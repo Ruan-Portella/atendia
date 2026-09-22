@@ -1,4 +1,5 @@
-import { MessageCircle } from "lucide-react";
+import Link from "next/link";
+import { LogIn, MessageCircle } from "lucide-react";
 import { hostAgency } from "@/lib/domain-server";
 import { initials } from "@/lib/utils";
 
@@ -22,7 +23,11 @@ export default async function AgencyDomainPage() {
       )}
       <h1 className="text-2xl font-bold">{name}</h1>
       <p className="max-w-sm text-sm text-muted">Este endereço hospeda os assistentes virtuais e relatórios de {agency ? name : "uma agência"}. Se você recebeu um link, confira se ele está completo.</p>
-      {wa && <a href={wa} target="_blank" rel="noopener" className="btn-primary" style={{ background: agency?.brand_color }}><MessageCircle size={15} />Falar com {name}</a>}
+      <div className="flex flex-wrap items-center justify-center gap-2.5">
+        {/* clientes da agência entram por aqui (link mágico, sem senha) */}
+        <Link href="/cliente/entrar" className={wa ? "btn-ghost" : "btn-primary"} style={wa ? undefined : { background: agency?.brand_color }}><LogIn size={15} />Área do cliente</Link>
+        {wa && <a href={wa} target="_blank" rel="noopener" className="btn-primary" style={{ background: agency?.brand_color }}><MessageCircle size={15} />Falar com {name}</a>}
+      </div>
     </main>
   );
 }
