@@ -9,8 +9,14 @@ import { appUrl } from "./utils";
  * app). Verificado, os links de demo, portal do cliente e código do widget passam a usá-lo.
  */
 
-export const CNAME_TARGET = process.env.CUSTOM_DOMAIN_CNAME ?? "cname.vercel-dns.com";
-export const APEX_A_RECORD = "76.76.21.21";
+/**
+ * Alvos de DNS. A Vercel passou a recomendar um CNAME próprio de cada projeto
+ * (ex.: 564cab…vercel-dns-017.com, em Project → Domains); os antigos cname.vercel-dns.com e
+ * 76.76.21.21 continuam funcionando. Defina CUSTOM_DOMAIN_CNAME / CUSTOM_DOMAIN_A com os do
+ * seu projeto, ou configure VERCEL_* para o painel perguntar à Vercel (recommendedDnsRecord).
+ */
+export const CNAME_TARGET = (process.env.CUSTOM_DOMAIN_CNAME ?? "cname.vercel-dns.com").replace(/\.$/, "");
+export const APEX_A_RECORD = process.env.CUSTOM_DOMAIN_A ?? "76.76.21.21";
 /** Resposta de /api/domain-check: prova que o domínio chega neste app (sem nome de produto). */
 export const DOMAIN_MARKER = "cw-app";
 
@@ -142,5 +148,33 @@ export async function checkDomain(domain: string): Promise<DomainStatus> {
     return { live: false, extraRecords, message: "O domínio responde, mas ainda não aponta para nós. Confira o registro DNS abaixo." };
   } catch {
     return { live: false, extraRecords, message: "Ainda não chegou aqui. DNS pode levar de minutos a algumas horas para propagar; o certificado HTTPS é emitido logo depois." };
+  }
+}
+
+/** Extrai o valor de maior prioridade (rank 1) de recommendedCNAME / recommendedIPv4 da Vercel. */
+export function pickRecommended(list: unknown): string | null {
+  if (!Array.isArray(list) || !list.length) return null;
+  const sorted = [...list].sort((a, b) => (Number((a as { rank?: number })?.rank) || 99) - (Number((b as { rank?: number })?.rank) || 99));
+  const v = (sorted[0] as { value?: unknown })?.value ?? sorted[0];
+  const s = Array.isArray(v) ? v[0] : v;
+  return typeof s === "string" && s ? s.replace(/\.$/, "") : null;
+}
+
+/**
+ * Registro DNS que a agência deve criar. Com a API da Vercel configurada, usa o que ela
+ * recomenda para este domínio (o CNAME próprio do projeto); senão, os valores do .env.
+ */
+export async function recommendedDnsRecord(domain: string): Promise<{ type: "A" | "CNAME"; name: string; value: string }> {
+  const apex = isApexDomain(domain);
+  const fallback = apex ? { type: "A" as const, name: "@", value: APEX_A_RECORD } : { type: "CNAME" as const, name: dnsRecordName(domain), value: CNAME_TARGET };
+  const v = vercel();
+  if (!v) return fallback;
+  try {
+    const r = await v.call("GET", `/v6/domains/${domain}/config`);
+    if (!r.ok) return fallback;
+    const value = apex ? pickRecommended(r.json.recommendedIPv4) : pickRecommended(r.json.recommendedCNAME);
+    return value ? { ...fallback, value } : fallback;
+  } catch {
+    return fallback;
   }
 }

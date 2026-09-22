@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dnsRecordName, isApexDomain, isCustomHost, parseDomain } from "../domain";
+import { dnsRecordName, isApexDomain, isCustomHost, parseDomain, pickRecommended } from "../domain";
 
 describe("parseDomain", () => {
   it("limpa https, caminho e maiúsculas", () => {
@@ -38,5 +38,18 @@ describe("isCustomHost", () => {
   });
   it("domínio de terceiro é", () => {
     expect(isCustomHost("chat.agencia.com.br")).toBe(true);
+  });
+});
+
+describe("pickRecommended (resposta da Vercel)", () => {
+  it("pega o de rank 1 e tira o ponto final", () => {
+    expect(pickRecommended([{ rank: 2, value: "cname.vercel-dns.com." }, { rank: 1, value: "564cab24d9ff00af.vercel-dns-017.com." }])).toBe("564cab24d9ff00af.vercel-dns-017.com");
+  });
+  it("IPv4 vem como lista de IPs", () => {
+    expect(pickRecommended([{ rank: 1, value: ["216.198.79.1", "64.29.17.1"] }])).toBe("216.198.79.1");
+  });
+  it("sem recomendação: null (usa o padrão)", () => {
+    expect(pickRecommended(undefined)).toBeNull();
+    expect(pickRecommended([])).toBeNull();
   });
 });

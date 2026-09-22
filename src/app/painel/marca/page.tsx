@@ -4,7 +4,7 @@ import { requireAgency } from "@/lib/agency";
 import { saveCustomDomain, updateAgency, verifyCustomDomain } from "../actions";
 import { LogoUpload } from "@/components/logo-upload";
 import { appUrl } from "@/lib/utils";
-import { APEX_A_RECORD, CNAME_TARGET, dnsRecordName, isApexDomain, vercelDomainsEnabled } from "@/lib/domain";
+import { isApexDomain, recommendedDnsRecord, vercelDomainsEnabled } from "@/lib/domain";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { CopyButton } from "@/components/copy-button";
@@ -16,7 +16,8 @@ export default async function MarcaPage() {
   const domain = agency.custom_domain;
   const verified = Boolean(domain && agency.custom_domain_verified_at);
   const apex = domain ? isApexDomain(domain) : false;
-  const record = apex ? { type: "A", name: "@", value: APEX_A_RECORD } : { type: "CNAME", name: domain ? dnsRecordName(domain) : "chat", value: CNAME_TARGET };
+  // só pergunta à Vercel enquanto falta configurar o DNS
+  const record = domain && !verified ? await recommendedDnsRecord(domain) : null;
 
   return (
     <div className="flex max-w-[640px] flex-col gap-6">
@@ -53,7 +54,7 @@ export default async function MarcaPage() {
             {verified && <p className="text-xs text-muted">Atenção: trocar ou apagar o domínio faz o widget parar nos sites onde foi instalado com o domínio atual. Reinstale o código novo nesses sites.</p>}
 
             {domain && (
-              verified ? (
+              verified || !record ? (
                 <p className="flex items-center gap-2 rounded-lg bg-brand-soft px-3 py-2 text-sm font-semibold text-brand"><CheckCircle2 size={16} />https://{domain} está no ar.</p>
               ) : (
                 <div className="flex flex-col gap-3 rounded-xl border border-line bg-ground p-4 text-sm">
