@@ -5,7 +5,7 @@ import { ChatWindow } from "@/components/chat-window";
 import { WidgetFrame } from "@/components/widget-frame";
 import { initials } from "@/lib/utils";
 
-export const metadata = { robots: { index: false } };
+export const metadata = { title: { absolute: "Chat" }, robots: { index: false } };
 
 /** Conteúdo do iframe do widget e link direto para Instagram/WhatsApp. */
 export default async function WidgetPage({ params }: PageProps<"/w/[key]">) {

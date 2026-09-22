@@ -2,7 +2,7 @@ import { MessageCircle } from "lucide-react";
 import { hostAgency } from "@/lib/domain-server";
 import { initials } from "@/lib/utils";
 
-export const metadata = { robots: { index: false, follow: false } };
+export const metadata = { title: { absolute: "Atendimento" }, robots: { index: false, follow: false } };
 
 /**
  * O que aparece em qualquer endereço do domínio próprio da agência que não seja demo,

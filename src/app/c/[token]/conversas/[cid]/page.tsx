@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getPortalClient } from "@/lib/portal";
 import { belongsToHost } from "@/lib/domain-server";
 
-export const metadata = { title: "Conversa", robots: { index: false, follow: false } };
+export const metadata = { title: { absolute: "Conversa" }, robots: { index: false, follow: false } };
 
 /** Conversa completa, vista pelo cliente final (somente leitura). */
 export default async function PortalConversationPage({ params }: PageProps<"/c/[token]/conversas/[cid]">) {

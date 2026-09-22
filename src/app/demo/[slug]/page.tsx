@@ -10,9 +10,9 @@ export async function generateMetadata({ params }: PageProps<"/demo/[slug]">): P
   const { slug } = await params;
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("client_name, agency_id").eq("demo_slug", slug).maybeSingle();
-  if (!bot) return { title: "Demonstração" };
+  if (!bot) return { title: { absolute: "Demonstração" } };
   const { data: agency } = await db.from("agencies").select("name").eq("id", bot.agency_id).single();
-  return { title: `Assistente de IA para ${bot.client_name}`, description: `Demonstração preparada por ${agency?.name ?? ""}.`, robots: { index: false } };
+  return { title: { absolute: `Assistente de IA para ${bot.client_name}` }, description: `Demonstração preparada por ${agency?.name ?? ""}.`, robots: { index: false } };
 }
 
 /** Página pública que a agência manda para o prospect. White-label: só a marca da agência aparece. */

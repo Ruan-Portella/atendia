@@ -1,8 +1,9 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
+import { useRouter } from "next/navigation";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { getOrCreateVisitorId } from "@/lib/utils";
 
 export interface ChatBotPublic {
@@ -18,11 +19,53 @@ export interface ChatBotPublic {
 }
 
 type HandoffMode = "bot" | "requested" | "agent";
-/** Mensagem de alguém da equipe; `after` = quantas mensagens do chat já existiam quando chegou. */
-interface AgentMessage {
-  id: number;
+/**
+ * Item extra na conversa: mensagem de alguém da equipe ou aviso de "entrou"/"encerrou".
+ * `after` = quantas mensagens do chat já existiam quando chegou (define onde aparece).
+ */
+interface TimelineItem {
+  key: string;
+  kind: "agent" | "joined" | "ended";
   content: string;
   after: number;
+}
+
+interface HandoffState {
+  mode: HandoffMode;
+  timeline: TimelineItem[];
+  /** mensagens do chat (visitante + assistente) até agora, para posicionar os itens */
+  count: number;
+  lastAgentId: number;
+}
+
+type HandoffAction =
+  | { type: "server"; mode: HandoffMode } // o que o servidor informou (cabeçalho ou consulta)
+  | { type: "asked" } // o assistente acabou de chamar a equipe nesta resposta
+  | { type: "agent"; messages: Array<{ id: number; content: string }> }
+  | { type: "count"; n: number };
+
+/**
+ * Estado do atendimento humano no widget. Quem manda é o servidor; aqui só registramos as
+ * transições e deixamos o aviso na conversa ("uma pessoa entrou", "atendimento encerrado").
+ */
+export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState {
+  switch (a.type) {
+    case "count":
+      return a.n === s.count ? s : { ...s, count: a.n };
+    case "asked":
+      return s.mode === "bot" ? { ...s, mode: "requested" } : s;
+    case "agent": {
+      const fresh = a.messages.filter((m) => !s.timeline.some((x) => x.key === `a${m.id}`));
+      if (!fresh.length) return s;
+      return { ...s, lastAgentId: Math.max(s.lastAgentId, ...fresh.map((m) => m.id)), timeline: [...s.timeline, ...fresh.map((m) => ({ key: `a${m.id}`, kind: "agent" as const, content: m.content, after: s.count }))] };
+    }
+    case "server": {
+      if (a.mode === s.mode) return s;
+      const kind = a.mode === "agent" ? "joined" : a.mode === "bot" && s.mode === "agent" ? "ended" : null;
+      const timeline = kind ? [...s.timeline, { key: `${kind}${s.timeline.length}`, kind, content: "", after: s.count } as TimelineItem] : s.timeline;
+      return { ...s, mode: a.mode, timeline };
+    }
+  }
 }
 
 function textOf(m: UIMessage): string {
@@ -57,10 +100,8 @@ export function ChatWindow({
   const [input, setInput] = useState("");
   const [errorText, setErrorText] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [handoff, setHandoff] = useState<HandoffMode>("bot");
-  const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
+  const [{ mode, timeline, lastAgentId }, dispatch] = useReducer(handoffReducer, { mode: "bot", timeline: [], count: 0, lastAgentId: 0 });
   const [activity, setActivity] = useState(0); // sobe a cada resposta do servidor
-
 
   const transport = useMemo(
     () =>
@@ -72,7 +113,7 @@ export function ChatWindow({
           const cid = res.headers.get("X-Conversation-Id");
           if (cid) setConversationId(cid);
           const h = res.headers.get("X-Handoff");
-          setHandoff(h === "agent" || h === "requested" ? h : "bot");
+          dispatch({ type: "server", mode: h === "agent" || h === "requested" ? h : "bot" });
           setActivity((n) => n + 1);
           if (!res.ok) {
             const j = await res
@@ -87,17 +128,21 @@ export function ChatWindow({
     [apiBase, bot.key, conversationId, visitorId, channel],
   );
 
-  const { messages, sendMessage, status } = useChat({ transport });
+  const router = useRouter();
+  const { messages, sendMessage, status } = useChat({
+    transport,
+    onFinish: ({ message, messages: all }) => {
+      dispatch({ type: "count", n: all.length });
+      // no teste ao vivo do editor, a pergunta sem resposta aparece na lista sem recarregar
+      // (espera o servidor terminar de gravar, que acontece logo depois do fim do stream)
+      if (channel === "painel") window.setTimeout(() => router.refresh(), 1200);
+      if (message.parts.some((part) => part.type === "tool-chamar_atendente")) dispatch({ type: "asked" });
+    },
+  });
   const busy = status === "submitted" || status === "streaming";
-
-  // o assistente chamou a ferramenta de pedir atendente nesta resposta
-  const askedForHuman = messages.some((m) => m.parts.some((part) => part.type === "tool-chamar_atendente"));
-  const mode: HandoffMode = handoff === "bot" && askedForHuman ? "requested" : handoff;
 
   // Consulta respostas da equipe: rápido durante o atendimento humano, devagar logo depois
   // de uma conversa (a agência pode assumir sem o visitante pedir), e para quando esfria.
-  const messageCount = messages.length;
-  const lastAgentId = agentMessages.at(-1)?.id ?? 0;
   useEffect(() => {
     if (!conversationId) return;
     const startedAt = Date.now();
@@ -109,23 +154,24 @@ export function ChatWindow({
         const res = await fetch(`${apiBase}/api/chat/updates?key=${bot.key}&conversationId=${conversationId}&after=${lastAgentId}`, { cache: "no-store" });
         if (!res.ok) return;
         const j = (await res.json()) as { mode: HandoffMode; messages: Array<{ id: number; content: string }> };
-        setHandoff(j.mode);
-        if (j.messages.length) setAgentMessages((prev) => [...prev, ...j.messages.filter((m) => !prev.some((x) => x.id === m.id)).map((m) => ({ ...m, after: messageCount }))]);
+        if (j.messages.length) dispatch({ type: "agent", messages: j.messages });
+        dispatch({ type: "server", mode: j.mode });
       } catch {
         // sem rede: tenta de novo no próximo ciclo
       }
     }, interval);
     return () => window.clearInterval(timer);
-  }, [apiBase, bot.key, conversationId, mode, activity, lastAgentId, messageCount]);
+  }, [apiBase, bot.key, conversationId, mode, activity, lastAgentId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, busy, agentMessages]);
+  }, [messages, busy, timeline]);
 
   const send = (text: string) => {
     const t = text.trim();
     if (!t || busy) return;
     setInput("");
+    dispatch({ type: "count", n: messages.length + 1 });
     sendMessage({ text: t });
   };
 
@@ -159,10 +205,10 @@ export function ChatWindow({
             ))}
           </div>
         )}
-        {agentMessages.filter((a) => a.after === 0).map((a) => <AgentBubble key={`a${a.id}`} label={`Equipe ${bot.clientName}`}>{a.content}</AgentBubble>)}
+        {timeline.filter((x) => x.after === 0).map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} />)}
         {messages.map((m, i) => {
           const t = textOf(m);
-          const agents = agentMessages.filter((a) => a.after === i + 1);
+          const extras = timeline.filter((x) => x.after === i + 1);
           return (
             <Fragment key={m.id}>
               {(t || m.role === "user") && (
@@ -170,11 +216,11 @@ export function ChatWindow({
                   {t}
                 </Bubble>
               )}
-              {agents.map((a) => <AgentBubble key={`a${a.id}`} label={`Equipe ${bot.clientName}`}>{a.content}</AgentBubble>)}
+              {extras.map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} />)}
             </Fragment>
           );
         })}
-        {agentMessages.filter((a) => a.after > messages.length).map((a) => <AgentBubble key={`a${a.id}`} label={`Equipe ${bot.clientName}`}>{a.content}</AgentBubble>)}
+        {timeline.filter((x) => x.after > messages.length).map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} />)}
         {mode !== "bot" && (
           <div className="self-center rounded-full bg-white px-3 py-1 text-center text-[12px] text-[#4c5551] shadow-sm">
             {mode === "agent" ? "Você está falando com uma pessoa da equipe" : "Avisamos a equipe. Alguém vai responder aqui."}
@@ -218,6 +264,15 @@ export function ChatWindow({
           Atendimento por <span className="font-semibold text-[#4c5551]">{bot.poweredBy}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function Extra({ item, label, botName }: { item: TimelineItem; label: string; botName: string }) {
+  if (item.kind === "agent") return <AgentBubble label={label}>{item.content}</AgentBubble>;
+  return (
+    <div className="self-center rounded-full bg-[#e9ecef] px-3 py-1 text-center text-[12px] text-[#4c5551]">
+      {item.kind === "joined" ? "Uma pessoa da equipe entrou na conversa." : `Atendimento encerrado. ${botName} voltou a responder.`}
     </div>
   );
 }

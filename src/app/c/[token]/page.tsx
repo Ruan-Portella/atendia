@@ -9,7 +9,7 @@ import { num } from "@/lib/plans";
 import { DailyBars } from "@/components/daily-bars";
 import { PrintButton } from "@/components/print-button";
 
-export const metadata = { title: "Relatório do assistente", robots: { index: false, follow: false } };
+export const metadata = { title: { absolute: "Relatório do assistente" }, robots: { index: false, follow: false } };
 
 /**
  * Portal do cliente final: link somente leitura que a agência compartilha. Mostra o

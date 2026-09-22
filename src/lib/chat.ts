@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, chatModel, embedText, type Persona } from "./ai";
 import { currentPeriod, getPlan } from "./plans";
 import { notifyHandoff, notifyLead } from "./notify";
+import { looksUnanswered, recordUnanswered } from "./unanswered";
 
 export interface BotRow {
   id: string;
@@ -98,6 +99,7 @@ export async function runChat(opts: {
     await db.from("messages").insert({ conversation_id: convId, role: "user", content: question });
   }
 
+  let unansweredRecorded = false;
   const result = streamText({
     model: chatModel(),
     system,
@@ -144,13 +146,15 @@ export async function runChat(opts: {
         description: "Registra uma pergunta que não pôde ser respondida com o conteúdo disponível, para a empresa completar depois.",
         inputSchema: z.object({ pergunta: z.string().min(3) }),
         execute: async ({ pergunta }) => {
-          await db.from("unanswered").insert({ bot_id: bot.id, question: pergunta.slice(0, 500) });
-          await db.from("conversations").update({ needs_human: true }).eq("id", convId);
+          unansweredRecorded = true;
+          await recordUnanswered(db, bot.id, convId, pergunta);
           return { ok: true };
         },
       }),
     },
     onFinish: async ({ text }) => {
+      // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
+      if (!unansweredRecorded && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
       if (text) {
         await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null });
       }
