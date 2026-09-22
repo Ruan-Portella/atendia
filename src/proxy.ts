@@ -12,7 +12,9 @@ const CUSTOM_HOST_PATHS = /^\/(demo|c|w)\/|^\/api\/|^\/widget\.js$|^\/dominio$/;
  * (No Next 16 o antigo middleware.ts chama-se proxy.ts.)
  */
 export async function proxy(request: NextRequest) {
-  if (isCustomHost(request.headers.get("host"))) {
+  // a área do cliente (/cliente) precisa de sessão também no domínio da agência: segue abaixo
+  const clientArea = /^\/cliente(\/|$)/.test(request.nextUrl.pathname);
+  if (isCustomHost(request.headers.get("host")) && !clientArea) {
     if (CUSTOM_HOST_PATHS.test(request.nextUrl.pathname)) return NextResponse.next();
     const url = request.nextUrl.clone();
     url.pathname = "/dominio";

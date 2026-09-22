@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BotRow } from "./chat";
 import { appUrl } from "./utils";
+import { agencyBaseUrl } from "./domain";
 
 /**
  * Avisa a agência (e opcionalmente o cliente final) de um lead novo.
@@ -50,22 +51,57 @@ async function recipients(db: SupabaseClient, bot: BotRow): Promise<string[]> {
 }
 
 /** Avisa na hora que um visitante pediu para falar com alguém, com o link para responder. */
+/**
+ * Avisa na hora que um visitante pediu para falar com alguém:
+ *  - a agência (e o e-mail de aviso do bot), com link para o painel;
+ *  - as pessoas do cliente, se ele pode atender, com link para a área do cliente e a marca
+ *    da agência. Ninguém recebe o aviso duas vezes.
+ */
 export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string }) {
   const { db, bot, conversationId, reason } = opts;
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return;
-  const to = await recipients(db, bot);
+  const { Resend } = await import("resend");
+  const resend = new Resend(apiKey);
+  const said = reason ? `\nO que ele disse: "${reason.slice(0, 300)}"` : "";
+
+  // pessoas do cliente com permissão de atender
+  let memberEmails: string[] = [];
+  if (bot.client_id) {
+    const { data: client } = await db.from("clients").select("id, allow_handoff, agencies(name, custom_domain, custom_domain_verified_at)").eq("id", bot.client_id).maybeSingle();
+    if (client?.allow_handoff) {
+      const { data: members } = await db.from("client_members").select("email").eq("client_id", client.id);
+      memberEmails = (members ?? []).map((m) => m.email as string);
+      const agency = (Array.isArray(client.agencies) ? client.agencies[0] : client.agencies) as { name: string; custom_domain: string | null; custom_domain_verified_at: string | null } | null;
+      if (memberEmails.length && agency) {
+        const fromAddress = process.env.EMAIL_FROM?.match(/<([^>]+)>/)?.[1] ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev";
+        await resend.emails.send({
+          from: `${agency.name.replace(/["<>]/g, "")} <${fromAddress}>`,
+          to: memberEmails,
+          subject: `Um visitante quer falar com alguém · ${bot.client_name}`,
+          text: [
+            `Um visitante do site de ${bot.client_name} pediu para falar com uma pessoa.`,
+            said,
+            `\nResponda por aqui (o assistente pausa enquanto você atende):\n${agencyBaseUrl(agency)}/cliente/${bot.client_id}/conversas/${conversationId}`,
+            `\n${agency.name}`,
+          ].join("\n"),
+        });
+      }
+    }
+  }
+
+  const to = (await recipients(db, bot)).filter((e) => !memberEmails.includes(e.toLowerCase()));
   if (!to.length) return;
   const link = appUrl(`/painel/bots/${bot.id}/conversas/${conversationId}`);
-  const { Resend } = await import("resend");
-  await new Resend(apiKey).emails.send({
+  await resend.emails.send({
     from: process.env.EMAIL_FROM ?? "Atendia <onboarding@resend.dev>",
     to,
     subject: `Um visitante quer falar com alguém · ${bot.client_name}`,
     text: [
       `Um visitante do chatbot ${bot.name} (${bot.client_name}) pediu para falar com uma pessoa.`,
-      reason ? `\nO que ele disse: "${reason.slice(0, 300)}"` : "",
+      said,
       `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`,
+      memberEmails.length ? `\nAs pessoas do cliente também foram avisadas e podem responder pela área do cliente.` : "",
     ].join("\n"),
   });
 }

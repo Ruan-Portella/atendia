@@ -6,7 +6,9 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgency } from "@/lib/agency";
-import { ingestSource, type SourceRow } from "@/lib/ingest";
+import { postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { answerQuestion } from "@/lib/knowledge";
+import { sendMemberLink } from "@/lib/member";
 import { initials, slugify } from "@/lib/utils";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
@@ -205,7 +207,7 @@ export async function deleteBot(botId: string, redirectTo?: string): Promise<Act
 
 export async function resolveUnanswered(id: string, botId: string): Promise<ActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase.from("unanswered").update({ resolved: true }).eq("id", id);
+  const { error } = await supabase.from("unanswered").update({ resolved: true, resolved_by: "agência" }).eq("id", id);
   if (error) return fail("Não foi possível marcar como resolvida.");
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Marcada como resolvida.");
@@ -295,6 +297,9 @@ export async function sendReportNow(clientId: string, period?: string): Promise<
 
 /* ------------------------------------------------------------------ atendimento humano */
 
+/** Como as mensagens da agência ficam assinadas (o cliente final assina com o e-mail dele). */
+const AGENCY_AUTHOR = "agência";
+
 /**
  * Confere pela RLS que a conversa é da agência logada e devolve a service role para
  * escrever (conversas e mensagens são só leitura para o usuário, de propósito).
@@ -308,79 +313,42 @@ async function ownedConversation(conversationId: string) {
 export async function takeOverConversation(conversationId: string): Promise<ActionResult> {
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
-  const now = new Date().toISOString();
-  await owned.admin.from("conversations").update({ takeover_at: now, handled_at: null, needs_human: true }).eq("id", conversationId);
+  const r = await takeOver(owned.admin, conversationId);
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
-  return ok("Você assumiu a conversa. O assistente pausou até você devolver.");
+  return r;
 }
 
 export async function sendAgentMessage(conversationId: string, formData: FormData): Promise<ActionResult> {
-  const content = text(formData.get("content"));
-  if (!content) return fail("Escreva uma mensagem.");
-  if (content.length > 2000) return fail("Mensagem muito longa (até 2.000 caracteres).");
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
-  const { admin } = owned;
-  const now = new Date().toISOString();
-  const { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content });
-  if (error) return fail("A mensagem não foi enviada. Tente de novo.");
-  const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
-  // responder já assume a conversa (o assistente não fala por cima)
-  const { data: conv } = await admin.from("conversations").select("takeover_at").eq("id", conversationId).single();
-  await admin.from("conversations").update({ takeover_at: conv?.takeover_at ?? now, handled_at: null, last_message_at: now, message_count: count ?? 0 }).eq("id", conversationId);
+  const r = await postAgentMessage(owned.admin, conversationId, text(formData.get("content")), AGENCY_AUTHOR);
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
-  return ok("Enviada. O visitante vê em alguns segundos.");
+  return r;
 }
 
 /** Devolve a conversa ao assistente (ele volta a responder, sabendo o que você escreveu). */
 export async function releaseConversation(conversationId: string): Promise<ActionResult> {
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
-  await owned.admin.from("conversations").update({ takeover_at: null, handled_at: new Date().toISOString() }).eq("id", conversationId);
+  const r = await release(owned.admin, conversationId);
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   revalidatePath("/painel", "layout");
-  return ok("Atendimento encerrado. O assistente volta a responder esta conversa.");
+  return r;
 }
 
 /* ------------------------------------------------------------------ base de conhecimento */
-
-const PANEL_FAQ_TITLE = "Respostas do painel";
 
 /**
  * Responde uma pergunta que o assistente não soube: a resposta entra num FAQ do bot
  * ("Respostas do painel"), é indexada na hora e a pergunta sai da lista.
  */
 export async function answerUnanswered(unansweredId: string, botId: string, formData: FormData): Promise<ActionResult> {
-  const question = text(formData.get("question")).replace(/\s+/g, " ");
-  const answer = text(formData.get("answer"));
-  if (question.length < 3) return fail("Escreva a pergunta.");
-  if (answer.length < 2) return fail("Escreva a resposta que o assistente deve dar.");
-  if (question.length > 500 || answer.length > 3000) return fail("Pergunta ou resposta longa demais.");
-
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
-
-  const admin = createAdminClient();
-  const entry = `P: ${question}\nR: ${answer}`;
-  const { data: existing } = await admin.from("sources").select("id, bot_id, kind, title, url, content").eq("bot_id", botId).eq("kind", "faq").eq("title", PANEL_FAQ_TITLE).maybeSingle();
-  let source = existing;
-  if (source) {
-    source = { ...source, content: `${source.content ?? ""}\n\n${entry}`.trim() };
-    await admin.from("sources").update({ content: source.content }).eq("id", source.id);
-  } else {
-    const { data: created, error } = await admin.from("sources").insert({ bot_id: botId, kind: "faq", title: PANEL_FAQ_TITLE, content: entry }).select("id, bot_id, kind, title, url, content").single();
-    if (error || !created) return fail("Não foi possível salvar a resposta. Tente de novo.");
-    source = created;
-  }
-  try {
-    await ingestSource(admin, source as SourceRow);
-  } catch (e) {
-    return fail(`A resposta foi salva, mas não deu para treinar o assistente agora: ${(e as Error).message}`);
-  }
-  await supabase.from("unanswered").update({ resolved: true }).eq("id", unansweredId);
+  const r = await answerQuestion(createAdminClient(), { botId, unansweredId, question: text(formData.get("question")), answer: text(formData.get("answer")), author: AGENCY_AUTHOR });
   revalidatePath(`/painel/bots/${botId}`);
-  return ok("Pronto: o assistente já responde isso.");
+  return r;
 }
 
 export async function setAutoRefresh(botId: string, formData: FormData): Promise<ActionResult> {
@@ -428,4 +396,57 @@ export async function verifyCustomDomain(): Promise<ActionResult> {
   await supabase.from("agencies").update({ custom_domain_verified_at: new Date().toISOString() }).eq("id", agency.id);
   revalidatePath("/painel", "layout");
   return ok("Domínio verificado! Demos, portal do cliente e código do widget já usam ele.");
+}
+
+/* ------------------------------------------------------------------ acesso do cliente final */
+
+/** Liga/desliga o que as pessoas do cliente podem fazer na área do cliente. */
+export async function setClientPermissions(clientId: string, formData: FormData): Promise<ActionResult> {
+  const supabase = await createClient();
+  const patch = { allow_handoff: formData.get("allow_handoff") === "on", allow_knowledge: formData.get("allow_knowledge") === "on" };
+  const { error, count } = await supabase.from("clients").update(patch, { count: "exact" }).eq("id", clientId);
+  if (error || !count) return fail("Não foi possível salvar as permissões.");
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok("Permissões salvas. Valem na hora para quem já está logado.");
+}
+
+async function inviteContext(clientId: string) {
+  const { agency } = await requireAgency();
+  const supabase = await createClient();
+  const { data: client } = await supabase.from("clients").select("id, name").eq("id", clientId).maybeSingle();
+  return client ? { agency, supabase, client } : null;
+}
+
+/** Adiciona uma pessoa do cliente e manda o link de acesso por e-mail. */
+export async function addClientMember(clientId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await inviteContext(clientId);
+  if (!ctx) return fail("Cliente não encontrado.");
+  const email = text(formData.get("email")).toLowerCase();
+  if (!isEmail(email)) return fail("E-mail inválido.");
+  const { count } = await ctx.supabase.from("client_members").select("id", { count: "exact", head: true }).eq("client_id", clientId);
+  if ((count ?? 0) >= 20) return fail("Limite de 20 pessoas por cliente.");
+  const { error } = await ctx.supabase.from("client_members").insert({ client_id: clientId, email });
+  if (error) return fail(error.code === "23505" ? "Esse e-mail já tem acesso." : "Não foi possível adicionar. Tente de novo.");
+  revalidatePath(`/painel/clientes/${clientId}`);
+  const sent = await sendMemberLink({ email, origin: agencyBaseUrl(ctx.agency), next: `/cliente/${clientId}`, clientName: ctx.client.name, agency: ctx.agency });
+  if (!sent.ok) return fail(`Acesso criado, mas o convite não foi enviado: ${sent.message} A pessoa pode entrar pela área do cliente pedindo um link.`);
+  return ok(`Convite enviado para ${email}.`);
+}
+
+export async function resendClientInvite(clientId: string, memberId: string): Promise<ActionResult> {
+  const ctx = await inviteContext(clientId);
+  if (!ctx) return fail("Cliente não encontrado.");
+  const { data: member } = await ctx.supabase.from("client_members").select("email").eq("id", memberId).eq("client_id", clientId).maybeSingle();
+  if (!member) return fail("Pessoa não encontrada.");
+  const sent = await sendMemberLink({ email: member.email, origin: agencyBaseUrl(ctx.agency), next: `/cliente/${clientId}`, clientName: ctx.client.name, agency: ctx.agency });
+  return sent.ok ? ok(`Link enviado de novo para ${member.email}.`) : fail(sent.message);
+}
+
+/** Tira o acesso na hora (a sessão aberta perde acesso na próxima página que abrir). */
+export async function removeClientMember(clientId: string, memberId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error, count } = await supabase.from("client_members").delete({ count: "exact" }).eq("id", memberId).eq("client_id", clientId);
+  if (error || !count) return fail("Não foi possível remover.");
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok("Acesso removido.");
 }

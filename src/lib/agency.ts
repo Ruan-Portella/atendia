@@ -57,6 +57,11 @@ export const requireAgency = cache(async (): Promise<{ agency: Agency; email: st
   }
   if (!agency) {
     const admin = createAdminClient();
+    // pessoa de um cliente (entrou pela área do cliente) não vira agência sem querer
+    if (email) {
+      const { count } = await admin.from("client_members").select("id", { count: "exact", head: true }).eq("email", email.toLowerCase());
+      if (count) redirect("/cliente");
+    }
     const name = (meta.agency_name as string | undefined)?.trim() || (meta.full_name as string | undefined) || email.split("@")[0] || "Minha agência";
     const base = slugify(name);
     const slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;

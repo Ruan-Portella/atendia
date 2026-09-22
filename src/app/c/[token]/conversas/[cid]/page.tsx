@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPortalClient } from "@/lib/portal";
 import { belongsToHost } from "@/lib/domain-server";
+import { ConversationThread, type ThreadMessage } from "@/components/conversation-thread";
 
 export const metadata = { title: { absolute: "Conversa" }, robots: { index: false, follow: false } };
 
@@ -28,21 +29,7 @@ export default async function PortalConversationPage({ params }: PageProps<"/c/[
         <h1 className="text-2xl font-bold">Conversa com {bot?.name ?? "o assistente"}</h1>
         <p className="text-sm text-muted">{new Date(conv.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "long", timeStyle: "short" })}</p>
       </div>
-      {leads && leads.length > 0 && (
-        <div className="rounded-xl bg-brand-soft p-4 text-sm">
-          <div className="font-semibold text-brand">Contato capturado</div>
-          {leads.map((l, i) => <div key={i}>{l.name} · {l.phone ?? l.email}{l.notes ? ` · ${l.notes}` : ""}</div>)}
-        </div>
-      )}
-      <div className="flex flex-col gap-2.5">
-        {(messages ?? []).map((m) => (
-          <div key={m.id} className={m.role === "user" ? "max-w-[80%] self-end rounded-[14px_14px_4px_14px] bg-ink px-3.5 py-2.5 text-sm text-ground" : "max-w-[86%] self-start rounded-[14px_14px_14px_4px] border border-line bg-panel px-3.5 py-2.5 text-sm"}>
-            {m.role === "agent" && <div className="mb-0.5 text-[11px] font-semibold text-muted">Equipe</div>}
-            <div className="whitespace-pre-wrap">{m.content}</div>
-          </div>
-        ))}
-        {(messages ?? []).length === 0 && <p className="text-sm text-muted">Sem mensagens.</p>}
-      </div>
+      <ConversationThread messages={(messages ?? []) as ThreadMessage[]} leads={leads} agentLabel={() => "Equipe"} />
     </div>
   );
 }

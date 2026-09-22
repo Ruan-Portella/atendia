@@ -9,6 +9,7 @@ import { looksUnanswered, recordUnanswered } from "./unanswered";
 export interface BotRow {
   id: string;
   agency_id: string;
+  client_id?: string | null;
   name: string;
   client_name: string;
   client_site: string | null;

@@ -20,6 +20,8 @@ export interface SourceItem {
   error: string | null;
   /** Erro da última releitura automática (a fonte continua valendo com o conteúdo anterior). */
   refresh_error?: string | null;
+  /** "agência" ou o e-mail de quem do cliente editou pela área do cliente */
+  created_by?: string | null;
   updated_at: string;
 }
 
@@ -185,6 +187,7 @@ export function SourcesManager({ botId, sources }: { botId: string; sources: Sou
                   <span className="block truncate text-xs text-muted">
                     {processing ? "processando…" : s.status === "error" ? <span className="text-danger">{s.error ?? "erro ao processar"}</span> : s.kind === "site" || s.kind === "pdf" ? `${s.pages} página${s.pages === 1 ? "" : "s"}${s.url ? ` · ${s.url.replace(/^https?:\/\//, "")}` : ""}` : s.url?.replace(/^https?:\/\//, "") ?? `${s.content?.length ?? 0} caracteres`}
                   </span>
+                  {s.created_by && s.created_by !== "agência" && <span className="block truncate text-xs text-brand">editado pelo cliente · {s.created_by}</span>}
                   {s.refresh_error && s.status === "ready" && <span className="block truncate text-xs text-amber-ink" title={s.refresh_error}>Não consegui reler na última atualização automática; usando o conteúdo anterior.</span>}
                 </span>
                 <span className="md:hidden">

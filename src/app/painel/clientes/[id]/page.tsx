@@ -18,7 +18,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { CopyButton } from "@/components/copy-button";
 import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
-import { deleteBot, deleteClientRecord, disablePortal, enablePortal, saveReportEmail, sendReportNow, updateClientRecord } from "../../actions";
+import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePortal, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientPermissions, updateClientRecord } from "../../actions";
 
 export const metadata = { title: "Cliente" };
 
@@ -27,6 +27,7 @@ const TABS = [
   ["leads", "Leads"],
   ["conversas", "Conversas"],
   ["relatorio", "Relatório e portal"],
+  ["acesso", "Acesso do cliente"],
   ["dados", "Dados do cliente"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
@@ -48,7 +49,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   // a RLS limita os dados à agência logada
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
-    supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
@@ -64,7 +65,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const base = agencyBaseUrl(agency);
 
   // Só busca o que a aba aberta mostra.
-  const [pending, { data: leads }, { data: conversations }] = await Promise.all([
+  const [pending, { data: leads }, { data: conversations }, { data: members }] = await Promise.all([
     getPendingHandoffs(supabase, botIds),
     tab === "leads" && botIds.length
       ? supabase.from("leads").select("id, bot_id, conversation_id, name, phone, email, notes, created_at").in("bot_id", botIds).order("created_at", { ascending: false }).limit(200)
@@ -72,6 +73,9 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
     tab === "conversas" && botIds.length
       ? supabase.from("conversations").select("id, bot_id, started_at, message_count, needs_human, channel, handoff_requested_at, handled_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
       : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; handled_at: string | null }> }),
+    tab === "acesso"
+      ? supabase.from("client_members").select("id, email, last_login_at, created_at").eq("client_id", id).order("created_at")
+      : Promise.resolve({ data: [] as Array<{ id: string; email: string; last_login_at: string | null; created_at: string }> }),
   ]);
 
   return (
@@ -218,6 +222,53 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               >
                 Enviar o do mês passado agora
               </ConfirmAction>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {tab === "acesso" && (
+        <div className="flex max-w-[720px] flex-col gap-5">
+          <section className="card flex flex-col gap-3 p-5">
+            <div>
+              <h2 className="text-base font-bold">O que {client.name} pode fazer</h2>
+              <p className="text-sm text-muted">As pessoas abaixo entram na área do cliente (<code>{base.replace(/^https?:\/\//, "")}/cliente</code>) com um link no e-mail, sem senha. Sempre podem ver o relatório, os contatos e as conversas.</p>
+            </div>
+            <ActionForm key={`${client.allow_handoff}${client.allow_knowledge}`} action={setClientPermissions.bind(null, client.id)} className="flex flex-col gap-3">
+              <label className="flex items-start gap-2.5 text-sm">
+                <input type="checkbox" name="allow_handoff" defaultChecked={client.allow_handoff} className="mt-1" />
+                <span><strong>Atender conversas</strong><span className="block text-muted">Assumir quando o visitante pede alguém, responder e devolver ao assistente. Eles também recebem o aviso por e-mail.</span></span>
+              </label>
+              <label className="flex items-start gap-2.5 text-sm">
+                <input type="checkbox" name="allow_knowledge" defaultChecked={client.allow_knowledge} className="mt-1" />
+                <span><strong>Ensinar o assistente</strong><span className="block text-muted">Responder as perguntas sem resposta e criar/editar textos e FAQs. Site e PDFs continuam só com você.</span></span>
+              </label>
+              <SubmitButton className="btn-primary self-start">Salvar permissões</SubmitButton>
+            </ActionForm>
+          </section>
+
+          <section className="card flex flex-col gap-3 p-5">
+            <div>
+              <h2 className="text-base font-bold">Pessoas com acesso</h2>
+              <p className="text-sm text-muted">Adicione o e-mail de cada pessoa (dono, recepção…). Ela recebe um convite com o link de entrada.</p>
+            </div>
+            <ActionForm action={addClientMember.bind(null, client.id)} className="flex flex-wrap items-end gap-2">
+              <div className="min-w-[220px] flex-1">
+                <label htmlFor="member-email" className="label">E-mail</label>
+                <input id="member-email" name="email" type="email" required maxLength={200} className="input" placeholder="recepcao@clinicasorriso.com.br" />
+              </div>
+              <SubmitButton pendingLabel="Enviando convite…" className="btn-primary">Adicionar e convidar</SubmitButton>
+            </ActionForm>
+            <div className="overflow-hidden rounded-xl border border-line">
+              {(members ?? []).length === 0 && <p className="p-4 text-sm text-muted">Ninguém ainda.</p>}
+              {(members ?? []).map((m) => (
+                <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-2 px-4 py-3 text-sm last:border-0">
+                  <span className="min-w-0 flex-1 truncate font-medium">{m.email}</span>
+                  <span className="text-xs text-muted">{m.last_login_at ? `entrou ${relativeTime(m.last_login_at)}` : "ainda não entrou"}</span>
+                  <ConfirmAction action={resendClientInvite.bind(null, client.id, m.id)} title="Reenviar o link?" description={<>Um link novo de acesso vai para <strong className="text-ink">{m.email}</strong>.</>} confirmLabel="Reenviar" danger={false} className="text-xs font-semibold text-brand hover:underline">Reenviar link</ConfirmAction>
+                  <ConfirmAction action={removeClientMember.bind(null, client.id, m.id)} title="Tirar o acesso?" description={<><strong className="text-ink">{m.email}</strong> não consegue mais entrar na área do cliente.</>} confirmLabel="Tirar acesso" className="text-xs font-semibold text-danger hover:underline">Remover</ConfirmAction>
+                </div>
+              ))}
             </div>
           </section>
         </div>
