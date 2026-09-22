@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { belongsToHost } from "@/lib/domain-server";
 import { ChatWindow } from "@/components/chat-window";
 import { initials } from "@/lib/utils";
 import { brl } from "@/lib/plans";
@@ -19,7 +20,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
   const { slug } = await params;
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("demo_slug", slug).eq("is_demo", true).maybeSingle();
-  if (!bot) notFound();
+  if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
   const { data: agency } = await db.from("agencies").select("name, logo_url, brand_color, support_whatsapp").eq("id", bot.agency_id).single();
   await db.rpc("increment_demo_views", { p_slug: slug });
 

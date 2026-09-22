@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BotRow } from "./chat";
+import { appUrl } from "./utils";
 
 /**
  * Avisa a agência (e opcionalmente o cliente final) de um lead novo.
@@ -39,4 +40,32 @@ export async function notifyLead(opts: {
       .join("\n"),
   });
   if (lead.id) await db.from("leads").update({ notified_at: new Date().toISOString() }).eq("id", lead.id);
+}
+
+/** E-mails da agência e do aviso configurado no bot (sem duplicar). */
+async function recipients(db: SupabaseClient, bot: BotRow): Promise<string[]> {
+  const { data: agency } = await db.from("agencies").select("owner_id").eq("id", bot.agency_id).single();
+  const { data: owner } = agency ? await db.auth.admin.getUserById(agency.owner_id) : { data: null };
+  return [...new Set([bot.lead_capture?.notify_email, owner?.user?.email].filter((x): x is string => Boolean(x)))];
+}
+
+/** Avisa na hora que um visitante pediu para falar com alguém, com o link para responder. */
+export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string }) {
+  const { db, bot, conversationId, reason } = opts;
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return;
+  const to = await recipients(db, bot);
+  if (!to.length) return;
+  const link = appUrl(`/painel/bots/${bot.id}/conversas/${conversationId}`);
+  const { Resend } = await import("resend");
+  await new Resend(apiKey).emails.send({
+    from: process.env.EMAIL_FROM ?? "Atendia <onboarding@resend.dev>",
+    to,
+    subject: `Um visitante quer falar com alguém · ${bot.client_name}`,
+    text: [
+      `Um visitante do chatbot ${bot.name} (${bot.client_name}) pediu para falar com uma pessoa.`,
+      reason ? `\nO que ele disse: "${reason.slice(0, 300)}"` : "",
+      `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`,
+    ].join("\n"),
+  });
 }

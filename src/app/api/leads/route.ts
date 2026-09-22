@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { CORS_HEADERS, type BotRow } from "@/lib/chat";
 import { notifyLead } from "@/lib/notify";
+import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 
 /** Formulário de contato dentro do widget (quando o visitante prefere preencher em vez de conversar). */
 const schema = z.object({
@@ -26,6 +27,10 @@ export async function POST(req: Request) {
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("public_key", d.key).maybeSingle<BotRow>();
   if (!bot) return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
+  const exceeded = await firstExceeded(db, [
+    { key: `lead:${bot.id}:ip:${hashId(clientIp(req))}`, max: 5, windowSeconds: 3600, message: "Recebemos vários contatos seus agora. Nossa equipe já vai retornar." },
+  ]);
+  if (exceeded) return tooMany(exceeded, CORS_HEADERS);
 
   const { data: lead } = await db
     .from("leads")

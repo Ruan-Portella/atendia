@@ -8,8 +8,10 @@ Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + p
 
 - Landing page com gerador de demo público, calculadora de retorno, preços e afiliados.
 - Cadastro/login por e-mail + senha e Google (Supabase Auth). A agência é criada no primeiro acesso.
-- Painel: lista de chatbots com KPIs (conversas, leads, % resolvidas, faturamento informado), demos em destaque quando o prospect abre mais de 3 vezes.
-- Editor do chatbot: base de conhecimento (site inteiro, página, PDF, texto, FAQ), personalidade, aparência e marca, captura de leads, conversas, instalação, teste ao vivo. Perguntas que o bot não soube responder aparecem para você completar.
+- Painel por cliente: a agência tem clientes, cada um com vários chatbots. Lista de clientes com KPIs (conversas, leads, % resolvidas, faturamento informado) e um painel por cliente com chatbots, leads, conversas, relatório e dados.
+- Relatório mensal e portal do cliente final: link somente leitura (`/c/[token]`) com a marca da agência, números do mês, gráfico por dia, contatos e conversas; e-mail automático todo dia 1º (Vercel Cron) e "Salvar em PDF".
+- Atendimento humano: o assistente chama a equipe quando o visitante pede uma pessoa (e-mail na hora); no painel você assume a conversa, responde e o visitante vê no widget em segundos; ao devolver, o assistente continua sabendo o que você disse.
+- Editor do chatbot: base de conhecimento (site inteiro, página, PDF, texto, FAQ), personalidade, aparência e marca, captura de leads, conversas, instalação, teste ao vivo. Perguntas que o bot não soube responder aparecem com "Responder": a resposta vira FAQ e é indexada na hora. Sites e páginas são relidos toda semana (sem custo se nada mudou).
 - Gerador de demo: cria bot + rastreia o site + embeddings em um passo; página `/demo/[slug]` com a marca da agência e contador de aberturas; botão de WhatsApp para mandar o link.
 - Chat com RAG (pgvector), streaming, ferramentas para registrar lead e pergunta sem resposta, cota mensal por plano, memória de conversa por visitante.
 - Widget: `<script src=".../widget.js" data-key="…">` abre o chat em iframe (`/w/[key]`), funciona em qualquer site. Cor, canto da tela e distância da borda vêm da aba Aparência via `/api/widget/config` (cache de 60 s) e valem na hora nos sites instalados; `data-color` / `data-position` / `data-offset` no script sobrepõem por site. Chave por `?key=` (para `next/script` e tag managers); expõe `window.ChatWidget.open()/close()/toggle()`. Nomes genéricos: nada da plataforma aparece no código do cliente.
@@ -17,13 +19,18 @@ Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + p
 - Afiliados: link `?ref=`, cookie de 30 dias, 30% do valor pago pela indicada (calculado no `invoice.paid`) vira crédito. A agência converte o saldo em desconto com um clique: vira *customer balance* no Stripe e é abatido automaticamente das próximas faturas (sem cupom, sem PIX). Constantes em `src/lib/referral-credit.ts` (taxa e mínimo de R$ 10).
 - Stripe: checkout, portal e webhook (plano da agência, comissões). Sem chave, tudo fica em teste.
 - E-mail de lead novo via Resend (opcional).
+- Domínio próprio por agência (planos Agência e Escala): demos, portal e widget em `chat.agencia.com.br`, com instrução de DNS, verificação e integração opcional com a API de domínios da Vercel.
+- Limites nas rotas públicas (demo, chat, formulário de lead) guardados no próprio Postgres, com IP em hash.
+- Testes (`npm test`, Vitest) e CI no GitHub Actions (lint, tipos e testes).
 
 ## Configurar em 15 minutos
 
 ### 1. Supabase
 
 1. Crie um projeto em supabase.com (plano free serve).
-2. **SQL Editor** → cole e execute `supabase/migrations/0001_init.sql` (tabelas, pgvector, funções, RLS, buckets e a agência "vitrine" das demos anônimas) e depois `0002_install_ping.sql` (detecção de instalação do widget), `0003_referral_credit.sql` (crédito de indicação) e `0004_clients.sql` (clientes com vários chatbots e RLS mais rápida).
+2. **Migrações** (tudo em `supabase/migrations`, em ordem; todas podem rodar de novo sem estragar nada):
+   - **Automático (recomendado):** defina `DATABASE_URL` na Vercel (Supabase → Connect → *Session pooler*, porta 5432). Todo deploy de produção aplica as migrações novas **antes** do build (`scripts/migrate.mjs`); se uma falhar, o deploy falha e o código novo não vai ao ar. Localmente: `npm run migrate`.
+   - **Manual:** no **SQL Editor**, rode cada arquivo em ordem: `0001_init` (tabelas, pgvector, RLS, buckets, agência vitrine), `0002_install_ping`, `0003_referral_credit`, `0004_clients` (clientes com vários chatbots), `0005_rate_limit`, `0006_portal_handoff` (portal do cliente, relatório, atendimento humano), `0007_source_refresh` e `0008_custom_domain`.
 3. **Authentication → Providers**: deixe Email ligado (pode desligar "Confirm email" no começo para agilizar) e ative **Google** (Client ID/Secret do Google Cloud Console; a redirect URL está na tela do Supabase).
 4. **Authentication → URL Configuration**: Site URL = `http://localhost:3000` (depois o domínio da Vercel); Redirect URLs: `http://localhost:3000/auth/callback` e `https://SEU-DOMINIO/auth/callback`.
 5. **Project Settings → API**: copie `Project URL`, `anon key` e `service_role key`.
@@ -54,6 +61,12 @@ Crie sua conta em `/cadastro`, vá em **Demos**, cole o site de qualquer empresa
 ### 4. Vercel
 
 Importe o repositório, cole as mesmas variáveis do `.env.local` (mude `NEXT_PUBLIC_APP_URL` para o domínio final) e faça o deploy. Rotas de ingestão têm `maxDuration = 60`; no plano Hobby o limite é 60 s com Fluid Compute, suficiente para sites de até ~40 páginas. Sites maiores: reduza `CRAWL_MAX_PAGES` ou suba para o Pro.
+
+Variáveis extras para produção (detalhes em `.env.example`):
+
+- `DATABASE_URL`: aplica as migrações automaticamente em cada deploy de produção.
+- `CRON_SECRET`: liga os crons de `vercel.json` (relatório mensal nos dias 1–3, releitura diária dos sites com mais de 7 dias).
+- `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID` (opcional): o painel adiciona o domínio próprio da agência no projeto sozinho. Sem eles, adicione o domínio em Project → Settings → Domains.
 
 > Vercel Hobby não permite uso comercial. Quando começar a cobrar, use o plano Pro ou hospede em Cloudflare Pages/Railway.
 
@@ -100,7 +113,7 @@ public/widget.js                    loader do widget (botão flutuante + iframe 
 - **Ingestão síncrona**: sites muito grandes podem passar do timeout da função. V2: fila (Supabase Queues ou Inngest) e status "treinando" com polling.
 - **Demos anônimas** da landing ficam na agência vitrine para sempre. Crie um cron (Supabase → Cron) apagando `bots` com `is_demo = true` e `agency_id` da vitrine com mais de 7 dias.
 - **WhatsApp** para avisos de lead ainda não está ligado (campo existe). V2: API oficial da Meta ou Z-API.
-- **Domínio próprio** por agência: o campo existe; o roteamento por host entra na V2 (Vercel Domains + `proxy.ts` lendo `request.headers.host`).
-- **Rate limit** nas rotas públicas: use o rate limit da Vercel ou Upstash antes de divulgar em massa.
+- **Atendimento humano por consulta periódica** (o widget pergunta a cada poucos segundos durante o atendimento). Com muito volume, trocar por Supabase Realtime.
+- **Portal do cliente sem login**: quem tem o link vê os contatos daquele cliente. Dá para trocar ou desligar o link a qualquer momento no painel.
 
 # atendia

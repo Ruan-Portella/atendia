@@ -35,3 +35,26 @@ export async function getClientOptions(supabase: SupabaseClient, agencyId: strin
   const { data } = await supabase.from("clients").select("id, name").eq("agency_id", agencyId).order("name");
   return data ?? [];
 }
+
+export interface PendingHandoff {
+  id: string;
+  bot_id: string;
+  handoff_requested_at: string;
+  takeover_at: string | null;
+  bots: { name: string; client_name: string; client_id: string | null } | null;
+}
+
+/** Conversas em que o visitante pediu atendente e ninguém encerrou (últimos 7 dias). */
+export async function getPendingHandoffs(supabase: SupabaseClient, botIds?: string[]): Promise<PendingHandoff[]> {
+  let q = supabase
+    .from("conversations")
+    .select("id, bot_id, handoff_requested_at, takeover_at, bots(name, client_name, client_id)")
+    .not("handoff_requested_at", "is", null)
+    .is("handled_at", null)
+    .gte("handoff_requested_at", new Date(Date.now() - 7 * 86400000).toISOString())
+    .order("handoff_requested_at", { ascending: false })
+    .limit(20);
+  if (botIds) q = q.in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"]);
+  const { data } = await q;
+  return ((data ?? []) as Array<Omit<PendingHandoff, "bots"> & { bots: PendingHandoff["bots"] | PendingHandoff["bots"][] }>).map((r) => ({ ...r, bots: Array.isArray(r.bots) ? r.bots[0] ?? null : r.bots }));
+}

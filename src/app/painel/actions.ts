@@ -4,9 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgency } from "@/lib/agency";
+import { ingestSource, type SourceRow } from "@/lib/ingest";
 import { initials, slugify } from "@/lib/utils";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
+import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
+import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -16,42 +21,6 @@ const list = (v: FormDataEntryValue | null) =>
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 6);
-
-const text = (v: FormDataEntryValue | null | undefined) => String(v ?? "").trim();
-
-/**
- * Lê o "quanto você cobra" do formulário. Aceita "55", "55,90" ou "1.250,00".
- * Vazio vira null; valor inválido devolve uma mensagem para o toast.
- */
-function parsePrice(v: FormDataEntryValue | null | undefined): { cents: number | null } | { error: string } {
-  let s = text(v).replace(/^R\$\s*/i, "");
-  if (!s) return { cents: null };
-  // vírgula é decimal; ponto só é decimal quando não parece separador de milhar (1.250)
-  if (s.includes(",") || /^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
-  const n = Number(s);
-  if (!Number.isFinite(n) || n < 0) return { error: "Informe um valor válido para o preço (ex.: 55 ou 55,90)." };
-  if (n > 1_000_000) return { error: "O preço mensal parece alto demais. Confira o valor." };
-  return { cents: Math.round(n * 100) };
-}
-
-/** Valida nome, site e preço de um cliente (campos com `prefix`, ex.: "new_client_"). */
-function clientFields(fd: FormData, prefix = ""): { name: string; site: string | null; price_cents: number | null } | { error: string } {
-  const name = text(fd.get(`${prefix}name`));
-  const site = text(fd.get(`${prefix}site`));
-  if (name.length < 2) return { error: "O nome do cliente precisa ter pelo menos 2 caracteres." };
-  if (name.length > 80) return { error: "O nome do cliente pode ter no máximo 80 caracteres." };
-  if (site.length > 200) return { error: "O site do cliente pode ter no máximo 200 caracteres." };
-  const price = parsePrice(fd.get(`${prefix}price`));
-  if ("error" in price) return price;
-  return { name, site: site || null, price_cents: price.cents };
-}
-
-function assistantName(v: FormDataEntryValue | null | undefined): { name: string } | { error: string } {
-  const name = text(v);
-  if (name.length < 2) return { error: "O nome do assistente precisa ter pelo menos 2 caracteres." };
-  if (name.length > 40) return { error: "O nome do assistente pode ter no máximo 40 caracteres." };
-  return { name };
-}
 
 /**
  * Resolve o cliente de um formulário com o seletor de cliente: `client_id` de um cliente
@@ -179,7 +148,7 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   }
   if ("lead_enabled" in f || "notify_email" in f) {
     const email = f.notify_email?.trim() || null;
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("E-mail de aviso inválido.");
+    if (email && !isEmail(email)) return fail("E-mail de aviso inválido.");
     patch.lead_capture = { enabled: f.lead_enabled === "on", notify_email: email, notify_whatsapp: f.notify_whatsapp?.trim() || null };
   }
   if (!Object.keys(patch).length) return fail("Nada para salvar.");
@@ -256,15 +225,207 @@ export async function updateAgency(formData: FormData): Promise<ActionResult> {
   const { agency } = await requireAgency();
   const supabase = await createClient();
   const parsed = z
-    .object({ name: z.string().trim().min(2, "Nome muito curto.").max(80), brand_color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida."), support_whatsapp: z.string().max(30).optional(), logo_url: z.string().max(400).optional(), custom_domain: z.string().max(120).optional() })
+    .object({ name: z.string().trim().min(2, "Nome muito curto.").max(80), brand_color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida."), support_whatsapp: z.string().max(30).optional(), logo_url: z.string().max(400).optional() })
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   const d = parsed.data;
   const { error } = await supabase
     .from("agencies")
-    .update({ name: d.name, slug: agency.slug.startsWith(slugify(d.name)) ? agency.slug : `${slugify(d.name)}-${agency.slug.split("-").pop()}`, brand_color: d.brand_color, support_whatsapp: d.support_whatsapp?.replace(/\D/g, "") || null, logo_url: d.logo_url || null, custom_domain: d.custom_domain?.trim().toLowerCase() || null })
+    .update({ name: d.name, slug: agency.slug.startsWith(slugify(d.name)) ? agency.slug : `${slugify(d.name)}-${agency.slug.split("-").pop()}`, brand_color: d.brand_color, support_whatsapp: d.support_whatsapp?.replace(/\D/g, "") || null, logo_url: d.logo_url || null })
     .eq("id", agency.id);
   if (error) return fail("Não foi possível salvar a marca. Tente de novo.");
   revalidatePath("/painel", "layout");
   return ok("Marca atualizada.");
+}
+
+/* ------------------------------------------------------------------ portal e relatório */
+
+/** Liga o portal do cliente (ou troca o link, invalidando o antigo). */
+export async function enablePortal(clientId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error, count } = await supabase.from("clients").update({ portal_token: newPortalToken() }, { count: "exact" }).eq("id", clientId);
+  if (error || !count) return fail("Não foi possível gerar o link. Tente de novo.");
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok("Link do cliente pronto.");
+}
+
+export async function disablePortal(clientId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("clients").update({ portal_token: null }).eq("id", clientId);
+  if (error) return fail("Não foi possível desligar o link. Tente de novo.");
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok("Link desligado. Quem tinha o endereço não consegue mais abrir.");
+}
+
+export async function saveReportEmail(clientId: string, formData: FormData): Promise<ActionResult> {
+  const email = text(formData.get("report_email")).toLowerCase();
+  if (email && !isEmail(email)) return fail("E-mail inválido.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("clients").update({ report_email: email || null }).eq("id", clientId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok(email ? "Pronto: o relatório vai todo dia 1º para esse e-mail." : "Envio automático desligado.");
+}
+
+/** Manda agora o relatório de um mês (padrão: mês passado) para o e-mail do cliente. */
+export async function sendReportNow(clientId: string, period?: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: client } = await supabase.from("clients").select("id, report_email, portal_token").eq("id", clientId).maybeSingle();
+  if (!client) return fail("Cliente não encontrado.");
+  if (!client.report_email) return fail("Informe o e-mail do cliente antes de enviar.");
+  if (!process.env.RESEND_API_KEY) return fail("O envio de e-mail não está configurado neste servidor (RESEND_API_KEY).");
+  let token = client.portal_token;
+  if (!token) {
+    token = newPortalToken();
+    await supabase.from("clients").update({ portal_token: token }).eq("id", clientId);
+  }
+  const p = period ?? shiftPeriod(currentPeriodBR(), -1);
+  const report = await getClientReport(supabase, clientId, p);
+  if (!report) return fail("Não foi possível montar o relatório.");
+  try {
+    await sendReportEmail(report, client.report_email, `${portalUrl(token, agencyBaseUrl(report.agency))}?mes=${p}`);
+  } catch (e) {
+    return fail(`O e-mail não foi enviado: ${(e as Error).message}`);
+  }
+  // o envio automático do dia 1º não repete um mês já mandado à mão
+  if (p === shiftPeriod(currentPeriodBR(), -1)) await supabase.from("clients").update({ report_last_period: p }).eq("id", clientId);
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok(`Relatório de ${periodLabel(p)} enviado para ${client.report_email}.`);
+}
+
+/* ------------------------------------------------------------------ atendimento humano */
+
+/**
+ * Confere pela RLS que a conversa é da agência logada e devolve a service role para
+ * escrever (conversas e mensagens são só leitura para o usuário, de propósito).
+ */
+async function ownedConversation(conversationId: string) {
+  const supabase = await createClient();
+  const { data } = await supabase.from("conversations").select("id, bot_id").eq("id", conversationId).maybeSingle();
+  return data ? { conv: data, admin: createAdminClient() } : null;
+}
+
+export async function takeOverConversation(conversationId: string): Promise<ActionResult> {
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const now = new Date().toISOString();
+  await owned.admin.from("conversations").update({ takeover_at: now, handled_at: null, needs_human: true }).eq("id", conversationId);
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  return ok("Você assumiu a conversa. O assistente pausou até você devolver.");
+}
+
+export async function sendAgentMessage(conversationId: string, formData: FormData): Promise<ActionResult> {
+  const content = text(formData.get("content"));
+  if (!content) return fail("Escreva uma mensagem.");
+  if (content.length > 2000) return fail("Mensagem muito longa (até 2.000 caracteres).");
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const { admin } = owned;
+  const now = new Date().toISOString();
+  const { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content });
+  if (error) return fail("A mensagem não foi enviada. Tente de novo.");
+  const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
+  // responder já assume a conversa (o assistente não fala por cima)
+  const { data: conv } = await admin.from("conversations").select("takeover_at").eq("id", conversationId).single();
+  await admin.from("conversations").update({ takeover_at: conv?.takeover_at ?? now, handled_at: null, last_message_at: now, message_count: count ?? 0 }).eq("id", conversationId);
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  return ok("Enviada. O visitante vê em alguns segundos.");
+}
+
+/** Devolve a conversa ao assistente (ele volta a responder, sabendo o que você escreveu). */
+export async function releaseConversation(conversationId: string): Promise<ActionResult> {
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  await owned.admin.from("conversations").update({ takeover_at: null, handled_at: new Date().toISOString() }).eq("id", conversationId);
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  revalidatePath("/painel", "layout");
+  return ok("Atendimento encerrado. O assistente volta a responder esta conversa.");
+}
+
+/* ------------------------------------------------------------------ base de conhecimento */
+
+const PANEL_FAQ_TITLE = "Respostas do painel";
+
+/**
+ * Responde uma pergunta que o assistente não soube: a resposta entra num FAQ do bot
+ * ("Respostas do painel"), é indexada na hora e a pergunta sai da lista.
+ */
+export async function answerUnanswered(unansweredId: string, botId: string, formData: FormData): Promise<ActionResult> {
+  const question = text(formData.get("question")).replace(/\s+/g, " ");
+  const answer = text(formData.get("answer"));
+  if (question.length < 3) return fail("Escreva a pergunta.");
+  if (answer.length < 2) return fail("Escreva a resposta que o assistente deve dar.");
+  if (question.length > 500 || answer.length > 3000) return fail("Pergunta ou resposta longa demais.");
+
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+
+  const admin = createAdminClient();
+  const entry = `P: ${question}\nR: ${answer}`;
+  const { data: existing } = await admin.from("sources").select("id, bot_id, kind, title, url, content").eq("bot_id", botId).eq("kind", "faq").eq("title", PANEL_FAQ_TITLE).maybeSingle();
+  let source = existing;
+  if (source) {
+    source = { ...source, content: `${source.content ?? ""}\n\n${entry}`.trim() };
+    await admin.from("sources").update({ content: source.content }).eq("id", source.id);
+  } else {
+    const { data: created, error } = await admin.from("sources").insert({ bot_id: botId, kind: "faq", title: PANEL_FAQ_TITLE, content: entry }).select("id, bot_id, kind, title, url, content").single();
+    if (error || !created) return fail("Não foi possível salvar a resposta. Tente de novo.");
+    source = created;
+  }
+  try {
+    await ingestSource(admin, source as SourceRow);
+  } catch (e) {
+    return fail(`A resposta foi salva, mas não deu para treinar o assistente agora: ${(e as Error).message}`);
+  }
+  await supabase.from("unanswered").update({ resolved: true }).eq("id", unansweredId);
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Pronto: o assistente já responde isso.");
+}
+
+export async function setAutoRefresh(botId: string, formData: FormData): Promise<ActionResult> {
+  const enabled = formData.get("auto_refresh") === "on";
+  const supabase = await createClient();
+  const { error } = await supabase.from("bots").update({ auto_refresh: enabled }).eq("id", botId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(enabled ? "O site será relido toda semana." : "Releitura automática desligada.");
+}
+
+/* ------------------------------------------------------------------ domínio próprio */
+
+/** Salva (ou remove) o domínio próprio. Trocar de domínio exige verificar de novo. */
+export async function saveCustomDomain(formData: FormData): Promise<ActionResult> {
+  const { agency, plan } = await requireAgency();
+  if (!plan.customDomain) return fail("Domínio próprio está disponível a partir do plano Agência.");
+  const parsed = parseDomain(text(formData.get("custom_domain")));
+  if ("error" in parsed) return fail(parsed.error);
+  const domain = parsed.domain;
+  if (domain === agency.custom_domain) return ok("Nada mudou.");
+
+  if (domain) {
+    const admin = createAdminClient();
+    const { data: taken } = await admin.from("agencies").select("id").eq("custom_domain", domain).neq("id", agency.id).maybeSingle();
+    if (taken) return fail("Este domínio já está cadastrado em outra conta.");
+    const added = await addDomainToProject(domain);
+    if (!added.ok) return fail(added.message);
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.from("agencies").update({ custom_domain: domain, custom_domain_verified_at: null }).eq("id", agency.id);
+  if (error) return fail(error.code === "23505" ? "Este domínio já está cadastrado em outra conta." : "Não foi possível salvar o domínio.");
+  if (agency.custom_domain) await removeDomainFromProject(agency.custom_domain);
+  revalidatePath("/painel", "layout");
+  return ok(domain ? "Domínio salvo. Agora crie o registro DNS abaixo e clique em Verificar." : "Domínio removido. Os links voltam a usar o endereço padrão.");
+}
+
+/** Confere se o domínio já responde por nós; se sim, os links passam a usá-lo. */
+export async function verifyCustomDomain(): Promise<ActionResult> {
+  const { agency } = await requireAgency();
+  if (!agency.custom_domain) return fail("Cadastre um domínio primeiro.");
+  const status = await checkDomain(agency.custom_domain);
+  if (!status.live) return fail(status.message);
+  const supabase = await createClient();
+  await supabase.from("agencies").update({ custom_domain_verified_at: new Date().toISOString() }).eq("id", agency.id);
+  revalidatePath("/painel", "layout");
+  return ok("Domínio verificado! Demos, portal do cliente e código do widget já usam ele.");
 }

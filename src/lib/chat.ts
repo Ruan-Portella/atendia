@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, chatModel, embedText, type Persona } from "./ai";
 import { currentPeriod, getPlan } from "./plans";
-import { notifyLead } from "./notify";
+import { notifyHandoff, notifyLead } from "./notify";
 
 export interface BotRow {
   id: string;
@@ -25,7 +25,7 @@ export const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-function lastUserText(messages: UIMessage[]): string {
+export function lastUserText(messages: UIMessage[]): string {
   const last = [...messages].reverse().find((m) => m.role === "user");
   if (!last) return "";
   return last.parts
@@ -37,7 +37,7 @@ function lastUserText(messages: UIMessage[]): string {
 
 /**
  * Executa uma rodada de chat para um bot: recupera contexto (RAG), responde em streaming,
- * registra lead/pergunta sem resposta via ferramentas e persiste as mensagens.
+ * registra lead/pergunta sem resposta/pedido de atendente via ferramentas e persiste as mensagens.
  */
 export async function runChat(opts: {
   db: SupabaseClient;
@@ -85,7 +85,12 @@ export async function runChat(opts: {
   }
 
   const leadEnabled = bot.lead_capture?.enabled !== false;
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled });
+  // o que um atendente humano já escreveu (quando a conversa volta para o assistente)
+  const { data: agentRows } = opts.conversationId
+    ? await db.from("messages").select("content").eq("conversation_id", conversationId).eq("role", "agent").order("id", { ascending: false }).limit(6)
+    : { data: [] };
+  const agentMessages = (agentRows ?? []).map((r) => String(r.content).slice(0, 500)).reverse();
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages });
   const convId = conversationId;
 
   // 3. Persiste a pergunta do visitante
@@ -116,6 +121,22 @@ export async function runChat(opts: {
             .select("id")
             .single();
           notifyLead({ db, bot, lead: { id: lead?.id, ...input } }).catch(() => {});
+          return { ok: true };
+        },
+      }),
+      chamar_atendente: tool({
+        description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano ou alguém da equipe.",
+        inputSchema: z.object({ motivo: z.string().optional().describe("resumo curto do que a pessoa precisa") }),
+        execute: async ({ motivo }) => {
+          const { data: updated } = await db
+            .from("conversations")
+            .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
+            .eq("id", convId)
+            .or("handoff_requested_at.is.null,handled_at.not.is.null")
+            .select("id");
+          // avisa na primeira vez (ou de novo, se o atendimento anterior já tinha sido encerrado)
+          if (updated?.length) notifyHandoff({ db, bot, conversationId: convId, reason: motivo ?? question }).catch(() => {});
+          else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", convId);
           return { ok: true };
         },
       }),

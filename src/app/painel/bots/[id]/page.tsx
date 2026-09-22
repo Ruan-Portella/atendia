@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
-import { appUrl, initials, relativeTime } from "@/lib/utils";
+import { initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
+import { agencyBaseUrl } from "@/lib/domain";
 import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
 import { ChatWindow } from "@/components/chat-window";
@@ -16,7 +17,8 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { convertDemo, deleteBot, resolveUnanswered, setBotStatus, updateBot } from "../../actions";
+import { answerUnanswered, convertDemo, deleteBot, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { UnansweredItem } from "@/components/unanswered-item";
 
 export const metadata = { title: "Editor do chatbot" };
 
@@ -42,10 +44,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     requireAgency(),
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
-    tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, updated_at").eq("bot_id", id).order("created_at") : none,
+    tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, refresh_error, updated_at").eq("bot_id", id).order("created_at") : none,
     tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).in("kind", ["text", "faq"]) : none,
     tab === "fontes" ? supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10) : none,
-    tab === "conversas" ? supabase.from("conversations").select("id, started_at, message_count, needs_human, channel").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
+    tab === "conversas" ? supabase.from("conversations").select("id, started_at, message_count, needs_human, channel, handoff_requested_at, handled_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id) : none,
   ]);
   if (!bot) notFound();
@@ -57,8 +59,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const appearance = bot.appearance ?? {};
   const leadCapture = bot.lead_capture ?? {};
   const color = appearance.color ?? agency.brand_color;
-  const demoUrl = bot.is_demo && bot.demo_slug ? appUrl(`/demo/${bot.demo_slug}`) : null;
-  const embedSnippet = `<script src="${appUrl("/widget.js")}" data-key="${bot.public_key}" async></script>`;
+  // domínio próprio da agência (quando verificado) nos links que o cliente e o prospect veem
+  const base = agencyBaseUrl(agency);
+  const demoUrl = bot.is_demo && bot.demo_slug ? `${base}/demo/${bot.demo_slug}` : null;
+  const embedSnippet = `<script src="${base}/widget.js" data-key="${bot.public_key}" async></script>`;
 
   return (
     <div className="-mx-4 -my-5 flex min-h-full flex-col sm:-mx-6 sm:-my-7 lg:-mx-9">
@@ -127,16 +131,20 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <p className="text-sm text-muted">Tudo que {bot.name} sabe vem daqui. Ele não inventa o que não está nas fontes.</p>
               </div>
               <SourcesManager botId={id} sources={sources} />
+              {!bot.is_demo && sources.some((s) => s.kind === "site" || s.kind === "page") && (
+                <ActionForm key={String(bot.auto_refresh)} action={setAutoRefresh.bind(null, id)} className="flex flex-wrap items-center gap-3 text-sm">
+                  <label className="flex items-center gap-2"><input type="checkbox" name="auto_refresh" defaultChecked={bot.auto_refresh !== false} /> Reler o site do cliente automaticamente toda semana</label>
+                  <SubmitButton pendingLabel="Salvando…" className="text-xs font-semibold text-brand hover:underline disabled:opacity-50">Salvar</SubmitButton>
+                  <span className="w-full text-xs text-muted">Se nada mudou no site, não gasta nada. Se mudou, o assistente aprende sozinho.</span>
+                </ActionForm>
+              )}
               {unanswered && unanswered.length > 0 && (
                 <div className="flex flex-col gap-2.5 rounded-xl border border-[#efd9a9] bg-amber-soft px-[18px] py-4">
                   <div className="text-sm font-semibold text-amber-ink">{unanswered.length} pergunta{unanswered.length > 1 ? "s" : ""} que {bot.name} não soube responder</div>
                   {unanswered.map((u) => (
-                    <div key={u.id} className="flex items-center justify-between gap-3 text-sm text-ink-2">
-                      <span>“{u.question}”</span>
-                      <ActionForm action={resolveUnanswered.bind(null, u.id, id)}><SubmitButton pendingLabel="…" className="text-xs font-semibold text-brand hover:underline disabled:opacity-50">Resolvido</SubmitButton></ActionForm>
-                    </div>
+                    <UnansweredItem key={u.id} question={u.question} answer={answerUnanswered.bind(null, u.id, id)} dismiss={resolveUnanswered.bind(null, u.id, id)} />
                   ))}
-                  <p className="text-xs text-muted">Responda adicionando um texto ou FAQ acima; depois marque como resolvido.</p>
+                  <p className="text-xs text-muted">Clique em “Responder” e escreva o que o assistente deve dizer: ele aprende na hora.</p>
                 </div>
               )}
             </>
@@ -186,7 +194,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
           {tab === "conversas" && (
             <>
-              <div><h2 className="text-[22px] font-bold">Conversas</h2><p className="text-sm text-muted">Últimas 30. Marcadas as que pediram um humano.</p></div>
+              <div><h2 className="text-[22px] font-bold">Conversas</h2><p className="text-sm text-muted">Últimas 30. Abra uma conversa para assumir e responder como pessoa da equipe.</p></div>
               <div className="card overflow-hidden">
                 {(conversations ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma conversa ainda.</p>}
                 {(conversations ?? []).map((c) => (
@@ -194,7 +202,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <span className="text-muted">{relativeTime(c.started_at)}</span>
                     <span className="font-medium">{c.message_count} mensagens</span>
                     <span className="text-xs text-muted">{c.channel}</span>
-                    {c.needs_human && <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">pediu atendente</span>}
+                    {c.handoff_requested_at && !c.handled_at ? <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">esperando atendente</span> : c.needs_human ? <span className="ml-auto text-xs text-muted">precisou de ajuda</span> : null}
                   </Link>
                 ))}
               </div>
@@ -209,9 +217,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               </div>
               {bot.status !== "live" && !bot.is_demo && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O chatbot ainda não está publicado. Você pode instalar agora: o balão fica invisível no site do cliente até você clicar em “Publicar” no topo.</p>}
               <InstallGuide
-                widgetSrc={appUrl("/widget.js")}
+                widgetSrc={`${base}/widget.js`}
                 publicKey={bot.public_key}
-                directLink={appUrl(`/w/${bot.public_key}`)}
+                directLink={`${base}/w/${bot.public_key}`}
                 brand={process.env.NEXT_PUBLIC_BRAND_NAME ?? "Atendia"}
                 isLive={bot.status === "live"}
                 installed={bot.installed_at && bot.installed_host ? { host: bot.installed_host, at: bot.installed_at, lastSeen: bot.last_seen_at ?? null } : null}

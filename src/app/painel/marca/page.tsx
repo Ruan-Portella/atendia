@@ -1,32 +1,82 @@
+import Link from "next/link";
+import { CheckCircle2, Clock } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
-import { updateAgency } from "../actions";
+import { saveCustomDomain, updateAgency, verifyCustomDomain } from "../actions";
 import { LogoUpload } from "@/components/logo-upload";
 import { appUrl } from "@/lib/utils";
+import { APEX_A_RECORD, CNAME_TARGET, dnsRecordName, isApexDomain, vercelDomainsEnabled } from "@/lib/domain";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { CopyButton } from "@/components/copy-button";
 
 export const metadata = { title: "Marca e domínio" };
 
 export default async function MarcaPage() {
   const { agency, plan } = await requireAgency();
+  const domain = agency.custom_domain;
+  const verified = Boolean(domain && agency.custom_domain_verified_at);
+  const apex = domain ? isApexDomain(domain) : false;
+  const record = apex ? { type: "A", name: "@", value: APEX_A_RECORD } : { type: "CNAME", name: domain ? dnsRecordName(domain) : "chat", value: CNAME_TARGET };
+
   return (
-    <div className="max-w-[640px]">
-      <h1 className="text-2xl font-bold sm:text-[28px]">Marca e domínio</h1>
-      <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo e nos e-mails de lead.</p>
-      <ActionForm key={[agency.name, agency.brand_color, agency.logo_url, agency.support_whatsapp, agency.custom_domain].join("|")} action={updateAgency} className="card mt-6 flex flex-col gap-4 p-6">
-        <div><label htmlFor="name" className="label">Nome da agência</label><input id="name" name="name" defaultValue={agency.name} required className="input" /></div>
+    <div className="flex max-w-[640px] flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-bold sm:text-[28px]">Marca e domínio</h1>
+        <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo, no portal e nos e-mails.</p>
+      </div>
+      <ActionForm key={[agency.name, agency.brand_color, agency.logo_url, agency.support_whatsapp].join("|")} action={updateAgency} className="card flex flex-col gap-4 p-6">
+        <div><label htmlFor="name" className="label">Nome da agência</label><input id="name" name="name" defaultValue={agency.name} required minLength={2} maxLength={80} className="input" /></div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div><label htmlFor="brand_color" className="label">Cor padrão dos novos chatbots</label><input id="brand_color" name="brand_color" type="color" defaultValue={agency.brand_color} className="input h-11 p-1" /></div>
-          <div><label htmlFor="support_whatsapp" className="label">Seu WhatsApp (botão na página de demo)</label><input id="support_whatsapp" name="support_whatsapp" defaultValue={agency.support_whatsapp ?? ""} className="input" placeholder="5541999999999" /></div>
+          <div><label htmlFor="support_whatsapp" className="label">Seu WhatsApp (botão na demo e no portal)</label><input id="support_whatsapp" name="support_whatsapp" defaultValue={agency.support_whatsapp ?? ""} maxLength={30} className="input" placeholder="5541999999999" /></div>
         </div>
         <LogoUpload current={agency.logo_url} agencyId={agency.id} />
-        <div>
-          <label htmlFor="custom_domain" className="label">Domínio próprio para demos e widget {plan.customDomain ? "" : "(plano Agência ou superior)"}</label>
-          <input id="custom_domain" name="custom_domain" defaultValue={agency.custom_domain ?? ""} disabled={!plan.customDomain} className="input" placeholder="chat.suaagencia.com.br" />
-          <p className="mt-1 text-xs text-muted">Aponte um CNAME para {appUrl("").replace(/^https?:\/\//, "")} e adicione o domínio no projeto da Vercel. Enquanto isso, as demos usam {appUrl("/demo/…")}.</p>
-        </div>
         <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
       </ActionForm>
+
+      <section className="card flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-bold">Domínio próprio</h2>
+          <p className="text-sm text-muted">Demos, portal do cliente e o código do widget passam a usar o seu endereço (ex.: <code>chat.suaagencia.com.br</code>) em vez de {appUrl("").replace(/^https?:\/\//, "")}.</p>
+        </div>
+        {!plan.customDomain ? (
+          <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Disponível a partir do plano Agência. <Link href="/painel/cobranca" className="font-semibold underline">Ver planos</Link></p>
+        ) : (
+          <>
+            <ActionForm key={domain ?? ""} action={saveCustomDomain} className="flex flex-wrap items-end gap-2">
+              <div className="min-w-[220px] flex-1">
+                <label htmlFor="custom_domain" className="label">Domínio</label>
+                <input id="custom_domain" name="custom_domain" defaultValue={domain ?? ""} maxLength={120} className="input" placeholder="chat.suaagencia.com.br" />
+              </div>
+              <SubmitButton className="btn-ghost">Salvar domínio</SubmitButton>
+            </ActionForm>
+            {verified && <p className="text-xs text-muted">Atenção: trocar ou apagar o domínio faz o widget parar nos sites onde foi instalado com o domínio atual. Reinstale o código novo nesses sites.</p>}
+
+            {domain && (
+              verified ? (
+                <p className="flex items-center gap-2 rounded-lg bg-brand-soft px-3 py-2 text-sm font-semibold text-brand"><CheckCircle2 size={16} />https://{domain} está no ar.</p>
+              ) : (
+                <div className="flex flex-col gap-3 rounded-xl border border-line bg-ground p-4 text-sm">
+                  <p className="flex items-center gap-2 font-semibold"><Clock size={16} className="text-amber-ink" />Falta apontar o DNS</p>
+                  <p className="text-ink-2">No painel onde o domínio foi registrado (Registro.br, GoDaddy, Cloudflare, Hostinger…), crie este registro:</p>
+                  <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-lg border border-line bg-panel p-3 font-mono text-[13px]">
+                    <span className="text-muted">Tipo</span><span>{record.type}</span>
+                    <span className="text-muted">Nome</span><span>{record.name}</span>
+                    <span className="text-muted">Valor</span><span className="flex items-center gap-2 break-all">{record.value}<CopyButton text={record.value} label="Copiar" className="btn-icon h-auto w-auto px-1.5 py-0.5 text-xs" icon={false} /></span>
+                  </div>
+                  {apex && <p className="text-xs text-muted">Domínio raiz usa registro A. Se preferir, use um subdomínio (ex.: chat.{domain}) com CNAME; costuma ser mais simples.</p>}
+                  {record.type === "CNAME" && <p className="text-xs text-muted">Na Cloudflare, deixe a nuvem cinza (“DNS only”).</p>}
+                  {!vercelDomainsEnabled() && <p className="text-xs text-muted">Este servidor não tem a integração com a Vercel configurada: o domínio também precisa ser adicionado em Vercel → Project → Settings → Domains.</p>}
+                  <ActionForm action={verifyCustomDomain} className="self-start">
+                    <SubmitButton pendingLabel="Verificando…" className="btn-primary">Verificar agora</SubmitButton>
+                  </ActionForm>
+                  <p className="text-xs text-muted">O DNS pode levar de alguns minutos a algumas horas. Até verificar, os links continuam no endereço padrão.</p>
+                </div>
+              )
+            )}
+          </>
+        )}
+      </section>
     </div>
   );
 }

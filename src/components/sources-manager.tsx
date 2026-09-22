@@ -18,6 +18,8 @@ export interface SourceItem {
   chunk_count: number;
   pages: number;
   error: string | null;
+  /** Erro da última releitura automática (a fonte continua valendo com o conteúdo anterior). */
+  refresh_error?: string | null;
   updated_at: string;
 }
 
@@ -183,6 +185,7 @@ export function SourcesManager({ botId, sources }: { botId: string; sources: Sou
                   <span className="block truncate text-xs text-muted">
                     {processing ? "processando…" : s.status === "error" ? <span className="text-danger">{s.error ?? "erro ao processar"}</span> : s.kind === "site" || s.kind === "pdf" ? `${s.pages} página${s.pages === 1 ? "" : "s"}${s.url ? ` · ${s.url.replace(/^https?:\/\//, "")}` : ""}` : s.url?.replace(/^https?:\/\//, "") ?? `${s.content?.length ?? 0} caracteres`}
                   </span>
+                  {s.refresh_error && s.status === "ready" && <span className="block truncate text-xs text-amber-ink" title={s.refresh_error}>Não consegui reler na última atualização automática; usando o conteúdo anterior.</span>}
                 </span>
                 <span className="md:hidden">
                   <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} />

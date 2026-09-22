@@ -3,7 +3,8 @@ import { ChevronRight, Plus, UserPlus } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
-import { getBotStats, resolvedPct } from "@/lib/panel";
+import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
+import { PendingHandoffs } from "@/components/pending-handoffs";
 import { Kpi } from "@/components/kpi";
 import { daysAgoIso, initials } from "@/lib/utils";
 
@@ -20,10 +21,12 @@ interface ClientRow {
 export default async function ClientesPage() {
   const { agency, plan } = await requireAgency();
   const supabase = await createClient();
-  const [{ data }, stats] = await Promise.all([
+  const [{ data }, stats, pending] = await Promise.all([
     supabase.from("clients").select("id, name, site, price_cents, bots(id, status, is_demo)").eq("agency_id", agency.id).eq("bots.is_demo", false).order("name"),
     getBotStats(supabase, daysAgoIso(30)),
+    getPendingHandoffs(supabase),
   ]);
+  const waitingBy = (c: ClientRow) => pending.filter((h) => h.bots?.client_id === c.id).length;
   const clients = (data ?? []) as ClientRow[];
   const total = clients.reduce((s, c) => s + (c.price_cents ?? 0), 0) / 100;
   const sum = (c: ClientRow, k: "conversations" | "leads" | "needsHuman") => c.bots.reduce((s, b) => s + stats.of(b.id)[k], 0);
@@ -46,6 +49,8 @@ export default async function ClientesPage() {
         </div>
       </div>
 
+      <PendingHandoffs items={pending} />
+
       <div className="grid grid-cols-2 gap-3 sm:gap-3.5 xl:grid-cols-4">
         <Kpi label="Conversas (30 dias)" value={num(all.conversations)} sub="em todos os clientes" />
         <Kpi label="Leads capturados" value={num(all.leads)} sub="nome + contato entregues" />
@@ -67,7 +72,7 @@ export default async function ClientesPage() {
               <span className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-brand-soft text-[11px] font-bold text-brand">{initials(c.name)}</span>
                 <span className="min-w-0 leading-tight">
-                  <span className="block truncate font-semibold">{c.name}</span>
+                  <span className="flex items-center gap-2 truncate font-semibold">{c.name}{waitingBy(c) > 0 && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-[11px] font-semibold text-amber-ink">{waitingBy(c)} esperando</span>}</span>
                   <span className="block truncate text-xs text-muted">{c.site?.replace(/^https?:\/\//, "") ?? "sem site"}</span>
                 </span>
               </span>

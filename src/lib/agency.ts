@@ -15,6 +15,7 @@ export interface Agency {
   brand_color: string;
   support_whatsapp: string | null;
   custom_domain: string | null;
+  custom_domain_verified_at: string | null;
   plan: string;
   trial_ends_at: string;
   stripe_customer_id: string | null;

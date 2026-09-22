@@ -3,7 +3,8 @@ import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { DemoGenerator } from "@/components/demo-generator";
 import { CopyButton } from "@/components/copy-button";
-import { appUrl, relativeTime } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
+import { agencyBaseUrl } from "@/lib/domain";
 import { BotRowActions } from "@/components/bot-row-actions";
 import { deleteBot } from "../actions";
 
@@ -24,7 +25,7 @@ export default async function DemosPage() {
       <div className="card overflow-hidden">
         {(demos ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma demo ainda. Cole o site de um prospect acima; a demo aparece aqui com o link para enviar.</p>}
         {(demos ?? []).map((d) => {
-          const url = appUrl(`/demo/${d.demo_slug}`);
+          const url = `${agencyBaseUrl(agency)}/demo/${d.demo_slug}`;
           return (
             <div key={d.id} className="flex flex-wrap items-center gap-3 border-b border-line-2 px-4 py-3.5 text-sm last:border-0">
               <div className="min-w-0 flex-1 leading-tight">

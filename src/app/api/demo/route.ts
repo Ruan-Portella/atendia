@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { ingestSource } from "@/lib/ingest";
 import { normalizeUrl, slugify } from "@/lib/utils";
+import { clientIp, firstExceeded, hashId, tooMany, type LimitRule } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 
@@ -17,6 +18,9 @@ const bodySchema = z.object({
  * - Logado: a demo pertence à agência do usuário e aparece no painel dela.
  * - Anônimo (landing page): a demo pertence à agência "vitrine" da própria Atendia
  *   e expira; serve para o visitante experimentar.
+ *
+ * Cada demo lê um site inteiro e gera embeddings (custa dinheiro de IA), então tem limite
+ * por IP, por agência e um teto diário global para as anônimas.
  */
 export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
@@ -25,16 +29,27 @@ export async function POST(req: Request) {
   if (!url) return Response.json({ error: "invalid_url", message: "Cole um endereço válido, ex.: clinicasorriso.com.br" }, { status: 400 });
 
   const userClient = await createClient();
-  const {
-    data: { user },
-  } = await userClient.auth.getUser();
+  const { data: claims } = await userClient.auth.getClaims();
+  const userId = claims?.claims?.sub ?? null;
   const db = createAdminClient();
 
   let agencyId: string | null = null;
-  if (user) {
-    const { data: agency } = await db.from("agencies").select("id").eq("owner_id", user.id).maybeSingle();
+  if (userId) {
+    const { data: agency } = await db.from("agencies").select("id").eq("owner_id", userId).maybeSingle();
     agencyId = agency?.id ?? null;
   }
+
+  const ip = hashId(clientIp(req));
+  const rules: LimitRule[] = agencyId
+    ? [{ key: `demo:agency:${agencyId}`, max: 30, windowSeconds: 3600, message: "Você gerou muitas demos na última hora. Espere alguns minutos e tente de novo." }]
+    : [
+        { key: `demo:ip:${ip}:h`, max: 3, windowSeconds: 3600, message: "Você já gerou algumas demos agora há pouco. Crie sua conta grátis para gerar quantas quiser." },
+        { key: `demo:ip:${ip}:d`, max: 8, windowSeconds: 86400, message: "Limite diário de demos sem conta atingido. Crie sua conta grátis para continuar." },
+        { key: "demo:anon:global", max: Number(process.env.DEMO_ANON_DAILY_LIMIT ?? 150), windowSeconds: 86400, message: "Muita gente testando hoje! Crie sua conta grátis para gerar sua demo agora." },
+      ];
+  const exceeded = await firstExceeded(db, rules);
+  if (exceeded) return tooMany(exceeded);
+
   if (!agencyId) {
     // agência vitrine: criada uma vez, dona das demos anônimas
     const { data: showcase } = await db.from("agencies").select("id").eq("slug", "atendia").maybeSingle();

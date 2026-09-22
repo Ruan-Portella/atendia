@@ -9,6 +9,8 @@ interface Props {
   action: (formData: FormData) => Promise<ActionResult | void>;
   /** Mensagem do toast quando a action devolve ok sem mensagem própria. */
   success?: string;
+  /** Chamado depois de um ok (ex.: fechar o modal). */
+  onSuccess?: () => void;
   className?: string;
   children: React.ReactNode;
 }
@@ -23,7 +25,7 @@ function isNextControlError(err: unknown) {
  * Os campos continuam sendo HTML puro; só o feedback muda. Nunca deixa um erro da action
  * derrubar a página: vira toast.
  */
-export function ActionForm({ action, success = "Salvo.", className, children }: Props) {
+export function ActionForm({ action, success = "Salvo.", onSuccess, className, children }: Props) {
   const toast = useToast();
   const [, formAction] = useActionState(async (_prev: ActionResult | null, fd: FormData) => {
     let r: ActionResult | void;
@@ -36,8 +38,10 @@ export function ActionForm({ action, success = "Salvo.", className, children }: 
       return null;
     }
     if (!r) return null; // a action redirecionou
-    if (r.ok) toast.success(r.message ?? success);
-    else toast.error(r.message);
+    if (r.ok) {
+      toast.success(r.message ?? success);
+      onSuccess?.();
+    } else toast.error(r.message);
     return r;
   }, null);
   return (

@@ -1,11 +1,25 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isCustomHost } from "@/lib/domain";
+
+/** O que um domínio de agência serve: demos, portal do cliente, widget e API. */
+const CUSTOM_HOST_PATHS = /^\/(demo|c|w)\/|^\/api\/|^\/widget\.js$|^\/dominio$/;
 
 /**
  * Renova a sessão do Supabase a cada requisição e protege /painel.
+ * Em domínio próprio de agência, só deixa passar as páginas públicas dela (sem sessão);
+ * o resto (landing, login, painel) vira uma página neutra com a marca da agência.
  * (No Next 16 o antigo middleware.ts chama-se proxy.ts.)
  */
 export async function proxy(request: NextRequest) {
+  if (isCustomHost(request.headers.get("host"))) {
+    if (CUSTOM_HOST_PATHS.test(request.nextUrl.pathname)) return NextResponse.next();
+    const url = request.nextUrl.clone();
+    url.pathname = "/dominio";
+    url.search = "";
+    return NextResponse.rewrite(url);
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {

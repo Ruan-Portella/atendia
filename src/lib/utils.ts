@@ -74,3 +74,8 @@ export function getOrCreateVisitorId(storageKey: string): string | null {
     return "anon";
   }
 }
+
+/** Minutos desde uma data ISO. */
+export function minutesSince(iso: string): number {
+  return (Date.now() - new Date(iso).getTime()) / 60000;
+}

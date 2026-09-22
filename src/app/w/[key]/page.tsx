@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { belongsToHost } from "@/lib/domain-server";
 import { ChatWindow } from "@/components/chat-window";
 import { WidgetFrame } from "@/components/widget-frame";
 import { initials } from "@/lib/utils";
@@ -11,7 +12,7 @@ export default async function WidgetPage({ params }: PageProps<"/w/[key]">) {
   const { key } = await params;
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("public_key", key).maybeSingle();
-  if (!bot) notFound();
+  if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
   const { data: agency } = await db.from("agencies").select("name, brand_color").eq("id", bot.agency_id).single();
   const offline = bot.status !== "live" && !bot.is_demo;
   return (

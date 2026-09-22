@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Download, Plus } from "lucide-react";
+import { Download, ExternalLink, Plus } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
-import { getBotStats, resolvedPct } from "@/lib/panel";
-import { appUrl, daysAgoIso, initials, relativeTime } from "@/lib/utils";
+import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
+import { PendingHandoffs } from "@/components/pending-handoffs";
+import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
+import { agencyBaseUrl } from "@/lib/domain";
 import { Status } from "@/components/status";
 import { Kpi } from "@/components/kpi";
 import { BotRowActions } from "@/components/bot-row-actions";
@@ -14,7 +16,9 @@ import { ClientFields } from "@/components/client-fields";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { deleteBot, deleteClientRecord, updateClientRecord } from "../../actions";
+import { CopyButton } from "@/components/copy-button";
+import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
+import { deleteBot, deleteClientRecord, disablePortal, enablePortal, saveReportEmail, sendReportNow, updateClientRecord } from "../../actions";
 
 export const metadata = { title: "Cliente" };
 
@@ -22,6 +26,7 @@ const TABS = [
   ["chatbots", "Chatbots"],
   ["leads", "Leads"],
   ["conversas", "Conversas"],
+  ["relatorio", "Relatório e portal"],
   ["dados", "Dados do cliente"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
@@ -40,10 +45,10 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const tab = (TABS.some(([t]) => t === sp.tab) ? sp.tab : "chatbots") as Tab;
   const supabase = await createClient();
-  // requireAgency garante a sessão; a RLS limita os dados à agência.
-  const [, { data: client }, { data: botData }, stats] = await Promise.all([
+  // a RLS limita os dados à agência logada
+  const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
-    supabase.from("clients").select("id, name, site, price_cents, created_at").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
@@ -56,15 +61,17 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
     return { conversations: t.conversations + s.conversations, needsHuman: t.needsHuman + s.needsHuman, leads: t.leads + s.leads };
   }, { conversations: 0, needsHuman: 0, leads: 0 });
   const pct = resolvedPct(total);
+  const base = agencyBaseUrl(agency);
 
   // Só busca o que a aba aberta mostra.
-  const [{ data: leads }, { data: conversations }] = await Promise.all([
+  const [pending, { data: leads }, { data: conversations }] = await Promise.all([
+    getPendingHandoffs(supabase, botIds),
     tab === "leads" && botIds.length
       ? supabase.from("leads").select("id, bot_id, conversation_id, name, phone, email, notes, created_at").in("bot_id", botIds).order("created_at", { ascending: false }).limit(200)
       : Promise.resolve({ data: [] as LeadRow[] }),
     tab === "conversas" && botIds.length
-      ? supabase.from("conversations").select("id, bot_id, started_at, message_count, needs_human, channel").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
-      : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; message_count: number; needs_human: boolean; channel: string }> }),
+      ? supabase.from("conversations").select("id, bot_id, started_at, message_count, needs_human, channel, handoff_requested_at, handled_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
+      : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; handled_at: string | null }> }),
   ]);
 
   return (
@@ -90,10 +97,12 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
         <Kpi label="Você cobra" value={client.price_cents ? brl(client.price_cents / 100) : "—"} sub={client.price_cents ? "por mês" : "defina em Dados do cliente"} />
       </div>
 
+      <PendingHandoffs items={pending} showClient={false} />
+
       <nav className="-mb-1 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]">
         {TABS.map(([key, label]) => (
           <Link key={key} href={`/painel/clientes/${id}?tab=${key}`} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm ${tab === key ? "border-brand font-semibold text-brand" : "border-transparent font-medium text-ink-2 hover:text-ink"}`}>
-            {label}
+            {label}{key === "conversas" && pending.length > 0 ? <span className="ml-1.5 rounded-full bg-amber-soft px-1.5 py-0.5 text-[11px] font-semibold text-amber-ink">{pending.length}</span> : null}
           </Link>
         ))}
       </nav>
@@ -122,7 +131,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
                 <BotRowActions
                   bot={{ id: b.id, name: b.name, client_name: b.client_name, is_demo: false, status: b.status }}
                   demoUrl={null}
-                  embedSnippet={`<script src="${appUrl("/widget.js")}" data-key="${b.public_key}" async></script>`}
+                  embedSnippet={`<script src="${base}/widget.js" data-key="${b.public_key}" async></script>`}
                   whatsappUrl={null}
                   onDelete={deleteBot.bind(null, b.id, undefined)}
                 />
@@ -152,9 +161,65 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               <span className="font-medium">{botName.get(c.bot_id)}</span>
               <span>{c.message_count} mensagens</span>
               <span className="text-xs text-muted">{c.channel}</span>
-              {c.needs_human && <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">pediu atendente</span>}
+              {c.handoff_requested_at && !c.handled_at ? <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">esperando atendente</span> : c.needs_human ? <span className="ml-auto text-xs text-muted">precisou de ajuda</span> : null}
             </Link>
           ))}
+        </div>
+      )}
+
+      {tab === "relatorio" && (
+        <div className="flex max-w-[720px] flex-col gap-5">
+          <section className="card flex flex-col gap-3 p-5">
+            <div>
+              <h2 className="text-base font-bold">Link do cliente</h2>
+              <p className="text-sm text-muted">Uma página com a sua marca onde {client.name} vê o relatório do mês, os contatos capturados e as conversas. Somente leitura, sem login: quem tiver o link consegue abrir.</p>
+            </div>
+            {client.portal_token ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-lg border border-line bg-ground px-3 py-2 text-xs">{portalUrl(client.portal_token, base)}</code>
+                  <CopyButton text={portalUrl(client.portal_token, base)} label="Copiar link" className="btn-ghost" />
+                  <a href={portalUrl(client.portal_token, base)} target="_blank" rel="noopener" className="btn-ghost"><ExternalLink size={15} />Abrir</a>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <ConfirmAction action={enablePortal.bind(null, client.id)} title="Trocar o link?" description="O link atual para de funcionar e um novo é gerado. Use se o link foi parar em quem não devia." confirmLabel="Trocar link" className="btn-ghost text-xs">Trocar link</ConfirmAction>
+                  <ConfirmAction action={disablePortal.bind(null, client.id)} title="Desligar o link?" description="Ninguém mais consegue abrir a página do cliente. O relatório por e-mail também deixa de ter link até você criar outro." confirmLabel="Desligar" className="btn-ghost text-xs text-danger">Desligar link</ConfirmAction>
+                </div>
+              </>
+            ) : (
+              <ActionForm action={enablePortal.bind(null, client.id)}>
+                <SubmitButton pendingLabel="Gerando…" className="btn-primary">Criar link do cliente</SubmitButton>
+              </ActionForm>
+            )}
+          </section>
+
+          <section className="card flex flex-col gap-3 p-5">
+            <div>
+              <h2 className="text-base font-bold">Relatório mensal por e-mail</h2>
+              <p className="text-sm text-muted">Todo dia 1º, {client.name} recebe um resumo do mês anterior (pessoas atendidas, contatos, % resolvido sozinho) com a sua marca e o link acima. É o que mostra para o cliente por que ele paga você.</p>
+            </div>
+            <ActionForm key={client.report_email ?? ""} action={saveReportEmail.bind(null, client.id)} className="flex flex-wrap items-end gap-2">
+              <div className="min-w-[220px] flex-1">
+                <label htmlFor="report_email" className="label">E-mail do cliente</label>
+                <input id="report_email" name="report_email" type="email" maxLength={200} defaultValue={client.report_email ?? ""} className="input" placeholder="dono@clinicasorriso.com.br" />
+              </div>
+              <SubmitButton className="btn-primary">Salvar</SubmitButton>
+            </ActionForm>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-2 pt-3 text-sm">
+              <span className="text-muted">{client.report_last_period ? <>Último enviado: <span className="capitalize">{periodLabel(client.report_last_period)}</span>.</> : "Nenhum relatório enviado ainda."}</span>
+              <ConfirmAction
+                action={sendReportNow.bind(null, client.id, undefined)}
+                title={`Enviar o relatório de ${periodLabel(shiftPeriod(currentPeriodBR(), -1))}?`}
+                description={<>Vai para <strong className="text-ink">{client.report_email ?? "o e-mail do cliente"}</strong> agora.</>}
+                confirmLabel="Enviar agora"
+                danger={false}
+                disabled={!client.report_email}
+                className="btn-ghost"
+              >
+                Enviar o do mês passado agora
+              </ConfirmAction>
+            </div>
+          </section>
         </div>
       )}
 

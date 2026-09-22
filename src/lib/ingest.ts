@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as cheerio from "cheerio";
 import { extractText, getDocumentProxy } from "unpdf";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -131,12 +132,22 @@ export interface SourceRow {
   content: string | null;
 }
 
+export interface IngestOptions {
+  /**
+   * Releitura em segundo plano (cron): não mostra "processando" no painel e, se falhar,
+   * mantém a fonte pronta com os trechos antigos, guardando só o erro em refresh_error.
+   */
+  background?: boolean;
+  /** Hash do conteúdo já indexado; se o texto novo for igual, pula os embeddings. */
+  previousHash?: string | null;
+}
+
 /**
  * Processa uma fonte: extrai texto, quebra em trechos, gera embeddings e grava.
  * Usa o client com service role (roda em Route Handler ou Server Action).
  */
-export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuffer?: ArrayBuffer): Promise<{ chunks: number; pages: number }> {
-  await db.from("sources").update({ status: "pending", error: null }).eq("id", source.id);
+export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuffer?: ArrayBuffer, opts: IngestOptions = {}): Promise<{ chunks: number; pages: number; unchanged?: boolean }> {
+  if (!opts.background) await db.from("sources").update({ status: "pending", error: null }).eq("id", source.id);
   try {
     const docs: Array<{ text: string; meta: Record<string, unknown> }> = [];
     let pages = 0;
@@ -167,6 +178,13 @@ export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuf
     for (const d of docs) for (const c of chunkText(d.text)) pieces.push({ content: c, metadata: d.meta });
     if (!pieces.length) throw new Error("Nenhum conteúdo aproveitável encontrado.");
 
+    const hash = createHash("sha256").update(pieces.map((x) => x.content).join("\u0000")).digest("hex");
+    const now = new Date().toISOString();
+    if (opts.previousHash && opts.previousHash === hash) {
+      await db.from("sources").update({ last_refreshed_at: now, refresh_error: null, pages }).eq("id", source.id);
+      return { chunks: pieces.length, pages, unchanged: true };
+    }
+
     const embeddings = await embedTexts(pieces.map((p) => p.content));
 
     await db.from("chunks").delete().eq("source_id", source.id);
@@ -182,11 +200,15 @@ export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuf
       if (error) throw new Error(error.message);
     }
 
-    await db.from("sources").update({ status: "ready", chunk_count: pieces.length, pages, content: source.kind === "site" || source.kind === "pdf" ? null : source.content }).eq("id", source.id);
+    const done = { status: "ready", error: null, chunk_count: pieces.length, pages, content: source.kind === "site" || source.kind === "pdf" ? null : source.content };
+    const { error: saveError } = await db.from("sources").update({ ...done, content_hash: hash, last_refreshed_at: now, refresh_error: null }).eq("id", source.id);
+    // banco sem a migração 0007: grava ao menos o status, para a fonte não ficar presa em "processando"
+    if (saveError) await db.from("sources").update(done).eq("id", source.id);
     return { chunks: pieces.length, pages };
   } catch (e) {
     const message = (e as Error).message ?? "erro desconhecido";
-    await db.from("sources").update({ status: "error", error: message.slice(0, 500) }).eq("id", source.id);
+    if (opts.background) await db.from("sources").update({ refresh_error: message.slice(0, 500), last_refreshed_at: new Date().toISOString() }).eq("id", source.id);
+    else await db.from("sources").update({ status: "error", error: message.slice(0, 500) }).eq("id", source.id);
     throw e;
   }
 }
