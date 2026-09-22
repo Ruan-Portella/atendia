@@ -7,9 +7,9 @@ import { cn } from "@/lib/utils";
 
 const ITEMS = [
   { href: "/painel", label: "Chatbots", icon: Bot, exact: true },
+  { href: "/painel/clientes", label: "Clientes", icon: Users },
   { href: "/painel/demos", label: "Demos", icon: Sparkles },
   { href: "/painel/leads", label: "Leads", icon: Inbox },
-  { href: "/painel/clientes", label: "Clientes", icon: Users },
   { href: "/painel/marca", label: "Marca e domínio", icon: Palette },
   { href: "/painel/afiliados", label: "Afiliados", icon: Share2 },
   { href: "/painel/cobranca", label: "Cobrança", icon: CreditCard },

@@ -23,7 +23,7 @@ Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + p
 ### 1. Supabase
 
 1. Crie um projeto em supabase.com (plano free serve).
-2. **SQL Editor** → cole e execute `supabase/migrations/0001_init.sql` (tabelas, pgvector, funções, RLS, buckets e a agência "vitrine" das demos anônimas) e depois `0002_install_ping.sql` (detecção de instalação do widget) e `0003_referral_credit.sql` (crédito de indicação).
+2. **SQL Editor** → cole e execute `supabase/migrations/0001_init.sql` (tabelas, pgvector, funções, RLS, buckets e a agência "vitrine" das demos anônimas) e depois `0002_install_ping.sql` (detecção de instalação do widget), `0003_referral_credit.sql` (crédito de indicação) e `0004_clients.sql` (clientes com vários chatbots e RLS mais rápida).
 3. **Authentication → Providers**: deixe Email ligado (pode desligar "Confirm email" no começo para agilizar) e ative **Google** (Client ID/Secret do Google Cloud Console; a redirect URL está na tela do Supabase).
 4. **Authentication → URL Configuration**: Site URL = `http://localhost:3000` (depois o domínio da Vercel); Redirect URLs: `http://localhost:3000/auth/callback` e `https://SEU-DOMINIO/auth/callback`.
 5. **Project Settings → API**: copie `Project URL`, `anon key` e `service_role key`.

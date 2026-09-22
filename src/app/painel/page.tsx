@@ -4,6 +4,8 @@ import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
 import { appUrl, daysAgoIso, initials, relativeTime } from "@/lib/utils";
+import { getBotStats, resolvedPct } from "@/lib/panel";
+import { Kpi } from "@/components/kpi";
 import { Status } from "@/components/status";
 import { BotRowActions } from "@/components/bot-row-actions";
 import { deleteBot } from "./actions";
@@ -14,13 +16,13 @@ interface BotListRow {
   id: string;
   name: string;
   client_name: string;
+  client_id: string | null;
   client_site: string | null;
   status: string;
   is_demo: boolean;
   demo_slug: string | null;
   demo_views: number;
   public_key: string;
-  price_cents: number | null;
   appearance: { color?: string; avatar_text?: string };
   created_at: string;
 }
@@ -30,22 +32,20 @@ export default async function BotsPage() {
   const supabase = await createClient();
   const since = daysAgoIso(30);
 
-  const [{ data: bots }, { data: convs }, { data: leads }] = await Promise.all([
-    supabase.from("bots").select("id, name, client_name, client_site, status, is_demo, demo_slug, demo_views, public_key, price_cents, appearance, created_at").eq("agency_id", agency.id).order("is_demo").order("created_at", { ascending: false }),
-    supabase.from("conversations").select("id, bot_id, needs_human").gte("started_at", since),
-    supabase.from("leads").select("id, bot_id").gte("created_at", since),
+  // Contagens vêm agregadas do banco (bot_stats); antes baixávamos todas as conversas do mês.
+  const [{ data: bots }, { data: clients }, stats] = await Promise.all([
+    supabase.from("bots").select("id, name, client_id, client_name, client_site, status, is_demo, demo_slug, demo_views, public_key, appearance, created_at").eq("agency_id", agency.id).order("is_demo").order("client_name").order("created_at"),
+    supabase.from("clients").select("price_cents").eq("agency_id", agency.id),
+    getBotStats(supabase, since),
   ]);
 
   const rows = (bots ?? []) as BotListRow[];
   const live = rows.filter((b) => !b.is_demo);
   const demos = rows.filter((b) => b.is_demo);
-  const convCount = convs?.length ?? 0;
-  const leadCount = leads?.length ?? 0;
-  const humanCount = convs?.filter((c) => c.needs_human).length ?? 0;
-  const humanPct = convCount ? Math.round(100 - (humanCount / convCount) * 100) : 100;
-  const revenue = live.reduce((s, b) => s + (b.price_cents ?? 0), 0) / 100;
-  const convBy = (id: string) => convs?.filter((c) => c.bot_id === id).length ?? 0;
-  const leadBy = (id: string) => leads?.filter((l) => l.bot_id === id).length ?? 0;
+  const humanPct = resolvedPct(stats.total);
+  const revenue = (clients ?? []).reduce((s, c) => s + (c.price_cents ?? 0), 0) / 100;
+  const convBy = (id: string) => stats.of(id).conversations;
+  const leadBy = (id: string) => stats.of(id).leads;
 
   return (
     <>
@@ -61,19 +61,19 @@ export default async function BotsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:gap-3.5 xl:grid-cols-4">
-        <Kpi label="Conversas (30 dias)" value={num(convCount)} sub="em todos os chatbots" />
-        <Kpi label="Leads capturados" value={num(leadCount)} sub="nome + contato entregues" />
+        <Kpi label="Conversas (30 dias)" value={num(stats.total.conversations)} sub="em todos os chatbots" />
+        <Kpi label="Leads capturados" value={num(stats.total.leads)} sub="nome + contato entregues" />
         <Kpi label="Resolvidas sem humano" value={`${humanPct}%`} sub={`${100 - humanPct}% pediram atendente`} />
         <div className="flex flex-col gap-1.5 rounded-xl bg-brand px-4 py-3.5 text-ground sm:px-[18px] sm:py-4">
           <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#c7d9d1]">Você fatura dos clientes</span>
           <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{brl(revenue)}</span>
-          <span className="text-[13px] text-[#c7d9d1]">{live.length} clientes · plano {brl(plan.priceBrl)}</span>
+          <span className="text-[13px] text-[#c7d9d1]">{clients?.length ?? 0} cliente{clients?.length === 1 ? "" : "s"} · plano {brl(plan.priceBrl)}</span>
         </div>
       </div>
 
       <div className="card overflow-hidden">
         <div className="hidden grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_auto] gap-3 border-b border-line bg-ground px-[18px] py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted lg:grid">
-          <span>Chatbot</span><span>Cliente</span><span>Status</span><span>Conversas</span><span>Leads</span><span>Você cobra</span><span />
+          <span>Chatbot</span><span>Cliente</span><span>Status</span><span>Conversas</span><span>Leads</span><span>Criado</span><span />
         </div>
         {rows.length === 0 && (
           <div className="flex flex-col items-start gap-3 p-8">
@@ -102,11 +102,11 @@ export default async function BotsPage() {
             </div>
             {/* no celular, uma linha de resumo; no desktop, as colunas */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted lg:contents">
-              <span className={`hidden lg:inline lg:text-sm ${b.is_demo ? "text-muted" : "text-ink"}`}>{b.is_demo ? "Prospect" : b.client_name}</span>
+              {b.is_demo || !b.client_id ? <span className="hidden text-muted lg:inline lg:text-sm">{b.is_demo ? "Prospect" : b.client_name}</span> : <Link href={`/painel/clientes/${b.client_id}`} className="hidden truncate text-ink hover:underline lg:inline lg:text-sm">{b.client_name}</Link>}
               <Status status={b.is_demo ? "demo" : b.status} />
               <span className="tabular lg:text-sm lg:text-ink">{num(convBy(b.id))}<span className="lg:hidden"> conversas</span></span>
               <span className="tabular lg:text-sm">{b.is_demo ? <span className="hidden lg:inline">—</span> : <>{num(leadBy(b.id))}<span className="lg:hidden"> leads</span></>}</span>
-              <span className="tabular lg:text-sm lg:text-ink">{b.price_cents ? `${brl(b.price_cents / 100)}/mês` : <span className="hidden text-muted lg:inline">—</span>}</span>
+              <span className="hidden lg:inline lg:text-sm">{relativeTime(b.created_at)}</span>
               <span className="hidden items-center justify-end gap-2 lg:flex">
                 <Link href={`/painel/bots/${b.id}`} className="text-[13px] font-semibold text-brand">{b.is_demo ? (b.demo_views > 3 ? "Converter" : "Enviar") : "Editar"}</Link>
                 <BotRowActions
@@ -123,15 +123,5 @@ export default async function BotsPage() {
       </div>
       <p className="text-[13px] text-muted">Demos que o prospect abriu mais de 3 vezes aparecem em destaque: é hora de ligar.</p>
     </>
-  );
-}
-
-function Kpi({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="card flex flex-col gap-1.5 px-4 py-3.5 sm:px-[18px] sm:py-4">
-      <span className="kpi-label">{label}</span>
-      <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{value}</span>
-      <span className="text-[13px] text-muted">{sub}</span>
-    </div>
   );
 }

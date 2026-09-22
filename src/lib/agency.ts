@@ -39,7 +39,21 @@ export const requireAgency = cache(async (): Promise<{ agency: Agency; email: st
   const email = (claims.email as string | undefined) ?? "";
   const meta = (claims.user_metadata ?? {}) as Record<string, unknown>;
 
-  let { data: agency } = await supabase.from("agencies").select("*").eq("owner_id", userId).maybeSingle<Agency>();
+  // O uso do mês vem junto (embed do PostgREST): uma ida ao banco em vez de duas.
+  const period = currentPeriod();
+  const { data: row } = await supabase
+    .from("agencies")
+    .select("*, usage(conversations)")
+    .eq("owner_id", userId)
+    .eq("usage.period", period)
+    .maybeSingle<Agency & { usage: Array<{ conversations: number }> }>();
+  let agency: Agency | null = null;
+  let usage = 0;
+  if (row) {
+    const { usage: u, ...rest } = row;
+    agency = rest;
+    usage = u?.[0]?.conversations ?? 0;
+  }
   if (!agency) {
     const admin = createAdminClient();
     const name = (meta.agency_name as string | undefined)?.trim() || (meta.full_name as string | undefined) || email.split("@")[0] || "Minha agência";
@@ -59,6 +73,5 @@ export const requireAgency = cache(async (): Promise<{ agency: Agency; email: st
     agency = created;
   }
 
-  const { data: u } = await supabase.from("usage").select("conversations").eq("agency_id", agency.id).eq("period", currentPeriod()).maybeSingle();
-  return { agency, email, plan: getPlan(agency.plan), usage: u?.conversations ?? 0 };
+  return { agency, email, plan: getPlan(agency.plan), usage };
 });

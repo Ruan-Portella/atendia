@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { appUrl, initials, relativeTime } from "@/lib/utils";
-import { brl } from "@/lib/plans";
+import { getClientOptions } from "@/lib/panel";
 import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
 import { ChatWindow } from "@/components/chat-window";
@@ -15,6 +15,7 @@ import { WidgetPositionPicker } from "@/components/widget-position";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
+import { ClientPicker } from "@/components/client-picker";
 import { convertDemo, deleteBot, resolveUnanswered, setBotStatus, updateBot } from "../../actions";
 
 export const metadata = { title: "Editor do chatbot" };
@@ -30,21 +31,27 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
-  const { id } = await params;
-  const sp = await searchParams;
+  const [{ id }, sp] = await Promise.all([params, searchParams]);
   const tab = (TABS.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
-  const { agency } = await requireAgency();
   const supabase = await createClient();
 
-  const { data: bot } = await supabase.from("bots").select("*").eq("id", id).maybeSingle();
-  if (!bot) notFound();
-
-  const [{ data: sources }, { data: unanswered }, { data: conversations }, { count: leadCount }] = await Promise.all([
-    supabase.from("sources").select("id, kind, title, url, content, status, chunk_count, pages, error, updated_at").eq("bot_id", id).order("created_at"),
-    supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10),
-    tab === "conversas" ? supabase.from("conversations").select("id, started_at, message_count, needs_human, channel").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : Promise.resolve({ data: null }),
-    supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id),
+  // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
+  // inteiros) não vem mais: só o de textos/FAQs, que o modal de edição precisa.
+  const none = Promise.resolve({ data: null, count: null });
+  const [{ agency }, { data: bot }, { count: readySources }, { data: sourceMeta }, { data: sourceTexts }, { data: unanswered }, { data: conversations }, { count: leadCount }] = await Promise.all([
+    requireAgency(),
+    supabase.from("bots").select("*").eq("id", id).maybeSingle(),
+    supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
+    tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, updated_at").eq("bot_id", id).order("created_at") : none,
+    tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).in("kind", ["text", "faq"]) : none,
+    tab === "fontes" ? supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10) : none,
+    tab === "conversas" ? supabase.from("conversations").select("id, started_at, message_count, needs_human, channel").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
+    tab === "leads" ? supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id) : none,
   ]);
+  if (!bot) notFound();
+  const clients = bot.is_demo || tab === "personalidade" ? await getClientOptions(supabase, agency.id) : [];
+  const textOf = new Map(((sourceTexts ?? []) as Array<{ id: string; content: string | null }>).map((t) => [t.id, t.content]));
+  const sources: SourceItem[] = ((sourceMeta ?? []) as Array<Omit<SourceItem, "content">>).map((s) => ({ ...s, content: textOf.get(s.id) ?? null }));
 
   const persona = bot.persona ?? {};
   const appearance = bot.appearance ?? {};
@@ -52,12 +59,15 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const color = appearance.color ?? agency.brand_color;
   const demoUrl = bot.is_demo && bot.demo_slug ? appUrl(`/demo/${bot.demo_slug}`) : null;
   const embedSnippet = `<script src="${appUrl("/widget.js")}" data-key="${bot.public_key}" async></script>`;
-  const readySources = (sources ?? []).filter((s) => s.status === "ready").length;
 
   return (
     <div className="-mx-4 -my-5 flex min-h-full flex-col sm:-mx-6 sm:-my-7 lg:-mx-9">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-7 md:py-3.5">
-        <Link href="/painel" className="text-sm font-semibold text-muted">← Chatbots</Link>
+        {bot.client_id ? (
+          <Link href={`/painel/clientes/${bot.client_id}`} className="max-w-[40vw] truncate text-sm font-semibold text-muted">← {bot.client_name}</Link>
+        ) : (
+          <Link href={bot.is_demo ? "/painel/demos" : "/painel"} className="text-sm font-semibold text-muted">← {bot.is_demo ? "Demos" : "Chatbots"}</Link>
+        )}
         <span className="hidden text-line sm:inline">/</span>
         <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: color }}>{appearance.avatar_text ?? initials(bot.client_name)}</span>
         <span className="display min-w-0 truncate text-base font-bold sm:text-lg">{bot.name} · {bot.client_name}</span>
@@ -67,7 +77,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {!bot.is_demo && <CopyButton text={embedSnippet} label="Copiar código" className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && (
             <ActionForm action={setBotStatus.bind(null, id, bot.status === "live" ? "draft" : "live")}>
-              <SubmitButton pendingLabel={bot.status === "live" ? "Tirando do ar…" : "Publicando…"} className={bot.status === "live" ? "btn-ghost" : "btn-primary"} disabled={readySources === 0 && bot.status !== "live"} title={readySources === 0 ? "Adicione pelo menos uma fonte" : ""}>
+              <SubmitButton pendingLabel={bot.status === "live" ? "Tirando do ar…" : "Publicando…"} className={bot.status === "live" ? "btn-ghost" : "btn-primary"} disabled={!readySources && bot.status !== "live"} title={!readySources ? "Adicione pelo menos uma fonte" : ""}>
                 {bot.status === "live" ? "Tirar do ar" : "Publicar"}
               </SubmitButton>
             </ActionForm>
@@ -80,7 +90,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           <span className="font-semibold text-amber-ink">Esta é uma demo.</span>
           <span className="text-ink-2">Mande o link para o prospect{bot.demo_views > 0 ? ` (aberto ${bot.demo_views} ${bot.demo_views === 1 ? "vez" : "vezes"})` : ""}. Quando ele fechar, converta em chatbot pago; a base de conhecimento fica.</span>
           <div className="w-full sm:ml-auto sm:w-auto">
-            <ConvertDemo action={convertDemo.bind(null, id)} clientName={bot.client_name} assistantName={bot.name} />
+            <ConvertDemo action={convertDemo.bind(null, id)} clients={clients} clientName={bot.client_name} assistantName={bot.name} />
           </div>
         </div>
       )}
@@ -94,7 +104,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           ))}
           <div className="ml-auto shrink-0 lg:ml-0 lg:mt-auto lg:pt-4">
             <ConfirmAction
-              action={deleteBot.bind(null, id, "/painel")}
+              action={deleteBot.bind(null, id, bot.client_id ? `/painel/clientes/${bot.client_id}` : bot.is_demo ? "/painel/demos" : "/painel")}
               title={`Excluir ${bot.is_demo ? "esta demo" : "este chatbot"}?`}
               description={
                 <>
@@ -116,7 +126,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <h2 className="text-[22px] font-bold">Base de conhecimento</h2>
                 <p className="text-sm text-muted">Tudo que {bot.name} sabe vem daqui. Ele não inventa o que não está nas fontes.</p>
               </div>
-              <SourcesManager botId={id} sources={(sources ?? []) as SourceItem[]} />
+              <SourcesManager botId={id} sources={sources} />
               {unanswered && unanswered.length > 0 && (
                 <div className="flex flex-col gap-2.5 rounded-xl border border-[#efd9a9] bg-amber-soft px-[18px] py-4">
                   <div className="text-sm font-semibold text-amber-ink">{unanswered.length} pergunta{unanswered.length > 1 ? "s" : ""} que {bot.name} não soube responder</div>
@@ -135,15 +145,13 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "personalidade" && (
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Personalidade</h2><p className="text-sm text-muted">Como o assistente se apresenta e fala.</p></div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div><label htmlFor="name" className="label">Nome do assistente</label><input id="name" name="name" defaultValue={bot.name} className="input" /></div>
-                <div><label htmlFor="client_name" className="label">Nome do cliente</label><input id="client_name" name="client_name" defaultValue={bot.client_name} className="input" /></div>
-              </div>
-              <div><label htmlFor="client_site" className="label">Site do cliente</label><input id="client_site" name="client_site" defaultValue={bot.client_site ?? ""} className="input" /></div>
-              <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
-              <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas</label><input id="welcome" name="welcome" defaultValue={persona.welcome ?? ""} className="input" /></div>
-              <div><label htmlFor="instructions" className="label">Instruções extras (o que sempre dizer, o que nunca dizer)</label><textarea id="instructions" name="instructions" rows={5} defaultValue={persona.instructions ?? ""} className="input" placeholder="Ex.: Sempre ofereça a avaliação gratuita. Nunca prometa desconto." /></div>
-              <div><label htmlFor="price" className="label">Quanto você cobra do cliente (R$/mês, só para o seu painel)</label><input id="price" name="price" type="number" step={10} defaultValue={bot.price_cents ? bot.price_cents / 100 : ""} className="input max-w-[200px]" /></div>
+              <div><label htmlFor="name" className="label">Nome do assistente</label><input id="name" name="name" required minLength={2} maxLength={40} defaultValue={bot.name} className="input" /></div>
+              {!bot.is_demo && <ClientPicker clients={clients} defaultClientId={bot.client_id} suggestedName={bot.client_id ? "" : bot.client_name} idPrefix="pers" />}
+              <div><label htmlFor="client_site" className="label">Site onde o chatbot fica</label><input id="client_site" name="client_site" maxLength={200} defaultValue={bot.client_site ?? ""} className="input" /></div>
+              <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" maxLength={200} defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
+              <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas</label><input id="welcome" name="welcome" maxLength={300} defaultValue={persona.welcome ?? ""} className="input" /></div>
+              <div><label htmlFor="instructions" className="label">Instruções extras (o que sempre dizer, o que nunca dizer)</label><textarea id="instructions" name="instructions" rows={5} maxLength={4000} defaultValue={persona.instructions ?? ""} className="input" placeholder="Ex.: Sempre ofereça a avaliação gratuita. Nunca prometa desconto." /></div>
+              {bot.client_id && <p className="text-xs text-muted">O nome do cliente e quanto você cobra ficam no <Link href={`/painel/clientes/${bot.client_id}?tab=dados`} className="font-semibold text-brand hover:underline">painel do cliente</Link>.</p>}
               <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
             </ActionForm>
           )}
@@ -215,7 +223,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         <aside className="hidden flex-col gap-3 border-l border-line bg-[#ecebe4] p-5 lg:flex">
           <div className="flex items-center justify-between text-xs"><span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span><span className="text-muted">como o visitante vê</span></div>
           <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
-            {readySources > 0 ? (
+            {readySources ? (
               <ChatWindow
                 channel="painel"
                 bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name }}
@@ -224,11 +232,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <div className="flex h-full items-center justify-center bg-white p-6 text-center text-sm text-muted">Adicione uma fonte para testar o assistente.</div>
             )}
           </div>
-          {bot.price_cents ? <p className="text-xs text-muted">Você cobra {brl(bot.price_cents / 100)}/mês deste cliente.</p> : null}
         </aside>
 
         {/* abaixo de lg o teste ao vivo abre por um botão flutuante */}
-        <ChatPreviewSheet disabledReason={readySources === 0 ? "Adicione uma fonte para testar o assistente." : null}>
+        <ChatPreviewSheet disabledReason={!readySources ? "Adicione uma fonte para testar o assistente." : null}>
           <ChatWindow
             channel="painel"
             bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name }}

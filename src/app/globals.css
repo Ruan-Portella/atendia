@@ -86,3 +86,4 @@ dialog.modal[open]::backdrop { animation: fade-in var(--dur-base) var(--ease-out
 @utility eyebrow { @apply text-xs font-semibold uppercase tracking-[0.08em] text-brand; }
 @utility kpi-label { @apply text-xs font-semibold uppercase tracking-[0.06em] text-muted; }
 @utility tabular { font-variant-numeric: tabular-nums; }
+@utility skeleton { @apply animate-pulse rounded-md bg-line/70; }
