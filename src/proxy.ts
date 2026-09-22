@@ -35,7 +35,7 @@ export async function proxy(request: NextRequest) {
   }
   if (user && (path === "/login" || path === "/cadastro")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/painel";
+    url.pathname = "/painel/clientes";
     url.search = "";
     return NextResponse.redirect(url);
   }

@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") ?? "/painel";
+  const next = params.get("next") ?? "/painel/clientes";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [agency, setAgency] = useState("");
@@ -53,7 +53,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         return;
       }
       if (data.session) {
-        router.push("/painel");
+        router.push("/painel/clientes");
         router.refresh();
       } else {
         setMsg({ kind: "ok", text: "Conta criada. Confira seu e-mail para confirmar e entrar." });

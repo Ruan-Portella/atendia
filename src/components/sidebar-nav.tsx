@@ -2,14 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Users, Sparkles, Inbox, Palette, Share2, CreditCard } from "lucide-react";
+import { Users, Sparkles, Palette, Share2, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const ITEMS = [
-  { href: "/painel", label: "Chatbots", icon: Bot, exact: true },
-  { href: "/painel/clientes", label: "Clientes", icon: Users },
+const ITEMS: Array<{ href: string; label: string; icon: typeof Users; also?: string }> = [
+  { href: "/painel/clientes", label: "Clientes", icon: Users, also: "/painel/bots" },
   { href: "/painel/demos", label: "Demos", icon: Sparkles },
-  { href: "/painel/leads", label: "Leads", icon: Inbox },
   { href: "/painel/marca", label: "Marca e domínio", icon: Palette },
   { href: "/painel/afiliados", label: "Afiliados", icon: Share2 },
   { href: "/painel/cobranca", label: "Cobrança", icon: CreditCard },
@@ -20,8 +18,9 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const path = usePathname();
   return (
     <nav className="flex flex-col gap-1">
-      {ITEMS.map(({ href, label, icon: Icon, exact }) => {
-        const active = exact ? path === href || path.startsWith("/painel/bots") : path.startsWith(href);
+      {ITEMS.map(({ href, label, icon: Icon, also }) => {
+        // chatbots moram dentro do cliente, então o editor de bot acende "Clientes"
+        const active = path.startsWith(href) || (also ? path.startsWith(also) : false);
         return (
           <Link
             key={href}

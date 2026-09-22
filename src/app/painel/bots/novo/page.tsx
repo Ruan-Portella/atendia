@@ -14,7 +14,7 @@ export default async function NewBotPage({ searchParams }: PageProps<"/painel/bo
   const clienteId = typeof sp.cliente === "string" ? sp.cliente : null;
   const { agency } = await requireAgency();
   const clients = await getClientOptions(await createClient(), agency.id);
-  const back = clienteId ? { href: `/painel/clientes/${clienteId}`, label: "← Cliente" } : { href: "/painel", label: "← Chatbots" };
+  const back = clienteId ? { href: `/painel/clientes/${clienteId}`, label: "← Cliente" } : { href: "/painel/clientes", label: "← Clientes" };
 
   return (
     <div className="max-w-[560px]">

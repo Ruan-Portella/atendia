@@ -6,7 +6,7 @@ import { ConfirmModal } from "./modal";
 import { useToast } from "./toast";
 
 interface Props {
-  /** Server action sem argumentos livres (ex.: `deleteBot.bind(null, id, "/painel")`). */
+  /** Server action sem argumentos livres (ex.: `deleteBot.bind(null, id, "/painel/clientes")`). */
   action: () => Promise<ActionResult | void>;
   title: string;
   description?: React.ReactNode;

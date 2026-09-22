@@ -26,7 +26,7 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
   const pct = Math.min(100, Math.round((usage / Math.max(1, limit)) * 100));
 
   const brandBlock = (
-    <Link href="/painel" onClick={() => setOpen(false)} className="flex min-w-0 items-center gap-2.5 px-2 py-1">
+    <Link href="/painel/clientes" onClick={() => setOpen(false)} className="flex min-w-0 items-center gap-2.5 px-2 py-1">
       {agency.logo_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={agency.logo_url} alt="" className="h-7 w-7 shrink-0 rounded-lg object-cover" />

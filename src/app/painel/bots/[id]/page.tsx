@@ -66,7 +66,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         {bot.client_id ? (
           <Link href={`/painel/clientes/${bot.client_id}`} className="max-w-[40vw] truncate text-sm font-semibold text-muted">← {bot.client_name}</Link>
         ) : (
-          <Link href={bot.is_demo ? "/painel/demos" : "/painel"} className="text-sm font-semibold text-muted">← {bot.is_demo ? "Demos" : "Chatbots"}</Link>
+          <Link href={bot.is_demo ? "/painel/demos" : "/painel/clientes"} className="text-sm font-semibold text-muted">← {bot.is_demo ? "Demos" : "Clientes"}</Link>
         )}
         <span className="hidden text-line sm:inline">/</span>
         <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: color }}>{appearance.avatar_text ?? initials(bot.client_name)}</span>
@@ -104,7 +104,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           ))}
           <div className="ml-auto shrink-0 lg:ml-0 lg:mt-auto lg:pt-4">
             <ConfirmAction
-              action={deleteBot.bind(null, id, bot.client_id ? `/painel/clientes/${bot.client_id}` : bot.is_demo ? "/painel/demos" : "/painel")}
+              action={deleteBot.bind(null, id, bot.client_id ? `/painel/clientes/${bot.client_id}` : bot.is_demo ? "/painel/demos" : "/painel/clientes")}
               title={`Excluir ${bot.is_demo ? "esta demo" : "este chatbot"}?`}
               description={
                 <>

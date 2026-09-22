@@ -19,7 +19,7 @@ export default function PainelError({ error, retry }: { error: Error & { digest?
       <p className="text-sm text-muted">Pode ter sido uma falha passageira de conexão. Tente de novo; se continuar, volte para o início do painel.{error.digest ? ` (código ${error.digest})` : ""}</p>
       <div className="flex gap-2">
         <button type="button" onClick={() => retry()} className="btn-primary">Tentar de novo</button>
-        <Link href="/painel" className="btn-ghost">Ir para o painel</Link>
+        <Link href="/painel/clientes" className="btn-ghost">Ir para o painel</Link>
       </div>
     </div>
   );

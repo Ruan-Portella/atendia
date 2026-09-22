@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, UserPlus } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
-import { getBotStats } from "@/lib/panel";
+import { getBotStats, resolvedPct } from "@/lib/panel";
+import { Kpi } from "@/components/kpi";
 import { daysAgoIso, initials } from "@/lib/utils";
 
 export const metadata = { title: "Clientes" };
@@ -17,24 +18,43 @@ interface ClientRow {
 }
 
 export default async function ClientesPage() {
-  const { agency } = await requireAgency();
+  const { agency, plan } = await requireAgency();
   const supabase = await createClient();
   const [{ data }, stats] = await Promise.all([
-    supabase.from("clients").select("id, name, site, price_cents, bots(id, status)").eq("agency_id", agency.id).order("name"),
+    supabase.from("clients").select("id, name, site, price_cents, bots(id, status, is_demo)").eq("agency_id", agency.id).eq("bots.is_demo", false).order("name"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
   const clients = (data ?? []) as ClientRow[];
   const total = clients.reduce((s, c) => s + (c.price_cents ?? 0), 0) / 100;
-  const sum = (c: ClientRow, k: "conversations" | "leads") => c.bots.reduce((s, b) => s + stats.of(b.id)[k], 0);
+  const sum = (c: ClientRow, k: "conversations" | "leads" | "needsHuman") => c.bots.reduce((s, b) => s + stats.of(b.id)[k], 0);
+  // Números só dos chatbots de clientes (demos ficam de fora)
+  const all = { conversations: 0, needsHuman: 0, leads: 0 };
+  for (const c of clients) for (const k of ["conversations", "needsHuman", "leads"] as const) all[k] += sum(c, k);
+  const botCount = clients.reduce((n, c) => n + c.bots.length, 0);
+  const pct = resolvedPct(all);
 
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold sm:text-[28px]">Clientes</h1>
-          <p className="text-sm text-muted">{clients.length} cliente{clients.length === 1 ? "" : "s"} · {brl(total)}/mês em contratos (segundo o que você informou).</p>
+          <p className="text-sm text-muted">{clients.length} cliente{clients.length === 1 ? "" : "s"} · {botCount} de {plan.bots} chatbots do plano. Abra um cliente para ver os chatbots, leads e conversas dele.</p>
         </div>
-        <Link href="/painel/clientes/novo" className="btn-primary w-full sm:w-auto"><Plus size={15} />Novo cliente</Link>
+        <div className="flex w-full gap-2.5 sm:w-auto">
+          <Link href="/painel/clientes/novo" className="btn-ghost flex-1 sm:flex-none"><UserPlus size={15} />Novo cliente</Link>
+          <Link href="/painel/bots/novo" className="btn-primary flex-1 sm:flex-none"><Plus size={15} />Novo chatbot</Link>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-3.5 xl:grid-cols-4">
+        <Kpi label="Conversas (30 dias)" value={num(all.conversations)} sub="em todos os clientes" />
+        <Kpi label="Leads capturados" value={num(all.leads)} sub="nome + contato entregues" />
+        <Kpi label="Resolvidas sem humano" value={`${pct}%`} sub={`${100 - pct}% pediram atendente`} />
+        <div className="flex flex-col gap-1.5 rounded-xl bg-brand px-4 py-3.5 text-ground sm:px-[18px] sm:py-4">
+          <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#c7d9d1]">Você fatura dos clientes</span>
+          <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{brl(total)}</span>
+          <span className="text-[13px] text-[#c7d9d1]">por mês · plano {brl(plan.priceBrl)}</span>
+        </div>
       </div>
       <div className="card overflow-hidden">
         <div className="hidden grid-cols-[2.2fr_1fr_1fr_1fr_1fr_20px] gap-3 border-b border-line bg-ground px-[18px] py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted lg:grid">
