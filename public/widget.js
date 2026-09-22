@@ -93,7 +93,12 @@
       isOpen: function () { return open; }
     };
 
-    // Avisa o painel que o widget está instalado neste domínio (uma vez por sessão de navegação).
+  }
+
+  // Busca cor/posição no painel (até 2,5 s); se falhar, usa os padrões/atributos.
+  // Avisa o painel que o widget está instalado neste domínio (uma vez por sessão de navegação).
+  // Fica fora do init para contar mesmo quando o bot ainda está em rascunho.
+  function ping() {
     try {
       var k = "cw-ping-" + key;
       if (!sessionStorage.getItem(k) && location.protocol !== "file:") {
@@ -103,14 +108,20 @@
     } catch (_) {}
   }
 
-  // Busca cor/posição no painel (até 2,5 s); se falhar, usa os padrões/atributos.
+  // Busca a configuração no painel (até 2,5 s). Devolve:
+  //   { gone: true }   → bot apagado: não desenha nada
+  //   { live: false }  → bot em rascunho: só registra a instalação, sem balão
+  //   { color, ... }   → normal; se a rede falhar, {} e usa padrões/atributos
   function loadConfig(done) {
     var finished = false;
     function finish(c) { if (finished) return; finished = true; done(c || {}); }
     var t = setTimeout(function () { finish({}); }, 2500);
     try {
       fetch(origin + "/api/widget/config?key=" + encodeURIComponent(key), { cache: "no-store" })
-        .then(function (r) { return r.ok ? r.json() : {}; })
+        .then(function (r) {
+          if (r.status === 404 || r.status === 400) return { gone: true };
+          return r.ok ? r.json() : {};
+        })
         .then(function (c) { clearTimeout(t); finish(c); })
         .catch(function () { clearTimeout(t); finish({}); });
     } catch (_) { clearTimeout(t); finish({}); }
@@ -118,6 +129,9 @@
 
   function start() {
     loadConfig(function (c) {
+      if (c.gone) return; // chatbot excluído: silêncio total no site do cliente
+      ping();
+      if (c.live === false) return; // rascunho / fora do ar: sem balão até publicar
       if (!attrColor && c.color) color = c.color;
       if (!attrPos && c.position) side = c.position === "left" ? "left" : "right";
       if (!attrOffset && typeof c.offset === "number") offset = c.offset;

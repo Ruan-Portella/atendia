@@ -104,7 +104,7 @@ export function InstallGuide({ widgetSrc, publicKey, directLink, brand, isLive, 
       <details className="card px-5 py-4">
         <summary className="cursor-pointer text-sm font-semibold">Instalei e o balão não apareceu</summary>
         <div className="mt-3 flex flex-col gap-2 text-sm leading-relaxed text-ink-2">
-          <p><strong className="text-ink">O chatbot está publicado?</strong> Em rascunho o widget carrega mas responde que está indisponível. Clique em “Publicar” no topo.</p>
+          <p><strong className="text-ink">O chatbot está publicado?</strong> Em rascunho ou fora do ar o balão não aparece no site (a instalação ainda é detectada e aparece no cartão acima). Clique em “Publicar” no topo.</p>
           <p><strong className="text-ink">O site foi publicado depois de colar o código?</strong> Webflow, Framer, Wix e Shopify só aplicam o código quando você publica o site de novo. Teste em aba anônima para fugir do cache.</p>
           <p><strong className="text-ink">Bloqueador de anúncios.</strong> Alguns bloqueiam iframes de terceiros. Teste com o bloqueador desligado ou em outro navegador.</p>
           <p><strong className="text-ink">Content-Security-Policy.</strong> Se o site tem CSP, adicione o domínio <code className="rounded bg-ground px-1">{new URL(widgetSrc).origin}</code> em <code className="rounded bg-ground px-1">script-src</code>, <code className="rounded bg-ground px-1">frame-src</code> e <code className="rounded bg-ground px-1">connect-src</code>.</p>

@@ -98,7 +98,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               title={`Excluir ${bot.is_demo ? "esta demo" : "este chatbot"}?`}
               description={
                 <>
-                  <strong className="text-ink">{bot.name} · {bot.client_name}</strong> será apagado com a base de conhecimento, as conversas e os leads.{bot.status === "live" ? " O widget instalado no site do cliente para de responder na hora." : ""} Não tem desfazer.
+                  <strong className="text-ink">{bot.name} · {bot.client_name}</strong> será apagado com a base de conhecimento, as conversas e os leads.{bot.status === "live" ? " O balão some do site do cliente na hora, sem precisar mexer no código dele." : ""} Não tem desfazer.
                 </>
               }
               confirmLabel="Excluir definitivamente"
@@ -199,7 +199,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <h2 className="text-[22px] font-bold">Instalação</h2>
                 <p className="text-sm text-muted">Escolha onde o site do cliente foi feito e siga o passo a passo. O código é o mesmo em todo lugar; o que muda é onde colar.</p>
               </div>
-              {bot.status !== "live" && !bot.is_demo && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O chatbot ainda não está publicado. Você pode instalar agora, mas ele só responde depois de clicar em “Publicar” no topo.</p>}
+              {bot.status !== "live" && !bot.is_demo && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O chatbot ainda não está publicado. Você pode instalar agora: o balão fica invisível no site do cliente até você clicar em “Publicar” no topo.</p>}
               <InstallGuide
                 widgetSrc={appUrl("/widget.js")}
                 publicKey={bot.public_key}

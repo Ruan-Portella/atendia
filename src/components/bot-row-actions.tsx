@@ -64,7 +64,7 @@ export function BotRowActions({ bot, demoUrl, embedSnippet, whatsappUrl, onDelet
         description={
           <>
             <strong className="text-ink">{bot.is_demo ? bot.client_name : `${bot.name} · ${bot.client_name}`}</strong> será apagado com a base de conhecimento, as conversas e os leads.
-            {bot.status === "live" && !bot.is_demo ? " O widget instalado no site do cliente para de responder na hora." : ""} Não tem desfazer.
+            {bot.status === "live" && !bot.is_demo ? " O balão some do site do cliente na hora." : ""} Não tem desfazer.
           </>
         }
         confirmLabel="Excluir definitivamente"

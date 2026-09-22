@@ -85,7 +85,7 @@ export async function setBotStatus(botId: string, status: "live" | "draft"): Pro
   if (error) return fail(error.message);
   revalidatePath(`/painel/bots/${botId}`);
   revalidatePath("/painel");
-  return ok(status === "live" ? "Chatbot publicado. Ele já responde no site." : "Chatbot fora do ar.");
+  return ok(status === "live" ? "Chatbot publicado. Ele já responde no site." : "Chatbot fora do ar. O balão some do site do cliente em até um minuto.");
 }
 
 /** Converte uma demo em chatbot de verdade (mantém a base de conhecimento). */
