@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
@@ -24,18 +25,24 @@ export interface Agency {
 /**
  * Devolve a agência do usuário logado, criando-a no primeiro acesso
  * (usa o nome informado no cadastro ou o e-mail). Redireciona para /login se não houver sessão.
+ *
+ * Envolvida em `cache()`: layout e página chamam na mesma requisição e só a primeira consulta
+ * o banco. A identidade vem de `getClaims()` (JWT validado localmente), não de `getUser()`
+ * (uma ida ao servidor de Auth por chamada).
  */
-export async function requireAgency(): Promise<{ agency: Agency; email: string; plan: Plan; usage: number }> {
+export const requireAgency = cache(async (): Promise<{ agency: Agency; email: string; plan: Plan; usage: number }> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (!claims?.sub) redirect("/login");
+  const userId = claims.sub;
+  const email = (claims.email as string | undefined) ?? "";
+  const meta = (claims.user_metadata ?? {}) as Record<string, unknown>;
 
-  let { data: agency } = await supabase.from("agencies").select("*").eq("owner_id", user.id).maybeSingle<Agency>();
+  let { data: agency } = await supabase.from("agencies").select("*").eq("owner_id", userId).maybeSingle<Agency>();
   if (!agency) {
     const admin = createAdminClient();
-    const name = (user.user_metadata?.agency_name as string | undefined)?.trim() || user.user_metadata?.full_name || user.email!.split("@")[0];
+    const name = (meta.agency_name as string | undefined)?.trim() || (meta.full_name as string | undefined) || email.split("@")[0] || "Minha agência";
     const base = slugify(name);
     const slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -46,12 +53,12 @@ export async function requireAgency(): Promise<{ agency: Agency; email: string; 
       const { data: r } = await admin.from("agencies").select("id").eq("referral_code", ref).maybeSingle();
       referredBy = r?.id ?? null;
     }
-    const { data: created, error } = await admin.from("agencies").insert({ owner_id: user.id, name, slug, referred_by: referredBy }).select("*").single<Agency>();
+    const { data: created, error } = await admin.from("agencies").insert({ owner_id: userId, name, slug, referred_by: referredBy }).select("*").single<Agency>();
     if (error || !created) throw new Error(error?.message ?? "Não foi possível criar a agência");
     if (referredBy) await admin.from("referrals").insert({ referrer_id: referredBy, referred_id: created.id });
     agency = created;
   }
 
   const { data: u } = await supabase.from("usage").select("conversations").eq("agency_id", agency.id).eq("period", currentPeriod()).maybeSingle();
-  return { agency, email: user.email ?? "", plan: getPlan(agency.plan), usage: u?.conversations ?? 0 };
-}
+  return { agency, email, plan: getPlan(agency.plan), usage: u?.conversations ?? 0 };
+});

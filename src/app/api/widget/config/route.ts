@@ -9,7 +9,8 @@ export async function GET(req: Request) {
   const key = new URL(req.url).searchParams.get("key") ?? "";
   const headers = {
     "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
+    // navegador não guarda (o widget.js pede com no-store); CDN guarda 60 s
+    "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
   };
   if (!/^[a-f0-9]{16,32}$/i.test(key)) return Response.json({ error: "bad_key" }, { status: 400, headers });
 

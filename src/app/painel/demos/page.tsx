@@ -17,7 +17,7 @@ export default async function DemosPage() {
   return (
     <>
       <div>
-        <h1 className="text-[28px] font-bold">Demos</h1>
+        <h1 className="text-2xl font-bold sm:text-[28px]">Demos</h1>
         <p className="text-sm text-muted">Cole o site de um prospect. Em um minuto você tem um link para mandar no WhatsApp dele.</p>
       </div>
       <div className="card max-w-[640px] p-6"><DemoGenerator inPanel /></div>

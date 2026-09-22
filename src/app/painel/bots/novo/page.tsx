@@ -8,7 +8,7 @@ export default function NewBotPage() {
   return (
     <div className="max-w-[560px]">
       <Link href="/painel" className="text-sm font-semibold text-muted">← Chatbots</Link>
-      <h1 className="mt-3 text-[28px] font-bold">Novo chatbot</h1>
+      <h1 className="mt-3 text-2xl font-bold sm:text-[28px]">Novo chatbot</h1>
       <p className="text-sm text-muted">Você adiciona o site e os documentos do cliente no próximo passo.</p>
       <form action={createBot} className="card mt-6 flex flex-col gap-4 p-6">
         <div>

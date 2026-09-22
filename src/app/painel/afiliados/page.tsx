@@ -31,7 +31,7 @@ export default async function AfiliadosPage() {
   return (
     <div className="flex max-w-[760px] flex-col gap-5">
       <div>
-        <h1 className="text-[28px] font-bold">Indique e ganhe {pct}% em crédito, para sempre</h1>
+        <h1 className="text-2xl font-bold sm:text-[28px]">Indique e ganhe {pct}% em crédito, para sempre</h1>
         <p className="text-sm text-muted">Toda agência que assinar pelo seu link gera {pct}% do que ela paga, todo mês, como crédito na sua assinatura. Sem esperar pagamento, sem PIX: você troca por desconto quando quiser.</p>
       </div>
 

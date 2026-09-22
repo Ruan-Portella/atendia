@@ -11,9 +11,9 @@ export default async function MarcaPage() {
   const { agency, plan } = await requireAgency();
   return (
     <div className="max-w-[640px]">
-      <h1 className="text-[28px] font-bold">Marca e domínio</h1>
+      <h1 className="text-2xl font-bold sm:text-[28px]">Marca e domínio</h1>
       <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo e nos e-mails de lead.</p>
-      <ActionForm action={updateAgency} className="card mt-6 flex flex-col gap-4 p-6">
+      <ActionForm key={[agency.name, agency.brand_color, agency.logo_url, agency.support_whatsapp, agency.custom_domain].join("|")} action={updateAgency} className="card mt-6 flex flex-col gap-4 p-6">
         <div><label htmlFor="name" className="label">Nome da agência</label><input id="name" name="name" defaultValue={agency.name} required className="input" /></div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div><label htmlFor="brand_color" className="label">Cor padrão dos novos chatbots</label><input id="brand_color" name="brand_color" type="color" defaultValue={agency.brand_color} className="input h-11 p-1" /></div>

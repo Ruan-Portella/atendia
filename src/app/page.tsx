@@ -11,9 +11,9 @@ const NICHOS = ["Clínicas", "Imobiliárias", "Advogados", "Escolas e cursos", "
 export default function LandingPage() {
   return (
     <div className="flex min-h-full flex-col">
-      <header className="flex items-center justify-between border-b border-line px-6 py-5 md:px-24">
+      <header className="flex items-center justify-between border-b border-line px-5 py-4 sm:px-6 sm:py-5 lg:px-16 xl:px-24">
         <Logo />
-        <nav className="hidden items-center gap-8 text-[15px] font-medium md:flex">
+        <nav className="hidden items-center gap-6 text-[15px] font-medium lg:flex xl:gap-8">
           <a href="#como">Como funciona</a>
           <a href="#precos">Preços</a>
           <a href="#nichos">Por nicho</a>
@@ -21,13 +21,16 @@ export default function LandingPage() {
           <Link href="/login">Entrar</Link>
           <Link href="/cadastro" className="btn-primary">Começar grátis</Link>
         </nav>
-        <Link href="/cadastro" className="btn-primary md:hidden">Começar</Link>
+        <div className="flex items-center gap-3 lg:hidden">
+          <Link href="/login" className="text-sm font-medium">Entrar</Link>
+          <Link href="/cadastro" className="btn-primary">Começar grátis</Link>
+        </div>
       </header>
 
-      <section className="grid items-center gap-12 px-6 py-16 md:grid-cols-2 md:px-24 md:py-22">
+      <section className="grid items-center gap-10 px-5 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:px-16 lg:py-22 xl:px-24">
         <div className="flex flex-col gap-6">
           <span className="self-start rounded-full bg-brand-soft px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-brand">Para agências e freelancers</span>
-          <h1 className="text-4xl font-bold leading-[1.04] md:text-6xl" style={{ textWrap: "balance" }}>
+          <h1 className="text-[34px] font-bold leading-[1.06] sm:text-4xl md:text-5xl xl:text-6xl" style={{ textWrap: "balance" }}>
             Adicione R$ 3.000 por mês na sua agência revendendo chatbots de IA com a sua marca.
           </h1>
           <p className="max-w-[560px] text-lg leading-relaxed text-ink-2">
@@ -37,7 +40,7 @@ export default function LandingPage() {
             <Link href="/cadastro" className="btn-primary px-5 py-3.5 text-base">Criar conta grátis</Link>
             <a href="#como" className="btn-ghost px-4 py-3.5 text-base">Ver como funciona</a>
           </div>
-          <div className="flex gap-4 text-sm text-muted"><span>14 dias grátis</span><span>·</span><span>Sem cartão</span><span>·</span><span>Cancele quando quiser</span></div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted"><span>14 dias grátis</span><span className="hidden sm:inline">·</span><span>Sem cartão</span><span className="hidden sm:inline">·</span><span>Cancele quando quiser</span></div>
         </div>
 
         <div className="card flex flex-col gap-4 p-7 shadow-[0_20px_50px_rgba(27,31,29,0.08)]">
@@ -66,7 +69,7 @@ export default function LandingPage() {
         ))}
       </div>
 
-      <section className="grid items-center gap-12 bg-ink px-6 py-16 text-ground md:grid-cols-2 md:px-24">
+      <section className="grid items-center gap-12 bg-ink px-6 py-16 text-ground md:grid-cols-2 lg:px-16 xl:px-24">
         <div className="flex flex-col gap-4">
           <span className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-tint">Faça a conta</span>
           <h2 className="text-3xl font-bold leading-[1.08] md:text-[44px]">Você paga {brl(PLANS.agencia.priceBrl)}. Seus clientes pagam você.</h2>
@@ -75,12 +78,12 @@ export default function LandingPage() {
         <RoiCalculator />
       </section>
 
-      <section id="como" className="flex flex-col gap-10 px-6 py-20 md:px-24">
+      <section id="como" className="flex flex-col gap-10 px-6 py-20 lg:px-16 xl:px-24">
         <div className="max-w-[640px]">
           <span className="eyebrow">Como funciona</span>
           <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Do site do cliente ao chatbot no ar em uma tarde.</h2>
         </div>
-        <div className="grid gap-5 md:grid-cols-4">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["Cole a URL", `A ${brand} lê o site, os PDFs e as perguntas frequentes do cliente e monta a base de conhecimento.`],
             ["Coloque a sua marca", "Logo, cores, nome do assistente e tom de voz. O cliente vê a sua agência, nunca a nossa."],
@@ -96,7 +99,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="precos" className="flex flex-col gap-9 px-6 pb-20 md:px-24">
+      <section id="precos" className="flex flex-col gap-9 px-6 pb-20 lg:px-16 xl:px-24">
         <div className="max-w-[640px]">
           <span className="eyebrow">Preços</span>
           <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Um plano por tamanho de agência. Sem cobrança por mensagem.</h2>
@@ -127,7 +130,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="grid gap-8 px-6 pb-20 md:grid-cols-2 md:px-24">
+      <section className="grid gap-8 px-6 pb-20 md:grid-cols-2 lg:px-16 xl:px-24">
         <div id="nichos" className="card flex flex-col gap-4 p-7">
           <div className="display text-2xl font-bold">Material de venda pronto, por nicho</div>
           <p className="text-[15px] leading-relaxed text-ink-2">Uma página para cada tipo de cliente, com exemplos de conversa e argumentos. Use para vender.</p>
@@ -148,7 +151,7 @@ export default function LandingPage() {
         <h2 className="max-w-[760px] text-3xl font-bold leading-[1.1] md:text-[40px]">Gere a primeira demo hoje. Mande para um cliente amanhã.</h2>
         <Link href="/cadastro" className="btn-primary px-6 py-3.5 text-base">Criar conta grátis</Link>
       </section>
-      <footer className="flex flex-col gap-2 border-t border-line px-6 py-6 text-[13px] text-muted md:flex-row md:justify-between md:px-24">
+      <footer className="flex flex-col gap-2 border-t border-line px-6 py-6 text-[13px] text-muted md:flex-row md:justify-between lg:px-16 xl:px-24">
         <span>{brand} · [SEU CNPJ] · LGPD: os dados dos seus clientes ficam no Brasil</span>
         <span>Termos · Privacidade · Contato</span>
       </footer>

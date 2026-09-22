@@ -173,30 +173,28 @@ export function SourcesManager({ botId, sources }: { botId: string; sources: Sou
           const Icon = KIND[s.kind as Kind]?.icon ?? Type;
           const processing = busyId === s.id || s.status === "pending";
           return (
-            <div key={s.id} className={`grid grid-cols-1 gap-1 border-b border-line-2 px-4 py-3 text-sm last:border-0 md:grid-cols-[2.4fr_1fr_1fr_1.2fr_auto] md:items-center md:gap-3 ${processing ? "opacity-70" : ""}`}>
+            <div key={s.id} className={`flex flex-col gap-1.5 border-b border-line-2 px-4 py-3 text-sm last:border-0 md:grid md:grid-cols-[2.4fr_1fr_1fr_1.2fr_auto] md:items-center md:gap-3 ${processing ? "opacity-70" : ""}`}>
               <div className="flex min-w-0 items-center gap-2.5 leading-tight">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ground text-muted">
                   {processing ? <Loader2 size={15} className="animate-spin" /> : s.status === "error" ? <AlertCircle size={15} className="text-danger" /> : <Icon size={15} />}
                 </span>
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{s.title}</span>
                   <span className="block truncate text-xs text-muted">
                     {processing ? "processando…" : s.status === "error" ? <span className="text-danger">{s.error ?? "erro ao processar"}</span> : s.kind === "site" || s.kind === "pdf" ? `${s.pages} página${s.pages === 1 ? "" : "s"}${s.url ? ` · ${s.url.replace(/^https?:\/\//, "")}` : ""}` : s.url?.replace(/^https?:\/\//, "") ?? `${s.content?.length ?? 0} caracteres`}
                   </span>
                 </span>
+                <span className="md:hidden">
+                  <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} />
+                </span>
               </div>
-              <span className="text-ink-2">{KIND[s.kind as Kind]?.label ?? s.kind}</span>
-              <span className="tabular">{s.chunk_count}</span>
-              <span className="text-muted">{relativeTime(s.updated_at)}</span>
-              <span className="flex justify-end">
-                <Menu
-                  items={[
-                    { label: s.kind === "pdf" ? "Enviar novo PDF" : s.kind === "site" || s.kind === "page" ? "Reler e atualizar" : "Editar conteúdo", icon: s.kind === "pdf" ? FileText : s.kind === "text" || s.kind === "faq" ? Pencil : RefreshCw, onSelect: () => (s.kind === "text" || s.kind === "faq" ? setEditing(s) : reprocess(s)), disabled: processing },
-                    { label: s.kind === "site" || s.kind === "page" ? "Editar endereço ou título" : "Renomear", icon: Pencil, onSelect: () => setEditing(s), disabled: processing },
-                    { type: "separator" },
-                    { label: "Remover", icon: Trash2, danger: true, onSelect: () => setRemoving(s), disabled: processing },
-                  ]}
-                />
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-[42px] text-xs text-muted md:contents md:pl-0">
+                <span className="md:text-sm md:text-ink-2">{KIND[s.kind as Kind]?.label ?? s.kind}</span>
+                <span className="tabular md:text-sm md:text-ink">{s.chunk_count}<span className="md:hidden"> trechos</span></span>
+                <span className="md:text-sm">{relativeTime(s.updated_at)}</span>
+              </div>
+              <span className="hidden justify-end md:flex">
+                <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} />
               </span>
             </div>
           );
@@ -204,7 +202,7 @@ export function SourcesManager({ botId, sources }: { botId: string; sources: Sou
         {sources.length > 0 && (
           <div className="flex flex-wrap justify-between gap-2 bg-ground px-4 py-2 text-xs text-muted">
             <span>{readyCount} de {sources.length} fonte{sources.length === 1 ? "" : "s"} pronta{readyCount === 1 ? "" : "s"} · {totalChunks} trechos indexados</span>
-            <span>Mudou algo no site do cliente? Use “Reler e atualizar”.</span>
+            <span className="hidden sm:inline">Mudou algo no site do cliente? Use “Reler e atualizar”.</span>
           </div>
         )}
       </div>
@@ -308,5 +306,19 @@ function SourceFields({ kind }: { kind: Kind }) {
         </>
       )}
     </>
+  );
+}
+
+function SourceMenu({ s, processing, onEdit, onReprocess, onRemove }: { s: SourceItem; processing: boolean; onEdit: () => void; onReprocess: () => void; onRemove: () => void }) {
+  const editable = s.kind === "text" || s.kind === "faq";
+  return (
+    <Menu
+      items={[
+        { label: s.kind === "pdf" ? "Enviar novo PDF" : s.kind === "site" || s.kind === "page" ? "Reler e atualizar" : "Editar conteúdo", icon: s.kind === "pdf" ? FileText : editable ? Pencil : RefreshCw, onSelect: editable ? onEdit : onReprocess, disabled: processing },
+        { label: s.kind === "site" || s.kind === "page" ? "Editar endereço ou título" : "Renomear", icon: Pencil, onSelect: onEdit, disabled: processing },
+        { type: "separator" },
+        { label: "Remover", icon: Trash2, danger: true, onSelect: onRemove, disabled: processing },
+      ]}
+    />
   );
 }

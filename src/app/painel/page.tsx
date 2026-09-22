@@ -51,28 +51,28 @@ export default async function BotsPage() {
     <>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-[28px] font-bold">Chatbots</h1>
+          <h1 className="text-2xl font-bold sm:text-[28px]">Chatbots</h1>
           <p className="text-sm text-muted">{live.length} de {plan.bots} no plano · {demos.length} demo{demos.length === 1 ? "" : "s"} aguardando resposta do cliente</p>
         </div>
-        <div className="flex gap-2.5">
-          <Link href="/painel/demos" className="btn-ghost"><Sparkles size={15} />Gerar demo</Link>
-          <Link href="/painel/bots/novo" className="btn-primary"><Plus size={15} />Novo chatbot</Link>
+        <div className="flex w-full gap-2.5 sm:w-auto">
+          <Link href="/painel/demos" className="btn-ghost flex-1 sm:flex-none"><Sparkles size={15} />Gerar demo</Link>
+          <Link href="/painel/bots/novo" className="btn-primary flex-1 sm:flex-none"><Plus size={15} />Novo chatbot</Link>
         </div>
       </div>
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-3.5 xl:grid-cols-4">
         <Kpi label="Conversas (30 dias)" value={num(convCount)} sub="em todos os chatbots" />
         <Kpi label="Leads capturados" value={num(leadCount)} sub="nome + contato entregues" />
         <Kpi label="Resolvidas sem humano" value={`${humanPct}%`} sub={`${100 - humanPct}% pediram atendente`} />
-        <div className="flex flex-col gap-1.5 rounded-xl bg-brand px-[18px] py-4 text-ground">
+        <div className="flex flex-col gap-1.5 rounded-xl bg-brand px-4 py-3.5 text-ground sm:px-[18px] sm:py-4">
           <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#c7d9d1]">Você fatura dos clientes</span>
-          <span className="display text-[30px] font-bold leading-tight tabular">{brl(revenue)}</span>
+          <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{brl(revenue)}</span>
           <span className="text-[13px] text-[#c7d9d1]">{live.length} clientes · plano {brl(plan.priceBrl)}</span>
         </div>
       </div>
 
       <div className="card overflow-hidden">
-        <div className="hidden grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_auto] gap-3 border-b border-line bg-ground px-[18px] py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted md:grid">
+        <div className="hidden grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_auto] gap-3 border-b border-line bg-ground px-[18px] py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted lg:grid">
           <span>Chatbot</span><span>Cliente</span><span>Status</span><span>Conversas</span><span>Leads</span><span>Você cobra</span><span />
         </div>
         {rows.length === 0 && (
@@ -82,29 +82,42 @@ export default async function BotsPage() {
           </div>
         )}
         {rows.map((b) => (
-          <div key={b.id} className={`grid grid-cols-1 gap-2 border-b border-line-2 px-[18px] py-3.5 text-sm last:border-0 md:grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_auto] md:items-center md:gap-3 ${b.is_demo ? "bg-amber-soft/50" : ""}`}>
+          <div key={b.id} className={`flex flex-col gap-2.5 border-b border-line-2 px-4 py-3.5 text-sm last:border-0 lg:grid lg:grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_auto] lg:items-center lg:gap-3 lg:px-[18px] ${b.is_demo ? "bg-amber-soft/50" : ""}`}>
+            {/* nome + ações (no celular as ações ficam na mesma linha do nome) */}
             <div className="flex items-center gap-2.5">
               <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: b.is_demo ? "#c9c3b5" : b.appearance?.color ?? "#1f4e3d" }}>{b.appearance?.avatar_text ?? initials(b.client_name)}</span>
-              <span className="min-w-0 leading-tight">
+              <span className="min-w-0 flex-1 leading-tight">
                 <Link href={`/painel/bots/${b.id}`} className="block truncate font-semibold">{b.is_demo ? "Demo" : b.name} · {b.client_name}</Link>
                 <span className="block truncate text-xs text-muted">{b.client_site?.replace(/^https?:\/\//, "") ?? "sem site"}{b.is_demo ? ` · gerada ${relativeTime(b.created_at)}` : ""}{b.is_demo && b.demo_views > 3 ? ` · o prospect abriu ${b.demo_views} vezes` : ""}</span>
               </span>
+              <span className="lg:hidden">
+                <BotRowActions
+                  bot={{ id: b.id, name: b.name, client_name: b.client_name, is_demo: b.is_demo, status: b.status }}
+                  demoUrl={b.is_demo && b.demo_slug ? appUrl(`/demo/${b.demo_slug}`) : null}
+                  embedSnippet={b.is_demo ? null : `<script src="${appUrl("/widget.js")}" data-key="${b.public_key}" async></script>`}
+                  whatsappUrl={b.is_demo && b.demo_slug ? `https://wa.me/?text=${encodeURIComponent(`Olá! Montei um assistente de IA para o site de ${b.client_name}. Testa aqui: ${appUrl(`/demo/${b.demo_slug}`)}`)}` : null}
+                  onDelete={deleteBot.bind(null, b.id)}
+                />
+              </span>
             </div>
-            <span className={b.is_demo ? "text-muted" : ""}>{b.is_demo ? "Prospect" : b.client_name}</span>
-            <Status status={b.is_demo ? "demo" : b.status} />
-            <span className="tabular">{num(convBy(b.id))}</span>
-            <span className="tabular text-muted">{b.is_demo ? "—" : num(leadBy(b.id))}</span>
-            <span className="tabular">{b.price_cents ? `${brl(b.price_cents / 100)}/mês` : <span className="text-muted">—</span>}</span>
-            <span className="flex items-center justify-end gap-2">
-              <Link href={`/painel/bots/${b.id}`} className="text-[13px] font-semibold text-brand">{b.is_demo ? (b.demo_views > 3 ? "Converter" : "Enviar") : "Editar"}</Link>
-              <BotRowActions
-                bot={{ id: b.id, name: b.name, client_name: b.client_name, is_demo: b.is_demo, status: b.status }}
-                demoUrl={b.is_demo && b.demo_slug ? appUrl(`/demo/${b.demo_slug}`) : null}
-                embedSnippet={b.is_demo ? null : `<script src="${appUrl("/widget.js")}" data-key="${b.public_key}" async></script>`}
-                whatsappUrl={b.is_demo && b.demo_slug ? `https://wa.me/?text=${encodeURIComponent(`Olá! Montei um assistente de IA para o site de ${b.client_name}. Testa aqui: ${appUrl(`/demo/${b.demo_slug}`)}`)}` : null}
-                onDelete={deleteBot.bind(null, b.id)}
-              />
-            </span>
+            {/* no celular, uma linha de resumo; no desktop, as colunas */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted lg:contents">
+              <span className={`hidden lg:inline lg:text-sm ${b.is_demo ? "text-muted" : "text-ink"}`}>{b.is_demo ? "Prospect" : b.client_name}</span>
+              <Status status={b.is_demo ? "demo" : b.status} />
+              <span className="tabular lg:text-sm lg:text-ink">{num(convBy(b.id))}<span className="lg:hidden"> conversas</span></span>
+              <span className="tabular lg:text-sm">{b.is_demo ? <span className="hidden lg:inline">—</span> : <>{num(leadBy(b.id))}<span className="lg:hidden"> leads</span></>}</span>
+              <span className="tabular lg:text-sm lg:text-ink">{b.price_cents ? `${brl(b.price_cents / 100)}/mês` : <span className="hidden text-muted lg:inline">—</span>}</span>
+              <span className="hidden items-center justify-end gap-2 lg:flex">
+                <Link href={`/painel/bots/${b.id}`} className="text-[13px] font-semibold text-brand">{b.is_demo ? (b.demo_views > 3 ? "Converter" : "Enviar") : "Editar"}</Link>
+                <BotRowActions
+                  bot={{ id: b.id, name: b.name, client_name: b.client_name, is_demo: b.is_demo, status: b.status }}
+                  demoUrl={b.is_demo && b.demo_slug ? appUrl(`/demo/${b.demo_slug}`) : null}
+                  embedSnippet={b.is_demo ? null : `<script src="${appUrl("/widget.js")}" data-key="${b.public_key}" async></script>`}
+                  whatsappUrl={b.is_demo && b.demo_slug ? `https://wa.me/?text=${encodeURIComponent(`Olá! Montei um assistente de IA para o site de ${b.client_name}. Testa aqui: ${appUrl(`/demo/${b.demo_slug}`)}`)}` : null}
+                  onDelete={deleteBot.bind(null, b.id)}
+                />
+              </span>
+            </div>
           </div>
         ))}
       </div>
@@ -115,9 +128,9 @@ export default async function BotsPage() {
 
 function Kpi({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="card flex flex-col gap-1.5 px-[18px] py-4">
+    <div className="card flex flex-col gap-1.5 px-4 py-3.5 sm:px-[18px] sm:py-4">
       <span className="kpi-label">{label}</span>
-      <span className="display text-[30px] font-bold leading-tight tabular">{value}</span>
+      <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{value}</span>
       <span className="text-[13px] text-muted">{sub}</span>
     </div>
   );

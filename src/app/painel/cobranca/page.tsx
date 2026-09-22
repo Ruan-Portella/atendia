@@ -12,7 +12,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
   const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
   return (
     <div className="max-w-[900px]">
-      <h1 className="text-[28px] font-bold">Cobrança</h1>
+      <h1 className="text-2xl font-bold sm:text-[28px]">Cobrança</h1>
       <p className="text-sm text-muted">Plano atual: <strong>{plan.name}</strong>{trialDays !== null ? ` · ${trialDays} dias de teste restantes` : ""} · {num(usage)} de {num(plan.conversations)} conversas usadas este mês.</p>
       {sp.ok && <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Assinatura ativada. Obrigado!</p>}
       {sp.limite === "bots" && <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Você chegou ao limite de chatbots do plano {plan.name}. Faça upgrade para adicionar mais clientes.</p>}

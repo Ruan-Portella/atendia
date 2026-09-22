@@ -109,7 +109,7 @@
     function finish(c) { if (finished) return; finished = true; done(c || {}); }
     var t = setTimeout(function () { finish({}); }, 2500);
     try {
-      fetch(origin + "/api/widget/config?key=" + encodeURIComponent(key))
+      fetch(origin + "/api/widget/config?key=" + encodeURIComponent(key), { cache: "no-store" })
         .then(function (r) { return r.ok ? r.json() : {}; })
         .then(function (c) { clearTimeout(t); finish(c); })
         .catch(function () { clearTimeout(t); finish({}); });

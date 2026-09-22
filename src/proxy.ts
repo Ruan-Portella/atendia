@@ -21,9 +21,10 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims valida o JWT localmente (chave pública em cache) em vez de consultar o Auth
+  // a cada requisição, como faz getUser: é a diferença entre ~5 ms e ~300 ms por página.
+  const { data: claims } = await supabase.auth.getClaims();
+  const user = claims?.claims?.sub ? claims.claims : null;
 
   const path = request.nextUrl.pathname;
   if (!user && path.startsWith("/painel")) {

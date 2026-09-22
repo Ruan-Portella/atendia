@@ -12,6 +12,9 @@ interface Props {
 /**
  * Escolha do canto do balão e da distância da borda, com prévia de como fica no site do cliente.
  * Só campos de formulário (position, offset): o salvar é o do formulário da aba.
+ * Campos não controlados (defaultChecked/defaultValue): o React 19 reseta o <form> depois da
+ * action, e o formulário pai é remontado com `key` quando o bot muda, então os valores novos
+ * chegam pelas props. O estado aqui só alimenta a prévia.
  */
 export function WidgetPositionPicker({ position, offset, color }: Props) {
   const [side, setSide] = useState<"left" | "right">(position);
@@ -27,7 +30,7 @@ export function WidgetPositionPicker({ position, offset, color }: Props) {
           <div className="grid grid-cols-2 gap-2">
             {(["right", "left"] as const).map((v) => (
               <label key={v} className={cn("flex cursor-pointer items-center gap-2.5 rounded-[9px] border px-3.5 py-2.5 text-sm transition-colors duration-[120ms]", side === v ? "border-brand bg-brand-soft font-semibold text-brand" : "border-line bg-panel hover:bg-ground")}>
-                <input type="radio" name="position" value={v} checked={side === v} onChange={() => setSide(v)} className="accent-brand" />
+                <input type="radio" name="position" value={v} defaultChecked={position === v} onChange={() => setSide(v)} className="accent-brand" />
                 {v === "right" ? "Direita (padrão)" : "Esquerda"}
               </label>
             ))}
@@ -35,7 +38,7 @@ export function WidgetPositionPicker({ position, offset, color }: Props) {
         </fieldset>
         <div>
           <label htmlFor="offset" className="label">Distância da borda (px)</label>
-          <input id="offset" name="offset" type="number" min={0} max={200} step={4} value={gap} onChange={(e) => setGap(Number(e.target.value))} className="input max-w-[160px]" />
+          <input id="offset" name="offset" type="number" min={0} max={200} step={4} defaultValue={offset} onChange={(e) => setGap(Number(e.target.value))} className="input max-w-[160px]" />
           <p className="mt-1 text-xs text-muted">Aumente se o site já tem um botão de WhatsApp no mesmo canto, ou mude o lado.</p>
         </div>
       </div>

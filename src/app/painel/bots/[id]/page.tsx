@@ -10,6 +10,7 @@ import { ChatWindow } from "@/components/chat-window";
 import { CopyButton } from "@/components/copy-button";
 import { ConvertDemo } from "@/components/convert-demo";
 import { InstallGuide } from "@/components/install-guide";
+import { ChatPreviewSheet } from "@/components/chat-preview-sheet";
 import { WidgetPositionPicker } from "@/components/widget-position";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -54,16 +55,16 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const readySources = (sources ?? []).filter((s) => s.status === "ready").length;
 
   return (
-    <div className="-mx-5 -my-7 flex min-h-full flex-col md:-mx-9">
-      <div className="flex flex-wrap items-center gap-3 border-b border-line bg-panel px-5 py-3.5 md:px-7">
+    <div className="-mx-4 -my-5 flex min-h-full flex-col sm:-mx-6 sm:-my-7 md:-mx-7 lg:-mx-9">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-7 md:py-3.5">
         <Link href="/painel" className="text-sm font-semibold text-muted">← Chatbots</Link>
-        <span className="text-line">/</span>
+        <span className="hidden text-line sm:inline">/</span>
         <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: color }}>{appearance.avatar_text ?? initials(bot.client_name)}</span>
-        <span className="display text-lg font-bold">{bot.name} · {bot.client_name}</span>
+        <span className="display min-w-0 truncate text-base font-bold sm:text-lg">{bot.name} · {bot.client_name}</span>
         <Status status={bot.is_demo ? "demo" : bot.status} />
-        <div className="ml-auto flex flex-wrap gap-2">
-          {demoUrl && <CopyButton text={demoUrl} label="Copiar link da demo" />}
-          {!bot.is_demo && <CopyButton text={embedSnippet} label="Copiar código de instalação" />}
+        <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
+          {demoUrl && <CopyButton text={demoUrl} label="Copiar link da demo" className="btn-ghost flex-1 sm:flex-none" />}
+          {!bot.is_demo && <CopyButton text={embedSnippet} label="Copiar código" className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && (
             <ActionForm action={setBotStatus.bind(null, id, bot.status === "live" ? "draft" : "live")}>
               <SubmitButton pendingLabel={bot.status === "live" ? "Tirando do ar…" : "Publicando…"} className={bot.status === "live" ? "btn-ghost" : "btn-primary"} disabled={readySources === 0 && bot.status !== "live"} title={readySources === 0 ? "Adicione pelo menos uma fonte" : ""}>
@@ -75,23 +76,23 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
       </div>
 
       {bot.is_demo && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-line bg-amber-soft px-5 py-3 text-sm md:px-7">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line bg-amber-soft px-4 py-3 text-sm sm:px-5 md:px-7">
           <span className="font-semibold text-amber-ink">Esta é uma demo.</span>
           <span className="text-ink-2">Mande o link para o prospect{bot.demo_views > 0 ? ` (aberto ${bot.demo_views} ${bot.demo_views === 1 ? "vez" : "vezes"})` : ""}. Quando ele fechar, converta em chatbot pago; a base de conhecimento fica.</span>
-          <div className="ml-auto">
+          <div className="w-full sm:ml-auto sm:w-auto">
             <ConvertDemo action={convertDemo.bind(null, id)} clientName={bot.client_name} assistantName={bot.name} />
           </div>
         </div>
       )}
 
-      <div className="grid flex-1 md:grid-cols-[220px_minmax(0,1fr)_400px]">
-        <nav className="flex flex-row flex-wrap gap-1 border-b border-line p-3.5 md:flex-col md:border-b-0 md:border-r">
+      <div className="grid flex-1 lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]">
+        <nav className="flex flex-row items-center gap-1 overflow-x-auto border-b border-line px-3 py-2 [scrollbar-width:none] lg:flex-col lg:items-stretch lg:overflow-visible lg:border-b-0 lg:border-r lg:p-3.5">
           {TABS.map(([key, label]) => (
-            <Link key={key} href={`/painel/bots/${id}?tab=${key}`} className={`rounded-lg px-3 py-2.5 text-sm ${tab === key ? "bg-brand-soft font-semibold text-brand" : "font-medium text-ink-2 hover:bg-ground"}`}>
+            <Link key={key} href={`/painel/bots/${id}?tab=${key}`} className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm lg:py-2.5 ${tab === key ? "bg-brand-soft font-semibold text-brand" : "font-medium text-ink-2 hover:bg-ground"}`}>
               {label}
             </Link>
           ))}
-          <div className="mt-auto pt-4">
+          <div className="ml-auto shrink-0 lg:ml-0 lg:mt-auto lg:pt-4">
             <ConfirmAction
               action={deleteBot.bind(null, id, "/painel")}
               title={`Excluir ${bot.is_demo ? "esta demo" : "este chatbot"}?`}
@@ -108,7 +109,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           </div>
         </nav>
 
-        <section className="flex flex-col gap-5 px-5 py-6 md:px-7">
+        <section className="flex min-w-0 flex-col gap-5 px-4 py-5 pb-24 sm:px-5 md:px-7 md:py-6 lg:pb-6">
           {tab === "fontes" && (
             <>
               <div>
@@ -132,7 +133,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "personalidade" && (
-            <ActionForm action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
+            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Personalidade</h2><p className="text-sm text-muted">Como o assistente se apresenta e fala.</p></div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><label htmlFor="name" className="label">Nome do assistente</label><input id="name" name="name" defaultValue={bot.name} className="input" /></div>
@@ -148,7 +149,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "aparencia" && (
-            <ActionForm action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
+            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Aparência e marca</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Atendia"} nunca aparece.</p></div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><label htmlFor="color" className="label">Cor principal</label><input id="color" name="color" type="color" defaultValue={color} className="input h-11 p-1" /></div>
@@ -157,7 +158,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <div><label htmlFor="suggested" className="label">Perguntas sugeridas (uma por linha, até 6)</label><textarea id="suggested" name="suggested" rows={4} defaultValue={(appearance.suggested_questions ?? []).join("\n")} className="input" /></div>
               <div className="border-t border-line pt-4">
                 <h3 className="text-sm font-semibold">Balão no site do cliente</h3>
-                <p className="mb-3 text-xs text-muted">Vale na hora para o widget já instalado; não precisa trocar o código.</p>
+                <p className="mb-3 text-xs text-muted">Vale para o widget já instalado em até um minuto; não precisa trocar o código.</p>
                 <WidgetPositionPicker position={appearance.position === "left" ? "left" : "right"} offset={Number(appearance.offset ?? 20)} color={color} />
               </div>
               <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
@@ -165,7 +166,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "leads" && (
-            <ActionForm action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
+            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Captura de leads</h2><p className="text-sm text-muted">Quando o visitante quer agendar, orçar ou falar com alguém, o assistente pede nome e contato. {leadCount ?? 0} leads até agora.</p></div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="lead_enabled" defaultChecked={leadCapture.enabled !== false} /> Ativar captura de leads na conversa</label>
               <div><label htmlFor="notify_email" className="label">Avisar por e-mail (o dono do cliente, por exemplo)</label><input id="notify_email" name="notify_email" type="email" defaultValue={leadCapture.notify_email ?? ""} className="input" placeholder="recepcao@clinicasorriso.com.br" /></div>
@@ -211,7 +212,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
         </section>
 
-        <aside className="flex flex-col gap-3 border-t border-line bg-[#ecebe4] p-5 md:border-l md:border-t-0">
+        <aside className="hidden flex-col gap-3 border-l border-line bg-[#ecebe4] p-5 lg:flex">
           <div className="flex items-center justify-between text-xs"><span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span><span className="text-muted">como o visitante vê</span></div>
           <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
             {readySources > 0 ? (
@@ -225,6 +226,14 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           </div>
           {bot.price_cents ? <p className="text-xs text-muted">Você cobra {brl(bot.price_cents / 100)}/mês deste cliente.</p> : null}
         </aside>
+
+        {/* abaixo de lg o teste ao vivo abre por um botão flutuante */}
+        <ChatPreviewSheet disabledReason={readySources === 0 ? "Adicione uma fonte para testar o assistente." : null}>
+          <ChatWindow
+            channel="painel"
+            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name }}
+          />
+        </ChatPreviewSheet>
       </div>
     </div>
   );

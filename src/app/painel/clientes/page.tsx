@@ -12,7 +12,7 @@ export default async function ClientesPage() {
   const total = (bots ?? []).reduce((s, b) => s + (b.price_cents ?? 0), 0) / 100;
   return (
     <>
-      <div><h1 className="text-[28px] font-bold">Clientes</h1><p className="text-sm text-muted">{bots?.length ?? 0} clientes · {brl(total)}/mês em contratos (segundo o que você informou por chatbot).</p></div>
+      <div><h1 className="text-2xl font-bold sm:text-[28px]">Clientes</h1><p className="text-sm text-muted">{bots?.length ?? 0} clientes · {brl(total)}/mês em contratos (segundo o que você informou por chatbot).</p></div>
       <div className="card overflow-hidden">
         {(bots ?? []).map((b) => (
           <Link key={b.id} href={`/painel/bots/${b.id}`} className="flex flex-wrap items-center gap-3 border-b border-line-2 px-4 py-3.5 text-sm last:border-0 hover:bg-ground">
