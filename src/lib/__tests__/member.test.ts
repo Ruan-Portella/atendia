@@ -6,6 +6,8 @@ describe("isEmailLinkSession (só link mágico dá acesso à área do cliente)",
     expect(isEmailLinkSession([{ method: "otp", timestamp: 1 }])).toBe(true);
     expect(isEmailLinkSession(["magiclink"])).toBe(true);
     expect(isEmailLinkSession([{ method: "password", timestamp: 1 }, { method: "otp", timestamp: 2 }])).toBe(true);
+    // primeiro acesso de um e-mail convidado (conta nova)
+    expect(isEmailLinkSession([{ method: "email/signup", timestamp: 1 }])).toBe(true);
   });
   it("recusa senha, Google e sessão sem amr", () => {
     expect(isEmailLinkSession([{ method: "password", timestamp: 1 }])).toBe(false);

@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hostAgency } from "@/lib/domain-server";
-import { currentOrigin, memberForAction, sendMemberLink, type Membership } from "@/lib/member";
+import { currentOrigin, EMAIL_LINK_TYPES, memberForAction, sendMemberLink, type Membership } from "@/lib/member";
+import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
 import { isEmail, text } from "@/lib/validation";
 import { postAgentMessage, release, takeOver } from "@/lib/handoff";
@@ -123,4 +125,22 @@ export async function memberDeleteText(clientId: string, botId: string, sourceId
   const r = await deleteTextSource(ctx.admin, botId, sourceId);
   revalidatePath(`/cliente/${clientId}/aprender`);
   return r;
+}
+
+/**
+ * Clique em "Entrar" na tela do link mágico: só aqui o token é usado. Abrir o link não gasta
+ * nada, então os robôs de segurança de e-mail (que abrem os links antes da pessoa) não
+ * invalidam o acesso.
+ */
+export async function confirmAccess(tokenHash: string, type: string, nextRaw: string): Promise<ActionResult> {
+  const next = /^\/cliente(\/[\w-]*)*$/.test(nextRaw) ? nextRaw : "/cliente";
+  const otpType = (EMAIL_LINK_TYPES as readonly string[]).includes(type) ? (type as (typeof EMAIL_LINK_TYPES)[number]) : "magiclink";
+  const supabase = await createClient();
+  const { data, error } = tokenHash ? await supabase.auth.verifyOtp({ type: otpType, token_hash: tokenHash }) : { data: null, error: new Error("sem token") };
+  if (error || !data?.user?.email) {
+    console.warn("link da área do cliente recusado:", error?.message);
+    redirect(`/cliente/entrar?erro=link&next=${encodeURIComponent(next)}`);
+  }
+  await createAdminClient().from("client_members").update({ last_login_at: new Date().toISOString() }).eq("email", data.user.email.toLowerCase());
+  redirect(next);
 }

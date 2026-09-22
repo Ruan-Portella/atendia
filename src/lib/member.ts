@@ -26,7 +26,11 @@ export interface Membership {
   agency: { name: string; logo_url: string | null; brand_color: string; support_whatsapp: string | null; custom_domain: string | null; custom_domain_verified_at: string | null };
 }
 
-const MAGIC_METHODS = new Set(["otp", "magiclink"]);
+/** Métodos de sessão que provam posse do e-mail (link/código enviado para ele). Senha e Google não. */
+const MAGIC_METHODS = new Set(["otp", "magiclink", "email/signup", "invite"]);
+
+/** Tipos de token de e-mail aceitos no /cliente/auth. */
+export const EMAIL_LINK_TYPES = ["magiclink", "signup", "invite", "email"] as const;
 
 /** true se a sessão foi aberta por link mágico / código por e-mail. */
 export function isEmailLinkSession(amr: unknown): boolean {
@@ -90,10 +94,15 @@ export async function sendMemberLink(opts: { email: string; origin: string; next
   if (!isEmail(opts.email)) return { ok: false, message: "E-mail inválido." };
 
   const admin = createAdminClient();
+  // Cria a conta antes (se já existir, o erro é ignorado): para e-mail novo, o Supabase
+  // geraria um link de *cadastro* em vez de login, com outro tipo de token.
+  await admin.auth.admin.createUser({ email: opts.email, email_confirm: true }).catch(() => null);
   const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email: opts.email });
   const hashed = data?.properties?.hashed_token;
   if (error || !hashed) return { ok: false, message: "Não foi possível gerar o link de acesso. Tente de novo." };
-  const link = `${opts.origin}/cliente/auth?token_hash=${encodeURIComponent(hashed)}&next=${encodeURIComponent(opts.next)}`;
+  // o tipo vai junto: a validação precisa usar exatamente o tipo do token gerado
+  const type = data.properties.verification_type ?? "magiclink";
+  const link = `${opts.origin}/cliente/auth?token_hash=${encodeURIComponent(hashed)}&type=${encodeURIComponent(type)}&next=${encodeURIComponent(opts.next)}`;
 
   const color = /^#[0-9a-f]{6}$/i.test(opts.agency.brand_color) ? opts.agency.brand_color : "#1f4e3d";
   const fromAddress = process.env.EMAIL_FROM?.match(/<([^>]+)>/)?.[1] ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev";
