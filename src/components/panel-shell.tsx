@@ -17,9 +17,8 @@ interface Props {
 }
 
 /**
- * Casca do painel em três tamanhos:
- *  - celular (< md): barra no topo + menu lateral deslizante;
- *  - tablet (md–lg): trilho de ícones à esquerda;
+ * Casca do painel em dois tamanhos:
+ *  - celular e tablet (< lg): barra no topo com botão hambúrguer + menu lateral deslizante;
  *  - desktop (lg+): sidebar completa.
  */
 export function PanelShell({ agency, planName, trialDays, usage, limit, usageLabel, children }: Props) {
@@ -34,7 +33,7 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
       ) : (
         <span className="display flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold text-ink" style={{ background: agency.brand_color === "#1f4e3d" ? "#e9a23b" : agency.brand_color }}>{agency.initials}</span>
       )}
-      <span className="min-w-0 leading-tight lg:block md:hidden">
+      <span className="min-w-0 leading-tight">
         <span className="block truncate text-sm font-semibold">{agency.name}</span>
         <span className="block text-[11px] text-[#9aa39e]">Plano {planName}{trialDays !== null ? ` · ${trialDays} dias` : ""}</span>
       </span>
@@ -51,14 +50,14 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
 
   const signOut = (
     <form action="/auth/signout" method="post" className="px-2 pt-2">
-      <button type="submit" className="flex items-center gap-2 text-xs text-[#9aa39e] hover:text-ground"><LogOut size={14} /><span className="lg:inline md:hidden">Sair</span></button>
+      <button type="submit" className="flex items-center gap-2 text-xs text-[#9aa39e] hover:text-ground"><LogOut size={14} />Sair</button>
     </form>
   );
 
   return (
-    <div className="flex min-h-full flex-col md:flex-row">
+    <div className="flex min-h-full flex-col lg:flex-row">
       {/* barra do celular */}
-      <header className="sticky top-0 z-40 flex items-center gap-2 bg-ink px-3 py-2.5 text-ground md:hidden">
+      <header className="sticky top-0 z-40 flex items-center gap-2 bg-ink px-3 py-2.5 text-ground lg:hidden">
         <button type="button" onClick={() => setOpen(true)} aria-label="Abrir menu" aria-expanded={open} className="inline-flex h-10 w-10 items-center justify-center rounded-lg hover:bg-[#262c29]">
           <MenuIcon size={20} />
         </button>
@@ -68,9 +67,9 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
 
       {/* menu deslizante (celular) */}
       {open && (
-        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <button type="button" aria-label="Fechar menu" onClick={() => setOpen(false)} className="absolute inset-0 bg-ink/50" />
-          <aside className="menu-in absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col gap-1.5 bg-ink p-4 text-ground shadow-2xl">
+          <aside className="menu-in absolute inset-y-0 left-0 flex w-[300px] max-w-[85vw] flex-col gap-1.5 bg-ink p-4 text-ground shadow-2xl">
             <div className="flex items-center justify-between pb-3">
               {brandBlock}
               <button type="button" onClick={() => setOpen(false)} aria-label="Fechar" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[#262c29]"><X size={18} /></button>
@@ -81,19 +80,15 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
         </div>
       )}
 
-      {/* sidebar tablet (trilho) e desktop */}
-      <aside className={cn("hidden shrink-0 flex-col gap-1.5 bg-ink p-4 text-ground md:flex md:min-h-screen md:w-[72px] md:items-stretch md:px-2.5 lg:w-60 lg:px-4")}>
-        <div className="pb-4 pt-1 md:flex md:justify-center lg:block">{brandBlock}</div>
-        <SidebarNav compact />
-        <div className="mt-auto hidden lg:block">{usageBlock}</div>
-        <Link href="/painel/cobranca" title={`Conversas do mês: ${usageLabel}`} className="mt-auto hidden flex-col items-center gap-1 rounded-[10px] bg-[#262c29] px-2 py-2.5 text-[11px] font-semibold text-[#c8cfcb] md:flex lg:hidden">
-          <span className="tabular">{pct}%</span>
-          <span className="h-1 w-8 overflow-hidden rounded-full bg-[#3a423e]"><span className="block h-full bg-brand-tint" style={{ width: `${pct}%` }} /></span>
-        </Link>
-        <div className="md:flex md:justify-center lg:block">{signOut}</div>
+      {/* sidebar do desktop */}
+      <aside className={cn("hidden w-60 shrink-0 flex-col gap-1.5 bg-ink p-4 text-ground lg:flex lg:min-h-screen")}>
+        <div className="pb-4 pt-1">{brandBlock}</div>
+        <SidebarNav />
+        <div className="mt-auto">{usageBlock}</div>
+        {signOut}
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-5 sm:px-6 sm:py-7 md:px-7 md:gap-6 lg:px-9">{children}</main>
+      <main className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-5 sm:px-6 sm:py-7 md:gap-6 lg:px-9">{children}</main>
     </div>
   );
 }

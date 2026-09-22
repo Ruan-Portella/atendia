@@ -55,7 +55,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const readySources = (sources ?? []).filter((s) => s.status === "ready").length;
 
   return (
-    <div className="-mx-4 -my-5 flex min-h-full flex-col sm:-mx-6 sm:-my-7 md:-mx-7 lg:-mx-9">
+    <div className="-mx-4 -my-5 flex min-h-full flex-col sm:-mx-6 sm:-my-7 lg:-mx-9">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-7 md:py-3.5">
         <Link href="/painel" className="text-sm font-semibold text-muted">← Chatbots</Link>
         <span className="hidden text-line sm:inline">/</span>
