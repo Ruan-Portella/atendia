@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ground: #f6f4ee;
+  --color-panel: #fffdf8;
+  --color-line: #e3dfd4;
+  --color-line-2: #efebe2;
+  --color-ink: #1b1f1d;
+  --color-ink-2: #4c5551;
+  --color-muted: #6a736e;
+  --color-brand: #1f4e3d;
+  --color-brand-2: #163a2d;
+  --color-brand-soft: #e4efe9;
+  --color-brand-tint: #9fd3bf;
+  --color-amber: #e9a23b;
+  --color-amber-soft: #fdf0d3;
+  --color-amber-ink: #a5691a;
+  --color-danger: #b23a3a;
+  --color-danger-soft: #fbe6e6;
+  --font-sans: var(--font-plex), system-ui, sans-serif;
+  --font-display: var(--font-familjen), var(--font-plex), system-ui, sans-serif;
+}
+
+html { color-scheme: light; }
+body { background: var(--color-ground); color: var(--color-ink); font-family: var(--font-sans); }
+
+h1, h2, h3, .display { font-family: var(--font-display); letter-spacing: -0.01em; }
+
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none; }
+@utility btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none bg-brand text-ground hover:bg-brand-2; }
+@utility btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none bg-ink text-ground hover:bg-black; }
+@utility btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none bg-panel text-ink border border-line hover:bg-ground; }
+@utility btn-danger { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none bg-panel text-danger border border-line hover:bg-danger-soft; }
+@utility input { @apply w-full rounded-[9px] border border-line bg-panel px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand; }
+@utility label { @apply block text-xs font-semibold text-muted mb-1.5; }
+@utility card { @apply bg-panel border border-line rounded-xl; }
+@utility eyebrow { @apply text-xs font-semibold uppercase tracking-[0.08em] text-brand; }
+@utility kpi-label { @apply text-xs font-semibold uppercase tracking-[0.06em] text-muted; }
+@utility tabular { font-variant-numeric: tabular-nums; }
