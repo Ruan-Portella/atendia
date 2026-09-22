@@ -3,8 +3,10 @@ import { Plus, Sparkles } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
-import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
+import { appUrl, daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { Status } from "@/components/status";
+import { BotRowActions } from "@/components/bot-row-actions";
+import { deleteBot } from "./actions";
 
 export const metadata = { title: "Chatbots" };
 
@@ -17,6 +19,7 @@ interface BotListRow {
   is_demo: boolean;
   demo_slug: string | null;
   demo_views: number;
+  public_key: string;
   price_cents: number | null;
   appearance: { color?: string; avatar_text?: string };
   created_at: string;
@@ -28,7 +31,7 @@ export default async function BotsPage() {
   const since = daysAgoIso(30);
 
   const [{ data: bots }, { data: convs }, { data: leads }] = await Promise.all([
-    supabase.from("bots").select("id, name, client_name, client_site, status, is_demo, demo_slug, demo_views, price_cents, appearance, created_at").eq("agency_id", agency.id).order("is_demo").order("created_at", { ascending: false }),
+    supabase.from("bots").select("id, name, client_name, client_site, status, is_demo, demo_slug, demo_views, public_key, price_cents, appearance, created_at").eq("agency_id", agency.id).order("is_demo").order("created_at", { ascending: false }),
     supabase.from("conversations").select("id, bot_id, needs_human").gte("started_at", since),
     supabase.from("leads").select("id, bot_id").gte("created_at", since),
   ]);
@@ -69,7 +72,7 @@ export default async function BotsPage() {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="hidden grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_0.8fr] gap-3 border-b border-line bg-ground px-[18px] py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted md:grid">
+        <div className="hidden grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_auto] gap-3 border-b border-line bg-ground px-[18px] py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted md:grid">
           <span>Chatbot</span><span>Cliente</span><span>Status</span><span>Conversas</span><span>Leads</span><span>Você cobra</span><span />
         </div>
         {rows.length === 0 && (
@@ -79,7 +82,7 @@ export default async function BotsPage() {
           </div>
         )}
         {rows.map((b) => (
-          <div key={b.id} className={`grid grid-cols-1 gap-2 border-b border-line-2 px-[18px] py-3.5 text-sm last:border-0 md:grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_0.8fr] md:items-center md:gap-3 ${b.is_demo ? "bg-amber-soft/50" : ""}`}>
+          <div key={b.id} className={`grid grid-cols-1 gap-2 border-b border-line-2 px-[18px] py-3.5 text-sm last:border-0 md:grid-cols-[2.2fr_1.4fr_1fr_1fr_1fr_1.1fr_auto] md:items-center md:gap-3 ${b.is_demo ? "bg-amber-soft/50" : ""}`}>
             <div className="flex items-center gap-2.5">
               <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: b.is_demo ? "#c9c3b5" : b.appearance?.color ?? "#1f4e3d" }}>{b.appearance?.avatar_text ?? initials(b.client_name)}</span>
               <span className="min-w-0 leading-tight">
@@ -92,7 +95,16 @@ export default async function BotsPage() {
             <span className="tabular">{num(convBy(b.id))}</span>
             <span className="tabular text-muted">{b.is_demo ? "—" : num(leadBy(b.id))}</span>
             <span className="tabular">{b.price_cents ? `${brl(b.price_cents / 100)}/mês` : <span className="text-muted">—</span>}</span>
-            <Link href={`/painel/bots/${b.id}`} className="text-[13px] font-semibold text-brand md:text-right">{b.is_demo ? (b.demo_views > 3 ? "Converter" : "Enviar") : "Editar"}</Link>
+            <span className="flex items-center justify-end gap-2">
+              <Link href={`/painel/bots/${b.id}`} className="text-[13px] font-semibold text-brand">{b.is_demo ? (b.demo_views > 3 ? "Converter" : "Enviar") : "Editar"}</Link>
+              <BotRowActions
+                bot={{ id: b.id, name: b.name, client_name: b.client_name, is_demo: b.is_demo, status: b.status }}
+                demoUrl={b.is_demo && b.demo_slug ? appUrl(`/demo/${b.demo_slug}`) : null}
+                embedSnippet={b.is_demo ? null : `<script src="${appUrl("/widget.js")}" data-key="${b.public_key}" async></script>`}
+                whatsappUrl={b.is_demo && b.demo_slug ? `https://wa.me/?text=${encodeURIComponent(`Olá! Montei um assistente de IA para o site de ${b.client_name}. Testa aqui: ${appUrl(`/demo/${b.demo_slug}`)}`)}` : null}
+                onDelete={deleteBot.bind(null, b.id)}
+              />
+            </span>
           </div>
         ))}
       </div>

@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { billingEnabled, planFromPrice, stripe } from "@/lib/stripe";
 import { PLANS } from "@/lib/plans";
+import { REFERRAL_RATE } from "@/lib/referral-credit";
 
 /** Webhook do Stripe: mantém o plano da agência e a comissão de afiliado em dia. */
 export async function POST(req: Request) {
@@ -45,7 +46,8 @@ export async function POST(req: Request) {
       break;
     }
     case "invoice.paid": {
-      // 30% de comissão recorrente para quem indicou
+      // Comissão recorrente para quem indicou: 30% do que a agência indicada pagou de fato
+      // (se ela usou crédito de indicação na fatura, a comissão é sobre o valor líquido).
       const inv = event.data.object;
       const customer = typeof inv.customer === "string" ? inv.customer : inv.customer?.id;
       if (!customer) break;
@@ -53,8 +55,10 @@ export async function POST(req: Request) {
       if (!ag) break;
       const { data: ref } = await db.from("referrals").select("id, commission_cents").eq("referred_id", ag.id).maybeSingle();
       if (!ref) break;
-      const price = (PLANS as Record<string, { priceBrl: number }>)[ag.plan]?.priceBrl ?? 0;
-      await db.from("referrals").update({ status: "paying", commission_cents: ref.commission_cents + Math.round(price * 100 * 0.3) }).eq("id", ref.id);
+      const paidCents = inv.amount_paid ?? Math.round(((PLANS as Record<string, { priceBrl: number }>)[ag.plan]?.priceBrl ?? 0) * 100);
+      const commission = Math.round(paidCents * REFERRAL_RATE);
+      if (commission > 0) await db.from("referrals").update({ status: "paying", commission_cents: ref.commission_cents + commission }).eq("id", ref.id);
+      else await db.from("referrals").update({ status: "paying" }).eq("id", ref.id);
       break;
     }
   }

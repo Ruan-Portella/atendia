@@ -138,8 +138,8 @@ export default function LandingPage() {
           </div>
         </div>
         <div id="afiliados" className="card flex flex-col gap-4 p-7">
-          <div className="display text-2xl font-bold">Indique e ganhe 30% para sempre</div>
-          <p className="text-[15px] leading-relaxed text-ink-2">Cada agência que assinar pelo seu link paga 30% de comissão todo mês, enquanto ela for cliente. Sem teto.</p>
+          <div className="display text-2xl font-bold">Indique e ganhe 30% em crédito, para sempre</div>
+          <p className="text-[15px] leading-relaxed text-ink-2">Cada agência que assinar pelo seu link gera 30% do que ela paga, todo mês, como crédito na sua assinatura. Com três ou quatro indicações, seu plano sai de graça. Sem teto.</p>
           <Link href="/cadastro" className="btn-dark mt-auto self-start">Quero meu link</Link>
         </div>
       </section>

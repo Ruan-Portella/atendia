@@ -21,16 +21,65 @@
   --font-display: var(--font-familjen), var(--font-plex), system-ui, sans-serif;
 }
 
+:root {
+  /* movimento: três durações, três curvas (ver components/ui) */
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 420ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
 html { color-scheme: light; }
 body { background: var(--color-ground); color: var(--color-ink); font-family: var(--font-sans); }
 
 h1, h2, h3, .display { font-family: var(--font-display); letter-spacing: -0.01em; }
 
-@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none; }
-@utility btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none bg-brand text-ground hover:bg-brand-2; }
-@utility btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none bg-ink text-ground hover:bg-black; }
-@utility btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none bg-panel text-ink border border-line hover:bg-ground; }
-@utility btn-danger { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none bg-panel text-danger border border-line hover:bg-danger-soft; }
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Modal nativo (<dialog>) */
+dialog.modal {
+  margin: auto;
+  width: calc(100% - 32px);
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
+  background: var(--color-panel);
+  color: var(--color-ink);
+  padding: 0;
+  box-shadow: 0 24px 60px rgba(27, 31, 29, 0.22);
+}
+dialog.modal[open] { animation: rise-in var(--dur-base) var(--ease-out); }
+dialog.modal::backdrop { background: rgba(27, 31, 29, 0.45); }
+dialog.modal[open]::backdrop { animation: fade-in var(--dur-base) var(--ease-out); }
+
+.toast-in { animation: rise-in var(--dur-base) var(--ease-out); }
+.menu-in { animation: rise-in var(--dur-fast) var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none; }
+@utility btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-brand text-ground hover:bg-brand-2; }
+@utility btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-ink text-ground hover:bg-black; }
+@utility btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-panel text-ink border border-line hover:bg-ground; }
+@utility btn-danger { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-panel text-danger border border-line hover:bg-danger-soft; }
+@utility btn-danger-solid { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-danger text-white hover:bg-[#932f2f]; }
+@utility btn-icon { @apply inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-[color,background-color] duration-[120ms] hover:bg-ground hover:text-ink active:translate-y-px disabled:opacity-50 disabled:pointer-events-none; }
+@utility menu-item { @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink transition-colors duration-[120ms] hover:bg-ground disabled:opacity-50 disabled:pointer-events-none; }
 @utility input { @apply w-full rounded-[9px] border border-line bg-panel px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand; }
 @utility label { @apply block text-xs font-semibold text-muted mb-1.5; }
 @utility card { @apply bg-panel border border-line rounded-xl; }

@@ -8,6 +8,12 @@ import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
 import { ChatWindow } from "@/components/chat-window";
 import { CopyButton } from "@/components/copy-button";
+import { ConvertDemo } from "@/components/convert-demo";
+import { InstallGuide } from "@/components/install-guide";
+import { WidgetPositionPicker } from "@/components/widget-position";
+import { ActionForm } from "@/components/ui/action-form";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { convertDemo, deleteBot, resolveUnanswered, setBotStatus, updateBot } from "../../actions";
 
 export const metadata = { title: "Editor do chatbot" };
@@ -33,7 +39,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   if (!bot) notFound();
 
   const [{ data: sources }, { data: unanswered }, { data: conversations }, { count: leadCount }] = await Promise.all([
-    supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, updated_at").eq("bot_id", id).order("created_at"),
+    supabase.from("sources").select("id, kind, title, url, content, status, chunk_count, pages, error, updated_at").eq("bot_id", id).order("created_at"),
     supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10),
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, message_count, needs_human, channel").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : Promise.resolve({ data: null }),
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id),
@@ -59,11 +65,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {demoUrl && <CopyButton text={demoUrl} label="Copiar link da demo" />}
           {!bot.is_demo && <CopyButton text={embedSnippet} label="Copiar código de instalação" />}
           {!bot.is_demo && (
-            <form action={setBotStatus.bind(null, id, bot.status === "live" ? "draft" : "live")}>
-              <button type="submit" className={bot.status === "live" ? "btn-ghost" : "btn-primary"} disabled={readySources === 0 && bot.status !== "live"} title={readySources === 0 ? "Adicione pelo menos uma fonte" : ""}>
+            <ActionForm action={setBotStatus.bind(null, id, bot.status === "live" ? "draft" : "live")}>
+              <SubmitButton pendingLabel={bot.status === "live" ? "Tirando do ar…" : "Publicando…"} className={bot.status === "live" ? "btn-ghost" : "btn-primary"} disabled={readySources === 0 && bot.status !== "live"} title={readySources === 0 ? "Adicione pelo menos uma fonte" : ""}>
                 {bot.status === "live" ? "Tirar do ar" : "Publicar"}
-              </button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
           )}
         </div>
       </div>
@@ -72,11 +78,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         <div className="flex flex-wrap items-center gap-3 border-b border-line bg-amber-soft px-5 py-3 text-sm md:px-7">
           <span className="font-semibold text-amber-ink">Esta é uma demo.</span>
           <span className="text-ink-2">Mande o link para o prospect{bot.demo_views > 0 ? ` (aberto ${bot.demo_views} ${bot.demo_views === 1 ? "vez" : "vezes"})` : ""}. Quando ele fechar, converta em chatbot pago; a base de conhecimento fica.</span>
-          <form action={convertDemo.bind(null, id)} className="ml-auto flex items-center gap-2">
-            <label htmlFor="price" className="sr-only">Preço mensal</label>
-            <input id="price" name="price" type="number" min={0} step={10} placeholder="R$/mês" className="input w-28 py-1.5" />
-            <button type="submit" className="btn-dark py-1.5">Converter em cliente</button>
-          </form>
+          <div className="ml-auto">
+            <ConvertDemo action={convertDemo.bind(null, id)} clientName={bot.client_name} assistantName={bot.name} />
+          </div>
         </div>
       )}
 
@@ -87,9 +91,21 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               {label}
             </Link>
           ))}
-          <form action={deleteBot.bind(null, id)} className="mt-auto pt-4">
-            <button type="submit" className="px-3 text-xs text-danger">Excluir chatbot</button>
-          </form>
+          <div className="mt-auto pt-4">
+            <ConfirmAction
+              action={deleteBot.bind(null, id, "/painel")}
+              title={`Excluir ${bot.is_demo ? "esta demo" : "este chatbot"}?`}
+              description={
+                <>
+                  <strong className="text-ink">{bot.name} · {bot.client_name}</strong> será apagado com a base de conhecimento, as conversas e os leads.{bot.status === "live" ? " O widget instalado no site do cliente para de responder na hora." : ""} Não tem desfazer.
+                </>
+              }
+              confirmLabel="Excluir definitivamente"
+              className="px-3 text-xs font-medium text-danger hover:underline"
+            >
+              Excluir {bot.is_demo ? "demo" : "chatbot"}
+            </ConfirmAction>
+          </div>
         </nav>
 
         <section className="flex flex-col gap-5 px-5 py-6 md:px-7">
@@ -106,7 +122,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   {unanswered.map((u) => (
                     <div key={u.id} className="flex items-center justify-between gap-3 text-sm text-ink-2">
                       <span>“{u.question}”</span>
-                      <form action={resolveUnanswered.bind(null, u.id, id)}><button type="submit" className="text-xs font-semibold text-brand">Resolvido</button></form>
+                      <ActionForm action={resolveUnanswered.bind(null, u.id, id)}><SubmitButton pendingLabel="…" className="text-xs font-semibold text-brand hover:underline disabled:opacity-50">Resolvido</SubmitButton></ActionForm>
                     </div>
                   ))}
                   <p className="text-xs text-muted">Responda adicionando um texto ou FAQ acima; depois marque como resolvido.</p>
@@ -116,7 +132,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "personalidade" && (
-            <form action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
+            <ActionForm action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Personalidade</h2><p className="text-sm text-muted">Como o assistente se apresenta e fala.</p></div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><label htmlFor="name" className="label">Nome do assistente</label><input id="name" name="name" defaultValue={bot.name} className="input" /></div>
@@ -127,31 +143,36 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas</label><input id="welcome" name="welcome" defaultValue={persona.welcome ?? ""} className="input" /></div>
               <div><label htmlFor="instructions" className="label">Instruções extras (o que sempre dizer, o que nunca dizer)</label><textarea id="instructions" name="instructions" rows={5} defaultValue={persona.instructions ?? ""} className="input" placeholder="Ex.: Sempre ofereça a avaliação gratuita. Nunca prometa desconto." /></div>
               <div><label htmlFor="price" className="label">Quanto você cobra do cliente (R$/mês, só para o seu painel)</label><input id="price" name="price" type="number" step={10} defaultValue={bot.price_cents ? bot.price_cents / 100 : ""} className="input max-w-[200px]" /></div>
-              <button type="submit" className="btn-primary self-start">Salvar</button>
-            </form>
+              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+            </ActionForm>
           )}
 
           {tab === "aparencia" && (
-            <form action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
+            <ActionForm action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Aparência e marca</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Atendia"} nunca aparece.</p></div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><label htmlFor="color" className="label">Cor principal</label><input id="color" name="color" type="color" defaultValue={color} className="input h-11 p-1" /></div>
                 <div><label htmlFor="avatar_text" className="label">Iniciais do avatar</label><input id="avatar_text" name="avatar_text" maxLength={2} defaultValue={appearance.avatar_text ?? initials(bot.client_name)} className="input" /></div>
               </div>
               <div><label htmlFor="suggested" className="label">Perguntas sugeridas (uma por linha, até 6)</label><textarea id="suggested" name="suggested" rows={4} defaultValue={(appearance.suggested_questions ?? []).join("\n")} className="input" /></div>
-              <button type="submit" className="btn-primary self-start">Salvar</button>
-            </form>
+              <div className="border-t border-line pt-4">
+                <h3 className="text-sm font-semibold">Balão no site do cliente</h3>
+                <p className="mb-3 text-xs text-muted">Vale na hora para o widget já instalado; não precisa trocar o código.</p>
+                <WidgetPositionPicker position={appearance.position === "left" ? "left" : "right"} offset={Number(appearance.offset ?? 20)} color={color} />
+              </div>
+              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+            </ActionForm>
           )}
 
           {tab === "leads" && (
-            <form action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
+            <ActionForm action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Captura de leads</h2><p className="text-sm text-muted">Quando o visitante quer agendar, orçar ou falar com alguém, o assistente pede nome e contato. {leadCount ?? 0} leads até agora.</p></div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="lead_enabled" defaultChecked={leadCapture.enabled !== false} /> Ativar captura de leads na conversa</label>
               <div><label htmlFor="notify_email" className="label">Avisar por e-mail (o dono do cliente, por exemplo)</label><input id="notify_email" name="notify_email" type="email" defaultValue={leadCapture.notify_email ?? ""} className="input" placeholder="recepcao@clinicasorriso.com.br" /></div>
               <div><label htmlFor="notify_whatsapp" className="label">WhatsApp para aviso (em breve)</label><input id="notify_whatsapp" name="notify_whatsapp" defaultValue={leadCapture.notify_whatsapp ?? ""} className="input" placeholder="+55 41 9…" /></div>
               <p className="text-xs text-muted">Você também recebe todos os leads no seu e-mail e na aba Leads do painel.</p>
-              <button type="submit" className="btn-primary self-start">Salvar</button>
-            </form>
+              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+            </ActionForm>
           )}
 
           {tab === "conversas" && (
@@ -172,17 +193,20 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "instalacao" && (
-            <div className="flex max-w-[720px] flex-col gap-5">
-              <div><h2 className="text-[22px] font-bold">Instalação</h2><p className="text-sm text-muted">Cole antes do <code>&lt;/body&gt;</code> do site do cliente. Funciona em WordPress, Webflow, Framer, Wix, Shopify e HTML puro.</p></div>
-              <pre className="overflow-auto rounded-xl bg-ink p-4 text-[13px] text-ground">{embedSnippet}</pre>
-              <div className="flex gap-2"><CopyButton text={embedSnippet} label="Copiar código" className="btn-primary" /></div>
-              <div className="card p-5 text-sm leading-relaxed text-ink-2">
-                <p><strong>WordPress:</strong> Aparência → Editor de temas → footer.php, ou o plugin “Insert Headers and Footers”.</p>
-                <p className="mt-2"><strong>Webflow / Framer:</strong> Configurações do site → Custom code → Footer.</p>
-                <p className="mt-2"><strong>Wix / Shopify:</strong> Configurações → Código personalizado (Wix) ou theme.liquid (Shopify).</p>
-                <p className="mt-2"><strong>Link direto</strong> (para Instagram ou WhatsApp): <code className="rounded bg-ground px-1">{appUrl(`/w/${bot.public_key}`)}</code></p>
+            <div className="flex max-w-[860px] flex-col gap-5">
+              <div>
+                <h2 className="text-[22px] font-bold">Instalação</h2>
+                <p className="text-sm text-muted">Escolha onde o site do cliente foi feito e siga o passo a passo. O código é o mesmo em todo lugar; o que muda é onde colar.</p>
               </div>
-              {bot.status !== "live" && !bot.is_demo && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O chatbot ainda não está publicado. Clique em “Publicar” no topo para ele responder no site.</p>}
+              {bot.status !== "live" && !bot.is_demo && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O chatbot ainda não está publicado. Você pode instalar agora, mas ele só responde depois de clicar em “Publicar” no topo.</p>}
+              <InstallGuide
+                widgetSrc={appUrl("/widget.js")}
+                publicKey={bot.public_key}
+                directLink={appUrl(`/w/${bot.public_key}`)}
+                brand={process.env.NEXT_PUBLIC_BRAND_NAME ?? "Atendia"}
+                isLive={bot.status === "live"}
+                installed={bot.installed_at && bot.installed_host ? { host: bot.installed_host, at: bot.installed_at, lastSeen: bot.last_seen_at ?? null } : null}
+              />
             </div>
           )}
         </section>

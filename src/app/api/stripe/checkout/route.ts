@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { billingEnabled, priceFor, stripe } from "@/lib/stripe";
+import { billingEnabled, ensureStripeCustomer, priceFor, stripe } from "@/lib/stripe";
 import { appUrl } from "@/lib/utils";
 
 export async function POST(req: Request) {
@@ -18,12 +18,9 @@ export async function POST(req: Request) {
   const { data: agency } = await supabase.from("agencies").select("id, name, stripe_customer_id").eq("owner_id", user.id).single();
   if (!agency) return Response.json({ error: "no_agency" }, { status: 400 });
 
-  let customer = agency.stripe_customer_id as string | null;
-  if (!customer) {
-    const c = await stripe.customers.create({ email: user.email ?? undefined, name: agency.name, metadata: { agencyId: agency.id } });
-    customer = c.id;
-    await createAdminClient().from("agencies").update({ stripe_customer_id: customer }).eq("id", agency.id);
-  }
+  // O customer é criado antes do checkout para que crédito de indicação já lançado
+  // (customer balance) seja abatido na primeira fatura.
+  const customer = await ensureStripeCustomer(createAdminClient(), agency, user.email);
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",

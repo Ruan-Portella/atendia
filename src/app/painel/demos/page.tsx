@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { DemoGenerator } from "@/components/demo-generator";
 import { CopyButton } from "@/components/copy-button";
 import { appUrl, relativeTime } from "@/lib/utils";
+import { BotRowActions } from "@/components/bot-row-actions";
+import { deleteBot } from "../actions";
 
 export const metadata = { title: "Demos" };
 
@@ -20,7 +22,7 @@ export default async function DemosPage() {
       </div>
       <div className="card max-w-[640px] p-6"><DemoGenerator inPanel /></div>
       <div className="card overflow-hidden">
-        {(demos ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma demo ainda.</p>}
+        {(demos ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma demo ainda. Cole o site de um prospect acima; a demo aparece aqui com o link para enviar.</p>}
         {(demos ?? []).map((d) => {
           const url = appUrl(`/demo/${d.demo_slug}`);
           return (
@@ -33,6 +35,7 @@ export default async function DemosPage() {
               <a href={url} target="_blank" rel="noopener" className="text-[13px] font-semibold text-brand">Abrir</a>
               <CopyButton text={url} label="Copiar link" />
               <a href={`https://wa.me/?text=${encodeURIComponent(`Olá! Montei um assistente de IA para o site de ${d.client_name}. Testa aqui: ${url}`)}`} target="_blank" rel="noopener" className="btn-dark py-1.5">Mandar no WhatsApp</a>
+              <BotRowActions bot={{ id: d.id, name: "Demo", client_name: d.client_name, is_demo: true, status: d.status }} demoUrl={url} embedSnippet={null} whatsappUrl={null} onDelete={deleteBot.bind(null, d.id)} />
             </div>
           );
         })}

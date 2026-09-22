@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createBot } from "../../actions";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 export const metadata = { title: "Novo chatbot" };
 
@@ -26,7 +27,7 @@ export default function NewBotPage() {
           <label htmlFor="price" className="label">Quanto você vai cobrar por mês (R$, só para o seu controle)</label>
           <input id="price" name="price" type="number" min={0} step="10" className="input" placeholder="400" />
         </div>
-        <button type="submit" className="btn-primary self-start">Criar e configurar</button>
+        <SubmitButton pendingLabel="Criando…" className="btn-primary self-start">Criar e configurar</SubmitButton>
       </form>
     </div>
   );
