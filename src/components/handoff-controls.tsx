@@ -58,14 +58,21 @@ export function HandoffStatus({ conv, onTakeOver }: { conv: HandoffConversation;
 }
 
 /** Caixa de resposta e botões de assumir/encerrar. Vai embaixo da conversa. */
-export function HandoffReply({ conv, onTakeOver, onSend, onRelease }: { conv: HandoffConversation; onTakeOver: () => Promise<ActionResult>; onSend: (fd: FormData) => Promise<ActionResult>; onRelease: () => Promise<ActionResult> }) {
+export function HandoffReply({ conv, onTakeOver, onSend, onRelease, docked = false }: {
+  conv: HandoffConversation;
+  onTakeOver: () => Promise<ActionResult>;
+  onSend: (fd: FormData) => Promise<ActionResult>;
+  onRelease: () => Promise<ActionResult>;
+  /** já está num rodapé fixo (tela de chat do painel): sem borda nem sticky próprios */
+  docked?: boolean;
+}) {
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
   const waiting = open && !conv.takeover_at && Boolean(conv.handoff_requested_at);
   return (
     <>
       {active ? (
-        <div className="sticky bottom-0 flex flex-col gap-2 border-t border-line bg-ground py-3">
+        <div className={docked ? "flex flex-col gap-2" : "sticky bottom-0 flex flex-col gap-2 border-t border-line bg-ground py-3"}>
           <ActionForm action={onSend} className="flex items-end gap-2">
             <label htmlFor="agent-msg" className="sr-only">Sua resposta</label>
             <textarea id="agent-msg" name="content" required maxLength={2000} rows={2} className="input flex-1 resize-y" placeholder="Escreva sua resposta para o visitante…" />

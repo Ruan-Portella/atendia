@@ -5,10 +5,14 @@ import { ConversationThread, type ThreadMessage } from "@/components/conversatio
 import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
+import { MessageScroller } from "@/components/message-scroller";
 import { conversationState } from "@/lib/presence";
 import { memberRelease, memberSend, memberTakeOver } from "../../../actions";
 
 export const metadata = { title: { absolute: "Conversa" }, robots: { index: false, follow: false } };
+
+/** "O contato nunca escreveu": a janela de 24 h do WhatsApp nem chegou a abrir. */
+const NEVER = new Date(0).toISOString();
 
 export default async function MemberConversationPage({ params }: PageProps<"/cliente/[id]/conversas/[cid]">) {
   const { id, cid } = await params;
@@ -21,29 +25,45 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
     .maybeSingle();
   if (!conv) notFound();
   const [{ data: messages }, { data: leads }] = await Promise.all([
-    admin.from("messages").select("id, role, content, author").eq("conversation_id", cid).order("id"),
+    admin.from("messages").select("id, role, content, author, created_at").eq("conversation_id", cid).order("id"),
     admin.from("leads").select("name, phone, email, notes").eq("conversation_id", cid),
   ]);
   const agencyName = member.agency.name;
   const takeOver = memberTakeOver.bind(null, id, cid);
+  const allMessages = (messages ?? []) as ThreadMessage[];
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   const handoffOpen = member.allowHandoff && !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
+  // no WhatsApp a janela de 24 h conta da última mensagem do contato
+  const handoffConv = conv.channel === "whatsapp" ? { ...conv, last_user_at: visitorMsgs.at(-1)?.created_at ?? NEVER } : conv;
 
+  // Tela de chat: preenche o espaço abaixo das abas (a casca do portal rola só o conteúdo);
+  // cabeçalho e resposta fixos, e só as mensagens rolam.
   return (
-    <div className="flex max-w-[760px] flex-col gap-4">
-      <Link href={`/cliente/${id}/conversas`} className="text-sm font-semibold text-muted">← Conversas</Link>
-      <div>
-        <h1 className="flex flex-wrap items-center gap-3 text-2xl font-bold">Conversa <ConversationStateBadge conv={conv} withTime /></h1>
-        <p className="text-sm text-muted">{new Date(conv.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "long", timeStyle: "short" })}</p>
-      </div>
+    <div className="-my-6 flex min-h-0 flex-1 flex-col sm:-my-8">
+      <header className="border-b border-line py-3">
+        <Link href={`/cliente/${id}/conversas`} className="text-xs font-semibold text-muted">← Conversas</Link>
+        <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa <ConversationStateBadge conv={conv} withTime /></h1>
+        <p className="text-xs text-muted">{new Date(conv.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "long", timeStyle: "short" })}{conv.channel === "whatsapp" ? " · WhatsApp" : ""}</p>
+      </header>
+
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={handoffOpen} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />
-      {member.allowHandoff && <HandoffStatus conv={conv} onTakeOver={takeOver} />}
-      <ConversationThread
-        messages={(messages ?? []) as ThreadMessage[]}
-        leads={leads}
-        agentLabel={(author) => (author === email ? "Você" : !author || author === "agência" ? agencyName : author)}
-      />
-      {member.allowHandoff && <HandoffReply conv={conv} onTakeOver={takeOver} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} />}
+
+      <MessageScroller count={allMessages.length} className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4 sm:-mx-6 sm:px-6">
+        <div className="flex flex-col gap-4 py-5">
+          {member.allowHandoff && <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />}
+          <ConversationThread
+            messages={allMessages}
+            leads={leads}
+            agentLabel={(author) => (author === email ? "Você" : !author || author === "agência" ? agencyName : author)}
+          />
+        </div>
+      </MessageScroller>
+
+      {member.allowHandoff && (
+        <footer className="border-t border-line py-3">
+          <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked />
+        </footer>
+      )}
     </div>
   );
 }

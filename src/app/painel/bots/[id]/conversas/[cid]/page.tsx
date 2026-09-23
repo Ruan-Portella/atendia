@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { relativeTime } from "@/lib/utils";
@@ -12,7 +13,8 @@ import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { whatsappAllowed } from "@/lib/whatsapp";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
-import { TemplateSender } from "@/components/template-sender";
+import { TemplateModalButton } from "@/components/template-modal-button";
+import { MessageScroller } from "@/components/message-scroller";
 import { deleteConversation, releaseConversation, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
 
 export const metadata = { title: "Conversa" };
@@ -52,45 +54,56 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   }
   const contactName = leads?.[0]?.name ?? "";
 
+  const allMessages = (messages ?? []) as ThreadMessage[];
+  const templateAction = sendConversationTemplate.bind(null, cid);
+
+  // Tela de chat: ocupa a tela toda (a barra do celular tem 60 px), cabeçalho e resposta
+  // fixos, e só as mensagens rolam.
   return (
-    <div className="flex max-w-[760px] flex-col gap-4">
-      <Link href={`/painel/bots/${id}?tab=conversas`} className="text-sm font-semibold text-muted">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>
-      <div>
-        <h1 className="flex flex-wrap items-center gap-3 text-2xl font-bold">Conversa {relativeTime(conv.started_at)} <ConversationStateBadge conv={conv} withTime /></h1>
-        <p className="text-sm text-muted">canal: {conv.channel}{conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
-      </div>
+    <div className="-mx-4 -my-5 flex h-[calc(100dvh-60px)] min-h-0 flex-col sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-dvh">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-7">
+        <div className="min-w-0 flex-1">
+          <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-semibold text-muted">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>
+          <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa {relativeTime(conv.started_at)} <ConversationStateBadge conv={conv} withTime /></h1>
+          <p className="text-xs text-muted">canal: {conv.channel}{conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
+          <ConfirmAction
+            action={deleteConversation.bind(null, cid)}
+            title="Excluir esta conversa?"
+            description="As mensagens e os contatos capturados nela são apagados de vez (ex.: a pessoa pediu para apagar os dados dela). Não tem desfazer."
+            confirmLabel="Excluir conversa"
+            className="btn-ghost text-danger"
+          >
+            <Trash2 size={15} />
+            Excluir
+          </ConfirmAction>
+        </div>
+      </header>
+
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={!conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at)} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />
-      <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
-      <ConversationThread
-        messages={(messages ?? []) as ThreadMessage[]}
-        leads={leads}
-        showSources
-        agentLabel={(author) => (!author || author === "agência" ? "Você (agência)" : `Cliente · ${author}`)}
-      />
-      <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} />
-      {templates &&
-        (windowOpen ? (
-          <details className="card p-4 text-sm">
-            <summary className="cursor-pointer font-semibold">Enviar modelo de mensagem</summary>
-            <div className="mt-3"><TemplateSender templates={templates} action={sendConversationTemplate.bind(null, cid)} defaults={[contactName]} /></div>
-          </details>
-        ) : (
-          <div className="flex flex-col gap-3 rounded-xl border border-[#efd9a9] bg-amber-soft p-4">
-            <p className="text-sm text-amber-ink"><strong>Passaram 24 h desde a última mensagem do contato.</strong> O WhatsApp só deixa retomar com um modelo aprovado. Quando ele responder, a conversa continua aqui normalmente.</p>
-            <TemplateSender templates={templates} action={sendConversationTemplate.bind(null, cid)} defaults={[contactName]} />
-          </div>
-        ))}
-      <div className="border-t border-line-2 pt-3">
-        <ConfirmAction
-          action={deleteConversation.bind(null, cid)}
-          title="Excluir esta conversa?"
-          description="As mensagens e os contatos capturados nela são apagados de vez (ex.: a pessoa pediu para apagar os dados dela). Não tem desfazer."
-          confirmLabel="Excluir conversa"
-          className="text-xs font-medium text-danger hover:underline"
-        >
-          Excluir conversa (LGPD)
-        </ConfirmAction>
-      </div>
+
+      <MessageScroller count={allMessages.length} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-4 py-5 sm:px-5 md:px-7">
+          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
+          <ConversationThread
+            messages={allMessages}
+            leads={leads}
+            showSources
+            agentLabel={(author) => (!author || author === "agência" ? "Você (agência)" : `Cliente · ${author}`)}
+          />
+        </div>
+      </MessageScroller>
+
+      <footer className="border-t border-line bg-ground">
+        <div className="mx-auto flex max-w-[860px] flex-col gap-2 px-4 py-3 sm:px-5 md:px-7">
+          {templates && !windowOpen && (
+            <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink"><strong>Passaram 24 h desde a última mensagem do contato.</strong> O WhatsApp só deixa retomar com um modelo aprovado: use “Enviar modelo” no topo. Quando ele responder, a conversa continua aqui.</p>
+          )}
+          <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked />
+        </div>
+      </footer>
     </div>
   );
 }

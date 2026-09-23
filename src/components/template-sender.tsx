@@ -10,13 +10,15 @@ import { SubmitButton } from "@/components/ui/submit-button";
  * Envio de um modelo aprovado: escolhe o modelo e aparecem só os campos das variáveis dele,
  * com a mensagem montada ao vivo. Sem `askPhone`, o número já vem da conversa.
  */
-export function TemplateSender({ templates, action, askPhone = false, submitLabel = "Enviar modelo", defaults = [] }: {
+export function TemplateSender({ templates, action, askPhone = false, submitLabel = "Enviar modelo", defaults = [], onSent }: {
   templates: SendableTemplate[];
   action: (fd: FormData) => Promise<ActionResult | void>;
   askPhone?: boolean;
   submitLabel?: string;
   /** Valores sugeridos para as variáveis, na ordem (ex.: o nome do contato em {{1}}). */
   defaults?: string[];
+  /** Chamado depois de um envio que deu certo (ex.: fechar o modal). */
+  onSent?: () => void;
 }) {
   const [name, setName] = useState(templates[0]?.name ?? "");
   const [values, setValues] = useState<string[]>(defaults);
@@ -29,7 +31,7 @@ export function TemplateSender({ templates, action, askPhone = false, submitLabe
   const set = (i: number, v: string) => setValues((prev) => Object.assign([...prev], { [i]: v }));
 
   return (
-    <ActionForm action={action} className="flex flex-col gap-3">
+    <ActionForm action={action} onSuccess={onSent} className="flex flex-col gap-3">
       {askPhone && (
         <div>
           <label htmlFor="tpl-to" className="label">WhatsApp do contato (com DDD)</label>
