@@ -12,7 +12,7 @@ import { conversationState, whatsappWindowOpen } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { whatsappAllowed } from "@/lib/whatsapp";
-import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
+import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
@@ -90,7 +90,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
             messages={allMessages}
             leads={leads}
             showSources
-            agentLabel={(author) => (!author || author === "agência" ? "Você (agência)" : `Cliente · ${author}`)}
+            agentLabel={(author) => (!author || author === "agência" ? "Você (agência)" : author === PHONE_AUTHOR ? "Pelo celular (WhatsApp Business)" : `Cliente · ${author}`)}
           />
         </div>
       </MessageScroller>

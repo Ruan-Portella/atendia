@@ -7,10 +7,14 @@ import type { ActionResult } from "@/lib/action-result";
 import { useToast } from "@/components/ui/toast";
 
 interface SessionInfo {
-  phoneNumberId: string;
+  /** Não vem na coexistência (a Meta só informa a conta). */
+  phoneNumberId?: string | null;
   wabaId: string;
   businessId?: string | null;
 }
+
+/** Eventos de fim do cadastro: número novo (FINISH) ou o app do celular (coexistência). */
+const FINISH_EVENTS = new Set(["FINISH", "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"]);
 
 interface FacebookSdk {
   init(opts: { appId: string; autoLogAppEvents: boolean; xfbml: boolean; version: string; fedCM?: boolean }): void;
@@ -52,7 +56,16 @@ function loadSdk(appId: string, version: string): Promise<FacebookSdk> {
  * conta do WhatsApp e o número, e a Meta devolve um código (FB.login) e os IDs (postMessage).
  * Com os dois em mãos, a server action termina a conexão.
  */
-export function WhatsAppConnect({ appId, configId, graphVersion, action }: { appId: string; configId: string; graphVersion: string; action: (input: SessionInfo & { code: string }) => Promise<ActionResult> }) {
+export function WhatsAppConnect({ appId, configId, graphVersion, action, coexistence = false, label = "Conectar WhatsApp", primary = true }: {
+  appId: string;
+  configId: string;
+  graphVersion: string;
+  action: (input: SessionInfo & { code: string; coexistence?: boolean }) => Promise<ActionResult>;
+  /** Conectar o WhatsApp Business que o cliente já usa no celular, sem tirar o número do app. */
+  coexistence?: boolean;
+  label?: string;
+  primary?: boolean;
+}) {
   const toast = useToast();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -69,8 +82,8 @@ export function WhatsAppConnect({ appId, configId, graphVersion, action }: { app
         return;
       }
       if (data?.type !== "WA_EMBEDDED_SIGNUP") return;
-      if (data.event === "FINISH" && data.data?.phone_number_id && data.data.waba_id) {
-        session.current = { phoneNumberId: data.data.phone_number_id, wabaId: data.data.waba_id, businessId: data.data.business_id ?? null };
+      if (FINISH_EVENTS.has(data.event ?? "") && data.data?.waba_id) {
+        session.current = { phoneNumberId: data.data.phone_number_id ?? null, wabaId: data.data.waba_id, businessId: data.data.business_id ?? null };
       }
     };
     window.addEventListener("message", onMessage);
@@ -86,7 +99,7 @@ export function WhatsAppConnect({ appId, configId, graphVersion, action }: { app
       return setBusy(false);
     }
     try {
-      const r = await action({ code, ...info });
+      const r = await action({ code, ...info, coexistence });
       if (r.ok) {
         toast.success(r.message ?? "WhatsApp conectado.");
         router.refresh();
@@ -118,14 +131,19 @@ export function WhatsAppConnect({ appId, configId, graphVersion, action }: { app
         }
       },
       // sessionInfoVersion 3: formato do postMessage lido acima (o mesmo do link hospedado da Meta)
-      { config_id: configId, response_type: "code", override_default_response_type: true, extras: { setup: {}, version: "v4", sessionInfoVersion: "3" } },
+      {
+        config_id: configId,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: { setup: {}, version: "v4", sessionInfoVersion: "3", ...(coexistence ? { featureType: "whatsapp_business_app_onboarding" } : {}) },
+      },
     );
   }
 
   return (
-    <button type="button" onClick={start} disabled={busy} className="btn-primary self-start">
+    <button type="button" onClick={start} disabled={busy} className={primary ? "btn-primary self-start" : "btn-ghost self-start"}>
       <MessageCircle size={16} />
-      {busy ? "Conectando…" : "Conectar WhatsApp"}
+      {busy ? "Conectando…" : label}
     </button>
   );
 }

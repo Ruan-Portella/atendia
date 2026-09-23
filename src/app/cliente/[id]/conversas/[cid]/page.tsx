@@ -7,7 +7,7 @@ import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { MessageScroller } from "@/components/message-scroller";
 import { conversationState } from "@/lib/presence";
-import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
+import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { memberRelease, memberSend, memberTakeOver } from "../../../actions";
 
 export const metadata = { title: { absolute: "Conversa" }, robots: { index: false, follow: false } };
@@ -52,7 +52,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
           <ConversationThread
             messages={allMessages}
             leads={leads}
-            agentLabel={(author) => (author === email ? "Você" : !author || author === "agência" ? agencyName : author)}
+            agentLabel={(author) => (author === email ? "Você" : !author || author === "agência" ? agencyName : author === PHONE_AUTHOR ? "Pelo celular" : author)}
           />
         </div>
       </MessageScroller>

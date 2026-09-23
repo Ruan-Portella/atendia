@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_MEDIA_BYTES, downloadMedia, toWhatsAppText, validSignature, waIdVariants, whatsappAllowed } from "../whatsapp";
-import { inboundText } from "../whatsapp-inbound";
+import { PHONE_PAUSE_MINUTES, inboundText, phonePauseActive } from "../whatsapp-inbound";
 
 const sign = (body: string, secret: string) => "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
 
@@ -102,5 +102,19 @@ describe("downloadMedia", () => {
     vi.stubGlobal("fetch", fetchMock);
     await expect(downloadMedia(ch, "media-2")).rejects.toThrow(/grande demais/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("phonePauseActive", () => {
+  const now = Date.UTC(2026, 8, 23, 15, 0, 0);
+  const ago = (min: number) => new Date(now - min * 60_000).toISOString();
+  it("resposta pelo celular há pouco: o assistente fica quieto", () => {
+    expect(phonePauseActive(ago(5), now)).toBe(true);
+    expect(phonePauseActive(ago(PHONE_PAUSE_MINUTES - 1), now)).toBe(true);
+  });
+  it("sem resposta pelo celular, ou há mais de 1 h: o assistente volta", () => {
+    expect(phonePauseActive(null, now)).toBe(false);
+    expect(phonePauseActive(undefined, now)).toBe(false);
+    expect(phonePauseActive(ago(PHONE_PAUSE_MINUTES + 1), now)).toBe(false);
   });
 });

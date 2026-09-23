@@ -60,7 +60,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "fontes" ? supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10) : none,
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, handled_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id) : none,
-    tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason").eq("bot_id", id).maybeSingle() : none,
+    tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
   const clients = bot.is_demo || tab === "personalidade" ? await getClientOptions(supabase, agency.id) : [];
@@ -258,7 +258,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   <p className="text-sm text-amber-ink">
                     Desconectado {relativeTime(whatsapp.disconnected_at)}{whatsapp.disconnect_reason ? `: ${whatsapp.disconnect_reason}` : ""}. {bot.name} parou de responder por este número. As conversas antigas continuam no painel.
                   </p>
-                  {signup && <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} />}
+                  {signup && <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence={Boolean(whatsapp.coexistence)} label="Conectar de novo" />}
                   <ConfirmAction
                     action={disconnectWhatsApp.bind(null, id)}
                     title="Remover este número?"
@@ -274,6 +274,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   <div className="card flex flex-col gap-3 p-5">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">conectado</span>
+                      {whatsapp.coexistence && <span className="rounded-full bg-ground px-2.5 py-0.5 text-xs font-semibold text-muted">também no app do celular</span>}
                       <span className="display text-lg font-bold">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
                       {whatsapp.verified_name && <span className="text-sm text-muted">· {whatsapp.verified_name}</span>}
                     </div>
@@ -297,9 +298,18 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <div className="card flex flex-col gap-4 p-5">
                   {signup ? (
                     <>
-                      <p className="text-sm text-ink-2">O cliente entra com o Facebook dele, escolhe a conta do WhatsApp Business e o número. Pode ser feito com ele do lado, na chamada, ou pelo seu acesso ao Facebook da empresa dele.</p>
-                      <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} />
-                      <p className="text-xs text-muted">O número escolhido passa a funcionar pela API e sai do aplicativo do WhatsApp no celular. Use um número dedicado ao atendimento.</p>
+                      <p className="text-sm text-ink-2">O cliente entra com o Facebook dele e escolhe o número. Pode ser feito com ele do lado, na chamada, ou pelo seu acesso ao Facebook da empresa dele.</p>
+                      <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
+                        <div className="text-sm font-semibold">Já atende pelo WhatsApp Business no celular</div>
+                        <p className="text-sm text-ink-2">O número continua funcionando no app do celular. {bot.name} responde as mensagens; quando alguém da equipe responde pelo celular, a resposta aparece em Conversas e {bot.name} fica quieto naquela conversa por 1 hora.</p>
+                        <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence label="Conectar o WhatsApp Business do celular" />
+                        <p className="text-xs text-muted">No celular, abra o WhatsApp Business atualizado e aceite quando a Meta pedir para compartilhar contatos e histórico.</p>
+                      </div>
+                      <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
+                        <div className="text-sm font-semibold">Número novo, só para o atendimento</div>
+                        <p className="text-sm text-ink-2">Um número que não está em nenhum WhatsApp. Ele passa a funcionar só pela API, sem app no celular.</p>
+                        <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar número novo" primary={false} />
+                      </div>
                     </>
                   ) : (
                     <p className="text-sm text-muted">O botão de conexão aparece quando META_APP_ID e WHATSAPP_CONFIG_ID estiverem configurados.</p>

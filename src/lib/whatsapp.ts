@@ -149,6 +149,20 @@ export async function registerNumber(phoneNumberId: string, pin: string, token: 
   await graph(`${phoneNumberId}/register`, token, { body: { messaging_product: "whatsapp", pin } });
 }
 
+/** Números de uma conta do WhatsApp (na coexistência a Meta não diz qual foi escolhido). */
+export async function listWabaPhoneNumbers(wabaId: string, token: string) {
+  const res = await graph<{ data?: Array<{ id: string; display_phone_number?: string; verified_name?: string }> }>(`${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name`, token);
+  return res.data ?? [];
+}
+
+/**
+ * Coexistência: pede à Meta a sincronização dos contatos e do histórico do app do celular.
+ * Obrigatório em até 24 h depois de conectar, senão a Meta desconecta o número.
+ */
+export async function startAppSync(phoneNumberId: string, token: string, syncType: "smb_app_state_sync" | "history") {
+  await graph(`${phoneNumberId}/smb_app_data`, token, { body: { messaging_product: "whatsapp", sync_type: syncType } });
+}
+
 export function newPin(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }

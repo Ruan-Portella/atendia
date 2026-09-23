@@ -15,7 +15,7 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
-import { WhatsAppError, waIdVariants, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
+import { WhatsAppError, waIdVariants, listWabaPhoneNumbers, startAppSync, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
 import { seal, unseal } from "@/lib/secret-box";
 import { TOKEN_REJECTED, isAccessError, markDisconnected } from "@/lib/whatsapp-access";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
@@ -406,15 +406,20 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
 
 export interface SignupResult {
   code: string;
-  phoneNumberId: string;
+  /** Vem vazio na coexistência: a Meta só informa a conta, e o número é buscado nela. */
+  phoneNumberId?: string | null;
   wabaId: string;
   businessId?: string | null;
+  /** O cliente conectou o WhatsApp Business do celular (o número continua funcionando no app). */
+  coexistence?: boolean;
 }
 
 /**
  * Fim do cadastro incorporado (Embedded Signup): o cliente escolheu o número na janela da Meta.
- * Troca o código pelo token dele, inscreve o app na conta do WhatsApp, registra o número na
- * Cloud API e liga ao chatbot. Token e PIN ficam cifrados; nada disso volta para o navegador.
+ * Troca o código pelo token dele, inscreve o app na conta do WhatsApp e liga o número ao chatbot.
+ * Número novo: registra na Cloud API com um PIN. Coexistência (número do app do celular): não
+ * registra (já está) e pede a sincronização de contatos e histórico, que a Meta exige em 24 h.
+ * Token e PIN ficam cifrados; nada disso volta para o navegador.
  */
 export async function completeWhatsAppSignup(botId: string, input: SignupResult): Promise<ActionResult> {
   const { email } = await requireAgency();
@@ -425,23 +430,35 @@ export async function completeWhatsAppSignup(botId: string, input: SignupResult)
   if (bot.is_demo) return fail("Converta a demo em chatbot antes de ligar o WhatsApp.");
 
   const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "");
-  const phoneNumberId = digits(input.phoneNumberId);
+  const coexistence = Boolean(input.coexistence);
   const wabaId = digits(input.wabaId);
   const businessId = digits(input.businessId) || null;
-  if (!input.code || phoneNumberId.length < 8 || wabaId.length < 8) return fail("A Meta não devolveu o número escolhido. Tente conectar de novo.");
+  if (!input.code || wabaId.length < 8) return fail("A Meta não devolveu a conta escolhida. Tente conectar de novo.");
+
+  let token: string;
+  let phoneNumberId = digits(input.phoneNumberId);
+  try {
+    token = await exchangeSignupCode(input.code);
+    if (phoneNumberId.length < 8) {
+      const numbers = await listWabaPhoneNumbers(wabaId, token);
+      if (numbers.length !== 1) return fail(numbers.length ? "Esta conta do WhatsApp tem mais de um número. Por enquanto conecte uma conta com um número só." : "A conta do WhatsApp escolhida não tem número. Tente conectar de novo.");
+      phoneNumberId = numbers[0].id;
+    }
+  } catch (e) {
+    console.error("whatsapp: cadastro incorporado falhou", e);
+    return fail(`A Meta recusou a conexão: ${e instanceof WhatsAppError ? e.message : "erro desconhecido"}. Tente de novo em instantes.`);
+  }
 
   const admin = createAdminClient();
   const { data: existing } = await admin.from("whatsapp_channels").select("bot_id, pin_enc").eq("phone_number_id", phoneNumberId).maybeSingle();
   if (existing && existing.bot_id !== botId) return fail("Este número já está ligado a outro chatbot. Desconecte lá primeiro.");
 
-  let token: string;
   let phone: Awaited<ReturnType<typeof getPhoneNumber>>;
   // reconectar o mesmo número usa o mesmo PIN: um PIN novo seria recusado pela verificação em duas etapas
   const pin = existing?.pin_enc ? unseal(existing.pin_enc) : newPin();
   try {
-    token = await exchangeSignupCode(input.code);
     await subscribeApp(wabaId, token);
-    await registerNumber(phoneNumberId, pin, token);
+    if (!coexistence) await registerNumber(phoneNumberId, pin, token);
     phone = await getPhoneNumber(phoneNumberId, token);
   } catch (e) {
     console.error("whatsapp: cadastro incorporado falhou", e);
@@ -457,11 +474,24 @@ export async function completeWhatsAppSignup(botId: string, input: SignupResult)
     display_phone: phone.display_phone_number ?? null,
     verified_name: phone.verified_name ?? null,
     access_token_enc: seal(token),
-    pin_enc: seal(pin),
+    pin_enc: coexistence ? null : seal(pin),
+    coexistence,
   });
   if (error) return fail("O número foi conectado na Meta, mas não deu para salvar aqui. Tente de novo.");
+
+  // coexistência: contatos primeiro, depois o histórico (a Meta desconecta se não pedirmos em 24 h)
+  let syncWarning = "";
+  if (coexistence) {
+    try {
+      await startAppSync(phoneNumberId, token, "smb_app_state_sync");
+      await startAppSync(phoneNumberId, token, "history");
+    } catch (e) {
+      console.error("whatsapp: sincronização da coexistência falhou", e);
+      syncWarning = " Atenção: a sincronização com o app do celular falhou; conecte de novo em até 24 h para o número não ser desconectado pela Meta.";
+    }
+  }
   revalidatePath(`/painel/bots/${botId}`);
-  return ok(`WhatsApp ${phone.display_phone_number ?? ""} conectado. O assistente já responde por ele.`);
+  return ok(`WhatsApp ${phone.display_phone_number ?? ""} conectado.${coexistence ? " Ele continua funcionando no app do celular." : ""} O assistente já responde por ele.${syncWarning}`);
 }
 
 export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
