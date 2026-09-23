@@ -1,14 +1,11 @@
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { appUrl } from "./utils";
+import { appUrl, currentPeriodBR } from "./utils";
+import { estimateCost, monthUsage, type UsageLine } from "./whatsapp-usage";
 
 /* ------------------------------------------------------------------ períodos (mês no fuso de SP) */
 
-/** Mês atual em São Paulo, 'AAAA-MM'. */
-export function currentPeriodBR(now = new Date()): string {
-  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).formatToParts(now);
-  return `${p.find((x) => x.type === "year")!.value}-${p.find((x) => x.type === "month")!.value}`;
-}
+export { currentPeriodBR };
 
 export function isPeriod(v: unknown): v is string {
   return typeof v === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
@@ -60,6 +57,32 @@ export interface ClientReport {
   previous: Summary;
   daily: Array<{ day: string; conversations: number; leads: number }>;
   resolvedPct: number;
+  /** Mensagens do WhatsApp no mês e a estimativa do que a Meta cobra do cliente; null sem uso. */
+  whatsapp: WhatsAppMonth | null;
+}
+
+export interface WhatsAppMonth {
+  sent: number;
+  billed: number;
+  /** Estimativa em R$ pela tabela de referência (a Meta cobra direto no cartão do cliente). */
+  estimate: number;
+  /** Houve mensagem cobrada de categoria sem preço de referência (a estimativa fica abaixo do real). */
+  partial: boolean;
+}
+
+/** Soma o consumo de todos os chatbots do cliente no mês. */
+async function whatsappMonth(db: SupabaseClient, botIds: string[], period: string): Promise<WhatsAppMonth | null> {
+  const perBot = await Promise.all(botIds.map((id) => monthUsage(db, id, period)));
+  const merged = new Map<string, UsageLine>();
+  for (const l of perBot.flat()) {
+    const m = merged.get(l.category) ?? { category: l.category, sent: 0, billed: 0 };
+    merged.set(l.category, { ...m, sent: m.sent + l.sent, billed: m.billed + l.billed });
+  }
+  const lines = [...merged.values()];
+  const sent = lines.reduce((a, l) => a + l.sent, 0);
+  if (!sent) return null;
+  const { total, unpriced } = estimateCost(lines);
+  return { sent, billed: lines.reduce((a, l) => a + l.billed, 0), estimate: total, partial: unpriced.length > 0 };
 }
 
 const EMPTY: Summary = { conversations: 0, needsHuman: 0, leads: 0, visitorMessages: 0 };
@@ -85,10 +108,11 @@ export async function getClientReport(db: SupabaseClient, clientId: string, peri
   ]);
   const ids = (bots ?? []).map((b) => b.id);
   const { from, to } = periodRange(period);
-  const [current, previous, daily] = await Promise.all([
+  const [current, previous, daily, whatsapp] = await Promise.all([
     summary(db, ids, period),
     summary(db, ids, shiftPeriod(period, -1)),
     ids.length ? db.rpc("bots_daily", { p_bot_ids: ids, p_from: from, p_to: to }).then((r) => (r.data ?? []) as ClientReport["daily"]) : Promise.resolve([]),
+    whatsappMonth(db, ids, period),
   ]);
   return {
     period,
@@ -99,6 +123,7 @@ export async function getClientReport(db: SupabaseClient, clientId: string, peri
     previous,
     daily,
     resolvedPct: current.conversations ? Math.round(100 - (current.needsHuman / current.conversations) * 100) : 100,
+    whatsapp,
   };
 }
 
@@ -106,6 +131,15 @@ export async function getClientReport(db: SupabaseClient, clientId: string, peri
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const fmt = (n: number) => new Intl.NumberFormat("pt-BR").format(n);
+export const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 }).format(n);
+
+/** Frase do WhatsApp no relatório (tela e e-mail): quanto foi enviado e quanto a Meta deve cobrar. */
+export function whatsappSentence(w: WhatsAppMonth): string {
+  const cost = w.billed
+    ? ` A Meta cobrou ${fmt(w.billed)} delas, cerca de ${fmtBRL(w.estimate)}${w.partial ? " ou um pouco mais" : ""}, direto no cartão cadastrado no WhatsApp.`
+    : " Nenhuma foi cobrada pela Meta.";
+  return `${fmt(w.sent)} mensage${w.sent === 1 ? "m enviada" : "ns enviadas"} pelo WhatsApp.${cost}`;
+}
 
 function delta(cur: number, prev: number): string {
   const c = change(cur, prev);
@@ -143,13 +177,14 @@ ${kpis.map(([label, value, sub]) => `<td width="33%" valign="top" style="backgro
 <div style="font-size:24px;font-weight:bold;margin:4px 0">${esc(value)}</div>
 <div style="font-size:11px;color:#6b736f">${esc(sub)}</div></td>`).join("")}
 </tr></table></td></tr>
+${r.whatsapp ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">WhatsApp:</strong> ${esc(whatsappSentence(r.whatsapp))}</td></tr>` : ""}
 <tr><td style="padding:14px 24px 24px">
 <a href="${esc(link)}" style="display:inline-block;background:${color};color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 18px;border-radius:9px">Ver relatório completo e contatos</a>
 </td></tr>
 <tr><td style="padding:14px 24px;border-top:1px solid #efebe2;font-size:12px;color:#8a938e">Relatório preparado por ${esc(r.agency.name)}.</td></tr>
 </table></td></tr></table></body></html>`;
 
-  const text = [headline, "", ...kpis.map(([l, v, s]) => `${l}: ${v}${s ? ` (${s})` : ""}`), "", `Relatório completo: ${link}`, "", `Preparado por ${r.agency.name}.`].join("\n");
+  const text = [headline, "", ...kpis.map(([l, v, s]) => `${l}: ${v}${s ? ` (${s})` : ""}`), ...(r.whatsapp ? ["", `WhatsApp: ${whatsappSentence(r.whatsapp)}`] : []), "", `Relatório completo: ${link}`, "", `Preparado por ${r.agency.name}.`].join("\n");
   return { subject, html, text };
 }
 

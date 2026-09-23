@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, MessageCircle } from "lucide-react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { change, periodLabel, periodRange, shiftPeriod, type ClientReport } from "@/lib/report";
+import { change, fmtBRL, periodLabel, periodRange, shiftPeriod, type ClientReport } from "@/lib/report";
 import { initials, relativeTime } from "@/lib/utils";
 import { num } from "@/lib/plans";
 import { DailyBars } from "@/components/daily-bars";
@@ -99,6 +99,32 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
           </div>
         ))}
       </div>
+
+      {report.whatsapp && (
+        <section className="card flex flex-col gap-3 p-4 sm:p-5">
+          <div className="flex items-center gap-2">
+            <MessageCircle size={17} style={{ color }} />
+            <h2 className="text-base font-bold">WhatsApp</h2>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="kpi-label">Mensagens enviadas</span>
+              <span className="display text-xl font-bold tabular">{num(report.whatsapp.sent)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="kpi-label">Cobradas pela Meta</span>
+              <span className="display text-xl font-bold tabular">{num(report.whatsapp.billed)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="kpi-label">Custo estimado</span>
+              <span className="display text-xl font-bold tabular">≈ {fmtBRL(report.whatsapp.estimate)}</span>
+            </div>
+          </div>
+          <p className="text-xs text-muted">
+            A Meta cobra as mensagens do WhatsApp direto no cartão cadastrado no Gerenciador do WhatsApp, não por aqui. O valor é uma estimativa pela tabela de referência{report.whatsapp.partial ? " e pode ficar um pouco abaixo do real" : ""}; o valor exato está na fatura da Meta.
+          </p>
+        </section>
+      )}
 
       <section className="card flex flex-col gap-3 p-4 sm:p-5">
         <h2 className="text-base font-bold">Conversas por dia</h2>

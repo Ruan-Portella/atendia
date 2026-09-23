@@ -39,6 +39,7 @@ describe("renderReportEmail", () => {
     previous: { conversations: 200, needsHuman: 10, leads: 20, visitorMessages: 500 },
     daily: [],
     resolvedPct: 91,
+    whatsapp: null,
   };
   it("traz os números, a comparação e o link", () => {
     const { subject, html, text } = renderReportEmail(report, "https://x/c/tok?mes=2026-08");
@@ -47,6 +48,17 @@ describe("renderReportEmail", () => {
     expect(text).toContain("+70% vs. mês anterior");
     expect(html).toContain("https://x/c/tok?mes=2026-08");
     expect(html).toContain("#123456");
+  });
+  it("sem WhatsApp no mês, o e-mail não fala de WhatsApp", () => {
+    expect(renderReportEmail(report, "https://x").text).not.toContain("WhatsApp:");
+  });
+  it("com WhatsApp, mostra enviadas, cobradas e a estimativa", () => {
+    const { text, html } = renderReportEmail({ ...report, whatsapp: { sent: 1250, billed: 250, estimate: 8.75, partial: false } }, "https://x");
+    // o formato de moeda usa espaço não separável depois do "R$"
+    expect(text).toMatch(/WhatsApp: 1\.250 mensagens enviadas pelo WhatsApp\. A Meta cobrou 250 delas, cerca de R\$\s8,75/);
+    expect(html).toContain("WhatsApp:");
+    const none = renderReportEmail({ ...report, whatsapp: { sent: 1, billed: 0, estimate: 0, partial: false } }, "https://x").text;
+    expect(none).toContain("1 mensagem enviada pelo WhatsApp. Nenhuma foi cobrada pela Meta.");
   });
   it("escapa HTML dos nomes", () => {
     const { html } = renderReportEmail(report, "https://x");

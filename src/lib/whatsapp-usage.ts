@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { currentPeriodBR } from "./report";
+import { currentPeriodBR } from "./utils";
 
 /**
  * Consumo do WhatsApp por cliente: a Meta informa em cada status de mensagem enviada se ela foi
