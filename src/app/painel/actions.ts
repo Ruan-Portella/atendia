@@ -17,6 +17,7 @@ import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDoma
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { WhatsAppError, waIdVariants, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
 import { seal, unseal } from "@/lib/secret-box";
+import { TOKEN_REJECTED, isAccessError, markDisconnected } from "@/lib/whatsapp-access";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
@@ -489,7 +490,7 @@ async function ownedTemplateChannel(botId: string): Promise<TemplateChannel | { 
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return { error: "Chatbot não encontrado." };
   const ch = await loadTemplateChannel(createAdminClient(), botId);
-  return ch ?? { error: "Conecte o WhatsApp (com a conta do WhatsApp Business) para usar modelos." };
+  return ch ?? { error: "Conecte o WhatsApp (com a conta do WhatsApp Business) para usar modelos. Se ele aparece como desconectado, conecte de novo." };
 }
 
 /** "21 99999-9999" vira 5521999999999; quem já digitou o DDI fica como está. */
@@ -502,12 +503,12 @@ function whatsappNumber(raw: string): string {
  * Manda um modelo aprovado (campos `template` e `param_N` do formulário) e devolve o texto
  * como o contato recebeu, para entrar no histórico da conversa.
  */
-async function sendApprovedTemplate(ch: TemplateChannel, to: string, formData: FormData): Promise<{ text: string } | { error: string }> {
+async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: string, formData: FormData): Promise<{ text: string } | { error: string }> {
   let templates;
   try {
     templates = await listSendable(ch);
   } catch (e) {
-    return { error: `Não deu para ler os modelos: ${metaError(e)}` };
+    return { error: `Não deu para ler os modelos: ${await metaError(botId, e)}` };
   }
   const t = templates.find((x) => x.name === text(formData.get("template")));
   if (!t) return { error: "Escolha um modelo aprovado." };
@@ -516,7 +517,7 @@ async function sendApprovedTemplate(ch: TemplateChannel, to: string, formData: F
   try {
     await sendTemplate(ch, to, t, params);
   } catch (e) {
-    return { error: `O WhatsApp não aceitou o envio: ${metaError(e)}` };
+    return { error: `O WhatsApp não aceitou o envio: ${await metaError(botId, e)}` };
   }
   return { text: renderTemplate(t.body, params) };
 }
@@ -529,7 +530,18 @@ async function recordTemplateMessage(admin: ReturnType<typeof createAdminClient>
   await admin.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conversationId);
 }
 
-const metaError = (e: unknown) => (e instanceof WhatsAppError ? e.message : "erro desconhecido");
+/**
+ * Texto do erro da Meta para o aviso. Se o erro diz que o acesso ao número acabou (o cliente
+ * removeu o app), já marca o número como desconectado e avisa a agência.
+ */
+async function metaError(botId: string, e: unknown): Promise<string> {
+  if (isAccessError(e)) {
+    await markDisconnected(createAdminClient(), { column: "bot_id", value: botId }, TOKEN_REJECTED);
+    revalidatePath(`/painel/bots/${botId}`);
+    return "o cliente removeu o acesso do Boavoz a este WhatsApp. Conecte de novo na aba WhatsApp";
+  }
+  return e instanceof WhatsAppError ? e.message : "erro desconhecido";
+}
 
 export async function createWhatsAppTemplate(botId: string, formData: FormData): Promise<ActionResult> {
   const ch = await ownedTemplateChannel(botId);
@@ -543,7 +555,7 @@ export async function createWhatsAppTemplate(botId: string, formData: FormData):
   try {
     await createTemplate(ch, { name, category, body, examples });
   } catch (e) {
-    return fail(`A Meta recusou o modelo: ${metaError(e)}`);
+    return fail(`A Meta recusou o modelo: ${await metaError(botId, e)}`);
   }
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Modelo enviado para análise da Meta. Costuma sair em minutos; recarregue para ver o status.");
@@ -555,7 +567,7 @@ export async function deleteWhatsAppTemplate(botId: string, name: string): Promi
   try {
     await deleteTemplate(ch, name);
   } catch (e) {
-    return fail(`Não foi possível excluir: ${metaError(e)}`);
+    return fail(`Não foi possível excluir: ${await metaError(botId, e)}`);
   }
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Modelo excluído.");
@@ -569,7 +581,7 @@ export async function sendConversationTemplate(conversationId: string, formData:
   if ("error" in ch) return fail(ch.error);
   const { data: conv } = await owned.admin.from("conversations").select("channel, wa_id").eq("id", conversationId).single();
   if (conv?.channel !== "whatsapp" || !conv.wa_id) return fail("Esta conversa não é do WhatsApp.");
-  const sent = await sendApprovedTemplate(ch, conv.wa_id, formData);
+  const sent = await sendApprovedTemplate(owned.conv.bot_id, ch, conv.wa_id, formData);
   if ("error" in sent) return fail(sent.error);
   await recordTemplateMessage(owned.admin, conversationId, sent.text);
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
@@ -585,7 +597,7 @@ export async function startWhatsAppConversation(botId: string, formData: FormDat
   if ("error" in ch) return fail(ch.error);
   const to = whatsappNumber(text(formData.get("to")));
   if (to.length < 12) return fail("Informe o WhatsApp com DDD, ex.: 21 99999-9999.");
-  const sent = await sendApprovedTemplate(ch, to, formData);
+  const sent = await sendApprovedTemplate(botId, ch, to, formData);
   if ("error" in sent) return fail(sent.error);
 
   const admin = createAdminClient();

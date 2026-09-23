@@ -15,8 +15,9 @@ export * from "./template-text";
 
 /** Número do chatbot com a conta do WhatsApp (sem ela não há modelos). Service role. */
 export async function loadTemplateChannel(admin: SupabaseClient, botId: string): Promise<TemplateChannel | null> {
-  const { data } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
-  return data?.waba_id ? (data as TemplateChannel) : null;
+  const { data } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc, disconnected_at").eq("bot_id", botId).maybeSingle();
+  // desconectado: sem token, e o do servidor não serve para a conta do cliente
+  return data?.waba_id && !data.disconnected_at ? (data as TemplateChannel) : null;
 }
 
 export async function listSendable(ch: TemplateChannel): Promise<SendableTemplate[]> {

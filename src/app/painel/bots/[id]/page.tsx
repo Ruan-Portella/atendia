@@ -60,7 +60,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "fontes" ? supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10) : none,
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, handled_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id) : none,
-    tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at").eq("bot_id", id).maybeSingle() : none,
+    tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
   const clients = bot.is_demo || tab === "personalidade" ? await getClientOptions(supabase, agency.id) : [];
@@ -249,6 +249,26 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               </div>
               {bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
+              ) : whatsapp?.disconnected_at ? (
+                <div className="flex flex-col gap-4 rounded-xl border border-[#efd9a9] bg-amber-soft p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-amber-ink">desconectado</span>
+                    <span className="display text-lg font-bold">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
+                  </div>
+                  <p className="text-sm text-amber-ink">
+                    Desconectado {relativeTime(whatsapp.disconnected_at)}{whatsapp.disconnect_reason ? `: ${whatsapp.disconnect_reason}` : ""}. {bot.name} parou de responder por este número. As conversas antigas continuam no painel.
+                  </p>
+                  {signup && <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} />}
+                  <ConfirmAction
+                    action={disconnectWhatsApp.bind(null, id)}
+                    title="Remover este número?"
+                    description="O número sai do chatbot e você pode conectar outro. As conversas antigas continuam no painel."
+                    confirmLabel="Remover"
+                    className="self-start text-xs font-medium text-danger hover:underline"
+                  >
+                    Remover número
+                  </ConfirmAction>
+                </div>
               ) : whatsapp ? (
                 <>
                   <div className="card flex flex-col gap-3 p-5">

@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { WhatsAppError } from "@/lib/whatsapp";
+import { TOKEN_REJECTED, isAccessError, markDisconnected } from "@/lib/whatsapp-access";
 import { STATUS_LABEL, listTemplates, templateBody, unsupportedReason, type Template, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { createWhatsAppTemplate, deleteWhatsAppTemplate } from "@/app/painel/actions";
 import { ActionForm } from "@/components/ui/action-form";
@@ -17,7 +18,9 @@ const STATUS_STYLE: Record<string, string> = {
  * exclusão (o envio fica nas conversas). Quem renderiza já conferiu o dono do chatbot e o e-mail liberado.
  */
 export async function WhatsAppTemplates({ botId }: { botId: string }) {
-  const { data: ch } = await createAdminClient().from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
+  const admin = createAdminClient();
+  const { data: ch } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc, disconnected_at").eq("bot_id", botId).maybeSingle();
+  if (ch?.disconnected_at) return null;
   if (!ch?.waba_id) {
     return <p className="text-sm text-muted">Para usar modelos de mensagem, conecte o número informando a conta do WhatsApp Business (WABA ID).</p>;
   }
@@ -27,7 +30,11 @@ export async function WhatsAppTemplates({ botId }: { botId: string }) {
   try {
     templates = await listTemplates(ch as TemplateChannel);
   } catch (e) {
-    error = e instanceof WhatsAppError ? e.message : "erro desconhecido";
+    if (isAccessError(e)) {
+      // o cliente removeu o acesso: marca, avisa a agência e a próxima visita já mostra "desconectado"
+      await markDisconnected(admin, { column: "bot_id", value: botId }, TOKEN_REJECTED);
+      error = "o cliente removeu o acesso do Boavoz a este WhatsApp. Recarregue a página para conectar de novo";
+    } else error = e instanceof WhatsAppError ? e.message : "erro desconhecido";
   }
 
   return (

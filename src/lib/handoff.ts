@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fail, ok, type ActionResult } from "./action-result";
 import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendText } from "./whatsapp";
+import { TOKEN_REJECTED, isAccessError, markDisconnected } from "./whatsapp-access";
 
 /**
  * Atendimento humano: as mesmas operações para a agência (painel) e para o cliente final
@@ -39,12 +40,16 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
 async function deliverToWhatsApp(admin: SupabaseClient, conversationId: string, content: string): Promise<true | ActionResult> {
   const { data: conv } = await admin.from("conversations").select("bot_id, channel, wa_id").eq("id", conversationId).maybeSingle();
   if (conv?.channel !== "whatsapp" || !conv.wa_id) return true;
-  const { data: channel } = await admin.from("whatsapp_channels").select("phone_number_id, access_token_enc").eq("bot_id", conv.bot_id).maybeSingle();
-  if (!channel) return fail("O WhatsApp deste chatbot foi desconectado. A mensagem não foi enviada.");
+  const { data: channel } = await admin.from("whatsapp_channels").select("phone_number_id, access_token_enc, disconnected_at").eq("bot_id", conv.bot_id).maybeSingle();
+  if (!channel || channel.disconnected_at) return fail("O WhatsApp deste chatbot foi desconectado. A mensagem não foi enviada: conecte de novo na aba WhatsApp.");
   try {
     await sendText(channel, conv.wa_id, content);
     return true;
   } catch (e) {
+    if (isAccessError(e)) {
+      await markDisconnected(admin, { column: "bot_id", value: conv.bot_id }, TOKEN_REJECTED);
+      return fail("O cliente removeu o acesso do Boavoz ao WhatsApp. A mensagem não foi enviada: conecte de novo na aba WhatsApp.");
+    }
     if (e instanceof WhatsAppError && e.code === OUTSIDE_WINDOW_CODE) {
       return fail("Passaram mais de 24 horas desde a última mensagem do cliente. O WhatsApp só deixa responder dentro desse prazo.");
     }
