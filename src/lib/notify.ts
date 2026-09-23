@@ -67,15 +67,16 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
 
   // pessoas do cliente com permissão de atender
   let memberEmails: string[] = [];
+  let delegated = false; // a agência escolheu: só as pessoas do cliente recebem
   if (bot.client_id) {
-    const { data: client } = await db.from("clients").select("id, allow_handoff, agencies(name, custom_domain, custom_domain_verified_at)").eq("id", bot.client_id).maybeSingle();
+    const { data: client } = await db.from("clients").select("id, allow_handoff, handoff_notify, agencies(name, custom_domain, custom_domain_verified_at)").eq("id", bot.client_id).maybeSingle();
     if (client?.allow_handoff) {
       const { data: members } = await db.from("client_members").select("email").eq("client_id", client.id);
       memberEmails = (members ?? []).map((m) => m.email as string);
       const agency = (Array.isArray(client.agencies) ? client.agencies[0] : client.agencies) as { name: string; custom_domain: string | null; custom_domain_verified_at: string | null } | null;
       if (memberEmails.length && agency) {
         const fromAddress = process.env.EMAIL_FROM?.match(/<([^>]+)>/)?.[1] ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev";
-        await resend.emails.send({
+        const { error } = await resend.emails.send({
           from: `${agency.name.replace(/["<>]/g, "")} <${fromAddress}>`,
           to: memberEmails,
           subject: `Um visitante quer falar com alguém · ${bot.client_name}`,
@@ -86,9 +87,12 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
             `\n${agency.name}`,
           ].join("\n"),
         });
+        // só deixa de avisar a agência se o e-mail para o cliente saiu mesmo
+        delegated = client.handoff_notify === "client" && !error;
       }
     }
   }
+  if (delegated) return;
 
   const to = (await recipients(db, bot)).filter((e) => !memberEmails.includes(e.toLowerCase()));
   if (!to.length) return;

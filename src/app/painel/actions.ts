@@ -403,7 +403,7 @@ export async function verifyCustomDomain(): Promise<ActionResult> {
 /** Liga/desliga o que as pessoas do cliente podem fazer na área do cliente. */
 export async function setClientPermissions(clientId: string, formData: FormData): Promise<ActionResult> {
   const supabase = await createClient();
-  const patch = { allow_handoff: formData.get("allow_handoff") === "on", allow_knowledge: formData.get("allow_knowledge") === "on" };
+  const patch = { allow_handoff: formData.get("allow_handoff") === "on", allow_knowledge: formData.get("allow_knowledge") === "on", handoff_notify: formData.get("handoff_notify") === "client" ? "client" : "all" };
   const { error, count } = await supabase.from("clients").update(patch, { count: "exact" }).eq("id", clientId);
   if (error || !count) return fail("Não foi possível salvar as permissões.");
   revalidatePath(`/painel/clientes/${clientId}`);

@@ -50,7 +50,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   // a RLS limita os dados à agência logada
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
-    supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, handoff_notify").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
@@ -244,11 +244,23 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               <h2 className="text-base font-bold">O que {client.name} pode fazer</h2>
               <p className="text-sm text-muted">As pessoas abaixo entram na área do cliente (<code>{base.replace(/^https?:\/\//, "")}/cliente</code>) com um link no e-mail, sem senha. Sempre podem ver o relatório, os contatos e as conversas.</p>
             </div>
-            <ActionForm key={`${client.allow_handoff}${client.allow_knowledge}`} action={setClientPermissions.bind(null, client.id)} className="flex flex-col gap-3">
+            <ActionForm key={`${client.allow_handoff}${client.allow_knowledge}${client.handoff_notify}`} action={setClientPermissions.bind(null, client.id)} className="flex flex-col gap-3">
               <label className="flex items-start gap-2.5 text-sm">
                 <input type="checkbox" name="allow_handoff" defaultChecked={client.allow_handoff} className="mt-1" />
                 <span><strong>Atender conversas</strong><span className="block text-muted">Assumir quando o visitante pede alguém, responder e devolver ao assistente. Eles também recebem o aviso por e-mail.</span></span>
               </label>
+              <fieldset className="ml-6 flex flex-col gap-1.5 rounded-lg border border-line-2 bg-ground px-3 py-2.5 text-sm">
+                <legend className="px-1 text-xs font-semibold text-muted">Quem recebe o e-mail quando um visitante pede atendimento</legend>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="handoff_notify" value="all" defaultChecked={client.handoff_notify !== "client"} />
+                  Você (agência) e as pessoas do cliente
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="handoff_notify" value="client" defaultChecked={client.handoff_notify === "client"} />
+                  Só as pessoas do cliente (você delegou o atendimento)
+                </label>
+                <span className="text-xs text-muted">Se o cliente não puder atender ou não tiver ninguém cadastrado, o e-mail continua indo para você, para nenhum pedido ficar sem aviso.</span>
+              </fieldset>
               <label className="flex items-start gap-2.5 text-sm">
                 <input type="checkbox" name="allow_knowledge" defaultChecked={client.allow_knowledge} className="mt-1" />
                 <span><strong>Ensinar o assistente</strong><span className="block text-muted">Responder as perguntas sem resposta e criar/editar textos e FAQs. Site e PDFs continuam só com você.</span></span>
