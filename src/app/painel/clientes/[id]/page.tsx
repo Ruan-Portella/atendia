@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
 import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
 import { PendingHandoffs } from "@/components/pending-handoffs";
+import { ConversationStateBadge } from "@/components/conversation-state";
 import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { agencyBaseUrl } from "@/lib/domain";
 import { Status } from "@/components/status";
@@ -18,7 +19,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { CopyButton } from "@/components/copy-button";
 import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
-import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePortal, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientPermissions, updateClientRecord } from "../../actions";
+import { addClientMember, deleteBot, eraseContactData, deleteClientRecord, disablePortal, enablePortal, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientPermissions, updateClientRecord } from "../../actions";
 
 export const metadata = { title: "Cliente" };
 
@@ -71,8 +72,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       ? supabase.from("leads").select("id, bot_id, conversation_id, name, phone, email, notes, created_at").in("bot_id", botIds).order("created_at", { ascending: false }).limit(200)
       : Promise.resolve({ data: [] as LeadRow[] }),
     tab === "conversas" && botIds.length
-      ? supabase.from("conversations").select("id, bot_id, started_at, message_count, needs_human, channel, handoff_requested_at, handled_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
-      : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; handled_at: string | null }> }),
+      ? supabase.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, handled_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
+      : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; last_message_at: string; visitor_seen_at: string | null; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; handled_at: string | null }> }),
     tab === "acesso"
       ? supabase.from("client_members").select("id, email, last_login_at, created_at").eq("client_id", id).order("created_at")
       : Promise.resolve({ data: [] as Array<{ id: string; email: string; last_login_at: string | null; created_at: string }> }),
@@ -152,6 +153,14 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               <a href={`/api/leads/export?cliente=${client.id}`} className="btn-ghost"><Download size={15} />Exportar CSV</a>
             </div>
           )}
+          <ActionForm action={eraseContactData.bind(null, client.id)} className="card flex flex-wrap items-end gap-2 p-4">
+            <div className="min-w-[240px] flex-1">
+              <label htmlFor="erase-contact" className="label">Apagar os dados de uma pessoa (pedido LGPD)</label>
+              <input id="erase-contact" name="contact" required maxLength={120} className="input" placeholder="E-mail ou WhatsApp que ela deixou no chat" />
+            </div>
+            <SubmitButton pendingLabel="Apagando…" className="btn-danger">Apagar dados</SubmitButton>
+            <p className="w-full text-xs text-muted">Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os chatbots deste cliente. Não tem desfazer.</p>
+          </ActionForm>
           <LeadList leads={(leads ?? []) as LeadRow[]} originLabel="Chatbot" originOf={(bid) => botName.get(bid) ?? ""} empty="Nenhum lead deste cliente ainda. Eles aparecem aqui assim que um visitante deixar contato no chat." />
         </>
       )}
@@ -165,6 +174,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               <span className="font-medium">{botName.get(c.bot_id)}</span>
               <span>{c.message_count} mensagens</span>
               <span className="text-xs text-muted">{c.channel}</span>
+              <ConversationStateBadge conv={c} />
               {c.handoff_requested_at && !c.handled_at ? <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">esperando atendente</span> : c.needs_human ? <span className="ml-auto text-xs text-muted">precisou de ajuda</span> : null}
             </Link>
           ))}

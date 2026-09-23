@@ -11,7 +11,8 @@ export async function OPTIONS() {
 }
 
 /**
- * O widget consulta aqui enquanto a conversa está com atendimento humano.
+ * O widget consulta aqui enquanto o chat está aberto: traz as respostas da equipe e serve de
+ * sinal de "visitante online" (visitor_seen_at).
  * GET ?key=CHAVE&conversationId=ID&after=ULTIMO_ID
  * → { mode: "bot" | "requested" | "agent", messages: [{ id, content }] } (só mensagens de atendente)
  */
@@ -32,6 +33,13 @@ export async function GET(req: Request) {
     .eq("bots.public_key", key)
     .maybeSingle();
   if (!conv) return Response.json({ error: "not_found" }, { status: 404, headers: HEADERS });
+
+  const now = Date.now();
+  await db
+    .from("conversations")
+    .update({ visitor_seen_at: new Date(now).toISOString() })
+    .eq("id", conversationId)
+    .or(`visitor_seen_at.is.null,visitor_seen_at.lt.${new Date(now - 20_000).toISOString()}`);
 
   const { data: messages } = await db.from("messages").select("id, content").eq("conversation_id", conversationId).eq("role", "agent").gt("id", after).order("id").limit(50);
   const mode = conv.handled_at ? "bot" : conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : "bot";

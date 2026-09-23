@@ -105,3 +105,53 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
     ].join("\n"),
   });
 }
+
+/** E-mail simples para o dono da agência (avisos de plano, cota, teste). */
+export async function notifyAgencyOwner(db: SupabaseClient, agencyId: string, subject: string, lines: string[]): Promise<boolean> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return false;
+  const { data: agency } = await db.from("agencies").select("owner_id").eq("id", agencyId).maybeSingle();
+  if (!agency?.owner_id) return false;
+  const { data: owner } = await db.auth.admin.getUserById(agency.owner_id);
+  const to = owner?.user?.email;
+  if (!to) return false;
+  const { Resend } = await import("resend");
+  const { error } = await new Resend(apiKey).emails.send({ from: process.env.EMAIL_FROM ?? "Atendia <onboarding@resend.dev>", to, subject, text: lines.join("\n") });
+  return !error;
+}
+
+/**
+ * Avisos de cota do mês, disparados pelo contador de conversas: exatamente ao chegar em 80%
+ * e na primeira conversa acima do limite (o contador sobe de 1 em 1, então cada aviso sai
+ * uma vez por mês sem precisar guardar nada).
+ */
+/** Qual aviso de cota disparar para este valor do contador (cada um sai uma vez por mês). */
+export function usageAlertLevel(used: number, limit: number): 80 | 100 | null {
+  if (limit <= 0) return null;
+  if (used === Math.ceil(limit * 0.8)) return 80;
+  if (used === limit + 1) return 100;
+  return null;
+}
+
+export async function notifyUsageThreshold(db: SupabaseClient, agencyId: string, used: number, limit: number) {
+  const level = usageAlertLevel(used, limit);
+  if (!level) return;
+  const billing = appUrl("/painel/cobranca");
+  if (level === 80) {
+    await notifyAgencyOwner(db, agencyId, "Você já usou 80% das conversas do mês", [
+      `Seus chatbots já tiveram ${used} de ${limit} conversas neste mês.`,
+      "",
+      "Quando o limite acabar, o chat dos seus clientes passa a mostrar só um formulário de contato (os contatos continuam chegando, mas o assistente para de responder).",
+      "",
+      `Para não parar, faça upgrade do plano: ${billing}`,
+    ]);
+  } else {
+    await notifyAgencyOwner(db, agencyId, "Limite de conversas do mês atingido", [
+      `Seus chatbots chegaram a ${limit} conversas neste mês.`,
+      "",
+      "A partir de agora, quem abre o chat no site dos seus clientes vê um formulário de contato em vez do assistente. Os contatos continuam chegando no painel.",
+      "",
+      `Faça upgrade para o assistente voltar a responder na hora: ${billing}`,
+    ]);
+  }
+}

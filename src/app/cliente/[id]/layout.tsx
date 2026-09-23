@@ -2,6 +2,7 @@ import { requireMember } from "@/lib/member";
 import { getPendingHandoffs } from "@/lib/panel";
 import { AgencyHeader } from "@/components/report-view";
 import { MemberNav } from "@/components/member-nav";
+import { HandoffWatcher } from "@/components/handoff-watcher";
 
 /** Casca da área do cliente: marca da agência, abas conforme as permissões e "Sair". */
 export default async function MemberLayout({ children, params }: LayoutProps<"/cliente/[id]">) {
@@ -16,6 +17,7 @@ export default async function MemberLayout({ children, params }: LayoutProps<"/c
       <div className="border-b border-line bg-panel">
         <MemberNav clientId={id} handoff={member.allowHandoff} knowledge={member.allowKnowledge} waiting={pending.filter((p) => !p.takeover_at).length} />
       </div>
+      {member.allowHandoff && <HandoffWatcher endpoint={`/api/cliente/pending?clientId=${id}`} />}
       <main className="mx-auto flex w-full max-w-[980px] flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
     </div>
   );

@@ -41,6 +41,8 @@ export interface PendingHandoff {
   bot_id: string;
   handoff_requested_at: string;
   takeover_at: string | null;
+  last_message_at: string;
+  visitor_seen_at: string | null;
   bots: { name: string; client_name: string; client_id: string | null } | null;
 }
 
@@ -48,7 +50,7 @@ export interface PendingHandoff {
 export async function getPendingHandoffs(supabase: SupabaseClient, botIds?: string[]): Promise<PendingHandoff[]> {
   let q = supabase
     .from("conversations")
-    .select("id, bot_id, handoff_requested_at, takeover_at, bots(name, client_name, client_id)")
+    .select("id, bot_id, handoff_requested_at, takeover_at, last_message_at, visitor_seen_at, bots(name, client_name, client_id)")
     .not("handoff_requested_at", "is", null)
     .is("handled_at", null)
     .gte("handoff_requested_at", new Date(Date.now() - 7 * 86400000).toISOString())

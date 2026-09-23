@@ -21,7 +21,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("demo_slug", slug).eq("is_demo", true).maybeSingle();
   if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
-  const { data: agency } = await db.from("agencies").select("name, logo_url, brand_color, support_whatsapp").eq("id", bot.agency_id).single();
+  const { data: agency } = await db.from("agencies").select("name, logo_url, brand_color, support_whatsapp, privacy_url").eq("id", bot.agency_id).single();
   await db.rpc("increment_demo_views", { p_slug: slug });
 
   const color = bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d";
@@ -71,7 +71,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
         <div className="h-[600px] overflow-hidden rounded-2xl shadow-[0_16px_40px_rgba(27,31,29,0.12)]">
           <ChatWindow
             channel="demo"
-            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou o assistente de ${bot.client_name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null }}
+            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou o assistente de ${bot.client_name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null }}
           />
         </div>
       </main>

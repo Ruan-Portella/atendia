@@ -450,3 +450,63 @@ export async function removeClientMember(clientId: string, memberId: string): Pr
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok("Acesso removido.");
 }
+
+/* ------------------------------------------------------------------ LGPD */
+
+/** Apaga uma conversa inteira (mensagens e contatos capturados nela). */
+export async function deleteConversation(conversationId: string): Promise<ActionResult> {
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  await owned.admin.from("leads").delete().eq("conversation_id", conversationId);
+  const { error } = await owned.admin.from("conversations").delete().eq("id", conversationId);
+  if (error) return fail("Não foi possível excluir. Tente de novo.");
+  revalidatePath("/painel", "layout");
+  redirect(`/painel/bots/${owned.conv.bot_id}?tab=conversas`);
+}
+
+const digitsOf = (v: string) => v.replace(/\D/g, "");
+
+/**
+ * Pedido de titular (LGPD): apaga todos os contatos com esse e-mail ou telefone nos chatbots
+ * do cliente, e as conversas em que foram capturados.
+ */
+export async function eraseContactData(clientId: string, formData: FormData): Promise<ActionResult> {
+  const contact = text(formData.get("contact")).toLowerCase();
+  const digits = digitsOf(contact);
+  const byEmail = isEmail(contact);
+  if (!byEmail && digits.length < 8) return fail("Informe um e-mail ou um telefone com DDD.");
+  const supabase = await createClient();
+  const { data: bots } = await supabase.from("bots").select("id").eq("client_id", clientId);
+  const ids = (bots ?? []).map((b) => b.id);
+  if (!ids.length) return ok("Nenhum dado encontrado para esse contato.");
+
+  const { data: leads } = byEmail
+    ? await supabase.from("leads").select("id, conversation_id").in("bot_id", ids).ilike("email", contact)
+    : await supabase.from("leads").select("id, conversation_id, phone").in("bot_id", ids).not("phone", "is", null);
+  // telefone: compara só os números, pelo final (com ou sem +55 e DDD formatado)
+  const tail = digits.slice(-10);
+  const matches = (leads ?? []).filter((l) => byEmail || digitsOf(String((l as { phone?: string }).phone ?? "")).endsWith(tail));
+  if (!matches.length) return ok("Nenhum dado encontrado para esse contato.");
+
+  const admin = createAdminClient();
+  const convIds = [...new Set(matches.map((l) => l.conversation_id).filter((c): c is string => Boolean(c)))];
+  await admin.from("leads").delete().in("id", matches.map((l) => l.id));
+  if (convIds.length) await admin.from("conversations").delete().in("id", convIds).in("bot_id", ids);
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok(`Apagados ${matches.length} contato${matches.length === 1 ? "" : "s"} e ${convIds.length} conversa${convIds.length === 1 ? "" : "s"}.`);
+}
+
+/** Política de privacidade (link no chat) e prazo de guarda dos dados dos visitantes. */
+export async function updatePrivacy(formData: FormData): Promise<ActionResult> {
+  const { agency } = await requireAgency();
+  const url = text(formData.get("privacy_url"));
+  if (url && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(url)) return fail("Use o endereço completo da política, começando com https://");
+  if (url.length > 400) return fail("Endereço longo demais.");
+  const months = Number(formData.get("retention_months"));
+  const retention = [6, 12, 24].includes(months) ? months : null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("agencies").update({ privacy_url: url || null, retention_months: retention }).eq("id", agency.id);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath("/painel", "layout");
+  return ok(retention ? `Salvo. Conversas e contatos com mais de ${retention} meses serão apagados automaticamente.` : "Salvo.");
+}

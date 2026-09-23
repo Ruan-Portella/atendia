@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, chatModel, embedText, type Persona } from "./ai";
 import { currentPeriod, getPlan } from "./plans";
-import { notifyHandoff, notifyLead } from "./notify";
+import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
 import { looksUnanswered, recordUnanswered } from "./unanswered";
 
 export interface BotRow {
@@ -60,7 +60,11 @@ export async function runChat(opts: {
       throw new Error("trial_expired");
     }
     const { data: used } = await db.rpc("increment_usage", { p_agency_id: bot.agency_id, p_period: currentPeriod() });
-    if (typeof used === "number" && used > plan.conversations) throw new Error("quota_exceeded");
+    if (typeof used === "number") {
+      // avisa a agência ao chegar em 80% e ao estourar (sem atrasar a resposta do visitante)
+      notifyUsageThreshold(db, bot.agency_id, used, plan.conversations).catch(() => {});
+      if (used > plan.conversations) throw new Error("quota_exceeded");
+    }
 
     const { data: conv, error } = await db
       .from("conversations")
@@ -160,7 +164,8 @@ export async function runChat(opts: {
         await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null });
       }
       const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
-      await db.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", convId);
+      const now = new Date().toISOString();
+      await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", convId);
     },
   });
 

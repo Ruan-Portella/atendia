@@ -11,6 +11,8 @@ Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + p
 - Painel por cliente: a agência tem clientes, cada um com vários chatbots. Lista de clientes com KPIs (conversas, leads, % resolvidas, faturamento informado) e um painel por cliente com chatbots, leads, conversas, relatório e dados.
 - Relatório mensal e portal do cliente final: link somente leitura (`/c/[token]`) com a marca da agência, números do mês, gráfico por dia, contatos e conversas; e-mail automático todo dia 1º (Vercel Cron) e "Salvar em PDF".
 - Área do cliente (`/cliente`): as pessoas do cliente final (quantos e-mails quiser) entram por link mágico, sem senha, com a marca da agência. A agência libera por cliente: **atender conversas** (assumir, responder, devolver) e/ou **ensinar o assistente** (responder perguntas sem resposta, criar e editar textos e FAQs; site e PDF ficam com a agência). Só vale sessão aberta por link mágico, e tudo fica assinado (quem respondeu, quem editou).
+- Conversa continua depois do F5 (até 6 h, só para o mesmo navegador) e mostra no painel "Visitante online" / "Ativa" / "Encerrada" (30 min sem mensagem); no atendimento humano você vê se o visitante ainda está no site.
+- Avisos em tempo real: no site, bolinha com contador e prévia da mensagem no balão fechado (o chat carrega escondido depois do F5 se há conversa aberta); no painel e na área do cliente, aviso em qualquer tela quando um visitante pede atendente (som, contador na aba e notificação do navegador opcional), e a conversa aberta se atualiza sozinha.
 - Atendimento humano: o assistente chama a equipe quando o visitante pede uma pessoa (e-mail na hora); no painel você assume a conversa, responde e o visitante vê no widget em segundos; ao devolver, o assistente continua sabendo o que você disse.
 - Editor do chatbot: base de conhecimento (site inteiro, página, PDF, texto, FAQ), personalidade, aparência e marca, captura de leads, conversas, instalação, teste ao vivo. Perguntas que o bot não soube responder aparecem com "Responder": a resposta vira FAQ e é indexada na hora. Sites e páginas são relidos toda semana (sem custo se nada mudou).
 - Gerador de demo: cria bot + rastreia o site + embeddings em um passo; página `/demo/[slug]` com a marca da agência e contador de aberturas; botão de WhatsApp para mandar o link.
@@ -21,6 +23,8 @@ Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + p
 - Stripe: checkout, portal e webhook (plano da agência, comissões). Sem chave, tudo fica em teste.
 - E-mail de lead novo via Resend (opcional).
 - Domínio próprio por agência (planos Agência e Escala): demos, portal e widget em `chat.agencia.com.br`, com instrução de DNS, verificação e integração opcional com a API de domínios da Vercel.
+- Chat nunca quebra para o visitante: sem cota, com o teste vencido ou com falha da IA, o widget vira um formulário de contato (o lead chega no painel) e a agência é avisada por e-mail (80% e 100% da cota, 3 dias antes e no fim do teste) e por uma faixa no painel.
+- LGPD: aviso no chat com link para a política de privacidade da agência, excluir conversa, apagar os dados de uma pessoa pelo e-mail ou telefone e limpeza automática opcional (6, 12 ou 24 meses).
 - Limites nas rotas públicas (demo, chat, formulário de lead) guardados no próprio Postgres, com IP em hash.
 - Testes (`npm test`, Vitest) e CI no GitHub Actions (lint, tipos e testes).
 
@@ -31,7 +35,7 @@ Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + p
 1. Crie um projeto em supabase.com (plano free serve).
 2. **Migrações** (tudo em `supabase/migrations`, em ordem; todas podem rodar de novo sem estragar nada):
    - **Automático (recomendado):** defina `DATABASE_URL` na Vercel (Supabase → Connect → *Session pooler*, porta 5432). Todo deploy de produção aplica as migrações novas **antes** do build (`scripts/migrate.mjs`); se uma falhar, o deploy falha e o código novo não vai ao ar. Localmente: `npm run migrate`.
-   - **Manual:** no **SQL Editor**, rode cada arquivo em ordem: `0001_init` (tabelas, pgvector, RLS, buckets, agência vitrine), `0002_install_ping`, `0003_referral_credit`, `0004_clients` (clientes com vários chatbots), `0005_rate_limit`, `0006_portal_handoff` (portal do cliente, relatório, atendimento humano), `0007_source_refresh`, `0008_custom_domain`, `0009_client_access` (área do cliente).
+   - **Manual:** no **SQL Editor**, rode cada arquivo em ordem: `0001_init` (tabelas, pgvector, RLS, buckets, agência vitrine), `0002_install_ping`, `0003_referral_credit`, `0004_clients` (clientes com vários chatbots), `0005_rate_limit`, `0006_portal_handoff` (portal do cliente, relatório, atendimento humano), `0007_source_refresh`, `0008_custom_domain`, `0009_client_access` (área do cliente) e `0010_lgpd_alerts` (avisos de plano e LGPD) e `0011_conversation_presence` (conversa continua no F5 e visitante online).
 3. **Authentication → Providers**: deixe Email ligado (pode desligar "Confirm email" no começo para agilizar) e ative **Google** (Client ID/Secret do Google Cloud Console; a redirect URL está na tela do Supabase).
 4. **Authentication → URL Configuration**: Site URL = `http://localhost:3000` (depois o domínio da Vercel); Redirect URLs: `http://localhost:3000/auth/callback` e `https://SEU-DOMINIO/auth/callback`.
 5. **Project Settings → API**: copie `Project URL`, `anon key` e `service_role key`.
@@ -66,7 +70,7 @@ Importe o repositório, cole as mesmas variáveis do `.env.local` (mude `NEXT_PU
 Variáveis extras para produção (detalhes em `.env.example`):
 
 - `DATABASE_URL`: aplica as migrações automaticamente em cada deploy de produção.
-- `CRON_SECRET`: liga os crons de `vercel.json` (relatório mensal nos dias 1–3, releitura diária dos sites com mais de 7 dias).
+- `CRON_SECRET`: liga os 2 crons de `vercel.json` (o limite do plano Hobby): relatório mensal nos dias 1–3 e um diário que faz os avisos de fim de teste, a limpeza LGPD e a releitura dos sites com mais de 7 dias.
 - `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID` (opcional): o painel adiciona o domínio próprio da agência no projeto sozinho. Sem eles, adicione o domínio em Project → Settings → Domains.
 
 > Vercel Hobby não permite uso comercial. Quando começar a cobrar, use o plano Pro ou hospede em Cloudflare Pages/Railway.

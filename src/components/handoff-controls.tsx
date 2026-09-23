@@ -1,6 +1,7 @@
 import { Headset } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import { minutesSince, relativeTime } from "@/lib/utils";
+import { conversationState, lastSeen } from "@/lib/presence";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AutoRefresh } from "@/components/auto-refresh";
@@ -10,6 +11,17 @@ export interface HandoffConversation {
   handoff_requested_at: string | null;
   takeover_at: string | null;
   handled_at: string | null;
+  visitor_seen_at?: string | null;
+}
+
+/** "Visitante online agora" / "saiu do site há X" — para saber se ainda vale responder. */
+function VisitorPresence({ conv }: { conv: HandoffConversation }) {
+  const online = conversationState(conv) === "online";
+  return online ? (
+    <span className="inline-flex items-center gap-1.5 font-semibold text-brand"><span className="h-2 w-2 animate-pulse rounded-full bg-brand" />Visitante online agora</span>
+  ) : (
+    <span className="text-muted">O visitante saiu do site {relativeTime(lastSeen(conv))}. Se ele voltar, a conversa continua de onde parou e ele vê suas respostas.</span>
+  );
 }
 
 /** Faixa de status (pediu atendente / você está atendendo) + atualização ao vivo. Vai no topo. */
@@ -20,6 +32,9 @@ export function HandoffStatus({ conv, onTakeOver }: { conv: HandoffConversation;
   return (
     <>
       {(active || waiting) && <AutoRefresh ms={active ? 3000 : 5000} />}
+      {(active || waiting) && (
+        <div className="rounded-lg border border-line bg-panel px-4 py-2 text-sm"><VisitorPresence conv={conv} /></div>
+      )}
       {waiting && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#efd9a9] bg-amber-soft px-4 py-3 text-sm">
           <Headset size={18} className="text-amber-ink" />
@@ -42,8 +57,8 @@ export function HandoffReply({ conv, onTakeOver, onSend, onRelease }: { conv: Ha
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
   const waiting = open && !conv.takeover_at && Boolean(conv.handoff_requested_at);
-  // conversa recente (30 min) ainda dá para assumir: o visitante provavelmente está lá
-  const recent = minutesSince(conv.last_message_at) < 30;
+  // dá para assumir se o visitante está no site agora ou falou há menos de 30 min
+  const recent = conversationState(conv) === "online" || minutesSince(conv.last_message_at) < 30;
   return (
     <>
       {active ? (

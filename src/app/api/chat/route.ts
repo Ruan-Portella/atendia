@@ -3,6 +3,7 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { CORS_HEADERS, lastUserText, runChat, type BotRow } from "@/lib/chat";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
+import { isResumable } from "@/lib/presence";
 
 const MAX_MESSAGE_CHARS = 2000;
 
@@ -15,6 +16,9 @@ const bodySchema = z.object({
   channel: z.enum(["widget", "demo", "painel"]).default("widget"),
   messages: z.array(z.any()).min(1).max(200),
 });
+
+const FALLBACK_MESSAGE = "No momento não consigo responder por aqui. Deixe seu contato que a equipe retorna em breve.";
+const contactFallback = (error: string, status: number) => Response.json({ error, fallback: "contact", message: FALLBACK_MESSAGE }, { status, headers: CORS_HEADERS });
 
 export async function OPTIONS() {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -45,8 +49,9 @@ export async function POST(req: Request) {
   let convId = conversationId ?? null;
   let handoff: "requested" | "agent" | null = null;
   if (convId) {
-    const { data: conv } = await db.from("conversations").select("id, handoff_requested_at, takeover_at, handled_at").eq("id", convId).eq("bot_id", bot.id).maybeSingle();
-    if (!conv) convId = null;
+    const { data: conv } = await db.from("conversations").select("id, handoff_requested_at, takeover_at, handled_at, last_message_at").eq("id", convId).eq("bot_id", bot.id).maybeSingle();
+    // outra conversa ou parada há horas: começa uma nova
+    if (!conv || !isResumable(conv.last_message_at)) convId = null;
     else if (!conv.handled_at) handoff = conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : null;
   }
 
@@ -64,7 +69,8 @@ export async function POST(req: Request) {
     const text = lastUserText(messages as UIMessage[]);
     if (text) await db.from("messages").insert({ conversation_id: convId, role: "user", content: text });
     const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
-    await db.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", convId);
+    const now = new Date().toISOString();
+    await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", convId);
     return createUIMessageStreamResponse({
       stream: createUIMessageStream({ execute: () => {} }),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": convId, "X-Handoff": "agent", "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
@@ -86,9 +92,10 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     const msg = (e as Error).message;
-    if (msg === "quota_exceeded") return Response.json({ error: msg, message: "Limite de conversas do plano atingido." }, { status: 402, headers: CORS_HEADERS });
-    if (msg === "trial_expired") return Response.json({ error: msg, message: "Período de teste encerrado." }, { status: 402, headers: CORS_HEADERS });
+    // Sem cota, teste vencido ou falha do provedor de IA: o visitante nunca vê erro técnico nem
+    // assunto de plano. O widget troca o chat por um formulário de contato (o lead não se perde).
+    if (msg === "quota_exceeded" || msg === "trial_expired") return contactFallback(msg, 402);
     console.error(e);
-    return Response.json({ error: "chat_failed", message: "Não consegui responder agora. Tente de novo em instantes." }, { status: 500, headers: CORS_HEADERS });
+    return contactFallback("chat_failed", 503);
   }
 }

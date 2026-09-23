@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CheckCircle2, Clock, Info } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
-import { saveCustomDomain, updateAgency, verifyCustomDomain } from "../actions";
+import { saveCustomDomain, updateAgency, updatePrivacy, verifyCustomDomain } from "../actions";
 import { LogoUpload } from "@/components/logo-upload";
 import { appUrl } from "@/lib/utils";
 import { isApexDomain, recommendedDnsRecord, vercelDomainsEnabled } from "@/lib/domain";
@@ -84,6 +84,31 @@ export default async function MarcaPage() {
             )}
           </>
         )}
+      </section>
+
+      <section className="card flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-bold">Privacidade e LGPD</h2>
+          <p className="text-sm text-muted">O chat avisa o visitante que a conversa fica registrada para o atendimento. Aqui você coloca o link da sua política de privacidade e decide por quanto tempo guardar os dados.</p>
+        </div>
+        <ActionForm key={`${agency.privacy_url ?? ""}|${agency.retention_months ?? ""}`} action={updatePrivacy} className="flex flex-col gap-4">
+          <div>
+            <label htmlFor="privacy_url" className="label">Link da política de privacidade (opcional)</label>
+            <input id="privacy_url" name="privacy_url" type="url" maxLength={400} defaultValue={agency.privacy_url ?? ""} className="input" placeholder="https://suaagencia.com.br/privacidade" />
+            <p className="mt-1 text-xs text-muted">Aparece como “Privacidade” embaixo do chat, em todos os seus chatbots.</p>
+          </div>
+          <div>
+            <label htmlFor="retention_months" className="label">Apagar conversas e contatos automaticamente depois de</label>
+            <select id="retention_months" name="retention_months" defaultValue={agency.retention_months ? String(agency.retention_months) : ""} className="input max-w-[260px]">
+              <option value="">Não apagar</option>
+              <option value="6">6 meses</option>
+              <option value="12">12 meses</option>
+              <option value="24">24 meses</option>
+            </select>
+            <p className="mt-1 text-xs text-muted">A LGPD pede guardar só pelo tempo necessário. Os relatórios de meses já apagados passam a mostrar zero.</p>
+          </div>
+          <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+        </ActionForm>
       </section>
     </div>
   );

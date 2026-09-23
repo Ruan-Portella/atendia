@@ -16,6 +16,8 @@ export interface Agency {
   support_whatsapp: string | null;
   custom_domain: string | null;
   custom_domain_verified_at: string | null;
+  privacy_url: string | null;
+  retention_months: number | null;
   plan: string;
   trial_ends_at: string;
   stripe_customer_id: string | null;

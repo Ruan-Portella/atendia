@@ -20,7 +20,7 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400, headers: CORS_HEADERS });
+  if (!parsed.success) return Response.json({ error: "invalid_body", message: "Confira o nome (pelo menos 2 letras) e o WhatsApp ou e-mail." }, { status: 400, headers: CORS_HEADERS });
   const d = parsed.data;
   if (!d.phone && !d.email) return Response.json({ error: "contact_required", message: "Informe WhatsApp ou e-mail." }, { status: 400, headers: CORS_HEADERS });
 
@@ -32,9 +32,15 @@ export async function POST(req: Request) {
   ]);
   if (exceeded) return tooMany(exceeded, CORS_HEADERS);
 
+  // só vincula a uma conversa que seja deste bot
+  let conversationId = d.conversationId ?? null;
+  if (conversationId) {
+    const { data: conv } = await db.from("conversations").select("id").eq("id", conversationId).eq("bot_id", bot.id).maybeSingle();
+    if (!conv) conversationId = null;
+  }
   const { data: lead } = await db
     .from("leads")
-    .insert({ bot_id: bot.id, conversation_id: d.conversationId ?? null, name: d.name, phone: d.phone ?? null, email: d.email ?? null, notes: d.notes ?? null })
+    .insert({ bot_id: bot.id, conversation_id: conversationId, name: d.name, phone: d.phone ?? null, email: d.email ?? null, notes: d.notes ?? null })
     .select("id")
     .single();
   notifyLead({ db, bot, lead: { id: lead?.id, nome: d.name, whatsapp: d.phone, email: d.email, interesse: d.notes } }).catch(() => {});

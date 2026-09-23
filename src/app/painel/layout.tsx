@@ -2,6 +2,8 @@ import { requireAgency } from "@/lib/agency";
 import { num } from "@/lib/plans";
 import { daysUntil, initials } from "@/lib/utils";
 import { PanelShell } from "@/components/panel-shell";
+import { PlanAlert } from "@/components/plan-alert";
+import { HandoffWatcher } from "@/components/handoff-watcher";
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {
   const { agency, plan, usage } = await requireAgency();
@@ -16,6 +18,8 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       limit={plan.conversations}
       usageLabel={`${num(usage)} / ${num(plan.conversations)}`}
     >
+      <HandoffWatcher endpoint="/api/painel/pending" />
+      <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={plan.conversations} />
       {children}
     </PanelShell>
   );

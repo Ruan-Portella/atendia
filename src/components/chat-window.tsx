@@ -16,6 +16,8 @@ export interface ChatBotPublic {
   suggestedQuestions: string[];
   poweredBy?: string | null; // nome da agência (white-label) ou null para esconder
   leadForm?: boolean;
+  /** política de privacidade da agência (link no aviso LGPD do chat) */
+  privacyUrl?: string | null;
 }
 
 type HandoffMode = "bot" | "requested" | "agent";
@@ -42,7 +44,8 @@ type HandoffAction =
   | { type: "server"; mode: HandoffMode } // o que o servidor informou (cabeçalho ou consulta)
   | { type: "asked" } // o assistente acabou de chamar a equipe nesta resposta
   | { type: "agent"; messages: Array<{ id: number; content: string }> }
-  | { type: "count"; n: number };
+  | { type: "count"; n: number }
+  | { type: "restore"; mode: HandoffMode; count: number; agents: Array<{ id: number; content: string; after: number }> }; // conversa retomada depois do F5
 
 /**
  * Estado do atendimento humano no widget. Quem manda é o servidor; aqui só registramos as
@@ -50,6 +53,13 @@ type HandoffAction =
  */
 export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState {
   switch (a.type) {
+    case "restore":
+      return {
+        mode: a.mode,
+        count: a.count,
+        lastAgentId: a.agents.reduce((m, x) => Math.max(m, x.id), 0),
+        timeline: a.agents.map((x) => ({ key: `a${x.id}`, kind: "agent" as const, content: x.content, after: x.after })),
+      };
     case "count":
       return a.n === s.count ? s : { ...s, count: a.n };
     case "asked":
@@ -67,6 +77,18 @@ export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState 
     }
   }
 }
+
+/**
+ * Avisa a página do site do cliente (widget.js) quando o chat roda dentro do iframe:
+ * mensagem nova (bolinha e prévia no balão), conversa aberta (recarrega o chat em segundo
+ * plano depois do F5) e fechar. "*" porque o domínio do site do cliente não é conhecido aqui;
+ * o conteúdo é só da conversa deste próprio visitante.
+ */
+function notifyParent(message: unknown) {
+  if (typeof window !== "undefined" && window.parent !== window) window.parent.postMessage(message, "*");
+}
+
+const preview = (t: string) => (t.length > 120 ? `${t.slice(0, 117)}…` : t);
 
 function textOf(m: UIMessage): string {
   return m.parts
@@ -87,18 +109,25 @@ export function ChatWindow({
   apiBase = "",
   onClose,
   compact = false,
+  embedded = false,
 }: {
   bot: ChatBotPublic;
   channel?: "widget" | "demo" | "painel";
   apiBase?: string;
   onClose?: () => void;
   compact?: boolean;
+  /** dentro do iframe do widget: conversa com o widget.js da página */
+  embedded?: boolean;
 }) {
   const storageKey = `atendia:${bot.key}`;
+  // no iframe do widget, o X do topo fecha o balão na página do cliente
+  const close = onClose ?? (embedded ? () => notifyParent("chat-widget:close") : undefined);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [visitorId] = useState<string | null>(() => getOrCreateVisitorId(storageKey));
   const [input, setInput] = useState("");
   const [errorText, setErrorText] = useState<string | null>(null);
+  // o assistente não pode responder agora (cota, teste, falha): mostra o formulário de contato
+  const [fallback, setFallback] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [{ mode, timeline, lastAgentId }, dispatch] = useReducer(handoffReducer, { mode: "bot", timeline: [], count: 0, lastAgentId: 0 });
   const [activity, setActivity] = useState(0); // sobe a cada resposta do servidor
@@ -120,7 +149,8 @@ export function ChatWindow({
               .clone()
               .json()
               .catch(() => ({}));
-            setErrorText(j.message ?? "Não consegui responder agora. Tente de novo.");
+            if (j.fallback === "contact") setFallback(j.message ?? "Deixe seu contato que a equipe retorna.");
+            else setErrorText(j.message ?? "Não consegui responder agora. Tente de novo.");
           } else setErrorText(null);
           return res;
         },
@@ -129,9 +159,10 @@ export function ChatWindow({
   );
 
   const router = useRouter();
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, setMessages } = useChat({
     transport,
     onFinish: ({ message, messages: all }) => {
+      if (embedded && message.role === "assistant" && textOf(message)) notifyParent({ type: "chat-widget:message", from: bot.name, preview: preview(textOf(message)) });
       dispatch({ type: "count", n: all.length });
       // no teste ao vivo do editor, a pergunta sem resposta aparece na lista sem recarregar
       // (espera o servidor terminar de gravar, que acontece logo depois do fim do stream)
@@ -141,27 +172,80 @@ export function ChatWindow({
   });
   const busy = status === "submitted" || status === "streaming";
 
-  // Consulta respostas da equipe: rápido durante o atendimento humano, devagar logo depois
-  // de uma conversa (a agência pode assumir sem o visitante pedir), e para quando esfria.
+  // F5 / voltou ao site: retoma a conversa aberta deste visitante (não no teste do painel)
+  const convKey = `${storageKey}:conversa`;
+  const resumes = channel !== "painel" && Boolean(visitorId);
+  useEffect(() => {
+    if (!resumes) return;
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(convKey);
+    } catch {
+      return;
+    }
+    if (!saved) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/chat/history?key=${bot.key}&conversationId=${saved}&visitorId=${encodeURIComponent(visitorId ?? "")}`, { cache: "no-store" });
+        const j = (await res.json()) as { resumable?: boolean; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string }> };
+        if (cancelled) return;
+        if (!j.resumable) {
+          localStorage.removeItem(convKey);
+          if (embedded) notifyParent({ type: "chat-widget:conversation", active: false });
+          return;
+        }
+        const ui: UIMessage[] = [];
+        const agents: Array<{ id: number; content: string; after: number }> = [];
+        for (const m of j.messages ?? []) {
+          if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length });
+          else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }] });
+        }
+        setMessages(ui);
+        setConversationId(saved);
+        dispatch({ type: "restore", mode: j.mode ?? "bot", count: ui.length, agents });
+      } catch {
+        // sem rede: começa do zero, sem travar o chat
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resumes, convKey, apiBase, bot.key, visitorId, setMessages, embedded]);
+
+  useEffect(() => {
+    if (!resumes || !conversationId) return;
+    try {
+      localStorage.setItem(convKey, conversationId);
+      if (embedded) notifyParent({ type: "chat-widget:conversation", active: true });
+    } catch {
+      // navegador sem armazenamento: só não retoma depois do F5
+    }
+  }, [resumes, convKey, conversationId, embedded]);
+
+  // Consulta o servidor com a conversa aberta: rápido durante o atendimento humano, a cada
+  // 30 s no resto (a agência pode assumir sem o visitante pedir). Cada consulta também avisa
+  // que o visitante continua no site ("visitante online" no painel). Aba escondida: pausa.
   useEffect(() => {
     if (!conversationId) return;
-    const startedAt = Date.now();
-    const interval = mode === "agent" ? 4000 : mode === "requested" ? 6000 : 20000;
+    const interval = mode === "agent" ? 4000 : mode === "requested" ? 6000 : 30000;
     const timer = window.setInterval(async () => {
       if (document.hidden) return;
-      if (mode === "bot" && Date.now() - startedAt > 10 * 60_000) return;
       try {
         const res = await fetch(`${apiBase}/api/chat/updates?key=${bot.key}&conversationId=${conversationId}&after=${lastAgentId}`, { cache: "no-store" });
         if (!res.ok) return;
         const j = (await res.json()) as { mode: HandoffMode; messages: Array<{ id: number; content: string }> };
-        if (j.messages.length) dispatch({ type: "agent", messages: j.messages });
+        if (j.messages.length) {
+          dispatch({ type: "agent", messages: j.messages });
+          if (embedded) notifyParent({ type: "chat-widget:message", from: `Equipe ${bot.clientName}`, preview: preview(j.messages.at(-1)!.content) });
+        }
         dispatch({ type: "server", mode: j.mode });
       } catch {
         // sem rede: tenta de novo no próximo ciclo
       }
     }, interval);
     return () => window.clearInterval(timer);
-  }, [apiBase, bot.key, conversationId, mode, activity, lastAgentId]);
+  }, [apiBase, bot.key, bot.clientName, conversationId, mode, activity, lastAgentId, embedded]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -187,8 +271,8 @@ export function ChatWindow({
           <div className="text-[15px] font-semibold">{bot.name}</div>
           <div className="text-xs opacity-85">{bot.clientName} · responde na hora</div>
         </div>
-        {onClose && (
-          <button type="button" onClick={onClose} aria-label="Fechar" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
+        {close && (
+          <button type="button" onClick={close} aria-label="Fechar" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         )}
@@ -235,10 +319,13 @@ export function ChatWindow({
             </span>
           </Bubble>
         )}
-        {errorText && <div className="rounded-lg bg-[#fbe6e6] px-3 py-2 text-[13px] text-[#b23a3a]">{errorText}</div>}
+        {errorText && !fallback && <div className="rounded-lg bg-[#fbe6e6] px-3 py-2 text-[13px] text-[#b23a3a]">{errorText}</div>}
         <div ref={bottomRef} />
       </div>
 
+      {fallback ? (
+        <ContactFallback bot={bot} apiBase={apiBase} conversationId={conversationId} message={fallback} />
+      ) : (
       <form
         className="flex items-center gap-2 border-t border-[#e1e6ea] p-2.5"
         onSubmit={(e) => {
@@ -259,12 +346,74 @@ export function ChatWindow({
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
         </button>
       </form>
+      )}
+      <p className="px-3 pb-1 text-center text-[10.5px] leading-snug text-[#8a938e]">
+        A conversa fica registrada para o atendimento.{bot.privacyUrl ? <> <a href={bot.privacyUrl} target="_blank" rel="noopener" className="underline">Privacidade</a></> : null}
+      </p>
       {bot.poweredBy !== null && !compact && (
         <div className="pb-2 text-center text-[11px] text-[#8a938e]">
           Atendimento por <span className="font-semibold text-[#4c5551]">{bot.poweredBy}</span>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Quando o assistente não pode responder (limite do plano, teste encerrado, falha da IA), o
+ * visitante deixa o contato aqui em vez de ver um erro. Vai para /api/leads, que não depende
+ * da cota, e chega ao painel e ao e-mail da agência como qualquer lead.
+ */
+function ContactFallback({ bot, apiBase, conversationId, message }: { bot: ChatBotPublic; apiBase: string; conversationId: string | null; message: string }) {
+  const [state, setState] = useState<"idle" | "sending" | "done">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const contact = String(fd.get("contact") ?? "").trim();
+    const isEmailContact = contact.includes("@");
+    setState("sending");
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/leads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: bot.key,
+          conversationId,
+          name: String(fd.get("name") ?? "").trim(),
+          ...(isEmailContact ? { email: contact } : { phone: contact }),
+          notes: String(fd.get("notes") ?? "").trim().slice(0, 500) || undefined,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(j.message ?? "Confira os dados e tente de novo.");
+        setState("idle");
+        return;
+      }
+      setState("done");
+    } catch {
+      setError("Sem conexão. Tente de novo.");
+      setState("idle");
+    }
+  }
+
+  if (state === "done") {
+    return <div className="border-t border-[#e1e6ea] p-4 text-center text-sm text-[#1b1f1d]">Recebemos seu contato! A equipe de {bot.clientName} vai te responder em breve.</div>;
+  }
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2 border-t border-[#e1e6ea] p-3">
+      <p className="text-[13px] text-[#4c5551]">{message}</p>
+      <input name="name" required minLength={2} maxLength={80} placeholder="Seu nome" autoComplete="name" className="rounded-lg border border-[#e1e6ea] px-3 py-2 text-sm outline-none focus:border-[#9aa39e]" />
+      <input name="contact" required maxLength={120} placeholder="WhatsApp ou e-mail" autoComplete="tel" className="rounded-lg border border-[#e1e6ea] px-3 py-2 text-sm outline-none focus:border-[#9aa39e]" />
+      <textarea name="notes" rows={2} maxLength={500} placeholder="Como podemos ajudar? (opcional)" className="resize-none rounded-lg border border-[#e1e6ea] px-3 py-2 text-sm outline-none focus:border-[#9aa39e]" />
+      {error && <p className="text-[12px] text-[#b23a3a]">{error}</p>}
+      <button type="submit" disabled={state === "sending"} className="rounded-lg px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-60" style={{ background: bot.color }}>
+        {state === "sending" ? "Enviando…" : "Enviar contato"}
+      </button>
+    </form>
   );
 }
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Headset } from "lucide-react";
 import type { PendingHandoff } from "@/lib/panel";
 import { relativeTime } from "@/lib/utils";
+import { conversationState } from "@/lib/presence";
 
 /** Faixa "visitantes esperando atendente" com atalho para cada conversa. */
 export function PendingHandoffs({ items, showClient = true }: { items: PendingHandoff[]; showClient?: boolean }) {
@@ -17,6 +18,7 @@ export function PendingHandoffs({ items, showClient = true }: { items: PendingHa
           <Link key={h.id} href={`/painel/bots/${h.bot_id}/conversas/${h.id}`} className="flex flex-wrap items-center gap-x-2 rounded-lg px-1 py-1.5 text-sm text-ink-2 hover:bg-white/60">
             <span className="font-medium text-ink">{showClient ? `${h.bots?.client_name ?? ""} · ` : ""}{h.bots?.name}</span>
             <span className="text-xs text-muted">pediu {relativeTime(h.handoff_requested_at)}</span>
+            {conversationState(h) === "online" ? <span className="text-xs font-semibold text-brand">● online</span> : <span className="text-xs text-muted">saiu do site</span>}
             <span className="ml-auto text-xs font-semibold text-amber-ink">{h.takeover_at ? "em atendimento" : "responder →"}</span>
           </Link>
         ))}

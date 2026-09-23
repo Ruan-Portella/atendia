@@ -13,7 +13,7 @@ export default async function WidgetPage({ params }: PageProps<"/w/[key]">) {
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("public_key", key).maybeSingle();
   if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
-  const { data: agency } = await db.from("agencies").select("name, brand_color").eq("id", bot.agency_id).single();
+  const { data: agency } = await db.from("agencies").select("name, brand_color, privacy_url").eq("id", bot.agency_id).single();
   const offline = bot.status !== "live" && !bot.is_demo;
   return (
     <WidgetFrame>
@@ -22,7 +22,8 @@ export default async function WidgetPage({ params }: PageProps<"/w/[key]">) {
       ) : (
         <ChatWindow
           channel="widget"
-          bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color: bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d", avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null }}
+          embedded
+          bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color: bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d", avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null }}
         />
       )}
     </WidgetFrame>
