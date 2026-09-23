@@ -106,10 +106,12 @@ export async function handleInstagramMessage(db: SupabaseClient, ch: IgChannelRo
   const mid = ev.message?.mid ?? ev.postback?.mid;
   const igsid = ev.sender?.id;
   if (!mid || !igsid || ev.message?.is_deleted) return;
-  if (!(await firstTime(db, mid))) return;
+  if (!(await firstTime(db, mid))) return console.log("instagram: mensagem repetida ignorada", mid);
 
   const { data: bot } = await db.from("bots").select("*").eq("id", ch.bot_id).maybeSingle<BotRow>();
-  if (!bot || bot.status !== "live") return;
+  if (!bot) return console.warn("instagram: chatbot não encontrado", ch.bot_id);
+  if (bot.status !== "live") return console.log("instagram: chatbot não publicado, DM ignorada", bot.id);
+  console.log("instagram: DM recebida", { bot: bot.id, mid });
 
   const reply = (text: string) => send(db, ch, igsid, text);
   const typed = igText(ev);
