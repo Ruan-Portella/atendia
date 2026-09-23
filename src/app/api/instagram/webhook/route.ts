@@ -34,6 +34,23 @@ async function findChannel(db: ReturnType<typeof createAdminClient>, entry: NonN
   return data;
 }
 
+/**
+ * Formato do webhook para o log, sem conteúdo: tipo, campos de cada entrada e de cada evento e os
+ * ids envolvidos. É o que precisamos para entender um evento que não foi tratado.
+ */
+function shape(body: WebhookBody) {
+  return {
+    objeto: body.object,
+    camposDoCorpo: Object.keys(body),
+    entradas: (body.entry ?? []).map((e) => ({
+      id: e.id,
+      campos: Object.keys(e),
+      changes: (e.changes ?? []).map((c) => c.field),
+      eventos: (e.messaging ?? []).map((ev) => ({ campos: Object.keys(ev), mensagem: Object.keys(ev.message ?? {}), de: ev.sender?.id, para: ev.recipient?.id })),
+    })),
+  };
+}
+
 /** Cadastro do webhook no painel da Meta: ela manda o verify token e espera o challenge de volta. */
 export async function GET(req: Request) {
   const p = new URL(req.url).searchParams;
@@ -60,10 +77,14 @@ export async function POST(req: Request) {
   } catch {
     return new Response("invalid body", { status: 400 });
   }
-  if (body.object !== "instagram") return new Response("ok");
+  // "instagram" é o normal; "page" é o formato do Messenger, que a Meta às vezes usa para o Instagram
+  if (body.object !== "instagram" && body.object !== "page") {
+    console.log("instagram: webhook de outro tipo ignorado", shape(body));
+    return new Response("ok");
+  }
 
   const entries = (body.entry ?? []).map((e) => ({ ...e, messaging: messagingEvents(e) })).filter((e) => e.id && e.messaging.length);
-  if (!entries.length) console.log("instagram: webhook sem mensagens", { entradas: body.entry?.length ?? 0, campos: body.entry?.flatMap((e) => (e.changes ?? []).map((c) => c.field)) });
+  if (!entries.length) console.log("instagram: webhook sem mensagens", shape(body));
   if (entries.length) {
     after(async () => {
       const db = createAdminClient();
