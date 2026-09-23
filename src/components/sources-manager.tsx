@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AlertCircle, FileText, Globe, Link2, ListChecks, Loader2, Pencil, Plus, RefreshCw, Trash2, Type } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
+import { socialNetworkOf } from "@/lib/social-links";
 import { Modal, ConfirmModal } from "@/components/ui/modal";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
@@ -236,7 +237,7 @@ export function SourcesManager({ botId, sources }: { botId: string; sources: Sou
             {(editing.kind === "site" || editing.kind === "page") && (
               <div>
                 <label htmlFor="edit-url" className="label">Endereço</label>
-                <input id="edit-url" name="url" defaultValue={editing.url ?? ""} required className="input" placeholder="https://" />
+                <UrlInput id="edit-url" defaultValue={editing.url ?? ""} />
               </div>
             )}
             {(editing.kind === "text" || editing.kind === "faq") && (
@@ -290,7 +291,7 @@ function SourceFields({ kind }: { kind: Kind }) {
       {(kind === "site" || kind === "page") && (
         <div>
           <label htmlFor="src-url" className="label">{kind === "site" ? "Endereço do site (lê até 40 páginas do mesmo domínio)" : "Endereço da página"}</label>
-          <input id="src-url" name="url" required autoFocus className="input" placeholder="https://" />
+          <UrlInput id="src-url" autoFocus />
         </div>
       )}
       {kind === "pdf" && (
@@ -310,6 +311,22 @@ function SourceFields({ kind }: { kind: Kind }) {
             <textarea id="src-content" name="content" required rows={8} className="input font-mono text-[13px]" placeholder={kind === "faq" ? "P: Aceitam Unimed?\nR: Sim, para consultas e limpeza.\n\nP: Tem estacionamento?\nR: Sim, gratuito no subsolo." : "Tudo que o assistente precisa saber e que não está no site."} />
           </div>
         </>
+      )}
+    </>
+  );
+}
+
+/** Campo de endereço que avisa quando é rede social (o robô só consegue ler a bio). */
+function UrlInput({ id, defaultValue, autoFocus }: { id: string; defaultValue?: string; autoFocus?: boolean }) {
+  const [network, setNetwork] = useState(() => socialNetworkOf(defaultValue ?? ""));
+  return (
+    <>
+      <input id={id} name="url" defaultValue={defaultValue} required autoFocus={autoFocus} className="input" placeholder="https://" onChange={(e) => setNetwork(socialNetworkOf(e.target.value))} aria-describedby={network ? `${id}-social` : undefined} />
+      {network && (
+        <p id={`${id}-social`} role="status" className="mt-2 flex items-start gap-2 rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-xs text-amber-ink">
+          <AlertCircle size={14} className="mt-px shrink-0" />
+          <span>O {network} esconde quase tudo de quem não está logado: o assistente aprende no máximo a bio e as legendas dos posts, e às vezes nem isso. Para horários, produtos, preços e dúvidas comuns, cadastre também um <strong>Texto</strong> ou <strong>FAQ</strong>.</span>
+        </p>
       )}
     </>
   );

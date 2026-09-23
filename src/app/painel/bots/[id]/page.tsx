@@ -7,6 +7,7 @@ import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
+import { ConnectLinkButton } from "@/components/connect-link-button";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
 import { WhatsAppBilling } from "@/components/whatsapp-billing";
 import { WhatsAppUsage } from "@/components/whatsapp-usage";
@@ -25,7 +26,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { answerUnanswered, completeWhatsAppSignup, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 
@@ -260,7 +261,12 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   <p className="text-sm text-amber-ink">
                     Desconectado {relativeTime(whatsapp.disconnected_at)}{whatsapp.disconnect_reason ? `: ${whatsapp.disconnect_reason}` : ""}. {bot.name} parou de responder por este número. As conversas antigas continuam no painel.
                   </p>
-                  {signup && <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence={Boolean(whatsapp.coexistence)} label="Conectar de novo" />}
+                  {signup && (
+                    <div className="flex flex-col gap-3">
+                      <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
+                      <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence={Boolean(whatsapp.coexistence)} label="Conectar de novo agora" primary={false} />
+                    </div>
+                  )}
                   <ConfirmAction
                     action={disconnectWhatsApp.bind(null, id)}
                     title="Remover este número?"
@@ -299,7 +305,12 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <div className="card flex flex-col gap-4 p-5">
                   {signup ? (
                     <>
-                      <p className="text-sm text-ink-2">O cliente entra com o Facebook dele e escolhe o número. Pode ser feito com ele do lado, na chamada, ou pelo seu acesso ao Facebook da empresa dele.</p>
+                      <div className="flex flex-col gap-2 rounded-xl border border-[#cfe3d8] bg-brand-soft p-4">
+                        <div className="text-sm font-semibold">Mande um link para o cliente conectar</div>
+                        <p className="text-sm text-ink-2">Quem conecta é o dono do WhatsApp, com o Facebook dele. O link abre uma página com a sua marca, explica o passo a passo e o cadastro do cartão na Meta. Não precisa de conta nem de senha.</p>
+                        <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
+                      </div>
+                      <p className="pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted">Ou conecte agora, com o cliente do lado</p>
                       <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
                         <div className="text-sm font-semibold">Já atende pelo WhatsApp Business no celular</div>
                         <p className="text-sm text-ink-2">O número continua funcionando no app do celular. {bot.name} responde as mensagens; quando alguém da equipe responde pelo celular, a resposta aparece em Conversas e {bot.name} fica quieto naquela conversa por 1 hora.</p>

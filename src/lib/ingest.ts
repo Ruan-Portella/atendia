@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import { extractText, getDocumentProxy } from "unpdf";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { embedTexts } from "./ai";
+import { socialNetworkOf } from "./social-links";
 
 /* ------------------------------------------------------------------------ */
 /* Extração de texto                                                         */
@@ -33,17 +34,54 @@ export async function fetchPage(url: string, timeoutMs = 12000): Promise<PageTex
   }
 }
 
+// sem \b no fim: o Instagram cola os botões ("Log InSign Up")
+const LOGIN_RE = /\b(log ?in|sign ?up|entrar|fazer login|cadastre-se|inscreva-se|create an account)/i;
+
+/** Página que é só a tela de login (redes sociais sem sessão): pouco texto e chamadas de login. */
+export function isLoginWall(text: string): boolean {
+  return text.length < 300 && LOGIN_RE.test(text);
+}
+
+/**
+ * Rede social sem login: o corpo é só a tela de login, mas as meta tags trazem a bio (perfil)
+ * ou a legenda (post) entre aspas, ex.: `5 likes, 0 comments - loja on August 25, 2026: "legenda"`.
+ */
+function socialText($: cheerio.CheerioAPI): { title: string; text: string } {
+  // no perfil a bio só vem em name=description; no post, a legenda vem nas duas
+  const descs = [$('meta[name="description"]').attr("content"), $('meta[property="og:description"]').attr("content")].map((d) => (d ?? "").trim());
+  const quoteRe = /:\s*"([\s\S]+)"\.?\s*$/;
+  const desc = descs.find((d) => quoteRe.test(d)) ?? descs.find(Boolean) ?? "";
+  const ogTitle = ($('meta[property="og:title"]').attr("content") || $("title").first().text() || "").trim();
+  const name = ogTitle.replace(/\s*(on Instagram|on Threads|•|\|)[\s\S]*$/i, "").trim();
+  const quoted = desc.match(quoteRe)?.[1]?.trim();
+  if (quoted) {
+    const date = desc.match(/\bon ([A-Z][a-z]+ \d{1,2}, \d{4}):/)?.[1];
+    return { title: name, text: date ? `Post de ${name} (${date}): ${quoted}` : `Bio de ${name}: ${quoted}` };
+  }
+  // sem aspas: aproveita a descrição só se não for chamada de login nem só contadores (likes/seguidores)
+  const plain = LOGIN_RE.test(desc) || /^[\d.,]+\s*[KMB]?\s+(likes|followers|curtidas|seguidores)\b/i.test(desc) ? "" : desc;
+  return { title: name, text: plain };
+}
+
 export function parseHtml(url: string, html: string): PageText {
   const $ = cheerio.load(html);
+  const social = socialNetworkOf(url) ? socialText($) : null;
+  const description = ($('meta[name="description"]').attr("content") || $('meta[property="og:description"]').attr("content") || "").trim();
   $("script, style, noscript, svg, iframe, nav, footer, header, form, [aria-hidden='true'], .cookie, #cookie").remove();
-  const title = ($("title").first().text() || $("h1").first().text() || url).trim().slice(0, 200);
+  const title = (social?.title || $("title").first().text() || $("h1").first().text() || url).trim().slice(0, 200);
   const root = $("main").length ? $("main") : $("article").length ? $("article") : $("body");
-  const text = root
+  let text = root
     .text()
     .replace(/[ \t ]+/g, " ")
     .replace(/\s*\n\s*/g, "\n")
     .replace(/\n{2,}/g, "\n\n")
     .trim();
+  if (social) text = social.text;
+  else {
+    // tela de login não é conteúdo; páginas quase vazias (renderizadas por JS) ficam com a descrição
+    if (isLoginWall(text)) text = "";
+    if (text.length < 200 && description.length > text.length && !LOGIN_RE.test(description)) text = text ? `${description}\n\n${text}` : description;
+  }
 
   const base = new URL(url);
   const links = new Set<string>();
@@ -71,13 +109,19 @@ export async function crawlSite(startUrl: string, maxPages = Number(process.env.
   const seen = new Set<string>([startUrl]);
   const queue = [startUrl];
   const pages: PageText[] = [];
+  // rede social: cada post vira só a legenda (curta), e só seguimos os links do próprio perfil
+  const social = socialNetworkOf(startUrl) !== null;
+  const profilePath = new URL(startUrl).pathname.replace(/\/?$/, "/");
+  const minText = social ? 20 : 80;
   while (queue.length && pages.length < maxPages) {
     const batch = queue.splice(0, 5);
     const results = await Promise.all(batch.map((u) => fetchPage(u)));
     for (const p of results) {
-      if (!p || p.text.length < 80) continue;
-      pages.push(p);
+      if (!p) continue;
+      if (p.text.length >= minText) pages.push(p);
+      else if (!social) continue;
       for (const l of p.links) {
+        if (social && !new URL(l).pathname.startsWith(profilePath)) continue;
         if (!seen.has(l) && seen.size < maxPages * 4) {
           seen.add(l);
           queue.push(l);
@@ -152,14 +196,17 @@ export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuf
     const docs: Array<{ text: string; meta: Record<string, unknown> }> = [];
     let pages = 0;
 
+    const social = source.url ? socialNetworkOf(source.url) : null;
+    const socialError = `O ${social} só mostra posts para quem está logado, então o robô não consegue ler este perfil. Cadastre as informações como Texto ou FAQ.`;
+
     if (source.kind === "site" && source.url) {
       const crawled = await crawlSite(source.url);
-      if (!crawled.length) throw new Error("Não consegui ler nenhuma página desse site. Ele bloqueia robôs ou depende de JavaScript.");
+      if (!crawled.length) throw new Error(social ? socialError : "Não consegui ler nenhuma página desse site. Ele bloqueia robôs ou depende de JavaScript.");
       pages = crawled.length;
       for (const p of crawled) docs.push({ text: `${p.title}\n${p.text}`, meta: { url: p.url, title: p.title } });
     } else if (source.kind === "page" && source.url) {
       const p = await fetchPage(source.url);
-      if (!p) throw new Error("Não consegui ler essa página.");
+      if (!p || p.text.length < 40) throw new Error(social ? socialError : p ? "A página não tem texto aproveitável (pode exigir login ou depender de JavaScript)." : "Não consegui ler essa página.");
       pages = 1;
       docs.push({ text: `${p.title}\n${p.text}`, meta: { url: p.url, title: p.title } });
     } else if (source.kind === "pdf") {
