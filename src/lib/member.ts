@@ -13,7 +13,9 @@ import { isEmail } from "./validation";
  * Regra de acesso (conferida em TODA página e ação):
  *  1. o e-mail da sessão está em client_members daquele cliente; e
  *  2. a sessão foi aberta por link mágico (claim `amr` = otp/magiclink). Sem isso, alguém
- *     poderia criar conta com senha usando o e-mail do cliente e herdar o acesso.
+ *     poderia criar conta com senha usando o e-mail do cliente e herdar o acesso;
+ *  3. o link foi usado há menos de MEMBER_SESSION_DAYS dias. Depois disso a pessoa é
+ *     deslogada e pede um link novo (a data vem do próprio token: amr.timestamp).
  * Os dados são lidos com a service role, sempre filtrando pelo cliente autorizado.
  */
 
@@ -38,12 +40,42 @@ export function isEmailLinkSession(amr: unknown): boolean {
   return amr.some((e) => MAGIC_METHODS.has(typeof e === "string" ? e : (e as { method?: string })?.method ?? ""));
 }
 
-export const getMemberSession = cache(async (): Promise<{ email: string; memberships: Membership[] } | null> => {
+/** Quantos dias vale o acesso aberto por um link; depois, desloga e pede um link novo. */
+export const MEMBER_SESSION_DAYS = 7;
+
+/**
+ * Quando o link do e-mail foi usado (segundos Unix), pelo claim `amr` do token. É a data do
+ * login, não da última renovação da sessão. null quando o token não traz a data.
+ */
+export function emailLinkLoginAt(amr: unknown): number | null {
+  if (!Array.isArray(amr)) return null;
+  const times = amr
+    .filter((e) => typeof e === "object" && e && MAGIC_METHODS.has(String((e as { method?: string }).method)))
+    .map((e) => Number((e as { timestamp?: number }).timestamp))
+    .filter((t) => Number.isFinite(t) && t > 0);
+  return times.length ? Math.max(...times) : null;
+}
+
+/** O acesso passou do prazo? Sem data no token, não derruba (evita trancar todo mundo para fora). */
+export function isMemberSessionExpired(amr: unknown, nowMs = Date.now(), days = MEMBER_SESSION_DAYS): boolean {
+  const at = emailLinkLoginAt(amr);
+  return at !== null && nowMs - at * 1000 > days * 86_400_000;
+}
+
+export interface MemberSession {
+  email: string;
+  /** passou dos 7 dias: precisa sair e pedir um link novo */
+  expired: boolean;
+  memberships: Membership[];
+}
+
+export const getMemberSession = cache(async (): Promise<MemberSession | null> => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   const email = typeof claims?.email === "string" ? claims.email.toLowerCase() : "";
   if (!email || !isEmailLinkSession(claims?.amr)) return null;
+  if (isMemberSessionExpired(claims?.amr)) return { email, expired: true, memberships: [] };
   const { data: rows } = await createAdminClient()
     .from("client_members")
     .select("client_id, clients!inner(id, name, agency_id, allow_handoff, allow_knowledge, agencies!inner(name, logo_url, brand_color, support_whatsapp, custom_domain, custom_domain_verified_at))")
@@ -53,16 +85,21 @@ export const getMemberSession = cache(async (): Promise<{ email: string; members
     const a = (Array.isArray(c.agencies) ? c.agencies[0] : c.agencies) as Membership["agency"];
     return { clientId: String(c.id), clientName: String(c.name), agencyId: String(c.agency_id), allowHandoff: Boolean(c.allow_handoff), allowKnowledge: Boolean(c.allow_knowledge), agency: a };
   });
-  return { email, memberships };
+  return { email, expired: false, memberships };
 });
 
+/** Leva para a rota que encerra a sessão vencida e mostra a tela de pedir link. */
+export const expiredRedirect = (next: string) => `/cliente/expirou?next=${encodeURIComponent(next)}`;
+
 /**
- * Exige acesso ao cliente. Sem sessão válida → tela de entrada; sem acesso a este cliente
- * (ou domínio de outra agência) → 404. Devolve a service role já "presa" ao cliente.
+ * Exige acesso ao cliente. Sem sessão válida → tela de entrada; acesso vencido (7 dias) →
+ * desloga e pede link novo; sem acesso a este cliente (ou domínio de outra agência) → 404.
+ * Devolve a service role já "presa" ao cliente.
  */
 export async function requireMember(clientId: string, permission?: "handoff" | "knowledge"): Promise<{ email: string; member: Membership; admin: SupabaseClient; botIds: string[] }> {
   const session = await getMemberSession();
   if (!session) redirect(`/cliente/entrar?next=${encodeURIComponent(`/cliente/${clientId}`)}`);
+  if (session.expired) redirect(expiredRedirect(`/cliente/${clientId}`));
   const member = session.memberships.find((m) => m.clientId === clientId);
   if (!member || !(await belongsToHost(member.agencyId))) notFound();
   if (permission === "handoff" && !member.allowHandoff) notFound();
@@ -127,6 +164,7 @@ export async function memberForAction(clientId: string, permission?: "handoff" |
   const session = await getMemberSession();
   const member = session?.memberships.find((m) => m.clientId === clientId);
   if (!session || !member || !(await belongsToHost(member.agencyId))) return null;
+  if (session?.expired) return null;
   if (permission === "handoff" && !member.allowHandoff) return null;
   if (permission === "knowledge" && !member.allowKnowledge) return null;
   const admin = createAdminClient();

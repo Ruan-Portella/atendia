@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChevronRight } from "lucide-react";
-import { getMemberSession } from "@/lib/member";
+import { expiredRedirect, getMemberSession } from "@/lib/member";
 import { hostAgency } from "@/lib/domain-server";
 
 export const metadata = { title: { absolute: "Área do cliente" }, robots: { index: false, follow: false } };
@@ -10,6 +10,7 @@ export const metadata = { title: { absolute: "Área do cliente" }, robots: { ind
 export default async function MemberHome() {
   const session = await getMemberSession();
   if (!session) redirect("/cliente/entrar");
+  if (session.expired) redirect(expiredRedirect("/cliente"));
   const host = await hostAgency();
   const list = session.memberships.filter((m) => host === undefined || m.agencyId === host?.id);
   if (list.length === 1) redirect(`/cliente/${list[0].clientId}`);

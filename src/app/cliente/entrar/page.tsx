@@ -27,6 +27,7 @@ export default async function MemberLoginPage({ searchParams }: PageProps<"/clie
             <p className="text-sm text-muted">Acompanhe e atenda as conversas do seu assistente{name ? `, com ${name}` : ""}.</p>
           </div>
         </div>
+        {sp.expirou === "1" && <p className="rounded-lg bg-ground px-3 py-2 text-sm text-ink-2">Por segurança, cada acesso vale 7 dias. Peça um link novo para continuar.</p>}
         {sp.erro === "link" && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Esse link expirou ou já foi usado. Peça um novo abaixo.</p>}
         <ActionForm action={requestAccessLink} className="flex flex-col gap-3">
           <input type="hidden" name="next" value={next} />
@@ -36,7 +37,7 @@ export default async function MemberLoginPage({ searchParams }: PageProps<"/clie
           </div>
           <SubmitButton pendingLabel="Enviando…" className="btn-primary">Receber link de acesso</SubmitButton>
         </ActionForm>
-        <p className="text-center text-xs text-muted">Sem senha: mandamos um link que vale por 1 hora. Se não chegar, confira o spam ou peça acesso para a agência.</p>
+        <p className="text-center text-xs text-muted">Sem senha: mandamos um link que vale por 1 hora, e o acesso fica aberto por 7 dias. Se não chegar, confira o spam ou peça acesso para a agência.</p>
       </div>
     </main>
   );
