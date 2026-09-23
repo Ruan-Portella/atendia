@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, Clock } from "lucide-react";
+import { CheckCircle2, Clock, Info } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { saveCustomDomain, updateAgency, verifyCustomDomain } from "../actions";
 import { LogoUpload } from "@/components/logo-upload";
@@ -39,6 +39,13 @@ export default async function MarcaPage() {
         <div>
           <h2 className="text-base font-bold">Domínio próprio</h2>
           <p className="text-sm text-muted">Demos, portal do cliente e o código do widget passam a usar o seu endereço (ex.: <code>chat.suaagencia.com.br</code>) em vez de {appUrl("").replace(/^https?:\/\//, "")}.</p>
+        </div>
+        <div className="flex gap-2.5 rounded-lg border border-line bg-ground px-3.5 py-3 text-sm text-ink-2">
+          <Info size={16} className="mt-0.5 shrink-0 text-muted" />
+          <p>
+            <strong className="text-ink">O domínio próprio é para os seus clientes.</strong> Por ele, eles e os prospects acessam as demos, o portal com o relatório, a área do cliente e o chat do site. Este painel, onde você configura tudo, continua em{" "}
+            <strong className="text-ink">{appUrl("").replace(/^https?:\/\//, "")}</strong>. Abrir o painel pelo seu domínio mostra só uma página com a sua marca.
+          </p>
         </div>
         {!plan.customDomain ? (
           <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Disponível a partir do plano Agência. <Link href="/painel/cobranca" className="font-semibold underline">Ver planos</Link></p>
