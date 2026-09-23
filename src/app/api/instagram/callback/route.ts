@@ -12,7 +12,13 @@ import { markConnectLinkUsed, resolveConnectLink } from "@/lib/whatsapp-connect-
  */
 export async function GET(req: Request) {
   const p = new URL(req.url).searchParams;
-  const origin = readState(p.get("state"));
+  let origin: ReturnType<typeof readState>;
+  try {
+    origin = readState(p.get("state"));
+  } catch (e) {
+    console.error("instagram: state ilegível", e);
+    return new Response("O Instagram não está configurado no servidor (INSTAGRAM_APP_SECRET).", { status: 503 });
+  }
   if (!origin) return new Response("Este retorno do Instagram não é válido ou expirou. Comece a conexão de novo.", { status: 400 });
 
   const back = (result: { ok: true } | { ok: false; message: string }): never => {
@@ -29,7 +35,14 @@ export async function GET(req: Request) {
     if (!link || link.state !== "open" || link.channel !== "instagram" || link.botId !== origin.botId) back({ ok: false, message: "Este link não vale mais. Peça um novo à agência." });
   }
 
-  const r = await connectInstagram(db, { botId: origin.botId, code: p.get("code")!, via: origin.via });
+  // falha inesperada (banco, chave de cifra…) volta como aviso na tela, nunca como página 500
+  let r: Awaited<ReturnType<typeof connectInstagram>>;
+  try {
+    r = await connectInstagram(db, { botId: origin.botId, code: p.get("code")!, via: origin.via });
+  } catch (e) {
+    console.error("instagram: retorno do login falhou", e);
+    r = { ok: false, message: `Não foi possível concluir a conexão (${(e as Error).message}). Tente de novo; se continuar, fale com o suporte.` };
+  }
   if (r.ok && origin.via === "link") await markConnectLinkUsed(db, origin.token);
   revalidatePath(`/painel/bots/${origin.botId}`);
   back(r.ok ? { ok: true } : r);
