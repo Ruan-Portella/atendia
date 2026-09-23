@@ -12,15 +12,13 @@ import { conversationState, whatsappWindowOpen } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { whatsappAllowed } from "@/lib/whatsapp";
+import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
 import { deleteConversation, releaseConversation, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
 
 export const metadata = { title: "Conversa" };
-
-/** "O contato nunca escreveu": a janela de 24 h do WhatsApp nem chegou a abrir. */
-const NEVER = new Date(0).toISOString();
 
 export default async function ConversationPage({ params }: PageProps<"/painel/bots/[id]/conversas/[cid]">) {
   const { id, cid } = await params;
@@ -41,9 +39,10 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { name: string; client_id: string | null; client_name: string } | null;
   const takeOver = takeOverConversation.bind(null, cid);
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
-  // no WhatsApp a janela de 24 h conta da última mensagem do contato; conversa aberta por nós
-  // com modelo (sem mensagem dele ainda) começa fechada
-  const handoffConv = isWhatsApp ? { ...conv, last_user_at: visitorMsgs.at(-1)?.created_at ?? NEVER } : conv;
+  // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com
+  // ele (é por número); aberta por nós com modelo e sem resposta, ela nem abriu
+  const lastUserAt = isWhatsApp ? await lastContactMessageAt(supabase, id, conv.wa_id!) : undefined;
+  const handoffConv = isWhatsApp ? { ...conv, last_user_at: lastUserAt } : conv;
   const windowOpen = isWhatsApp && whatsappWindowOpen(handoffConv);
 
   // modelos aprovados, para retomar a conversa (só quem está no teste do WhatsApp)
@@ -99,7 +98,10 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
       <footer className="border-t border-line bg-ground">
         <div className="mx-auto flex max-w-[860px] flex-col gap-2 px-4 py-3 sm:px-5 md:px-7">
           {templates && !windowOpen && (
-            <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink"><strong>Passaram 24 h desde a última mensagem do contato.</strong> O WhatsApp só deixa retomar com um modelo aprovado: use “Enviar modelo” no topo. Quando ele responder, a conversa continua aqui.</p>
+            <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+              {lastUserAt === null ? <strong>Aguardando a resposta do contato.</strong> : <strong>Passaram 24 h desde a última mensagem do contato.</strong>}{" "}
+              {lastUserAt === null ? "Até ele responder, o WhatsApp só deixa enviar modelos aprovados" : "O WhatsApp só deixa retomar com um modelo aprovado"}: use “Enviar modelo” no topo. Quando ele responder, a conversa continua aqui.
+            </p>
           )}
           <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked />
         </div>

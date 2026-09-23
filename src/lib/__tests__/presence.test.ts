@@ -52,5 +52,9 @@ describe("whatsappWindowOpen", () => {
     expect(whatsappWindowOpen({ channel: "whatsapp", last_message_at: ago(10), last_user_at: ago(3600) }, now)).toBe(true);
     // conversa aberta pelo painel, sem mensagem do contato ainda
     expect(canTakeOver({ channel: "whatsapp", last_message_at: ago(10), last_user_at: ago(30 * 3600) }, now)).toBe(false);
+    // null = o contato nunca escreveu (aberta por nós com modelo): fechada mesmo com mensagem nossa agora
+    expect(whatsappWindowOpen({ channel: "whatsapp", last_message_at: ago(10), last_user_at: null }, now)).toBe(false);
+    // ausente = não sabemos: usa a última mensagem da conversa
+    expect(whatsappWindowOpen({ channel: "whatsapp", last_message_at: ago(3600) }, now)).toBe(true);
   });
 });

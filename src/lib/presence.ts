@@ -15,7 +15,10 @@ export interface PresenceInput {
   last_message_at: string;
   visitor_seen_at?: string | null;
   channel?: string | null;
-  /** Última mensagem do próprio contato: é dela que o WhatsApp conta a janela de 24 h. */
+  /**
+   * Última mensagem do próprio contato: é dela que o WhatsApp conta a janela de 24 h.
+   * null = ele nunca escreveu (conversa aberta por nós com modelo); ausente = não sabemos.
+   */
   last_user_at?: string | null;
 }
 
@@ -53,6 +56,7 @@ export function canTakeOver(c: PresenceInput, now = Date.now()): boolean {
 
 /** Ainda dá para mandar texto livre no WhatsApp? (senão, só modelo aprovado) */
 export function whatsappWindowOpen(c: PresenceInput, now = Date.now()): boolean {
+  if (c.last_user_at === null) return false;
   const from = c.last_user_at ?? c.last_message_at;
   return now - new Date(from).getTime() < WHATSAPP_WINDOW_HOURS * 3_600_000;
 }

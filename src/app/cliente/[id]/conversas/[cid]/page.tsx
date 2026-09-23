@@ -7,19 +7,17 @@ import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { MessageScroller } from "@/components/message-scroller";
 import { conversationState } from "@/lib/presence";
+import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { memberRelease, memberSend, memberTakeOver } from "../../../actions";
 
 export const metadata = { title: { absolute: "Conversa" }, robots: { index: false, follow: false } };
-
-/** "O contato nunca escreveu": a janela de 24 h do WhatsApp nem chegou a abrir. */
-const NEVER = new Date(0).toISOString();
 
 export default async function MemberConversationPage({ params }: PageProps<"/cliente/[id]/conversas/[cid]">) {
   const { id, cid } = await params;
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, handoff_requested_at, takeover_at, handled_at")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, handoff_requested_at, takeover_at, handled_at")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
@@ -33,8 +31,8 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const allMessages = (messages ?? []) as ThreadMessage[];
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   const handoffOpen = member.allowHandoff && !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
-  // no WhatsApp a janela de 24 h conta da última mensagem do contato
-  const handoffConv = conv.channel === "whatsapp" ? { ...conv, last_user_at: visitorMsgs.at(-1)?.created_at ?? NEVER } : conv;
+  // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com ele
+  const handoffConv = conv.channel === "whatsapp" && conv.wa_id ? { ...conv, last_user_at: await lastContactMessageAt(admin, conv.bot_id, conv.wa_id) } : conv;
 
   // Tela de chat: preenche o espaço abaixo das abas (a casca do portal rola só o conteúdo);
   // cabeçalho e resposta fixos, e só as mensagens rolam.

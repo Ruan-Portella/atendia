@@ -26,6 +26,19 @@ export interface ChannelRow extends WaChannel {
   bot_id: string;
 }
 
+/**
+ * Quando o contato escreveu por último para este chatbot, em qualquer conversa (a janela de 24 h
+ * da Meta é por número, não por conversa). null se ele nunca escreveu, ou se as conversas em que
+ * escreveu foram apagadas.
+ */
+export async function lastContactMessageAt(db: SupabaseClient, botId: string, waId: string): Promise<string | null> {
+  const { data: convs } = await db.from("conversations").select("id").eq("bot_id", botId).in("wa_id", waIdVariants(waId));
+  const ids = (convs ?? []).map((c) => c.id as string);
+  if (!ids.length) return null;
+  const { data } = await db.from("messages").select("created_at").in("conversation_id", ids).eq("role", "user").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return (data?.created_at as string | undefined) ?? null;
+}
+
 /** Texto da mensagem (texto, botão ou item de lista); null para áudio, imagem, figurinha… */
 export function inboundText(m: InboundMessage): string | null {
   const t = m.text?.body ?? m.button?.text ?? m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title;
