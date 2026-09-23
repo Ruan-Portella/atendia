@@ -7,6 +7,7 @@ import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
+import { WhatsAppTemplates } from "@/components/whatsapp-templates";
 import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
 import { ChatWindow } from "@/components/chat-window";
@@ -227,26 +228,29 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               {bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
               ) : whatsapp ? (
-                <div className="card flex flex-col gap-3 p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">conectado</span>
-                    <span className="display text-lg font-bold">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
-                    {whatsapp.verified_name && <span className="text-sm text-muted">· {whatsapp.verified_name}</span>}
+                <>
+                  <div className="card flex flex-col gap-3 p-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">conectado</span>
+                      <span className="display text-lg font-bold">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
+                      {whatsapp.verified_name && <span className="text-sm text-muted">· {whatsapp.verified_name}</span>}
+                    </div>
+                    <p className="text-sm text-ink-2">Ligado {relativeTime(whatsapp.created_at)}. {bot.status === "live" ? "Mande uma mensagem para este número para testar." : "O chatbot não está publicado: ele só responde no WhatsApp depois de clicar em “Publicar” no topo."}</p>
+                    {whatsapp.business_id && (
+                      <p className="text-xs text-muted">As conversas do WhatsApp são cobradas pela Meta direto do cliente. Para não parar, ele precisa ter uma forma de pagamento no <a href="https://business.facebook.com/wa/manage/home/" target="_blank" rel="noopener" className="font-semibold text-brand hover:underline">Gerenciador do WhatsApp</a>.</p>
+                    )}
+                    <ConfirmAction
+                      action={disconnectWhatsApp.bind(null, id)}
+                      title="Desconectar o WhatsApp?"
+                      description={<>O assistente para de responder pelo número <strong className="text-ink">{whatsapp.display_phone ?? whatsapp.phone_number_id}</strong>. As conversas antigas continuam no painel.</>}
+                      confirmLabel="Desconectar"
+                      className="self-start text-xs font-medium text-danger hover:underline"
+                    >
+                      Desconectar
+                    </ConfirmAction>
                   </div>
-                  <p className="text-sm text-ink-2">Ligado {relativeTime(whatsapp.created_at)}. {bot.status === "live" ? "Mande uma mensagem para este número para testar." : "O chatbot não está publicado: ele só responde no WhatsApp depois de clicar em “Publicar” no topo."}</p>
-                  {whatsapp.business_id && (
-                    <p className="text-xs text-muted">As conversas do WhatsApp são cobradas pela Meta direto do cliente. Para não parar, ele precisa ter uma forma de pagamento no <a href="https://business.facebook.com/wa/manage/home/" target="_blank" rel="noopener" className="font-semibold text-brand hover:underline">Gerenciador do WhatsApp</a>.</p>
-                  )}
-                  <ConfirmAction
-                    action={disconnectWhatsApp.bind(null, id)}
-                    title="Desconectar o WhatsApp?"
-                    description={<>O assistente para de responder pelo número <strong className="text-ink">{whatsapp.display_phone ?? whatsapp.phone_number_id}</strong>. As conversas antigas continuam no painel.</>}
-                    confirmLabel="Desconectar"
-                    className="self-start text-xs font-medium text-danger hover:underline"
-                  >
-                    Desconectar
-                  </ConfirmAction>
-                </div>
+                  <WhatsAppTemplates botId={id} />
+                </>
               ) : (
                 <div className="card flex flex-col gap-4 p-5">
                   {signup ? (

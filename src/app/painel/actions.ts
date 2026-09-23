@@ -17,6 +17,7 @@ import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDoma
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { WhatsAppError, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
 import { seal, unseal } from "@/lib/secret-box";
+import { createTemplate, deleteTemplate, lines, listTemplates, sendTemplate, templateBody, templateVariables, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -476,6 +477,78 @@ export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
   if (error) return fail("Não foi possível desconectar. Tente de novo.");
   revalidatePath(`/painel/bots/${botId}`);
   return ok("WhatsApp desconectado. O assistente parou de responder por ele.");
+}
+
+/* ------------------------------------------------------------------ modelos de mensagem (whatsapp) */
+
+/** Número do WhatsApp do chatbot, conferindo e-mail liberado e dono do chatbot. */
+async function ownedTemplateChannel(botId: string): Promise<TemplateChannel | { error: string }> {
+  const { email } = await requireAgency();
+  if (!whatsappAllowed(email)) return { error: "O WhatsApp ainda não está disponível na sua conta." };
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!bot) return { error: "Chatbot não encontrado." };
+  const { data: ch } = await createAdminClient().from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
+  if (!ch?.waba_id) return { error: "Conecte o WhatsApp (com a conta do WhatsApp Business) para usar modelos." };
+  return ch as TemplateChannel;
+}
+
+const metaError = (e: unknown) => (e instanceof WhatsAppError ? e.message : "erro desconhecido");
+
+export async function createWhatsAppTemplate(botId: string, formData: FormData): Promise<ActionResult> {
+  const ch = await ownedTemplateChannel(botId);
+  if ("error" in ch) return fail(ch.error);
+  const name = text(formData.get("name")).toLowerCase().replace(/\s+/g, "_");
+  const body = String(formData.get("body") ?? "").trim();
+  const examples = lines(String(formData.get("examples") ?? ""));
+  const category = formData.get("category") === "MARKETING" ? "MARKETING" : "UTILITY";
+  const invalid = validateTemplate({ name, body, examples });
+  if (invalid) return fail(invalid);
+  try {
+    await createTemplate(ch, { name, category, body, examples });
+  } catch (e) {
+    return fail(`A Meta recusou o modelo: ${metaError(e)}`);
+  }
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Modelo enviado para análise da Meta. Costuma sair em minutos; recarregue para ver o status.");
+}
+
+export async function deleteWhatsAppTemplate(botId: string, name: string): Promise<ActionResult> {
+  const ch = await ownedTemplateChannel(botId);
+  if ("error" in ch) return fail(ch.error);
+  try {
+    await deleteTemplate(ch, name);
+  } catch (e) {
+    return fail(`Não foi possível excluir: ${metaError(e)}`);
+  }
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Modelo excluído.");
+}
+
+/** Envia um modelo aprovado para um número (teste, ou avisar alguém fora da janela de 24 h). */
+export async function sendWhatsAppTemplate(botId: string, formData: FormData): Promise<ActionResult> {
+  const ch = await ownedTemplateChannel(botId);
+  if ("error" in ch) return fail(ch.error);
+  const name = text(formData.get("template"));
+  const to = text(formData.get("to")).replace(/\D/g, "");
+  const params = lines(String(formData.get("params") ?? ""));
+  if (to.length < 10) return fail("Informe o número com DDI e DDD, ex.: 55 21 99999-9999.");
+  let templates;
+  try {
+    templates = await listTemplates(ch);
+  } catch (e) {
+    return fail(`Não deu para ler os modelos: ${metaError(e)}`);
+  }
+  const t = templates.find((x) => x.name === name && x.status === "APPROVED");
+  if (!t) return fail("Escolha um modelo aprovado.");
+  const needed = templateVariables(templateBody(t)).length;
+  if (params.length < needed) return fail(`Este modelo tem ${needed} variáve${needed === 1 ? "l" : "is"}: preencha uma por linha.`);
+  try {
+    await sendTemplate(ch, to, t, params.slice(0, needed));
+  } catch (e) {
+    return fail(`O WhatsApp não aceitou o envio: ${metaError(e)}`);
+  }
+  return ok("Mensagem enviada. Confira no WhatsApp do número.");
 }
 
 /* ------------------------------------------------------------------ domínio próprio */

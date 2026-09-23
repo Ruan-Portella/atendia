@@ -77,6 +77,11 @@ async function graph<T>(path: string, token: string, init?: { method?: string; b
   return data as T;
 }
 
+/** Chamada à Graph API com o token do número (para quem monta outras operações, ex.: modelos). */
+export function graphFor<T>(ch: WaChannel, path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  return graph<T>(path, channelToken(ch), init);
+}
+
 export async function sendText(ch: WaChannel, to: string, body: string) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: { messaging_product: "whatsapp", recipient_type: "individual", to, type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true } },
