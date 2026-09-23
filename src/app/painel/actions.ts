@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -13,6 +14,7 @@ import { initials, slugify } from "@/lib/utils";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
+import { ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -509,4 +511,11 @@ export async function updatePrivacy(formData: FormData): Promise<ActionResult> {
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   revalidatePath("/painel", "layout");
   return ok(retention ? `Salvo. Conversas e contatos com mais de ${retention} meses serão apagados automaticamente.` : "Salvo.");
+}
+
+/** Esconde o card "Primeiros passos" neste navegador (um ano). */
+export async function hideOnboarding(): Promise<ActionResult> {
+  (await cookies()).set(ONBOARDING_COOKIE, "hidden", { path: "/painel", maxAge: 60 * 60 * 24 * 365, sameSite: "lax", httpOnly: true });
+  revalidatePath("/painel/clientes");
+  return ok("Primeiros passos ocultados.");
 }

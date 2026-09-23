@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { ChevronRight, Plus, UserPlus } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
@@ -6,6 +7,8 @@ import { brl, num } from "@/lib/plans";
 import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
 import { PendingHandoffs } from "@/components/pending-handoffs";
 import { Kpi } from "@/components/kpi";
+import { OnboardingChecklist } from "@/components/onboarding-checklist";
+import { getOnboarding, ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { daysAgoIso, initials } from "@/lib/utils";
 
 export const metadata = { title: "Clientes" };
@@ -21,10 +24,12 @@ interface ClientRow {
 export default async function ClientesPage() {
   const { agency, plan } = await requireAgency();
   const supabase = await createClient();
-  const [{ data }, stats, pending] = await Promise.all([
+  const hideOnboarding = (await cookies()).get(ONBOARDING_COOKIE)?.value === "hidden";
+  const [{ data }, stats, pending, onboarding] = await Promise.all([
     supabase.from("clients").select("id, name, site, price_cents, bots(id, status, is_demo)").eq("agency_id", agency.id).eq("bots.is_demo", false).order("name"),
     getBotStats(supabase, daysAgoIso(30)),
     getPendingHandoffs(supabase),
+    hideOnboarding ? null : getOnboarding(supabase, agency),
   ]);
   const waitingBy = (c: ClientRow) => pending.filter((h) => h.bots?.client_id === c.id).length;
   const clients = (data ?? []) as ClientRow[];
@@ -50,6 +55,8 @@ export default async function ClientesPage() {
       </div>
 
       <PendingHandoffs items={pending} />
+
+      {onboarding && <OnboardingChecklist steps={onboarding} />}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-3.5 xl:grid-cols-4">
         <Kpi label="Conversas (30 dias)" value={num(all.conversations)} sub="em todos os clientes" />

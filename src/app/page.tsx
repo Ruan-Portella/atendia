@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
+import { LegalFooter } from "@/components/legal-page";
 import { DemoGenerator } from "@/components/demo-generator";
 import { RoiCalculator } from "@/components/roi-calculator";
 import { PLANS, brl, num } from "@/lib/plans";
@@ -151,10 +152,7 @@ export default function LandingPage() {
         <h2 className="max-w-[760px] text-3xl font-bold leading-[1.1] md:text-[40px]">Gere a primeira demo hoje. Mande para um cliente amanhã.</h2>
         <Link href="/cadastro" className="btn-primary px-6 py-3.5 text-base">Criar conta grátis</Link>
       </section>
-      <footer className="flex flex-col gap-2 border-t border-line px-6 py-6 text-[13px] text-muted md:flex-row md:justify-between lg:px-16 xl:px-24">
-        <span>{brand} · LGPD: os dados dos seus clientes ficam no Brasil</span>
-        <span>Termos · Privacidade · Contato</span>
-      </footer>
+      <LegalFooter />
     </div>
   );
 }
