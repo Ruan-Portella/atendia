@@ -13,7 +13,7 @@ interface SessionInfo {
 }
 
 interface FacebookSdk {
-  init(opts: { appId: string; autoLogAppEvents: boolean; xfbml: boolean; version: string }): void;
+  init(opts: { appId: string; autoLogAppEvents: boolean; xfbml: boolean; version: string; fedCM?: boolean }): void;
   login(cb: (res: { authResponse?: { code?: string } | null }) => void, opts: Record<string, unknown>): void;
 }
 
@@ -31,7 +31,8 @@ function loadSdk(appId: string, version: string): Promise<FacebookSdk> {
   if (window.FB) return Promise.resolve(window.FB);
   return new Promise((resolve, reject) => {
     window.fbAsyncInit = () => {
-      window.FB!.init({ appId, autoLogAppEvents: true, xfbml: true, version });
+      // sem FedCM: no Chrome o SDK abriria um login comum (response_type=token) que ignora o config_id
+      window.FB!.init({ appId, autoLogAppEvents: true, xfbml: true, version, fedCM: false });
       resolve(window.FB!);
     };
     if (document.getElementById(SDK_ID)) return;
