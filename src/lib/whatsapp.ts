@@ -91,6 +91,25 @@ export async function sendText(ch: WaChannel, to: string, body: string) {
   });
 }
 
+/** O WhatsApp aceita mídia de até 16 MB; mais que isso nem tentamos baixar. */
+export const MAX_MEDIA_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Baixa uma mídia recebida (ex.: áudio). A Meta devolve um endereço temporário, que também
+ * exige o token do número.
+ */
+export async function downloadMedia(ch: WaChannel, mediaId: string): Promise<{ data: Uint8Array; mimeType: string }> {
+  const token = channelToken(ch);
+  const meta = await graph<{ url?: string; mime_type?: string; file_size?: number }>(mediaId, token);
+  if (!meta.url) throw new WhatsAppError("a Meta não devolveu o endereço da mídia");
+  if (meta.file_size && meta.file_size > MAX_MEDIA_BYTES) throw new WhatsAppError("mídia grande demais");
+  const res = await fetch(meta.url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) throw new WhatsAppError(`download da mídia falhou (${res.status})`);
+  const data = new Uint8Array(await res.arrayBuffer());
+  if (data.byteLength > MAX_MEDIA_BYTES) throw new WhatsAppError("mídia grande demais");
+  return { data, mimeType: meta.mime_type ?? res.headers.get("content-type") ?? "application/octet-stream" };
+}
+
 /** Marca como lida e mostra "digitando…" enquanto o assistente pensa. Falha não importa. */
 export async function markReadTyping(ch: WaChannel, messageId: string) {
   await graph(`${ch.phone_number_id}/messages`, channelToken(ch), {

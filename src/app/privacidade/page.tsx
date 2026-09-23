@@ -41,7 +41,7 @@ export default function PrivacyPage() {
 
       <Section title="4. WhatsApp e produtos da Meta">
         <p>
-          Quando uma empresa conecta um número de WhatsApp Business à {brand} (pelo cadastro incorporado da Meta), recebemos e tratamos: identificadores da conta WhatsApp Business e do número, o token de acesso concedido pela empresa, e as mensagens enviadas e recebidas nesse número, incluindo o número de telefone, o nome de perfil do contato e o status de entrega.
+          Quando uma empresa conecta um número de WhatsApp Business à {brand} (pelo cadastro incorporado da Meta), recebemos e tratamos: identificadores da conta WhatsApp Business e do número, o token de acesso concedido pela empresa, e as mensagens enviadas e recebidas nesse número, incluindo o número de telefone, o nome de perfil do contato e o status de entrega. Mensagens de áudio são transcritas em texto por um provedor de IA para que o assistente possa responder; guardamos só o texto transcrito, não o arquivo de áudio.
         </p>
         <p>
           Usamos esses dados <strong>somente</strong> para receber as mensagens, gerar e enviar as respostas do assistente, permitir o atendimento humano e mostrar o histórico no painel da empresa. Não vendemos esses dados, não os usamos para publicidade e não os usamos para treinar modelos de inteligência artificial. O uso também segue os Termos e as Políticas do WhatsApp Business e da Meta.
@@ -65,7 +65,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Supabase</strong>: banco de dados e autenticação.</li>
           <li><strong>Vercel</strong>: hospedagem da aplicação.</li>
-          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic e Google): geram as respostas e processam a base de conhecimento.</li>
+          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic e Google): geram as respostas, processam a base de conhecimento e transcrevem áudios recebidos pelo WhatsApp.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>
           <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp, quando a empresa conecta esse canal.</li>

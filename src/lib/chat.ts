@@ -100,7 +100,7 @@ export async function runChat(opts: {
   const agentMessages = (agentRows ?? []).map((r) => String(r.content).slice(0, 500)).reverse();
   const wa = opts.whatsapp;
   const channelNote = wa
-    ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil dela é "${wa.profileName}": confirme antes de usar.` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown.`
+    ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil dela é "${wa.profileName}": confirme antes de usar.` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
     : undefined;
   const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote });
   const convId = conversationId;

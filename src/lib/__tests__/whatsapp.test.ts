@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { toWhatsAppText, validSignature, waIdVariants, whatsappAllowed } from "../whatsapp";
+import { MAX_MEDIA_BYTES, downloadMedia, toWhatsAppText, validSignature, waIdVariants, whatsappAllowed } from "../whatsapp";
 import { inboundText } from "../whatsapp-inbound";
 
 const sign = (body: string, secret: string) => "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
@@ -72,5 +72,35 @@ describe("waIdVariants", () => {
   it("fixo e outros países ficam como estão", () => {
     expect(waIdVariants("552133334444")).toEqual(["552133334444"]);
     expect(waIdVariants("14155550123")).toEqual(["14155550123"]);
+  });
+});
+
+describe("downloadMedia", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+  const ch = { phone_number_id: "123" };
+
+  it("pede o endereço à Meta e baixa com o token do número", async () => {
+    vi.stubEnv("WHATSAPP_TOKEN", "tok");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ url: "https://lookaside.fbsbx.com/a", mime_type: "audio/ogg", file_size: 3 })))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])));
+    vi.stubGlobal("fetch", fetchMock);
+    const media = await downloadMedia(ch, "media-1");
+    expect(media.mimeType).toBe("audio/ogg");
+    expect([...media.data]).toEqual([1, 2, 3]);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/media-1$/);
+    for (const [, init] of fetchMock.mock.calls) expect(init.headers.Authorization).toBe("Bearer tok");
+  });
+
+  it("não baixa mídia maior que o limite do WhatsApp", async () => {
+    vi.stubEnv("WHATSAPP_TOKEN", "tok");
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ url: "https://x", file_size: MAX_MEDIA_BYTES + 1 })));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(downloadMedia(ch, "media-2")).rejects.toThrow(/grande demais/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

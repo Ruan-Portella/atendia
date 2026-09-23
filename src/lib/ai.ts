@@ -1,7 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { embed, embedMany, type EmbeddingModel, type LanguageModel } from "ai";
+import { embed, embedMany, transcribe, type EmbeddingModel, type LanguageModel } from "ai";
 
 type ProviderOptions = NonNullable<Parameters<typeof embed>[0]["providerOptions"]>;
 
@@ -47,6 +47,30 @@ function embeddingModel(): { model: EmbeddingModel; options: (task: "query" | "d
     throw new Error("Nenhuma chave para embeddings: defina OPENAI_API_KEY ou GOOGLE_API_KEY (com EMBEDDING_PROVIDER=google).");
   }
   return { model: openai.textEmbedding(process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small"), options: () => undefined, batch: 64 };
+}
+
+/**
+ * Transcrição de áudio (mensagens de voz do WhatsApp): OpenAI se houver OPENAI_API_KEY, senão
+ * Google (GOOGLE_API_KEY). A Anthropic não transcreve. Sem nenhuma das duas, não há transcrição.
+ */
+export function canTranscribe(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY);
+}
+
+export async function transcribeAudio(audio: Uint8Array): Promise<string> {
+  if (process.env.OPENAI_API_KEY) {
+    const { text } = await transcribe({
+      model: openai.transcription(process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe"),
+      audio,
+      providerOptions: { openai: { language: "pt" } },
+    });
+    return text.trim();
+  }
+  if (process.env.GOOGLE_API_KEY) {
+    const { text } = await transcribe({ model: google.transcription(process.env.GOOGLE_TRANSCRIBE_MODEL ?? "gemini-3.5-transcribe"), audio });
+    return text.trim();
+  }
+  throw new Error("Nenhuma chave para transcrever áudio: defina OPENAI_API_KEY ou GOOGLE_API_KEY.");
 }
 
 /** Embedding de uma pergunta do visitante. */

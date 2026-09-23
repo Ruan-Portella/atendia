@@ -2,7 +2,8 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runChat, type BotRow } from "./chat";
 import { firstExceeded } from "./rate-limit";
-import { markReadTyping, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
+import { canTranscribe, transcribeAudio } from "./ai";
+import { downloadMedia, markReadTyping, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
 const RESUME_HOURS = 24;
@@ -10,7 +11,10 @@ const MAX_MESSAGE_CHARS = 2000;
 const HISTORY = 12;
 
 const FALLBACK = "No momento não consigo responder por aqui. A equipe vai retornar sua mensagem em breve.";
-const ONLY_TEXT = "Por enquanto eu consigo ler só mensagens de texto. Pode escrever sua dúvida?";
+const ONLY_TEXT = "Por enquanto eu entendo mensagens de texto e áudios. Fotos, vídeos e documentos ainda não. Pode escrever sua dúvida?";
+const AUDIO_FAILED = "Não consegui entender o áudio. Pode mandar de novo ou escrever?";
+/** Marca a mensagem que chegou como áudio (no painel e para o assistente). */
+export const AUDIO_PREFIX = "🎤 ";
 
 /** O que interessa de uma mensagem recebida no webhook (value.messages[]). */
 export interface InboundMessage {
@@ -20,6 +24,7 @@ export interface InboundMessage {
   text?: { body?: string };
   button?: { text?: string };
   interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  audio?: { id?: string; mime_type?: string; voice?: boolean };
 }
 
 export interface ChannelRow extends WaChannel {
@@ -60,9 +65,11 @@ export async function handleInbound(db: SupabaseClient, channel: ChannelRow, msg
   const waId = msg.from;
   const reply = (body: string) => sendText(channel, waId, toWhatsAppText(body));
 
-  const text = inboundText(msg);
-  if (!text) return reply(ONLY_TEXT);
+  const typed = inboundText(msg);
+  const audioId = msg.type === "audio" ? msg.audio?.id : undefined;
+  if (!typed && !(audioId && canTranscribe())) return reply(ONLY_TEXT);
 
+  // o limite vem antes da transcrição: áudio em massa não gera custo
   const exceeded = await firstExceeded(db, [
     { key: `wa:${bot.id}:${waId}:m`, max: 15, windowSeconds: 60, message: "Você está mandando mensagens rápido demais. Espere um minutinho." },
     { key: `wa:${bot.id}:${waId}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
@@ -70,6 +77,19 @@ export async function handleInbound(db: SupabaseClient, channel: ChannelRow, msg
   if (exceeded) return reply(exceeded.message);
 
   await markReadTyping(channel, msg.id);
+
+  let text = typed;
+  if (!text && audioId) {
+    try {
+      const { data } = await downloadMedia(channel, audioId);
+      const transcript = await transcribeAudio(data);
+      text = transcript ? AUDIO_PREFIX + transcript : null;
+    } catch (e) {
+      console.error("whatsapp: áudio não transcrito", msg.id, e);
+    }
+    if (!text) return reply(AUDIO_FAILED);
+  }
+  if (!text) return;
 
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
   const { data: conv } = await db
