@@ -51,6 +51,15 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
+      <Section title="4.1 Instagram">
+        <p>
+          Quando uma empresa conecta a conta profissional do Instagram (pelo login do Instagram), recebemos e tratamos o identificador e o nome de usuário da conta, o token de acesso concedido pela empresa e as mensagens diretas enviadas e recebidas por ela, incluindo o identificador do contato no Instagram. Mensagens de áudio são transcritas em texto por um provedor de IA; guardamos só o texto.
+        </p>
+        <p>
+          Usamos esses dados somente para responder as mensagens com o assistente da empresa, permitir o atendimento humano e mostrar o histórico no painel. Não vendemos esses dados, não os usamos para publicidade nem para treinar modelos de IA. A empresa pode desconectar a conta no painel ou nas configurações do Instagram (Apps e sites); com isso, o token é apagado.
+        </p>
+      </Section>
+
       <Section title="5. Para que usamos e com qual base legal">
         <ul>
           <li><strong>Prestar o serviço contratado</strong> (execução de contrato): criar e operar os assistentes, entregar contatos, relatórios e atendimento humano.</li>
@@ -68,7 +77,7 @@ export default function PrivacyPage() {
           <li><strong>Provedores de IA</strong> (OpenAI, Anthropic e Google): geram as respostas, processam a base de conhecimento e transcrevem áudios recebidos pelo WhatsApp.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>
-          <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp, quando a empresa conecta esse canal.</li>
+          <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp e no Instagram, quando a empresa conecta esses canais.</li>
         </ul>
         <p>Também podemos compartilhar dados por ordem judicial ou exigência legal. Não vendemos dados pessoais.</p>
       </Section>
@@ -83,7 +92,7 @@ export default function PrivacyPage() {
         <ul>
           <li>Dados da conta: enquanto ela estiver ativa, e depois pelo prazo exigido por lei (por exemplo, registros fiscais).</li>
           <li>Conversas e contatos: pelo prazo definido por cada agência no painel (6, 12 ou 24 meses) ou até serem apagados por ela.</li>
-          <li>Tokens de acesso do WhatsApp: até a desconexão do número ou o encerramento da conta.</li>
+          <li>Tokens de acesso do WhatsApp e do Instagram: até a desconexão ou o encerramento da conta.</li>
         </ul>
       </Section>
 

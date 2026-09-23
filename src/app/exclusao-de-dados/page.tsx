@@ -12,11 +12,12 @@ export default function DataDeletionPage() {
   const { brand, email } = company;
   const subject = encodeURIComponent("Exclusão de dados");
   return (
-    <LegalPage title="Exclusão de dados" intro={`Como pedir que a ${brand} apague os seus dados pessoais, inclusive os recebidos pelo WhatsApp e por outros produtos da Meta.`}>
+    <LegalPage title="Exclusão de dados" intro={`Como pedir que a ${brand} apague os seus dados pessoais, inclusive os recebidos pelo WhatsApp, pelo Instagram e por outros produtos da Meta.`}>
       <Section title="Se você tem uma conta na plataforma">
         <ul>
           <li><strong>Conversas e contatos:</strong> apague uma conversa específica pelo painel, ou apague tudo de um cliente em Clientes, na opção de exclusão LGPD.</li>
           <li><strong>WhatsApp:</strong> desconecte o número no painel do assistente ou remova o acesso da {brand} nas configurações da sua conta Meta (Configurações do negócio › Integrações). O token de acesso é apagado e deixamos de receber mensagens.</li>
+          <li><strong>Instagram:</strong> desconecte a conta no painel do assistente ou remova o acesso nas configurações do Instagram (Configurações › Apps e sites). O token de acesso é apagado e deixamos de receber as mensagens diretas.</li>
           <li><strong>Conta inteira:</strong> envie o pedido pelo e-mail abaixo, a partir do e-mail cadastrado. Apagamos a conta, os assistentes, as conversas e os contatos.</li>
         </ul>
       </Section>

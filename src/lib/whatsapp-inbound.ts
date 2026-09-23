@@ -37,7 +37,7 @@ const MEDIA_LABEL: Record<string, string> = {
   contacts: "👤 (contato)",
   audio: "🎤 (áudio)",
 };
-const mediaLabel = (type: string) => MEDIA_LABEL[type] ?? "(mensagem sem texto)";
+export const mediaLabel = (type: string) => MEDIA_LABEL[type] ?? "(mensagem sem texto)";
 
 /** O que interessa de uma mensagem recebida no webhook (value.messages[]). */
 export interface InboundMessage {
@@ -59,8 +59,9 @@ export interface ChannelRow extends WaChannel {
  * da Meta é por número, não por conversa). null se ele nunca escreveu, ou se as conversas em que
  * escreveu foram apagadas.
  */
-export async function lastContactMessageAt(db: SupabaseClient, botId: string, waId: string): Promise<string | null> {
-  const { data: convs } = await db.from("conversations").select("id").eq("bot_id", botId).in("wa_id", waIdVariants(waId));
+export async function lastContactMessageAt(db: SupabaseClient, botId: string, contact: { waId: string } | { igsid: string }): Promise<string | null> {
+  const base = db.from("conversations").select("id").eq("bot_id", botId);
+  const { data: convs } = await ("waId" in contact ? base.in("wa_id", waIdVariants(contact.waId)) : base.eq("ig_id", contact.igsid));
   const ids = (convs ?? []).map((c) => c.id as string);
   if (!ids.length) return null;
   const { data } = await db.from("messages").select("created_at").in("conversation_id", ids).eq("role", "user").order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -74,7 +75,7 @@ export function inboundText(m: InboundMessage): string | null {
 }
 
 /** Grava uma mensagem do contato numa conversa e atualiza contadores (sem o assistente responder). */
-async function storeContactMessage(db: SupabaseClient, conversationId: string, content: string) {
+export async function storeContactMessage(db: SupabaseClient, conversationId: string, content: string) {
   await db.from("messages").insert({ conversation_id: conversationId, role: "user", content });
   const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
   const now = new Date().toISOString();

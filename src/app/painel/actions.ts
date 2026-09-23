@@ -19,6 +19,7 @@ import { WhatsAppError, waIdVariants, getPhoneNumber, subscribeApp, unsubscribeA
 import { unseal } from "@/lib/secret-box";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
 import { createConnectLink } from "@/lib/whatsapp-connect-link";
+import { unsubscribeInstagram } from "@/lib/instagram";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -422,8 +423,8 @@ export async function completeWhatsAppSignup(botId: string, input: SignupResult)
   return r;
 }
 
-/** Link para o cliente conectar o próprio WhatsApp (vale 7 dias, uma conexão). */
-export async function createWhatsAppConnectLink(botId: string): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
+/** Link para o cliente conectar o próprio WhatsApp ou Instagram (vale 7 dias, uma conexão). */
+export async function createWhatsAppConnectLink(botId: string, channel: "whatsapp" | "instagram" = "whatsapp"): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
   const { email } = await requireAgency();
   if (!whatsappAllowed(email)) return { ok: false, message: "O WhatsApp ainda não está disponível na sua conta." };
   const supabase = await createClient();
@@ -431,7 +432,7 @@ export async function createWhatsAppConnectLink(botId: string): Promise<{ ok: tr
   if (!bot) return { ok: false, message: "Chatbot não encontrado." };
   if (bot.is_demo) return { ok: false, message: "Converta a demo em chatbot antes de ligar o WhatsApp." };
   try {
-    const { url } = await createConnectLink(createAdminClient(), botId);
+    const { url } = await createConnectLink(createAdminClient(), botId, channel);
     return { ok: true, url };
   } catch {
     return { ok: false, message: "Não foi possível criar o link. Tente de novo." };
@@ -452,6 +453,24 @@ export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
   if (error) return fail("Não foi possível desconectar. Tente de novo.");
   revalidatePath(`/painel/bots/${botId}`);
   return ok("WhatsApp desconectado. O assistente parou de responder por ele.");
+}
+
+/* ------------------------------------------------------------------ instagram */
+
+/** Desliga a conta do Instagram do chatbot: o app sai das mensagens dela e o token é apagado. */
+export async function disconnectInstagram(botId: string): Promise<ActionResult> {
+  const { email } = await requireAgency();
+  if (!whatsappAllowed(email)) return fail("O Instagram ainda não está disponível na sua conta.");
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  const admin = createAdminClient();
+  const { data: ch } = await admin.from("instagram_channels").select("access_token_enc").eq("bot_id", botId).maybeSingle();
+  if (ch?.access_token_enc) await unsubscribeInstagram(unseal(ch.access_token_enc));
+  const { error } = await admin.from("instagram_channels").delete().eq("bot_id", botId);
+  if (error) return fail("Não foi possível desconectar. Tente de novo.");
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Instagram desconectado. O assistente parou de responder as mensagens diretas.");
 }
 
 /* ------------------------------------------------------------------ modelos de mensagem (whatsapp) */

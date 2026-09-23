@@ -1,8 +1,9 @@
-import { CheckCircle2, CreditCard } from "lucide-react";
+import { CheckCircle2, CreditCard, MessageCircle } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NEUTRAL_ICONS } from "@/lib/white-label";
 import { LINK_DAYS, resolveConnectLink } from "@/lib/whatsapp-connect-link";
 import { WHATSAPP_BILLING_URL, embeddedSignupConfig, hasPaymentMethod } from "@/lib/whatsapp";
+import { instagramConfigured } from "@/lib/instagram";
 import { AgencyHeader, brandColor } from "@/components/report-view";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { completeLinkSignup } from "../actions";
@@ -15,13 +16,14 @@ export const metadata = { title: { absolute: "Conectar WhatsApp" }, robots: { in
  * com o Facebook dele e conecta o próprio número. Depois, o passo do cartão (a Meta cobra as
  * mensagens direto dele) fica em destaque até ser feito.
  */
-export default async function ConnectWhatsAppPage({ params }: PageProps<"/conectar/[token]">) {
-  const { token } = await params;
+export default async function ConnectWhatsAppPage({ params, searchParams }: PageProps<"/conectar/[token]">) {
+  const [{ token }, sp] = await Promise.all([params, searchParams]);
   const admin = createAdminClient();
   const link = await resolveConnectLink(admin, token);
   const signup = embeddedSignupConfig();
+  const ready = link?.channel === "instagram" ? instagramConfigured() : Boolean(signup);
 
-  if (!link || link.state === "expired" || !signup) {
+  if (!link || link.state === "expired" || !ready) {
     return (
       <Shell agency={link?.agency}>
         <div className="card flex flex-col gap-2 p-6 text-center">
@@ -34,6 +36,47 @@ export default async function ConnectWhatsAppPage({ params }: PageProps<"/conect
 
   const color = brandColor(link.agency.brand_color);
   const { bot } = link;
+
+  if (link.channel === "instagram") {
+    const error = typeof sp.ig_erro === "string" ? sp.ig_erro : null;
+    if (link.state === "used") {
+      const { data: ch } = await admin.from("instagram_channels").select("username").eq("bot_id", link.botId).maybeSingle();
+      return (
+        <Shell agency={link.agency}>
+          <div className="flex flex-col items-center gap-2 text-center">
+            <CheckCircle2 size={40} style={{ color }} />
+            <h1 className="text-2xl font-bold">Instagram conectado!</h1>
+            <p className="text-[15px] text-ink-2">{ch?.username ? `A conta @${ch.username}` : "A sua conta"} já está ligada ao assistente {bot.name}. Ele responde as mensagens diretas a qualquer hora. Pode fechar esta página.</p>
+          </div>
+        </Shell>
+      );
+    }
+    return (
+      <Shell agency={link.agency}>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold uppercase tracking-[0.06em] text-muted">{bot.client_name}</p>
+          <h1 className="text-2xl font-bold sm:text-[28px]">Conecte o seu Instagram ao assistente {bot.name}</h1>
+          <p className="text-[15px] text-ink-2">{link.agency.name} preparou um assistente que responde as mensagens diretas do seu Instagram, a qualquer hora. Falta só você conectar a conta: leva 2 minutos, com o login do seu Instagram. As mensagens do Instagram não têm custo.</p>
+        </div>
+        {error && <p className="rounded-lg bg-danger-soft px-3 py-2.5 text-sm text-danger">{error}</p>}
+        <section className="card flex flex-col gap-3 p-5">
+          <h2 className="text-lg font-bold">Antes de conectar, confira no app do Instagram</h2>
+          <ol className="ml-5 list-decimal space-y-1.5 text-sm text-ink-2">
+            <li>A conta precisa ser <strong className="text-ink">profissional</strong> (Empresa ou Criador). Em Configurações → Tipo de conta e ferramentas.</li>
+            <li>Ligue <strong className="text-ink">“Permitir acesso às mensagens”</strong>: Configurações → Mensagens e respostas a stories → Ferramentas conectadas.</li>
+          </ol>
+          <a href={`/api/instagram/connect?link=${encodeURIComponent(token)}`} className="btn-primary self-start" style={{ background: color }}>
+            <MessageCircle size={16} />
+            Conectar meu Instagram
+          </a>
+          <p className="text-xs text-muted">Abre a tela de login do Instagram, onde você autoriza o acesso às mensagens. Ela pode mostrar o nome do aplicativo usado na conexão: é normal e seguro.</p>
+        </section>
+      </Shell>
+    );
+  }
+
+  // daqui para baixo é o link do WhatsApp (o "ready" acima já garantiu a configuração)
+  if (!signup) return null;
 
   if (link.state === "used") {
     const { data: ch } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc, display_phone").eq("bot_id", link.botId).maybeSingle();

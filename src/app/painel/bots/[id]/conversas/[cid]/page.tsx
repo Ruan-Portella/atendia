@@ -13,6 +13,7 @@ import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { whatsappAllowed } from "@/lib/whatsapp";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
+import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
@@ -25,7 +26,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, needs_human, handoff_requested_at, takeover_at, handled_at, bots(name, client_id, client_name)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, needs_human, handoff_requested_at, takeover_at, handled_at, bots(name, client_id, client_name)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -41,8 +42,9 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com
   // ele (é por número); aberta por nós com modelo e sem resposta, ela nem abriu
-  const lastUserAt = isWhatsApp ? await lastContactMessageAt(supabase, id, conv.wa_id!) : undefined;
-  const handoffConv = isWhatsApp ? { ...conv, last_user_at: lastUserAt } : conv;
+  const isInstagram = conv.channel === "instagram" && Boolean(conv.ig_id);
+  const lastUserAt = isWhatsApp ? await lastContactMessageAt(supabase, id, { waId: conv.wa_id! }) : isInstagram ? await lastContactMessageAt(supabase, id, { igsid: conv.ig_id! }) : undefined;
+  const handoffConv = isWhatsApp || isInstagram ? { ...conv, last_user_at: lastUserAt } : conv;
   const windowOpen = isWhatsApp && whatsappWindowOpen(handoffConv);
 
   // modelos aprovados, para retomar a conversa (só quem está no teste do WhatsApp)
@@ -90,13 +92,18 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
             messages={allMessages}
             leads={leads}
             showSources
-            agentLabel={(author) => (!author || author === "agência" ? "Você (agência)" : author === PHONE_AUTHOR ? "Pelo celular (WhatsApp Business)" : `Cliente · ${author}`)}
+            agentLabel={(author) => (!author || author === "agência" ? "Você (agência)" : author === PHONE_AUTHOR ? "Pelo celular (WhatsApp Business)" : author === IG_APP_AUTHOR ? "Pelo app do Instagram" : `Cliente · ${author}`)}
           />
         </div>
       </MessageScroller>
 
       <footer className="border-t border-line bg-ground">
         <div className="mx-auto flex max-w-[860px] flex-col gap-2 px-4 py-3 sm:px-5 md:px-7">
+          {isInstagram && !whatsappWindowOpen(handoffConv) && (
+            <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+              <strong>{lastUserAt === null ? "O contato ainda não mandou mensagem." : "Passaram 24 h desde a última mensagem do contato."}</strong> O Instagram só deixa responder dentro desse prazo. Quando ele escrever de novo, a conversa continua aqui.
+            </p>
+          )}
           {templates && !windowOpen && (
             <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
               {lastUserAt === null ? <strong>Aguardando a resposta do contato.</strong> : <strong>Passaram 24 h desde a última mensagem do contato.</strong>}{" "}

@@ -47,9 +47,11 @@ export async function runChat(opts: {
   messages: UIMessage[];
   conversationId: string | null;
   visitorId: string | null;
-  channel: "widget" | "demo" | "painel" | "whatsapp";
+  channel: "widget" | "demo" | "painel" | "whatsapp" | "instagram";
   /** Contato do WhatsApp: o número já é conhecido, o assistente só pede o nome. */
   whatsapp?: { waId: string; profileName?: string | null };
+  /** Contato do Instagram Direct (IGSID). O WhatsApp da pessoa não é conhecido. */
+  instagram?: { igsid: string };
 }) {
   const { db, bot, messages, channel } = opts;
 
@@ -70,7 +72,7 @@ export async function runChat(opts: {
 
     const { data: conv, error } = await db
       .from("conversations")
-      .insert({ bot_id: bot.id, visitor_id: opts.visitorId, channel, ...(opts.whatsapp ? { wa_id: opts.whatsapp.waId } : {}) })
+      .insert({ bot_id: bot.id, visitor_id: opts.visitorId, channel, ...(opts.whatsapp ? { wa_id: opts.whatsapp.waId } : {}), ...(opts.instagram ? { ig_id: opts.instagram.igsid } : {}) })
       .select("id")
       .single();
     if (error || !conv) throw new Error("Não foi possível abrir a conversa.");
@@ -101,7 +103,9 @@ export async function runChat(opts: {
   const wa = opts.whatsapp;
   const channelNote = wa
     ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil dela é "${wa.profileName}": confirme antes de usar.` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
-    : undefined;
+    : opts.instagram
+      ? "A conversa é pelo Direct do Instagram. Você não sabe o WhatsApp da pessoa: para registrar o contato, peça nome e WhatsApp. O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio."
+      : undefined;
   const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote });
   const convId = conversationId;
 

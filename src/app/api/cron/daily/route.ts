@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deadline, isCronAuthorized } from "@/lib/cron";
 import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
+import { refreshInstagramTokens } from "@/lib/instagram-channel";
 
 export const maxDuration = 60;
 
@@ -22,6 +23,8 @@ export async function GET(req: Request) {
   };
   const trial = await run("avisos de teste", () => trialReminders(db));
   const retention = await run("limpeza LGPD", () => applyRetention(db));
+  // o acesso ao Instagram vale 60 dias: renova antes de vencer
+  const instagram = await run("tokens do Instagram", () => refreshInstagramTokens(db));
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
-  return Response.json({ trial, retention, sources });
+  return Response.json({ trial, retention, instagram, sources });
 }

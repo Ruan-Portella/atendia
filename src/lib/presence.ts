@@ -49,7 +49,8 @@ export const WHATSAPP_WINDOW_HOURS = 24;
  * resposta: no site, online agora ou falou há menos de IDLE_MINUTES; no WhatsApp, dentro das 24 h.
  */
 export function canTakeOver(c: PresenceInput, now = Date.now()): boolean {
-  if (c.channel === "whatsapp") return whatsappWindowOpen(c, now);
+  // WhatsApp e Instagram: a resposta livre vale até 24 h depois da última mensagem do contato
+  if (c.channel === "whatsapp" || c.channel === "instagram") return whatsappWindowOpen(c, now);
   const idle = (now - new Date(c.last_message_at).getTime()) / 60_000;
   return conversationState(c, now) === "online" || idle < IDLE_MINUTES;
 }

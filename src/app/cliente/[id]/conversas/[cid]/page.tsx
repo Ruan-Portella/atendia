@@ -8,6 +8,7 @@ import { ConversationLive } from "@/components/conversation-live";
 import { MessageScroller } from "@/components/message-scroller";
 import { conversationState } from "@/lib/presence";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
+import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { memberRelease, memberSend, memberTakeOver } from "../../../actions";
 
 export const metadata = { title: { absolute: "Conversa" }, robots: { index: false, follow: false } };
@@ -17,7 +18,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, handoff_requested_at, takeover_at, handled_at")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, handoff_requested_at, takeover_at, handled_at")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
@@ -32,7 +33,8 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   const handoffOpen = member.allowHandoff && !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com ele
-  const handoffConv = conv.channel === "whatsapp" && conv.wa_id ? { ...conv, last_user_at: await lastContactMessageAt(admin, conv.bot_id, conv.wa_id) } : conv;
+  const contact = conv.channel === "whatsapp" && conv.wa_id ? { waId: conv.wa_id } : conv.channel === "instagram" && conv.ig_id ? { igsid: conv.ig_id } : null;
+  const handoffConv = contact ? { ...conv, last_user_at: await lastContactMessageAt(admin, conv.bot_id, contact) } : conv;
 
   // Tela de chat: preenche o espaço abaixo das abas (a casca do portal rola só o conteúdo);
   // cabeçalho e resposta fixos, e só as mensagens rolam.
@@ -41,7 +43,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
       <header className="border-b border-line py-3">
         <Link href={`/cliente/${id}/conversas`} className="text-xs font-semibold text-muted">← Conversas</Link>
         <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa <ConversationStateBadge conv={conv} withTime /></h1>
-        <p className="text-xs text-muted">{new Date(conv.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "long", timeStyle: "short" })}{conv.channel === "whatsapp" ? " · WhatsApp" : ""}</p>
+        <p className="text-xs text-muted">{new Date(conv.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "long", timeStyle: "short" })}{conv.channel === "whatsapp" ? " · WhatsApp" : conv.channel === "instagram" ? " · Instagram" : ""}</p>
       </header>
 
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={handoffOpen} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />
@@ -52,7 +54,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
           <ConversationThread
             messages={allMessages}
             leads={leads}
-            agentLabel={(author) => (author === email ? "Você" : !author || author === "agência" ? agencyName : author === PHONE_AUTHOR ? "Pelo celular" : author)}
+            agentLabel={(author) => (author === email ? "Você" : !author || author === "agência" ? agencyName : author === PHONE_AUTHOR ? "Pelo celular" : author === IG_APP_AUTHOR ? "Pelo Instagram" : author)}
           />
         </div>
       </MessageScroller>

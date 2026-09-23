@@ -13,7 +13,7 @@ import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
 export async function completeLinkSignup(token: string, input: SignupResult): Promise<ActionResult> {
   const admin = createAdminClient();
   const link = await resolveConnectLink(admin, token);
-  if (!link || link.state !== "open") return fail("Este link não vale mais. Peça um novo à agência.");
+  if (!link || link.state !== "open" || link.channel !== "whatsapp") return fail("Este link não vale mais. Peça um novo à agência.");
   if (link.bot.is_demo) return fail("Este assistente ainda não está pronto para o WhatsApp. Fale com a agência.");
   const r = await connectFromSignup(admin, { botId: link.botId, agencyId: link.agencyId, clientName: link.bot.client_name, input, via: "link" });
   if (r.ok) await markConnectLinkUsed(admin, token);

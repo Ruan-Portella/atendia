@@ -26,7 +26,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 
@@ -39,6 +39,7 @@ const TABS = [
   ["leads", "Captura de leads"],
   ["conversas", "Conversas"],
   ["whatsapp", "WhatsApp"],
+  ["instagram", "Instagram"],
   ["instalacao", "Instalação"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
@@ -47,14 +48,15 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const [{ id }, sp, { email }] = await Promise.all([params, searchParams, requireAgency()]);
   // WhatsApp em teste: a aba só existe para os e-mails liberados
   const waAllowed = whatsappAllowed(email);
-  const tabs = waAllowed ? TABS : TABS.filter(([t]) => t !== "whatsapp");
+  // WhatsApp e Instagram estão no mesmo teste fechado
+  const tabs = waAllowed ? TABS : TABS.filter(([t]) => t !== "whatsapp" && t !== "instagram");
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
   const supabase = await createClient();
 
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
   // inteiros) não vem mais: só o de textos/FAQs, que o modal de edição precisa.
   const none = Promise.resolve({ data: null, count: null });
-  const [{ agency }, { data: bot }, { count: readySources }, { data: sourceMeta }, { data: sourceTexts }, { data: unanswered }, { data: conversations }, { count: leadCount }, { data: whatsapp }] = await Promise.all([
+  const [{ agency }, { data: bot }, { count: readySources }, { data: sourceMeta }, { data: sourceTexts }, { data: unanswered }, { data: conversations }, { count: leadCount }, { data: instagram }, { data: whatsapp }] = await Promise.all([
     requireAgency(),
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
@@ -63,6 +65,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "fontes" ? supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10) : none,
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, handled_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id) : none,
+    tab === "instagram" ? supabase.from("instagram_channels").select("ig_user_id, username, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
     tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
@@ -335,6 +338,58 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                       <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
                     </ActionForm>
                   </details>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === "instagram" && (
+            <div className="flex max-w-[640px] flex-col gap-4">
+              <div>
+                <h2 className="text-[22px] font-bold">Instagram</h2>
+                <p className="text-sm text-muted">{bot.name} responde as mensagens diretas do Instagram do cliente com a mesma base de conhecimento. As mensagens do Instagram não são cobradas pela Meta.</p>
+              </div>
+              {sp.ig === "ok" && <p className="rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Instagram conectado. Mande uma DM para a conta para testar.</p>}
+              {typeof sp.ig_erro === "string" && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{sp.ig_erro}</p>}
+              {bot.is_demo ? (
+                <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o Instagram.</p>
+              ) : instagram && !instagram.disconnected_at ? (
+                <div className="card flex flex-col gap-3 p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">conectado</span>
+                    <span className="display text-lg font-bold">@{instagram.username ?? instagram.ig_user_id}</span>
+                  </div>
+                  <p className="text-sm text-ink-2">Ligado {relativeTime(instagram.created_at)}. {bot.status === "live" ? "Mande uma DM para a conta para testar." : "O chatbot não está publicado: ele só responde no Instagram depois de clicar em “Publicar” no topo."}</p>
+                  <p className="text-xs text-muted">Se o assistente não responder, confira no Instagram da conta: Configurações → Mensagens e respostas a stories → Ferramentas conectadas → “Permitir acesso às mensagens”. O acesso é renovado sozinho a cada 60 dias.</p>
+                  <ConfirmAction
+                    action={disconnectInstagram.bind(null, id)}
+                    title="Desconectar o Instagram?"
+                    description={<>O assistente para de responder as mensagens de <strong className="text-ink">@{instagram.username ?? instagram.ig_user_id}</strong>. As conversas antigas continuam no painel.</>}
+                    confirmLabel="Desconectar"
+                    className="self-start text-xs font-medium text-danger hover:underline"
+                  >
+                    Desconectar
+                  </ConfirmAction>
+                </div>
+              ) : (
+                <div className="card flex flex-col gap-4 p-5">
+                  {instagram?.disconnected_at && (
+                    <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">@{instagram.username ?? instagram.ig_user_id} foi desconectado {relativeTime(instagram.disconnected_at)}{instagram.disconnect_reason ? `: ${instagram.disconnect_reason}` : ""}. Conecte de novo abaixo.</p>
+                  )}
+                  <div className="flex flex-col gap-1.5 text-sm text-ink-2">
+                    <div className="font-semibold text-ink">Antes de conectar, a conta precisa:</div>
+                    <ul className="ml-5 list-disc space-y-0.5">
+                      <li>ser uma <strong>conta profissional</strong> (Empresa ou Criador);</li>
+                      <li>ter ligado <strong>“Permitir acesso às mensagens”</strong> em Configurações → Mensagens e respostas a stories → Ferramentas conectadas.</li>
+                    </ul>
+                  </div>
+                  <div className="flex flex-col gap-2 rounded-xl border border-[#cfe3d8] bg-brand-soft p-4">
+                    <div className="text-sm font-semibold">Mande um link para o cliente conectar</div>
+                    <p className="text-sm text-ink-2">Quem conecta é o dono da conta, com o login do Instagram dele. O link abre uma página com a sua marca e o passo a passo. Não precisa de conta nem de senha no painel.</p>
+                    <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id, "instagram")} clientName={bot.client_name} channelName="Instagram" />
+                  </div>
+                  <p className="pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted">Ou conecte agora, com o login da conta</p>
+                  <a href={`/api/instagram/connect?bot=${id}`} className="btn-ghost self-start">Conectar Instagram</a>
                 </div>
               )}
             </div>
