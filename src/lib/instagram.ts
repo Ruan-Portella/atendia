@@ -185,6 +185,38 @@ export async function sendInstagramText(ch: IgChannel, recipientId: string, text
   return r.message_id ?? null;
 }
 
+/* ------------------------------------------------------------------ conversas (busca de DMs) */
+
+/** A Meta manda data como timestamp unix (segundos) ou ISO; devolve em milissegundos. */
+export function igTime(v: string | number | undefined): number {
+  if (v === undefined || v === "") return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? (n < 1e12 ? n * 1000 : n) : new Date(String(v)).getTime() || 0;
+}
+
+export async function listConversations(ch: IgChannel): Promise<Array<{ id: string; updated_time?: string | number }>> {
+  const r = await api<{ data?: Array<{ id: string; updated_time?: string | number }> }>("me/conversations?platform=instagram&fields=id,updated_time", tokenOf(ch));
+  return r.data ?? [];
+}
+
+export async function conversationMessages(ch: IgChannel, conversationId: string): Promise<Array<{ id: string; created_time?: string | number }>> {
+  const r = await api<{ messages?: { data?: Array<{ id: string; created_time?: string | number }> } }>(`${conversationId}?fields=messages`, tokenOf(ch));
+  return r.messages?.data ?? [];
+}
+
+export interface IgMessageDetails {
+  id: string;
+  created_time?: string | number;
+  from?: { id?: string; username?: string };
+  to?: { data?: Array<{ id?: string; username?: string }> };
+  message?: string;
+}
+
+/** Detalhes de uma mensagem (a Meta só dá os das 20 mais recentes de cada conversa). */
+export async function messageDetails(ch: IgChannel, messageId: string): Promise<IgMessageDetails> {
+  return api<IgMessageDetails>(`${messageId}?fields=id,created_time,from,to,message`, tokenOf(ch));
+}
+
 /** "Visto" e "digitando…" enquanto o assistente pensa. Falha não importa. */
 export async function instagramTyping(ch: IgChannel, recipientId: string) {
   const token = tokenOf(ch);
