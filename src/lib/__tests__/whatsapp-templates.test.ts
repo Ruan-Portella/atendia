@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formParams, lines, renderTemplate, templateBody, templateVariables, validateTemplate } from "../template-text";
+import { formParams, lines, renderTemplate, templateBody, templateName, templateVariables, unsupportedReason, validateTemplate } from "../template-text";
 
 describe("templateVariables", () => {
   it("acha as variáveis na ordem, sem repetir", () => {
@@ -47,5 +47,25 @@ describe("renderTemplate e formParams", () => {
     fd.set("param_2", " b ");
     fd.set("param_1", "a");
     expect(formParams(fd, 3)).toEqual(["a", "b", ""]);
+  });
+});
+
+describe("templateName", () => {
+  it("converte para o formato da Meta", () => {
+    expect(templateName("Retorno Atendimento")).toBe("retorno_atendimento");
+    expect(templateName("  Confirmação de horário! ")).toBe("confirmacao_de_horario");
+    expect(templateName("aviso_lead")).toBe("aviso_lead");
+  });
+});
+
+describe("unsupportedReason", () => {
+  it("texto, rodapé e botões fixos: dá para enviar", () => {
+    expect(unsupportedReason({ components: [{ type: "HEADER", format: "TEXT", text: "Oi" }, { type: "BODY", text: "Olá {{1}}!" }, { type: "FOOTER", text: "x" }, { type: "BUTTONS", buttons: [{ type: "QUICK_REPLY" }, { type: "URL", url: "https://a.com" }] }] })).toBeNull();
+  });
+  it("mídia, carrossel, botão variável e variável com nome: não dá", () => {
+    expect(unsupportedReason({ components: [{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "x" }] })).toMatch(/cabeçalho/);
+    expect(unsupportedReason({ components: [{ type: "BODY", text: "x" }, { type: "CAROUSEL" }] })).toMatch(/carrossel/);
+    expect(unsupportedReason({ components: [{ type: "BODY", text: "x" }, { type: "BUTTONS", buttons: [{ type: "URL", url: "https://a.com/{{1}}" }] }] })).toMatch(/botão/);
+    expect(unsupportedReason({ components: [{ type: "BODY", text: "Olá {{nome}}" }] })).toMatch(/nome/);
   });
 });

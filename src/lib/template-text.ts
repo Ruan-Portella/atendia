@@ -13,7 +13,32 @@ export interface Template {
   category: string;
   language: string;
   rejected_reason?: string;
-  components?: Array<{ type: string; text?: string }>;
+  components?: TemplateComponent[];
+}
+
+export interface TemplateComponent {
+  type: string; // HEADER, BODY, FOOTER, BUTTONS, CAROUSEL…
+  format?: string; // no HEADER: TEXT, IMAGE, VIDEO, DOCUMENT, LOCATION
+  text?: string;
+  buttons?: Array<{ type: string; url?: string }>;
+}
+
+/**
+ * Por que o Boavoz ainda não consegue mandar este modelo (null = consegue). O envio só preenche
+ * variáveis do texto; mídia no cabeçalho, carrossel e botões com parte variável ficam de fora.
+ */
+export function unsupportedReason(t: Pick<Template, "components">): string | null {
+  const comps = t.components ?? [];
+  for (const c of comps) {
+    if (c.type === "HEADER" && c.format && c.format !== "TEXT") return "tem imagem, vídeo ou documento no cabeçalho";
+    if (c.type === "HEADER" && /\{\{/.test(c.text ?? "")) return "tem variável no cabeçalho";
+    if (c.type === "CAROUSEL") return "é um carrossel";
+    if (c.type === "BUTTONS" && (c.buttons ?? []).some((b) => !["QUICK_REPLY", "PHONE_NUMBER", "URL"].includes(b.type) || /\{\{/.test(b.url ?? ""))) return "tem botão com parte variável";
+    if (!["HEADER", "BODY", "FOOTER", "BUTTONS"].includes(c.type)) return "usa um recurso que o Boavoz ainda não envia";
+  }
+  const body = templateBody(t);
+  if (/\{\{\s*[^\d\s}]/.test(body)) return "usa variáveis com nome em vez de número";
+  return null;
 }
 
 export const STATUS_LABEL: Record<string, string> = {
@@ -61,6 +86,17 @@ export function toSendable(t: Template): SendableTemplate {
 /** Valores das variáveis enviados pelo formulário (campos param_1, param_2…). */
 export function formParams(formData: FormData, count: number): string[] {
   return Array.from({ length: count }, (_, i) => String(formData.get(`param_${i + 1}`) ?? "").trim());
+}
+
+/** "Retorno Atendimento!" vira "retorno_atendimento": o formato de nome que a Meta aceita. */
+export function templateName(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "") // acentos soltos pelo NFD
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 /** Linhas de um textarea, uma por variável. */

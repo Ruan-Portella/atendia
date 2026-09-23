@@ -17,7 +17,7 @@ import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDoma
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { WhatsAppError, waIdVariants, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
 import { seal, unseal } from "@/lib/secret-box";
-import { createTemplate, deleteTemplate, formParams, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
+import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -534,7 +534,7 @@ const metaError = (e: unknown) => (e instanceof WhatsAppError ? e.message : "err
 export async function createWhatsAppTemplate(botId: string, formData: FormData): Promise<ActionResult> {
   const ch = await ownedTemplateChannel(botId);
   if ("error" in ch) return fail(ch.error);
-  const name = text(formData.get("name")).toLowerCase().replace(/\s+/g, "_");
+  const name = templateName(text(formData.get("name")));
   const body = String(formData.get("body") ?? "").trim();
   const examples = lines(String(formData.get("examples") ?? ""));
   const category = formData.get("category") === "MARKETING" ? "MARKETING" : "UTILITY";

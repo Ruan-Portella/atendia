@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { WhatsAppError } from "@/lib/whatsapp";
-import { STATUS_LABEL, listTemplates, templateBody, type Template, type TemplateChannel } from "@/lib/whatsapp-templates";
+import { STATUS_LABEL, listTemplates, templateBody, unsupportedReason, type Template, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { createWhatsAppTemplate, deleteWhatsAppTemplate } from "@/app/painel/actions";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -60,6 +60,7 @@ export async function WhatsAppTemplates({ botId }: { botId: string }) {
                 </ConfirmAction>
               </div>
               <p className="whitespace-pre-line text-ink-2">{templateBody(t)}</p>
+              {unsupportedReason(t) && <p className="text-xs text-muted">Não aparece para envio no Boavoz: {unsupportedReason(t)}.</p>}
               {t.status === "REJECTED" && t.rejected_reason && t.rejected_reason !== "NONE" && <p className="text-xs text-danger">Motivo da Meta: {t.rejected_reason}</p>}
             </div>
           ))}
@@ -70,7 +71,7 @@ export async function WhatsAppTemplates({ botId }: { botId: string }) {
         <summary className="cursor-pointer text-sm font-semibold">Criar modelo</summary>
         <ActionForm action={createWhatsAppTemplate.bind(null, botId)} className="mt-4 flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div><label htmlFor="tpl-name" className="label">Nome (só minúsculas e _)</label><input id="tpl-name" name="name" required maxLength={512} pattern="[a-z0-9_ ]+" className="input font-mono" placeholder="retorno_atendimento" /></div>
+            <div><label htmlFor="tpl-name" className="label">Nome interno (o contato não vê)</label><input id="tpl-name" name="name" required maxLength={512} className="input font-mono" placeholder="retorno_atendimento" /></div>
             <div>
               <label htmlFor="tpl-category" className="label">Categoria</label>
               <select id="tpl-category" name="category" className="input" defaultValue="UTILITY">

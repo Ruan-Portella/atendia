@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { graphFor, type WaChannel } from "./whatsapp";
-import { TEMPLATE_LANGUAGE, templateVariables, toSendable, type SendableTemplate, type Template, type TemplateCategory } from "./template-text";
+import { TEMPLATE_LANGUAGE, templateVariables, toSendable, unsupportedReason, type SendableTemplate, type Template, type TemplateCategory } from "./template-text";
 
 /**
  * Modelos de mensagem (templates) do WhatsApp: a única forma de escrever para alguém fora da
@@ -20,7 +20,7 @@ export async function loadTemplateChannel(admin: SupabaseClient, botId: string):
 }
 
 export async function listSendable(ch: TemplateChannel): Promise<SendableTemplate[]> {
-  return (await listTemplates(ch)).filter((t) => t.status === "APPROVED").map(toSendable);
+  return (await listTemplates(ch)).filter((t) => t.status === "APPROVED" && !unsupportedReason(t)).map(toSendable);
 }
 
 export async function listTemplates(ch: TemplateChannel): Promise<Template[]> {

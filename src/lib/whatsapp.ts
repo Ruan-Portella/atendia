@@ -71,8 +71,11 @@ async function graph<T>(path: string, token: string, init?: { method?: string; b
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = (data as { error?: { message?: string; code?: number; error_data?: { details?: string } } }).error;
-    throw new WhatsAppError(err?.error_data?.details ?? err?.message ?? `Graph API ${res.status}`, err?.code);
+    const err = (data as { error?: { message?: string; code?: number; error_user_title?: string; error_user_msg?: string; error_data?: { details?: string } } }).error;
+    // a Meta manda uma explicação para pessoas (error_user_msg) além da técnica
+    const human = [err?.error_user_title, err?.error_user_msg].filter(Boolean).join(": ");
+    console.error("whatsapp: Graph API", res.status, path.split("?")[0], JSON.stringify(err));
+    throw new WhatsAppError(human || err?.error_data?.details || err?.message || `Graph API ${res.status}`, err?.code);
   }
   return data as T;
 }
