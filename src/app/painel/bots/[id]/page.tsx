@@ -8,6 +8,7 @@ import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
+import { WhatsAppBilling } from "@/components/whatsapp-billing";
 import { TemplateSender } from "@/components/template-sender";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
@@ -279,9 +280,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                       {whatsapp.verified_name && <span className="text-sm text-muted">· {whatsapp.verified_name}</span>}
                     </div>
                     <p className="text-sm text-ink-2">Ligado {relativeTime(whatsapp.created_at)}. {bot.status === "live" ? "Mande uma mensagem para este número para testar." : "O chatbot não está publicado: ele só responde no WhatsApp depois de clicar em “Publicar” no topo."}</p>
-                    {whatsapp.business_id && (
-                      <p className="text-xs text-muted">As conversas do WhatsApp são cobradas pela Meta direto do cliente. Para não parar, ele precisa ter uma forma de pagamento no <a href="https://business.facebook.com/wa/manage/home/" target="_blank" rel="noopener" className="font-semibold text-brand hover:underline">Gerenciador do WhatsApp</a>.</p>
-                    )}
+                    <WhatsAppBilling botId={id} />
                     <ConfirmAction
                       action={disconnectWhatsApp.bind(null, id)}
                       title="Desconectar o WhatsApp?"

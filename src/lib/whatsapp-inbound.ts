@@ -4,7 +4,7 @@ import { runChat, type BotRow } from "./chat";
 import { firstExceeded } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { downloadMedia, markReadTyping, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
-import { isAccessError } from "./whatsapp-access";
+import { isAccessError, isPaymentError } from "./whatsapp-access";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
 const RESUME_HOURS = 24;
@@ -167,8 +167,8 @@ export async function handleInbound(db: SupabaseClient, channel: ChannelRow, msg
     await saved;
     if (answer.trim()) await reply(answer);
   } catch (e) {
-    // sem acesso ao número: quem chamou marca a desconexão (e não adianta tentar o aviso)
-    if (isAccessError(e)) throw e;
+    // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)
+    if (isAccessError(e) || isPaymentError(e)) throw e;
     const code = (e as Error).message;
     // sem cota ou teste vencido: o contato não vê assunto de plano, só que a equipe retorna
     if (code !== "quota_exceeded" && code !== "trial_expired") console.error("whatsapp: falha ao responder", e);

@@ -25,6 +25,11 @@ export class WhatsAppError extends Error {
 
 /** Fora da janela de 24 h desde a última mensagem do contato: só modelo aprovado passa. */
 export const OUTSIDE_WINDOW_CODE = 131047;
+/** A Meta recusou a mensagem por problema de pagamento da conta (sem cartão, cartão recusado). */
+export const PAYMENT_ISSUE_CODE = 131042;
+
+/** Onde o cliente cadastra o cartão (Gerenciador do WhatsApp → Configurações de pagamento). */
+export const WHATSAPP_BILLING_URL = "https://business.facebook.com/wa/manage/home/";
 
 /** Um número ligado a um chatbot, com o token cifrado do cliente (ou sem, no número de teste). */
 export interface WaChannel {
@@ -161,6 +166,12 @@ export async function listWabaPhoneNumbers(wabaId: string, token: string) {
  */
 export async function startAppSync(phoneNumberId: string, token: string, syncType: "smb_app_state_sync" | "history") {
   await graph(`${phoneNumberId}/smb_app_data`, token, { body: { messaging_product: "whatsapp", sync_type: syncType } });
+}
+
+/** A conta do WhatsApp já tem forma de pagamento? (primary_funding_id preenchido) */
+export async function hasPaymentMethod(ch: WaChannel & { waba_id: string }): Promise<boolean> {
+  const res = await graph<{ primary_funding_id?: string }>(`${ch.waba_id}?fields=primary_funding_id`, channelToken(ch));
+  return Boolean(res.primary_funding_id);
 }
 
 export function newPin(): string {

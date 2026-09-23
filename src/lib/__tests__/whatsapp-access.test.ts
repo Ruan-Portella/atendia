@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ACCESS_LOST_EVENTS, isAccessError, markDisconnected } from "../whatsapp-access";
-import { WhatsAppError } from "../whatsapp";
+import { ACCESS_LOST_EVENTS, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "../whatsapp-access";
+import { WhatsAppError, hasPaymentMethod } from "../whatsapp";
 
 describe("isAccessError", () => {
   it("token inválido e falta de permissão contam como acesso removido", () => {
@@ -50,5 +50,42 @@ describe("markDisconnected", () => {
   it("nada para marcar (já desconectado ou número desconhecido)", async () => {
     const { db } = fakeDb([]);
     expect(await markDisconnected(db, { column: "bot_id", value: "b1" }, "x")).toBe(0);
+  });
+});
+
+describe("pagamento da Meta", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("131042 é recusa por pagamento; acesso removido não é", () => {
+    expect(isPaymentError(new WhatsAppError("Business eligibility payment issue", 131042))).toBe(true);
+    expect(isPaymentError(new WhatsAppError("token", 190))).toBe(false);
+    expect(isAccessError(new WhatsAppError("Business eligibility payment issue", 131042))).toBe(false);
+  });
+
+  it("marca a recusa uma vez só (só quem ainda não estava marcado)", async () => {
+    const calls: Record<string, unknown[]> = {};
+    const chain = {
+      update: (v: unknown) => ((calls.update = [v]), chain),
+      eq: (...a: unknown[]) => ((calls.eq = a), chain),
+      is: (...a: unknown[]) => ((calls.is = a), chain),
+      select: () => Promise.resolve({ data: [] }),
+    };
+    const db = { from: vi.fn(() => chain) } as unknown as SupabaseClient;
+    await markPaymentIssue(db, { column: "phone_number_id", value: "p1" });
+    expect(calls.eq).toEqual(["phone_number_id", "p1"]);
+    expect(calls.is).toEqual(["payment_issue_at", null]);
+    expect(calls.update?.[0]).toHaveProperty("payment_issue_at");
+  });
+
+  it("lê o cartão da conta pelo primary_funding_id", async () => {
+    vi.stubEnv("WHATSAPP_TOKEN", "tok");
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ primary_funding_id: "123", id: "w1" }))).mockResolvedValueOnce(new Response(JSON.stringify({ id: "w1" })));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await hasPaymentMethod({ phone_number_id: "p", waba_id: "w1" })).toBe(true);
+    expect(await hasPaymentMethod({ phone_number_id: "p", waba_id: "w1" })).toBe(false);
+    expect(fetchMock.mock.calls[0][0]).toContain("w1?fields=primary_funding_id");
   });
 });

@@ -10,14 +10,15 @@ import { requireAgency } from "@/lib/agency";
 import { postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
-import { initials, slugify } from "@/lib/utils";
+import { appUrl, initials, slugify } from "@/lib/utils";
+import { notifyAgencyOwner } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
-import { WhatsAppError, waIdVariants, listWabaPhoneNumbers, startAppSync, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
+import { WHATSAPP_BILLING_URL, WhatsAppError, waIdVariants, listWabaPhoneNumbers, startAppSync, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
 import { seal, unseal } from "@/lib/secret-box";
-import { TOKEN_REJECTED, isAccessError, markDisconnected } from "@/lib/whatsapp-access";
+import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
@@ -422,7 +423,7 @@ export interface SignupResult {
  * Token e PIN ficam cifrados; nada disso volta para o navegador.
  */
 export async function completeWhatsAppSignup(botId: string, input: SignupResult): Promise<ActionResult> {
-  const { email } = await requireAgency();
+  const { email, agency } = await requireAgency();
   if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
@@ -490,8 +491,21 @@ export async function completeWhatsAppSignup(botId: string, input: SignupResult)
       syncWarning = " Atenção: a sincronização com o app do celular falhou; conecte de novo em até 24 h para o número não ser desconectado pela Meta.";
     }
   }
+  // o cliente paga a Meta direto: o dono da agência recebe o passo a passo para repassar
+  await notifyAgencyOwner(admin, agency.id, `WhatsApp conectado: falta o cartão na Meta`, [
+    `O número ${phone.display_phone_number ?? phoneNumberId} foi conectado ao Boavoz${coexistence ? " (continua funcionando no app do celular)" : ""}.`,
+    "",
+    "Último passo, feito pelo cliente: cadastrar um cartão para a Meta.",
+    `1. Entrar em ${WHATSAPP_BILLING_URL} com o Facebook usado na conexão.`,
+    "2. Abrir Configurações de pagamento e adicionar um cartão de crédito.",
+    "",
+    "Por que: as mensagens do WhatsApp são cobradas pela Meta direto no cartão do cliente, por mensagem entregue (valores na tabela da Meta para o Brasil). Não passam pela agência nem pelo Boavoz.",
+    "Sem cartão, o assistente responde enquanto houver mensagens grátis; depois a Meta recusa e ele para de responder.",
+    "",
+    `Painel: ${appUrl(`/painel/bots/${botId}?tab=whatsapp`)}`,
+  ]).catch(() => false);
   revalidatePath(`/painel/bots/${botId}`);
-  return ok(`WhatsApp ${phone.display_phone_number ?? ""} conectado.${coexistence ? " Ele continua funcionando no app do celular." : ""} O assistente já responde por ele.${syncWarning}`);
+  return ok(`WhatsApp ${phone.display_phone_number ?? ""} conectado.${coexistence ? " Ele continua funcionando no app do celular." : ""} Último passo: o cliente cadastra um cartão na Meta (as instruções foram para o seu e-mail).${syncWarning}`);
 }
 
 export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
@@ -569,6 +583,11 @@ async function metaError(botId: string, e: unknown): Promise<string> {
     await markDisconnected(createAdminClient(), { column: "bot_id", value: botId }, TOKEN_REJECTED);
     revalidatePath(`/painel/bots/${botId}`);
     return "o cliente removeu o acesso do Boavoz a este WhatsApp. Conecte de novo na aba WhatsApp";
+  }
+  if (isPaymentError(e)) {
+    await markPaymentIssue(createAdminClient(), { column: "bot_id", value: botId });
+    revalidatePath(`/painel/bots/${botId}`);
+    return "a Meta recusou por falta de forma de pagamento. O cliente precisa cadastrar o cartão no Gerenciador do WhatsApp";
   }
   return e instanceof WhatsAppError ? e.message : "erro desconhecido";
 }

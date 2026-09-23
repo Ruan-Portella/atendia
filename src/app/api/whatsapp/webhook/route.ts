@@ -1,8 +1,8 @@
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { validSignature } from "@/lib/whatsapp";
+import { PAYMENT_ISSUE_CODE, validSignature } from "@/lib/whatsapp";
 import { handleEcho, handleInbound, type ChannelRow, type EchoMessage, type InboundMessage } from "@/lib/whatsapp-inbound";
-import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, markDisconnected } from "@/lib/whatsapp-access";
+import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 
 export const maxDuration = 60;
 
@@ -103,7 +103,10 @@ async function echoes(db: ReturnType<typeof createAdminClient>, { value }: Chang
 async function messages(db: ReturnType<typeof createAdminClient>, { value }: Change) {
   const phoneNumberId = value?.metadata?.phone_number_id;
   for (const s of value?.statuses ?? []) {
-    if (s.status === "failed") console.warn("whatsapp: mensagem não entregue", phoneNumberId, s.errors?.[0]);
+    if (s.status !== "failed") continue;
+    console.warn("whatsapp: mensagem não entregue", phoneNumberId, s.errors?.[0]);
+    // a recusa por pagamento às vezes só chega aqui, no status da mensagem
+    if (phoneNumberId && s.errors?.some((err) => err.code === PAYMENT_ISSUE_CODE)) await markPaymentIssue(db, { column: "phone_number_id", value: phoneNumberId });
   }
   if (!phoneNumberId || !value?.messages?.length) return;
   const channel = await activeChannel(db, phoneNumberId);
@@ -116,6 +119,10 @@ async function messages(db: ReturnType<typeof createAdminClient>, { value }: Cha
       if (isAccessError(e)) {
         await markDisconnected(db, { column: "phone_number_id", value: phoneNumberId }, TOKEN_REJECTED);
         return;
+      }
+      if (isPaymentError(e)) {
+        await markPaymentIssue(db, { column: "phone_number_id", value: phoneNumberId });
+        continue;
       }
       console.error("whatsapp: erro na mensagem", msg.id, e);
     }

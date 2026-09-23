@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fail, ok, type ActionResult } from "./action-result";
 import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendText } from "./whatsapp";
-import { TOKEN_REJECTED, isAccessError, markDisconnected } from "./whatsapp-access";
+import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 
 /**
  * Atendimento humano: as mesmas operações para a agência (painel) e para o cliente final
@@ -49,6 +49,10 @@ async function deliverToWhatsApp(admin: SupabaseClient, conversationId: string, 
     if (isAccessError(e)) {
       await markDisconnected(admin, { column: "bot_id", value: conv.bot_id }, TOKEN_REJECTED);
       return fail("O cliente removeu o acesso do Boavoz ao WhatsApp. A mensagem não foi enviada: conecte de novo na aba WhatsApp.");
+    }
+    if (isPaymentError(e)) {
+      await markPaymentIssue(admin, { column: "bot_id", value: conv.bot_id });
+      return fail("A Meta recusou a mensagem por falta de forma de pagamento. O cliente precisa cadastrar o cartão no Gerenciador do WhatsApp.");
     }
     if (e instanceof WhatsAppError && e.code === OUTSIDE_WINDOW_CODE) {
       return fail("Passaram mais de 24 horas desde a última mensagem do cliente. O WhatsApp só deixa responder dentro desse prazo.");
