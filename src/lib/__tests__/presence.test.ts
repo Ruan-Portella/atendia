@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conversationState, isResumable, lastSeen } from "../presence";
+import { canTakeOver, conversationState, isResumable, lastSeen } from "../presence";
 
 const now = Date.UTC(2026, 8, 22, 12, 0, 0);
 const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString();
@@ -30,5 +30,17 @@ describe("lastSeen", () => {
     expect(lastSeen({ last_message_at: ago(600), visitor_seen_at: ago(60) })).toBe(ago(60));
     expect(lastSeen({ last_message_at: ago(60), visitor_seen_at: ago(600) })).toBe(ago(60));
     expect(lastSeen({ last_message_at: ago(60), visitor_seen_at: null })).toBe(ago(60));
+  });
+});
+
+describe("canTakeOver", () => {
+  it("site: online ou falou há menos de 30 min", () => {
+    expect(canTakeOver({ last_message_at: ago(3 * 3600), visitor_seen_at: ago(10) }, now)).toBe(true);
+    expect(canTakeOver({ last_message_at: ago(10 * 60) }, now)).toBe(true);
+    expect(canTakeOver({ last_message_at: ago(45 * 60) }, now)).toBe(false);
+  });
+  it("WhatsApp: dentro da janela de 24 h da Meta", () => {
+    expect(canTakeOver({ channel: "whatsapp", last_message_at: ago(5 * 3600) }, now)).toBe(true);
+    expect(canTakeOver({ channel: "whatsapp", last_message_at: ago(25 * 3600) }, now)).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ export const RESUME_HOURS = 6;
 export interface PresenceInput {
   last_message_at: string;
   visitor_seen_at?: string | null;
+  channel?: string | null;
 }
 
 export type ConversationState = "online" | "active" | "closed";
@@ -33,4 +34,17 @@ export function isResumable(lastMessageAt: string, now = Date.now()): boolean {
 export function lastSeen(c: PresenceInput): string {
   if (!c.visitor_seen_at) return c.last_message_at;
   return new Date(c.visitor_seen_at) > new Date(c.last_message_at) ? c.visitor_seen_at : c.last_message_at;
+}
+
+/** No WhatsApp a Meta deixa responder até 24 h depois da última mensagem do cliente. */
+export const WHATSAPP_WINDOW_HOURS = 24;
+
+/**
+ * Dá para assumir (de novo, inclusive depois de encerrar) enquanto a pessoa ainda pode ver a
+ * resposta: no site, online agora ou falou há menos de IDLE_MINUTES; no WhatsApp, dentro das 24 h.
+ */
+export function canTakeOver(c: PresenceInput, now = Date.now()): boolean {
+  const idle = (now - new Date(c.last_message_at).getTime()) / 60_000;
+  if (c.channel === "whatsapp") return idle < WHATSAPP_WINDOW_HOURS * 60;
+  return conversationState(c, now) === "online" || idle < IDLE_MINUTES;
 }

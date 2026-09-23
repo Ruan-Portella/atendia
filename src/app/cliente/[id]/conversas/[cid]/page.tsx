@@ -15,7 +15,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, handoff_requested_at, takeover_at, handled_at")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, handoff_requested_at, takeover_at, handled_at")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();

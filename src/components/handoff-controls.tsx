@@ -1,7 +1,7 @@
 import { Headset } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
-import { minutesSince, relativeTime } from "@/lib/utils";
-import { conversationState, lastSeen } from "@/lib/presence";
+import { relativeTime } from "@/lib/utils";
+import { WHATSAPP_WINDOW_HOURS, canTakeOver, conversationState, lastSeen } from "@/lib/presence";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AutoRefresh } from "@/components/auto-refresh";
@@ -12,10 +12,14 @@ export interface HandoffConversation {
   takeover_at: string | null;
   handled_at: string | null;
   visitor_seen_at?: string | null;
+  channel?: string | null;
 }
 
 /** "Visitante online agora" / "saiu do site há X" — para saber se ainda vale responder. */
 function VisitorPresence({ conv }: { conv: HandoffConversation }) {
+  if (conv.channel === "whatsapp") {
+    return <span className="text-muted">Conversa pelo WhatsApp. Última mensagem {relativeTime(conv.last_message_at)}; dá para responder até {WHATSAPP_WINDOW_HOURS} h depois da última mensagem do cliente.</span>;
+  }
   const online = conversationState(conv) === "online";
   return online ? (
     <span className="inline-flex items-center gap-1.5 font-semibold text-brand"><span className="h-2 w-2 animate-pulse rounded-full bg-brand" />Visitante online agora</span>
@@ -57,8 +61,6 @@ export function HandoffReply({ conv, onTakeOver, onSend, onRelease }: { conv: Ha
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
   const waiting = open && !conv.takeover_at && Boolean(conv.handoff_requested_at);
-  // dá para assumir se o visitante está no site agora ou falou há menos de 30 min
-  const recent = conversationState(conv) === "online" || minutesSince(conv.last_message_at) < 30;
   return (
     <>
       {active ? (
@@ -73,13 +75,13 @@ export function HandoffReply({ conv, onTakeOver, onSend, onRelease }: { conv: Ha
           </ActionForm>
         </div>
       ) : (
-        !waiting && open && recent && (
+        !waiting && canTakeOver(conv) && (
           <ActionForm action={onTakeOver} className="self-start">
             <SubmitButton pendingLabel="Assumindo…" className="btn-ghost"><Headset size={15} />Assumir esta conversa</SubmitButton>
           </ActionForm>
         )
       )}
-      {conv.handled_at && conv.handoff_requested_at && <p className="text-xs text-muted">Atendimento humano encerrado {relativeTime(conv.handled_at)}.</p>}
+      {conv.handled_at && conv.handoff_requested_at && <p className="text-xs text-muted">Atendimento humano encerrado {relativeTime(conv.handled_at)}.{canTakeOver(conv) ? " Você pode assumir de novo quando quiser." : ""}</p>}
     </>
   );
 }
