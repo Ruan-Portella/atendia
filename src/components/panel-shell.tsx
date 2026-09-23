@@ -81,7 +81,8 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
       )}
 
       {/* sidebar do desktop */}
-      <aside className={cn("hidden w-60 shrink-0 flex-col gap-1.5 bg-ink p-4 text-ground lg:flex lg:min-h-screen")}>
+      {/* altura da tela e presa no topo: em página longa ela não estica junto com o conteúdo */}
+      <aside className={cn("hidden w-60 shrink-0 flex-col gap-1.5 bg-ink p-4 text-ground lg:sticky lg:top-0 lg:flex lg:h-dvh lg:overflow-y-auto")}>
         <div className="pb-4 pt-1">{brandBlock}</div>
         <SidebarNav />
         <div className="mt-auto">{usageBlock}</div>

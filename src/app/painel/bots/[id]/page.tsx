@@ -119,13 +119,14 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
       )}
 
       <div className="grid flex-1 lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]">
-        <nav className="flex flex-row items-center gap-1 overflow-x-auto border-b border-line px-3 py-2 [scrollbar-width:none] lg:flex-col lg:items-stretch lg:overflow-visible lg:border-b-0 lg:border-r lg:p-3.5">
+        {/* no desktop as abas ficam presas no topo ao rolar; a linha divisória fica no conteúdo */}
+        <nav className="flex flex-row items-center gap-1 overflow-x-auto border-b border-line px-3 py-2 [scrollbar-width:none] lg:sticky lg:top-0 lg:max-h-dvh lg:flex-col lg:items-stretch lg:self-start lg:overflow-y-auto lg:border-b-0 lg:p-3.5">
           {tabs.map(([key, label]) => (
             <Link key={key} href={`/painel/bots/${id}?tab=${key}`} className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm lg:py-2.5 ${tab === key ? "bg-brand-soft font-semibold text-brand" : "font-medium text-ink-2 hover:bg-ground"}`}>
               {label}
             </Link>
           ))}
-          <div className="ml-auto shrink-0 lg:ml-0 lg:mt-auto lg:pt-4">
+          <div className="ml-auto shrink-0 lg:ml-0 lg:mt-3 lg:border-t lg:border-line-2 lg:pt-3">
             <ConfirmAction
               action={deleteBot.bind(null, id, bot.client_id ? `/painel/clientes/${bot.client_id}` : bot.is_demo ? "/painel/demos" : "/painel/clientes")}
               title={`Excluir ${bot.is_demo ? "esta demo" : "este chatbot"}?`}
@@ -142,7 +143,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           </div>
         </nav>
 
-        <section className="flex min-w-0 flex-col gap-5 px-4 py-5 pb-24 sm:px-5 md:px-7 md:py-6 lg:pb-6">
+        <section className="flex min-w-0 flex-col gap-5 px-4 py-5 pb-24 sm:px-5 md:px-7 md:py-6 lg:border-l lg:border-line lg:pb-6">
           {tab === "fontes" && (
             <>
               <div>
@@ -316,17 +317,20 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
         </section>
 
-        <aside className="hidden flex-col gap-3 border-l border-line bg-[#ecebe4] p-5 lg:flex">
-          <div className="flex items-center justify-between text-xs"><span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span><span className="text-muted">como o visitante vê</span></div>
-          <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
-            {readySources ? (
-              <ChatWindow
-                channel="painel"
-                bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url }}
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center bg-white p-6 text-center text-sm text-muted">Adicione uma fonte para testar o assistente.</div>
-            )}
+        <aside className="hidden border-l border-line bg-[#ecebe4] p-5 lg:block">
+          {/* o fundo ocupa a coluna inteira; o chat de teste acompanha a rolagem */}
+          <div className="sticky top-5 flex flex-col gap-3">
+            <div className="flex items-center justify-between text-xs"><span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span><span className="text-muted">como o visitante vê</span></div>
+            <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
+              {readySources ? (
+                <ChatWindow
+                  channel="painel"
+                  bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url }}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center bg-white p-6 text-center text-sm text-muted">Adicione uma fonte para testar o assistente.</div>
+              )}
+            </div>
           </div>
         </aside>
 
