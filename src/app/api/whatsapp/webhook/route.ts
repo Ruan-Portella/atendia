@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PAYMENT_ISSUE_CODE, validSignature } from "@/lib/whatsapp";
 import { handleEcho, handleInbound, type ChannelRow, type EchoMessage, type InboundMessage } from "@/lib/whatsapp-inbound";
+import { recordUsage, type MessageStatus } from "@/lib/whatsapp-usage";
 import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 
 export const maxDuration = 60;
@@ -18,7 +19,7 @@ interface WebhookBody {
         messages?: InboundMessage[];
         // coexistência: o que o negócio mandou pelo app do celular
         message_echoes?: EchoMessage[];
-        statuses?: Array<{ status?: string; recipient_id?: string; errors?: Array<{ code?: number; title?: string }> }>;
+        statuses?: Array<MessageStatus & { recipient_id?: string; errors?: Array<{ code?: number; title?: string }> }>;
         // account_update
         event?: string;
         waba_info?: { waba_id?: string };
@@ -108,7 +109,13 @@ async function messages(db: ReturnType<typeof createAdminClient>, { value }: Cha
     // a recusa por pagamento às vezes só chega aqui, no status da mensagem
     if (phoneNumberId && s.errors?.some((err) => err.code === PAYMENT_ISSUE_CODE)) await markPaymentIssue(db, { column: "phone_number_id", value: phoneNumberId });
   }
-  if (!phoneNumberId || !value?.messages?.length) return;
+  if (!phoneNumberId) return;
+  // consumo: cada status de mensagem enviada diz se a Meta cobrou e em qual categoria
+  if (value?.statuses?.length) {
+    const { data: owner } = await db.from("whatsapp_channels").select("bot_id").eq("phone_number_id", phoneNumberId).maybeSingle();
+    if (owner) await recordUsage(db, owner.bot_id, phoneNumberId, value.statuses);
+  }
+  if (!value?.messages?.length) return;
   const channel = await activeChannel(db, phoneNumberId);
   if (!channel) return;
   for (const msg of value.messages) {

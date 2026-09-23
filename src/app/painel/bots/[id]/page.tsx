@@ -9,6 +9,7 @@ import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
 import { WhatsAppBilling } from "@/components/whatsapp-billing";
+import { WhatsAppUsage } from "@/components/whatsapp-usage";
 import { TemplateSender } from "@/components/template-sender";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
@@ -291,6 +292,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                       Desconectar
                     </ConfirmAction>
                   </div>
+                  <WhatsAppUsage botId={id} />
                   <WhatsAppTemplates botId={id} />
                 </>
               ) : (
