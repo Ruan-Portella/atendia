@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lines, templateBody, templateVariables, validateTemplate } from "../whatsapp-templates";
+import { formParams, lines, renderTemplate, templateBody, templateVariables, validateTemplate } from "../template-text";
 
 describe("templateVariables", () => {
   it("acha as variáveis na ordem, sem repetir", () => {
@@ -32,5 +32,20 @@ describe("helpers", () => {
     expect(templateBody({ components: [{ type: "HEADER", text: "x" }, { type: "BODY", text: "corpo" }] })).toBe("corpo");
     expect(templateBody({})).toBe("");
     expect(lines(" Maria \n\n clareamento ")).toEqual(["Maria", "clareamento"]);
+  });
+});
+
+describe("renderTemplate e formParams", () => {
+  it("monta a mensagem como o contato recebe; campo vazio continua aparecendo", () => {
+    expect(renderTemplate("Olá, {{1}}! Sobre {{2}}.", ["Maria", "clareamento"])).toBe("Olá, Maria! Sobre clareamento.");
+    expect(renderTemplate("Olá, {{1}}! Sobre {{2}}.", ["Maria"])).toBe("Olá, Maria! Sobre {{2}}.");
+    expect(renderTemplate("Olá, {{1}}!", ["  "])).toBe("Olá, {{1}}!");
+  });
+
+  it("lê param_1, param_2… na ordem", () => {
+    const fd = new FormData();
+    fd.set("param_2", " b ");
+    fd.set("param_1", "a");
+    expect(formParams(fd, 3)).toEqual(["a", "b", ""]);
   });
 });

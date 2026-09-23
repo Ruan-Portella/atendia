@@ -15,6 +15,8 @@ export interface PresenceInput {
   last_message_at: string;
   visitor_seen_at?: string | null;
   channel?: string | null;
+  /** Última mensagem do próprio contato: é dela que o WhatsApp conta a janela de 24 h. */
+  last_user_at?: string | null;
 }
 
 export type ConversationState = "online" | "active" | "closed";
@@ -44,7 +46,13 @@ export const WHATSAPP_WINDOW_HOURS = 24;
  * resposta: no site, online agora ou falou há menos de IDLE_MINUTES; no WhatsApp, dentro das 24 h.
  */
 export function canTakeOver(c: PresenceInput, now = Date.now()): boolean {
+  if (c.channel === "whatsapp") return whatsappWindowOpen(c, now);
   const idle = (now - new Date(c.last_message_at).getTime()) / 60_000;
-  if (c.channel === "whatsapp") return idle < WHATSAPP_WINDOW_HOURS * 60;
   return conversationState(c, now) === "online" || idle < IDLE_MINUTES;
+}
+
+/** Ainda dá para mandar texto livre no WhatsApp? (senão, só modelo aprovado) */
+export function whatsappWindowOpen(c: PresenceInput, now = Date.now()): boolean {
+  const from = c.last_user_at ?? c.last_message_at;
+  return now - new Date(from).getTime() < WHATSAPP_WINDOW_HOURS * 3_600_000;
 }

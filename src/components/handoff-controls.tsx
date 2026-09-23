@@ -13,12 +13,13 @@ export interface HandoffConversation {
   handled_at: string | null;
   visitor_seen_at?: string | null;
   channel?: string | null;
+  last_user_at?: string | null;
 }
 
 /** "Visitante online agora" / "saiu do site há X" — para saber se ainda vale responder. */
 function VisitorPresence({ conv }: { conv: HandoffConversation }) {
   if (conv.channel === "whatsapp") {
-    return <span className="text-muted">Conversa pelo WhatsApp. Última mensagem {relativeTime(conv.last_message_at)}; dá para responder até {WHATSAPP_WINDOW_HOURS} h depois da última mensagem do cliente.</span>;
+    return <span className="text-muted">Conversa pelo WhatsApp. O cliente escreveu por último {relativeTime(conv.last_user_at ?? conv.last_message_at)}; dá para responder até {WHATSAPP_WINDOW_HOURS} h depois disso.</span>;
   }
   const online = conversationState(conv) === "online";
   return online ? (

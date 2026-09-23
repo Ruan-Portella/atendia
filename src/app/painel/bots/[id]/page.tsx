@@ -8,6 +8,9 @@ import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
+import { TemplateSender } from "@/components/template-sender";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
 import { ChatWindow } from "@/components/chat-window";
@@ -20,7 +23,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { answerUnanswered, completeWhatsAppSignup, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { answerUnanswered, completeWhatsAppSignup, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 
@@ -40,7 +43,8 @@ type Tab = (typeof TABS)[number][0];
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
   const [{ id }, sp, { email }] = await Promise.all([params, searchParams, requireAgency()]);
   // WhatsApp em teste: a aba só existe para os e-mails liberados
-  const tabs = whatsappAllowed(email) ? TABS : TABS.filter(([t]) => t !== "whatsapp");
+  const waAllowed = whatsappAllowed(email);
+  const tabs = waAllowed ? TABS : TABS.filter(([t]) => t !== "whatsapp");
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
   const supabase = await createClient();
 
@@ -71,6 +75,12 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const base = agencyBaseUrl(agency);
   const demoUrl = bot.is_demo && bot.demo_slug ? `${base}/demo/${bot.demo_slug}` : null;
   const signup = embeddedSignupConfig();
+  // "+ Nova conversa" pelo WhatsApp: precisa do número conectado e de modelos aprovados
+  let newChatTemplates: SendableTemplate[] | null = null;
+  if (tab === "conversas" && waAllowed && !bot.is_demo) {
+    const ch = await loadTemplateChannel(createAdminClient(), id);
+    newChatTemplates = ch ? await listSendable(ch).catch(() => []) : null;
+  }
   const embedSnippet = `<script src="${base}/widget.js" data-key="${bot.public_key}" async></script>`;
 
   return (
@@ -203,7 +213,18 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
           {tab === "conversas" && (
             <>
-              <div><h2 className="text-[22px] font-bold">Conversas</h2><p className="text-sm text-muted">Últimas 30. Abra uma conversa para assumir e responder como pessoa da equipe.</p></div>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><h2 className="text-[22px] font-bold">Conversas</h2><p className="text-sm text-muted">Últimas 30. Abra uma conversa para assumir e responder como pessoa da equipe.</p></div>
+                {newChatTemplates && (
+                  <details className="group w-full sm:w-auto">
+                    <summary className="btn-primary cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ Nova conversa</summary>
+                    <div className="card mt-2 flex flex-col gap-3 p-4 sm:w-[420px]">
+                      <p className="text-sm text-muted">Comece a falar com alguém pelo WhatsApp. A primeira mensagem precisa ser um modelo aprovado; quando a pessoa responder, {bot.name} (ou você) continua a conversa.</p>
+                      <TemplateSender templates={newChatTemplates} action={startWhatsAppConversation.bind(null, id)} askPhone submitLabel="Enviar e abrir conversa" />
+                    </div>
+                  </details>
+                )}
+              </div>
               <div className="card overflow-hidden">
                 {(conversations ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma conversa ainda.</p>}
                 {(conversations ?? []).map((c) => (

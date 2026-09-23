@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { toWhatsAppText, validSignature, whatsappAllowed } from "../whatsapp";
+import { toWhatsAppText, validSignature, waIdVariants, whatsappAllowed } from "../whatsapp";
 import { inboundText } from "../whatsapp-inbound";
 
 const sign = (body: string, secret: string) => "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
@@ -61,5 +61,16 @@ describe("whatsappAllowed", () => {
     expect(whatsappAllowed("ruanmorales29@gmail.com")).toBe(false);
     vi.stubEnv("WHATSAPP_BETA_EMAILS", "*");
     expect(whatsappAllowed("qualquer@um.com")).toBe(true);
+  });
+});
+
+describe("waIdVariants", () => {
+  it("celular brasileiro com e sem o 9", () => {
+    expect(waIdVariants("5521987654321")).toEqual(["5521987654321", "552187654321"]);
+    expect(waIdVariants("552187654321")).toEqual(["552187654321", "5521987654321"]);
+  });
+  it("fixo e outros países ficam como estão", () => {
+    expect(waIdVariants("552133334444")).toEqual(["552133334444"]);
+    expect(waIdVariants("14155550123")).toEqual(["14155550123"]);
   });
 });

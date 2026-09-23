@@ -1,67 +1,26 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { graphFor, type WaChannel } from "./whatsapp";
+import { TEMPLATE_LANGUAGE, templateVariables, toSendable, type SendableTemplate, type Template, type TemplateCategory } from "./template-text";
 
 /**
  * Modelos de mensagem (templates) do WhatsApp: a única forma de escrever para alguém fora da
  * janela de 24 h. Ficam na conta do WhatsApp Business (WABA) e passam pela aprovação da Meta.
  */
 
-export const TEMPLATE_LANGUAGE = "pt_BR";
-export type TemplateCategory = "UTILITY" | "MARKETING";
-
-export interface Template {
-  id: string;
-  name: string;
-  status: string; // APPROVED, PENDING, REJECTED, PAUSED, DISABLED…
-  category: string;
-  language: string;
-  rejected_reason?: string;
-  components?: Array<{ type: string; text?: string }>;
-}
-
 export interface TemplateChannel extends WaChannel {
   waba_id: string;
 }
 
-export const STATUS_LABEL: Record<string, string> = {
-  APPROVED: "aprovado",
-  PENDING: "em análise",
-  REJECTED: "reprovado",
-  PAUSED: "pausado",
-  DISABLED: "desativado",
-  IN_APPEAL: "em recurso",
-};
+export * from "./template-text";
 
-/** Números das variáveis {{1}}, {{2}}… na ordem em que aparecem (sem repetir). */
-export function templateVariables(body: string): number[] {
-  const seen: number[] = [];
-  for (const m of body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)) {
-    const n = Number(m[1]);
-    if (!seen.includes(n)) seen.push(n);
-  }
-  return seen;
+/** Número do chatbot com a conta do WhatsApp (sem ela não há modelos). Service role. */
+export async function loadTemplateChannel(admin: SupabaseClient, botId: string): Promise<TemplateChannel | null> {
+  const { data } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
+  return data?.waba_id ? (data as TemplateChannel) : null;
 }
 
-/** Texto do corpo de um modelo, para mostrar e saber quantas variáveis ele pede. */
-export function templateBody(t: Pick<Template, "components">): string {
-  return t.components?.find((c) => c.type === "BODY")?.text ?? "";
-}
-
-/** Linhas de um textarea, uma por variável. */
-export function lines(value: string): string[] {
-  return value.split("\n").map((l) => l.trim()).filter(Boolean);
-}
-
-/** Regras da Meta, conferidas antes de enviar para não gastar uma reprovação à toa. */
-export function validateTemplate(input: { name: string; body: string; examples: string[] }): string | null {
-  if (!/^[a-z0-9_]{1,512}$/.test(input.name)) return "O nome aceita só letras minúsculas, números e _ (ex.: aviso_de_retorno).";
-  const body = input.body.trim();
-  if (body.length < 5) return "Escreva o texto da mensagem.";
-  if (body.length > 1024) return "O texto pode ter no máximo 1.024 caracteres.";
-  const vars = templateVariables(body);
-  if (vars.some((n, i) => n !== i + 1)) return "Numere as variáveis em ordem, começando em {{1}}: {{1}}, {{2}}, {{3}}…";
-  if (/^\s*\{\{\s*\d+\s*\}\}|\{\{\s*\d+\s*\}\}\s*$/.test(body)) return "A Meta não aceita variável no começo ou no fim do texto. Coloque alguma palavra antes e depois.";
-  if (input.examples.length < vars.length) return `Dê um exemplo para cada variável (${vars.length}), um por linha. A Meta usa os exemplos para aprovar.`;
-  return null;
+export async function listSendable(ch: TemplateChannel): Promise<SendableTemplate[]> {
+  return (await listTemplates(ch)).filter((t) => t.status === "APPROVED").map(toSendable);
 }
 
 export async function listTemplates(ch: TemplateChannel): Promise<Template[]> {

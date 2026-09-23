@@ -131,6 +131,18 @@ export function newPin(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
+/**
+ * O mesmo celular brasileiro em dois formatos: com o 9 (55 21 9xxxx-xxxx, 13 dígitos) e sem
+ * (55 21 xxxx-xxxx, 12 dígitos). A Meta às vezes identifica o contato sem o 9, então quem busca
+ * a conversa de um número precisa olhar os dois.
+ */
+export function waIdVariants(waId: string): string[] {
+  const d = waId.replace(/\D/g, "");
+  if (d.startsWith("55") && d.length === 13 && d[4] === "9") return [d, d.slice(0, 4) + d.slice(5)];
+  if (d.startsWith("55") && d.length === 12 && /[6-9]/.test(d[4])) return [d, d.slice(0, 4) + "9" + d.slice(4)];
+  return [d];
+}
+
 /** `X-Hub-Signature-256` = "sha256=" + HMAC-SHA256 do corpo cru com a chave secreta do app. */
 export function validSignature(rawBody: string, header: string | null, secret: string | undefined): boolean {
   if (!secret || !header?.startsWith("sha256=")) return false;

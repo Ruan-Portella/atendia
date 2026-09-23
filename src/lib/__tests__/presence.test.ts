@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canTakeOver, conversationState, isResumable, lastSeen } from "../presence";
+import { canTakeOver, conversationState, isResumable, lastSeen, whatsappWindowOpen } from "../presence";
 
 const now = Date.UTC(2026, 8, 22, 12, 0, 0);
 const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString();
@@ -42,5 +42,15 @@ describe("canTakeOver", () => {
   it("WhatsApp: dentro da janela de 24 h da Meta", () => {
     expect(canTakeOver({ channel: "whatsapp", last_message_at: ago(5 * 3600) }, now)).toBe(true);
     expect(canTakeOver({ channel: "whatsapp", last_message_at: ago(25 * 3600) }, now)).toBe(false);
+  });
+});
+
+describe("whatsappWindowOpen", () => {
+  it("conta da última mensagem do contato, não da nossa", () => {
+    // mandamos um modelo agora, mas o cliente não escreve há 2 dias: janela fechada
+    expect(whatsappWindowOpen({ channel: "whatsapp", last_message_at: ago(10), last_user_at: ago(48 * 3600) }, now)).toBe(false);
+    expect(whatsappWindowOpen({ channel: "whatsapp", last_message_at: ago(10), last_user_at: ago(3600) }, now)).toBe(true);
+    // conversa aberta pelo painel, sem mensagem do contato ainda
+    expect(canTakeOver({ channel: "whatsapp", last_message_at: ago(10), last_user_at: ago(30 * 3600) }, now)).toBe(false);
   });
 });

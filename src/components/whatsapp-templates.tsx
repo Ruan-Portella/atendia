@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { WhatsAppError } from "@/lib/whatsapp";
-import { STATUS_LABEL, listTemplates, templateBody, templateVariables, type Template, type TemplateChannel } from "@/lib/whatsapp-templates";
-import { createWhatsAppTemplate, deleteWhatsAppTemplate, sendWhatsAppTemplate } from "@/app/painel/actions";
+import { STATUS_LABEL, listTemplates, templateBody, type Template, type TemplateChannel } from "@/lib/whatsapp-templates";
+import { createWhatsAppTemplate, deleteWhatsAppTemplate } from "@/app/painel/actions";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
@@ -13,8 +13,8 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 /**
- * Modelos de mensagem da conta do WhatsApp do chatbot: lista com status da Meta, criação,
- * exclusão e envio de teste. Quem renderiza já conferiu o dono do chatbot e o e-mail liberado.
+ * Modelos de mensagem da conta do WhatsApp do chatbot: lista com status da Meta, criação e
+ * exclusão (o envio fica nas conversas). Quem renderiza já conferiu o dono do chatbot e o e-mail liberado.
  */
 export async function WhatsAppTemplates({ botId }: { botId: string }) {
   const { data: ch } = await createAdminClient().from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
@@ -29,13 +29,12 @@ export async function WhatsAppTemplates({ botId }: { botId: string }) {
   } catch (e) {
     error = e instanceof WhatsAppError ? e.message : "erro desconhecido";
   }
-  const approved = templates.filter((t) => t.status === "APPROVED");
 
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h3 className="text-lg font-bold">Modelos de mensagem</h3>
-        <p className="text-sm text-muted">Fora das 24 h depois da última mensagem do cliente, o WhatsApp só deixa mandar modelos aprovados pela Meta. Use para retornar contatos e avisos.</p>
+        <p className="text-sm text-muted">Fora das 24 h depois da última mensagem do cliente, o WhatsApp só deixa mandar modelos aprovados pela Meta. Os aprovados aparecem para envio dentro das conversas e em “+ Nova conversa”.</p>
       </div>
 
       {error ? (
@@ -86,26 +85,6 @@ export async function WhatsAppTemplates({ botId }: { botId: string }) {
           <SubmitButton pendingLabel="Enviando para a Meta…" className="btn-primary self-start">Enviar para análise</SubmitButton>
         </ActionForm>
       </details>
-
-      {approved.length > 0 && (
-        <details className="card p-5">
-          <summary className="cursor-pointer text-sm font-semibold">Enviar um modelo</summary>
-          <ActionForm action={sendWhatsAppTemplate.bind(null, botId)} className="mt-4 flex flex-col gap-4">
-            <div>
-              <label htmlFor="tpl-send" className="label">Modelo</label>
-              <select id="tpl-send" name="template" className="input">
-                {approved.map((t) => {
-                  const n = templateVariables(templateBody(t)).length;
-                  return <option key={t.id} value={t.name}>{t.name}{n ? ` (${n} variáve${n === 1 ? "l" : "is"})` : ""}</option>;
-                })}
-              </select>
-            </div>
-            <div><label htmlFor="tpl-to" className="label">Para (com DDI e DDD)</label><input id="tpl-to" name="to" required inputMode="tel" className="input" placeholder="55 21 99999-9999" /></div>
-            <div><label htmlFor="tpl-params" className="label">Valores das variáveis (um por linha)</label><textarea id="tpl-params" name="params" rows={2} className="input" /></div>
-            <SubmitButton pendingLabel="Enviando…" className="btn-ghost self-start">Enviar</SubmitButton>
-          </ActionForm>
-        </details>
-      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runChat, type BotRow } from "./chat";
 import { firstExceeded } from "./rate-limit";
-import { markReadTyping, sendText, toWhatsAppText, type WaChannel } from "./whatsapp";
+import { markReadTyping, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
 const RESUME_HOURS = 24;
@@ -63,7 +63,7 @@ export async function handleInbound(db: SupabaseClient, channel: ChannelRow, msg
     .from("conversations")
     .select("id, takeover_at, handled_at")
     .eq("bot_id", bot.id)
-    .eq("wa_id", waId)
+    .in("wa_id", waIdVariants(waId)) // conversa aberta pelo painel pode ter o número com o 9
     .gt("last_message_at", since)
     .order("last_message_at", { ascending: false })
     .limit(1)

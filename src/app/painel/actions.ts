@@ -15,9 +15,9 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
-import { WhatsAppError, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
+import { WhatsAppError, waIdVariants, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
 import { seal, unseal } from "@/lib/secret-box";
-import { createTemplate, deleteTemplate, lines, listTemplates, sendTemplate, templateBody, templateVariables, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
+import { createTemplate, deleteTemplate, formParams, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -488,9 +488,45 @@ async function ownedTemplateChannel(botId: string): Promise<TemplateChannel | { 
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return { error: "Chatbot não encontrado." };
-  const { data: ch } = await createAdminClient().from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
-  if (!ch?.waba_id) return { error: "Conecte o WhatsApp (com a conta do WhatsApp Business) para usar modelos." };
-  return ch as TemplateChannel;
+  const ch = await loadTemplateChannel(createAdminClient(), botId);
+  return ch ?? { error: "Conecte o WhatsApp (com a conta do WhatsApp Business) para usar modelos." };
+}
+
+/** "21 99999-9999" vira 5521999999999; quem já digitou o DDI fica como está. */
+function whatsappNumber(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  return d.length === 10 || d.length === 11 ? `55${d}` : d;
+}
+
+/**
+ * Manda um modelo aprovado (campos `template` e `param_N` do formulário) e devolve o texto
+ * como o contato recebeu, para entrar no histórico da conversa.
+ */
+async function sendApprovedTemplate(ch: TemplateChannel, to: string, formData: FormData): Promise<{ text: string } | { error: string }> {
+  let templates;
+  try {
+    templates = await listSendable(ch);
+  } catch (e) {
+    return { error: `Não deu para ler os modelos: ${metaError(e)}` };
+  }
+  const t = templates.find((x) => x.name === text(formData.get("template")));
+  if (!t) return { error: "Escolha um modelo aprovado." };
+  const params = formParams(formData, t.vars);
+  if (params.some((p) => !p)) return { error: "Preencha todos os campos do modelo." };
+  try {
+    await sendTemplate(ch, to, t, params);
+  } catch (e) {
+    return { error: `O WhatsApp não aceitou o envio: ${metaError(e)}` };
+  }
+  return { text: renderTemplate(t.body, params) };
+}
+
+/** Grava o modelo enviado como resposta da equipe e atualiza a conversa. */
+async function recordTemplateMessage(admin: ReturnType<typeof createAdminClient>, conversationId: string, content: string) {
+  const { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, author: AGENCY_AUTHOR });
+  if (error) await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content });
+  const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
+  await admin.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conversationId);
 }
 
 const metaError = (e: unknown) => (e instanceof WhatsAppError ? e.message : "erro desconhecido");
@@ -525,30 +561,45 @@ export async function deleteWhatsAppTemplate(botId: string, name: string): Promi
   return ok("Modelo excluído.");
 }
 
-/** Envia um modelo aprovado para um número (teste, ou avisar alguém fora da janela de 24 h). */
-export async function sendWhatsAppTemplate(botId: string, formData: FormData): Promise<ActionResult> {
+/** Modelo dentro de uma conversa do WhatsApp (o jeito de retomar depois das 24 h). */
+export async function sendConversationTemplate(conversationId: string, formData: FormData): Promise<ActionResult> {
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const ch = await ownedTemplateChannel(owned.conv.bot_id);
+  if ("error" in ch) return fail(ch.error);
+  const { data: conv } = await owned.admin.from("conversations").select("channel, wa_id").eq("id", conversationId).single();
+  if (conv?.channel !== "whatsapp" || !conv.wa_id) return fail("Esta conversa não é do WhatsApp.");
+  const sent = await sendApprovedTemplate(ch, conv.wa_id, formData);
+  if ("error" in sent) return fail(sent.error);
+  await recordTemplateMessage(owned.admin, conversationId, sent.text);
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  return ok("Modelo enviado. Quando o contato responder, a conversa continua aqui.");
+}
+
+/**
+ * "+ Nova conversa": começa a falar com um número pelo WhatsApp com um modelo aprovado.
+ * Se já existe conversa recente com ele, o modelo entra nela em vez de abrir outra.
+ */
+export async function startWhatsAppConversation(botId: string, formData: FormData): Promise<ActionResult> {
   const ch = await ownedTemplateChannel(botId);
   if ("error" in ch) return fail(ch.error);
-  const name = text(formData.get("template"));
-  const to = text(formData.get("to")).replace(/\D/g, "");
-  const params = lines(String(formData.get("params") ?? ""));
-  if (to.length < 10) return fail("Informe o número com DDI e DDD, ex.: 55 21 99999-9999.");
-  let templates;
-  try {
-    templates = await listTemplates(ch);
-  } catch (e) {
-    return fail(`Não deu para ler os modelos: ${metaError(e)}`);
+  const to = whatsappNumber(text(formData.get("to")));
+  if (to.length < 12) return fail("Informe o WhatsApp com DDD, ex.: 21 99999-9999.");
+  const sent = await sendApprovedTemplate(ch, to, formData);
+  if ("error" in sent) return fail(sent.error);
+
+  const admin = createAdminClient();
+  const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
+  const { data: recent } = await admin.from("conversations").select("id").eq("bot_id", botId).in("wa_id", waIdVariants(to)).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1).maybeSingle();
+  let conversationId = recent?.id as string | undefined;
+  if (!conversationId) {
+    const { data: created, error } = await admin.from("conversations").insert({ bot_id: botId, channel: "whatsapp", wa_id: to, visitor_id: null }).select("id").single();
+    if (error || !created) return fail("A mensagem foi enviada, mas não deu para abrir a conversa aqui. Ela aparece quando o contato responder.");
+    conversationId = created.id as string;
   }
-  const t = templates.find((x) => x.name === name && x.status === "APPROVED");
-  if (!t) return fail("Escolha um modelo aprovado.");
-  const needed = templateVariables(templateBody(t)).length;
-  if (params.length < needed) return fail(`Este modelo tem ${needed} variáve${needed === 1 ? "l" : "is"}: preencha uma por linha.`);
-  try {
-    await sendTemplate(ch, to, t, params.slice(0, needed));
-  } catch (e) {
-    return fail(`O WhatsApp não aceitou o envio: ${metaError(e)}`);
-  }
-  return ok("Mensagem enviada. Confira no WhatsApp do número.");
+  await recordTemplateMessage(admin, conversationId, sent.text);
+  revalidatePath(`/painel/bots/${botId}`);
+  redirect(`/painel/bots/${botId}/conversas/${conversationId}`);
 }
 
 /* ------------------------------------------------------------------ domínio próprio */
