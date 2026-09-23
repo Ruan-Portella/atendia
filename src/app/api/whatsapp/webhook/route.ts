@@ -57,7 +57,7 @@ export async function POST(req: Request) {
           if (s.status === "failed") console.warn("whatsapp: mensagem não entregue", phoneNumberId, s.errors?.[0]);
         }
         if (!phoneNumberId || !value?.messages?.length) continue;
-        const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow>();
+        const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, access_token_enc").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow>();
         if (!channel) {
           console.warn("whatsapp: número sem chatbot ligado", phoneNumberId);
           continue;

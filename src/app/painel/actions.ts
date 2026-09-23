@@ -15,7 +15,8 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
-import { WhatsAppError, getPhoneNumber, subscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
+import { WhatsAppError, exchangeSignupCode, getPhoneNumber, newPin, registerNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
+import { seal, unseal } from "@/lib/secret-box";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -401,13 +402,77 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   return ok(`WhatsApp ${phone.display_phone_number ?? ""} ligado. Mande uma mensagem para ele para testar.`);
 }
 
+export interface SignupResult {
+  code: string;
+  phoneNumberId: string;
+  wabaId: string;
+  businessId?: string | null;
+}
+
+/**
+ * Fim do cadastro incorporado (Embedded Signup): o cliente escolheu o número na janela da Meta.
+ * Troca o código pelo token dele, inscreve o app na conta do WhatsApp, registra o número na
+ * Cloud API e liga ao chatbot. Token e PIN ficam cifrados; nada disso volta para o navegador.
+ */
+export async function completeWhatsAppSignup(botId: string, input: SignupResult): Promise<ActionResult> {
+  const { email } = await requireAgency();
+  if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  if (bot.is_demo) return fail("Converta a demo em chatbot antes de ligar o WhatsApp.");
+
+  const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+  const phoneNumberId = digits(input.phoneNumberId);
+  const wabaId = digits(input.wabaId);
+  const businessId = digits(input.businessId) || null;
+  if (!input.code || phoneNumberId.length < 8 || wabaId.length < 8) return fail("A Meta não devolveu o número escolhido. Tente conectar de novo.");
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("whatsapp_channels").select("bot_id, pin_enc").eq("phone_number_id", phoneNumberId).maybeSingle();
+  if (existing && existing.bot_id !== botId) return fail("Este número já está ligado a outro chatbot. Desconecte lá primeiro.");
+
+  let token: string;
+  let phone: Awaited<ReturnType<typeof getPhoneNumber>>;
+  // reconectar o mesmo número usa o mesmo PIN: um PIN novo seria recusado pela verificação em duas etapas
+  const pin = existing?.pin_enc ? unseal(existing.pin_enc) : newPin();
+  try {
+    token = await exchangeSignupCode(input.code);
+    await subscribeApp(wabaId, token);
+    await registerNumber(phoneNumberId, pin, token);
+    phone = await getPhoneNumber(phoneNumberId, token);
+  } catch (e) {
+    console.error("whatsapp: cadastro incorporado falhou", e);
+    return fail(`A Meta recusou a conexão: ${e instanceof WhatsAppError ? e.message : "erro desconhecido"}. Tente de novo em instantes.`);
+  }
+
+  await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
+  const { error } = await admin.from("whatsapp_channels").insert({
+    bot_id: botId,
+    phone_number_id: phoneNumberId,
+    waba_id: wabaId,
+    business_id: businessId,
+    display_phone: phone.display_phone_number ?? null,
+    verified_name: phone.verified_name ?? null,
+    access_token_enc: seal(token),
+    pin_enc: seal(pin),
+  });
+  if (error) return fail("O número foi conectado na Meta, mas não deu para salvar aqui. Tente de novo.");
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(`WhatsApp ${phone.display_phone_number ?? ""} conectado. O assistente já responde por ele.`);
+}
+
 export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
   const { email } = await requireAgency();
   if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
-  const { error } = await createAdminClient().from("whatsapp_channels").delete().eq("bot_id", botId);
+  const admin = createAdminClient();
+  const { data: channel } = await admin.from("whatsapp_channels").select("waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
+  // o app deixa de receber os eventos da conta do cliente (o número de teste fica como está)
+  if (channel?.waba_id && channel.access_token_enc) await unsubscribeApp(channel.waba_id, unseal(channel.access_token_enc));
+  const { error } = await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
   if (error) return fail("Não foi possível desconectar. Tente de novo.");
   revalidatePath(`/painel/bots/${botId}`);
   return ok("WhatsApp desconectado. O assistente parou de responder por ele.");

@@ -39,10 +39,10 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
 async function deliverToWhatsApp(admin: SupabaseClient, conversationId: string, content: string): Promise<true | ActionResult> {
   const { data: conv } = await admin.from("conversations").select("bot_id, channel, wa_id").eq("id", conversationId).maybeSingle();
   if (conv?.channel !== "whatsapp" || !conv.wa_id) return true;
-  const { data: channel } = await admin.from("whatsapp_channels").select("phone_number_id").eq("bot_id", conv.bot_id).maybeSingle();
+  const { data: channel } = await admin.from("whatsapp_channels").select("phone_number_id, access_token_enc").eq("bot_id", conv.bot_id).maybeSingle();
   if (!channel) return fail("O WhatsApp deste chatbot foi desconectado. A mensagem não foi enviada.");
   try {
-    await sendText(channel.phone_number_id, conv.wa_id, content);
+    await sendText(channel, conv.wa_id, content);
     return true;
   } catch (e) {
     if (e instanceof WhatsAppError && e.code === OUTSIDE_WINDOW_CODE) {

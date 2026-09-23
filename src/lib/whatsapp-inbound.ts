@@ -2,7 +2,7 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runChat, type BotRow } from "./chat";
 import { firstExceeded } from "./rate-limit";
-import { markReadTyping, sendText, toWhatsAppText } from "./whatsapp";
+import { markReadTyping, sendText, toWhatsAppText, type WaChannel } from "./whatsapp";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
 const RESUME_HOURS = 24;
@@ -22,9 +22,8 @@ export interface InboundMessage {
   interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
 }
 
-export interface ChannelRow {
+export interface ChannelRow extends WaChannel {
   bot_id: string;
-  phone_number_id: string;
 }
 
 /** Texto da mensagem (texto, botão ou item de lista); null para áudio, imagem, figurinha… */
@@ -46,7 +45,7 @@ export async function handleInbound(db: SupabaseClient, channel: ChannelRow, msg
   if (!bot || bot.status !== "live") return;
 
   const waId = msg.from;
-  const reply = (body: string) => sendText(channel.phone_number_id, waId, toWhatsAppText(body));
+  const reply = (body: string) => sendText(channel, waId, toWhatsAppText(body));
 
   const text = inboundText(msg);
   if (!text) return reply(ONLY_TEXT);
@@ -57,7 +56,7 @@ export async function handleInbound(db: SupabaseClient, channel: ChannelRow, msg
   ]);
   if (exceeded) return reply(exceeded.message);
 
-  await markReadTyping(channel.phone_number_id, msg.id);
+  await markReadTyping(channel, msg.id);
 
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
   const { data: conv } = await db

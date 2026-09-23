@@ -1,14 +1,19 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { unseal } from "./secret-box";
 
 /**
- * Cloud API do WhatsApp (Meta): envio de mensagens e conferência do webhook.
+ * Cloud API do WhatsApp (Meta): envio de mensagens, cadastro incorporado e conferência do webhook.
  *
- *   WHATSAPP_TOKEN          → token do usuário do sistema (envia as mensagens)
- *   WHATSAPP_APP_SECRET     → chave secreta do app (confere a assinatura do webhook)
+ *   META_APP_ID             → ID do app na Meta (troca do código do cadastro incorporado)
+ *   WHATSAPP_CONFIG_ID      → configuração do Facebook Login for Business (cadastro incorporado)
+ *   WHATSAPP_APP_SECRET     → chave secreta do app (webhook e troca do código)
  *   WHATSAPP_VERIFY_TOKEN   → texto combinado no cadastro do webhook no painel da Meta
+ *   WHATSAPP_TOKEN_KEY      → chave que cifra os tokens dos clientes no banco
+ *   WHATSAPP_TOKEN          → token do usuário do sistema: só para números sem token próprio
+ *                             (o número de teste do app, ligado pelo ID)
  *   WHATSAPP_GRAPH_VERSION  → versão da Graph API (padrão abaixo)
  */
-const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION ?? "v23.0";
+export const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION ?? "v23.0";
 /** Limite da Meta para o corpo de uma mensagem de texto. */
 const MAX_BODY = 4096;
 
@@ -21,8 +26,21 @@ export class WhatsAppError extends Error {
 /** Fora da janela de 24 h desde a última mensagem do contato: só modelo aprovado passa. */
 export const OUTSIDE_WINDOW_CODE = 131047;
 
+/** Um número ligado a um chatbot, com o token cifrado do cliente (ou sem, no número de teste). */
+export interface WaChannel {
+  phone_number_id: string;
+  access_token_enc?: string | null;
+}
+
 export function whatsappConfigured() {
   return Boolean(process.env.WHATSAPP_TOKEN);
+}
+
+/** Dados que o botão "Conectar WhatsApp" precisa; null se o cadastro incorporado não está configurado. */
+export function embeddedSignupConfig(): { appId: string; configId: string; graphVersion: string } | null {
+  const appId = process.env.META_APP_ID;
+  const configId = process.env.WHATSAPP_CONFIG_ID;
+  return appId && configId ? { appId, configId, graphVersion: GRAPH_VERSION } : null;
 }
 
 /**
@@ -34,9 +52,17 @@ export function whatsappAllowed(email: string): boolean {
   return list.includes("*") || (Boolean(email) && list.includes(email.trim().toLowerCase()));
 }
 
-async function graph<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+function envToken(): string {
   const token = process.env.WHATSAPP_TOKEN;
   if (!token) throw new WhatsAppError("WHATSAPP_TOKEN não configurado");
+  return token;
+}
+
+function channelToken(ch: WaChannel): string {
+  return ch.access_token_enc ? unseal(ch.access_token_enc) : envToken();
+}
+
+async function graph<T>(path: string, token: string, init?: { method?: string; body?: unknown }): Promise<T> {
   const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${path}`, {
     method: init?.method ?? (init?.body ? "POST" : "GET"),
     headers: { Authorization: `Bearer ${token}`, ...(init?.body ? { "Content-Type": "application/json" } : {}) },
@@ -51,27 +77,53 @@ async function graph<T>(path: string, init?: { method?: string; body?: unknown }
   return data as T;
 }
 
-export async function sendText(phoneNumberId: string, to: string, body: string) {
-  return graph<{ messages?: Array<{ id: string }> }>(`${phoneNumberId}/messages`, {
+export async function sendText(ch: WaChannel, to: string, body: string) {
+  return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: { messaging_product: "whatsapp", recipient_type: "individual", to, type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true } },
   });
 }
 
 /** Marca como lida e mostra "digitando…" enquanto o assistente pensa. Falha não importa. */
-export async function markReadTyping(phoneNumberId: string, messageId: string) {
-  await graph(`${phoneNumberId}/messages`, {
+export async function markReadTyping(ch: WaChannel, messageId: string) {
+  await graph(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: { messaging_product: "whatsapp", status: "read", message_id: messageId, typing_indicator: { type: "text" } },
   }).catch(() => {});
 }
 
 /** Confere se o token enxerga o número e devolve como ele aparece no WhatsApp. */
-export async function getPhoneNumber(phoneNumberId: string) {
-  return graph<{ id: string; display_phone_number?: string; verified_name?: string }>(`${phoneNumberId}?fields=display_phone_number,verified_name`);
+export async function getPhoneNumber(phoneNumberId: string, token = envToken()) {
+  return graph<{ id: string; display_phone_number?: string; verified_name?: string }>(`${phoneNumberId}?fields=display_phone_number,verified_name`, token);
 }
 
 /** Inscreve o app nos eventos da conta do WhatsApp (sem isso o webhook não recebe nada dela). */
-export async function subscribeApp(wabaId: string) {
-  await graph(`${wabaId}/subscribed_apps`, { method: "POST", body: {} });
+export async function subscribeApp(wabaId: string, token = envToken()) {
+  await graph(`${wabaId}/subscribed_apps`, token, { method: "POST", body: {} });
+}
+
+/** Desfaz a inscrição ao desconectar. Falha não importa: o número já saiu do banco. */
+export async function unsubscribeApp(wabaId: string, token: string) {
+  await graph(`${wabaId}/subscribed_apps`, token, { method: "DELETE" }).catch(() => {});
+}
+
+/** Troca o código do cadastro incorporado (vale 30 s) pelo token do cliente. */
+export async function exchangeSignupCode(code: string): Promise<string> {
+  const appId = process.env.META_APP_ID;
+  const secret = process.env.WHATSAPP_APP_SECRET;
+  if (!appId || !secret) throw new WhatsAppError("META_APP_ID ou WHATSAPP_APP_SECRET não configurado");
+  const qs = new URLSearchParams({ client_id: appId, client_secret: secret, code });
+  const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/oauth/access_token?${qs}`, { cache: "no-store" });
+  const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: { message?: string; code?: number } };
+  if (!res.ok || !data.access_token) throw new WhatsAppError(data.error?.message ?? "a Meta não devolveu o token", data.error?.code);
+  return data.access_token;
+}
+
+/** Registra o número na Cloud API. O PIN vira a verificação em duas etapas do número. */
+export async function registerNumber(phoneNumberId: string, pin: string, token: string) {
+  await graph(`${phoneNumberId}/register`, token, { body: { messaging_product: "whatsapp", pin } });
+}
+
+export function newPin(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 /** `X-Hub-Signature-256` = "sha256=" + HMAC-SHA256 do corpo cru com a chave secreta do app. */

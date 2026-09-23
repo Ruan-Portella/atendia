@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
-import { whatsappAllowed } from "@/lib/whatsapp";
+import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
+import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
 import { ChatWindow } from "@/components/chat-window";
@@ -18,7 +19,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { answerUnanswered, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { answerUnanswered, completeWhatsAppSignup, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 
@@ -54,7 +55,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "fontes" ? supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10) : none,
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, handled_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id) : none,
-    tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, display_phone, verified_name, created_at").eq("bot_id", id).maybeSingle() : none,
+    tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
   const clients = bot.is_demo || tab === "personalidade" ? await getClientOptions(supabase, agency.id) : [];
@@ -68,6 +69,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   // domínio próprio da agência (quando verificado) nos links que o cliente e o prospect veem
   const base = agencyBaseUrl(agency);
   const demoUrl = bot.is_demo && bot.demo_slug ? `${base}/demo/${bot.demo_slug}` : null;
+  const signup = embeddedSignupConfig();
   const embedSnippet = `<script src="${base}/widget.js" data-key="${bot.public_key}" async></script>`;
 
   return (
@@ -232,6 +234,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     {whatsapp.verified_name && <span className="text-sm text-muted">· {whatsapp.verified_name}</span>}
                   </div>
                   <p className="text-sm text-ink-2">Ligado {relativeTime(whatsapp.created_at)}. {bot.status === "live" ? "Mande uma mensagem para este número para testar." : "O chatbot não está publicado: ele só responde no WhatsApp depois de clicar em “Publicar” no topo."}</p>
+                  {whatsapp.business_id && (
+                    <p className="text-xs text-muted">As conversas do WhatsApp são cobradas pela Meta direto do cliente. Para não parar, ele precisa ter uma forma de pagamento no <a href="https://business.facebook.com/wa/manage/home/" target="_blank" rel="noopener" className="font-semibold text-brand hover:underline">Gerenciador do WhatsApp</a>.</p>
+                  )}
                   <ConfirmAction
                     action={disconnectWhatsApp.bind(null, id)}
                     title="Desconectar o WhatsApp?"
@@ -243,12 +248,26 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   </ConfirmAction>
                 </div>
               ) : (
-                <ActionForm action={connectWhatsApp.bind(null, id)} className="card flex flex-col gap-4 p-5">
-                  <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
-                  <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
-                  <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Em breve o cliente conecta o próprio número com um clique.</p>
-                  <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-primary self-start">Ligar WhatsApp</SubmitButton>
-                </ActionForm>
+                <div className="card flex flex-col gap-4 p-5">
+                  {signup ? (
+                    <>
+                      <p className="text-sm text-ink-2">O cliente entra com o Facebook dele, escolhe a conta do WhatsApp Business e o número. Pode ser feito com ele do lado, na chamada, ou pelo seu acesso ao Facebook da empresa dele.</p>
+                      <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} />
+                      <p className="text-xs text-muted">O número escolhido passa a funcionar pela API e sai do aplicativo do WhatsApp no celular. Use um número dedicado ao atendimento.</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted">O botão de conexão aparece quando META_APP_ID e WHATSAPP_CONFIG_ID estiverem configurados.</p>
+                  )}
+                  <details className="border-t border-line-2 pt-3 text-sm">
+                    <summary className="cursor-pointer text-xs font-semibold text-muted">Ligar pelo ID (número de teste do app)</summary>
+                    <ActionForm action={connectWhatsApp.bind(null, id)} className="mt-3 flex flex-col gap-4">
+                      <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
+                      <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
+                      <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Usa o token do servidor (WHATSAPP_TOKEN).</p>
+                      <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
+                    </ActionForm>
+                  </details>
+                </div>
               )}
             </div>
           )}
