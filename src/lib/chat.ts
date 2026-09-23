@@ -47,7 +47,9 @@ export async function runChat(opts: {
   messages: UIMessage[];
   conversationId: string | null;
   visitorId: string | null;
-  channel: "widget" | "demo" | "painel";
+  channel: "widget" | "demo" | "painel" | "whatsapp";
+  /** Contato do WhatsApp: o número já é conhecido, o assistente só pede o nome. */
+  whatsapp?: { waId: string; profileName?: string | null };
 }) {
   const { db, bot, messages, channel } = opts;
 
@@ -68,7 +70,7 @@ export async function runChat(opts: {
 
     const { data: conv, error } = await db
       .from("conversations")
-      .insert({ bot_id: bot.id, visitor_id: opts.visitorId, channel })
+      .insert({ bot_id: bot.id, visitor_id: opts.visitorId, channel, ...(opts.whatsapp ? { wa_id: opts.whatsapp.waId } : {}) })
       .select("id")
       .single();
     if (error || !conv) throw new Error("Não foi possível abrir a conversa.");
@@ -96,7 +98,11 @@ export async function runChat(opts: {
     ? await db.from("messages").select("content").eq("conversation_id", conversationId).eq("role", "agent").order("id", { ascending: false }).limit(6)
     : { data: [] };
   const agentMessages = (agentRows ?? []).map((r) => String(r.content).slice(0, 500)).reverse();
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages });
+  const wa = opts.whatsapp;
+  const channelNote = wa
+    ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil dela é "${wa.profileName}": confirme antes de usar.` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown.`
+    : undefined;
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote });
   const convId = conversationId;
 
   // 3. Persiste a pergunta do visitante
@@ -105,6 +111,9 @@ export async function runChat(opts: {
   }
 
   let unansweredRecorded = false;
+  // resolve quando a resposta já está gravada (quem não usa o stream, como o WhatsApp, espera por ele)
+  let markSaved!: () => void;
+  const saved = new Promise<void>((resolve) => (markSaved = resolve));
   const result = streamText({
     model: chatModel(),
     system,
@@ -124,7 +133,7 @@ export async function runChat(opts: {
           if (!leadEnabled) return { ok: false };
           const { data: lead } = await db
             .from("leads")
-            .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? null, email: input.email ?? null, notes: input.interesse ?? null })
+            .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? wa?.waId ?? null, email: input.email ?? null, notes: input.interesse ?? null })
             .select("id")
             .single();
           notifyLead({ db, bot, lead: { id: lead?.id, ...input } }).catch(() => {});
@@ -157,17 +166,22 @@ export async function runChat(opts: {
         },
       }),
     },
+    onError: () => markSaved(),
     onFinish: async ({ text }) => {
-      // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
-      if (!unansweredRecorded && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
-      if (text) {
-        await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null });
+      try {
+        // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
+        if (!unansweredRecorded && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
+        if (text) {
+          await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null });
+        }
+        const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
+        const now = new Date().toISOString();
+        await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", convId);
+      } finally {
+        markSaved();
       }
-      const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
-      const now = new Date().toISOString();
-      await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", convId);
     },
   });
 
-  return { result, conversationId: convId, sources: used };
+  return { result, conversationId: convId, sources: used, saved };
 }

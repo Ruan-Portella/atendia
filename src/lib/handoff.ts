@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fail, ok, type ActionResult } from "./action-result";
+import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendText } from "./whatsapp";
 
 /**
  * Atendimento humano: as mesmas operações para a agência (painel) e para o cliente final
@@ -17,6 +18,8 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   const content = rawContent.trim();
   if (!content) return fail("Escreva uma mensagem.");
   if (content.length > 2000) return fail("Mensagem muito longa (até 2.000 caracteres).");
+  const sent = await deliverToWhatsApp(admin, conversationId, content);
+  if (sent !== true) return sent;
   const now = new Date().toISOString();
   let { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, author });
   // banco sem a migração 0009 (coluna author): envia sem o autor
@@ -27,6 +30,27 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   const { data: conv } = await admin.from("conversations").select("takeover_at").eq("id", conversationId).single();
   await admin.from("conversations").update({ takeover_at: conv?.takeover_at ?? now, handled_at: null, last_message_at: now, message_count: count ?? 0 }).eq("id", conversationId);
   return ok("Enviada. O visitante vê em alguns segundos.");
+}
+
+/**
+ * Conversa do WhatsApp: a resposta da equipe sai pelo número ligado ao chatbot (antes de gravar,
+ * para não mostrar no painel algo que o cliente não recebeu). Outros canais: nada a fazer.
+ */
+async function deliverToWhatsApp(admin: SupabaseClient, conversationId: string, content: string): Promise<true | ActionResult> {
+  const { data: conv } = await admin.from("conversations").select("bot_id, channel, wa_id").eq("id", conversationId).maybeSingle();
+  if (conv?.channel !== "whatsapp" || !conv.wa_id) return true;
+  const { data: channel } = await admin.from("whatsapp_channels").select("phone_number_id").eq("bot_id", conv.bot_id).maybeSingle();
+  if (!channel) return fail("O WhatsApp deste chatbot foi desconectado. A mensagem não foi enviada.");
+  try {
+    await sendText(channel.phone_number_id, conv.wa_id, content);
+    return true;
+  } catch (e) {
+    if (e instanceof WhatsAppError && e.code === OUTSIDE_WINDOW_CODE) {
+      return fail("Passaram mais de 24 horas desde a última mensagem do cliente. O WhatsApp só deixa responder dentro desse prazo.");
+    }
+    console.error("whatsapp: resposta do atendente falhou", e);
+    return fail("O WhatsApp não aceitou a mensagem. Tente de novo em instantes.");
+  }
 }
 
 /** Devolve a conversa ao assistente (ele volta a responder, sabendo o que foi escrito). */

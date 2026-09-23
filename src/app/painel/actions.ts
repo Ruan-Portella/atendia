@@ -15,6 +15,7 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
+import { WhatsAppError, getPhoneNumber, subscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -360,6 +361,56 @@ export async function setAutoRefresh(botId: string, formData: FormData): Promise
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   revalidatePath(`/painel/bots/${botId}`);
   return ok(enabled ? "O site será relido toda semana." : "Releitura automática desligada.");
+}
+
+/* ------------------------------------------------------------------ whatsapp */
+
+/**
+ * Liga um número do WhatsApp (Cloud API) ao chatbot pelo Phone number ID. Confere com a Meta
+ * se o token enxerga o número. Por enquanto vale para o número de teste do app (token do .env);
+ * o cadastro incorporado vai preencher isso sozinho.
+ */
+export async function connectWhatsApp(botId: string, formData: FormData): Promise<ActionResult> {
+  const { email } = await requireAgency();
+  if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  if (bot.is_demo) return fail("Converta a demo em chatbot antes de ligar o WhatsApp.");
+  if (!whatsappConfigured()) return fail("O WhatsApp ainda não está configurado no servidor (WHATSAPP_TOKEN).");
+
+  const phoneNumberId = text(formData.get("phone_number_id")).replace(/\D/g, "");
+  const wabaId = text(formData.get("waba_id")).replace(/\D/g, "") || null;
+  if (phoneNumberId.length < 8) return fail("Cole o Phone number ID (só números), que aparece na configuração da API do app na Meta.");
+
+  let phone: Awaited<ReturnType<typeof getPhoneNumber>>;
+  try {
+    phone = await getPhoneNumber(phoneNumberId);
+    if (wabaId) await subscribeApp(wabaId);
+  } catch (e) {
+    return fail(`A Meta não reconheceu esse número: ${e instanceof WhatsAppError ? e.message : "erro desconhecido"}. Confira o ID e as permissões do token.`);
+  }
+
+  const admin = createAdminClient();
+  const { data: taken } = await admin.from("whatsapp_channels").select("bot_id").eq("phone_number_id", phoneNumberId).maybeSingle();
+  if (taken && taken.bot_id !== botId) return fail("Este número já está ligado a outro chatbot. Desconecte lá primeiro.");
+  await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
+  const { error } = await admin.from("whatsapp_channels").insert({ bot_id: botId, phone_number_id: phoneNumberId, waba_id: wabaId, display_phone: phone.display_phone_number ?? null, verified_name: phone.verified_name ?? null });
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(`WhatsApp ${phone.display_phone_number ?? ""} ligado. Mande uma mensagem para ele para testar.`);
+}
+
+export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
+  const { email } = await requireAgency();
+  if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  const { error } = await createAdminClient().from("whatsapp_channels").delete().eq("bot_id", botId);
+  if (error) return fail("Não foi possível desconectar. Tente de novo.");
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("WhatsApp desconectado. O assistente parou de responder por ele.");
 }
 
 /* ------------------------------------------------------------------ domínio próprio */

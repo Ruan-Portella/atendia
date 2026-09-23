@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
+import { whatsappAllowed } from "@/lib/whatsapp";
 import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
 import { ChatWindow } from "@/components/chat-window";
@@ -17,7 +18,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { answerUnanswered, convertDemo, deleteBot, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { answerUnanswered, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 
@@ -29,19 +30,22 @@ const TABS = [
   ["aparencia", "Aparência e marca"],
   ["leads", "Captura de leads"],
   ["conversas", "Conversas"],
+  ["whatsapp", "WhatsApp"],
   ["instalacao", "Instalação"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
-  const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const tab = (TABS.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
+  const [{ id }, sp, { email }] = await Promise.all([params, searchParams, requireAgency()]);
+  // WhatsApp em teste: a aba só existe para os e-mails liberados
+  const tabs = whatsappAllowed(email) ? TABS : TABS.filter(([t]) => t !== "whatsapp");
+  const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
   const supabase = await createClient();
 
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
   // inteiros) não vem mais: só o de textos/FAQs, que o modal de edição precisa.
   const none = Promise.resolve({ data: null, count: null });
-  const [{ agency }, { data: bot }, { count: readySources }, { data: sourceMeta }, { data: sourceTexts }, { data: unanswered }, { data: conversations }, { count: leadCount }] = await Promise.all([
+  const [{ agency }, { data: bot }, { count: readySources }, { data: sourceMeta }, { data: sourceTexts }, { data: unanswered }, { data: conversations }, { count: leadCount }, { data: whatsapp }] = await Promise.all([
     requireAgency(),
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
@@ -50,6 +54,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "fontes" ? supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10) : none,
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, handled_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id) : none,
+    tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, display_phone, verified_name, created_at").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
   const clients = bot.is_demo || tab === "personalidade" ? await getClientOptions(supabase, agency.id) : [];
@@ -102,7 +107,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
       <div className="grid flex-1 lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]">
         <nav className="flex flex-row items-center gap-1 overflow-x-auto border-b border-line px-3 py-2 [scrollbar-width:none] lg:flex-col lg:items-stretch lg:overflow-visible lg:border-b-0 lg:border-r lg:p-3.5">
-          {TABS.map(([key, label]) => (
+          {tabs.map(([key, label]) => (
             <Link key={key} href={`/painel/bots/${id}?tab=${key}`} className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm lg:py-2.5 ${tab === key ? "bg-brand-soft font-semibold text-brand" : "font-medium text-ink-2 hover:bg-ground"}`}>
               {label}
             </Link>
@@ -209,6 +214,43 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 ))}
               </div>
             </>
+          )}
+
+          {tab === "whatsapp" && (
+            <div className="flex max-w-[640px] flex-col gap-4">
+              <div>
+                <h2 className="text-[22px] font-bold">WhatsApp</h2>
+                <p className="text-sm text-muted">{bot.name} responde no WhatsApp do cliente com a mesma base de conhecimento. Pedidos de atendente aparecem em Conversas, e a sua resposta sai pelo WhatsApp.</p>
+              </div>
+              {bot.is_demo ? (
+                <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
+              ) : whatsapp ? (
+                <div className="card flex flex-col gap-3 p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">conectado</span>
+                    <span className="display text-lg font-bold">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
+                    {whatsapp.verified_name && <span className="text-sm text-muted">· {whatsapp.verified_name}</span>}
+                  </div>
+                  <p className="text-sm text-ink-2">Ligado {relativeTime(whatsapp.created_at)}. {bot.status === "live" ? "Mande uma mensagem para este número para testar." : "O chatbot não está publicado: ele só responde no WhatsApp depois de clicar em “Publicar” no topo."}</p>
+                  <ConfirmAction
+                    action={disconnectWhatsApp.bind(null, id)}
+                    title="Desconectar o WhatsApp?"
+                    description={<>O assistente para de responder pelo número <strong className="text-ink">{whatsapp.display_phone ?? whatsapp.phone_number_id}</strong>. As conversas antigas continuam no painel.</>}
+                    confirmLabel="Desconectar"
+                    className="self-start text-xs font-medium text-danger hover:underline"
+                  >
+                    Desconectar
+                  </ConfirmAction>
+                </div>
+              ) : (
+                <ActionForm action={connectWhatsApp.bind(null, id)} className="card flex flex-col gap-4 p-5">
+                  <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
+                  <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
+                  <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Em breve o cliente conecta o próprio número com um clique.</p>
+                  <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-primary self-start">Ligar WhatsApp</SubmitButton>
+                </ActionForm>
+              )}
+            </div>
           )}
 
           {tab === "instalacao" && (

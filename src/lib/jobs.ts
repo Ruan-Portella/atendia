@@ -49,6 +49,8 @@ export async function trialReminders(db: SupabaseClient) {
  * sem resposta mais antigos que isso apagados. Mensagens vão junto com a conversa.
  */
 export async function applyRetention(db: SupabaseClient) {
+  // ids de mensagens do WhatsApp já tratadas: só servem contra reentrega, que vem em minutos
+  await db.from("whatsapp_inbound").delete().lt("created_at", daysAgoIso(7));
   const { data: agencies } = await db.from("agencies").select("id, retention_months").not("retention_months", "is", null);
   let conversations = 0;
   let leads = 0;
