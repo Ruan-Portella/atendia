@@ -4,7 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { useRouter } from "next/navigation";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { getOrCreateVisitorId } from "@/lib/utils";
+import { adoptLegacyStorage, getOrCreateVisitorId } from "@/lib/utils";
 
 export interface ChatBotPublic {
   key: string;
@@ -119,11 +119,15 @@ export function ChatWindow({
   /** dentro do iframe do widget: conversa com o widget.js da página */
   embedded?: boolean;
 }) {
-  const storageKey = `atendia:${bot.key}`;
+  // nome genérico: roda no domínio da agência, nada da plataforma aparece
+  const storageKey = `chat:${bot.key}`;
   // no iframe do widget, o X do topo fecha o balão na página do cliente
   const close = onClose ?? (embedded ? () => notifyParent("chat-widget:close") : undefined);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [visitorId] = useState<string | null>(() => getOrCreateVisitorId(storageKey));
+  const [visitorId] = useState<string | null>(() => {
+    adoptLegacyStorage(`atendia:${bot.key}`, storageKey); // chave de antes da Boavoz
+    return getOrCreateVisitorId(storageKey);
+  });
   const [input, setInput] = useState("");
   const [errorText, setErrorText] = useState<string | null>(null);
   // o assistente não pode responder agora (cota, teste, falha): mostra o formulário de contato

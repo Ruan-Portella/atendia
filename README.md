@@ -1,6 +1,6 @@
-# Atendia
+# Boavoz
 
-Plataforma white-label de chatbots de IA para agências e freelancers. A agência cola o site de um cliente, recebe um assistente treinado nele, coloca a própria marca e revende por assinatura. A Atendia nunca aparece para o cliente final.
+Plataforma white-label de chatbots de IA para agências e freelancers. A agência cola o site de um cliente, recebe um assistente treinado nele, coloca a própria marca e revende por assinatura. A Boavoz nunca aparece para o cliente final.
 
 Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + pgvector, Storage) · **Vercel AI SDK** com **OpenAI ou Anthropic** · **Stripe** (opcional) · Tailwind v4.
 
@@ -35,7 +35,7 @@ Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + p
 1. Crie um projeto em supabase.com (plano free serve).
 2. **Migrações** (tudo em `supabase/migrations`, em ordem; todas podem rodar de novo sem estragar nada):
    - **Automático (recomendado):** defina `DATABASE_URL` na Vercel (Supabase → Connect → *Session pooler*, porta 5432). Todo deploy de produção aplica as migrações novas **antes** do build (`scripts/migrate.mjs`); se uma falhar, o deploy falha e o código novo não vai ao ar. Localmente: `npm run migrate`.
-   - **Manual:** no **SQL Editor**, rode cada arquivo em ordem: `0001_init` (tabelas, pgvector, RLS, buckets, agência vitrine), `0002_install_ping`, `0003_referral_credit`, `0004_clients` (clientes com vários chatbots), `0005_rate_limit`, `0006_portal_handoff` (portal do cliente, relatório, atendimento humano), `0007_source_refresh`, `0008_custom_domain`, `0009_client_access` (área do cliente) e `0010_lgpd_alerts` (avisos de plano e LGPD) , `0011_conversation_presence` (conversa continua no F5 e visitante online) e `0012_handoff_notify` (quem recebe o aviso de atendimento, por cliente).
+   - **Manual:** no **SQL Editor**, rode cada arquivo em ordem: `0001_init` (tabelas, pgvector, RLS, buckets, agência vitrine), `0002_install_ping`, `0003_referral_credit`, `0004_clients` (clientes com vários chatbots), `0005_rate_limit`, `0006_portal_handoff` (portal do cliente, relatório, atendimento humano), `0007_source_refresh`, `0008_custom_domain`, `0009_client_access` (área do cliente) e `0010_lgpd_alerts` (avisos de plano e LGPD) , `0011_conversation_presence` (conversa continua no F5 e visitante online) , `0012_handoff_notify` (quem recebe o aviso de atendimento, por cliente) e `0013_boavoz` (vitrine com o nome novo).
 3. **Authentication → Providers**: deixe Email ligado (pode desligar "Confirm email" no começo para agilizar) e ative **Google** (Client ID/Secret do Google Cloud Console; a redirect URL está na tela do Supabase).
 4. **Authentication → URL Configuration**: Site URL = `http://localhost:3000` (depois o domínio da Vercel); Redirect URLs: `http://localhost:3000/auth/callback` e `https://SEU-DOMINIO/auth/callback`.
 5. **Project Settings → API**: copie `Project URL`, `anon key` e `service_role key`.
@@ -121,4 +121,4 @@ public/widget.js                    loader do widget (botão flutuante + iframe 
 - **Atendimento humano por consulta periódica** (o widget pergunta a cada poucos segundos durante o atendimento). Com muito volume, trocar por Supabase Realtime.
 - **Portal do cliente sem login**: quem tem o link vê os contatos daquele cliente. Dá para trocar ou desligar o link a qualquer momento no painel.
 
-# atendia
+# boavoz

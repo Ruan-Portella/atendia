@@ -69,7 +69,9 @@ export const requireAgency = cache(async (): Promise<{ agency: Agency; email: st
     const slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
 
     // afiliado: cookie gravado pelo proxy quando a pessoa chegou por ?ref=
-    const ref = (await cookies()).get("atendia_ref")?.value;
+    // (atendia_ref é o nome de antes da Boavoz; pode ser lido até 30 dias depois da troca)
+    const jar = await cookies();
+    const ref = (jar.get("boavoz_ref") ?? jar.get("atendia_ref"))?.value;
     let referredBy: string | null = null;
     if (ref) {
       const { data: r } = await admin.from("agencies").select("id").eq("referral_code", ref).maybeSingle();

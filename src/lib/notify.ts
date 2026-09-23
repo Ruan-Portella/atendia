@@ -24,7 +24,7 @@ export async function notifyLead(opts: {
   const { Resend } = await import("resend");
   const resend = new Resend(apiKey);
   await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? "Atendia <onboarding@resend.dev>",
+    from: process.env.EMAIL_FROM ?? "Boavoz <onboarding@resend.dev>",
     to,
     subject: `Novo lead no chatbot de ${bot.client_name}: ${lead.nome}`,
     text: [
@@ -98,7 +98,7 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
   if (!to.length) return;
   const link = appUrl(`/painel/bots/${bot.id}/conversas/${conversationId}`);
   await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? "Atendia <onboarding@resend.dev>",
+    from: process.env.EMAIL_FROM ?? "Boavoz <onboarding@resend.dev>",
     to,
     subject: `Um visitante quer falar com alguém · ${bot.client_name}`,
     text: [
@@ -120,7 +120,7 @@ export async function notifyAgencyOwner(db: SupabaseClient, agencyId: string, su
   const to = owner?.user?.email;
   if (!to) return false;
   const { Resend } = await import("resend");
-  const { error } = await new Resend(apiKey).emails.send({ from: process.env.EMAIL_FROM ?? "Atendia <onboarding@resend.dev>", to, subject, text: lines.join("\n") });
+  const { error } = await new Resend(apiKey).emails.send({ from: process.env.EMAIL_FROM ?? "Boavoz <onboarding@resend.dev>", to, subject, text: lines.join("\n") });
   return !error;
 }
 

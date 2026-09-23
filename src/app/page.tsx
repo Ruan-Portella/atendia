@@ -4,7 +4,7 @@ import { DemoGenerator } from "@/components/demo-generator";
 import { RoiCalculator } from "@/components/roi-calculator";
 import { PLANS, brl, num } from "@/lib/plans";
 
-const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? "Atendia";
+const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz";
 
 const NICHOS = ["Clínicas", "Imobiliárias", "Advogados", "Escolas e cursos", "Academias", "Restaurantes", "E-commerce", "Hotéis e pousadas"];
 

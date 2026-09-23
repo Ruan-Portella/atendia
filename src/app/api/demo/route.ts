@@ -16,7 +16,7 @@ const bodySchema = z.object({
 /**
  * Gera um chatbot de demonstração a partir de uma URL.
  * - Logado: a demo pertence à agência do usuário e aparece no painel dela.
- * - Anônimo (landing page): a demo pertence à agência "vitrine" da própria Atendia
+ * - Anônimo (landing page): a demo pertence à agência "vitrine" da própria Boavoz
  *   e expira; serve para o visitante experimentar.
  *
  * Cada demo lê um site inteiro e gera embeddings (custa dinheiro de IA), então tem limite
@@ -52,9 +52,9 @@ export async function POST(req: Request) {
 
   if (!agencyId) {
     // agência vitrine: criada uma vez, dona das demos anônimas
-    const { data: showcase } = await db.from("agencies").select("id").eq("slug", "atendia").maybeSingle();
+    const { data: showcase } = await db.from("agencies").select("id").eq("slug", "boavoz").maybeSingle();
     if (showcase) agencyId = showcase.id;
-    else return Response.json({ error: "showcase_missing", message: "Crie a agência vitrine (slug 'atendia') para demos anônimas." }, { status: 500 });
+    else return Response.json({ error: "showcase_missing", message: "Crie a agência vitrine (slug 'boavoz') para demos anônimas." }, { status: 500 });
   }
 
   const host = new URL(url).hostname.replace(/^www\./, "");

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { LogIn, MessageCircle } from "lucide-react";
 import { hostAgency } from "@/lib/domain-server";
 import { initials } from "@/lib/utils";
+import { NEUTRAL_ICONS } from "@/lib/white-label";
 
-export const metadata = { title: { absolute: "Atendimento" }, robots: { index: false, follow: false } };
+export const metadata = { title: { absolute: "Atendimento" }, robots: { index: false, follow: false }, icons: NEUTRAL_ICONS };
 
 /**
  * O que aparece em qualquer endereço do domínio próprio da agência que não seja demo,

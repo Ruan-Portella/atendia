@@ -75,6 +75,24 @@ export function getOrCreateVisitorId(storageKey: string): string | null {
   }
 }
 
+/**
+ * Leva o visitante e a conversa aberta de uma chave antiga do localStorage para a nova
+ * (sem sobrescrever o que já existe na nova), para a troca de nome não zerar ninguém.
+ */
+export function adoptLegacyStorage(oldKey: string, newKey: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (const suffix of ["", ":conversa"]) {
+      const old = localStorage.getItem(oldKey + suffix);
+      if (old === null) continue;
+      if (localStorage.getItem(newKey + suffix) === null) localStorage.setItem(newKey + suffix, old);
+      localStorage.removeItem(oldKey + suffix);
+    }
+  } catch {
+    // sem localStorage (modo privado, bloqueado): nada a levar
+  }
+}
+
 /** Minutos desde uma data ISO. */
 export function minutesSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 60000;

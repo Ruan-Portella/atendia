@@ -167,7 +167,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
           {tab === "aparencia" && (
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
-              <div><h2 className="text-[22px] font-bold">Aparência e marca</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Atendia"} nunca aparece.</p></div>
+              <div><h2 className="text-[22px] font-bold">Aparência e marca</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"} nunca aparece.</p></div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><label htmlFor="color" className="label">Cor principal</label><input id="color" name="color" type="color" defaultValue={color} className="input h-11 p-1" /></div>
                 <div><label htmlFor="avatar_text" className="label">Iniciais do avatar</label><input id="avatar_text" name="avatar_text" maxLength={2} defaultValue={appearance.avatar_text ?? initials(bot.client_name)} className="input" /></div>
@@ -222,7 +222,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 widgetSrc={`${base}/widget.js`}
                 publicKey={bot.public_key}
                 directLink={`${base}/w/${bot.public_key}`}
-                brand={process.env.NEXT_PUBLIC_BRAND_NAME ?? "Atendia"}
+                brand={process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"}
                 isLive={bot.status === "live"}
                 installed={bot.installed_at && bot.installed_host ? { host: bot.installed_host, at: bot.installed_at, lastSeen: bot.last_seen_at ?? null } : null}
               />

@@ -15,7 +15,7 @@ export interface PageText {
   links: string[];
 }
 
-const UA = "Mozilla/5.0 (compatible; AtendiaBot/1.0; +https://atendia.com.br/bot)";
+const UA = "Mozilla/5.0 (compatible; BoavozBot/1.0; +https://boavoz.com)";
 
 export async function fetchPage(url: string, timeoutMs = 12000): Promise<PageText | null> {
   const ctrl = new AbortController();
