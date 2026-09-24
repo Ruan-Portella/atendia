@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 
-type SyncResult = { ok: true; processed: number } | { ok: false; message: string };
+type SyncResult = { ok: true; processed: number; conversations?: number; recentMessages?: number; newestConversationAt?: string | null } | { ok: false; message: string };
 
 /**
  * Busca as DMs novas do Instagram a cada poucos segundos enquanto a página está aberta (e visível).
@@ -14,7 +14,7 @@ type SyncResult = { ok: true; processed: number } | { ok: false; message: string
 export function InstagramPoller({ action, intervalMs = 15_000, visible = false }: { action: () => Promise<SyncResult>; intervalMs?: number; visible?: boolean }) {
   const router = useRouter();
   const busy = useRef(false);
-  const [last, setLast] = useState<{ at: Date; processed: number; error?: string } | null>(null);
+  const [last, setLast] = useState<{ at: Date; processed: number; error?: string; detail?: string } | null>(null);
   const [running, setRunning] = useState(false);
 
   const run = useCallback(async () => {
@@ -24,7 +24,10 @@ export function InstagramPoller({ action, intervalMs = 15_000, visible = false }
     try {
       const r = await action();
       if (r.ok) {
-        setLast({ at: new Date(), processed: r.processed });
+        // o que a API trouxe: ajuda a entender um "nada novo"
+        const newest = r.newestConversationAt ? new Date(r.newestConversationAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
+        const detail = r.conversations === undefined ? undefined : `${r.conversations} conversa${r.conversations === 1 ? "" : "s"} na conta${newest ? `, a mais recente em ${newest}` : ""}; ${r.recentMessages ?? 0} mensage${r.recentMessages === 1 ? "m" : "ns"} desde a última busca`;
+        setLast({ at: new Date(), processed: r.processed, detail });
         if (r.processed) router.refresh();
       } else setLast({ at: new Date(), processed: 0, error: r.message });
     } catch {
@@ -59,7 +62,8 @@ export function InstagramPoller({ action, intervalMs = 15_000, visible = false }
       ) : last ? (
         <span>
           Última busca às {last.at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-          {last.processed ? ` · ${last.processed} mensage${last.processed === 1 ? "m nova" : "ns novas"}` : " · nada novo"}. Busca sozinha a cada {Math.round(intervalMs / 1000)} s enquanto esta página estiver aberta.
+          {last.processed ? ` · ${last.processed} mensage${last.processed === 1 ? "m nova" : "ns novas"}` : " · nada novo"}
+          {last.detail ? ` (${last.detail})` : ""}. Busca sozinha a cada {Math.round(intervalMs / 1000)} s enquanto esta página estiver aberta.
         </span>
       ) : (
         <span>Buscando mensagens…</span>

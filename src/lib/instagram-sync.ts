@@ -38,14 +38,29 @@ export function toMessagingEvent(m: IgMessageDetails, igUserId: string, username
   };
 }
 
-export async function syncInstagram(db: SupabaseClient, ch: SyncChannel): Promise<{ processed: number }> {
+/** O que a busca viu: serve para entender um "nada novo" (a API não trouxe nada, ou filtramos). */
+export interface SyncStats {
+  processed: number;
+  conversations: number;
+  recentConversations: number;
+  recentMessages: number;
+  newestConversationAt: string | null;
+}
+
+export async function syncInstagram(db: SupabaseClient, ch: SyncChannel): Promise<SyncStats> {
   const startedAt = new Date();
   const since = (ch.last_synced_at ? new Date(ch.last_synced_at).getTime() : startedAt.getTime() - FIRST_SYNC_MINUTES * 60_000) - OVERLAP_MS;
-  let processed = 0;
+  const stats: SyncStats = { processed: 0, conversations: 0, recentConversations: 0, recentMessages: 0, newestConversationAt: null };
   try {
-    const conversations = (await listConversations(ch)).filter((c) => igTime(c.updated_time) >= since).slice(0, MAX_CONVERSATIONS);
+    const all = await listConversations(ch);
+    stats.conversations = all.length;
+    const newest = Math.max(0, ...all.map((c) => igTime(c.updated_time)));
+    stats.newestConversationAt = newest ? new Date(newest).toISOString() : null;
+    const conversations = all.filter((c) => igTime(c.updated_time) >= since).slice(0, MAX_CONVERSATIONS);
+    stats.recentConversations = conversations.length;
     for (const c of conversations) {
       const recent = (await conversationMessages(ch, c.id)).filter((m) => igTime(m.created_time) >= since);
+      stats.recentMessages += recent.length;
       if (!recent.length) continue;
       // o que já foi tratado (pelo webhook ou por uma busca anterior) nem busca os detalhes
       const { data: seen } = await db.from("whatsapp_inbound").select("message_id").in("message_id", recent.map((m) => m.id));
@@ -56,17 +71,17 @@ export async function syncInstagram(db: SupabaseClient, ch: SyncChannel): Promis
         if (!ev) continue;
         if (ev.message?.is_echo) await handleInstagramEcho(db, ch, ev);
         else await handleInstagramMessage(db, ch, ev);
-        processed++;
+        stats.processed++;
       }
     }
   } catch (e) {
     if (isInstagramAccessError(e)) {
       await markInstagramDisconnected(db, { column: "bot_id", value: ch.bot_id }, IG_TOKEN_REJECTED);
-      return { processed };
+      return stats;
     }
     throw e;
   }
   await db.from("instagram_channels").update({ last_synced_at: startedAt.toISOString() }).eq("bot_id", ch.bot_id);
-  if (processed) console.log("instagram: busca de DMs", { bot: ch.bot_id, processed });
-  return { processed };
+  console.log("instagram: busca de DMs", { bot: ch.bot_id, desde: new Date(since).toISOString(), ...stats });
+  return stats;
 }
