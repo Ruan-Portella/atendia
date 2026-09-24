@@ -8,6 +8,7 @@ import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { ConnectLinkButton } from "@/components/connect-link-button";
+import { InstagramPoller } from "@/components/instagram-poller";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
 import { WhatsAppBilling } from "@/components/whatsapp-billing";
 import { WhatsAppUsage } from "@/components/whatsapp-usage";
@@ -26,7 +27,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, syncInstagramNow, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 
@@ -360,7 +361,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <span className="display text-lg font-bold">@{instagram.username ?? instagram.ig_user_id}</span>
                   </div>
                   <p className="text-sm text-ink-2">Ligado {relativeTime(instagram.created_at)}. {bot.status === "live" ? "Mande uma DM para a conta para testar." : "O chatbot não está publicado: ele só responde no Instagram depois de clicar em “Publicar” no topo."}</p>
-                  <p className="text-xs text-muted">Se o assistente não responder, confira no Instagram da conta: Configurações → Mensagens e respostas a stories → Ferramentas conectadas → “Permitir acesso às mensagens”. O acesso é renovado sozinho a cada 60 dias.</p>
+                  <InstagramPoller action={syncInstagramNow.bind(null, id)} visible />
+                  <p className="text-xs text-muted">As DMs chegam na hora pelo webhook da Meta; a busca acima é a reserva (e o caminho enquanto o app não está publicado na Meta). O acesso é renovado sozinho a cada 60 dias.</p>
                   <ConfirmAction
                     action={disconnectInstagram.bind(null, id)}
                     title="Desconectar o Instagram?"

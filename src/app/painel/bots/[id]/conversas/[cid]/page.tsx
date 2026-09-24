@@ -17,7 +17,8 @@ import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { deleteConversation, releaseConversation, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
+import { deleteConversation, releaseConversation, sendAgentMessage, sendConversationTemplate, syncInstagramNow, takeOverConversation } from "@/app/painel/actions";
+import { InstagramPoller } from "@/components/instagram-poller";
 
 export const metadata = { title: "Conversa" };
 
@@ -83,6 +84,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
         </div>
       </header>
 
+      {isInstagram && <InstagramPoller action={syncInstagramNow.bind(null, id)} />}
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={!conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at)} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />
 
       <MessageScroller count={allMessages.length} className="min-h-0 flex-1 overflow-y-auto">

@@ -105,7 +105,11 @@ async function transcribeFrom(url: string): Promise<string | null> {
 export async function handleInstagramMessage(db: SupabaseClient, ch: IgChannelRow, ev: IgMessagingEvent) {
   const mid = ev.message?.mid ?? ev.postback?.mid;
   const igsid = ev.sender?.id;
-  if (!mid || !igsid || ev.message?.is_deleted) return;
+  if (!mid || !igsid || ev.message?.is_deleted) {
+    return console.log("instagram: DM sem id ou apagada, ignorada", { temMid: Boolean(mid), temRemetente: Boolean(igsid), apagada: Boolean(ev.message?.is_deleted), camposDaMensagem: Object.keys(ev.message ?? {}) });
+  }
+  // trava: a própria conta nunca é tratada como cliente (o assistente responderia a si mesmo)
+  if (igsid === ch.ig_user_id) return console.log("instagram: mensagem da própria conta ignorada", mid);
   if (!(await firstTime(db, mid))) return console.log("instagram: mensagem repetida ignorada", mid);
 
   const { data: bot } = await db.from("bots").select("*").eq("id", ch.bot_id).maybeSingle<BotRow>();
@@ -177,6 +181,7 @@ export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, 
   const mid = ev.message?.mid;
   const igsid = ev.recipient?.id;
   if (!mid || !igsid) return;
+  console.log("instagram: eco recebido", { mid });
   if (!(await firstTime(db, mid))) return;
 
   const content = (igText(ev) ?? igMediaLabel(ev)).slice(0, MAX_MESSAGE_CHARS);

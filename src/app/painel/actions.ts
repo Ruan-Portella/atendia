@@ -20,6 +20,7 @@ import { unseal } from "@/lib/secret-box";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
 import { createConnectLink } from "@/lib/whatsapp-connect-link";
 import { unsubscribeInstagram } from "@/lib/instagram";
+import { syncInstagram } from "@/lib/instagram-sync";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -471,6 +472,29 @@ export async function disconnectInstagram(botId: string): Promise<ActionResult> 
   if (error) return fail("Não foi possível desconectar. Tente de novo.");
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Instagram desconectado. O assistente parou de responder as mensagens diretas.");
+}
+
+/**
+ * Busca as DMs novas do Instagram do chatbot (reserva do webhook). O painel chama a cada poucos
+ * segundos enquanto a aba Instagram ou uma conversa do Instagram está aberta.
+ */
+export async function syncInstagramNow(botId: string): Promise<{ ok: true; processed: number } | { ok: false; message: string }> {
+  const { email } = await requireAgency();
+  if (!whatsappAllowed(email)) return { ok: false, message: "O Instagram ainda não está disponível na sua conta." };
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!bot) return { ok: false, message: "Chatbot não encontrado." };
+  const admin = createAdminClient();
+  const { data: ch } = await admin.from("instagram_channels").select("bot_id, ig_user_id, username, access_token_enc, last_synced_at, disconnected_at").eq("bot_id", botId).maybeSingle();
+  if (!ch || ch.disconnected_at) return { ok: false, message: "Conecte o Instagram para buscar as mensagens." };
+  try {
+    const { processed } = await syncInstagram(admin, ch);
+    if (processed) revalidatePath(`/painel/bots/${botId}`);
+    return { ok: true, processed };
+  } catch (e) {
+    console.error("instagram: busca de DMs falhou", e);
+    return { ok: false, message: `Não deu para buscar as mensagens: ${(e as Error).message}` };
+  }
 }
 
 /* ------------------------------------------------------------------ modelos de mensagem (whatsapp) */
