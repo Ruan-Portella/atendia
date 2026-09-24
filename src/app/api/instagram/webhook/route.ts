@@ -102,9 +102,6 @@ export async function POST(req: Request) {
           try {
             if (ev.message?.is_echo) await handleInstagramEcho(db, ch, ev);
             else if (ev.message || ev.postback) await handleInstagramMessage(db, ch, ev);
-            // leitura, reação, edição…: nada a responder. Registra só o formato (sem conteúdo),
-            // para enxergar o que a Meta mandou quando uma DM não é tratada
-            else console.log("instagram: evento sem mensagem ignorado", { campos: Object.keys(ev) });
           } catch (e) {
             if (isInstagramAccessError(e)) {
               await markInstagramDisconnected(db, { column: "ig_user_id", value: ch.ig_user_id }, IG_TOKEN_REJECTED);

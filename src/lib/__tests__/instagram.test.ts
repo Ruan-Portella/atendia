@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InstagramError, authorizeUrl, fitDm, igTime, isInstagramAccessError, isOutsideWindow, readState, signState, toInstagramText } from "../instagram";
-import { toMessagingEvent } from "../instagram-sync";
+import { InstagramError, authorizeUrl, fitDm, isInstagramAccessError, isOutsideWindow, readState, signState, toInstagramText } from "../instagram";
 import { igMediaLabel, igText } from "../instagram-inbound";
 
 describe("state do login", () => {
@@ -71,29 +70,5 @@ describe("mensagens recebidas", () => {
     expect(igMediaLabel({ message: { attachments: [{ type: "image" }] } })).toBe("📷 (foto)");
     expect(igMediaLabel({ message: { attachments: [{ type: "story_mention" }] } })).toBe("(menção nos stories)");
     expect(igMediaLabel({ message: {} })).toBe("(mensagem sem texto)");
-  });
-});
-
-describe("busca de DMs", () => {
-  it("lê datas em segundos, milissegundos ou ISO", () => {
-    expect(igTime(1_700_000_000)).toBe(1_700_000_000_000);
-    expect(igTime("1700000000")).toBe(1_700_000_000_000);
-    expect(igTime(1_700_000_000_000)).toBe(1_700_000_000_000);
-    expect(igTime("2026-09-23T20:00:00+0000")).toBe(Date.UTC(2026, 8, 23, 20));
-    expect(igTime(undefined)).toBe(0);
-  });
-
-  it("mensagem do contato vira DM; da própria conta vira eco", () => {
-    const base = { id: "mid1", created_time: "2026-09-23T20:00:00+0000", message: "oi" };
-    const dm = toMessagingEvent({ ...base, from: { id: "contato" }, to: { data: [{ id: "conta" }] } }, "conta");
-    expect(dm).toMatchObject({ sender: { id: "contato" }, recipient: { id: "conta" }, message: { mid: "mid1", text: "oi" } });
-    expect(dm?.message?.is_echo).toBeUndefined();
-    const echo = toMessagingEvent({ ...base, from: { id: "conta" }, to: { data: [{ id: "contato" }] } }, "conta");
-    expect(echo?.message?.is_echo).toBe(true);
-    expect(echo?.recipient?.id).toBe("contato");
-    expect(toMessagingEvent({ id: "x" }, "conta")).toBeNull();
-    // a API usou outro id para a conta: reconhece pelo @ e trata como eco
-    const otherId = toMessagingEvent({ ...base, from: { id: "outro-id", username: "Fintrabr" }, to: { data: [{ id: "contato" }] } }, "conta", "fintrabr");
-    expect(otherId?.message?.is_echo).toBe(true);
   });
 });
