@@ -35,7 +35,7 @@ export default function LandingPage() {
             Adicione R$ 3.000 por mês na sua agência revendendo chatbots de IA com a sua marca.
           </h1>
           <p className="max-w-[560px] text-lg leading-relaxed text-ink-2">
-            Crie um chatbot treinado no site e nos documentos de cada cliente em minutos, coloque o seu logo e cobre o que quiser. Nós cuidamos da IA. Você cuida dos clientes.
+            Crie um chatbot treinado no site e nos documentos de cada cliente em minutos, coloque o seu logo e cobre o que quiser. Ele atende no site e, em breve, também no WhatsApp oficial e no Instagram Direct do cliente. Nós cuidamos da IA. Você cuida dos clientes.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Link href="/cadastro" className="btn-primary px-5 py-3.5 text-base">Criar conta grátis</Link>
@@ -63,11 +63,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 px-6 pb-14 text-sm text-muted">
-        <span>Funciona em qualquer site:</span>
-        {["WordPress", "Webflow", "Framer", "Wix", "Shopify", "Lovable", "HTML puro"].map((s) => (
-          <span key={s} className="font-semibold text-ink">{s}</span>
-        ))}
+      <div className="flex flex-col items-center gap-3 px-6 pb-14 text-sm text-muted">
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2">
+          <span>Funciona em qualquer site:</span>
+          {["WordPress", "Webflow", "Framer", "Wix", "Shopify", "Lovable", "HTML puro"].map((s) => (
+            <span key={s} className="font-semibold text-ink">{s}</span>
+          ))}
+        </div>
+        {/* canais da Meta ainda em teste fechado: tirar o "em breve" no lançamento */}
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+          <span>E também:</span>
+          <span className="font-semibold text-ink">WhatsApp oficial</span>
+          <span>·</span>
+          <span className="font-semibold text-ink">Instagram Direct</span>
+          <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-semibold text-brand">em breve</span>
+          <span className="w-full text-center text-xs sm:w-auto">pela integração oficial da Meta</span>
+        </div>
       </div>
 
       <section className="grid items-center gap-12 bg-ink px-6 py-16 text-ground md:grid-cols-2 lg:px-16 xl:px-24">
@@ -88,7 +99,7 @@ export default function LandingPage() {
           {[
             ["Cole a URL", `A ${brand} lê o site, os PDFs e as perguntas frequentes do cliente e monta a base de conhecimento.`],
             ["Coloque a sua marca", "Logo, cores, nome do assistente e tom de voz. O cliente vê a sua agência, nunca a nossa."],
-            ["Cole uma linha no site", "Um script de uma linha. Funciona em qualquer plataforma, do WordPress ao HTML puro."],
+            ["Cole uma linha no site", "Um script de uma linha. Funciona em qualquer plataforma, do WordPress ao HTML puro. Em breve, conecte também o WhatsApp e o Instagram do cliente, com o login oficial da Meta."],
             ["Receba os leads", "Nome, WhatsApp e o resumo da conversa chegam por e-mail ou direto no seu painel."],
           ].map(([t, d], i) => (
             <div key={t} className="card flex flex-col gap-3 p-6">

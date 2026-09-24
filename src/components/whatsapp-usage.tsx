@@ -26,13 +26,13 @@ export async function WhatsAppUsage({ botId }: { botId: string }) {
         <p className="text-sm text-muted">Nenhuma mensagem enviada neste mês ainda.</p>
       ) : (
         <div className="card overflow-hidden text-sm">
-          <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 border-b border-line-2 px-4 py-2 text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+          <div className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-x-6 border-b border-line-2 px-4 py-2 text-xs font-semibold uppercase tracking-[0.06em] text-muted">
             <span>Tipo</span>
             <span className="text-right">Enviadas</span>
             <span className="text-right">Cobradas</span>
           </div>
           {lines.map((l) => (
-            <div key={l.category} className="grid grid-cols-[1fr_auto_auto] gap-x-6 border-b border-line-2 px-4 py-2 last:border-0">
+            <div key={l.category} className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-x-6 border-b border-line-2 px-4 py-2 last:border-0">
               <span>{CATEGORY_LABEL[l.category] ?? l.category}</span>
               <span className="text-right tabular">{num(l.sent)}</span>
               <span className="text-right tabular">{num(l.billed)}</span>
