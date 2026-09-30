@@ -22,7 +22,7 @@ import { createConnectLink } from "@/lib/whatsapp-connect-link";
 import { instagramAllowed, unsubscribeInstagram } from "@/lib/instagram";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
-import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
+import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -285,16 +285,11 @@ export async function sendReportNow(clientId: string, period?: string): Promise<
   if (!client) return fail("Cliente não encontrado.");
   if (!client.report_email) return fail("Informe o e-mail do cliente antes de enviar.");
   if (!process.env.RESEND_API_KEY) return fail("O envio de e-mail não está configurado neste servidor (RESEND_API_KEY).");
-  let token = client.portal_token;
-  if (!token) {
-    token = newPortalToken();
-    await supabase.from("clients").update({ portal_token: token }).eq("id", clientId);
-  }
   const p = period ?? shiftPeriod(currentPeriodBR(), -1);
   const report = await getClientReport(supabase, clientId, p);
   if (!report) return fail("Não foi possível montar o relatório.");
   try {
-    await sendReportEmail(report, client.report_email, `${portalUrl(token, agencyBaseUrl(report.agency))}?mes=${p}`);
+    await sendReportEmail(report, client.report_email, reportLink(clientId, client.portal_token, agencyBaseUrl(report.agency), p));
   } catch (e) {
     return fail(`O e-mail não foi enviado: ${(e as Error).message}`);
   }

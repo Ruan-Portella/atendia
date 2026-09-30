@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isCronAuthorized, deadline } from "@/lib/cron";
 import { agencyBaseUrl } from "@/lib/domain";
-import { currentPeriodBR, getClientReport, newPortalToken, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
+import { currentPeriodBR, getClientReport, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 export const maxDuration = 60;
 
@@ -30,17 +30,12 @@ export async function GET(req: Request) {
   for (const c of clients ?? []) {
     if (!hasTime()) break;
     try {
-      let token = c.portal_token as string | null;
-      if (!token) {
-        token = newPortalToken();
-        await db.from("clients").update({ portal_token: token }).eq("id", c.id);
-      }
       const report = await getClientReport(db, c.id, period);
       if (!report || !report.bots.length) {
         await db.from("clients").update({ report_last_period: period }).eq("id", c.id); // sem chatbots: nada a relatar
         continue;
       }
-      await sendReportEmail(report, c.report_email as string, `${portalUrl(token, agencyBaseUrl(report.agency))}?mes=${period}`);
+      await sendReportEmail(report, c.report_email as string, reportLink(c.id, c.portal_token as string | null, agencyBaseUrl(report.agency), period));
       await db.from("clients").update({ report_last_period: period }).eq("id", c.id);
       sent++;
     } catch (e) {

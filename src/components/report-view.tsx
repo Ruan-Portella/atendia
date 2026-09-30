@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, MessageCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, MessageCircle } from "lucide-react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { change, fmtBRL, periodLabel, periodRange, shiftPeriod, type ClientReport } from "@/lib/report";
 import { initials, relativeTime } from "@/lib/utils";
@@ -35,16 +35,17 @@ export function AgencyHeader({ agency, children }: { agency: ClientReport["agenc
 }
 
 /**
- * Relatório do mês de um cliente: números, gráfico, contatos e conversas.
+ * Relatório do mês de um cliente: números, gráfico e, na área logada, contatos e conversas.
  * `basePath` = "/c/TOKEN" (link público) ou "/cliente/ID" (área logada); links de mês e de
  * conversa são montados a partir dele. `db` já precisa estar limitado a este cliente.
+ * `people=false` (link público, sem login) mostra só números: dados pessoais ficam atrás do login.
  */
-export async function ReportView({ db, report, basePath, today, monthPath = basePath }: { db: SupabaseClient; report: ClientReport; basePath: string; today: string; monthPath?: string }) {
+export async function ReportView({ db, report, basePath, today, monthPath = basePath, people = true }: { db: SupabaseClient; report: ClientReport; basePath: string; today: string; monthPath?: string; people?: boolean }) {
   const { period } = report;
   const botIds = report.bots.map((b) => b.id);
   const botName = new Map(report.bots.map((b) => [b.id, b.name]));
   const { from, to } = periodRange(period);
-  const [{ data: leads }, { data: conversations }] = botIds.length
+  const [{ data: leads }, { data: conversations }] = people && botIds.length
     ? await Promise.all([
         db.from("leads").select("id, bot_id, conversation_id, name, phone, email, notes, created_at").in("bot_id", botIds).gte("created_at", from).lt("created_at", to).order("created_at", { ascending: false }).limit(300),
         db.from("conversations").select("id, bot_id, started_at, message_count, handoff_requested_at").in("bot_id", botIds).gte("started_at", from).lt("started_at", to).order("started_at", { ascending: false }).limit(50),
@@ -131,39 +132,56 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
         <DailyBars days={report.daily} color={color} />
       </section>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-base font-bold">Contatos capturados <span className="font-normal text-muted">({(leads ?? []).length})</span></h2>
-        <div className="card overflow-hidden">
-          {(leads ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhum contato neste mês.</p>}
-          {(leads ?? []).map((l) => (
-            <div key={l.id} className="flex flex-col gap-1 border-b border-line-2 px-4 py-3 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_1.4fr_2fr_auto] sm:items-center sm:gap-3">
-              <span className="font-semibold">{l.name ?? "Sem nome"}</span>
-              <span className="text-ink-2">{[l.phone, l.email].filter(Boolean).join(" · ") || "—"}</span>
-              <span className="truncate text-muted">{l.notes ?? ""}</span>
-              <span className="flex items-center gap-3 text-xs text-muted">
-                {new Date(l.created_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                {l.phone && <a href={`https://wa.me/${l.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener" className="font-semibold hover:underline print:hidden" style={{ color }}>WhatsApp</a>}
-                {l.conversation_id && <Link href={`${basePath}/conversas/${l.conversation_id}`} className="font-semibold hover:underline print:hidden">Conversa</Link>}
-              </span>
+      {!people && (
+        <section className="card flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 print:hidden">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <Lock size={17} className="mt-0.5 shrink-0 text-muted" />
+            <div>
+              <h2 className="text-base font-bold">Contatos e conversas</h2>
+              <p className="text-sm text-muted">Por segurança, nomes, telefones e conversas só aparecem na área do cliente, com login pelo e-mail.</p>
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
+          <Link href={`/cliente/entrar?next=${encodeURIComponent(`/cliente/${report.client.id}`)}`} className="btn-primary" style={{ background: color }}>Ver contatos e conversas (entrar)</Link>
+        </section>
+      )}
 
-      <section className="flex flex-col gap-3 print:hidden">
-        <h2 className="text-base font-bold">Últimas conversas</h2>
-        <div className="card overflow-hidden">
-          {(conversations ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma conversa neste mês.</p>}
-          {(conversations ?? []).map((cv) => (
-            <Link key={cv.id} href={`${basePath}/conversas/${cv.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-2 px-4 py-3 text-sm last:border-0 hover:bg-ground">
-              <span className="text-muted">{relativeTime(cv.started_at)}</span>
-              {report.bots.length > 1 && <span className="font-medium">{botName.get(cv.bot_id)}</span>}
-              <span>{cv.message_count} mensagens</span>
-              {cv.handoff_requested_at && <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">pediu atendente</span>}
-            </Link>
-          ))}
-        </div>
-      </section>
+      {people && (
+        <>
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-bold">Contatos capturados <span className="font-normal text-muted">({(leads ?? []).length})</span></h2>
+            <div className="card overflow-hidden">
+              {(leads ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhum contato neste mês.</p>}
+              {(leads ?? []).map((l) => (
+                <div key={l.id} className="flex flex-col gap-1 border-b border-line-2 px-4 py-3 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_1.4fr_2fr_auto] sm:items-center sm:gap-3">
+                  <span className="font-semibold">{l.name ?? "Sem nome"}</span>
+                  <span className="text-ink-2">{[l.phone, l.email].filter(Boolean).join(" · ") || "—"}</span>
+                  <span className="truncate text-muted">{l.notes ?? ""}</span>
+                  <span className="flex items-center gap-3 text-xs text-muted">
+                    {new Date(l.created_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                    {l.phone && <a href={`https://wa.me/${l.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener" className="font-semibold hover:underline print:hidden" style={{ color }}>WhatsApp</a>}
+                    {l.conversation_id && <Link href={`${basePath}/conversas/${l.conversation_id}`} className="font-semibold hover:underline print:hidden">Conversa</Link>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-3 print:hidden">
+            <h2 className="text-base font-bold">Últimas conversas</h2>
+            <div className="card overflow-hidden">
+              {(conversations ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma conversa neste mês.</p>}
+              {(conversations ?? []).map((cv) => (
+                <Link key={cv.id} href={`${basePath}/conversas/${cv.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-2 px-4 py-3 text-sm last:border-0 hover:bg-ground">
+                  <span className="text-muted">{relativeTime(cv.started_at)}</span>
+                  {report.bots.length > 1 && <span className="font-medium">{botName.get(cv.bot_id)}</span>}
+                  <span>{cv.message_count} mensagens</span>
+                  {cv.handoff_requested_at && <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">pediu atendente</span>}
+                </Link>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
 
       <footer className="pt-2 text-center text-xs text-muted">Relatório preparado por {report.agency.name}.</footer>
     </>

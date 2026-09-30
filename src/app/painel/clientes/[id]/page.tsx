@@ -74,7 +74,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
     tab === "conversas" && botIds.length
       ? supabase.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, handled_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
       : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; last_message_at: string; visitor_seen_at: string | null; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; handled_at: string | null }> }),
-    tab === "acesso"
+    tab === "acesso" || (tab === "relatorio" && client.report_email)
       ? supabase.from("client_members").select("id, email, last_login_at, created_at").eq("client_id", id).order("created_at")
       : Promise.resolve({ data: [] as Array<{ id: string; email: string; last_login_at: string | null; created_at: string }> }),
   ]);
@@ -186,7 +186,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           <section className="card flex flex-col gap-3 p-5">
             <div>
               <h2 className="text-base font-bold">Link do cliente</h2>
-              <p className="text-sm text-muted">Uma página com a sua marca onde {client.name} vê o relatório do mês, os contatos capturados e as conversas. Somente leitura, sem login: quem tiver o link consegue abrir.</p>
+              <p className="text-sm text-muted">Uma página com a sua marca onde {client.name} vê os números do mês. Sem login: quem tiver o link consegue abrir, por isso ela não mostra contatos nem conversas. Esses ficam na área do cliente, com login pelo e-mail (aba Acesso do cliente).</p>
             </div>
             {client.portal_token ? (
               <>
@@ -197,7 +197,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <ConfirmAction action={enablePortal.bind(null, client.id)} title="Trocar o link?" description="O link atual para de funcionar e um novo é gerado. Use se o link foi parar em quem não devia." confirmLabel="Trocar link" className="btn-ghost text-xs">Trocar link</ConfirmAction>
-                  <ConfirmAction action={disablePortal.bind(null, client.id)} title="Desligar o link?" description="Ninguém mais consegue abrir a página do cliente. O relatório por e-mail também deixa de ter link até você criar outro." confirmLabel="Desligar" className="btn-ghost text-xs text-danger">Desligar link</ConfirmAction>
+                  <ConfirmAction action={disablePortal.bind(null, client.id)} title="Desligar o link?" description="Ninguém mais consegue abrir a página do cliente. O relatório por e-mail passa a levar para a entrada da área do cliente." confirmLabel="Desligar" className="btn-ghost text-xs text-danger">Desligar link</ConfirmAction>
                 </div>
               </>
             ) : (
@@ -210,7 +210,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           <section className="card flex flex-col gap-3 p-5">
             <div>
               <h2 className="text-base font-bold">Relatório mensal por e-mail</h2>
-              <p className="text-sm text-muted">Todo dia 1º, {client.name} recebe um resumo do mês anterior (pessoas atendidas, contatos, % resolvido sozinho) com a sua marca e o link acima. É o que mostra para o cliente por que ele paga você.</p>
+              <p className="text-sm text-muted">Todo dia 1º, {client.name} recebe um resumo do mês anterior (pessoas atendidas, contatos, % resolvido sozinho) com a sua marca e o link acima (ou a entrada da área do cliente, se o link estiver desligado). O e-mail leva só números, nunca contatos. É o que mostra para o cliente por que ele paga você.</p>
             </div>
             <ActionForm key={client.report_email ?? ""} action={saveReportEmail.bind(null, client.id)} className="flex flex-wrap items-end gap-2">
               <div className="min-w-[220px] flex-1">
@@ -219,6 +219,15 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               </div>
               <SubmitButton className="btn-primary">Salvar</SubmitButton>
             </ActionForm>
+            {client.report_email && !(members ?? []).some((m) => m.email === client.report_email) && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-ground px-3 py-2.5 text-sm">
+                <span className="text-ink-2">Para ver os contatos e as conversas, <strong className="text-ink">{client.report_email}</strong> precisa de acesso à área do cliente.</span>
+                <ActionForm action={addClientMember.bind(null, client.id)}>
+                  <input type="hidden" name="email" value={client.report_email} />
+                  <SubmitButton pendingLabel="Enviando convite…" className="btn-ghost text-xs">Dar acesso e convidar</SubmitButton>
+                </ActionForm>
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-2 pt-3 text-sm">
               <span className="text-muted">{client.report_last_period ? <>Último enviado: <span className="capitalize">{periodLabel(client.report_last_period)}</span>.</> : "Nenhum relatório enviado ainda."}</span>
               <ConfirmAction

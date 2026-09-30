@@ -7,8 +7,9 @@ import { AgencyHeader, ReportView } from "@/components/report-view";
 export const metadata = { title: { absolute: "Relatório do assistente" }, robots: { index: false, follow: false } };
 
 /**
- * Portal do cliente final: link somente leitura que a agência compartilha. Mostra o
- * relatório do mês, os contatos capturados e as conversas, com a marca da agência.
+ * Portal do cliente final: link somente leitura que a agência compartilha. Mostra só os
+ * números do mês, com a marca da agência. Contatos e conversas ficam na área do cliente
+ * (/cliente, login por e-mail): quem tem o link não é necessariamente quem pode ver dados pessoais.
  */
 export default async function ClientPortalPage({ params, searchParams }: PageProps<"/c/[token]">) {
   const [{ token }, sp] = await Promise.all([params, searchParams]);
@@ -25,7 +26,7 @@ export default async function ClientPortalPage({ params, searchParams }: PagePro
     <div className="min-h-full bg-ground">
       <AgencyHeader agency={report.agency} />
       <main className="mx-auto flex max-w-[980px] flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
-        <ReportView db={db} report={report} basePath={`/c/${token}`} today={today} />
+        <ReportView db={db} report={report} basePath={`/c/${token}`} today={today} people={false} />
       </main>
     </div>
   );

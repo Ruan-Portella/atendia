@@ -38,6 +38,14 @@ export function change(current: number, previous: number): number | null {
 export const newPortalToken = () => randomBytes(18).toString("base64url");
 /** Link do portal; `base` = domínio próprio da agência quando houver (ver agencyBaseUrl). */
 export const portalUrl = (token: string, base = appUrl()) => `${base.replace(/\/$/, "")}/c/${token}`;
+/**
+ * Link do e-mail do relatório: o portal (só números) quando a agência deixou o link ligado;
+ * sem link, a entrada da área do cliente. Nunca cria um link novo: desligar vale.
+ */
+export function reportLink(clientId: string, token: string | null, base: string, period: string): string {
+  const b = base.replace(/\/$/, "");
+  return token ? `${portalUrl(token, b)}?mes=${period}` : `${b}/cliente/entrar?next=${encodeURIComponent(`/cliente/${clientId}`)}`;
+}
 
 /* ------------------------------------------------------------------ dados */
 
@@ -179,7 +187,7 @@ ${kpis.map(([label, value, sub]) => `<td width="33%" valign="top" style="backgro
 </tr></table></td></tr>
 ${r.whatsapp ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">WhatsApp:</strong> ${esc(whatsappSentence(r.whatsapp))}</td></tr>` : ""}
 <tr><td style="padding:14px 24px 24px">
-<a href="${esc(link)}" style="display:inline-block;background:${color};color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 18px;border-radius:9px">Ver relatório completo e contatos</a>
+<a href="${esc(link)}" style="display:inline-block;background:${color};color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 18px;border-radius:9px">Ver relatório completo</a>
 </td></tr>
 <tr><td style="padding:14px 24px;border-top:1px solid #efebe2;font-size:12px;color:#8a938e">Relatório preparado por ${esc(r.agency.name)}.</td></tr>
 </table></td></tr></table></body></html>`;
