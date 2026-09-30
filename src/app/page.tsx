@@ -32,7 +32,7 @@ export default function LandingPage() {
         <div className="flex flex-col gap-6">
           <span className="self-start rounded-full bg-brand-soft px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-brand">Para agências e freelancers</span>
           <h1 className="text-[34px] font-bold leading-[1.06] sm:text-4xl md:text-5xl xl:text-6xl" style={{ textWrap: "balance" }}>
-            Adicione R$ 3.000 por mês na sua agência revendendo chatbots de IA com a sua marca.
+            Atendimento automático para os clientes da sua agência, com a sua marca.
           </h1>
           <p className="max-w-[560px] text-lg leading-relaxed text-ink-2">
             Crie um chatbot treinado no site e nos documentos de cada cliente em minutos, coloque o seu logo e cobre o que quiser. Ele atende no site e, em breve, também no WhatsApp oficial e no Instagram Direct do cliente. Nós cuidamos da IA. Você cuida dos clientes.
@@ -85,7 +85,7 @@ export default function LandingPage() {
         <div className="flex flex-col gap-4">
           <span className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-tint">Faça a conta</span>
           <h2 className="text-3xl font-bold leading-[1.08] md:text-[44px]">Você paga {brl(PLANS.agencia.priceBrl)}. Seus clientes pagam você.</h2>
-          <p className="max-w-[520px] text-[17px] leading-relaxed text-[#b9c2bd]">Um chatbot que responde 24 horas, agenda e qualifica leads vale entre R$ 300 e R$ 800 por mês para um negócio local. Você define o preço, o cliente nunca vê a {brand}.</p>
+          <p className="max-w-[520px] text-[17px] leading-relaxed text-[#b9c2bd]">Um atendimento que responde 24 horas, agenda e qualifica leads tem valor para qualquer negócio local. Você define o preço do seu serviço. Seu cliente vê a sua marca no painel, no widget e no chat; só na conexão do WhatsApp e do Instagram as telas da Meta mostram a {brand} como fornecedora da tecnologia.</p>
         </div>
         <RoiCalculator />
       </section>
@@ -98,7 +98,7 @@ export default function LandingPage() {
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["Cole a URL", `A ${brand} lê o site, os PDFs e as perguntas frequentes do cliente e monta a base de conhecimento.`],
-            ["Coloque a sua marca", "Logo, cores, nome do assistente e tom de voz. O cliente vê a sua agência, nunca a nossa."],
+            ["Coloque a sua marca", "Logo, cores, nome do assistente e tom de voz. No painel, no widget e no chat, o cliente vê a sua agência."],
             ["Cole uma linha no site", "Um script de uma linha. Funciona em qualquer plataforma, do WordPress ao HTML puro. Em breve, conecte também o WhatsApp e o Instagram do cliente, com o login oficial da Meta."],
             ["Receba os leads", "Nome, WhatsApp e o resumo da conversa chegam por e-mail ou direto no seu painel."],
           ].map(([t, d], i) => (
@@ -114,7 +114,8 @@ export default function LandingPage() {
       <section id="precos" className="flex flex-col gap-9 px-6 pb-20 lg:px-16 xl:px-24">
         <div className="max-w-[640px]">
           <span className="eyebrow">Preços</span>
-          <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Um plano por tamanho de agência. Sem cobrança por mensagem.</h2>
+          <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Um plano por tamanho de agência.</h2>
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente, à parte do plano. As mensagens do Instagram não são cobradas pela Meta.</p>
         </div>
         <div className="grid gap-5 md:grid-cols-3">
           {(["freelancer", "agencia", "escala"] as const).map((id) => {

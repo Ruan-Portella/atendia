@@ -9,8 +9,8 @@ const plex = IBM_Plex_Sans({ variable: "--font-plex", subsets: ["latin"], weight
 const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz";
 
 export const metadata: Metadata = {
-  title: { default: `${brand} · chatbots de IA com a sua marca`, template: `%s · ${brand}` },
-  description: "Crie chatbots de IA treinados no site de cada cliente, coloque a sua marca e cobre o que quiser. Feito para agências e freelancers.",
+  title: { default: `${brand} · atendimento ao cliente com a sua marca`, template: `%s · ${brand}` },
+  description: "Atendimento ao cliente para empresas, com a marca da sua agência: um assistente treinado no site e nos documentos de cada negócio, no site, no WhatsApp e no Instagram. Feito para agências e freelancers.",
   // em public/ e declarados aqui (não como app/favicon.ico): assim as páginas white-label
   // trocam o ícone inteiro pelo neutro (ver lib/white-label.ts)
   icons: {

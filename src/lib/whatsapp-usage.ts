@@ -4,7 +4,7 @@ import { currentPeriodBR } from "./utils";
 /**
  * Consumo do WhatsApp por cliente: a Meta informa em cada status de mensagem enviada se ela foi
  * cobrada e em qual categoria (webhook, campo pricing). Guardamos uma linha por mensagem e somamos
- * por mês. Serve para mostrar o custo à agência hoje e para cobrar "WhatsApp incluso" no futuro.
+ * por mês. Serve para mostrar o custo à agência (só informativo: o BoaVoz nunca cobra pelo uso do WhatsApp).
  */
 
 export interface StatusPricing {

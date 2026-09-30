@@ -29,6 +29,7 @@ export function RoiCalculator() {
         <div><div className="text-xs text-[#b9c2bd]">Plano {plan === 99 ? "Freelancer" : plan === 249 ? "Agência" : "Escala"}</div><div className="display text-2xl font-bold tabular">{brl(plan)}</div></div>
         <div><div className="text-xs text-[#9fd3bf]">Sobra por mês</div><div className="display text-2xl font-bold tabular text-[#9fd3bf]">{brl(revenue - plan)}</div></div>
       </div>
+      <p className="text-xs text-[#8f9994]">Simulação com os números que você escolher. Não é promessa de faturamento: o resultado depende do seu preço e dos clientes que você fechar.</p>
     </div>
   );
 }
