@@ -4,6 +4,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { embedTexts } from "./ai";
 import { socialNetworkOf } from "./social-links";
+import { safeFetch } from "./safe-fetch";
 
 /* ------------------------------------------------------------------------ */
 /* Extração de texto                                                         */
@@ -22,7 +23,8 @@ export async function fetchPage(url: string, timeoutMs = 12000): Promise<PageTex
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { headers: { "user-agent": UA, accept: "text/html,*/*" }, redirect: "follow", signal: ctrl.signal });
+    // safeFetch recusa endereço interno (SSRF): a URL vem de quem cadastra a fonte ou da demo
+    const { res } = await safeFetch(url, { headers: { "user-agent": UA, accept: "text/html,*/*" }, signal: ctrl.signal });
     const ct = res.headers.get("content-type") ?? "";
     if (!res.ok || !ct.includes("text/html")) return null;
     const html = await res.text();
