@@ -140,7 +140,8 @@ export function ChatWindow({
     () =>
       new DefaultChatTransport({
         api: `${apiBase}/api/chat`,
-        body: () => ({ key: bot.key, conversationId, visitorId, channel }),
+        // só o texto novo: o servidor monta o histórico a partir do banco
+        prepareSendMessagesRequest: ({ messages }) => ({ body: { key: bot.key, conversationId, visitorId, channel, text: textOf(messages[messages.length - 1]) } }),
         fetch: async (url, init) => {
           const res = await fetch(url, init);
           const cid = res.headers.get("X-Conversation-Id");
@@ -171,7 +172,7 @@ export function ChatWindow({
       // no teste ao vivo do editor, a pergunta sem resposta aparece na lista sem recarregar
       // (espera o servidor terminar de gravar, que acontece logo depois do fim do stream)
       if (channel === "painel") window.setTimeout(() => router.refresh(), 1200);
-      if (message.parts.some((part) => part.type === "tool-chamar_atendente")) dispatch({ type: "asked" });
+      if (message.parts.some((part) => part.type === "data-handoff")) dispatch({ type: "asked" });
     },
   });
   const busy = status === "submitted" || status === "streaming";

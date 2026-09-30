@@ -1,4 +1,4 @@
-import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai";
+import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage, type UIMessageChunk } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, chatModel, embedText, type Persona } from "./ai";
@@ -35,6 +35,31 @@ export function lastUserText(messages: UIMessage[]): string {
     .map((p) => p.text)
     .join(" ")
     .trim();
+}
+
+/**
+ * O navegador não recebe as chamadas de ferramenta (nome, WhatsApp e e-mail do lead, motivo do
+ * pedido de atendente). O pedido de atendente vira só o sinal data-handoff para o widget.
+ */
+export function withoutToolParts() {
+  return new TransformStream<UIMessageChunk, UIMessageChunk>({
+    transform(chunk, ctrl) {
+      if (!chunk.type.startsWith("tool-")) return ctrl.enqueue(chunk);
+      if (chunk.type === "tool-input-available" && chunk.toolName === "chamar_atendente") ctrl.enqueue({ type: "data-handoff", data: true });
+    },
+  });
+}
+
+/**
+ * Histórico da conversa vindo do banco, só texto, no formato do chat (o que a equipe escreveu
+ * conta como resposta). Nunca do navegador: quem manda o histórico poderia inventar falas do
+ * assistente ou da equipe.
+ */
+export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000): Promise<UIMessage[]> {
+  const { data: rows } = await db.from("messages").select("id, role, content").eq("conversation_id", conversationId).order("id", { ascending: false }).limit(limit);
+  return (rows ?? [])
+    .reverse()
+    .map((r) => ({ id: String(r.id), role: r.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: String(r.content).slice(0, maxChars) }] }));
 }
 
 /**

@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { CORS_HEADERS, lastUserText, runChat, type BotRow } from "@/lib/chat";
+import { createClient } from "@/lib/supabase/server";
+import { CORS_HEADERS, conversationHistory, lastUserText, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 import { isResumable } from "@/lib/presence";
 
@@ -14,7 +15,10 @@ const bodySchema = z.object({
   conversationId: z.string().uuid().nullable().optional(),
   visitorId: z.string().max(80).nullable().optional(),
   channel: z.enum(["widget", "demo", "painel"]).default("widget"),
-  messages: z.array(z.any()).min(1).max(200),
+  /** Só o texto novo; o histórico vem do banco. */
+  text: z.string().optional(),
+  /** Formato antigo (aba aberta antes da atualização): só a última fala do visitante é usada. */
+  messages: z.array(z.any()).max(200).optional(),
 });
 
 const FALLBACK_MESSAGE = "No momento não consigo responder por aqui. Deixe seu contato que a equipe retorna em breve.";
@@ -32,26 +36,33 @@ export async function OPTIONS() {
 export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400, headers: CORS_HEADERS });
-  const { key, conversationId, visitorId, channel, messages } = parsed.data;
-
-  if (lastUserText(messages as UIMessage[]).length > MAX_MESSAGE_CHARS) {
+  const { key, conversationId, visitorId, messages } = parsed.data;
+  const text = (parsed.data.text ?? lastUserText((messages ?? []) as UIMessage[])).trim();
+  if (!text) return Response.json({ error: "invalid_body" }, { status: 400, headers: CORS_HEADERS });
+  if (text.length > MAX_MESSAGE_CHARS) {
     return Response.json({ error: "message_too_long", message: `Mensagem muito longa. Resuma em até ${MAX_MESSAGE_CHARS} caracteres.` }, { status: 413, headers: CORS_HEADERS });
   }
 
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("public_key", key).maybeSingle<BotRow>();
   if (!bot) return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
+  // "painel" (teste ao vivo, funciona com o bot em rascunho) só com sessão de quem enxerga o bot
+  let channel = parsed.data.channel;
+  if (channel === "painel") {
+    const { data: own } = await (await createClient()).from("bots").select("id").eq("id", bot.id).maybeSingle();
+    if (!own) channel = "widget";
+  }
   if (bot.status !== "live" && !bot.is_demo && channel !== "painel") {
     return Response.json({ error: "bot_offline", message: "Este assistente ainda não foi publicado." }, { status: 403, headers: CORS_HEADERS });
   }
 
-  // Só continua uma conversa que seja deste bot; qualquer outro id vira conversa nova.
+  // Só continua uma conversa deste bot e do mesmo visitante; qualquer outro id vira conversa nova.
   let convId = conversationId ?? null;
   let handoff: "requested" | "agent" | null = null;
   if (convId) {
-    const { data: conv } = await db.from("conversations").select("id, handoff_requested_at, takeover_at, handled_at, last_message_at").eq("id", convId).eq("bot_id", bot.id).maybeSingle();
+    const { data: conv } = await db.from("conversations").select("id, visitor_id, handoff_requested_at, takeover_at, handled_at, last_message_at").eq("id", convId).eq("bot_id", bot.id).maybeSingle();
     // outra conversa ou parada há horas: começa uma nova
-    if (!conv || !isResumable(conv.last_message_at)) convId = null;
+    if (!conv || conv.visitor_id !== (visitorId ?? null) || !isResumable(conv.last_message_at)) convId = null;
     else if (!conv.handled_at) handoff = conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : null;
   }
 
@@ -66,8 +77,7 @@ export async function POST(req: Request) {
   // Uma pessoa da agência assumiu: o assistente fica quieto; a mensagem vai para o painel
   // e a resposta chega ao widget por /api/chat/updates.
   if (convId && handoff === "agent") {
-    const text = lastUserText(messages as UIMessage[]);
-    if (text) await db.from("messages").insert({ conversation_id: convId, role: "user", content: text });
+    await db.from("messages").insert({ conversation_id: convId, role: "user", content: text });
     const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
     const now = new Date().toISOString();
     await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", convId);
@@ -78,17 +88,18 @@ export async function POST(req: Request) {
   }
 
   try {
+    const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];
     const { result, conversationId: activeId } = await runChat({
       db,
       bot,
-      messages: messages as UIMessage[],
+      messages: [...history, { id: "novo", role: "user", parts: [{ type: "text", text }] }],
       conversationId: convId,
       visitorId: visitorId ?? null,
       channel: bot.is_demo ? "demo" : channel,
     });
-    return result.toUIMessageStreamResponse({
+    return createUIMessageStreamResponse({
+      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts()),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": activeId, ...(handoff ? { "X-Handoff": handoff } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
-      onError: (e) => (e instanceof Error ? e.message : "erro"),
     });
   } catch (e) {
     const msg = (e as Error).message;
