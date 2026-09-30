@@ -6,6 +6,7 @@ import { initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
+import { instagramAllowed } from "@/lib/instagram";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { ConnectLinkButton } from "@/components/connect-link-button";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
@@ -48,8 +49,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const [{ id }, sp, { email }] = await Promise.all([params, searchParams, requireAgency()]);
   // WhatsApp em teste: a aba só existe para os e-mails liberados
   const waAllowed = whatsappAllowed(email);
-  // WhatsApp e Instagram estão no mesmo teste fechado
-  const tabs = waAllowed ? TABS : TABS.filter(([t]) => t !== "whatsapp" && t !== "instagram");
+  // Instagram: só quem está na lista INSTAGRAM_BETA_EMAILS (o teste do WhatsApp não libera)
+  const igAllowed = instagramAllowed(email);
+  const tabs = TABS.filter(([t]) => (t === "whatsapp" ? waAllowed : t === "instagram" ? igAllowed : true));
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
   const supabase = await createClient();
 

@@ -2,8 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { whatsappAllowed } from "@/lib/whatsapp";
-import { authorizeUrl, instagramConfigured, signState } from "@/lib/instagram";
+import { authorizeUrl, instagramAllowed, instagramConfigured, signState } from "@/lib/instagram";
 import { resolveConnectLink } from "@/lib/whatsapp-connect-link";
 
 /**
@@ -25,7 +24,7 @@ export async function GET(req: Request) {
 
   const botId = p.get("bot") ?? "";
   const { email } = await requireAgency();
-  if (!whatsappAllowed(email)) redirect(`/painel/bots/${botId}`);
+  if (!instagramAllowed(email)) redirect(`/painel/bots/${botId}`);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) redirect("/painel/clientes");

@@ -36,6 +36,16 @@ export function instagramConfigured(): boolean {
   return Boolean(process.env.INSTAGRAM_APP_ID && process.env.INSTAGRAM_APP_SECRET);
 }
 
+/**
+ * Enquanto o Instagram está em teste, só estes e-mails veem a aba e ligam contas (o teste do
+ * WhatsApp não libera o Instagram). INSTAGRAM_BETA_EMAILS: lista separada por vírgula; "*" libera
+ * para todos; sem a lista, o Instagram não aparece para ninguém.
+ */
+export function instagramAllowed(email: string | null | undefined): boolean {
+  const list = (process.env.INSTAGRAM_BETA_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return list.includes("*") || (Boolean(email) && list.includes(email!.trim().toLowerCase()));
+}
+
 function secret(): string {
   const s = process.env.INSTAGRAM_APP_SECRET;
   if (!s) throw new InstagramError("INSTAGRAM_APP_SECRET não configurado");

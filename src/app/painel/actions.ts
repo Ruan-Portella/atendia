@@ -19,7 +19,7 @@ import { WhatsAppError, waIdVariants, getPhoneNumber, subscribeApp, unsubscribeA
 import { unseal } from "@/lib/secret-box";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
 import { createConnectLink } from "@/lib/whatsapp-connect-link";
-import { unsubscribeInstagram } from "@/lib/instagram";
+import { instagramAllowed, unsubscribeInstagram } from "@/lib/instagram";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, portalUrl, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -426,7 +426,7 @@ export async function completeWhatsAppSignup(botId: string, input: SignupResult)
 /** Link para o cliente conectar o próprio WhatsApp ou Instagram (vale 7 dias, uma conexão). */
 export async function createWhatsAppConnectLink(botId: string, channel: "whatsapp" | "instagram" = "whatsapp"): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
   const { email } = await requireAgency();
-  if (!whatsappAllowed(email)) return { ok: false, message: "O WhatsApp ainda não está disponível na sua conta." };
+  if (channel === "instagram" ? !instagramAllowed(email) : !whatsappAllowed(email)) return { ok: false, message: `O ${channel === "instagram" ? "Instagram" : "WhatsApp"} ainda não está disponível na sua conta.` };
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
   if (!bot) return { ok: false, message: "Chatbot não encontrado." };
@@ -460,7 +460,7 @@ export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
 /** Desliga a conta do Instagram do chatbot: o app sai das mensagens dela e o token é apagado. */
 export async function disconnectInstagram(botId: string): Promise<ActionResult> {
   const { email } = await requireAgency();
-  if (!whatsappAllowed(email)) return fail("O Instagram ainda não está disponível na sua conta.");
+  if (!instagramAllowed(email)) return fail("O Instagram ainda não está disponível na sua conta.");
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
