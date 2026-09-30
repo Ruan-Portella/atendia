@@ -21,9 +21,5 @@ export function getPlan(id: string): Plan {
   return (PLANS as Record<string, Plan>)[id] ?? { ...PLANS.trial, id: "cancelado" as PlanId, name: "Cancelado", bots: 0, conversations: 0 };
 }
 
-export function currentPeriod(d = new Date()): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
 export const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(v);
 export const num = (v: number) => new Intl.NumberFormat("pt-BR").format(v);

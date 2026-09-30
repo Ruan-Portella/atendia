@@ -3,8 +3,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
 import { createAdminClient } from "./supabase/admin";
-import { currentPeriod, getPlan, type Plan } from "./plans";
-import { slugify } from "./utils";
+import { getPlan, type Plan } from "./plans";
+import { currentPeriodBR, slugify } from "./utils";
 
 export interface Agency {
   id: string;
@@ -43,7 +43,7 @@ export const requireAgency = cache(async (): Promise<{ agency: Agency; email: st
   const meta = (claims.user_metadata ?? {}) as Record<string, unknown>;
 
   // O uso do mês vem junto (embed do PostgREST): uma ida ao banco em vez de duas.
-  const period = currentPeriod();
+  const period = currentPeriodBR(); // mês de Brasília, o mesmo do relatório e do uso do WhatsApp
   const { data: row } = await supabase
     .from("agencies")
     .select("*, usage(conversations)")

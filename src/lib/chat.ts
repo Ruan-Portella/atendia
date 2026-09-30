@@ -2,7 +2,8 @@ import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage, 
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, chatModel, embedText, type Persona } from "./ai";
-import { currentPeriod, getPlan } from "./plans";
+import { getPlan } from "./plans";
+import { currentPeriodBR } from "./utils";
 import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
 import { looksUnanswered, recordUnanswered } from "./unanswered";
 
@@ -88,7 +89,7 @@ export async function runChat(opts: {
     if (plan.id === "trial" && agency?.trial_ends_at && new Date(agency.trial_ends_at) < new Date()) {
       throw new Error("trial_expired");
     }
-    const { data: used } = await db.rpc("increment_usage", { p_agency_id: bot.agency_id, p_period: currentPeriod() });
+    const { data: used } = await db.rpc("increment_usage", { p_agency_id: bot.agency_id, p_period: currentPeriodBR() });
     if (typeof used === "number") {
       // avisa a agência ao chegar em 80% e ao estourar (sem atrasar a resposta do visitante)
       notifyUsageThreshold(db, bot.agency_id, used, plan.conversations).catch(() => {});
