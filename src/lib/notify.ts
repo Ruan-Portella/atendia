@@ -124,6 +124,18 @@ export async function notifyAgencyOwner(db: SupabaseClient, agencyId: string, su
   return !error;
 }
 
+/** Alerta para quem opera a plataforma (PLATFORM_ALERT_EMAIL, padrão contato@boavoz.com). */
+export async function notifyPlatform(subject: string, lines: string[]): Promise<boolean> {
+  const text = lines.join("\n");
+  console.error(`[alerta] ${subject}\n${text}`);
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return false;
+  const { Resend } = await import("resend");
+  const to = process.env.PLATFORM_ALERT_EMAIL ?? "contato@boavoz.com";
+  const { error } = await new Resend(apiKey).emails.send({ from: process.env.EMAIL_FROM ?? "Boavoz <onboarding@resend.dev>", to, subject: `[Boavoz] ${subject}`, text });
+  return !error;
+}
+
 /**
  * Avisos de cota do mês, disparados pelo contador de conversas: exatamente ao chegar em 80%
  * e na primeira conversa acima do limite (o contador sobe de 1 em 1, então cada aviso sai

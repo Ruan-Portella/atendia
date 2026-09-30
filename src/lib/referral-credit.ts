@@ -13,11 +13,12 @@ export interface CreditSummary {
 
 /** Soma o que as indicações geraram e subtrai o que já virou desconto. */
 export async function creditSummary(db: SupabaseClient, agencyId: string): Promise<CreditSummary> {
-  const [{ data: refs }, { data: ag }] = await Promise.all([
-    db.from("referrals").select("commission_cents").eq("referrer_id", agencyId),
+  const [{ data: rows }, { data: ag }] = await Promise.all([
+    // uma linha por fatura paga (migração 0022): o total não dobra se o Stripe reenviar o evento
+    db.from("referral_commissions").select("commission_cents, referrals!inner(referrer_id)").eq("referrals.referrer_id", agencyId),
     db.from("agencies").select("credit_redeemed_cents").eq("id", agencyId).maybeSingle(),
   ]);
-  const earnedCents = (refs ?? []).reduce((s, r) => s + (r.commission_cents ?? 0), 0);
+  const earnedCents = (rows ?? []).reduce((s, r) => s + (r.commission_cents ?? 0), 0);
   // coluna ausente (migração 0003 não rodou) → trata como zero
   const redeemedCents = (ag as { credit_redeemed_cents?: number } | null)?.credit_redeemed_cents ?? 0;
   return { earnedCents, redeemedCents, availableCents: Math.max(0, earnedCents - redeemedCents) };
