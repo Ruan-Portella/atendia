@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { conversationHistory, runChat, type BotRow } from "./chat";
 import { canTranscribe, transcribeAudio } from "./ai";
+import { recordAiUsage } from "./ai-usage";
 import { firstExceeded } from "./rate-limit";
 import { instagramTyping, isInstagramAccessError, sendInstagramText, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, phonePauseActive, storeContactMessage } from "./whatsapp-inbound";
@@ -88,12 +89,12 @@ export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, tex
   if (mid) await firstTime(db, mid);
 }
 
-async function transcribeFrom(url: string): Promise<string | null> {
+async function transcribeFrom(url: string, onUsage?: Parameters<typeof transcribeAudio>[1]): Promise<string | null> {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`download do áudio falhou (${res.status})`);
   const data = new Uint8Array(await res.arrayBuffer());
   if (data.byteLength > MAX_MEDIA_BYTES) throw new Error("áudio grande demais");
-  const transcript = await transcribeAudio(data);
+  const transcript = await transcribeAudio(data, onUsage);
   return transcript ? AUDIO_PREFIX + transcript : null;
 }
 
@@ -126,7 +127,7 @@ export async function handleInstagramMessage(db: SupabaseClient, ch: IgChannelRo
   const transcribe = async () => {
     if (!audioUrl || !canTranscribe()) return null;
     try {
-      return await transcribeFrom(audioUrl);
+      return await transcribeFrom(audioUrl, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "instagram", ...u }));
     } catch (e) {
       console.error("instagram: áudio não transcrito", mid, e);
       return null;

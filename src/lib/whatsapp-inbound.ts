@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { conversationHistory, runChat, type BotRow } from "./chat";
 import { firstExceeded } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
+import { recordAiUsage } from "./ai-usage";
 import { downloadMedia, markReadTyping, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
 import { isAccessError, isPaymentError } from "./whatsapp-access";
 
@@ -126,7 +127,7 @@ export async function handleInbound(db: SupabaseClient, channel: ChannelRow, msg
     if (!audioId || !canTranscribe()) return null;
     try {
       const { data } = await downloadMedia(channel, audioId);
-      const transcript = await transcribeAudio(data);
+      const transcript = await transcribeAudio(data, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "whatsapp", ...u }));
       return transcript ? AUDIO_PREFIX + transcript : null;
     } catch (e) {
       if (isAccessError(e)) throw e;

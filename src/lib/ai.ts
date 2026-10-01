@@ -57,38 +57,49 @@ export function canTranscribe(): boolean {
   return Boolean(process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY);
 }
 
-export async function transcribeAudio(audio: Uint8Array): Promise<string> {
+/** `onUsage` recebe o modelo e a duração do áudio (custo em ai_usage). */
+export async function transcribeAudio(audio: Uint8Array, onUsage?: (u: { audioModel: string; audioSeconds: number }) => void): Promise<string> {
   if (process.env.OPENAI_API_KEY) {
-    const { text } = await transcribe({
-      model: openai.transcription(process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe"),
-      audio,
-      providerOptions: { openai: { language: "pt" } },
-    });
+    const model = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe";
+    const { text, durationInSeconds } = await transcribe({ model: openai.transcription(model), audio, providerOptions: { openai: { language: "pt" } } });
+    onUsage?.({ audioModel: model, audioSeconds: durationInSeconds ?? 0 });
     return text.trim();
   }
   if (process.env.GOOGLE_API_KEY) {
-    const { text } = await transcribe({ model: google.transcription(process.env.GOOGLE_TRANSCRIBE_MODEL ?? "gemini-3.5-transcribe"), audio });
+    const model = process.env.GOOGLE_TRANSCRIBE_MODEL ?? "gemini-3.5-transcribe";
+    const { text, durationInSeconds } = await transcribe({ model: google.transcription(model), audio });
+    onUsage?.({ audioModel: model, audioSeconds: durationInSeconds ?? 0 });
     return text.trim();
   }
   throw new Error("Nenhuma chave para transcrever áudio: defina OPENAI_API_KEY ou GOOGLE_API_KEY.");
 }
 
+/** Modelo e tokens gastos num embedding (para o custo em ai_usage). */
+export interface EmbeddingUsage {
+  model: string;
+  tokens: number;
+}
+
+const modelIdOf = (m: unknown) => (typeof m === "string" ? m : ((m as { modelId?: string }).modelId ?? "desconhecido"));
+
 /** Embedding de uma pergunta do visitante. */
-export async function embedText(text: string): Promise<number[]> {
+export async function embedText(text: string): Promise<{ embedding: number[]; usage: EmbeddingUsage }> {
   const m = embeddingModel();
-  const { embedding } = await embed({ model: m.model, value: text.slice(0, 8000), providerOptions: m.options("query") });
-  return embedding;
+  const { embedding, usage } = await embed({ model: m.model, value: text.slice(0, 8000), providerOptions: m.options("query") });
+  return { embedding, usage: { model: modelIdOf(m.model), tokens: usage?.tokens ?? 0 } };
 }
 
 /** Embeddings dos trechos da base de conhecimento, em lotes. */
-export async function embedTexts(texts: string[]): Promise<number[][]> {
+export async function embedTexts(texts: string[]): Promise<{ embeddings: number[][]; usage: EmbeddingUsage }> {
   const m = embeddingModel();
   const out: number[][] = [];
+  let tokens = 0;
   for (let i = 0; i < texts.length; i += m.batch) {
-    const { embeddings } = await embedMany({ model: m.model, values: texts.slice(i, i + m.batch).map((t) => t.slice(0, 8000)), providerOptions: m.options("document") });
+    const { embeddings, usage } = await embedMany({ model: m.model, values: texts.slice(i, i + m.batch).map((t) => t.slice(0, 8000)), providerOptions: m.options("document") });
     out.push(...embeddings);
+    tokens += usage?.tokens ?? 0;
   }
-  return out;
+  return { embeddings: out, usage: { model: modelIdOf(m.model), tokens } };
 }
 
 export interface Persona {

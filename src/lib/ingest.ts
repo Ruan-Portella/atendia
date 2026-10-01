@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { embedTexts } from "./ai";
 import { socialNetworkOf } from "./social-links";
 import { safeFetch } from "./safe-fetch";
+import { recordAiUsage } from "./ai-usage";
 import type { Response } from "undici";
 
 /* ------------------------------------------------------------------------ */
@@ -271,7 +272,8 @@ export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuf
       return { chunks: pieces.length, pages, unchanged: true };
     }
 
-    const embeddings = await embedTexts(pieces.map((p) => p.content));
+    const { embeddings, usage } = await embedTexts(pieces.map((p) => p.content));
+    void recordAiUsage(db, { botId: source.bot_id, kind: "leitura", embeddingModel: usage.model, embeddingTokens: usage.tokens });
 
     await db.from("chunks").delete().eq("source_id", source.id);
     for (let i = 0; i < pieces.length; i += 200) {

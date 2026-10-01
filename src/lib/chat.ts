@@ -6,6 +6,7 @@ import { getPlan } from "./plans";
 import { currentPeriodBR } from "./utils";
 import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
 import { looksUnanswered, recordUnanswered } from "./unanswered";
+import { recordAiUsage } from "./ai-usage";
 
 export interface BotRow {
   id: string;
@@ -124,8 +125,10 @@ export async function runChat(opts: {
   const question = lastUserText(messages);
   let context = "";
   const used: Array<{ title?: string; url?: string }> = [];
+  let embeddingUsage: Awaited<ReturnType<typeof embedText>>["usage"] | null = null;
   if (question) {
-    const embedding = await embedText(question);
+    const { embedding, usage } = await embedText(question);
+    embeddingUsage = usage;
     const { data: hits } = await db.rpc("match_chunks", { p_bot_id: bot.id, p_query: JSON.stringify(embedding), p_count: 6, p_min_similarity: 0.15 });
     const rows = (hits ?? []) as Array<{ content: string; metadata: { title?: string; url?: string }; similarity: number }>;
     context = rows.map((r, i) => `[${i + 1}] ${r.metadata?.title ? r.metadata.title + "\n" : ""}${r.content}`).join("\n\n---\n\n");
@@ -212,7 +215,21 @@ export async function runChat(opts: {
       }),
     },
     onError: () => markSaved(),
-    onFinish: async ({ text, steps }) => {
+    onFinish: async ({ text, steps, totalUsage, response }) => {
+      // custo da resposta inteira (todos os passos + embedding da pergunta), sem atrasar nada
+      void recordAiUsage(db, {
+        agencyId: bot.agency_id,
+        botId: bot.id,
+        conversationId: convId,
+        kind: "resposta",
+        channel,
+        model: response?.modelId,
+        inputTokens: totalUsage?.inputTokens ?? 0,
+        cachedInputTokens: totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0,
+        outputTokens: totalUsage?.outputTokens ?? 0,
+        embeddingModel: embeddingUsage?.model,
+        embeddingTokens: embeddingUsage?.tokens ?? 0,
+      });
       try {
         // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
         if (!unansweredRecorded && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
