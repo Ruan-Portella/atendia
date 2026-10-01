@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { embedTexts } from "./ai";
 import { socialNetworkOf } from "./social-links";
 import { safeFetch } from "./safe-fetch";
+import type { Response } from "undici";
 
 /* ------------------------------------------------------------------------ */
 /* Extração de texto                                                         */
@@ -18,17 +19,48 @@ export interface PageText {
 }
 
 const UA = "Mozilla/5.0 (compatible; BoavozBot/1.0; +https://boavoz.com)";
+/** Página maior que isto não é lida (HTML normal fica bem abaixo; evita estourar a memória). */
+const MAX_PAGE_BYTES = 5 * 1024 * 1024;
+
+/** Lê o corpo até `max` bytes; acima disso, desiste e devolve null. */
+async function readText(res: Response, max: number): Promise<string | null> {
+  if (Number(res.headers.get("content-length") ?? 0) > max) {
+    await res.body?.cancel();
+    return null;
+  }
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (let r = await reader.read(); !r.done; r = await reader.read()) {
+    size += r.value.byteLength;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(r.value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** Mesmo site com ou sem "www". */
+export const sameSite = (a: string, b: string) => a.replace(/^www\./, "") === b.replace(/^www\./, "");
 
 export async function fetchPage(url: string, timeoutMs = 12000): Promise<PageText | null> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     // safeFetch recusa endereço interno (SSRF): a URL vem de quem cadastra a fonte ou da demo
-    const { res } = await safeFetch(url, { headers: { "user-agent": UA, accept: "text/html,*/*" }, signal: ctrl.signal });
+    const { res, url: finalUrl } = await safeFetch(url, { headers: { "user-agent": UA, accept: "text/html,*/*" }, signal: ctrl.signal });
     const ct = res.headers.get("content-type") ?? "";
-    if (!res.ok || !ct.includes("text/html")) return null;
-    const html = await res.text();
-    return parseHtml(url, html);
+    if (!res.ok || !ct.includes("text/html")) {
+      await res.body?.cancel();
+      return null;
+    }
+    const html = await readText(res, MAX_PAGE_BYTES);
+    if (html === null) return null;
+    // links relativos e o domínio do rastreio partem de onde a página realmente está
+    return parseHtml(finalUrl, html);
   } catch {
     return null;
   } finally {
@@ -92,7 +124,7 @@ export function parseHtml(url: string, html: string): PageText {
     if (!href) return;
     try {
       const u = new URL(href, base);
-      if (u.hostname !== base.hostname) return;
+      if (!sameSite(u.hostname, base.hostname)) return;
       if (!/^https?:$/.test(u.protocol)) return;
       if (/\.(pdf|jpg|jpeg|png|gif|webp|svg|zip|mp4|mp3|docx?|xlsx?)$/i.test(u.pathname)) return;
       if (/\/(wp-admin|wp-login|cart|carrinho|checkout|login|logout|admin|tag|tags|feed)\b/i.test(u.pathname)) return;
@@ -115,14 +147,19 @@ export async function crawlSite(startUrl: string, maxPages = Number(process.env.
   const social = socialNetworkOf(startUrl) !== null;
   const profilePath = new URL(startUrl).pathname.replace(/\/?$/, "/");
   const minText = social ? 20 : 80;
+  let rootHost: string | undefined;
   while (queue.length && pages.length < maxPages) {
     const batch = queue.splice(0, 5);
     const results = await Promise.all(batch.map((u) => fetchPage(u)));
     for (const p of results) {
       if (!p) continue;
+      // o site é onde a primeira página realmente abriu (depois dos redirecionamentos);
+      // página que redireciona para outro domínio não puxa o rastreio para lá
+      rootHost ??= new URL(p.url).hostname;
       if (p.text.length >= minText) pages.push(p);
       else if (!social) continue;
       for (const l of p.links) {
+        if (!sameSite(new URL(l).hostname, rootHost)) continue;
         if (social && !new URL(l).pathname.startsWith(profilePath)) continue;
         if (!seen.has(l) && seen.size < maxPages * 4) {
           seen.add(l);

@@ -30,3 +30,11 @@ describe("stream do widget", () => {
     expect(JSON.stringify(out)).not.toMatch(/Ana|2199|reclama/);
   });
 });
+
+describe("ações no histórico do modelo", () => {
+  it("resume o que o assistente já fez", async () => {
+    const { actionsNote } = await import("../chat");
+    expect(actionsNote(null)).toBeNull();
+    expect(actionsNote([{ name: "registrar_lead", output: { ok: true } }, { name: "chamar_atendente", output: { ok: false } }])).toBe("(ações desta resposta: registrar_lead ok, chamar_atendente falhou)");
+  });
+});

@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runChat, type BotRow } from "./chat";
+import { conversationHistory, runChat, type BotRow } from "./chat";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { firstExceeded } from "./rate-limit";
 import { instagramTyping, isInstagramAccessError, sendInstagramText, toInstagramText, type IgChannel } from "./instagram";
@@ -149,10 +149,7 @@ export async function handleInstagramMessage(db: SupabaseClient, ch: IgChannelRo
   if (!text) return reply(AUDIO_FAILED);
   const question = text.slice(0, MAX_MESSAGE_CHARS);
 
-  const { data: rows } = conv
-    ? await db.from("messages").select("id, role, content").eq("conversation_id", conv.id).order("id", { ascending: false }).limit(HISTORY)
-    : { data: [] };
-  const history: UIMessage[] = (rows ?? []).reverse().map((r) => ({ id: String(r.id), role: r.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: String(r.content) }] }));
+  const history: UIMessage[] = conv ? await conversationHistory(db, conv.id, HISTORY) : [];
   history.push({ id: mid, role: "user", parts: [{ type: "text", text: question }] });
 
   try {

@@ -25,3 +25,17 @@ describe("endereços internos", () => {
     expect(await fetchPage("http://127.0.0.1:3000/")).toBeNull();
   });
 });
+
+describe("rastreio do site", () => {
+  it("trata www e sem www como o mesmo site", async () => {
+    const { sameSite } = await import("../ingest");
+    expect(sameSite("www.clinica.com.br", "clinica.com.br")).toBe(true);
+    expect(sameSite("clinica.com.br", "outra.com.br")).toBe(false);
+  });
+
+  it("links de www contam como do mesmo site", async () => {
+    const { parseHtml } = await import("../ingest");
+    const p = parseHtml("https://clinica.com.br/", '<a href="https://www.clinica.com.br/precos">x</a><a href="https://outra.com/">y</a>');
+    expect(p.links).toEqual(["https://www.clinica.com.br/precos"]);
+  });
+});

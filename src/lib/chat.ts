@@ -57,10 +57,25 @@ export function withoutToolParts() {
  * assistente ou da equipe.
  */
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000): Promise<UIMessage[]> {
-  const { data: rows } = await db.from("messages").select("id, role, content").eq("conversation_id", conversationId).order("id", { ascending: false }).limit(limit);
-  return (rows ?? [])
-    .reverse()
-    .map((r) => ({ id: String(r.id), role: r.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: String(r.content).slice(0, maxChars) }] }));
+  const { data: rows } = await db.from("messages").select("id, role, content, tool_results").eq("conversation_id", conversationId).order("id", { ascending: false }).limit(limit);
+  return (rows ?? []).reverse().map((r) => {
+    const text = String(r.content).slice(0, maxChars);
+    // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
+    const done = actionsNote(r.tool_results as ToolResultRow[] | null);
+    return { id: String(r.id), role: r.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: done ? `${text}\n\n${done}` : text }] };
+  });
+}
+
+export interface ToolResultRow {
+  name: string;
+  output: unknown;
+}
+
+/** "(ações desta resposta: registrar_lead ok)" para o histórico do modelo; null sem ações. */
+export function actionsNote(results: ToolResultRow[] | null | undefined): string | null {
+  if (!results?.length) return null;
+  const parts = results.map((r) => `${r.name} ${(r.output as { ok?: boolean } | null)?.ok === false ? "falhou" : "ok"}`);
+  return `(ações desta resposta: ${parts.join(", ")})`;
 }
 
 /**
@@ -197,12 +212,13 @@ export async function runChat(opts: {
       }),
     },
     onError: () => markSaved(),
-    onFinish: async ({ text }) => {
+    onFinish: async ({ text, steps }) => {
       try {
         // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
         if (!unansweredRecorded && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
         if (text) {
-          await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null });
+          const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, output: t.output })));
+          await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null });
         }
         const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
         const now = new Date().toISOString();

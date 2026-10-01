@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runChat, type BotRow } from "./chat";
+import { conversationHistory, runChat, type BotRow } from "./chat";
 import { firstExceeded } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { downloadMedia, markReadTyping, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
@@ -154,12 +154,7 @@ export async function handleInbound(db: SupabaseClient, channel: ChannelRow, msg
   const question = text.slice(0, MAX_MESSAGE_CHARS);
 
   // histórico da conversa no formato do chat (o que a equipe escreveu conta como resposta)
-  const { data: rows } = conv
-    ? await db.from("messages").select("id, role, content").eq("conversation_id", conv.id).order("id", { ascending: false }).limit(HISTORY)
-    : { data: [] };
-  const history: UIMessage[] = (rows ?? [])
-    .reverse()
-    .map((r) => ({ id: String(r.id), role: r.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: String(r.content) }] }));
+  const history: UIMessage[] = conv ? await conversationHistory(db, conv.id, HISTORY) : [];
   history.push({ id: msg.id, role: "user", parts: [{ type: "text", text: question }] });
 
   try {
