@@ -338,7 +338,9 @@ export async function runChat(opts: {
   const result = streamText({
     model: chatModel(),
     system,
-    // com a trava de escopo, o lembrete vai depois da última mensagem (pesa mais que o histórico)
+    // com a trava de escopo, o lembrete vai depois da última mensagem (pesa mais que o histórico);
+    // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
+    allowSystemInMessages: true,
     messages: [...(await convertToModelMessages(messages.slice(-12))), ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name) }] : [])],
     temperature: CHAT_TEMPERATURE,
     stopWhen: stepCountIs(3),

@@ -50,6 +50,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       const r = await generateText({
         model: chatModel(opts.model),
         system,
+        allowSystemInMessages: true,
         messages: [
           ...(opts.history ?? []).map((content, i) => ({ role: i % 2 === 0 ? ("user" as const) : ("assistant" as const), content })),
           { role: "user" as const, content: question },

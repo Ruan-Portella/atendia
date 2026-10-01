@@ -49,7 +49,7 @@ export async function GET(req: Request) {
   const results = await Promise.all(questions.map((q) => evaluateQuestion(db, bot, q, opts)));
   if (sp.get("formato") === "json") return Response.json(results.length === 1 ? results[0] : results);
   const overview = results.length > 1
-    ? ["RESUMO", ...results.map((r, i) => `  ${i + 1}. respondeu ${r.summary.respondeu} · não tenho ${r.summary.nao_tenho} · recusou ${r.summary.recusou} · atendente ${r.summary.chamou_atendente} · de ${r.summary.runs} — ${r.question}`), "", ""].join("\n")
+    ? ["RESUMO", ...results.map((r, i) => `  ${i + 1}. respondeu ${r.summary.respondeu} · não tenho ${r.summary.nao_tenho} · recusou ${r.summary.recusou} · atendente ${r.summary.chamou_atendente} · ERRO ${r.summary.erro} · de ${r.summary.runs} — ${r.question}`), "", ""].join("\n")
     : "";
   return new Response(overview + results.map(evalReport).join("\n\n==========\n\n"), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }
