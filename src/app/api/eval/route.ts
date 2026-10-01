@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const botId = sp.get("bot") ?? "";
   // conjunto fixo (evals/casos.jsonl): &casos=1 roda tudo; &categoria=escopo_fixo filtra
-  if (sp.get("casos") && /^[0-9a-f-]{36}$/i.test(botId)) {
+  if ((sp.get("casos") || sp.get("categoria")) && /^[0-9a-f-]{36}$/i.test(botId)) {
     const db = createAdminClient();
     const { data: bot } = await db.from("bots").select("*").eq("id", botId).maybeSingle<BotRow>();
     if (!bot) return new Response("bot não encontrado", { status: 404 });
@@ -46,7 +46,13 @@ export async function GET(req: Request) {
   // várias perguntas: &q=...&q=... (até 8), cada uma rodada N vezes
   const questions = sp.getAll("q").map((q) => q.trim().slice(0, 2000)).filter(Boolean).slice(0, 8);
   if (!/^[0-9a-f-]{36}$/i.test(botId) || !questions.length) {
-    return new Response("Use: /api/eval?bot=ID_DO_BOT&q=pergunta&n=10 (opcionais: temp=0.3, model=gpt-4.1-mini, canal=whatsapp|instagram, formato=json)", { status: 400 });
+    return new Response(
+      [
+        "Conjunto fixo de casos: /api/eval?bot=ID_DO_BOT&casos=1 (opcionais: categoria=escopo_fixo, n=3, model=gpt-4.1-mini, temp=0.3)",
+        "Pergunta avulsa: /api/eval?bot=ID_DO_BOT&q=pergunta&n=10 (opcionais: canal=whatsapp|instagram, historico=a||b, temp=0.3, model=gpt-4.1-mini, formato=json)",
+      ].join("\n"),
+      { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } },
+    );
   }
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("id", botId).maybeSingle<BotRow>();
