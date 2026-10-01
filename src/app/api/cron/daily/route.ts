@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deadline, isCronAuthorized } from "@/lib/cron";
 import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
@@ -13,6 +14,18 @@ export const maxDuration = 60;
  */
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return new Response("unauthorized", { status: 401 });
+  // vigia de fora: o Sentry avisa se o job não rodar no horário ou falhar
+  const result = await Sentry.withMonitor("cron-diario", () => daily(), {
+    schedule: { type: "crontab", value: "0 6 * * *" },
+    timezone: "UTC",
+    checkinMargin: 30,
+    maxRuntime: 2,
+  });
+  await Sentry.flush(2000);
+  return Response.json(result);
+}
+
+async function daily() {
   const db = createAdminClient();
   const hasTime = deadline(50_000);
   const run = async <T,>(name: string, fn: () => Promise<T>) => {
@@ -40,5 +53,5 @@ export async function GET(req: Request) {
     return { ratio: h.diskRatio };
   });
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
-  return Response.json({ trial, retention, instagram, aiUsage, disk, sources });
+  return { trial, retention, instagram, aiUsage, disk, sources };
 }

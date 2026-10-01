@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
  * 503 quando não. Sem o segredo, só o status; com `Authorization: Bearer $CRON_SECRET`, os detalhes.
  */
 export async function GET(req: Request) {
+  // ?teste-sentry=1 com o segredo: erro de propósito, para conferir que chega ao Sentry
+  if (isCronAuthorized(req) && new URL(req.url).searchParams.get("teste-sentry") === "1") throw new Error("Teste do Sentry (ignorar)");
   let report;
   try {
     report = await checkHealth(createAdminClient());

@@ -77,6 +77,7 @@ export default function PrivacyPage() {
           <li><strong>Provedores de IA</strong> (OpenAI, Anthropic e Google): geram as respostas, processam a base de conhecimento e transcrevem áudios recebidos pelo WhatsApp.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>
+          <li><strong>Sentry</strong>: monitoramento de erros técnicos da plataforma, configurado para não receber conteúdo de conversas, cookies nem dados de usuários.</li>
           <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp e no Instagram, quando a empresa conecta esses canais.</li>
         </ul>
         <p>Também podemos compartilhar dados por ordem judicial ou exigência legal. Não vendemos dados pessoais.</p>
