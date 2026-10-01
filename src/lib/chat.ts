@@ -9,6 +9,8 @@ import { looksUnanswered, recordUnanswered } from "./unanswered";
 import { recordAiUsage } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
 import { RISK_TEXT, detectRisk } from "./risk";
+import { ageNote, type AgeStatus } from "./gate/age";
+import { regulatedChannelNote, type RegulatedChannel } from "./gate/sales-channel";
 
 export interface BotRow {
   id: string;
@@ -27,6 +29,8 @@ export interface BotRow {
   human_handoff?: HumanHandoff | null;
   /** "Assuntos do negócio": ampliam o nível flexível da trava de escopo. */
   business_topics?: string | null;
+  /** Onde o contato finaliza o pedido de bebida ou remédio (nunca no chat da Meta). */
+  regulated_channel?: RegulatedChannel | null;
 }
 
 export const CORS_HEADERS = {
@@ -184,6 +188,11 @@ export async function handleRiskWithoutAi(
   return true;
 }
 
+/** Linhas do portão para o prompt: idade, canal de venda dos itens 18+ e instrução da entrada. */
+export function gateNotesFor(bot: Pick<BotRow, "regulated_channel" | "human_handoff">, gate?: { age: AgeStatus; instruction?: string }): string[] {
+  return [ageNote(gate?.age ?? null), regulatedChannelNote(bot.regulated_channel, bot.human_handoff?.address), ...(gate?.instruction ? [gate.instruction] : [])];
+}
+
 /** Contatos e horário da equipe para o prompt (caminho para humano). */
 export function handoffPrompt(bot: Pick<BotRow, "human_handoff">) {
   return { humanContacts: contactLines(bot.human_handoff), hours: hoursLines(bot.human_handoff?.hours) };
@@ -202,6 +211,7 @@ export function chatTools(exec: {
   chamar_atendente: ToolExec<{ motivo?: string; urgente?: boolean }>;
   registrar_pergunta_sem_resposta: ToolExec<{ pergunta: string }>;
   registrar_recusa: ToolExec<{ nivel: RefusalLevel; pedido?: string }>;
+  pedir_confirmacao_18: ToolExec<Record<string, never>>;
 }) {
   return {
     registrar_lead: tool({
@@ -232,6 +242,12 @@ export function chatTools(exec: {
       description: "Registra que você recusou um pedido fora do escopo do atendimento. nivel \"fixo\": tarefa sem relação com o negócio ou executar o serviço que a empresa vende; \"flexivel\": assunto distante do negócio. Chame junto com a sua resposta de recusa.",
       inputSchema: z.object({ nivel: z.enum(["fixo", "flexivel"]), pedido: z.string().optional().describe("resumo curto do que foi pedido") }),
       execute: exec.registrar_recusa,
+    }),
+    // sempre na lista (ordem fixa ajuda o cache do provedor); só tem efeito nos canais da Meta
+    pedir_confirmacao_18: tool({
+      description: "Pergunta à pessoa se ela tem 18 anos ou mais, com botões Sim e Não (barreira de idade). Use quando a idade não foi confirmada e ela pede bebida alcoólica ou remédio, ou você ia mostrar esses itens. Depois de chamar, não escreva mais nada: a pergunta vai sozinha.",
+      inputSchema: z.object({}),
+      execute: exec.pedir_confirmacao_18,
     }),
   };
 }
@@ -334,6 +350,12 @@ export async function runChat(opts: {
   instagram?: { igsid: string };
   /** Evento da fila (inbound_events): a pergunta é gravada uma vez só, mesmo no reprocesso. */
   questionKey?: string;
+  /** false: a pergunta já está gravada (ex.: depois do "Sim" do 18+, a IA responde à pergunta de antes). */
+  storeQuestion?: boolean;
+  /** Busca já feita (o portão da entrada usa o mesmo resultado; não busca duas vezes). */
+  retrieval?: Awaited<ReturnType<typeof retrieveContext>>;
+  /** Portão (canais da Meta): idade do contato e instrução da entrada. */
+  gate?: { age: AgeStatus; instruction?: string };
 }) {
   const { db, bot, messages, channel } = opts;
 
@@ -342,7 +364,7 @@ export async function runChat(opts: {
 
   // 2. Recuperação de contexto
   const question = lastUserText(messages);
-  const { context, used, embeddingUsage } = await retrieveContext(db, bot.id, question);
+  const { context, used, embeddingUsage } = opts.retrieval ?? (await retrieveContext(db, bot.id, question));
 
   const leadEnabled = bot.lead_capture?.enabled !== false;
   // o que um atendente humano já escreveu (quando a conversa volta para o assistente)
@@ -357,11 +379,11 @@ export async function runChat(opts: {
   const scopeLock = channel === "whatsapp" || channel === "instagram";
   // no chat do site de um bot que também atende no WhatsApp: nunca mandar pedir item 18+ por lá
   const widgetWithWhatsapp = !scopeLock && Boolean((await db.from("whatsapp_channels").select("bot_id").eq("bot_id", bot.id).is("disconnected_at", null).maybeSingle()).data);
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp });
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: scopeLock ? gateNotesFor(bot, opts.gate) : [] });
   const convId = conversationId;
 
   // 3. Persiste a pergunta do visitante
-  if (question) {
+  if (question && opts.storeQuestion !== false) {
     const row = { conversation_id: convId, role: "user", content: question, ...(opts.questionKey ? { inbound_key: opts.questionKey } : {}) };
     // com a chave do evento, o reprocesso não grava a mesma pergunta duas vezes
     // erro aqui sobe: na fila, o evento volta e é tentado de novo (a mensagem não some)
@@ -371,6 +393,7 @@ export async function runChat(opts: {
 
   let unansweredRecorded = false;
   let urgentCalled = false;
+  let askAgeCalled = false;
   // resolve quando a resposta já está gravada (quem não usa o stream, como o WhatsApp, espera por ele)
   // resolve com o id da resposta gravada (null se não houve texto ou deu erro)
   let markSaved!: (id?: number | null) => void;
@@ -430,6 +453,11 @@ export async function runChat(opts: {
         if (error) console.error("recusa não registrada", error.message);
         return { ok: true };
       },
+      pedir_confirmacao_18: async () => {
+        // o canal troca a resposta pela pergunta fixa com botões (só se a idade não foi confirmada)
+        askAgeCalled = true;
+        return { ok: true };
+      },
     }),
     onError: () => markSaved(),
     onFinish: async ({ text, steps, totalUsage, response }) => {
@@ -469,5 +497,5 @@ export async function runChat(opts: {
   });
 
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
-  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled };
+  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled };
 }

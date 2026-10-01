@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import { checkRun, inventedValues, loadCases, type EvalCase } from "../eval-cases";
 import type { EvalRun } from "../eval";
 
-describe("conjunto fixo de casos (evals/casos.jsonl)", () => {
-  const cases = loadCases();
+describe.each([
+  ["evals/casos.jsonl", undefined, 20],
+  ["evals/casos-bar.jsonl", "bar", 5],
+] as const)("conjunto fixo de casos (%s)", (_file, name, min) => {
+  const cases = loadCases(name);
 
   it("todas as linhas são casos válidos, com id único", () => {
-    expect(cases.length).toBeGreaterThan(20);
+    expect(cases.length).toBeGreaterThan(min);
     expect(new Set(cases.map((c) => c.id)).size).toBe(cases.length);
     for (const c of cases) {
-      expect(["recusa", "nao_recusa", "atendente", "qualquer"], c.id).toContain(c.esperado);
+      expect(["recusa", "nao_recusa", "atendente", "barra", "pede_18", "qualquer"], c.id).toContain(c.esperado);
+      if (c.idade) expect(["sim", "nao"], c.id).toContain(c.idade);
       expect(c.pergunta.length, c.id).toBeGreaterThan(1);
       if (c.historico) expect(c.historico.length % 2, `${c.id}: histórico alterna contato e assistente`).toBe(0);
       if (c.deve_conter) new RegExp(c.deve_conter, "i");
@@ -48,5 +52,18 @@ describe("checagem de cada rodada", () => {
     expect(checkRun(c({ sem_ferramenta: true }), run({ tools: ["registrar_lead"] }), "")).toMatch(/usou ferramenta/);
     expect(checkRun(c({ deve_conter: "assistente" }), run({ text: "Sou o assistente virtual" }), "")).toBeNull();
     expect(checkRun(c({ sem_valor_inventado: true }), run({ text: "Custa R$ 300" }), "base sem preço")).toMatch(/valor fora da base/);
+  });
+
+  it("confere o portão", () => {
+    expect(checkRun(c({ esperado: "barra" }), run({ verdict: "barrou" }), "")).toBeNull();
+    expect(checkRun(c({ esperado: "barra" }), run({}), "")).toMatch(/não barrou/);
+    expect(checkRun(c({ esperado: "pede_18" }), run({ verdict: "pediu_18" }), "")).toBeNull();
+    expect(checkRun(c({ esperado: "pede_18" }), run({}), "")).toMatch(/não pediu 18/);
+    expect(checkRun(c({}), run({ verdict: "barrou" }), "")).toMatch(/portão sem motivo/);
+    expect(checkRun(c({}), run({ verdict: "pediu_18" }), "")).toMatch(/portão sem motivo/);
+  });
+
+  it("nome de arquivo de casos só com letras, números e hífen", () => {
+    expect(() => loadCases("../segredo")).toThrow();
   });
 });

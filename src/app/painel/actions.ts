@@ -12,6 +12,8 @@ import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
 import { initials, normalizeUrl, slugify } from "@/lib/utils";
 import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
+import { resetAge } from "@/lib/gate/age";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
@@ -175,6 +177,32 @@ async function parseHumanHandoff(supabase: Awaited<ReturnType<typeof createClien
   return { value: { email, phone, site: site as string | null, form_url: form as string | null, address, hours: Object.keys(hours).length ? hours : null } };
 }
 
+/**
+ * Onde o contato finaliza a compra de bebida alcoólica ou remédio (aba Atendimento humano): no
+ * WhatsApp e no Instagram a venda desses itens nunca fecha no chat. Link de WhatsApp ou de DM não
+ * serve (a venda voltaria para o chat). Tudo vazio: o assistente usa o que estiver na base.
+ */
+function parseRegulatedChannel(f: Record<string, string>): { value: RegulatedChannel | null } | { error: string } {
+  const link = (raw: string | undefined, label: string): string | null | { error: string } => {
+    const v = raw?.trim();
+    if (!v) return null;
+    const u = normalizeUrl(v);
+    if (!u) return { error: `${label} inválido. Ex.: bardoze.com.br/cardapio` };
+    if (isChatLink(u)) return { error: `${label}: link de WhatsApp ou de mensagem direta não serve. A compra desses itens precisa terminar fora do chat (site, app de delivery, telefone ou retirada).` };
+    return u;
+  };
+  const site = link(f.regulated_site, "Link do site");
+  if (site && typeof site === "object") return site;
+  const app = link(f.regulated_app, "Link do app de delivery");
+  if (app && typeof app === "object") return app;
+  const phone = f.regulated_phone?.trim().slice(0, 30) || null;
+  if (phone && phone.replace(/\D/g, "").length < 10) return { error: "Telefone para pedidos inválido. Use DDD, ex.: (21) 3333-4444." };
+  const pickup = f.regulated_pickup === "on";
+  if (pickup && !f.handoff_address?.trim()) return { error: "Para retirada no local, preencha o endereço em Atendimento presencial." };
+  if (!site && !app && !phone && !pickup) return { value: null };
+  return { value: { site: site as string | null, app: app as string | null, phone, pickup } };
+}
+
 export async function updateBot(botId: string, formData: FormData): Promise<ActionResult> {
   const { agency } = await requireAgency();
   const supabase = await createClient();
@@ -219,6 +247,9 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
     const handoff = await parseHumanHandoff(supabase, botId, f);
     if ("error" in handoff) return fail(handoff.error);
     patch.human_handoff = handoff.value;
+    const regulated = parseRegulatedChannel(f);
+    if ("error" in regulated) return fail(regulated.error);
+    patch.regulated_channel = regulated.value;
   }
   if (!Object.keys(patch).length) return fail("Nada para salvar.");
 
@@ -390,6 +421,19 @@ export async function sendAgentMessage(conversationId: string, formData: FormDat
   const r = await postAgentMessage(owned.admin, conversationId, text(formData.get("content")), AGENCY_AUTHOR);
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return r;
+}
+
+/** Zera a resposta de 18+ do contato neste bot: na próxima vez que pedir o item, ele é perguntado de novo. */
+export async function resetConversationAge(conversationId: string): Promise<ActionResult> {
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const { data: conv } = await owned.admin.from("conversations").select("channel, wa_id, ig_id").eq("id", conversationId).maybeSingle();
+  const contact = conv?.channel === "whatsapp" ? conv.wa_id : conv?.channel === "instagram" ? conv.ig_id : null;
+  if (!conv || !contact) return fail("Só conversas do WhatsApp e do Instagram têm confirmação de 18+.");
+  await resetAge(owned.admin, { botId: owned.conv.bot_id, channel: conv.channel, contact });
+  await owned.admin.from("conversations").update({ age_pending_question: null }).eq("id", conversationId);
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  return ok("Confirmação de 18+ zerada. Se o contato pedir bebida ou remédio, ele é perguntado de novo.");
 }
 
 /** Devolve a conversa ao assistente (ele volta a responder, sabendo o que você escreveu). */

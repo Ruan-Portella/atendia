@@ -1,12 +1,14 @@
-import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, aiDisclosure, handleRiskWithoutAi, withRiskText, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
+import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, handleRiskWithoutAi, enterHumanOnly, markHumanOnlyNotice, openConversation, type AiBlockReason, type BotRow } from "./chat";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { isAccessError, isPaymentError } from "./whatsapp-access";
+import { answerWithGate } from "./gate/flow";
+import { AGE_NO, AGE_YES } from "./gate/age";
+import { GATE_TEXTS } from "./gate/rules";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
 const RESUME_HOURS = 24;
@@ -265,23 +267,25 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     if (!conv) conv = { id: await openConversation(db, bot, { channel: "whatsapp", waId }), takeover_at: null, handled_at: null };
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
-    // histórico do banco (com a rajada já gravada) + a pergunta, que o runChat grava uma vez só
-    // (no reprocesso "unanswered" a pergunta já está no banco, então já vem no histórico)
-    const history: UIMessage[] = await conversationHistory(db, conv.id, HISTORY);
-    if (before.state !== "unanswered") history.push({ id: q.msg.id, role: "user", parts: [{ type: "text", text: texts[qi]! }] });
-    // aviso de IA: calculado antes de a resposta nova entrar na conversa
-    const disclosure = await aiDisclosure(db, bot, conv.id);
-    const { result, saved, urgent } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "whatsapp", whatsapp: { waId, profileName }, questionKey: q.key });
-    const raw = await result.text;
-    const answerId = await saved;
-    // risco à vida: o texto fixo com os telefones vai mesmo que a IA não tenha copiado o aviso
-    const answer = withRiskText(raw, urgent());
-    if (answer.trim()) {
-      // prefixo na mesma mensagem (nunca uma mensagem a mais); o painel guarda o que o contato viu
-      const out = disclosure ? `${disclosure}\n\n${answer.trim()}` : answer;
-      const sent = await reply(out);
-      if (answerId) await db.from("messages").update({ channel_msg_id: sent.messages?.[0]?.id ?? "enviada", ...(out !== raw ? { content: out } : {}) }).eq("id", answerId);
-    }
+    // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
+    await answerWithGate(
+      {
+        db,
+        bot,
+        channel: "whatsapp",
+        contact: waId,
+        conversationId: conv.id,
+        send: async (text, ageButtons) => {
+          const sent = ageButtons
+            ? await sendButtons(channel, waId, text, [{ id: AGE_YES, title: GATE_TEXTS.ageYes }, { id: AGE_NO, title: GATE_TEXTS.ageNo }])
+            : await reply(text);
+          return sent.messages?.[0]?.id ?? null;
+        },
+        chat: { whatsapp: { waId, profileName } },
+        historySize: HISTORY,
+      },
+      { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id },
+    );
   } catch (e) {
     // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)
     if (isAccessError(e) || isPaymentError(e)) throw e;

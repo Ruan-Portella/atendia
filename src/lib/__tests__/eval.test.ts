@@ -10,5 +10,7 @@ describe("classificação das respostas na avaliação", () => {
     expect(verdictOf("Ruan trabalhou na Resoluti. Não tenho a história completa dele, registrei para a equipe.", ["registrar_pergunta_sem_resposta"])).toBe("respondeu");
     // trava de escopo
     expect(verdictOf("Não consigo fazer sua redação, mas posso te contar sobre os nossos cursos!", ["registrar_recusa"])).toBe("recusou");
+    // portão: a IA pediu a confirmação de 18+
+    expect(verdictOf("", ["pedir_confirmacao_18"])).toBe("pediu_18");
   });
 });

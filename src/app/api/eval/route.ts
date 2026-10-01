@@ -19,7 +19,9 @@ function isPlatformAdmin(email: string | undefined): boolean {
  * /api/eval?bot=ID&q=pergunta&n=10&temp=0.3&model=gpt-4.1-mini&canal=whatsapp&formato=json
  * (várias perguntas: repita &q=, até 8; aí cada uma roda no máximo 5 vezes)
  * (conversa anterior: &historico=fala do contato||resposta do assistente||… antes da pergunta)
+ * (portão: &idade=sim|nao simula a resposta de 18+; &fora=1 simula número de fora do Brasil)
  * Conjunto fixo: /api/eval?bot=ID&casos=1 (opcionais: n=3, categoria=escopo_fixo, model=, temp=)
+ * Casos de um bot de teste: &casos=bar (evals/casos-bar.jsonl)
  * Roda a pergunta N vezes pelo mesmo caminho do chat, sem gravar nada, e mostra os trechos que
  * a busca trouxe e cada resposta. Gasta IA de verdade (N respostas).
  */
@@ -35,7 +37,13 @@ export async function GET(req: Request) {
     const { data: bot } = await db.from("bots").select("*").eq("id", botId).maybeSingle<BotRow>();
     if (!bot) return new Response("bot não encontrado", { status: 404 });
     const categoria = sp.get("categoria");
-    const cases = loadCases().filter((c) => !categoria || c.categoria === categoria);
+    const file = sp.get("casos");
+    let cases;
+    try {
+      cases = loadCases(file && file !== "1" ? file : undefined).filter((c) => !categoria || c.categoria === categoria);
+    } catch {
+      return new Response("arquivo de casos não encontrado", { status: 404 });
+    }
     const temp = sp.get("temp");
     const temperature = temp !== null && temp !== "" && Number.isFinite(Number(temp)) ? Math.min(Math.max(Number(temp), 0), 1.5) : undefined;
     const model = sp.get("model")?.trim() || undefined;
@@ -49,7 +57,8 @@ export async function GET(req: Request) {
     return new Response(
       [
         "Conjunto fixo de casos: /api/eval?bot=ID_DO_BOT&casos=1 (opcionais: categoria=escopo_fixo, n=3, model=gpt-4.1-mini, temp=0.3)",
-        "Pergunta avulsa: /api/eval?bot=ID_DO_BOT&q=pergunta&n=10 (opcionais: canal=whatsapp|instagram, historico=a||b, temp=0.3, model=gpt-4.1-mini, formato=json)",
+        "Casos de um bot de teste: /api/eval?bot=ID_DO_BOT&casos=bar (evals/casos-bar.jsonl)",
+        "Pergunta avulsa: /api/eval?bot=ID_DO_BOT&q=pergunta&n=10 (opcionais: canal=whatsapp|instagram, historico=a||b, idade=sim|nao, fora=1, temp=0.3, model=gpt-4.1-mini, formato=json)",
       ].join("\n"),
       { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } },
     );
@@ -68,11 +77,14 @@ export async function GET(req: Request) {
     channel: (canal === "whatsapp" || canal === "instagram" ? canal : "widget") as "widget" | "whatsapp" | "instagram",
     // conversa anterior: &historico=contato||assistente||contato… (separado por ||)
     history: sp.get("historico")?.split("||").map((t) => t.trim().slice(0, 2000)).filter(Boolean).slice(0, 12),
+    // portão: idade já respondida (sem o parâmetro, não confirmada) e número de fora do Brasil
+    age: sp.get("idade") === "sim" ? ("sim" as const) : sp.get("idade") === "nao" ? ("nao" as const) : null,
+    foreign: sp.get("fora") === "1",
   };
   const results = await Promise.all(questions.map((q) => evaluateQuestion(db, bot, q, opts)));
   if (sp.get("formato") === "json") return Response.json(results.length === 1 ? results[0] : results);
   const overview = results.length > 1
-    ? ["RESUMO", ...results.map((r, i) => `  ${i + 1}. respondeu ${r.summary.respondeu} · não tenho ${r.summary.nao_tenho} · recusou ${r.summary.recusou} · atendente ${r.summary.chamou_atendente} · ERRO ${r.summary.erro} · de ${r.summary.runs} — ${r.question}`), "", ""].join("\n")
+    ? ["RESUMO", ...results.map((r, i) => `  ${i + 1}. respondeu ${r.summary.respondeu} · não tenho ${r.summary.nao_tenho} · recusou ${r.summary.recusou} · barrou ${r.summary.barrou} · 18+ ${r.summary.pediu_18} · atendente ${r.summary.chamou_atendente} · ERRO ${r.summary.erro} · de ${r.summary.runs} — ${r.question}`), "", ""].join("\n")
     : "";
   return new Response(overview + results.map(evalReport).join("\n\n==========\n\n"), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }

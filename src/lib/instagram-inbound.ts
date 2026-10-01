@@ -1,6 +1,5 @@
-import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, aiDisclosure, handleRiskWithoutAi, withRiskText, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
+import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, handleRiskWithoutAi, enterHumanOnly, markHumanOnlyNotice, openConversation, type AiBlockReason, type BotRow } from "./chat";
 import { markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
@@ -9,6 +8,9 @@ import { firstExceeded, noticeOnce } from "./rate-limit";
 import { instagramTyping, isInstagramAccessError, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, phonePauseActive, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
+import { answerWithGate } from "./gate/flow";
+import { AGE_NO, AGE_YES } from "./gate/age";
+import { GATE_TEXTS } from "./gate/rules";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de resposta do Instagram). */
 const RESUME_HOURS = 24;
@@ -236,20 +238,20 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     if (!conv) conv = { id: await openConversation(db, bot, { channel: "instagram", igsid }), takeover_at: null, handled_at: null };
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
-    // (no reprocesso "unanswered" a pergunta já está no banco, então já vem no histórico)
-    const history: UIMessage[] = await conversationHistory(db, conv.id, HISTORY);
-    if (before.state !== "unanswered") history.push({ id: q.key, role: "user", parts: [{ type: "text", text: texts[qi]! }] });
-    // aviso de IA: calculado antes de a resposta nova entrar na conversa
-    const disclosure = await aiDisclosure(db, bot, conv.id);
-    const { result, saved, urgent } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "instagram", instagram: { igsid }, questionKey: q.key });
-    const raw = await result.text;
-    const answerId = await saved;
-    const answer = withRiskText(raw, urgent());
-    if (answer.trim()) {
-      const out = disclosure ? `${disclosure}\n\n${answer.trim()}` : answer;
-      const mid = await reply(out);
-      if (answerId) await db.from("messages").update({ channel_msg_id: mid ?? "enviada", ...(out !== raw ? { content: out } : {}) }).eq("id", answerId);
-    }
+    // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
+    await answerWithGate(
+      {
+        db,
+        bot,
+        channel: "instagram",
+        contact: igsid,
+        conversationId: conv.id,
+        send: (text, ageButtons) => send(db, ch, igsid, text, ageButtons ? [{ title: GATE_TEXTS.ageYes, payload: AGE_YES }, { title: GATE_TEXTS.ageNo, payload: AGE_NO }] : undefined),
+        chat: { instagram: { igsid } },
+        historySize: HISTORY,
+      },
+      { text: texts[qi]!, key: q.key, msgId: q.key, stored: before.state === "unanswered", button: q.ev.message?.quick_reply?.payload },
+    );
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;
     const code = (e as Error).message;

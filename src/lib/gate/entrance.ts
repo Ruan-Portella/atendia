@@ -1,0 +1,88 @@
+import { generateText } from "ai";
+import { chatModel } from "../ai";
+import { dictionaryHits, hitSummary, categoryLabel } from "./match";
+import type { GateCategory, GateChannel } from "./rules";
+import type { AgeStatus } from "./age";
+
+/*
+ * Portão na entrada (WhatsApp e Instagram): o que o contato pede. Etapa 1, dicionário em toda
+ * mensagem; etapa 2, IA só quando o dicionário acusa, com a pergunta "o contato PEDE o item?"
+ * (mencionar não basta: "bebi cerveja ontem, posso tomar o remédio?" não dispara nada).
+ */
+
+export interface EntranceInput {
+  text: string;
+  channel: Exclude<GateChannel, "widget">;
+  contactPhone?: string | null;
+  age: AgeStatus;
+  /** Contexto que a busca trouxe para esta pergunta (atalho do 18+ só se ele tem item regulamentado). */
+  context: string;
+  companyName: string;
+  /** Classificador da etapa 2 (troca nos testes). */
+  classify?: (text: string, categories: GateCategory[], companyName: string) => Promise<Classification>;
+}
+
+export interface Classification {
+  /** Categorias que o contato está de fato pedindo (das que o dicionário acusou). */
+  pedidas: GateCategory[];
+  tem_outro_assunto: boolean;
+}
+
+export type EntranceDecision =
+  /** Só pedido proibido: texto fixo, sem a IA principal. */
+  | { kind: "proibido"; categories: GateCategory[] }
+  /** Pedido de regulamentado, idade não confirmada e a base tem o item: pergunta de 18+ direto. */
+  | { kind: "pede_18"; categories: GateCategory[] }
+  /** Segue para a IA, com instrução extra e/ou texto fixo antes da resposta. */
+  | { kind: "ia"; prefix?: string; instruction?: string; regulated: GateCategory[]; prohibited: GateCategory[] };
+
+/** Etapa 2: IA barata, só quando o dicionário acusa. Na dúvida, conta como pedido (lado seguro). */
+export async function classifyRequest(text: string, categories: GateCategory[], companyName: string): Promise<Classification> {
+  const labels = categories.map((c) => `${c} (${categoryLabel(c)})`).join(", ");
+  try {
+    const r = await generateText({
+      model: chatModel(),
+      system: "Você classifica mensagens de clientes de uma empresa. Responda só com JSON válido, sem texto antes ou depois.",
+      prompt: `Empresa: ${companyName}. Mensagem do cliente: """${text.slice(0, 1500)}"""
+Categorias que um filtro de palavras marcou: ${labels}.
+Para cada categoria, decida se o cliente está PEDINDO, querendo comprar, perguntando se tem ou o preço do item. Só mencionar não conta (ex.: "bebi cerveja ontem, posso tomar o remédio?", "gastei 20 reais em cerveja", "frango na cerveja").
+Responda: {"pedidas": ["categoria", ...], "tem_outro_assunto": true|false} onde tem_outro_assunto diz se a mensagem também pede ou pergunta outra coisa além desses itens.`,
+      temperature: 0,
+      maxRetries: 3,
+    });
+    const json = JSON.parse(r.text.replace(/^```(?:json)?|```$/g, "").trim()) as { pedidas?: string[]; tem_outro_assunto?: boolean };
+    return { pedidas: (json.pedidas ?? []).filter((c): c is GateCategory => categories.includes(c as GateCategory)), tem_outro_assunto: Boolean(json.tem_outro_assunto) };
+  } catch {
+    return { pedidas: categories, tem_outro_assunto: true };
+  }
+}
+
+export async function decideEntrance(input: EntranceInput): Promise<EntranceDecision> {
+  const hits = dictionaryHits(input.text, { channel: input.channel, contactPhone: input.contactPhone });
+  if (!hits.length) return { kind: "ia", regulated: [], prohibited: [] };
+  // o nível vem do dicionário (canal e país já aplicados); a IA só diz o que foi pedido
+  const levelOf = new Map(hits.map((h) => [h.category, h.level]));
+  const summary = hitSummary(hits);
+  const c = await (input.classify ?? classifyRequest)(input.text, [...summary.proibidos, ...summary.regulamentados], input.companyName);
+  const prohibited = [...new Set(c.pedidas.filter((x) => levelOf.get(x) === "proibido"))];
+  const regulated = [...new Set(c.pedidas.filter((x) => levelOf.get(x) === "regulamentado"))];
+
+  if (prohibited.length && !regulated.length && !c.tem_outro_assunto) return { kind: "proibido", categories: prohibited };
+
+  // atalho determinístico do 18+: pediu regulamentado, idade vazia e a base tem o item
+  if (regulated.length && input.age === null && !prohibited.length) {
+    const contextHasItem = dictionaryHits(input.context, { channel: input.channel, contactPhone: input.contactPhone }).some((h) => regulated.includes(h.category));
+    if (contextHasItem) return { kind: "pede_18", categories: regulated };
+  }
+
+  const notes: string[] = [];
+  if (prohibited.length) notes.push(`A pessoa também pediu ${prohibited.map(categoryLabel).join(", ")}: não trate disso, não cite o item; responda só o resto.`);
+  if (regulated.length && input.age === "nao") notes.push(`A pessoa pediu ${regulated.map(categoryLabel).join(", ")}, mas disse que não tem 18 anos: não fale desses itens; ofereça o resto.`);
+  return {
+    kind: "ia",
+    prefix: prohibited.length ? "Um dos itens que você pediu não conseguimos atender por aqui." : undefined,
+    instruction: notes.length ? notes.join(" ") : undefined,
+    regulated,
+    prohibited,
+  };
+}

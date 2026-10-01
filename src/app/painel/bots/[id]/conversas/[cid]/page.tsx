@@ -17,7 +17,8 @@ import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { deleteConversation, releaseConversation, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
+import { deleteConversation, releaseConversation, resetConversationAge, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
+import { ageRecord } from "@/lib/gate/age";
 
 export const metadata = { title: "Conversa" };
 
@@ -54,6 +55,8 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
     templates = ch ? await listSendable(ch).catch(() => []) : null;
   }
   const contactName = leads?.[0]?.name ?? "";
+  // resposta de 18+ do contato neste bot (tabela interna: lida com a service role)
+  const age = isWhatsApp || isInstagram ? await ageRecord(createAdminClient(), { botId: id, channel: isWhatsApp ? "whatsapp" : "instagram", contact: (isWhatsApp ? conv.wa_id : conv.ig_id)! }) : null;
 
   const allMessages = (messages ?? []) as ThreadMessage[];
   const templateAction = sendConversationTemplate.bind(null, cid);
@@ -70,6 +73,18 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
+          {age && (
+            <ConfirmAction
+              action={resetConversationAge.bind(null, cid)}
+              title="Zerar a confirmação de 18+?"
+              description={`O contato ${age.status === "sim" ? "confirmou ter 18 anos ou mais" : "disse que não tem 18 anos"} (${relativeTime(age.decidedAt)}). Zerando, na próxima vez que pedir bebida ou remédio o assistente pergunta de novo.`}
+              confirmLabel="Zerar 18+"
+              danger={false}
+              className="btn-ghost"
+            >
+              18+: {age.status === "sim" ? "sim" : "não"} · zerar
+            </ConfirmAction>
+          )}
           <ConfirmAction
             action={deleteConversation.bind(null, cid)}
             title="Excluir esta conversa?"

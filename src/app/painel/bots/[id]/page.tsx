@@ -31,6 +31,7 @@ import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, di
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 
 export const metadata = { title: "Editor do chatbot" };
 
@@ -81,6 +82,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const appearance = bot.appearance ?? {};
   const leadCapture = bot.lead_capture ?? {};
   const handoff = (bot.human_handoff ?? {}) as HumanHandoff;
+  const regulated = (bot.regulated_channel ?? {}) as RegulatedChannel;
   const color = appearance.color ?? agency.brand_color;
   // domínio próprio da agência (quando verificado) nos links que o cliente e o prospect veem
   const base = agencyBaseUrl(agency);
@@ -264,6 +266,17 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     );
                   })}
                 </div>
+              </section>
+
+              <section className="flex flex-col gap-3 border-t border-line pt-4">
+                <h3 className="text-sm font-semibold">Bebida alcoólica e remédio: onde o cliente finaliza a compra</h3>
+                <p className="-mt-2 text-xs text-muted">No WhatsApp e no Instagram, o assistente só fala desses itens com quem confirmou ter 18 anos ou mais, e a compra nunca fecha no chat: ele manda o cliente para um destes caminhos, nesta ordem. Não vale link de WhatsApp nem de mensagem direta. Tudo em branco: o assistente usa o que estiver nas fontes.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div><label htmlFor="regulated_site" className="label">Link do site (item ou cardápio)</label><input id="regulated_site" name="regulated_site" maxLength={300} defaultValue={regulated.site ?? ""} className="input" placeholder="bardoze.com.br/cardapio" /></div>
+                  <div><label htmlFor="regulated_app" className="label">Link do app de delivery</label><input id="regulated_app" name="regulated_app" maxLength={300} defaultValue={regulated.app ?? ""} className="input" placeholder="ifood.com.br/delivery/…" /></div>
+                  <div><label htmlFor="regulated_phone" className="label">Telefone para pedidos (ligação)</label><input id="regulated_phone" name="regulated_phone" maxLength={30} defaultValue={regulated.phone ?? ""} className="input" placeholder="(21) 3333-4444" /></div>
+                </div>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="regulated_pickup" defaultChecked={Boolean(regulated.pickup)} /> Retirada no local (usa o endereço de Atendimento presencial)</label>
               </section>
               <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
             </ActionForm>
