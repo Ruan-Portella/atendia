@@ -79,6 +79,83 @@ export function actionsNote(results: ToolResultRow[] | null | undefined): string
   return `(ações desta resposta: ${parts.join(", ")})`;
 }
 
+/** Temperatura do modelo nas respostas (a avaliação mede o efeito de trocar). */
+export const CHAT_TEMPERATURE = 0.3;
+
+export interface ContextHit {
+  content: string;
+  metadata: { title?: string; url?: string };
+  similarity: number;
+}
+
+/** Trechos da base mais parecidos com a pergunta (busca exata no bot) e o texto do contexto. */
+export async function retrieveContext(db: SupabaseClient, botId: string, question: string) {
+  let context = "";
+  const used: Array<{ title?: string; url?: string }> = [];
+  let hits: ContextHit[] = [];
+  let embeddingUsage: Awaited<ReturnType<typeof embedText>>["usage"] | null = null;
+  if (question) {
+    const { embedding, usage } = await embedText(question);
+    embeddingUsage = usage;
+    const { data } = await db.rpc("match_chunks", { p_bot_id: botId, p_query: JSON.stringify(embedding), p_count: 6, p_min_similarity: 0.15 });
+    hits = (data ?? []) as ContextHit[];
+    context = hits.map((r, i) => `[${i + 1}] ${r.metadata?.title ? r.metadata.title + "\n" : ""}${r.content}`).join("\n\n---\n\n");
+    for (const r of hits) {
+      const key = r.metadata?.url ?? r.metadata?.title;
+      if (key && !used.some((u) => (u.url ?? u.title) === key)) used.push({ title: r.metadata?.title, url: r.metadata?.url });
+    }
+  }
+  return { context, used, hits, embeddingUsage };
+}
+
+/** Regra do canal no prompt (WhatsApp com ou sem telefone, Instagram; o site não tem). */
+export function channelNoteFor(opts: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: { igsid: string } }): string | undefined {
+  const wa = opts.whatsapp;
+  const waPhone = wa && /^\d+$/.test(wa.waId) ? wa.waId : null;
+  return wa && !waPhone
+    ? `A conversa é pelo WhatsApp, mas o número da pessoa não aparece para você: para registrar o contato, peça nome e telefone. Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
+    : wa
+    ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil dela é "${wa.profileName}": confirme antes de usar.` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
+    : opts.instagram
+      ? "A conversa é pelo Direct do Instagram. Você não sabe o WhatsApp da pessoa: para registrar o contato, peça nome e WhatsApp. O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio."
+      : undefined;
+}
+
+type ToolExec<I> = (input: I) => Promise<{ ok: boolean }>;
+
+/**
+ * As ferramentas do assistente (descrição e formato iguais para o chat de verdade e para a
+ * avaliação); quem chama decide o que cada uma faz.
+ */
+export function chatTools(exec: {
+  registrar_lead: ToolExec<{ nome: string; whatsapp?: string; email?: string; interesse?: string }>;
+  chamar_atendente: ToolExec<{ motivo?: string }>;
+  registrar_pergunta_sem_resposta: ToolExec<{ pergunta: string }>;
+}) {
+  return {
+    registrar_lead: tool({
+      description: "Registra o contato de um visitante interessado (nome e WhatsApp ou e-mail) para a equipe retornar.",
+      inputSchema: z.object({
+        nome: z.string().min(2),
+        whatsapp: z.string().optional(),
+        email: z.string().optional(),
+        interesse: z.string().optional().describe("o que a pessoa quer: agendar, orçamento, etc."),
+      }),
+      execute: exec.registrar_lead,
+    }),
+    chamar_atendente: tool({
+      description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano ou alguém da equipe.",
+      inputSchema: z.object({ motivo: z.string().optional().describe("resumo curto do que a pessoa precisa") }),
+      execute: exec.chamar_atendente,
+    }),
+    registrar_pergunta_sem_resposta: tool({
+      description: "Registra uma pergunta que não pôde ser respondida com o conteúdo disponível, para a empresa completar depois.",
+      inputSchema: z.object({ pergunta: z.string().min(3) }),
+      execute: exec.registrar_pergunta_sem_resposta,
+    }),
+  };
+}
+
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
 export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled";
 
@@ -185,20 +262,7 @@ export async function runChat(opts: {
 
   // 2. Recuperação de contexto
   const question = lastUserText(messages);
-  let context = "";
-  const used: Array<{ title?: string; url?: string }> = [];
-  let embeddingUsage: Awaited<ReturnType<typeof embedText>>["usage"] | null = null;
-  if (question) {
-    const { embedding, usage } = await embedText(question);
-    embeddingUsage = usage;
-    const { data: hits } = await db.rpc("match_chunks", { p_bot_id: bot.id, p_query: JSON.stringify(embedding), p_count: 6, p_min_similarity: 0.15 });
-    const rows = (hits ?? []) as Array<{ content: string; metadata: { title?: string; url?: string }; similarity: number }>;
-    context = rows.map((r, i) => `[${i + 1}] ${r.metadata?.title ? r.metadata.title + "\n" : ""}${r.content}`).join("\n\n---\n\n");
-    for (const r of rows) {
-      const key = r.metadata?.url ?? r.metadata?.title;
-      if (key && !used.some((u) => (u.url ?? u.title) === key)) used.push({ title: r.metadata?.title, url: r.metadata?.url });
-    }
-  }
+  const { context, used, embeddingUsage } = await retrieveContext(db, bot.id, question);
 
   const leadEnabled = bot.lead_capture?.enabled !== false;
   // o que um atendente humano já escreveu (quando a conversa volta para o assistente)
@@ -208,13 +272,7 @@ export async function runChat(opts: {
   const agentMessages = (agentRows ?? []).map((r) => String(r.content).slice(0, 500)).reverse();
   const wa = opts.whatsapp;
   const waPhone = wa && /^\d+$/.test(wa.waId) ? wa.waId : null;
-  const channelNote = wa && !waPhone
-    ? `A conversa é pelo WhatsApp, mas o número da pessoa não aparece para você: para registrar o contato, peça nome e telefone. Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
-    : wa
-    ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil dela é "${wa.profileName}": confirme antes de usar.` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
-    : opts.instagram
-      ? "A conversa é pelo Direct do Instagram. Você não sabe o WhatsApp da pessoa: para registrar o contato, peça nome e WhatsApp. O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio."
-      : undefined;
+  const channelNote = channelNoteFor(opts);
   const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote });
   const convId = conversationId;
 
@@ -237,54 +295,37 @@ export async function runChat(opts: {
     model: chatModel(),
     system,
     messages: await convertToModelMessages(messages.slice(-12)),
-    temperature: 0.3,
+    temperature: CHAT_TEMPERATURE,
     stopWhen: stepCountIs(3),
-    tools: {
-      registrar_lead: tool({
-        description: "Registra o contato de um visitante interessado (nome e WhatsApp ou e-mail) para a equipe retornar.",
-        inputSchema: z.object({
-          nome: z.string().min(2),
-          whatsapp: z.string().optional(),
-          email: z.string().optional(),
-          interesse: z.string().optional().describe("o que a pessoa quer: agendar, orçamento, etc."),
-        }),
-        execute: async (input) => {
-          if (!leadEnabled) return { ok: false };
-          const { data: lead } = await db
-            .from("leads")
-            .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? waPhone, email: input.email ?? null, notes: input.interesse ?? null })
-            .select("id")
-            .single();
-          notifyLead({ db, bot, lead: { id: lead?.id, ...input } }).catch(() => {});
-          return { ok: true };
-        },
-      }),
-      chamar_atendente: tool({
-        description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano ou alguém da equipe.",
-        inputSchema: z.object({ motivo: z.string().optional().describe("resumo curto do que a pessoa precisa") }),
-        execute: async ({ motivo }) => {
-          const { data: updated } = await db
-            .from("conversations")
-            .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
-            .eq("id", convId)
-            .or("handoff_requested_at.is.null,handled_at.not.is.null")
-            .select("id");
-          // avisa na primeira vez (ou de novo, se o atendimento anterior já tinha sido encerrado)
-          if (updated?.length) notifyHandoff({ db, bot, conversationId: convId, reason: motivo ?? question }).catch(() => {});
-          else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", convId);
-          return { ok: true };
-        },
-      }),
-      registrar_pergunta_sem_resposta: tool({
-        description: "Registra uma pergunta que não pôde ser respondida com o conteúdo disponível, para a empresa completar depois.",
-        inputSchema: z.object({ pergunta: z.string().min(3) }),
-        execute: async ({ pergunta }) => {
-          unansweredRecorded = true;
-          await recordUnanswered(db, bot.id, convId, pergunta);
-          return { ok: true };
-        },
-      }),
-    },
+    tools: chatTools({
+      registrar_lead: async (input) => {
+        if (!leadEnabled) return { ok: false };
+        const { data: lead } = await db
+          .from("leads")
+          .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? waPhone, email: input.email ?? null, notes: input.interesse ?? null })
+          .select("id")
+          .single();
+        notifyLead({ db, bot, lead: { id: lead?.id, ...input } }).catch(() => {});
+        return { ok: true };
+      },
+      chamar_atendente: async ({ motivo }) => {
+        const { data: updated } = await db
+          .from("conversations")
+          .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
+          .eq("id", convId)
+          .or("handoff_requested_at.is.null,handled_at.not.is.null")
+          .select("id");
+        // avisa na primeira vez (ou de novo, se o atendimento anterior já tinha sido encerrado)
+        if (updated?.length) notifyHandoff({ db, bot, conversationId: convId, reason: motivo ?? question }).catch(() => {});
+        else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", convId);
+        return { ok: true };
+      },
+      registrar_pergunta_sem_resposta: async ({ pergunta }) => {
+        unansweredRecorded = true;
+        await recordUnanswered(db, bot.id, convId, pergunta);
+        return { ok: true };
+      },
+    }),
     onError: () => markSaved(),
     onFinish: async ({ text, steps, totalUsage, response }) => {
       // custo da resposta inteira (todos os passos + embedding da pergunta), sem atrasar nada

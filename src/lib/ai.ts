@@ -22,12 +22,13 @@ const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_API_KEY });
 
-export function chatModel(): LanguageModel {
+/** Modelo do chat. `id` troca o modelo (a avaliação compara modelos do mesmo provedor). */
+export function chatModel(id?: string): LanguageModel {
   if (provider === "anthropic") {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error("AI_PROVIDER=anthropic exige ANTHROPIC_API_KEY");
-    return anthropic(process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5");
+    return anthropic(id ?? process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5");
   }
-  return openai(process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini");
+  return openai(id ?? process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini");
 }
 
 export const providerName = provider === "anthropic" ? "Anthropic" : "OpenAI";
