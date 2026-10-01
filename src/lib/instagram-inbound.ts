@@ -2,7 +2,7 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { conversationHistory, openConversation, runChat, type BotRow } from "./chat";
 import { markOwnMessage } from "./inbound-queue";
-import { isOptOutKeyword, optOutConfirmation, suppress, suppressionScope } from "./suppression";
+import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded } from "./rate-limit";
@@ -80,8 +80,8 @@ async function recentConversation(db: SupabaseClient, botId: string, igsid: stri
 }
 
 /** Manda a DM e guarda o id dela: o webhook ecoa as nossas mensagens, e assim o eco é ignorado. */
-export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string): Promise<string | null> {
-  const mid = await sendInstagramText(ch, to, text);
+export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string, quickReplies?: Array<{ title: string; payload: string }>): Promise<string | null> {
+  const mid = await sendInstagramText(ch, to, text, quickReplies);
   if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
   return mid;
 }
@@ -141,20 +141,33 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
 
   let conv = await recentConversation(db, bot.id, igsid);
 
-  // opt-out fixo (SAIR, PARAR, STOP): antes da IA, em qualquer estado; vale para tudo no Instagram
-  const handled = new Set(texts.map((t, i) => (isOptOutKeyword(t) ? i : -1)).filter((i) => i >= 0));
-  if (handled.size) {
+  // opt-out fixo (SAIR, PARAR, STOP) e o "Foi engano": antes da IA, em qualquer estado; vale para tudo no Instagram
+  const target = { channel: "instagram" as const, scope: suppressionScope({ botId: bot.id }), contact: igsid };
+  const undo = new Set(burst.map((q, i) => (q.ev.message?.quick_reply?.payload === OPTOUT_UNDO ? i : -1)).filter((i) => i >= 0));
+  if (undo.size) {
+    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
+    if (convId) {
+      if (!conv) conv = { id: convId, takeover_at: null, handled_at: null };
+      for (const i of undo) await storeOnce(db, convId, shown(i), burst[i].key);
+    }
+    await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" });
+    const done = `Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${bot.client_name}.`;
+    const mid = await reply(done);
+    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: done, channel_msg_id: mid ?? "enviada" });
+  }
+  const handled = new Set(texts.map((t, i) => (isOptOutKeyword(t) || undo.has(i) ? i : -1)).filter((i) => i >= 0));
+  if (handled.size > undo.size) {
     const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
     if (convId) {
       if (!conv) conv = { id: convId, takeover_at: null, handled_at: null };
       for (const i of handled) await storeOnce(db, convId, shown(i), burst[i].key);
     }
-    await suppress(db, { channel: "instagram", scope: suppressionScope({ botId: bot.id }), contact: igsid, kind: "all", reason: "opt_out", source: "chat" });
+    await suppress(db, { ...target, kind: "all", reason: "opt_out", source: "chat" });
     const confirmation = optOutConfirmation("all", bot.client_name);
-    const mid = await reply(confirmation);
+    const mid = await send(db, ch, igsid, confirmation, [{ title: "Foi engano", payload: OPTOUT_UNDO }]);
     if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: confirmation, channel_msg_id: mid ?? "enviada" });
-    if (handled.size === burst.length) return;
   }
+  if (handled.size === burst.length) return;
 
   const { data: appReply } = conv
     ? await db.from("messages").select("created_at").eq("conversation_id", conv.id).eq("role", "agent").eq("author", IG_APP_AUTHOR).order("id", { ascending: false }).limit(1).maybeSingle()

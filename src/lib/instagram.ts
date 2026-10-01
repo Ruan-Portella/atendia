@@ -190,8 +190,11 @@ export function toInstagramText(text: string): string {
 }
 
 /** Manda uma DM. Devolve o id da mensagem (o webhook ecoa as nossas; com ele sabemos ignorar). */
-export async function sendInstagramText(ch: IgChannel, recipientId: string, text: string): Promise<string | null> {
-  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message: { text: toInstagramText(text) } } });
+export async function sendInstagramText(ch: IgChannel, recipientId: string, text: string, quickReplies?: Array<{ title: string; payload: string }>): Promise<string | null> {
+  const message: Record<string, unknown> = { text: toInstagramText(text) };
+  // respostas rápidas: botões embaixo da mensagem (o toque volta com quick_reply.payload)
+  if (quickReplies?.length) message.quick_replies = quickReplies.slice(0, 13).map((q) => ({ content_type: "text", title: q.title.slice(0, 20), payload: q.payload }));
+  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message } });
   return r.message_id ?? null;
 }
 
