@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import { chatModel } from "./ai";
+import { chatModel, chatModelId, modelCallOptions } from "./ai";
 import { normalizeGateText } from "./gate/match";
 
 /*
@@ -35,7 +35,7 @@ export async function confirmRisk(text: string): Promise<boolean> {
       model: chatModel(),
       system: "Você classifica mensagens de atendimento. Responda só SIM ou NAO.",
       prompt: `A mensagem abaixo indica risco imediato à vida ou à integridade de alguém (ideia de suicídio, autolesão, emergência médica, violência)? Expressões figuradas ("morri de rir", "esse preço me mata") não contam.\n\nMensagem: """${text.slice(0, 1000)}"""`,
-      temperature: 0,
+      ...modelCallOptions(chatModelId(), { temperature: 0, cacheKey: "boavoz-risco" }),
       maxRetries: 3,
     });
     return !/^\s*n[aã]o\b/i.test(r.text);

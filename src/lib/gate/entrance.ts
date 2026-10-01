@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import { chatModel } from "../ai";
+import { chatModel, chatModelId, modelCallOptions } from "../ai";
 import { dictionaryHits, hitSummary, categoryLabel } from "./match";
 import { GATE_TEXTS, type GateCategory, type GateChannel } from "./rules";
 import type { AgeStatus } from "./age";
@@ -65,7 +65,7 @@ Para cada categoria, diga se o cliente PEDE o item ou só o MENCIONA.
 - "menciona": cita sem pedir: conta o que fez, pergunta de saúde ou de uso, receita, comparação (ex.: "tomei vinho no jantar, posso tomar paracetamol?": vinho e paracetamol mencionam; "gastei 20 reais em cerveja": menciona).
 Na dúvida, "pede".${rest}
 Responda: {"categorias": {"categoria": "pede" | "menciona"}, "tem_outro_assunto": true|false${blocked.length ? ', "resto": "..."' : ""}}, onde tem_outro_assunto diz se a mensagem também pede ou pergunta outra coisa além desses itens.`,
-      temperature: 0,
+      ...modelCallOptions(chatModelId(), { temperature: 0, cacheKey: "boavoz-portao" }),
       maxRetries: 3,
     });
     return parseClassification(r.text, categories);

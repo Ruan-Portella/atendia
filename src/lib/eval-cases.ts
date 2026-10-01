@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BotRow } from "./chat";
-import { evaluateQuestion, type EvalRun } from "./eval";
+import { costLine, costSummary, evaluateQuestion, type EvalRun } from "./eval";
+import type { ReasoningEffort } from "./ai";
 
 /*
  * Conjunto fixo de casos (evals/casos.jsonl): cada mudança de prompt, modelo ou temperatura roda
@@ -85,13 +86,13 @@ export function checkRun(c: EvalCase, run: EvalRun, allowedText: string): string
   return null;
 }
 
-export async function runCases(db: SupabaseClient, bot: BotRow, cases: EvalCase[], opts: { runs: number; model?: string; temperature?: number }) {
-  const results: Array<{ c: EvalCase; passed: number; runs: number; errors: number; failures: Array<{ reason: string; text: string }> }> = [];
+export async function runCases(db: SupabaseClient, bot: BotRow, cases: EvalCase[], opts: { runs: number; model?: string; temperature?: number; effort?: ReasoningEffort }) {
+  const results: Array<{ c: EvalCase; passed: number; runs: number; errors: number; failures: Array<{ reason: string; text: string }>; runList: EvalRun[] }> = [];
   // poucos casos em paralelo: o limite de tokens por minuto da OpenAI estoura com muitos juntos
   for (let i = 0; i < cases.length; i += 3) {
     const batch = await Promise.all(
       cases.slice(i, i + 3).map(async (c) => {
-        const r = await evaluateQuestion(db, bot, c.pergunta, { runs: opts.runs, model: opts.model, temperature: opts.temperature, channel: c.canal ?? "whatsapp", history: c.historico, age: c.idade ?? null, foreign: c.fora });
+        const r = await evaluateQuestion(db, bot, c.pergunta, { runs: opts.runs, model: opts.model, temperature: opts.temperature, effort: opts.effort, channel: c.canal ?? "whatsapp", history: c.historico, age: c.idade ?? null, foreign: c.fora });
         const allowed = [r.context, c.pergunta, ...(c.historico ?? [])].join("\n");
         // erro de chamada (ex.: limite da OpenAI) não é falha de comportamento: fica à parte
         const errors = r.runs.filter((run) => run.verdict === "erro").length;
@@ -99,7 +100,7 @@ export async function runCases(db: SupabaseClient, bot: BotRow, cases: EvalCase[
           .filter((run) => run.verdict !== "erro")
           .map((run) => ({ reason: checkRun(c, run, allowed), text: run.text }))
           .filter((f): f is { reason: string; text: string } => f.reason !== null);
-        return { c, passed: r.runs.length - errors - failures.length, runs: r.runs.length, errors, failures };
+        return { c, passed: r.runs.length - errors - failures.length, runs: r.runs.length, errors, failures, runList: r.runs };
       }),
     );
     results.push(...batch);
@@ -117,6 +118,7 @@ export function casesReport(results: Awaited<ReturnType<typeof runCases>>, meta:
     `CONJUNTO FIXO · MODELO: ${meta.model} · TEMPERATURA: ${meta.temperature} · ${meta.runs} RODADAS POR CASO`,
     "",
     `RESULTADO: ${results.filter(ok).length}/${results.length} casos passaram em todas as rodadas · obrigatórios (${[...MUST_PASS].join(", ")}): ${allMust ? "✅ OK" : "❌ FALHOU"}`,
+    costLine(costSummary(results.flatMap((r) => r.runList))),
     "",
     "POR CATEGORIA",
     ...cats.map((cat) => {

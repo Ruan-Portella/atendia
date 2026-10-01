@@ -2,11 +2,15 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { evalReport, evaluateQuestion } from "@/lib/eval";
 import { casesReport, loadCases, runCases } from "@/lib/eval-cases";
-import { chatModelId } from "@/lib/ai";
+import { chatModelId, type ReasoningEffort } from "@/lib/ai";
 import { CHAT_TEMPERATURE, type BotRow } from "@/lib/chat";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
+
+const EFFORTS = ["none", "minimal", "low", "medium", "high"] as const;
+/** &esforco= (modelos que raciocinam, gpt-5 em diante); sem ele, o mínimo do modelo. */
+const effortOf = (v: string | null): ReasoningEffort | undefined => (EFFORTS as readonly string[]).includes(v ?? "") ? (v as ReasoningEffort) : undefined;
 
 /** Quem opera a plataforma (PLATFORM_ADMIN_EMAILS, separados por vírgula). Sem a lista, ninguém. */
 function isPlatformAdmin(email: string | undefined): boolean {
@@ -22,6 +26,7 @@ function isPlatformAdmin(email: string | undefined): boolean {
  * (portão: &idade=sim|nao simula a resposta de 18+; &fora=1 simula número de fora do Brasil)
  * Conjunto fixo: /api/eval?bot=ID&casos=1 (opcionais: n=3, categoria=escopo_fixo, model=, temp=)
  * Casos de um bot de teste: &casos=bar (evals/casos-bar.jsonl)
+ * Comparar modelos: &model=gpt-5-mini (opcional &esforco=minimal|low|none); o relatório mostra o custo por resposta
  * Roda a pergunta N vezes pelo mesmo caminho do chat, sem gravar nada, e mostra os trechos que
  * a busca trouxe e cada resposta. Gasta IA de verdade (N respostas).
  */
@@ -48,15 +53,16 @@ export async function GET(req: Request) {
     const temperature = temp !== null && temp !== "" && Number.isFinite(Number(temp)) ? Math.min(Math.max(Number(temp), 0), 1.5) : undefined;
     const model = sp.get("model")?.trim() || undefined;
     const runs = Math.min(Math.max(Number(sp.get("n") ?? 3) || 3, 1), 5);
-    const results = await runCases(db, bot, cases, { runs, model, temperature });
-    return new Response(casesReport(results, { model: model ?? `${chatModelId()} (padrão)`, temperature: temperature ?? CHAT_TEMPERATURE, runs }), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+    const effort = effortOf(sp.get("esforco"));
+    const results = await runCases(db, bot, cases, { runs, model, temperature, effort });
+    return new Response(casesReport(results, { model: `${model ?? `${chatModelId()} (padrão)`}${effort ? ` (raciocínio: ${effort})` : ""}`, temperature: temperature ?? CHAT_TEMPERATURE, runs }), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
   }
   // várias perguntas: &q=...&q=... (até 8), cada uma rodada N vezes
   const questions = sp.getAll("q").map((q) => q.trim().slice(0, 2000)).filter(Boolean).slice(0, 8);
   if (!/^[0-9a-f-]{36}$/i.test(botId) || !questions.length) {
     return new Response(
       [
-        "Conjunto fixo de casos: /api/eval?bot=ID_DO_BOT&casos=1 (opcionais: categoria=escopo_fixo, n=3, model=gpt-4.1-mini, temp=0.3)",
+        "Conjunto fixo de casos: /api/eval?bot=ID_DO_BOT&casos=1 (opcionais: categoria=escopo_fixo, n=3, model=gpt-4.1-mini, esforco=minimal, temp=0.3)",
         "Casos de um bot de teste: /api/eval?bot=ID_DO_BOT&casos=bar (evals/casos-bar.jsonl)",
         "Pergunta avulsa: /api/eval?bot=ID_DO_BOT&q=pergunta&n=10 (opcionais: canal=whatsapp|instagram, historico=a||b, idade=sim|nao, fora=1, temp=0.3, model=gpt-4.1-mini, formato=json)",
       ].join("\n"),
@@ -80,6 +86,7 @@ export async function GET(req: Request) {
     // portão: idade já respondida (sem o parâmetro, não confirmada) e número de fora do Brasil
     age: sp.get("idade") === "sim" ? ("sim" as const) : sp.get("idade") === "nao" ? ("nao" as const) : null,
     foreign: sp.get("fora") === "1",
+    effort: effortOf(sp.get("esforco")),
   };
   const results = await Promise.all(questions.map((q) => evaluateQuestion(db, bot, q, opts)));
   if (sp.get("formato") === "json") return Response.json(results.length === 1 ? results[0] : results);

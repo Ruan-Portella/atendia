@@ -12,6 +12,12 @@ const PRICES: Record<string, { input: number; output?: number; cachedInput?: num
   "gpt-4.1-mini": { input: 0.4, cachedInput: 0.1, output: 1.6 },
   "gpt-4.1-nano": { input: 0.1, cachedInput: 0.025, output: 0.4 },
   "gpt-4.1": { input: 2, cachedInput: 0.5, output: 8 },
+  // gpt-5 em diante raciocinam: os tokens de raciocínio vêm na saída (tabela de 01/10/2026)
+  "gpt-5": { input: 1.25, cachedInput: 0.125, output: 10 },
+  "gpt-5-mini": { input: 0.25, cachedInput: 0.025, output: 2 },
+  "gpt-5-nano": { input: 0.05, cachedInput: 0.005, output: 0.4 },
+  "gpt-5.4-mini": { input: 0.75, cachedInput: 0.075, output: 4.5 },
+  "gpt-5.4-nano": { input: 0.2, cachedInput: 0.02, output: 1.25 },
   "text-embedding-3-small": { input: 0.02 },
   "text-embedding-3-large": { input: 0.13 },
   "claude-haiku-4-5": { input: 1, cachedInput: 0.1, output: 5 },

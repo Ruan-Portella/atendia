@@ -1,12 +1,13 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildSystemPrompt, chatModel, chatModelId, scopeReminder } from "./ai";
-import { CHAT_TEMPERATURE, channelNoteFor, chatTools, gatePrompt, handoffPrompt, retrieveContext, withRiskText, type BotRow } from "./chat";
+import { buildPrompt, chatModel, chatModelId, modelCallOptions, scopeReminder, type ReasoningEffort } from "./ai";
+import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { handoffNotice } from "./handoff-hours";
 import { RISK_TEXT } from "./risk";
 import { NO_INFO_PHRASE } from "./unanswered";
 import { decideEntrance } from "./gate/entrance";
 import { GATE_TEXTS } from "./gate/rules";
+import { costUsd } from "./ai-usage";
 import type { AgeStatus } from "./gate/age";
 
 /*
@@ -26,6 +27,8 @@ export interface EvalOptions {
   age?: AgeStatus;
   /** Contato de fora do Brasil (no WhatsApp, regulamentado vira proibido). */
   foreign?: boolean;
+  /** Esforço de raciocínio (só modelos que raciocinam: gpt-5 em diante). */
+  effort?: ReasoningEffort;
 }
 
 export interface EvalRun {
@@ -34,6 +37,10 @@ export interface EvalRun {
   tools: string[];
   inputTokens: number;
   outputTokens: number;
+  /** Parte da entrada que veio do cache da OpenAI (bem mais barata). */
+  cachedInputTokens?: number;
+  /** Custo da resposta em US$ (null: modelo sem preço na tabela). Texto fixo do portão: 0. */
+  costUsd?: number | null;
 }
 
 const ONLY_REGISTERED = /^(registrei|anotei|deixei registrad)/i;
@@ -45,6 +52,27 @@ export function verdictOf(text: string, tools: string[]): EvalRun["verdict"] {
   if (t.startsWith(NO_INFO_PHRASE)) return "nao_tenho";
   if (ONLY_REGISTERED.test(t) && tools.includes("registrar_pergunta_sem_resposta")) return "so_registrou";
   return "respondeu";
+}
+
+/** Custo médio por resposta da IA (os textos fixos do portão não contam: não passam pela IA). */
+export function costSummary(runs: EvalRun[]) {
+  const ai = runs.filter((r) => r.inputTokens > 0);
+  const sum = (f: (r: EvalRun) => number) => ai.reduce((t, r) => t + f(r), 0);
+  const priced = ai.filter((r) => typeof r.costUsd === "number");
+  const input = sum((r) => r.inputTokens);
+  return {
+    respostasIa: ai.length,
+    entradaMedia: ai.length ? Math.round(input / ai.length) : 0,
+    cachePct: input ? Math.round((sum((r) => r.cachedInputTokens ?? 0) / input) * 100) : 0,
+    saidaMedia: ai.length ? Math.round(sum((r) => r.outputTokens) / ai.length) : 0,
+    custoMedioUsd: priced.length ? priced.reduce((t, r) => t + (r.costUsd as number), 0) / priced.length : null,
+  };
+}
+
+export function costLine(c: ReturnType<typeof costSummary>): string {
+  if (!c.respostasIa) return "CUSTO: nenhuma resposta passou pela IA";
+  const usd = c.custoMedioUsd === null ? "sem preço na tabela" : `US$ ${c.custoMedioUsd.toFixed(5)}`;
+  return `CUSTO POR RESPOSTA DA IA: ${usd} · entrada média ${c.entradaMedia} tokens (${c.cachePct}% do cache) · saída média ${c.saidaMedia} tokens · ${c.respostasIa} respostas`;
 }
 
 export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question: string, opts: EvalOptions) {
@@ -61,16 +89,16 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
     try {
       // portão na entrada, como no canal: proibido e pergunta de 18+ nem chegam à IA principal
       const entrance = scopeLock ? await decideEntrance({ text: question, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, context, companyName: bot.client_name }) : null;
-      if (entrance?.kind === "proibido") return { verdict: "barrou", text: GATE_TEXTS.prohibited, tools: [`portao:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0 };
-      if (entrance?.kind === "nao_18") return { verdict: "barrou", text: GATE_TEXTS.under18, tools: [`portao:nao_18:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0 };
-      if (entrance?.kind === "pede_18") return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools: ["portao:pede_18"], inputTokens: 0, outputTokens: 0 };
+      if (entrance?.kind === "proibido") return { verdict: "barrou", text: GATE_TEXTS.prohibited, tools: [`portao:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      if (entrance?.kind === "nao_18") return { verdict: "barrou", text: GATE_TEXTS.under18, tools: [`portao:nao_18:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      if (entrance?.kind === "pede_18") return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools: ["portao:pede_18"], inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
       // mesmo corte do chat: a base sem os itens barrados para esta pessoa e as linhas do portão
       const remind = entrance?.kind === "ia" && (entrance.regulated.length > 0 || entrance.prohibited.length > 0);
       const gated = scopeLock
         ? gatePrompt(bot, context, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, gate: { age, instruction: entrance?.kind === "ia" ? entrance.instruction : undefined, remind } })
         : { context, gateNotes: [], reminder: [] };
-      const system = buildSystemPrompt({
+      const prompt = buildPrompt({
         assistantName: bot.name,
         clientName: bot.client_name,
         persona: bot.persona ?? {},
@@ -86,15 +114,17 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       });
       const r = await generateText({
         model: chatModel(opts.model),
-        system,
+        system: prompt.fixed,
         allowSystemInMessages: true,
         messages: [
+          { role: "system" as const, content: prompt.variable },
           ...(opts.history ?? []).map((content, i) => ({ role: i % 2 === 0 ? ("user" as const) : ("assistant" as const), content })),
           // item barrado junto com outro assunto: a IA responde à mensagem sem o item, como no canal
           { role: "user" as const, content: entrance?.kind === "ia" && entrance.question ? entrance.question : question },
           ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
         ],
-        temperature: opts.temperature ?? CHAT_TEMPERATURE,
+        // mesmas opções do chat (esforço de raciocínio, chave de cache)
+        ...modelCallOptions(opts.model ?? chatModelId(), { temperature: opts.temperature ?? CHAT_TEMPERATURE, cacheKey: chatCacheKey(opts.channel ?? "site"), effort: opts.effort }),
         stopWhen: stepCountIs(3),
         maxRetries: 6,
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)
@@ -110,16 +140,20 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         }),
       });
       const tools = r.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
+      const inputTokens = r.totalUsage?.inputTokens ?? 0;
+      const cachedInputTokens = r.totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0;
+      const outputTokens = r.totalUsage?.outputTokens ?? 0;
+      const usage = { inputTokens, outputTokens, cachedInputTokens, costUsd: costUsd({ model: r.response?.modelId ?? opts.model ?? chatModelId(), inputTokens, cachedInputTokens, outputTokens }) };
       // no relatório: o que a IA respondeu no lugar da mensagem original
       if (entrance?.kind === "ia" && entrance.question) tools.unshift(`portao:reescrita="${entrance.question}"`);
       // o que o contato recebe no WhatsApp e no Instagram: a pergunta fixa de 18+ no lugar da
       // resposta; o texto fixo de risco garantido; o aviso do item proibido antes da resposta
-      if (scopeLock && age === null && tools.includes("pedir_confirmacao_18")) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, inputTokens: r.totalUsage?.inputTokens ?? 0, outputTokens: r.totalUsage?.outputTokens ?? 0 };
+      if (scopeLock && age === null && tools.includes("pedir_confirmacao_18")) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, ...usage };
       let text = scopeLock ? withRiskText(r.text, urgent) : r.text;
       if (entrance?.kind === "ia" && entrance.prefix) text = `${entrance.prefix}\n\n${text}`;
-      return { verdict: verdictOf(text, tools.filter((t) => t !== "pedir_confirmacao_18")), text, tools, inputTokens: r.totalUsage?.inputTokens ?? 0, outputTokens: r.totalUsage?.outputTokens ?? 0 };
+      return { verdict: verdictOf(text, tools.filter((t) => t !== "pedir_confirmacao_18")), text, tools, ...usage };
     } catch (e) {
-      return { verdict: "erro", text: (e as Error).message, tools: [], inputTokens: 0, outputTokens: 0 };
+      return { verdict: "erro", text: (e as Error).message, tools: [], inputTokens: 0, outputTokens: 0, costUsd: 0 };
     }
   };
 
@@ -131,6 +165,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
   return {
     question,
     model: opts.model ?? `${chatModelId()} (padrão)`,
+    effort: opts.effort ?? null,
     temperature: opts.temperature ?? CHAT_TEMPERATURE,
     channel: opts.channel ?? "widget",
     age,
@@ -146,6 +181,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       chamou_atendente: runs.filter((r) => r.tools.includes("chamar_atendente")).length,
     },
     hits: hits.map((h) => ({ similarity: Math.round(h.similarity * 1000) / 1000, title: h.metadata?.title, preview: h.content.slice(0, 160).replace(/\s+/g, " ") })),
+    cost: costSummary(runs),
     contextChars: context.length,
     // texto da base que chegou ao modelo (o conjunto fixo confere se preço e prazo vieram dela)
     context,
@@ -159,7 +195,9 @@ export function evalReport(r: Awaited<ReturnType<typeof evaluateQuestion>>): str
   const pct = (n: number) => `${Math.round((n / s.runs) * 100)}%`;
   return [
     `PERGUNTA: ${r.question}`,
-    `MODELO: ${r.model} · TEMPERATURA: ${r.temperature} · RODADAS: ${s.runs} · CANAL: ${r.channel} · IDADE: ${r.age ?? "não confirmada"}`,
+    `MODELO: ${r.model}${r.effort ? ` (raciocínio: ${r.effort})` : ""} · TEMPERATURA: ${r.temperature} · RODADAS: ${s.runs} · CANAL: ${r.channel} · IDADE: ${r.age ?? "não confirmada"}`,
+    "",
+    costLine(r.cost),
     "",
     `RESPONDEU: ${s.respondeu} (${pct(s.respondeu)}) · "NÃO TENHO": ${s.nao_tenho} (${pct(s.nao_tenho)}) · RECUSOU (escopo): ${s.recusou} (${pct(s.recusou)}) · BARROU (portão): ${s.barrou} · PEDIU 18+: ${s.pediu_18} · SÓ REGISTROU: ${s.so_registrou} · ERRO: ${s.erro} · CHAMOU ATENDENTE: ${s.chamou_atendente}`,
     "",

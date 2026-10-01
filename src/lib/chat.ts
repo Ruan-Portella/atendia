@@ -1,7 +1,7 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage, type UIMessageChunk } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildSystemPrompt, chatModel, embedText, scopeReminder, type Persona } from "./ai";
+import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, scopeReminder, type Persona } from "./ai";
 import { getPlan } from "./plans";
 import { currentPeriodBR } from "./utils";
 import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
@@ -90,6 +90,9 @@ export function actionsNote(results: ToolResultRow[] | null | undefined): string
   const parts = results.map((r) => `${r.name} ${(r.output as { ok?: boolean } | null)?.ok === false ? "falhou" : "ok"}`);
   return `(ações desta resposta: ${parts.join(", ")})`;
 }
+
+/** Chave de cache da OpenAI por canal (o começo do prompt é igual em todos os bots do mesmo canal). */
+export const chatCacheKey = (channel: string) => `boavoz-chat-${channel === "whatsapp" || channel === "instagram" ? channel : "site"}`;
 
 /** Temperatura do modelo nas respostas (a avaliação mede o efeito de trocar). */
 export const CHAT_TEMPERATURE = 0.3;
@@ -401,7 +404,8 @@ export async function runChat(opts: {
   const widgetWithWhatsapp = !scopeLock && Boolean((await db.from("whatsapp_channels").select("bot_id").eq("bot_id", bot.id).is("disconnected_at", null).maybeSingle()).data);
   // portão: a base sem os itens barrados para esta pessoa e as linhas do portão no prompt
   const gated = scopeLock ? gatePrompt(bot, context, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [] };
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: gated.context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes });
+  // regras primeiro (iguais em toda a plataforma: cache da OpenAI); o que é deste bot e desta conversa depois
+  const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: gated.context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes });
   const convId = conversationId;
 
   // 3. Persiste a pergunta do visitante
@@ -423,12 +427,16 @@ export async function runChat(opts: {
   let savedId: number | null = null;
   const result = streamText({
     model: chatModel(),
-    system,
+    system: prompt.fixed,
     // com a trava de escopo, o lembrete vai depois da última mensagem (pesa mais que o histórico);
     // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
     allowSystemInMessages: true,
-    messages: [...(await convertToModelMessages(messages.slice(-12))), ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : [])],
-    temperature: CHAT_TEMPERATURE,
+    messages: [
+      { role: "system" as const, content: prompt.variable },
+      ...(await convertToModelMessages(messages.slice(-12))),
+      ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
+    ],
+    ...modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) }),
     stopWhen: stepCountIs(3),
     // limite de tokens por minuto da OpenAI (pico): o SDK tenta de novo com espera crescente
     maxRetries: 4,
