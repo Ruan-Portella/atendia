@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UIMessage } from "ai";
 import { AGE_NO, AGE_YES, AGE_NO_REASK_DAYS, ageNote, getAge, resetAge, setAge } from "../gate/age";
-import { decideEntrance, type Classification } from "../gate/entrance";
+import { decideEntrance, parseClassification, type Classification } from "../gate/entrance";
 import { isChatLink, regulatedChannelNote, regulatedDestination } from "../gate/sales-channel";
 import { ageAnswer, historyUpTo } from "../gate/flow";
 import { gatedContext, hiddenNote } from "../gate/context";
@@ -139,6 +139,16 @@ describe("portão na entrada", () => {
 
   it("WhatsApp de fora do Brasil: bebida vira proibido", async () => {
     expect(await entrance("tem Heineken?", { classify: classifyAs(["bebida"]), contactPhone: "14155550123" })).toEqual({ kind: "proibido", categories: ["bebida"] });
+  });
+
+  it("resposta do classificador: só \"menciona\" tira a categoria; o resto conta como pedido", () => {
+    expect(parseClassification('{"categorias": {"tabaco": "pede"}, "tem_outro_assunto": true}', ["tabaco"])).toEqual({ pedidas: ["tabaco"], tem_outro_assunto: true });
+    expect(parseClassification('{"categorias": {"bebida": "menciona", "medicamento": "Menciona"}, "tem_outro_assunto": true}', ["bebida", "medicamento"])).toEqual({ pedidas: [], tem_outro_assunto: true });
+    // categoria esquecida ou valor estranho: pedida
+    expect(parseClassification('{"categorias": {"bebida": "menciona"}}', ["bebida", "tabaco"])).toEqual({ pedidas: ["tabaco"], tem_outro_assunto: false });
+    expect(parseClassification('```json\n{"categorias": {"tabaco": "talvez"}}\n```', ["tabaco"]).pedidas).toEqual(["tabaco"]);
+    // resposta quebrada: tudo pedido
+    expect(parseClassification("não sei", ["tabaco"])).toEqual({ pedidas: ["tabaco"], tem_outro_assunto: true });
   });
 
   it("o classificador só recebe o que o dicionário acusou", async () => {

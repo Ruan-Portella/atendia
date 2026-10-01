@@ -36,7 +36,11 @@ export type EntranceDecision =
   /** Segue para a IA, com instrução extra e/ou texto fixo antes da resposta. */
   | { kind: "ia"; prefix?: string; instruction?: string; regulated: GateCategory[]; prohibited: GateCategory[] };
 
-/** Etapa 2: IA barata, só quando o dicionário acusa. Na dúvida, conta como pedido (lado seguro). */
+/**
+ * Etapa 2: IA barata, só quando o dicionário acusa. Cada categoria marcada conta como pedida, a
+ * não ser que a IA diga "menciona" (lado seguro: um "vendem X?" no meio de outra pergunta já
+ * escapou quando a IA tinha de listar o que era pedido).
+ */
 export async function classifyRequest(text: string, categories: GateCategory[], companyName: string): Promise<Classification> {
   const labels = categories.map((c) => `${c} (${categoryLabel(c)})`).join(", ");
   try {
@@ -44,14 +48,27 @@ export async function classifyRequest(text: string, categories: GateCategory[], 
       model: chatModel(),
       system: "Você classifica mensagens de clientes de uma empresa. Responda só com JSON válido, sem texto antes ou depois.",
       prompt: `Empresa: ${companyName}. Mensagem do cliente: """${text.slice(0, 1500)}"""
-Categorias que um filtro de palavras marcou: ${labels}.
-Para cada categoria, decida se o cliente está PEDINDO, querendo comprar, perguntando se tem ou o preço do item. Só mencionar não conta (ex.: "bebi cerveja ontem, posso tomar o remédio?", "gastei 20 reais em cerveja", "frango na cerveja").
-Responda: {"pedidas": ["categoria", ...], "tem_outro_assunto": true|false} onde tem_outro_assunto diz se a mensagem também pede ou pergunta outra coisa além desses itens.`,
+Um filtro de palavras marcou estas categorias: ${labels}.
+Para cada categoria, diga se o cliente PEDE o item ou só o MENCIONA.
+- "pede": quer comprar, pede, pergunta se a empresa vende ou tem, pergunta o preço, pede o cardápio ou a lista desses itens. Vale mesmo quando é só uma parte de uma mensagem com outros assuntos (ex.: "que horas vocês abrem? e tem narguilé?": narguilé pede).
+- "menciona": cita sem pedir: conta o que fez, pergunta de saúde ou de uso, receita, comparação (ex.: "tomei vinho no jantar, posso tomar paracetamol?": vinho e paracetamol mencionam; "gastei 20 reais em cerveja": menciona).
+Na dúvida, "pede".
+Responda: {"categorias": {"categoria": "pede" | "menciona"}, "tem_outro_assunto": true|false}, onde tem_outro_assunto diz se a mensagem também pede ou pergunta outra coisa além desses itens.`,
       temperature: 0,
       maxRetries: 3,
     });
-    const json = JSON.parse(r.text.replace(/^```(?:json)?|```$/g, "").trim()) as { pedidas?: string[]; tem_outro_assunto?: boolean };
-    return { pedidas: (json.pedidas ?? []).filter((c): c is GateCategory => categories.includes(c as GateCategory)), tem_outro_assunto: Boolean(json.tem_outro_assunto) };
+    return parseClassification(r.text, categories);
+  } catch {
+    return { pedidas: categories, tem_outro_assunto: true };
+  }
+}
+
+/** Lê a resposta do classificador. Categoria sem resposta clara de "menciona" conta como pedida. */
+export function parseClassification(raw: string, categories: GateCategory[]): Classification {
+  try {
+    const json = JSON.parse(raw.replace(/^\s*```(?:json)?|```\s*$/g, "").trim()) as { categorias?: Record<string, string>; tem_outro_assunto?: boolean };
+    const said = json.categorias ?? {};
+    return { pedidas: categories.filter((c) => String(said[c] ?? "").trim().toLowerCase() !== "menciona"), tem_outro_assunto: json.tem_outro_assunto === true };
   } catch {
     return { pedidas: categories, tem_outro_assunto: true };
   }
