@@ -43,11 +43,12 @@ describe("rastreio do site", () => {
 describe("texto da página", () => {
   it("separa blocos vizinhos e não cola palavras", async () => {
     const { parseHtml } = await import("../ingest");
-    const html = `<main><h1><span>Olá, eu sou</span><span>Ruan Portella</span></h1><p>Preço: <span>R$ 890</span>,00.</p><div><a href="/a">Ver projetos</a><a href="/b">Contato</a></div><ul><li>Next.js</li><li>Tailwind</li></ul></main>`;
+    const html = `<main><h1><span>Olá, eu sou</span><span>Ruan Portella</span></h1><p>Preço: <span>R$ 890</span>,00.</p><div><a href="/a">Ver projetos</a><a href="/b">Contato</a></div><ul><li>Next.js</li><li>Tailwind</li></ul><div>Resoluti Soluções em Tecnologia<a href="https://r.com">Visite o site</a></div></main>`;
     const text = parseHtml("https://clinica.com.br/", html).text;
     expect(text).toContain("Olá, eu sou Ruan Portella");
     expect(text).toContain("Preço: R$ 890,00.");
     expect(text).toContain("Ver projetos Contato");
     expect(text).toMatch(/Next\.js\s+Tailwind/);
+    expect(text).toContain("Resoluti Soluções em Tecnologia Visite o site");
   });
 });

@@ -110,6 +110,8 @@ export function parseHtml(url: string, html: string): PageText {
   root.find("br").replaceWith("\n");
   root.find("p, div, section, article, aside, li, ul, ol, dl, dt, dd, h1, h2, h3, h4, h5, h6, tr, table, blockquote, pre, figure, figcaption, details, summary").append("\n");
   root.find("a, button, span, td, th, label, strong, em, b, small").append(" ");
+  // texto solto seguido de link ("Resoluti Soluções em TecnologiaVisite o site")
+  root.find("a, button").prepend(" ");
   let text = root
     .text()
     .replace(/[ \t ]+/g, " ")
