@@ -94,7 +94,7 @@ export function graphFor<T>(ch: WaChannel, path: string, init?: { method?: strin
 
 export async function sendText(ch: WaChannel, to: string, body: string) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
-    body: { messaging_product: "whatsapp", recipient_type: "individual", to, type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true } },
+    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true } },
   });
 }
 
@@ -104,11 +104,19 @@ export async function sendButtons(ch: WaChannel, to: string, body: string, butto
     body: {
       messaging_product: "whatsapp",
       recipient_type: "individual",
-      to,
+      ...recipientOf(to),
       type: "interactive",
       interactive: { type: "button", body: { text: body.slice(0, 1024) }, action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) } },
     },
   });
+}
+
+/**
+ * Destino do envio: telefone vai em `to`; sem telefone (desde abr/2026 a Meta pode mandar só o
+ * BSUID, o id do usuário), o BSUID vai em `recipient`.
+ */
+export function recipientOf(contact: string): { to: string } | { recipient: string } {
+  return /^\d+$/.test(contact) ? { to: contact } : { recipient: contact };
 }
 
 /** O WhatsApp aceita mídia de até 16 MB; mais que isso nem tentamos baixar. */
@@ -199,6 +207,8 @@ export function newPin(): string {
  * a conversa de um número precisa olhar os dois.
  */
 export function waIdVariants(waId: string): string[] {
+  // BSUID (id do usuário sem telefone): não é número, vai como está
+  if (!/^[\d+\s()-]+$/.test(waId)) return [waId];
   const d = waId.replace(/\D/g, "");
   if (d.startsWith("55") && d.length === 13 && d[4] === "9") return [d, d.slice(0, 4) + d.slice(5)];
   if (d.startsWith("55") && d.length === 12 && /[6-9]/.test(d[4])) return [d, d.slice(0, 4) + "9" + d.slice(4)];

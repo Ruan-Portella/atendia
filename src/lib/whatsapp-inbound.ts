@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { conversationHistory, openConversation, runChat, type BotRow } from "./chat";
-import { firstExceeded } from "./rate-limit";
+import { HUMAN_ONLY_NOTICE, aiBlockedReason, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
+import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
@@ -44,7 +44,9 @@ export const mediaLabel = (type: string) => MEDIA_LABEL[type] ?? "(mensagem sem 
 /** O que interessa de uma mensagem recebida no webhook (value.messages[]). */
 export interface InboundMessage {
   id: string;
-  from: string;
+  /** Telefone do contato. Desde abr/2026 pode faltar: aí só vem o BSUID (from_user_id). */
+  from?: string;
+  from_user_id?: string;
   type: string;
   text?: { body?: string };
   button?: { text?: string };
@@ -54,7 +56,15 @@ export interface InboundMessage {
 
 export interface ChannelRow extends WaChannel {
   bot_id: string;
+  /** Número também no app WhatsApp Business do celular: o dono já vê cada mensagem lá. */
+  coexistence?: boolean;
 }
+
+/** Quem mandou: o telefone, ou o BSUID quando a Meta não manda o telefone. null = nenhum dos dois. */
+export const contactOf = (m: { from?: string; from_user_id?: string }): string | null => m.from ?? m.from_user_id ?? null;
+
+/** Tipos que nunca recebem resposta: reação ("joinha"), mensagem não suportada e aviso do sistema. */
+const SILENT_TYPES = new Set(["reaction", "unsupported", "system", "ephemeral"]);
 
 /**
  * Quando o contato escreveu por último para este chatbot, em qualquer conversa (a janela de 24 h
@@ -140,13 +150,16 @@ export async function previousAnswer(db: SupabaseClient, key: string): Promise<{
  * respondeu pelo celular há pouco, só guarda para o painel. Erro de acesso ou de pagamento sobe
  * para quem chamou marcar o número.
  */
-export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow, burst: QueuedMessage[]) {
+export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow, all: QueuedMessage[]) {
+  // reação, não suportada e sistema: nem resposta nem "só entendo texto" (o joinha não é pergunta)
+  const burst = all.filter((q) => !SILENT_TYPES.has(q.msg.type) && contactOf(q.msg));
+  if (burst.length < all.length) console.log("whatsapp: sem resposta", all.filter((q) => !burst.includes(q)).map((q) => q.msg.type));
   if (!burst.length) return;
   const { data: bot } = await db.from("bots").select("*").eq("id", channel.bot_id).maybeSingle<BotRow>();
   if (!bot || bot.status !== "live") return;
 
   const last = burst[burst.length - 1];
-  const waId = last.msg.from;
+  const waId = contactOf(last.msg)!;
   const profileName = last.profileName;
   const reply = (body: string) => sendText(channel, waId, toWhatsAppText(body));
 
@@ -156,7 +169,10 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
       { key: `wa:${bot.id}:${waId}:m`, max: 15, windowSeconds: 60, message: "Você está mandando mensagens rápido demais. Espere um minutinho." },
       { key: `wa:${bot.id}:${waId}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
     ]);
-    if (exceeded) return void (await reply(exceeded.message));
+    if (exceeded) {
+      if (await noticeOnce(db, exceeded)) await reply(exceeded.message);
+      return;
+    }
   }
 
   const transcribe = async (m: InboundMessage): Promise<string | null> => {
@@ -178,6 +194,23 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const shown = (i: number) => texts[i] ?? mediaLabel(burst[i].msg.type);
 
   let conv = await recentConversation(db, bot.id, waId);
+
+  /**
+   * Modo só humano (cota esgotada, teste vencido, plano cancelado): a IA não responde, as
+   * mensagens ficam gravadas, vira pedido de atendente e o contato recebe o texto fixo uma vez
+   * por conversa (nunca na coexistência: o dono já vê a mensagem no celular).
+   */
+  const humanOnly = async (reason: AiBlockReason) => {
+    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id").single()).data?.id;
+    if (!convId) return;
+    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    const { notify } = await enterHumanOnly(db, bot, convId, reason);
+    if (notify && !channel.coexistence) {
+      const sent = await reply(HUMAN_ONLY_NOTICE);
+      await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: HUMAN_ONLY_NOTICE, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
+      await markHumanOnlyNotice(db, convId);
+    }
+  };
 
   // opt-out fixo (SAIR, PARAR, STOP e os botões da confirmação): antes da IA, em qualquer estado
   const optOut = await handleOptOuts(db, channel, bot, waId, burst, texts, shown, conv?.id ?? null);
@@ -201,6 +234,10 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     await db.from("conversations").update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null }).eq("id", convId);
     return;
   }
+
+  // plano, teste e cota conferidos em toda mensagem, não só na conversa nova
+  const blocked = await aiBlockedReason(db, bot.agency_id, !conv);
+  if (blocked) return humanOnly(blocked);
 
   // a resposta vai para a última mensagem com texto; as de antes (e a mídia) só entram no histórico
   const qi = texts.map((t, i) => (t && !optOut.handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
@@ -239,8 +276,9 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)
     if (isAccessError(e) || isPaymentError(e)) throw e;
     const code = (e as Error).message;
-    // sem cota ou teste vencido: o contato não vê assunto de plano, só que a equipe retorna
-    if (code !== "quota_exceeded" && code !== "trial_expired") console.error("whatsapp: falha ao responder", e);
+    // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
+    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(code);
+    console.error("whatsapp: falha ao responder", e);
     await reply(FALLBACK).catch(() => {});
   }
 }

@@ -179,19 +179,51 @@ export function fitDm(text: string): string {
 }
 
 /** O Instagram não tem formatação: tira o markdown que o modelo às vezes usa. */
+export function plainInstagramText(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$|[.,!?])/g, "$1$2")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, label: string, url: string) => (label === url ? url : `${label}: ${url}`))
+    .replace(/^#{1,6}\s+/gm, "")
+    .trim();
+}
+
+/** Texto de uma DM só (sem markdown, cortado no limite de 1.000 bytes). */
 export function toInstagramText(text: string): string {
-  return fitDm(
-    text
-      .replace(/\*\*(.+?)\*\*/g, "$1")
-      .replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$|[.,!?])/g, "$1$2")
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, label: string, url: string) => (label === url ? url : `${label}: ${url}`))
-      .replace(/^#{1,6}\s+/gm, ""),
-  );
+  return fitDm(plainInstagramText(text));
+}
+
+/**
+ * Resposta longa vira até `maxParts` DMs, cortadas no fim de um parágrafo (ou de uma linha, de
+ * uma frase ou de uma palavra, nessa ordem), em vez de uma só cortada com "…". Só a última
+ * ainda pode levar "…", se o texto passar de 3 mensagens.
+ */
+export function splitDm(text: string, maxParts = 3): string[] {
+  let rest = plainInstagramText(text);
+  const parts: string[] = [];
+  while (parts.length < maxParts - 1 && Buffer.byteLength(rest, "utf8") > MAX_BYTES) {
+    // maior começo que cabe em 1.000 bytes (por caractere, para não partir emoji ou acento)
+    let size = 0;
+    let end = 0;
+    for (const ch of rest) {
+      size += Buffer.byteLength(ch, "utf8");
+      if (size > MAX_BYTES) break;
+      end += ch.length;
+    }
+    const head = rest.slice(0, end);
+    const min = Math.floor(end * 0.4); // não corta cedo demais (pedaço minúsculo)
+    const cuts = [head.lastIndexOf("\n\n"), head.lastIndexOf("\n"), Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? ")) + 1, head.lastIndexOf(" ")];
+    const cut = cuts.find((c) => c > min) ?? end;
+    parts.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) parts.push(fitDm(rest));
+  return parts.filter(Boolean);
 }
 
 /** Manda uma DM. Devolve o id da mensagem (o webhook ecoa as nossas; com ele sabemos ignorar). */
 export async function sendInstagramText(ch: IgChannel, recipientId: string, text: string, quickReplies?: Array<{ title: string; payload: string }>): Promise<string | null> {
-  const message: Record<string, unknown> = { text: toInstagramText(text) };
+  const message: Record<string, unknown> = { text: fitDm(text) };
   // respostas rápidas: botões embaixo da mensagem (o toque volta com quick_reply.payload)
   if (quickReplies?.length) message.quick_replies = quickReplies.slice(0, 13).map((q) => ({ content_type: "text", title: q.title.slice(0, 20), payload: q.payload }));
   const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message } });

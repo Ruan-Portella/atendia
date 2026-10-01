@@ -79,6 +79,57 @@ export function actionsNote(results: ToolResultRow[] | null | undefined): string
   return `(ações desta resposta: ${parts.join(", ")})`;
 }
 
+/** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
+export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled";
+
+/**
+ * Conferido em TODA mensagem do WhatsApp e do Instagram (não só na conversa nova): plano
+ * cancelado, teste vencido ou cota do mês esgotada param a IA também nas conversas abertas.
+ * A cota continua contada só na abertura da conversa (openConversation); aqui só se lê.
+ */
+export async function aiBlockedReason(db: SupabaseClient, agencyId: string, opening: boolean): Promise<AiBlockReason | null> {
+  const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", agencyId).maybeSingle();
+  const plan = getPlan(agency?.plan ?? "trial");
+  if (plan.id === "cancelado") return "cancelled";
+  if (plan.id === "trial" && agency?.trial_ends_at && new Date(agency.trial_ends_at) < new Date()) return "trial_expired";
+  const { data: usage } = await db.from("usage").select("conversations").eq("agency_id", agencyId).eq("period", currentPeriodBR()).maybeSingle();
+  const used = Number(usage?.conversations ?? 0);
+  // conversa nova: precisa de vaga; conversa aberta: só para depois que alguém já passou do limite
+  if (opening ? used >= plan.conversations : used > plan.conversations) return "quota_exceeded";
+  return null;
+}
+
+/** Motivo do pedido de atendente automático, para a equipe. */
+export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
+  quota_exceeded: "Assistente parado: a cota de conversas do mês acabou.",
+  trial_expired: "Assistente parado: o teste grátis venceu.",
+  cancelled: "Assistente parado: a assinatura foi cancelada.",
+};
+
+/** Texto fixo do modo só humano (Textos legais, seção 6): uma vez por conversa, sem prometer prazo. */
+export const HUMAN_ONLY_NOTICE = "Deixei sua mensagem registrada, e nossa equipe responde por aqui assim que possível.";
+
+/**
+ * Modo só humano numa conversa: vira pedido de atendente (a equipe é avisada na primeira vez) e
+ * devolve se o texto fixo ainda precisa ir ao contato (uma vez por conversa).
+ */
+export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversationId: string, reason: AiBlockReason): Promise<{ notify: boolean }> {
+  const { data: updated } = await db
+    .from("conversations")
+    .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
+    .eq("id", conversationId)
+    .or("handoff_requested_at.is.null,handled_at.not.is.null")
+    .select("id");
+  if (updated?.length) notifyHandoff({ db, bot, conversationId, reason: AI_BLOCK_LABEL[reason] }).catch(() => {});
+  const { data: conv } = await db.from("conversations").select("human_only_notice_at").eq("id", conversationId).maybeSingle();
+  return { notify: !conv?.human_only_notice_at };
+}
+
+/** Marca que o texto fixo do modo só humano já foi enviado nesta conversa. */
+export async function markHumanOnlyNotice(db: SupabaseClient, conversationId: string) {
+  await db.from("conversations").update({ human_only_notice_at: new Date().toISOString() }).eq("id", conversationId);
+}
+
 /**
  * Abre uma conversa nova: confere o teste e a cota do mês da agência (cada conversa conta 1).
  * Lança "trial_expired" ou "quota_exceeded" quando não pode.
@@ -156,7 +207,10 @@ export async function runChat(opts: {
     : { data: [] };
   const agentMessages = (agentRows ?? []).map((r) => String(r.content).slice(0, 500)).reverse();
   const wa = opts.whatsapp;
-  const channelNote = wa
+  const waPhone = wa && /^\d+$/.test(wa.waId) ? wa.waId : null;
+  const channelNote = wa && !waPhone
+    ? `A conversa é pelo WhatsApp, mas o número da pessoa não aparece para você: para registrar o contato, peça nome e telefone. Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
+    : wa
     ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil dela é "${wa.profileName}": confirme antes de usar.` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
     : opts.instagram
       ? "A conversa é pelo Direct do Instagram. Você não sabe o WhatsApp da pessoa: para registrar o contato, peça nome e WhatsApp. O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio."
@@ -198,7 +252,7 @@ export async function runChat(opts: {
           if (!leadEnabled) return { ok: false };
           const { data: lead } = await db
             .from("leads")
-            .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? wa?.waId ?? null, email: input.email ?? null, notes: input.interesse ?? null })
+            .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? waPhone, email: input.email ?? null, notes: input.interesse ?? null })
             .select("id")
             .single();
           notifyLead({ db, bot, lead: { id: lead?.id, ...input } }).catch(() => {});

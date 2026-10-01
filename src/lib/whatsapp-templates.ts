@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { graphFor, type WaChannel } from "./whatsapp";
+import { graphFor, recipientOf, type WaChannel } from "./whatsapp";
 import { TEMPLATE_LANGUAGE, templateVariables, toSendable, unsupportedReason, type SendableTemplate, type Template, type TemplateCategory } from "./template-text";
 
 /**
@@ -50,6 +50,6 @@ export async function deleteTemplate(ch: TemplateChannel, name: string) {
 export async function sendTemplate(ch: WaChannel, to: string, t: { name: string; language: string }, params: string[]) {
   const components = params.length ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }] : [];
   return graphFor<{ messages?: Array<{ id: string }> }>(ch, `${ch.phone_number_id}/messages`, {
-    body: { messaging_product: "whatsapp", to, type: "template", template: { name: t.name, language: { code: t.language }, components } },
+    body: { messaging_product: "whatsapp", ...recipientOf(to), type: "template", template: { name: t.name, language: { code: t.language }, components } },
   });
 }

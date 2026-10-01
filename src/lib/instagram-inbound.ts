@@ -1,12 +1,12 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { conversationHistory, openConversation, runChat, type BotRow } from "./chat";
+import { HUMAN_ONLY_NOTICE, aiBlockedReason, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
 import { markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
-import { firstExceeded } from "./rate-limit";
-import { instagramTyping, isInstagramAccessError, sendInstagramText, toInstagramText, type IgChannel } from "./instagram";
+import { firstExceeded, noticeOnce } from "./rate-limit";
+import { instagramTyping, isInstagramAccessError, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, phonePauseActive, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
 
@@ -81,8 +81,13 @@ async function recentConversation(db: SupabaseClient, botId: string, igsid: stri
 
 /** Manda a DM e guarda o id dela: o webhook ecoa as nossas mensagens, e assim o eco é ignorado. */
 export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string, quickReplies?: Array<{ title: string; payload: string }>): Promise<string | null> {
-  const mid = await sendInstagramText(ch, to, text, quickReplies);
-  if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
+  // resposta longa: até 3 DMs cortadas no fim de um parágrafo (as respostas rápidas vão na última)
+  const parts = splitDm(text);
+  let mid: string | null = null;
+  for (let i = 0; i < parts.length; i++) {
+    mid = await sendInstagramText(ch, to, parts[i], i === parts.length - 1 ? quickReplies : undefined);
+    if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
+  }
   return mid;
 }
 
@@ -108,7 +113,8 @@ export interface QueuedDm {
  * só guarda para o painel. Erro de acesso (token recusado) sobe para quem chamou marcar a conta.
  */
 export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedDm[]) {
-  const burst = all.filter((q) => (q.ev.message?.mid ?? q.ev.postback?.mid) && q.ev.sender?.id && !q.ev.message?.is_deleted);
+  // mensagem não suportada (enquete, efeito…) e apagada não recebem resposta
+  const burst = all.filter((q) => (q.ev.message?.mid ?? q.ev.postback?.mid) && q.ev.sender?.id && !q.ev.message?.is_deleted && !q.ev.message?.is_unsupported);
   if (!burst.length) return;
   const { data: bot } = await db.from("bots").select("*").eq("id", ch.bot_id).maybeSingle<BotRow>();
   if (!bot) return console.warn("instagram: chatbot não encontrado", ch.bot_id);
@@ -122,7 +128,10 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       { key: `ig:${bot.id}:${igsid}:m`, max: 15, windowSeconds: 60, message: "Você está mandando mensagens rápido demais. Espere um minutinho." },
       { key: `ig:${bot.id}:${igsid}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
     ]);
-    if (exceeded) return void (await reply(exceeded.message));
+    if (exceeded) {
+      if (await noticeOnce(db, exceeded)) await reply(exceeded.message);
+      return;
+    }
   }
 
   const transcribe = async (ev: IgMessagingEvent) => {
@@ -140,6 +149,19 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const shown = (i: number) => texts[i] ?? igMediaLabel(burst[i].ev);
 
   let conv = await recentConversation(db, bot.id, igsid);
+
+  /** Modo só humano (cota, teste, plano): grava, vira pedido de atendente, texto fixo uma vez. */
+  const humanOnly = async (reason: AiBlockReason) => {
+    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
+    if (!convId) return;
+    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    const { notify } = await enterHumanOnly(db, bot, convId, reason);
+    if (notify) {
+      const mid = await reply(HUMAN_ONLY_NOTICE);
+      await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: HUMAN_ONLY_NOTICE, channel_msg_id: mid ?? "enviada" });
+      await markHumanOnlyNotice(db, convId);
+    }
+  };
 
   // opt-out fixo (SAIR, PARAR, STOP) e o "Foi engano": antes da IA, em qualquer estado; vale para tudo no Instagram
   const target = { channel: "instagram" as const, scope: suppressionScope({ botId: bot.id }), contact: igsid };
@@ -185,6 +207,10 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     return;
   }
 
+  // plano, teste e cota conferidos em toda mensagem, não só na conversa nova
+  const blocked = await aiBlockedReason(db, bot.agency_id, !conv);
+  if (blocked) return humanOnly(blocked);
+
   const qi = texts.map((t, i) => (t && !handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
     if (handled.size) return;
@@ -219,7 +245,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;
     const code = (e as Error).message;
-    if (code !== "quota_exceeded" && code !== "trial_expired") console.error("instagram: falha ao responder", e);
+    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(code);
+    console.error("instagram: falha ao responder", e);
     await reply(FALLBACK).catch(() => {});
   }
 }

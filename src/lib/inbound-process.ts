@@ -35,7 +35,7 @@ export type IgPayload = { type: "msg" | "echo"; igUserId: string; ev: IgMessagin
 
 /** Número ligado e com acesso, ou null (sem chatbot, ou desconectado: não dá nem para responder). */
 async function activeWaChannel(db: SupabaseClient, phoneNumberId: string) {
-  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, waba_id, access_token_enc, disconnected_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
+  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, waba_id, access_token_enc, coexistence, disconnected_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
   if (!channel) console.warn("whatsapp: número sem chatbot ligado", phoneNumberId);
   return channel && !channel.disconnected_at ? channel : null;
 }

@@ -42,6 +42,14 @@ export async function firstExceeded(db: SupabaseClient, rules: LimitRule[]): Pro
   return i === -1 ? null : rules[i];
 }
 
+/**
+ * O contato estourou um limite: avisa uma vez por janela, não a cada mensagem (aviso repetido
+ * mantém laços com robôs de outras empresas, que respondem ao aviso). true = pode avisar agora.
+ */
+export async function noticeOnce(db: SupabaseClient, rule: LimitRule): Promise<boolean> {
+  return (await firstExceeded(db, [{ ...rule, key: `${rule.key}:aviso`, max: 1 }])) === null;
+}
+
 /** Resposta 429 padrão, com Retry-After para clientes que respeitam. */
 export function tooMany(rule: LimitRule, headers: Record<string, string> = {}): Response {
   return Response.json(
