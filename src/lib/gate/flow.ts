@@ -46,6 +46,14 @@ export function historyUpTo(history: UIMessage[], question: string): UIMessage[]
   return [...history, { id: "pergunta-18", role: "user", parts: [{ type: "text", text: question }] }];
 }
 
+/** Troca o texto da última fala do contato (a IA responde à versão sem os itens barrados). */
+export function withLastUserText(history: UIMessage[], text: string): UIMessage[] {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "user") return [...history.slice(0, i), { ...history[i], parts: [{ type: "text", text }] }, ...history.slice(i + 1)];
+  }
+  return [...history, { id: "pergunta-sem-item", role: "user", parts: [{ type: "text", text }] }];
+}
+
 /** Registro do portão (conformidade): só o que acusou, nunca o texto da conversa. */
 export async function logGate(db: SupabaseClient, row: { botId: string; conversationId: string | null; stage: "entrada" | "saida"; decision: string; categories: GateCategory[] }) {
   const { error } = await db.from("gate_detections").insert({ bot_id: row.botId, conversation_id: row.conversationId, stage: row.stage, decision: row.decision, categories: row.categories, rules_version: RULES_VERSION });
@@ -150,6 +158,13 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   if (entrance.regulated.length) {
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: age === "nao" ? "nao_18" : "regulamentado", categories: entrance.regulated });
     await db.from("conversations").update({ regulated_at: new Date().toISOString() }).eq("id", convId);
+  }
+
+  // item barrado junto com outro assunto: a IA responde à mensagem sem o item (o painel guarda a original)
+  if (entrance.question) {
+    if (storeQuestion) await storeOnce(db, convId, q.text, q.key);
+    storeQuestion = false;
+    history = withLastUserText(history, entrance.question);
   }
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)

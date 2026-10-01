@@ -4,7 +4,7 @@ import type { UIMessage } from "ai";
 import { AGE_NO, AGE_YES, AGE_NO_REASK_DAYS, ageNote, getAge, resetAge, setAge } from "../gate/age";
 import { decideEntrance, parseClassification, type Classification } from "../gate/entrance";
 import { isChatLink, regulatedChannelNote, regulatedDestination } from "../gate/sales-channel";
-import { ageAnswer, historyUpTo } from "../gate/flow";
+import { ageAnswer, historyUpTo, withLastUserText } from "../gate/flow";
 import { gatedContext, hiddenNote } from "../gate/context";
 import { scopeReminder } from "../ai";
 import type { GateCategory } from "../gate/rules";
@@ -158,12 +158,38 @@ describe("portão na entrada", () => {
     expect(parseClassification('```json\n{"categorias": {"tabaco": "talvez"}}\n```', ["tabaco"]).pedidas).toEqual(["tabaco"]);
     // resposta quebrada: tudo pedido
     expect(parseClassification("não sei", ["tabaco"])).toEqual({ pedidas: ["tabaco"], tem_outro_assunto: true });
+    // mensagem sem os itens barrados
+    expect(parseClassification('{"categorias": {"bebida": "pede"}, "tem_outro_assunto": true, "resto": " quanto é a pizza? "}', ["bebida"]).resto).toBe("quanto é a pizza?");
+    expect(parseClassification('{"categorias": {"bebida": "pede"}, "resto": ""}', ["bebida"]).resto).toBeUndefined();
+  });
+
+  it("item barrado junto com outro assunto: a IA responde à mensagem reescrita sem o item", async () => {
+    const classify = vi.fn(async (): Promise<Classification> => ({ pedidas: ["bebida"], tem_outro_assunto: true, resto: "quanto é a pizza de calabresa?" }));
+    const d = await entrance("quanto é a pizza de calabresa? e tem Heineken?", { classify, age: "nao" });
+    expect(d).toEqual({ kind: "ia", prefix: "Um dos itens que você pediu não conseguimos atender por aqui.", instruction: undefined, question: "quanto é a pizza de calabresa?", regulated: ["bebida"], prohibited: [] });
+    // quem disse que não tem 18: bebida também é barrada (o classificador sabe o que tirar)
+    expect(classify).toHaveBeenCalledWith(expect.any(String), ["bebida"], "Bar do Zé", ["bebida"]);
+  });
+
+  it("reescrita que ainda tem o item barrado não serve: fica a original com a instrução", async () => {
+    const classify = vi.fn(async (): Promise<Classification> => ({ pedidas: ["tabaco"], tem_outro_assunto: true, resto: "qual o horário? e tem cigarro?" }));
+    const d = await entrance("qual o horário? e tem cigarro?", { classify });
+    expect(d.kind).toBe("ia");
+    if (d.kind !== "ia") return;
+    expect(d.question).toBeUndefined();
+    expect(d.instruction).toContain("não cite o item");
+  });
+
+  it("sem idade confirmada, bebida não é barrada: o classificador só tira o proibido", async () => {
+    const classify = classifyAs(["bebida", "tabaco"], true);
+    await entrance("tem cerveja e cigarro?", { classify });
+    expect(classify).toHaveBeenCalledWith(expect.any(String), ["tabaco", "bebida"], "Bar do Zé", ["tabaco"]);
   });
 
   it("o classificador só recebe o que o dicionário acusou", async () => {
     const classify = classifyAs(["bebida"]);
     await entrance("tem Heineken?", { classify });
-    expect(classify).toHaveBeenCalledWith("tem Heineken?", ["bebida"], "Bar do Zé");
+    expect(classify).toHaveBeenCalledWith("tem Heineken?", ["bebida"], "Bar do Zé", []);
   });
 });
 
@@ -196,6 +222,14 @@ describe("resposta da pergunta de 18+", () => {
     expect(historyUpTo(history, "tem Heineken?").map((m) => m.id)).toEqual(["1", "2", "3"]);
     const missing = historyUpTo(history.slice(0, 2), "tem Heineken?");
     expect(missing.at(-1)).toMatchObject({ role: "user", parts: [{ type: "text", text: "tem Heineken?" }] });
+  });
+
+  it("a IA recebe a última fala do contato trocada pela versão sem o item", () => {
+    const msg = (id: string, role: "user" | "assistant", text: string): UIMessage => ({ id, role, parts: [{ type: "text", text }] });
+    const history = [msg("1", "user", "oi"), msg("2", "assistant", "Olá!"), msg("3", "user", "quanto é a pizza? e tem Heineken?")];
+    const out = withLastUserText(history, "quanto é a pizza?");
+    expect(out.map((m) => m.parts[0])).toEqual([{ type: "text", text: "oi" }, { type: "text", text: "Olá!" }, { type: "text", text: "quanto é a pizza?" }]);
+    expect(history[2].parts[0]).toEqual({ type: "text", text: "quanto é a pizza? e tem Heineken?" });
   });
 });
 

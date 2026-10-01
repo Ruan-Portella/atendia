@@ -90,7 +90,8 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         allowSystemInMessages: true,
         messages: [
           ...(opts.history ?? []).map((content, i) => ({ role: i % 2 === 0 ? ("user" as const) : ("assistant" as const), content })),
-          { role: "user" as const, content: question },
+          // item barrado junto com outro assunto: a IA responde à mensagem sem o item, como no canal
+          { role: "user" as const, content: entrance?.kind === "ia" && entrance.question ? entrance.question : question },
           ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
         ],
         temperature: opts.temperature ?? CHAT_TEMPERATURE,
@@ -109,6 +110,8 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         }),
       });
       const tools = r.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
+      // no relatório: o que a IA respondeu no lugar da mensagem original
+      if (entrance?.kind === "ia" && entrance.question) tools.unshift(`portao:reescrita="${entrance.question}"`);
       // o que o contato recebe no WhatsApp e no Instagram: a pergunta fixa de 18+ no lugar da
       // resposta; o texto fixo de risco garantido; o aviso do item proibido antes da resposta
       if (scopeLock && age === null && tools.includes("pedir_confirmacao_18")) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, inputTokens: r.totalUsage?.inputTokens ?? 0, outputTokens: r.totalUsage?.outputTokens ?? 0 };
