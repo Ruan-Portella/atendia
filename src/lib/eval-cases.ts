@@ -73,15 +73,20 @@ export function checkRun(c: EvalCase, run: EvalRun, allowedText: string): string
 }
 
 export async function runCases(db: SupabaseClient, bot: BotRow, cases: EvalCase[], opts: { runs: number; model?: string; temperature?: number }) {
-  const results: Array<{ c: EvalCase; passed: number; runs: number; failures: Array<{ reason: string; text: string }> }> = [];
-  // alguns casos em paralelo, para caber no tempo da função
-  for (let i = 0; i < cases.length; i += 6) {
+  const results: Array<{ c: EvalCase; passed: number; runs: number; errors: number; failures: Array<{ reason: string; text: string }> }> = [];
+  // poucos casos em paralelo: o limite de tokens por minuto da OpenAI estoura com muitos juntos
+  for (let i = 0; i < cases.length; i += 3) {
     const batch = await Promise.all(
-      cases.slice(i, i + 6).map(async (c) => {
+      cases.slice(i, i + 3).map(async (c) => {
         const r = await evaluateQuestion(db, bot, c.pergunta, { runs: opts.runs, model: opts.model, temperature: opts.temperature, channel: c.canal ?? "whatsapp", history: c.historico });
         const allowed = [r.context, c.pergunta, ...(c.historico ?? [])].join("\n");
-        const failures = r.runs.map((run) => ({ reason: checkRun(c, run, allowed), text: run.text })).filter((f): f is { reason: string; text: string } => f.reason !== null);
-        return { c, passed: r.runs.length - failures.length, runs: r.runs.length, failures };
+        // erro de chamada (ex.: limite da OpenAI) não é falha de comportamento: fica à parte
+        const errors = r.runs.filter((run) => run.verdict === "erro").length;
+        const failures = r.runs
+          .filter((run) => run.verdict !== "erro")
+          .map((run) => ({ reason: checkRun(c, run, allowed), text: run.text }))
+          .filter((f): f is { reason: string; text: string } => f.reason !== null);
+        return { c, passed: r.runs.length - errors - failures.length, runs: r.runs.length, errors, failures };
       }),
     );
     results.push(...batch);
@@ -90,7 +95,9 @@ export async function runCases(db: SupabaseClient, bot: BotRow, cases: EvalCase[
 }
 
 export function casesReport(results: Awaited<ReturnType<typeof runCases>>, meta: { model: string; temperature: number; runs: number }): string {
-  const ok = (r: (typeof results)[number]) => r.passed === r.runs;
+  // passou: nenhuma rodada errou o comportamento e pelo menos uma rodou; ⚠️ = só erro de chamada
+  const ok = (r: (typeof results)[number]) => r.failures.length === 0 && r.passed > 0;
+  const icon = (r: (typeof results)[number]) => (r.failures.length ? "❌" : r.errors ? "⚠️" : "✅");
   const cats = [...new Set(results.map((r) => r.c.categoria))];
   const allMust = results.filter((r) => MUST_PASS.has(r.c.categoria)).every(ok);
   const lines = [
@@ -106,9 +113,11 @@ export function casesReport(results: Awaited<ReturnType<typeof runCases>>, meta:
     }),
     "",
     "CASOS",
-    ...results.map((r) => `  ${ok(r) ? "✅" : "❌"} ${r.c.id} (${r.passed}/${r.runs}) — ${r.c.pergunta}`),
+    ...results.map((r) => `  ${icon(r)} ${r.c.id} (${r.passed}/${r.runs}${r.errors ? `, ${r.errors} com erro de chamada` : ""}) — ${r.c.pergunta}`),
   ];
-  const failed = results.filter((r) => !ok(r));
+  const errored = results.reduce((t, r) => t + r.errors, 0);
+  if (errored) lines.push("", `⚠️ ${errored} rodada(s) com erro de chamada (ex.: limite de tokens por minuto da OpenAI) não contam como falha. Se forem muitas, rode por categoria.`);
+  const failed = results.filter((r) => r.failures.length);
   if (failed.length) {
     lines.push("", "O QUE FALHOU");
     for (const r of failed) {

@@ -58,6 +58,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         ],
         temperature: opts.temperature ?? CHAT_TEMPERATURE,
         stopWhen: stepCountIs(3),
+        maxRetries: 6,
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)
         tools: chatTools({ registrar_lead: noop, chamar_atendente: async () => ({ ok: true, aviso: handoffNotice(bot.human_handoff?.hours) }), registrar_pergunta_sem_resposta: noop, registrar_recusa: noop }),
       });

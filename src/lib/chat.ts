@@ -345,6 +345,8 @@ export async function runChat(opts: {
     messages: [...(await convertToModelMessages(messages.slice(-12))), ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name) }] : [])],
     temperature: CHAT_TEMPERATURE,
     stopWhen: stepCountIs(3),
+    // limite de tokens por minuto da OpenAI (pico): o SDK tenta de novo com espera crescente
+    maxRetries: 4,
     tools: chatTools({
       registrar_lead: async (input) => {
         if (!leadEnabled) return { ok: false };
