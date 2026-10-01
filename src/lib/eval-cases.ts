@@ -86,10 +86,30 @@ export function checkRun(c: EvalCase, run: EvalRun, allowedText: string): string
   return null;
 }
 
-export async function runCases(db: SupabaseClient, bot: BotRow, cases: EvalCase[], opts: { runs: number; model?: string; temperature?: number; effort?: ReasoningEffort }) {
-  const results: Array<{ c: EvalCase; passed: number; runs: number; errors: number; failures: Array<{ reason: string; text: string }>; runList: EvalRun[] }> = [];
+export interface CaseResult {
+  c: EvalCase;
+  passed: number;
+  runs: number;
+  errors: number;
+  failures: Array<{ reason: string; text: string }>;
+  runList: EvalRun[];
+}
+
+/**
+ * Roda os casos, 3 por vez. `onResult`: cada caso assim que termina (o relatório vai aparecendo
+ * no navegador). `stopAt`: depois dessa hora não começa outro lote; os que faltaram voltam em
+ * `skipped` (melhor que estourar o tempo da função e não mostrar nada).
+ */
+export async function runCases(
+  db: SupabaseClient,
+  bot: BotRow,
+  cases: EvalCase[],
+  opts: { runs: number; model?: string; temperature?: number; effort?: ReasoningEffort; stopAt?: number; onResult?: (r: CaseResult) => void },
+): Promise<{ results: CaseResult[]; skipped: EvalCase[] }> {
+  const results: CaseResult[] = [];
   // poucos casos em paralelo: o limite de tokens por minuto da OpenAI estoura com muitos juntos
   for (let i = 0; i < cases.length; i += 3) {
+    if (opts.stopAt && Date.now() > opts.stopAt) return { results, skipped: cases.slice(i) };
     const batch = await Promise.all(
       cases.slice(i, i + 3).map(async (c) => {
         const r = await evaluateQuestion(db, bot, c.pergunta, { runs: opts.runs, model: opts.model, temperature: opts.temperature, effort: opts.effort, channel: c.canal ?? "whatsapp", history: c.historico, age: c.idade ?? null, foreign: c.fora });
@@ -100,18 +120,27 @@ export async function runCases(db: SupabaseClient, bot: BotRow, cases: EvalCase[
           .filter((run) => run.verdict !== "erro")
           .map((run) => ({ reason: checkRun(c, run, allowed), text: run.text }))
           .filter((f): f is { reason: string; text: string } => f.reason !== null);
-        return { c, passed: r.runs.length - errors - failures.length, runs: r.runs.length, errors, failures, runList: r.runs };
+        const result: CaseResult = { c, passed: r.runs.length - errors - failures.length, runs: r.runs.length, errors, failures, runList: r.runs };
+        opts.onResult?.(result);
+        return result;
       }),
     );
     results.push(...batch);
   }
-  return results;
+  return { results, skipped: [] };
 }
 
-export function casesReport(results: Awaited<ReturnType<typeof runCases>>, meta: { model: string; temperature: number; runs: number }): string {
+/** Ícone do caso: ✅ passou em todas as rodadas; ❌ errou o comportamento; ⚠️ só erro de chamada. */
+const caseIcon = (r: CaseResult) => (r.failures.length ? "❌" : r.errors ? "⚠️" : "✅");
+
+/** Uma linha por caso (a mesma do relatório e do andamento). */
+export function caseLine(r: CaseResult): string {
+  return `  ${caseIcon(r)} ${r.c.id} (${r.passed}/${r.runs}${r.errors ? `, ${r.errors} com erro de chamada` : ""}) — ${r.c.pergunta}`;
+}
+
+export function casesReport(results: CaseResult[], meta: { model: string; temperature: number; runs: number }, skipped: EvalCase[] = []): string {
   // passou: nenhuma rodada errou o comportamento e pelo menos uma rodou; ⚠️ = só erro de chamada
-  const ok = (r: (typeof results)[number]) => r.failures.length === 0 && r.passed > 0;
-  const icon = (r: (typeof results)[number]) => (r.failures.length ? "❌" : r.errors ? "⚠️" : "✅");
+  const ok = (r: CaseResult) => r.failures.length === 0 && r.passed > 0;
   const cats = [...new Set(results.map((r) => r.c.categoria))];
   const allMust = results.filter((r) => MUST_PASS.has(r.c.categoria)).every(ok);
   const lines = [
@@ -128,8 +157,9 @@ export function casesReport(results: Awaited<ReturnType<typeof runCases>>, meta:
     }),
     "",
     "CASOS",
-    ...results.map((r) => `  ${icon(r)} ${r.c.id} (${r.passed}/${r.runs}${r.errors ? `, ${r.errors} com erro de chamada` : ""}) — ${r.c.pergunta}`),
+    ...results.map(caseLine),
   ];
+  if (skipped.length) lines.push("", `⏱️ O tempo acabou antes de ${skipped.length} caso(s), que não rodaram: ${skipped.map((c) => c.id).join(", ")}. Rode de novo só a categoria deles (&categoria=…).`);
   const errored = results.reduce((t, r) => t + r.errors, 0);
   if (errored) lines.push("", `⚠️ ${errored} rodada(s) com erro de chamada (ex.: limite de tokens por minuto da OpenAI) não contam como falha. Se forem muitas, rode por categoria.`);
   const failed = results.filter((r) => r.failures.length);

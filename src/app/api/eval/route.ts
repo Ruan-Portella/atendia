@@ -1,11 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { evalReport, evaluateQuestion } from "@/lib/eval";
-import { casesReport, loadCases, runCases } from "@/lib/eval-cases";
+import { caseLine, casesReport, loadCases, runCases } from "@/lib/eval-cases";
 import { chatModelId, type ReasoningEffort } from "@/lib/ai";
 import { CHAT_TEMPERATURE, type BotRow } from "@/lib/chat";
 
-export const maxDuration = 60;
+// limite do plano Hobby da Vercel (fluid compute): o conjunto fixo inteiro cabe numa chamada
+export const maxDuration = 300;
+/** Depois disso não começa outro lote de casos (o que está rodando ainda termina antes dos 300 s). */
+const CASES_BUDGET_MS = 230_000;
 export const dynamic = "force-dynamic";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high"] as const;
@@ -54,8 +57,25 @@ export async function GET(req: Request) {
     const model = sp.get("model")?.trim() || undefined;
     const runs = Math.min(Math.max(Number(sp.get("n") ?? 3) || 3, 1), 5);
     const effort = effortOf(sp.get("esforco"));
-    const results = await runCases(db, bot, cases, { runs, model, temperature, effort });
-    return new Response(casesReport(results, { model: `${model ?? `${chatModelId()} (padrão)`}${effort ? ` (raciocínio: ${effort})` : ""}`, temperature: temperature ?? CHAT_TEMPERATURE, runs }), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+    const label = `${model ?? `${chatModelId()} (padrão)`}${effort ? ` (raciocínio: ${effort})` : ""}`;
+    const stopAt = Date.now() + CASES_BUDGET_MS;
+    // o relatório vai aparecendo: cada caso assim que termina, o resumo no fim
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const enc = new TextEncoder();
+        const write = (t: string) => controller.enqueue(enc.encode(t));
+        write(`Rodando ${cases.length} casos × ${runs} rodadas · ${label}. Cada caso aparece aqui quando termina; o resumo vem no fim.\n\n`);
+        try {
+          const { results, skipped } = await runCases(db, bot, cases, { runs, model, temperature, effort, stopAt, onResult: (r) => write(`${caseLine(r)}\n`) });
+          write(`\n==========\n\n${casesReport(results, { model: label, temperature: temperature ?? CHAT_TEMPERATURE, runs }, skipped)}\n`);
+        } catch (e) {
+          write(`\nERRO: ${(e as Error).message}\n`);
+        }
+        controller.close();
+      },
+    });
+    // nosniff: sem isso o navegador segura o texto até juntar um pedaço e não mostra o andamento
+    return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
   }
   // várias perguntas: &q=...&q=... (até 8), cada uma rodada N vezes
   const questions = sp.getAll("q").map((q) => q.trim().slice(0, 2000)).filter(Boolean).slice(0, 8);

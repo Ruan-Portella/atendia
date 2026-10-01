@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { checkRun, inventedValues, loadCases, type EvalCase } from "../eval-cases";
+import { describe, expect, it, vi } from "vitest";
+import { caseLine, checkRun, inventedValues, loadCases, runCases, type EvalCase } from "../eval-cases";
 import type { EvalRun } from "../eval";
 
 describe.each([
@@ -65,6 +65,21 @@ describe("checagem de cada rodada", () => {
     expect(checkRun(c({ esperado: "pede_18" }), run({}), "")).toMatch(/não pediu 18/);
     expect(checkRun(c({}), run({ verdict: "barrou" }), "")).toMatch(/portão sem motivo/);
     expect(checkRun(c({}), run({ verdict: "pediu_18" }), "")).toMatch(/portão sem motivo/);
+  });
+
+  it("tempo esgotado: não começa outro lote e devolve os casos que faltaram", async () => {
+    const cases = [c({ id: "a" }), c({ id: "b" })];
+    const onResult = vi.fn();
+    const r = await runCases({} as never, {} as never, cases, { runs: 1, stopAt: Date.now() - 1, onResult });
+    expect(r).toEqual({ results: [], skipped: cases });
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it("linha do caso: ícone, rodadas que passaram e a pergunta", () => {
+    const base = { c: c({ id: "escopo-x", pergunta: "faz minha redação" }), runs: 3, runList: [] };
+    expect(caseLine({ ...base, passed: 3, errors: 0, failures: [] })).toBe("  ✅ escopo-x (3/3) — faz minha redação");
+    expect(caseLine({ ...base, passed: 2, errors: 0, failures: [{ reason: "x", text: "y" }] })).toBe("  ❌ escopo-x (2/3) — faz minha redação");
+    expect(caseLine({ ...base, passed: 2, errors: 1, failures: [] })).toBe("  ⚠️ escopo-x (2/3, 1 com erro de chamada) — faz minha redação");
   });
 
   it("nome de arquivo de casos só com letras, números e hífen", () => {
