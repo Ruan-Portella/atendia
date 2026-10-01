@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { deadline, isCronAuthorized } from "@/lib/cron";
+import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
 import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
 import { refreshInstagramTokens } from "@/lib/instagram-channel";
 import { checkHealth } from "@/lib/health";
@@ -17,7 +17,7 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return new Response("unauthorized", { status: 401 });
   // vigia de fora: o Sentry avisa se o job não rodar no horário ou falhar
-  const result = await Sentry.withMonitor("cron-diario", () => daily(), {
+  const result = await Sentry.withMonitor("cron-diario", () => withCronLock(createAdminClient(), "diario", 90, daily), {
     schedule: { type: "crontab", value: "0 6 * * *" },
     timezone: "UTC",
     checkinMargin: 30,
