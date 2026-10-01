@@ -134,6 +134,12 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "proibido", categories: entrance.categories });
     return;
   }
+  if (entrance.kind === "nao_18") {
+    await storeOnce(db, convId, q.text, q.key);
+    await sendFixed(GATE_TEXTS.under18);
+    await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "nao_18", categories: entrance.categories });
+    return;
+  }
   if (entrance.kind === "pede_18") {
     await storeOnce(db, convId, q.text, q.key);
     await askAge(question);

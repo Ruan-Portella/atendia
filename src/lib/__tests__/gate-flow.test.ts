@@ -123,10 +123,19 @@ describe("portão na entrada", () => {
     expect(d).toMatchObject({ kind: "ia", regulated: ["bebida"], prohibited: [] });
   });
 
-  it("disse que não tem 18: instrução para não falar do item", async () => {
-    const d = await entrance("tem Heineken?", { classify: classifyAs(["bebida"]), age: "nao" });
+  it("disse que não tem 18 e pede só o item: texto fixo, sem IA principal", async () => {
+    expect(await entrance("tem Heineken?", { classify: classifyAs(["bebida"]), age: "nao" })).toEqual({ kind: "nao_18", categories: ["bebida"] });
+    // proibido + regulamentado para quem não tem 18: tudo barrado, vale o texto de proibido
+    expect(await entrance("tem cerveja e cigarro?", { classify: classifyAs(["bebida", "tabaco"]), age: "nao" })).toEqual({ kind: "proibido", categories: ["tabaco", "bebida"] });
+  });
+
+  it("disse que não tem 18 e pergunta outra coisa junto: IA com instrução para não falar do item nem prometer a equipe", async () => {
+    const d = await entrance("quanto é a pizza? e tem Heineken?", { classify: classifyAs(["bebida"], true), age: "nao" });
     expect(d.kind).toBe("ia");
-    if (d.kind === "ia") expect(d.instruction).toContain("não tem 18 anos");
+    if (d.kind === "ia") {
+      expect(d.instruction).toContain("não tem 18 anos");
+      expect(d.instruction).toContain("não registre pergunta");
+    }
   });
 
   it("confirmou 18+: segue sem instrução extra", async () => {

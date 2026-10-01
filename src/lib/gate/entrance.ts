@@ -33,6 +33,8 @@ export type EntranceDecision =
   | { kind: "proibido"; categories: GateCategory[] }
   /** Pedido de regulamentado, idade não confirmada e a base tem o item: pergunta de 18+ direto. */
   | { kind: "pede_18"; categories: GateCategory[] }
+  /** Só pedido de regulamentado, por quem disse que não tem 18: texto fixo, sem a IA principal. */
+  | { kind: "nao_18"; categories: GateCategory[] }
   /** Segue para a IA, com instrução extra e/ou texto fixo antes da resposta. */
   | { kind: "ia"; prefix?: string; instruction?: string; regulated: GateCategory[]; prohibited: GateCategory[] };
 
@@ -84,7 +86,10 @@ export async function decideEntrance(input: EntranceInput): Promise<EntranceDeci
   const prohibited = [...new Set(c.pedidas.filter((x) => levelOf.get(x) === "proibido"))];
   const regulated = [...new Set(c.pedidas.filter((x) => levelOf.get(x) === "regulamentado"))];
 
-  if (prohibited.length && !regulated.length && !c.tem_outro_assunto) return { kind: "proibido", categories: prohibited };
+  // tudo o que foi pedido está barrado para esta pessoa (e não há outro assunto): texto fixo
+  if (!c.tem_outro_assunto && prohibited.length && (!regulated.length || input.age === "nao")) return { kind: "proibido", categories: [...prohibited, ...regulated] };
+  // a IA prometia "vou confirmar com a equipe" sobre a cerveja para quem disse que não tem 18
+  if (!c.tem_outro_assunto && regulated.length && !prohibited.length && input.age === "nao") return { kind: "nao_18", categories: regulated };
 
   // atalho determinístico do 18+: pediu regulamentado, idade vazia e a base tem o item
   if (regulated.length && input.age === null && !prohibited.length) {
@@ -94,7 +99,7 @@ export async function decideEntrance(input: EntranceInput): Promise<EntranceDeci
 
   const notes: string[] = [];
   if (prohibited.length) notes.push(`A pessoa também pediu ${prohibited.map(categoryLabel).join(", ")}: não trate disso, não cite o item; responda só o resto.`);
-  if (regulated.length && input.age === "nao") notes.push(`A pessoa pediu ${regulated.map(categoryLabel).join(", ")}, mas disse que não tem 18 anos: não fale desses itens; ofereça o resto.`);
+  if (regulated.length && input.age === "nao") notes.push(`A pessoa pediu ${regulated.map(categoryLabel).join(", ")}, mas disse que não tem 18 anos: não fale desses itens, não registre pergunta sobre eles nem diga que vai confirmar com a equipe; responda só o resto.`);
   return {
     kind: "ia",
     prefix: prohibited.length ? "Um dos itens que você pediu não conseguimos atender por aqui." : undefined,

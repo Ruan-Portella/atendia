@@ -56,6 +56,6 @@ export async function resetAge(db: SupabaseClient, w: Who) {
 /** Estado para o prompt (parte dinâmica, depois do bloco em cache). */
 export function ageNote(status: AgeStatus): string {
   if (status === "sim") return "A pessoa confirmou ter 18 anos ou mais: pode falar de bebida alcoólica e remédio isento de prescrição que estejam no CONTEXTO (preço, opções), sem fechar a venda aqui.";
-  if (status === "nao") return "A pessoa disse que NÃO tem 18 anos: não fale de bebida alcoólica nem de remédio, nem cite, nem dê preço; ofereça o resto do cardápio ou dos serviços.";
+  if (status === "nao") return "A pessoa disse que NÃO tem 18 anos: não fale de bebida alcoólica nem de remédio, nem cite, nem dê preço, nem registre pergunta ou diga que vai confirmar com a equipe sobre eles; ofereça o resto do cardápio ou dos serviços.";
   return "A idade da pessoa não foi confirmada: se ela pedir ou se você for mostrar bebida alcoólica ou remédio, não cite os itens nem preços: chame pedir_confirmacao_18 e não escreva mais nada.";
 }

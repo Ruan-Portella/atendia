@@ -177,6 +177,8 @@ export const GATE_TEXTS = {
   ageNo: "Não",
   /** Depois do "Não". */
   ageDenied: "Tudo bem! Por aqui não posso falar sobre esse tipo de produto, mas sigo à disposição para o resto.",
+  /** Pedido só de item 18+ por quem já disse que não tem 18: sem a IA principal. */
+  under18: "Por aqui não posso falar sobre esse tipo de produto, mas sigo à disposição para o resto.",
   /** Botão nas respostas refeitas sem os itens 18+ (até 20 caracteres, limite da Meta). */
   showAdultOptions: "Ver opções 18+",
   /** Item regulamentado, 18+ confirmado, na hora de pedir. */

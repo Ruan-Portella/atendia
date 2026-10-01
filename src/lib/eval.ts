@@ -62,6 +62,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       // portão na entrada, como no canal: proibido e pergunta de 18+ nem chegam à IA principal
       const entrance = scopeLock ? await decideEntrance({ text: question, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, context, companyName: bot.client_name }) : null;
       if (entrance?.kind === "proibido") return { verdict: "barrou", text: GATE_TEXTS.prohibited, tools: [`portao:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0 };
+      if (entrance?.kind === "nao_18") return { verdict: "barrou", text: GATE_TEXTS.under18, tools: [`portao:nao_18:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0 };
       if (entrance?.kind === "pede_18") return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools: ["portao:pede_18"], inputTokens: 0, outputTokens: 0 };
 
       // mesmo corte do chat: a base sem os itens barrados para esta pessoa e as linhas do portão

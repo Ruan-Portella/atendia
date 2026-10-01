@@ -28,6 +28,6 @@ export function hiddenNote(hidden: GateCategory[], age: AgeStatus): string | nul
   if (!regulated.length || age === "sim") return null;
   const labels = regulated.map(categoryLabel).join(" e ");
   return age === "nao"
-    ? `A base tem ${labels}, mas esses itens ficam ocultos para esta pessoa (disse que não tem 18 anos): não fale deles e não diga que a empresa não tem; ofereça o resto.`
+    ? `A base tem ${labels}, mas esses itens ficam ocultos para esta pessoa (disse que não tem 18 anos): não fale deles, não registre pergunta sobre eles e não diga que a empresa não tem; ofereça o resto.`
     : `A base tem ${labels}, ocultos até a pessoa confirmar 18+: se ela pedir esses itens ou perguntar o que tem deles (cardápio de bebidas, carta de vinhos, remédios), chame pedir_confirmacao_18 e não escreva mais nada; nunca diga que a empresa não tem.`;
 }
