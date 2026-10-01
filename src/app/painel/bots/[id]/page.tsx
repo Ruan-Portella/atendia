@@ -30,6 +30,7 @@ import { ClientPicker } from "@/components/client-picker";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
+import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 
 export const metadata = { title: "Editor do chatbot" };
 
@@ -38,6 +39,7 @@ const TABS = [
   ["personalidade", "Personalidade"],
   ["aparencia", "Aparência e marca"],
   ["leads", "Captura de leads"],
+  ["atendimento", "Atendimento humano"],
   ["conversas", "Conversas"],
   ["whatsapp", "WhatsApp"],
   ["instagram", "Instagram"],
@@ -78,6 +80,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const persona = bot.persona ?? {};
   const appearance = bot.appearance ?? {};
   const leadCapture = bot.lead_capture ?? {};
+  const handoff = (bot.human_handoff ?? {}) as HumanHandoff;
   const color = appearance.color ?? agency.brand_color;
   // domínio próprio da agência (quando verificado) nos links que o cliente e o prospect veem
   const base = agencyBaseUrl(agency);
@@ -216,6 +219,47 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <div><label htmlFor="notify_email" className="label">Avisar por e-mail (o dono do cliente, por exemplo)</label><input id="notify_email" name="notify_email" type="email" defaultValue={leadCapture.notify_email ?? ""} className="input" placeholder="recepcao@clinicasorriso.com.br" /></div>
               <div><label htmlFor="notify_whatsapp" className="label">WhatsApp para aviso (em breve)</label><input id="notify_whatsapp" name="notify_whatsapp" defaultValue={leadCapture.notify_whatsapp ?? ""} className="input" placeholder="+55 41 9…" /></div>
               <p className="text-xs text-muted">Você também recebe todos os leads no seu e-mail e na aba Leads do painel.</p>
+              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+            </ActionForm>
+          )}
+
+          {tab === "atendimento" && (
+            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-5">
+              <input type="hidden" name="handoff" value="1" />
+              <div>
+                <h2 className="text-[22px] font-bold">Atendimento humano</h2>
+                <p className="text-sm text-muted">Quem pedir para falar com uma pessoa sempre consegue: o assistente avisa a equipe e a conversa aparece em Conversas para alguém assumir. Isso não pode ser desligado (regra da Meta no WhatsApp). Aqui você só complementa, tudo opcional.</p>
+              </div>
+
+              <section className="flex flex-col gap-3">
+                <h3 className="text-sm font-semibold">Outros jeitos de falar com a equipe</h3>
+                <p className="-mt-2 text-xs text-muted">O assistente oferece estes contatos quando alguém pede para falar com uma pessoa.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div><label htmlFor="handoff_phone" className="label">Telefone</label><input id="handoff_phone" name="handoff_phone" maxLength={30} defaultValue={handoff.phone ?? ""} className="input" placeholder="(21) 3333-4444" /></div>
+                  <div><label htmlFor="handoff_email" className="label">E-mail</label><input id="handoff_email" name="handoff_email" type="email" maxLength={200} defaultValue={handoff.email ?? ""} className="input" placeholder="contato@clinicasorriso.com.br" /></div>
+                  <div><label htmlFor="handoff_site" className="label">Site</label><input id="handoff_site" name="handoff_site" maxLength={200} defaultValue={handoff.site ?? ""} className="input" placeholder="clinicasorriso.com.br" /></div>
+                  <div><label htmlFor="handoff_form_url" className="label">Formulário de atendimento (link)</label><input id="handoff_form_url" name="handoff_form_url" maxLength={300} defaultValue={handoff.form_url ?? ""} className="input" placeholder="clinicasorriso.com.br/contato" /></div>
+                </div>
+                <div><label htmlFor="handoff_address" className="label">Atendimento presencial (endereço)</label><input id="handoff_address" name="handoff_address" maxLength={200} defaultValue={handoff.address ?? ""} className="input" placeholder="Rua das Flores, 100, Centro, Rio de Janeiro" /></div>
+                <p className="text-xs text-muted">O telefone precisa ser diferente do número do WhatsApp do assistente (exceto quando o número também está no app WhatsApp Business do celular).</p>
+              </section>
+
+              <section className="flex flex-col gap-3 border-t border-line pt-4">
+                <h3 className="text-sm font-semibold">Horário de atendimento da equipe</h3>
+                <p className="-mt-2 text-xs text-muted">Horário de Brasília. Fora dele, o pedido de atendente fica registrado e o assistente diz quando a equipe volta (ex.: &quot;Nossa equipe volta segunda às 9h&quot;). Deixe o dia em branco para fechado; sem nenhum horário, o assistente só diz que a equipe responde assim que possível.</p>
+                <div className="overflow-hidden rounded-xl border border-line">
+                  {WEEKDAYS.map((day, d) => {
+                    const h = (handoff.hours ?? {})[String(d) as keyof BusinessHours];
+                    return (
+                      <div key={day} className="flex flex-wrap items-center gap-3 border-b border-line-2 px-4 py-2.5 text-sm last:border-0">
+                        <span className="w-20 font-medium capitalize">{day}</span>
+                        <label className="flex items-center gap-1.5 text-muted">das <input type="time" name={`hours_open_${d}`} defaultValue={h?.[0] ?? ""} className="input w-auto py-1.5" aria-label={`${day}: abre`} /></label>
+                        <label className="flex items-center gap-1.5 text-muted">às <input type="time" name={`hours_close_${d}`} defaultValue={h?.[1] ?? ""} className="input w-auto py-1.5" aria-label={`${day}: fecha`} /></label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
               <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
             </ActionForm>
           )}

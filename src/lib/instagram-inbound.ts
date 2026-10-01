@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { HUMAN_ONLY_NOTICE, aiBlockedReason, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
+import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, aiDisclosure, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
 import { markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
@@ -158,7 +158,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     const { notify } = await enterHumanOnly(db, bot, convId, reason);
     if (notify) {
       const mid = await reply(HUMAN_ONLY_NOTICE);
-      await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: HUMAN_ONLY_NOTICE, channel_msg_id: mid ?? "enviada" });
+      await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: HUMAN_ONLY_NOTICE, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
       await markHumanOnlyNotice(db, convId);
     }
   };
@@ -175,7 +175,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" });
     const done = `Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${bot.client_name}.`;
     const mid = await reply(done);
-    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: done, channel_msg_id: mid ?? "enviada" });
+    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: done, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
   }
   const handled = new Set(texts.map((t, i) => (isOptOutKeyword(t) || undo.has(i) ? i : -1)).filter((i) => i >= 0));
   if (handled.size > undo.size) {
@@ -187,7 +187,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     await suppress(db, { ...target, kind: "all", reason: "opt_out", source: "chat" });
     const confirmation = optOutConfirmation("all", bot.client_name);
     const mid = await send(db, ch, igsid, confirmation, [{ title: "Foi engano", payload: OPTOUT_UNDO }]);
-    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: confirmation, channel_msg_id: mid ?? "enviada" });
+    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: confirmation, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
   }
   if (handled.size === burst.length) return;
 
@@ -235,12 +235,15 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     // (no reprocesso "unanswered" a pergunta já está no banco, então já vem no histórico)
     const history: UIMessage[] = await conversationHistory(db, conv.id, HISTORY);
     if (before.state !== "unanswered") history.push({ id: q.key, role: "user", parts: [{ type: "text", text: texts[qi]! }] });
+    // aviso de IA: calculado antes de a resposta nova entrar na conversa
+    const disclosure = await aiDisclosure(db, bot, conv.id);
     const { result, saved } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "instagram", instagram: { igsid }, questionKey: q.key });
     const answer = await result.text;
     const answerId = await saved;
     if (answer.trim()) {
-      const mid = await reply(answer);
-      if (answerId) await db.from("messages").update({ channel_msg_id: mid ?? "enviada" }).eq("id", answerId);
+      const out = disclosure ? `${disclosure}\n\n${answer.trim()}` : answer;
+      const mid = await reply(out);
+      if (answerId) await db.from("messages").update({ channel_msg_id: mid ?? "enviada", ...(disclosure ? { content: out } : {}) }).eq("id", answerId);
     }
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;

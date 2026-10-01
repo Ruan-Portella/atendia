@@ -10,7 +10,8 @@ import { requireAgency } from "@/lib/agency";
 import { postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
-import { initials, slugify } from "@/lib/utils";
+import { initials, normalizeUrl, slugify } from "@/lib/utils";
+import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
@@ -127,6 +128,48 @@ export async function createBot(formData: FormData): Promise<ActionResult> {
 }
 
 /** Salva personalidade, aparência, captura de leads e cliente do bot. */
+/**
+ * Caminho para humano (aba Atendimento humano): outros contatos e horário, todos opcionais.
+ * O pedido de atendente no chat fica sempre ligado; isto só complementa.
+ */
+async function parseHumanHandoff(supabase: Awaited<ReturnType<typeof createClient>>, botId: string, f: Record<string, string>): Promise<{ value: HumanHandoff } | { error: string }> {
+  const email = f.handoff_email?.trim() || null;
+  if (email && !isEmail(email)) return { error: "E-mail de atendimento inválido." };
+  const url = (raw: string | undefined, label: string): string | null | { error: string } => {
+    const v = raw?.trim();
+    if (!v) return null;
+    const u = normalizeUrl(v);
+    return u ?? { error: `${label} inválido. Ex.: clinicasorriso.com.br/contato` };
+  };
+  const site = url(f.handoff_site, "Site");
+  if (site && typeof site === "object") return site;
+  const form = url(f.handoff_form_url, "Link do formulário");
+  if (form && typeof form === "object") return form;
+  const phone = f.handoff_phone?.trim() || null;
+  if (phone) {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 10) return { error: "Telefone de atendimento inválido. Use DDD, ex.: (21) 3333-4444." };
+    // fora da coexistência, o telefone precisa ser outro: o número do bot é atendido pelo próprio bot
+    const { data: wa } = await createAdminClient().from("whatsapp_channels").select("display_phone, coexistence").eq("bot_id", botId).maybeSingle();
+    const botDigits = (wa?.display_phone ?? "").replace(/\D/g, "");
+    if (botDigits && !wa?.coexistence && (botDigits.endsWith(digits) || digits.endsWith(botDigits))) {
+      return { error: "Esse é o número do WhatsApp do próprio assistente. Informe outro telefone da equipe (ou deixe em branco)." };
+    }
+  }
+  const hours: BusinessHours = {};
+  for (let d = 0; d < 7; d++) {
+    const open = f[`hours_open_${d}`]?.trim();
+    const close = f[`hours_close_${d}`]?.trim();
+    if (!open && !close) continue;
+    if (!/^\d{2}:\d{2}$/.test(open ?? "") || !/^\d{2}:\d{2}$/.test(close ?? "") || open! >= close!) {
+      return { error: `Horário de ${WEEKDAYS[d]} inválido: a abertura precisa vir antes do fechamento.` };
+    }
+    hours[String(d) as keyof BusinessHours] = [open!, close!];
+  }
+  const address = f.handoff_address?.trim().slice(0, 200) || null;
+  return { value: { email, phone, site: site as string | null, form_url: form as string | null, address, hours: Object.keys(hours).length ? hours : null } };
+}
+
 export async function updateBot(botId: string, formData: FormData): Promise<ActionResult> {
   const { agency } = await requireAgency();
   const supabase = await createClient();
@@ -162,6 +205,11 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
     const email = f.notify_email?.trim() || null;
     if (email && !isEmail(email)) return fail("E-mail de aviso inválido.");
     patch.lead_capture = { enabled: f.lead_enabled === "on", notify_email: email, notify_whatsapp: f.notify_whatsapp?.trim() || null };
+  }
+  if ("handoff" in f) {
+    const handoff = await parseHumanHandoff(supabase, botId, f);
+    if ("error" in handoff) return fail(handoff.error);
+    patch.human_handoff = handoff.value;
   }
   if (!Object.keys(patch).length) return fail("Nada para salvar.");
 

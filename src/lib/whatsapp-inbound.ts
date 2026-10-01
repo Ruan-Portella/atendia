@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { HUMAN_ONLY_NOTICE, aiBlockedReason, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
+import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, aiDisclosure, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
@@ -207,7 +207,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     const { notify } = await enterHumanOnly(db, bot, convId, reason);
     if (notify && !channel.coexistence) {
       const sent = await reply(HUMAN_ONLY_NOTICE);
-      await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: HUMAN_ONLY_NOTICE, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
+      await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: HUMAN_ONLY_NOTICE, author: SYSTEM_AUTHOR, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
       await markHumanOnlyNotice(db, convId);
     }
   };
@@ -265,12 +265,16 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     // (no reprocesso "unanswered" a pergunta já está no banco, então já vem no histórico)
     const history: UIMessage[] = await conversationHistory(db, conv.id, HISTORY);
     if (before.state !== "unanswered") history.push({ id: q.msg.id, role: "user", parts: [{ type: "text", text: texts[qi]! }] });
+    // aviso de IA: calculado antes de a resposta nova entrar na conversa
+    const disclosure = await aiDisclosure(db, bot, conv.id);
     const { result, saved } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "whatsapp", whatsapp: { waId, profileName }, questionKey: q.key });
     const answer = await result.text;
     const answerId = await saved;
     if (answer.trim()) {
-      const sent = await reply(answer);
-      if (answerId) await db.from("messages").update({ channel_msg_id: sent.messages?.[0]?.id ?? "enviada" }).eq("id", answerId);
+      // prefixo na mesma mensagem (nunca uma mensagem a mais); o painel guarda o que o contato viu
+      const out = disclosure ? `${disclosure}\n\n${answer.trim()}` : answer;
+      const sent = await reply(out);
+      if (answerId) await db.from("messages").update({ channel_msg_id: sent.messages?.[0]?.id ?? "enviada", ...(disclosure ? { content: out } : {}) }).eq("id", answerId);
     }
   } catch (e) {
     // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)
@@ -322,7 +326,7 @@ async function handleOptOuts(
   const answer = async (content: string, buttons?: Array<{ id: string; title: string }>) => {
     const sent = buttons?.length ? await sendButtons(channel, waId, content, buttons) : await sendText(channel, waId, content);
     const id = await conversation();
-    if (id) await db.from("messages").insert({ conversation_id: id, role: "assistant", content, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
+    if (id) await db.from("messages").insert({ conversation_id: id, role: "assistant", content, author: SYSTEM_AUTHOR, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
   };
 
   let keywordDone = false;

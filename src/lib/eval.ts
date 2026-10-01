@@ -1,7 +1,8 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, chatModel, chatModelId } from "./ai";
-import { CHAT_TEMPERATURE, channelNoteFor, chatTools, retrieveContext, type BotRow } from "./chat";
+import { CHAT_TEMPERATURE, channelNoteFor, chatTools, handoffPrompt, retrieveContext, type BotRow } from "./chat";
+import { handoffNotice } from "./handoff-hours";
 import { NO_INFO_PHRASE } from "./unanswered";
 
 /*
@@ -37,7 +38,7 @@ export function verdictOf(text: string, tools: string[]): EvalRun["verdict"] {
 export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question: string, opts: EvalOptions) {
   const { context, hits } = await retrieveContext(db, bot.id, question);
   const channelNote = opts.channel === "whatsapp" ? channelNoteFor({ whatsapp: { waId: "5521999990000" } }) : opts.channel === "instagram" ? channelNoteFor({ instagram: { igsid: "teste" } }) : undefined;
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: bot.lead_capture?.enabled !== false, agentMessages: [], channelNote });
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: bot.lead_capture?.enabled !== false, agentMessages: [], channelNote, ...handoffPrompt(bot) });
   const noop = async () => ({ ok: true });
 
   const one = async (): Promise<EvalRun> => {
@@ -49,7 +50,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         temperature: opts.temperature ?? CHAT_TEMPERATURE,
         stopWhen: stepCountIs(3),
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)
-        tools: chatTools({ registrar_lead: noop, chamar_atendente: noop, registrar_pergunta_sem_resposta: noop }),
+        tools: chatTools({ registrar_lead: noop, chamar_atendente: async () => ({ ok: true, aviso: handoffNotice(bot.human_handoff?.hours) }), registrar_pergunta_sem_resposta: noop }),
       });
       const tools = r.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
       return { verdict: verdictOf(r.text, tools), text: r.text, tools, inputTokens: r.totalUsage?.inputTokens ?? 0, outputTokens: r.totalUsage?.outputTokens ?? 0 };

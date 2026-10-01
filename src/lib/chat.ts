@@ -7,6 +7,7 @@ import { currentPeriodBR } from "./utils";
 import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
 import { looksUnanswered, recordUnanswered } from "./unanswered";
 import { recordAiUsage } from "./ai-usage";
+import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
 
 export interface BotRow {
   id: string;
@@ -21,6 +22,8 @@ export interface BotRow {
   persona: Persona;
   appearance: { color?: string; avatar_text?: string; suggested_questions?: string[] };
   lead_capture: { enabled?: boolean; notify_email?: string | null; notify_whatsapp?: string | null };
+  /** Caminho para humano: outros contatos e horário de atendimento (opcionais). */
+  human_handoff?: HumanHandoff | null;
 }
 
 export const CORS_HEADERS = {
@@ -121,7 +124,35 @@ export function channelNoteFor(opts: { whatsapp?: { waId: string; profileName?: 
       : undefined;
 }
 
-type ToolExec<I> = (input: I) => Promise<{ ok: boolean }>;
+/** Autor das mensagens fixas da plataforma (confirmações, avisos): não contam como fala da IA. */
+export const SYSTEM_AUTHOR = "sistema";
+
+/**
+ * Aviso de IA (escolha da BoaVoz, por transparência), como prefixo da resposta, nunca como
+ * mensagem própria (cada mensagem a mais é cobrada do negócio pela Meta):
+ * - primeira resposta da IA na conversa (conversa nova também depois de 24 h sem mensagem):
+ *   "Sou {nome}, assistente virtual de {empresa}."
+ * - a conversa voltou de um atendente (ou de alguém no celular): "Voltei! Sou {nome}, …"
+ * null = a IA já falou por último, sem aviso.
+ */
+export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" | "client_name">, conversationId: string): Promise<string | null> {
+  const notSystem = `author.is.null,author.neq.${SYSTEM_AUTHOR}`;
+  const [{ data: last }, { data: ai }] = await Promise.all([
+    db.from("messages").select("role").eq("conversation_id", conversationId).neq("role", "user").or(notSystem).order("id", { ascending: false }).limit(1).maybeSingle(),
+    db.from("messages").select("id").eq("conversation_id", conversationId).eq("role", "assistant").or(notSystem).limit(1).maybeSingle(),
+  ]);
+  // a IA nunca falou nesta conversa (mesmo que a equipe tenha aberto com um modelo): apresenta
+  if (!ai) return `Sou ${bot.name}, assistente virtual de ${bot.client_name}.`;
+  if (last?.role === "agent") return `Voltei! Sou ${bot.name}, assistente virtual. Se precisar, é só pedir um atendente.`;
+  return null;
+}
+
+/** Contatos e horário da equipe para o prompt (caminho para humano). */
+export function handoffPrompt(bot: Pick<BotRow, "human_handoff">) {
+  return { humanContacts: contactLines(bot.human_handoff), hours: hoursLines(bot.human_handoff?.hours) };
+}
+
+type ToolExec<I> = (input: I) => Promise<{ ok: boolean; aviso?: string }>;
 
 /**
  * As ferramentas do assistente (descrição e formato iguais para o chat de verdade e para a
@@ -273,7 +304,7 @@ export async function runChat(opts: {
   const wa = opts.whatsapp;
   const waPhone = wa && /^\d+$/.test(wa.waId) ? wa.waId : null;
   const channelNote = channelNoteFor(opts);
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote });
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot) });
   const convId = conversationId;
 
   // 3. Persiste a pergunta do visitante
@@ -318,7 +349,8 @@ export async function runChat(opts: {
         // avisa na primeira vez (ou de novo, se o atendimento anterior já tinha sido encerrado)
         if (updated?.length) notifyHandoff({ db, bot, conversationId: convId, reason: motivo ?? question }).catch(() => {});
         else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", convId);
-        return { ok: true };
+        // fora do horário, o aviso diz quando a equipe volta; nunca promete resposta imediata
+        return { ok: true, aviso: handoffNotice(bot.human_handoff?.hours) };
       },
       registrar_pergunta_sem_resposta: async ({ pergunta }) => {
         unansweredRecorded = true;
