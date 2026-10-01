@@ -297,9 +297,10 @@ async function handleOptOuts(
     if (id) await storeOnce(db, id, shown(i), burst[i].key);
 
     if (button.startsWith(`${OPTOUT_UNDO}:`)) {
-      // "Foi engano": desfaz e fica gravado como novo opt-in dado pela própria pessoa
-      const ids = button.slice(OPTOUT_UNDO.length + 1).split(",").map(Number).filter(Number.isFinite);
-      await revoke(db, { ...target, ids, source: "chat:foi_engano" });
+      // "Foi engano": desfaz todos os SAIR/PARAR/STOP ativos do contato (quem tocou espera voltar a
+      // receber tudo) e fica gravado como novo opt-in dado pela própria pessoa. O que veio da Meta
+      // (preferências do WhatsApp, erro 131050) continua: não foi dado por esse SAIR.
+      await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" });
       await answer(`Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${company}.`);
     } else if (button.startsWith(`${OPTOUT_ALSO}:`)) {
       const kind = button.slice(OPTOUT_ALSO.length + 1) === "marketing" ? "marketing" : "utility";

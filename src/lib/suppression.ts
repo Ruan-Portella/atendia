@@ -62,10 +62,11 @@ export async function suppress(db: SupabaseClient, t: Target & { kind: Suppressi
 }
 
 /** Novo opt-in dado pela própria pessoa: desfaz supressões ativas (todas ou só de uma categoria). */
-export async function revoke(db: SupabaseClient, t: Target & { kind?: SuppressionKind; ids?: number[]; source: string }) {
+export async function revoke(db: SupabaseClient, t: Target & { kind?: SuppressionKind; ids?: number[]; reason?: string; source: string }) {
   let q = db.from("suppressions").update({ revoked_at: new Date().toISOString(), revoke_source: t.source }).eq("contact_hash", contactHash(t.channel, t.contact)).eq("channel", t.channel).eq("scope", t.scope).is("revoked_at", null);
   if (t.kind) q = q.eq("kind", t.kind);
   if (t.ids?.length) q = q.in("id", t.ids);
+  if (t.reason) q = q.eq("reason", t.reason);
   const { error } = await q;
   if (error) throw new Error(`supressão: ${error.message}`);
 }
