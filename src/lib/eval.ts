@@ -1,6 +1,6 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildSystemPrompt, chatModel } from "./ai";
+import { buildSystemPrompt, chatModel, chatModelId } from "./ai";
 import { CHAT_TEMPERATURE, channelNoteFor, chatTools, retrieveContext, type BotRow } from "./chat";
 import { NO_INFO_PHRASE } from "./unanswered";
 
@@ -65,7 +65,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
   const count = (v: EvalRun["verdict"]) => runs.filter((r) => r.verdict === v).length;
   return {
     question,
-    model: opts.model ?? "padrão",
+    model: opts.model ?? `${chatModelId()} (padrão)`,
     temperature: opts.temperature ?? CHAT_TEMPERATURE,
     summary: { runs: runs.length, respondeu: count("respondeu"), nao_tenho: count("nao_tenho"), so_registrou: count("so_registrou"), erro: count("erro"), chamou_atendente: runs.filter((r) => r.tools.includes("chamar_atendente")).length },
     hits: hits.map((h) => ({ similarity: Math.round(h.similarity * 1000) / 1000, title: h.metadata?.title, preview: h.content.slice(0, 160).replace(/\s+/g, " ") })),

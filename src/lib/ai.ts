@@ -22,13 +22,22 @@ const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_API_KEY });
 
+/**
+ * Modelo padrão do chat. gpt-4.1-mini desde 01/10/2026: na avaliação (/api/eval), respondeu 100%
+ * de uma pergunta com várias partes contra 20% do gpt-4o-mini (que caía no "Não tenho" e chamava
+ * atendente sem motivo), com o mesmo prompt e os mesmos trechos; custa ~2,7x por resposta.
+ */
+export function chatModelId(): string {
+  return provider === "anthropic" ? (process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5") : (process.env.OPENAI_CHAT_MODEL ?? "gpt-4.1-mini");
+}
+
 /** Modelo do chat. `id` troca o modelo (a avaliação compara modelos do mesmo provedor). */
 export function chatModel(id?: string): LanguageModel {
   if (provider === "anthropic") {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error("AI_PROVIDER=anthropic exige ANTHROPIC_API_KEY");
-    return anthropic(id ?? process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5");
+    return anthropic(id ?? chatModelId());
   }
-  return openai(id ?? process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini");
+  return openai(id ?? chatModelId());
 }
 
 export const providerName = provider === "anthropic" ? "Anthropic" : "OpenAI";
