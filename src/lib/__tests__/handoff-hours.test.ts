@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { contactLines, handoffNotice, nextOpening } from "../handoff-hours";
+import { contactLines, handoffNotice, nextOpening, type BusinessHours } from "../handoff-hours";
 import { aiDisclosure } from "../chat";
 
 // segunda a sexta, 9h às 18h (horário de Brasília)
-const hours = { "1": ["09:00", "18:00"], "2": ["09:00", "18:00"], "3": ["09:00", "18:00"], "4": ["09:00", "18:00"], "5": ["09:00", "18:00"] } as const;
+const hours: BusinessHours = { "1": ["09:00", "18:00"], "2": ["09:00", "18:00"], "3": ["09:00", "18:00"], "4": ["09:00", "18:00"], "5": ["09:00", "18:00"] };
 /** Data em Brasília (UTC-3). 2026-10-02 é sexta. */
 const br = (iso: string) => new Date(`${iso}-03:00`);
 
