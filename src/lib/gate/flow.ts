@@ -159,7 +159,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     questionKey: q.key,
     storeQuestion,
     retrieval,
-    gate: { age, instruction: entrance.instruction },
+    gate: { age, instruction: entrance.instruction, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 },
   });
   const raw = await result.text;
   const answerId = await saved;

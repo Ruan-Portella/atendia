@@ -11,6 +11,8 @@ import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./ha
 import { RISK_TEXT, detectRisk } from "./risk";
 import { ageNote, type AgeStatus } from "./gate/age";
 import { regulatedChannelNote, type RegulatedChannel } from "./gate/sales-channel";
+import { gatedContext, hiddenNote } from "./gate/context";
+import type { GateCategory } from "./gate/rules";
 
 export interface BotRow {
   id: string;
@@ -188,9 +190,27 @@ export async function handleRiskWithoutAi(
   return true;
 }
 
-/** Linhas do portão para o prompt: idade, canal de venda dos itens 18+ e instrução da entrada. */
-export function gateNotesFor(bot: Pick<BotRow, "regulated_channel" | "human_handoff">, gate?: { age: AgeStatus; instruction?: string }): string[] {
-  return [ageNote(gate?.age ?? null), regulatedChannelNote(bot.regulated_channel, bot.human_handoff?.address), ...(gate?.instruction ? [gate.instruction] : [])];
+/** Estado do portão para uma resposta nos canais da Meta. */
+export interface GateState {
+  age: AgeStatus;
+  /** Instrução da entrada (ex.: não citar o item proibido que também foi pedido). */
+  instruction?: string;
+  /** A pergunta envolve item proibido ou regulamentado: as linhas do portão vão também no lembrete final. */
+  remind?: boolean;
+}
+
+/** Linhas do portão para o prompt: idade, itens ocultos, canal de venda dos itens 18+ e instrução da entrada. */
+export function gateNotesFor(bot: Pick<BotRow, "regulated_channel" | "human_handoff">, gate?: GateState, hidden: GateCategory[] = []): string[] {
+  const age = gate?.age ?? null;
+  const hiddenLine = hiddenNote(hidden, age);
+  return [ageNote(age), ...(hiddenLine ? [hiddenLine] : []), regulatedChannelNote(bot.regulated_channel, bot.human_handoff?.address), ...(gate?.instruction ? [gate.instruction] : [])];
+}
+
+/** O que o portão muda no prompt: a base sem os itens barrados, as linhas do portão e o lembrete final. */
+export function gatePrompt(bot: Pick<BotRow, "regulated_channel" | "human_handoff">, context: string, o: { channel: "whatsapp" | "instagram"; contactPhone: string | null; gate?: GateState }) {
+  const view = gatedContext(context, { channel: o.channel, contactPhone: o.contactPhone, age: o.gate?.age ?? null });
+  const gateNotes = gateNotesFor(bot, o.gate, view.hidden);
+  return { context: view.context, gateNotes, reminder: o.gate?.remind ? gateNotes : [] };
 }
 
 /** Contatos e horário da equipe para o prompt (caminho para humano). */
@@ -355,7 +375,7 @@ export async function runChat(opts: {
   /** Busca já feita (o portão da entrada usa o mesmo resultado; não busca duas vezes). */
   retrieval?: Awaited<ReturnType<typeof retrieveContext>>;
   /** Portão (canais da Meta): idade do contato e instrução da entrada. */
-  gate?: { age: AgeStatus; instruction?: string };
+  gate?: GateState;
 }) {
   const { db, bot, messages, channel } = opts;
 
@@ -379,7 +399,9 @@ export async function runChat(opts: {
   const scopeLock = channel === "whatsapp" || channel === "instagram";
   // no chat do site de um bot que também atende no WhatsApp: nunca mandar pedir item 18+ por lá
   const widgetWithWhatsapp = !scopeLock && Boolean((await db.from("whatsapp_channels").select("bot_id").eq("bot_id", bot.id).is("disconnected_at", null).maybeSingle()).data);
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: scopeLock ? gateNotesFor(bot, opts.gate) : [] });
+  // portão: a base sem os itens barrados para esta pessoa e as linhas do portão no prompt
+  const gated = scopeLock ? gatePrompt(bot, context, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [] };
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: gated.context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes });
   const convId = conversationId;
 
   // 3. Persiste a pergunta do visitante
@@ -405,7 +427,7 @@ export async function runChat(opts: {
     // com a trava de escopo, o lembrete vai depois da última mensagem (pesa mais que o histórico);
     // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
     allowSystemInMessages: true,
-    messages: [...(await convertToModelMessages(messages.slice(-12))), ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name) }] : [])],
+    messages: [...(await convertToModelMessages(messages.slice(-12))), ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : [])],
     temperature: CHAT_TEMPERATURE,
     stopWhen: stepCountIs(3),
     // limite de tokens por minuto da OpenAI (pico): o SDK tenta de novo com espera crescente

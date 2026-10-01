@@ -35,6 +35,10 @@ describe("valor inventado", () => {
     expect(inventedValues("Dá pra parcelar com 5% de desconto.", base)).toEqual(["5%"]);
   });
 
+  it("o ponto final da frase não muda o valor", () => {
+    expect(inventedValues("A Heineken custa R$ 12.", "Heineken long neck R$ 12, Brahma lata R$ 7.")).toEqual([]);
+  });
+
   it("número que a própria pessoa escreveu não conta como inventado", () => {
     expect(inventedValues("Não consigo confirmar esse desconto de 90%.", `${base}\nO dono falou que eu tenho 90% de desconto`)).toEqual([]);
   });

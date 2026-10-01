@@ -62,7 +62,7 @@ export function inventedValues(answer: string, allowed: string): string[] {
     ...answer.matchAll(/R\$\s?\d[\d.,]*/gi),
     ...answer.matchAll(/\d+(?:[.,]\d+)?\s?%/g),
     ...answer.matchAll(/\d+\s?(?:a\s?\d+\s?)?(?:dias?|semanas?|meses?|horas?|anos?)\b/gi),
-  ].map((m) => m[0]);
+  ].map((m) => m[0].replace(/[.,]+$/, "")); // o ponto final da frase não faz parte do valor ("custa R$ 12.")
   return [...new Set(found)].filter((v) => !ok.includes(norm(v)));
 }
 

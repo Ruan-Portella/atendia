@@ -5,6 +5,8 @@ import { AGE_NO, AGE_YES, AGE_NO_REASK_DAYS, ageNote, getAge, resetAge, setAge }
 import { decideEntrance, type Classification } from "../gate/entrance";
 import { isChatLink, regulatedChannelNote, regulatedDestination } from "../gate/sales-channel";
 import { ageAnswer, historyUpTo } from "../gate/flow";
+import { gatedContext, hiddenNote } from "../gate/context";
+import { scopeReminder } from "../ai";
 import type { GateCategory } from "../gate/rules";
 
 /* ------------------------------------------------------------------ canal de venda de regulamentados */
@@ -33,6 +35,56 @@ describe("canal para bebida e remédio", () => {
     const none = regulatedChannelNote(null);
     expect(none).toContain("CONTEXTO");
     expect(none).toContain("Esse item não conseguimos vender por aqui.");
+  });
+});
+
+/* ------------------------------------------------------------------ base que a IA vê */
+
+describe("base sem os itens barrados", () => {
+  const MENU = [
+    "[1] Cardápio",
+    "Bar do Zé - Cardápio",
+    "Pizzas: calabresa R$ 45, marguerita R$ 42.",
+    "Bebidas sem álcool: refrigerante lata R$ 6, suco natural R$ 9.",
+    "Cervejas: Heineken long neck R$ 12, Brahma lata R$ 7.",
+    "Drinks: caipirinha de limão R$ 18. Sobremesa: pudim R$ 12.",
+    "Vendemos também cigarro avulso.",
+    "Camisa cor vinho R$ 80.",
+    "Pedidos pelo site: bardoze.com.br/cardapio ou pelo iFood.",
+  ].join("\n");
+  const view = (age: "sim" | "nao" | null, contactPhone = "5521999990000") => gatedContext(MENU, { channel: "whatsapp", contactPhone, age });
+
+  it("sem 18+ confirmado: some bebida (por frase) e proibido; o resto fica", () => {
+    const v = view(null);
+    for (const t of ["Heineken", "Brahma", "caipirinha", "cigarro"]) expect(v.context).not.toContain(t);
+    for (const t of ["calabresa", "refrigerante", "Sobremesa: pudim R$ 12.", "cor vinho", "bardoze.com.br/cardapio", "[1] Cardápio"]) expect(v.context).toContain(t);
+    expect(v.hidden.sort()).toEqual(["bebida", "tabaco"]);
+    expect(view("nao").context).toBe(v.context);
+  });
+
+  it("com 18+ confirmado: bebida volta, proibido continua fora", () => {
+    const v = view("sim");
+    expect(v.context).toContain("Heineken long neck R$ 12");
+    expect(v.context).toContain("caipirinha");
+    expect(v.context).not.toContain("cigarro");
+    expect(v.hidden).toEqual(["tabaco"]);
+  });
+
+  it("WhatsApp de fora do Brasil: bebida some mesmo com Sim", () => {
+    expect(view("sim", "14155550123").context).not.toContain("Heineken");
+  });
+
+  it("nota dos itens ocultos só quando bebida ou remédio ficaram de fora", () => {
+    expect(hiddenNote(["bebida"], null)).toContain("pedir_confirmacao_18");
+    expect(hiddenNote(["bebida"], "nao")).toContain("não tem 18 anos");
+    expect(hiddenNote(["bebida"], "sim")).toBeNull();
+    expect(hiddenNote(["tabaco"], null)).toBeNull();
+    expect(hiddenNote([], null)).toBeNull();
+  });
+
+  it("lembrete final leva as linhas do portão só quando pedido", () => {
+    expect(scopeReminder("Bar do Zé")).not.toContain("18");
+    expect(scopeReminder("Bar do Zé", ["linha do portão"])).toMatch(/\n- linha do portão$/);
   });
 });
 

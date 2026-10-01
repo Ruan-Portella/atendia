@@ -1,7 +1,7 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, chatModel, chatModelId, scopeReminder } from "./ai";
-import { CHAT_TEMPERATURE, channelNoteFor, chatTools, gateNotesFor, handoffPrompt, retrieveContext, withRiskText, type BotRow } from "./chat";
+import { CHAT_TEMPERATURE, channelNoteFor, chatTools, gatePrompt, handoffPrompt, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { handoffNotice } from "./handoff-hours";
 import { RISK_TEXT } from "./risk";
 import { NO_INFO_PHRASE } from "./unanswered";
@@ -64,11 +64,16 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       if (entrance?.kind === "proibido") return { verdict: "barrou", text: GATE_TEXTS.prohibited, tools: [`portao:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0 };
       if (entrance?.kind === "pede_18") return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools: ["portao:pede_18"], inputTokens: 0, outputTokens: 0 };
 
+      // mesmo corte do chat: a base sem os itens barrados para esta pessoa e as linhas do portão
+      const remind = entrance?.kind === "ia" && (entrance.regulated.length > 0 || entrance.prohibited.length > 0);
+      const gated = scopeLock
+        ? gatePrompt(bot, context, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, gate: { age, instruction: entrance?.kind === "ia" ? entrance.instruction : undefined, remind } })
+        : { context, gateNotes: [], reminder: [] };
       const system = buildSystemPrompt({
         assistantName: bot.name,
         clientName: bot.client_name,
         persona: bot.persona ?? {},
-        context,
+        context: gated.context,
         leadCapture: bot.lead_capture?.enabled !== false,
         agentMessages: [],
         channelNote,
@@ -76,7 +81,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         scopeLock,
         businessTopics: bot.business_topics,
         gateChannel: scopeLock ? (opts.channel as "whatsapp" | "instagram") : null,
-        gateNotes: scopeLock ? gateNotesFor(bot, { age, instruction: entrance?.kind === "ia" ? entrance.instruction : undefined }) : [],
+        gateNotes: gated.gateNotes,
       });
       const r = await generateText({
         model: chatModel(opts.model),
@@ -85,7 +90,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         messages: [
           ...(opts.history ?? []).map((content, i) => ({ role: i % 2 === 0 ? ("user" as const) : ("assistant" as const), content })),
           { role: "user" as const, content: question },
-          ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name) }] : []),
+          ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
         ],
         temperature: opts.temperature ?? CHAT_TEMPERATURE,
         stopWhen: stepCountIs(3),
