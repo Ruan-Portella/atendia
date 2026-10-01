@@ -12,7 +12,7 @@ import { RISK_TEXT, detectRisk } from "./risk";
 import { ageNote, type AgeStatus } from "./gate/age";
 import { regulatedChannelNote, type RegulatedChannel } from "./gate/sales-channel";
 import { gatedContext, hiddenNote } from "./gate/context";
-import type { GateCategory } from "./gate/rules";
+import { CATEGORIES, type GateCategory } from "./gate/rules";
 
 export interface BotRow {
   id: string;
@@ -206,7 +206,17 @@ export interface GateState {
 export function gateNotesFor(bot: Pick<BotRow, "regulated_channel" | "human_handoff">, gate?: GateState, hidden: GateCategory[] = []): string[] {
   const age = gate?.age ?? null;
   const hiddenLine = hiddenNote(hidden, age);
-  return [ageNote(age), ...(hiddenLine ? [hiddenLine] : []), regulatedChannelNote(bot.regulated_channel, bot.human_handoff?.address), ...(gate?.instruction ? [gate.instruction] : [])];
+  // idade não confirmada e nenhuma bebida ou remédio na base desta pergunta: não há o que proteger,
+  // e a instrução de pedir 18+ só atrapalhava ("qual remédio eu tomo?" virava pergunta de idade
+  // em vez da regra de saúde)
+  const regulatedInBase = hidden.some((c) => CATEGORIES[c].level === "regulamentado");
+  const relevant = age !== null || regulatedInBase || Boolean(gate?.remind);
+  return [
+    ...(age !== null || regulatedInBase ? [ageNote(age)] : []),
+    ...(hiddenLine ? [hiddenLine] : []),
+    ...(relevant ? [regulatedChannelNote(bot.regulated_channel, bot.human_handoff?.address)] : []),
+    ...(gate?.instruction ? [gate.instruction] : []),
+  ];
 }
 
 /** O que o portão muda no prompt: a base sem os itens barrados, as linhas do portão e o lembrete final. */

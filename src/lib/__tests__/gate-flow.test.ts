@@ -7,6 +7,7 @@ import { isChatLink, regulatedChannelNote, regulatedDestination } from "../gate/
 import { ageAnswer, historyUpTo, withLastUserText } from "../gate/flow";
 import { gatedContext, hiddenNote } from "../gate/context";
 import { scopeReminder } from "../ai";
+import { gateNotesFor } from "../chat";
 import type { GateCategory } from "../gate/rules";
 
 /* ------------------------------------------------------------------ canal de venda de regulamentados */
@@ -80,6 +81,25 @@ describe("base sem os itens barrados", () => {
     expect(hiddenNote(["bebida"], "sim")).toBeNull();
     expect(hiddenNote(["tabaco"], null)).toBeNull();
     expect(hiddenNote([], null)).toBeNull();
+  });
+
+  it("sem bebida nem remédio na base desta pergunta e idade não confirmada: nada de pedir 18+", () => {
+    const bot = { regulated_channel: null, human_handoff: null };
+    // ex.: "tô com dor de cabeça, qual remédio eu tomo?" numa empresa que não vende remédio
+    expect(gateNotesFor(bot, { age: null }, []).join(" ")).not.toContain("pedir_confirmacao_18");
+    expect(gateNotesFor(bot, { age: null }, ["tabaco"]).join(" ")).not.toContain("pedir_confirmacao_18");
+    expect(gateNotesFor(bot, { age: null }, [])).toEqual([]);
+    // a base tem o item (oculto): a instrução de idade e o canal de venda entram
+    const withItem = gateNotesFor(bot, { age: null }, ["bebida"]).join(" ");
+    expect(withItem).toContain("pedir_confirmacao_18");
+    expect(withItem).toContain("Para comprar bebida alcoólica ou remédio");
+    // idade já respondida vale sempre
+    expect(gateNotesFor(bot, { age: "nao" }, []).join(" ")).toContain("NÃO tem 18 anos");
+    expect(gateNotesFor(bot, { age: "sim" }, []).join(" ")).toContain("Para comprar bebida alcoólica ou remédio");
+    // pergunta sobre o item (entrada acusou): o canal de venda entra, a idade não
+    const asked = gateNotesFor(bot, { age: null, remind: true }, []).join(" ");
+    expect(asked).toContain("Para comprar bebida alcoólica ou remédio");
+    expect(asked).not.toContain("pedir_confirmacao_18");
   });
 
   it("lembrete final leva as linhas do portão só quando pedido", () => {

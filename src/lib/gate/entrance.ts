@@ -62,7 +62,7 @@ export async function classifyRequest(text: string, categories: GateCategory[], 
 Um filtro de palavras marcou estas categorias: ${labels}.
 Para cada categoria, diga se o cliente PEDE o item ou só o MENCIONA.
 - "pede": quer comprar, pede, pergunta se a empresa vende ou tem, pergunta o preço, pede o cardápio ou a lista desses itens. Vale mesmo quando é só uma parte de uma mensagem com outros assuntos (ex.: "que horas vocês abrem? e tem narguilé?": narguilé pede).
-- "menciona": cita sem pedir: conta o que fez, pergunta de saúde ou de uso, receita, comparação (ex.: "tomei vinho no jantar, posso tomar paracetamol?": vinho e paracetamol mencionam; "gastei 20 reais em cerveja": menciona).
+- "menciona": cita sem pedir: conta o que fez, pergunta de saúde ou de uso (qual remédio tomar para um sintoma, dose, se pode misturar), receita, comparação (ex.: "tomei vinho no jantar, posso tomar paracetamol?": vinho e paracetamol mencionam; "estou com febre, que remédio eu tomo?": remédio menciona, é pergunta de saúde; "gastei 20 reais em cerveja": menciona).
 Na dúvida, "pede".${rest}
 Responda: {"categorias": {"categoria": "pede" | "menciona"}, "tem_outro_assunto": true|false${blocked.length ? ', "resto": "..."' : ""}}, onde tem_outro_assunto diz se a mensagem também pede ou pergunta outra coisa além desses itens.`,
       ...modelCallOptions(chatModelId(), { temperature: 0, cacheKey: "boavoz-portao" }),
