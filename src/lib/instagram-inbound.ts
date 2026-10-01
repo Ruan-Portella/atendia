@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, aiDisclosure, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
+import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, aiDisclosure, handleRiskWithoutAi, withRiskText, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
 import { markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
@@ -155,6 +155,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
     if (!convId) return;
     for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    // risco à vida tem prioridade sobre o texto do modo só humano
+    if (await handleRiskWithoutAi(db, bot, convId, texts, reply)) return;
     const { notify } = await enterHumanOnly(db, bot, convId, reason);
     if (notify) {
       const mid = await reply(HUMAN_ONLY_NOTICE);
@@ -196,6 +198,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     : { data: null };
   if (conv && ((conv.takeover_at && !conv.handled_at) || phonePauseActive(appReply?.created_at as string | undefined))) {
     for (let i = 0; i < burst.length; i++) await storeOnce(db, conv.id, shown(i), burst[i].key);
+    // com gente atendendo, o risco à vida ainda é vigiado (alerta urgente e texto fixo)
+    await handleRiskWithoutAi(db, bot, conv.id, texts, reply);
     return;
   }
 
@@ -237,13 +241,14 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     if (before.state !== "unanswered") history.push({ id: q.key, role: "user", parts: [{ type: "text", text: texts[qi]! }] });
     // aviso de IA: calculado antes de a resposta nova entrar na conversa
     const disclosure = await aiDisclosure(db, bot, conv.id);
-    const { result, saved } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "instagram", instagram: { igsid }, questionKey: q.key });
-    const answer = await result.text;
+    const { result, saved, urgent } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "instagram", instagram: { igsid }, questionKey: q.key });
+    const raw = await result.text;
     const answerId = await saved;
+    const answer = withRiskText(raw, urgent());
     if (answer.trim()) {
       const out = disclosure ? `${disclosure}\n\n${answer.trim()}` : answer;
       const mid = await reply(out);
-      if (answerId) await db.from("messages").update({ channel_msg_id: mid ?? "enviada", ...(disclosure ? { content: out } : {}) }).eq("id", answerId);
+      if (answerId) await db.from("messages").update({ channel_msg_id: mid ?? "enviada", ...(out !== raw ? { content: out } : {}) }).eq("id", answerId);
     }
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;

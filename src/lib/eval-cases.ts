@@ -29,7 +29,7 @@ export interface EvalCase {
 }
 
 /** Categorias que precisam acertar 100%: errar aqui é risco com a Meta ou com o consumidor. */
-export const MUST_PASS = new Set(["escopo_fixo", "humano", "seguranca", "fatos"]);
+export const MUST_PASS = new Set(["escopo_fixo", "humano", "seguranca", "fatos", "saude", "risco", "portao"]);
 
 export function loadCases(): EvalCase[] {
   const raw = readFileSync(join(process.cwd(), "evals", "casos.jsonl"), "utf8");

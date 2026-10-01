@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, aiDisclosure, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
+import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, aiDisclosure, handleRiskWithoutAi, withRiskText, conversationHistory, enterHumanOnly, markHumanOnlyNotice, openConversation, runChat, type AiBlockReason, type BotRow } from "./chat";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
@@ -204,6 +204,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id").single()).data?.id;
     if (!convId) return;
     for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    // risco à vida tem prioridade sobre o texto do modo só humano
+    if (await handleRiskWithoutAi(db, bot, convId, texts, async (t) => (await reply(t)).messages?.[0]?.id ?? null)) return;
     const { notify } = await enterHumanOnly(db, bot, convId, reason);
     if (notify && !channel.coexistence) {
       const sent = await reply(HUMAN_ONLY_NOTICE);
@@ -223,6 +225,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   // gente atendendo: o assistente fica quieto, sem "digitando…", e as mensagens vão para o painel
   if (conv && ((conv.takeover_at && !conv.handled_at) || phonePauseActive(phoneReply?.created_at as string | undefined))) {
     for (let i = 0; i < burst.length; i++) await storeOnce(db, conv.id, shown(i), burst[i].key);
+    // com gente atendendo, o risco à vida ainda é vigiado (alerta urgente e texto fixo)
+    await handleRiskWithoutAi(db, bot, conv.id, texts, async (t) => (await reply(t)).messages?.[0]?.id ?? null);
     return;
   }
 
@@ -267,14 +271,16 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     if (before.state !== "unanswered") history.push({ id: q.msg.id, role: "user", parts: [{ type: "text", text: texts[qi]! }] });
     // aviso de IA: calculado antes de a resposta nova entrar na conversa
     const disclosure = await aiDisclosure(db, bot, conv.id);
-    const { result, saved } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "whatsapp", whatsapp: { waId, profileName }, questionKey: q.key });
-    const answer = await result.text;
+    const { result, saved, urgent } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "whatsapp", whatsapp: { waId, profileName }, questionKey: q.key });
+    const raw = await result.text;
     const answerId = await saved;
+    // risco à vida: o texto fixo com os telefones vai mesmo que a IA não tenha copiado o aviso
+    const answer = withRiskText(raw, urgent());
     if (answer.trim()) {
       // prefixo na mesma mensagem (nunca uma mensagem a mais); o painel guarda o que o contato viu
       const out = disclosure ? `${disclosure}\n\n${answer.trim()}` : answer;
       const sent = await reply(out);
-      if (answerId) await db.from("messages").update({ channel_msg_id: sent.messages?.[0]?.id ?? "enviada", ...(disclosure ? { content: out } : {}) }).eq("id", answerId);
+      if (answerId) await db.from("messages").update({ channel_msg_id: sent.messages?.[0]?.id ?? "enviada", ...(out !== raw ? { content: out } : {}) }).eq("id", answerId);
     }
   } catch (e) {
     // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)

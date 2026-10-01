@@ -57,8 +57,10 @@ async function recipients(db: SupabaseClient, bot: BotRow): Promise<string[]> {
  *  - as pessoas do cliente, se ele pode atender, com link para a área do cliente e a marca
  *    da agência. Ninguém recebe o aviso duas vezes.
  */
-export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string }) {
-  const { db, bot, conversationId, reason } = opts;
+export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string; urgent?: boolean }) {
+  const { db, bot, conversationId, reason, urgent } = opts;
+  // risco à vida: assunto destacado e a agência sempre avisada (mesmo com o atendimento delegado)
+  const urgentTag = urgent ? "URGENTE (possível risco à vida) · " : "";
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return;
   const { Resend } = await import("resend");
@@ -79,7 +81,7 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
         const { error } = await resend.emails.send({
           from: `${agency.name.replace(/["<>]/g, "")} <${fromAddress}>`,
           to: memberEmails,
-          subject: `Um visitante quer falar com alguém · ${bot.client_name}`,
+          subject: `${urgentTag}Um visitante quer falar com alguém · ${bot.client_name}`,
           text: [
             `Um visitante do site de ${bot.client_name} pediu para falar com uma pessoa.`,
             said,
@@ -92,7 +94,7 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
       }
     }
   }
-  if (delegated) return;
+  if (delegated && !urgent) return;
 
   const to = (await recipients(db, bot)).filter((e) => !memberEmails.includes(e.toLowerCase()));
   if (!to.length) return;
@@ -100,7 +102,7 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
   await resend.emails.send({
     from: process.env.EMAIL_FROM ?? "Boavoz <onboarding@resend.dev>",
     to,
-    subject: `Um visitante quer falar com alguém · ${bot.client_name}`,
+    subject: `${urgentTag}Um visitante quer falar com alguém · ${bot.client_name}`,
     text: [
       `Um visitante do chatbot ${bot.name} (${bot.client_name}) pediu para falar com uma pessoa.`,
       said,

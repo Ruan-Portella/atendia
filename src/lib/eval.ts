@@ -1,8 +1,9 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, chatModel, chatModelId, scopeReminder } from "./ai";
-import { CHAT_TEMPERATURE, channelNoteFor, chatTools, handoffPrompt, retrieveContext, type BotRow } from "./chat";
+import { CHAT_TEMPERATURE, channelNoteFor, chatTools, handoffPrompt, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { handoffNotice } from "./handoff-hours";
+import { RISK_TEXT } from "./risk";
 import { NO_INFO_PHRASE } from "./unanswered";
 
 /*
@@ -42,10 +43,11 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
   const { context, hits } = await retrieveContext(db, bot.id, question);
   const channelNote = opts.channel === "whatsapp" ? channelNoteFor({ whatsapp: { waId: "5521999990000" } }) : opts.channel === "instagram" ? channelNoteFor({ instagram: { igsid: "teste" } }) : undefined;
   const scopeLock = opts.channel === "whatsapp" || opts.channel === "instagram";
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: bot.lead_capture?.enabled !== false, agentMessages: [], channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics });
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: bot.lead_capture?.enabled !== false, agentMessages: [], channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (opts.channel as "whatsapp" | "instagram") : null });
   const noop = async () => ({ ok: true });
 
   const one = async (): Promise<EvalRun> => {
+    let urgent = false;
     try {
       const r = await generateText({
         model: chatModel(opts.model),
@@ -60,10 +62,15 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         stopWhen: stepCountIs(3),
         maxRetries: 6,
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)
-        tools: chatTools({ registrar_lead: noop, chamar_atendente: async () => ({ ok: true, aviso: handoffNotice(bot.human_handoff?.hours) }), registrar_pergunta_sem_resposta: noop, registrar_recusa: noop }),
+        tools: chatTools({ registrar_lead: noop, chamar_atendente: async ({ urgente }) => {
+            if (urgente) urgent = true;
+            return { ok: true, aviso: urgente ? RISK_TEXT : handoffNotice(bot.human_handoff?.hours) };
+          }, registrar_pergunta_sem_resposta: noop, registrar_recusa: noop }),
       });
       const tools = r.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
-      return { verdict: verdictOf(r.text, tools), text: r.text, tools, inputTokens: r.totalUsage?.inputTokens ?? 0, outputTokens: r.totalUsage?.outputTokens ?? 0 };
+      // o que o contato recebe: no WhatsApp e no Instagram, o canal garante o texto fixo de risco
+      const text = scopeLock ? withRiskText(r.text, urgent) : r.text;
+      return { verdict: verdictOf(text, tools), text, tools, inputTokens: r.totalUsage?.inputTokens ?? 0, outputTokens: r.totalUsage?.outputTokens ?? 0 };
     } catch (e) {
       return { verdict: "erro", text: (e as Error).message, tools: [], inputTokens: 0, outputTokens: 0 };
     }

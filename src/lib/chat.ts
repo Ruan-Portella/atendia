@@ -8,6 +8,7 @@ import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
 import { looksUnanswered, recordUnanswered } from "./unanswered";
 import { recordAiUsage } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
+import { RISK_TEXT, detectRisk } from "./risk";
 
 export interface BotRow {
   id: string;
@@ -150,6 +151,39 @@ export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" 
   return null;
 }
 
+/** Garante o texto fixo de risco à vida na resposta quando a IA chamou atendente com urgência. */
+export function withRiskText(answer: string, urgent: boolean): string {
+  if (!urgent || answer.includes("188")) return answer;
+  return answer.trim() ? `${answer.trim()}\n\n${RISK_TEXT}` : RISK_TEXT;
+}
+
+/**
+ * Risco à vida com a IA fora (atendente assumiu, alguém respondeu pelo celular, modo só humano):
+ * dicionário + checagem barata de IA. Se confirmar, vira pedido de atendente urgente (equipe
+ * avisada com destaque) e o contato recebe o texto fixo, a não ser que alguém da equipe tenha
+ * escrito nos últimos 10 minutos (aí só o alerta). Devolve true se agiu.
+ */
+export async function handleRiskWithoutAi(
+  db: SupabaseClient,
+  bot: BotRow,
+  conversationId: string,
+  texts: Array<string | null>,
+  send: (text: string) => Promise<string | null>,
+): Promise<boolean> {
+  const text = texts.filter(Boolean).join("\n");
+  if (!text || !(await detectRisk(text))) return false;
+  const now = new Date().toISOString();
+  await db.from("conversations").update({ needs_human: true, handoff_requested_at: now, handoff_urgent_at: now, handled_at: null }).eq("id", conversationId);
+  notifyHandoff({ db, bot, conversationId, reason: text.slice(0, 300), urgent: true }).catch(() => {});
+  const since = new Date(Date.now() - 10 * 60_000).toISOString();
+  const { data: recentAgent } = await db.from("messages").select("id").eq("conversation_id", conversationId).eq("role", "agent").gt("created_at", since).limit(1).maybeSingle();
+  if (!recentAgent) {
+    const mid = await send(RISK_TEXT);
+    await db.from("messages").insert({ conversation_id: conversationId, role: "assistant", content: RISK_TEXT, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
+  }
+  return true;
+}
+
 /** Contatos e horário da equipe para o prompt (caminho para humano). */
 export function handoffPrompt(bot: Pick<BotRow, "human_handoff">) {
   return { humanContacts: contactLines(bot.human_handoff), hours: hoursLines(bot.human_handoff?.hours) };
@@ -165,7 +199,7 @@ export type RefusalLevel = "fixo" | "flexivel";
  */
 export function chatTools(exec: {
   registrar_lead: ToolExec<{ nome: string; whatsapp?: string; email?: string; interesse?: string }>;
-  chamar_atendente: ToolExec<{ motivo?: string }>;
+  chamar_atendente: ToolExec<{ motivo?: string; urgente?: boolean }>;
   registrar_pergunta_sem_resposta: ToolExec<{ pergunta: string }>;
   registrar_recusa: ToolExec<{ nivel: RefusalLevel; pedido?: string }>;
 }) {
@@ -181,8 +215,11 @@ export function chatTools(exec: {
       execute: exec.registrar_lead,
     }),
     chamar_atendente: tool({
-      description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano ou alguém da equipe.",
-      inputSchema: z.object({ motivo: z.string().optional().describe("resumo curto do que a pessoa precisa") }),
+      description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano ou alguém da equipe, ou com urgente=true quando houver risco à vida ou à integridade.",
+      inputSchema: z.object({
+        motivo: z.string().optional().describe("resumo curto do que a pessoa precisa"),
+        urgente: z.boolean().optional().describe("true só se a pessoa indicar risco à vida ou à integridade (suicídio, autolesão, emergência médica, violência)"),
+      }),
       execute: exec.chamar_atendente,
     }),
     registrar_pergunta_sem_resposta: tool({
@@ -318,7 +355,9 @@ export async function runChat(opts: {
   const channelNote = channelNoteFor(opts);
   // trava de escopo só nos canais da Meta (no widget do site não há trava)
   const scopeLock = channel === "whatsapp" || channel === "instagram";
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics });
+  // no chat do site de um bot que também atende no WhatsApp: nunca mandar pedir item 18+ por lá
+  const widgetWithWhatsapp = !scopeLock && Boolean((await db.from("whatsapp_channels").select("bot_id").eq("bot_id", bot.id).is("disconnected_at", null).maybeSingle()).data);
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp });
   const convId = conversationId;
 
   // 3. Persiste a pergunta do visitante
@@ -331,6 +370,7 @@ export async function runChat(opts: {
   }
 
   let unansweredRecorded = false;
+  let urgentCalled = false;
   // resolve quando a resposta já está gravada (quem não usa o stream, como o WhatsApp, espera por ele)
   // resolve com o id da resposta gravada (null se não houve texto ou deu erro)
   let markSaved!: (id?: number | null) => void;
@@ -358,7 +398,14 @@ export async function runChat(opts: {
         notifyLead({ db, bot, lead: { id: lead?.id, ...input } }).catch(() => {});
         return { ok: true };
       },
-      chamar_atendente: async ({ motivo }) => {
+      chamar_atendente: async ({ motivo, urgente }) => {
+        if (urgente) {
+          // risco à vida: aviso destacado à equipe e o texto fixo com os telefones de emergência
+          urgentCalled = true;
+          await db.from("conversations").update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handoff_urgent_at: new Date().toISOString(), handled_at: null }).eq("id", convId);
+          notifyHandoff({ db, bot, conversationId: convId, reason: motivo ?? question, urgent: true }).catch(() => {});
+          return { ok: true, aviso: RISK_TEXT };
+        }
         const { data: updated } = await db
           .from("conversations")
           .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
@@ -421,5 +468,6 @@ export async function runChat(opts: {
     },
   });
 
-  return { result, conversationId: convId, sources: used, saved };
+  // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
+  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled };
 }
