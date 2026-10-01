@@ -52,6 +52,18 @@ export function blocks(kinds: SuppressionKind[], templateCategory: string): bool
 }
 
 export async function suppress(db: SupabaseClient, t: Target & { kind: SuppressionKind; reason: string; source: string }): Promise<number | null> {
+  // idempotente: já existe pedido ativo da mesma categoria (ex.: o evento foi reprocessado)? usa ele
+  const { data: existing } = await db
+    .from("suppressions")
+    .select("id")
+    .eq("contact_hash", contactHash(t.channel, t.contact))
+    .eq("channel", t.channel)
+    .eq("scope", t.scope)
+    .eq("kind", t.kind)
+    .is("revoked_at", null)
+    .limit(1)
+    .maybeSingle();
+  if (existing) return existing.id as number;
   const { data, error } = await db
     .from("suppressions")
     .insert({ contact_hash: contactHash(t.channel, t.contact), channel: t.channel, scope: t.scope, kind: t.kind, reason: t.reason, source: t.source })
