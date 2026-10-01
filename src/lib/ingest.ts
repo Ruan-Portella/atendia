@@ -105,9 +105,15 @@ export function parseHtml(url: string, html: string): PageText {
   $("script, style, noscript, svg, iframe, nav, footer, header, form, [aria-hidden='true'], .cookie, #cookie").remove();
   const title = (social?.title || $("title").first().text() || $("h1").first().text() || url).trim().slice(0, 200);
   const root = $("main").length ? $("main") : $("article").length ? $("article") : $("body");
+  // o text() do cheerio cola o texto de blocos vizinhos ("Full StackOlá, eu souRuan"): quebra de
+  // linha depois de cada bloco e espaço depois de botões, links e células
+  root.find("br").replaceWith("\n");
+  root.find("p, div, section, article, aside, li, ul, ol, dl, dt, dd, h1, h2, h3, h4, h5, h6, tr, table, blockquote, pre, figure, figcaption, details, summary").append("\n");
+  root.find("a, button, span, td, th, label, strong, em, b, small").append(" ");
   let text = root
     .text()
     .replace(/[ \t ]+/g, " ")
+    .replace(/ +([,.;:!?)])/g, "$1") // o espaço depois de <span> não fica antes da pontuação ("R$ 890,00")
     .replace(/\s*\n\s*/g, "\n")
     .replace(/\n{2,}/g, "\n\n")
     .trim();
