@@ -8,5 +8,7 @@ describe("classificação das respostas na avaliação", () => {
     expect(verdictOf("Registrei sua pergunta para que a equipe responda depois.", ["registrar_pergunta_sem_resposta"])).toBe("so_registrou");
     // registrou a parte que faltou, mas respondeu o resto: conta como resposta
     expect(verdictOf("Ruan trabalhou na Resoluti. Não tenho a história completa dele, registrei para a equipe.", ["registrar_pergunta_sem_resposta"])).toBe("respondeu");
+    // trava de escopo
+    expect(verdictOf("Não consigo fazer sua redação, mas posso te contar sobre os nossos cursos!", ["registrar_recusa"])).toBe("recusou");
   });
 });

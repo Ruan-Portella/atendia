@@ -201,6 +201,10 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
     if ((f.instructions ?? "").length > 4000) return fail("As instruções podem ter no máximo 4.000 caracteres.");
     patch.persona = { tone: f.tone, welcome: f.welcome, instructions: f.instructions, language: "português do Brasil" };
   }
+  if ("business_topics" in f) {
+    if (f.business_topics.length > 1000) return fail("Os assuntos do negócio podem ter no máximo 1.000 caracteres.");
+    patch.business_topics = f.business_topics.trim() || null;
+  }
   if ("color" in f) {
     if (!/^#[0-9a-fA-F]{6}$/.test(f.color)) return fail("Cor inválida.");
     const offset = Math.min(200, Math.max(0, Math.round(Number(f.offset)) || 20));

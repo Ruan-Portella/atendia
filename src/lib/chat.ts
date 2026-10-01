@@ -24,6 +24,8 @@ export interface BotRow {
   lead_capture: { enabled?: boolean; notify_email?: string | null; notify_whatsapp?: string | null };
   /** Caminho para humano: outros contatos e horário de atendimento (opcionais). */
   human_handoff?: HumanHandoff | null;
+  /** "Assuntos do negócio": ampliam o nível flexível da trava de escopo. */
+  business_topics?: string | null;
 }
 
 export const CORS_HEADERS = {
@@ -154,6 +156,8 @@ export function handoffPrompt(bot: Pick<BotRow, "human_handoff">) {
 
 type ToolExec<I> = (input: I) => Promise<{ ok: boolean; aviso?: string }>;
 
+export type RefusalLevel = "fixo" | "flexivel";
+
 /**
  * As ferramentas do assistente (descrição e formato iguais para o chat de verdade e para a
  * avaliação); quem chama decide o que cada uma faz.
@@ -162,6 +166,7 @@ export function chatTools(exec: {
   registrar_lead: ToolExec<{ nome: string; whatsapp?: string; email?: string; interesse?: string }>;
   chamar_atendente: ToolExec<{ motivo?: string }>;
   registrar_pergunta_sem_resposta: ToolExec<{ pergunta: string }>;
+  registrar_recusa: ToolExec<{ nivel: RefusalLevel; pedido?: string }>;
 }) {
   return {
     registrar_lead: tool({
@@ -183,6 +188,12 @@ export function chatTools(exec: {
       description: "Registra uma pergunta que não pôde ser respondida com o conteúdo disponível, para a empresa completar depois.",
       inputSchema: z.object({ pergunta: z.string().min(3) }),
       execute: exec.registrar_pergunta_sem_resposta,
+    }),
+    // sempre na lista (ordem fixa ajuda o cache do provedor); só é usada com a trava de escopo
+    registrar_recusa: tool({
+      description: "Registra que você recusou um pedido fora do escopo do atendimento. nivel \"fixo\": tarefa sem relação com o negócio ou executar o serviço que a empresa vende; \"flexivel\": assunto distante do negócio. Chame junto com a sua resposta de recusa.",
+      inputSchema: z.object({ nivel: z.enum(["fixo", "flexivel"]), pedido: z.string().optional().describe("resumo curto do que foi pedido") }),
+      execute: exec.registrar_recusa,
     }),
   };
 }
@@ -304,7 +315,9 @@ export async function runChat(opts: {
   const wa = opts.whatsapp;
   const waPhone = wa && /^\d+$/.test(wa.waId) ? wa.waId : null;
   const channelNote = channelNoteFor(opts);
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot) });
+  // trava de escopo só nos canais da Meta (no widget do site não há trava)
+  const scopeLock = channel === "whatsapp" || channel === "instagram";
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics });
   const convId = conversationId;
 
   // 3. Persiste a pergunta do visitante
@@ -355,6 +368,13 @@ export async function runChat(opts: {
       registrar_pergunta_sem_resposta: async ({ pergunta }) => {
         unansweredRecorded = true;
         await recordUnanswered(db, bot.id, convId, pergunta);
+        return { ok: true };
+      },
+      registrar_recusa: async ({ nivel, pedido }) => {
+        // registro próprio, separado das perguntas sem resposta (que são lacuna na base)
+        unansweredRecorded = true;
+        const { error } = await db.from("scope_refusals").insert({ bot_id: bot.id, conversation_id: convId, level: nivel, request: pedido?.slice(0, 300) ?? null });
+        if (error) console.error("recusa não registrada", error.message);
         return { ok: true };
       },
     }),

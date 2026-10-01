@@ -190,6 +190,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" maxLength={200} defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
               <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas</label><input id="welcome" name="welcome" maxLength={300} defaultValue={persona.welcome ?? ""} className="input" /></div>
               <div><label htmlFor="instructions" className="label">Instruções extras (o que sempre dizer, o que nunca dizer)</label><textarea id="instructions" name="instructions" rows={5} maxLength={4000} defaultValue={persona.instructions ?? ""} className="input" placeholder="Ex.: Sempre ofereça a avaliação gratuita. Nunca prometa desconto." /></div>
+              <div>
+                <label htmlFor="business_topics" className="label">Assuntos do negócio (WhatsApp e Instagram)</label>
+                <textarea id="business_topics" name="business_topics" rows={3} maxLength={1000} defaultValue={bot.business_topics ?? ""} className="input" placeholder="Ex.: cuidados com os dentes, dicas de escovação, como funciona o plano odontológico." />
+                <p className="mt-1 text-xs text-muted">No WhatsApp e no Instagram, o assistente conversa só sobre o negócio (regra da Meta contra assistentes de uso geral). Aqui você amplia os assuntos próximos que ele pode tratar. Fazer o trabalho pela pessoa (redação, tradução, programação) ou executar o serviço que a empresa vende continua bloqueado. No chat do site não há essa trava.</p>
+              </div>
               {bot.client_id && <p className="text-xs text-muted">O nome do cliente e quanto você cobra ficam no <Link href={`/painel/clientes/${bot.client_id}?tab=dados`} className="font-semibold text-brand hover:underline">painel do cliente</Link>.</p>}
               <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
             </ActionForm>
