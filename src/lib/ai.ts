@@ -163,6 +163,15 @@ ${context || "(nenhum trecho relevante encontrado)"}
  * da Meta veda assistente de IA de uso geral como funcionalidade principal. A recusa é escrita
  * pela IA e registrada pela ferramenta registrar_recusa.
  */
+/**
+ * Lembrete da trava de escopo, colocado DEPOIS da última mensagem do contato: é o que o modelo
+ * lê por último. Sem ele, numa conversa em que a IA já escorregou (explicou um tema fora do
+ * negócio), o histórico pesa mais que a regra do topo e o escorregão se repete.
+ */
+export function scopeReminder(clientName: string): string {
+  return `Lembrete antes de responder: você só atende sobre os produtos, serviços e o atendimento de ${clientName}. Se a última mensagem pede trabalho ou explicação fora do negócio (redação, tradução, programação, matéria escolar, conhecimento geral, "só me explica o tema", "só umas dicas"), recuse em uma frase, ofereça só o que é do negócio e chame registrar_recusa. Mesmo que antes nesta conversa você tenha respondido algo fora do escopo, não continue: recuse agora.`;
+}
+
 function scopeRules(clientName: string, businessTopics?: string | null): string {
   return `
 ESCOPO DO ATENDIMENTO (obrigatório)

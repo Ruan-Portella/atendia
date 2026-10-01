@@ -16,6 +16,7 @@ function isPlatformAdmin(email: string | undefined): boolean {
  * Avaliação de um bot, aberta no navegador por quem opera a plataforma (logado):
  * /api/eval?bot=ID&q=pergunta&n=10&temp=0.3&model=gpt-4.1-mini&canal=whatsapp&formato=json
  * (várias perguntas: repita &q=, até 8; aí cada uma roda no máximo 5 vezes)
+ * (conversa anterior: &historico=fala do contato||resposta do assistente||… antes da pergunta)
  * Roda a pergunta N vezes pelo mesmo caminho do chat, sem gravar nada, e mostra os trechos que
  * a busca trouxe e cada resposta. Gasta IA de verdade (N respostas).
  */
@@ -42,6 +43,8 @@ export async function GET(req: Request) {
     temperature: temp !== null && temp !== "" && Number.isFinite(Number(temp)) ? Math.min(Math.max(Number(temp), 0), 1.5) : undefined,
     model: sp.get("model")?.trim() || undefined,
     channel: (canal === "whatsapp" || canal === "instagram" ? canal : "widget") as "widget" | "whatsapp" | "instagram",
+    // conversa anterior: &historico=contato||assistente||contato… (separado por ||)
+    history: sp.get("historico")?.split("||").map((t) => t.trim().slice(0, 2000)).filter(Boolean).slice(0, 12),
   };
   const results = await Promise.all(questions.map((q) => evaluateQuestion(db, bot, q, opts)));
   if (sp.get("formato") === "json") return Response.json(results.length === 1 ? results[0] : results);

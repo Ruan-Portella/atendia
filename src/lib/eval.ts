@@ -1,6 +1,6 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildSystemPrompt, chatModel, chatModelId } from "./ai";
+import { buildSystemPrompt, chatModel, chatModelId, scopeReminder } from "./ai";
 import { CHAT_TEMPERATURE, channelNoteFor, chatTools, handoffPrompt, retrieveContext, type BotRow } from "./chat";
 import { handoffNotice } from "./handoff-hours";
 import { NO_INFO_PHRASE } from "./unanswered";
@@ -16,6 +16,8 @@ export interface EvalOptions {
   temperature?: number;
   model?: string;
   channel?: "widget" | "whatsapp" | "instagram";
+  /** Conversa anterior, alternando contato e assistente (começa pelo contato). */
+  history?: string[];
 }
 
 export interface EvalRun {
@@ -39,7 +41,8 @@ export function verdictOf(text: string, tools: string[]): EvalRun["verdict"] {
 export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question: string, opts: EvalOptions) {
   const { context, hits } = await retrieveContext(db, bot.id, question);
   const channelNote = opts.channel === "whatsapp" ? channelNoteFor({ whatsapp: { waId: "5521999990000" } }) : opts.channel === "instagram" ? channelNoteFor({ instagram: { igsid: "teste" } }) : undefined;
-  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: bot.lead_capture?.enabled !== false, agentMessages: [], channelNote, ...handoffPrompt(bot), scopeLock: opts.channel === "whatsapp" || opts.channel === "instagram", businessTopics: bot.business_topics });
+  const scopeLock = opts.channel === "whatsapp" || opts.channel === "instagram";
+  const system = buildSystemPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context, leadCapture: bot.lead_capture?.enabled !== false, agentMessages: [], channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics });
   const noop = async () => ({ ok: true });
 
   const one = async (): Promise<EvalRun> => {
@@ -47,7 +50,11 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       const r = await generateText({
         model: chatModel(opts.model),
         system,
-        messages: [{ role: "user", content: question }],
+        messages: [
+          ...(opts.history ?? []).map((content, i) => ({ role: i % 2 === 0 ? ("user" as const) : ("assistant" as const), content })),
+          { role: "user" as const, content: question },
+          ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name) }] : []),
+        ],
         temperature: opts.temperature ?? CHAT_TEMPERATURE,
         stopWhen: stepCountIs(3),
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)

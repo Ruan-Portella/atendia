@@ -1,7 +1,7 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage, type UIMessageChunk } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildSystemPrompt, chatModel, embedText, type Persona } from "./ai";
+import { buildSystemPrompt, chatModel, embedText, scopeReminder, type Persona } from "./ai";
 import { getPlan } from "./plans";
 import { currentPeriodBR } from "./utils";
 import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
@@ -338,7 +338,8 @@ export async function runChat(opts: {
   const result = streamText({
     model: chatModel(),
     system,
-    messages: await convertToModelMessages(messages.slice(-12)),
+    // com a trava de escopo, o lembrete vai depois da última mensagem (pesa mais que o histórico)
+    messages: [...(await convertToModelMessages(messages.slice(-12))), ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name) }] : [])],
     temperature: CHAT_TEMPERATURE,
     stopWhen: stepCountIs(3),
     tools: chatTools({
