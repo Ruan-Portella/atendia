@@ -1,7 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { evalReport, evaluateQuestion } from "@/lib/eval";
-import type { BotRow } from "@/lib/chat";
+import { casesReport, loadCases, runCases } from "@/lib/eval-cases";
+import { chatModelId } from "@/lib/ai";
+import { CHAT_TEMPERATURE, type BotRow } from "@/lib/chat";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -17,6 +19,7 @@ function isPlatformAdmin(email: string | undefined): boolean {
  * /api/eval?bot=ID&q=pergunta&n=10&temp=0.3&model=gpt-4.1-mini&canal=whatsapp&formato=json
  * (várias perguntas: repita &q=, até 8; aí cada uma roda no máximo 5 vezes)
  * (conversa anterior: &historico=fala do contato||resposta do assistente||… antes da pergunta)
+ * Conjunto fixo: /api/eval?bot=ID&casos=1 (opcionais: n=3, categoria=escopo_fixo, model=, temp=)
  * Roda a pergunta N vezes pelo mesmo caminho do chat, sem gravar nada, e mostra os trechos que
  * a busca trouxe e cada resposta. Gasta IA de verdade (N respostas).
  */
@@ -26,6 +29,20 @@ export async function GET(req: Request) {
 
   const sp = new URL(req.url).searchParams;
   const botId = sp.get("bot") ?? "";
+  // conjunto fixo (evals/casos.jsonl): &casos=1 roda tudo; &categoria=escopo_fixo filtra
+  if (sp.get("casos") && /^[0-9a-f-]{36}$/i.test(botId)) {
+    const db = createAdminClient();
+    const { data: bot } = await db.from("bots").select("*").eq("id", botId).maybeSingle<BotRow>();
+    if (!bot) return new Response("bot não encontrado", { status: 404 });
+    const categoria = sp.get("categoria");
+    const cases = loadCases().filter((c) => !categoria || c.categoria === categoria);
+    const temp = sp.get("temp");
+    const temperature = temp !== null && temp !== "" && Number.isFinite(Number(temp)) ? Math.min(Math.max(Number(temp), 0), 1.5) : undefined;
+    const model = sp.get("model")?.trim() || undefined;
+    const runs = Math.min(Math.max(Number(sp.get("n") ?? 3) || 3, 1), 5);
+    const results = await runCases(db, bot, cases, { runs, model, temperature });
+    return new Response(casesReport(results, { model: model ?? `${chatModelId()} (padrão)`, temperature: temperature ?? CHAT_TEMPERATURE, runs }), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  }
   // várias perguntas: &q=...&q=... (até 8), cada uma rodada N vezes
   const questions = sp.getAll("q").map((q) => q.trim().slice(0, 2000)).filter(Boolean).slice(0, 8);
   if (!/^[0-9a-f-]{36}$/i.test(botId) || !questions.length) {

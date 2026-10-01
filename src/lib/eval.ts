@@ -81,6 +81,8 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
     summary: { runs: runs.length, respondeu: count("respondeu"), nao_tenho: count("nao_tenho"), so_registrou: count("so_registrou"), recusou: count("recusou"), erro: count("erro"), chamou_atendente: runs.filter((r) => r.tools.includes("chamar_atendente")).length },
     hits: hits.map((h) => ({ similarity: Math.round(h.similarity * 1000) / 1000, title: h.metadata?.title, preview: h.content.slice(0, 160).replace(/\s+/g, " ") })),
     contextChars: context.length,
+    // texto da base que chegou ao modelo (o conjunto fixo confere se preço e prazo vieram dela)
+    context,
     runs,
   };
 }
