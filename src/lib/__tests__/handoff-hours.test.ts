@@ -15,12 +15,12 @@ describe("horário de atendimento", () => {
   });
 
   it("sexta à noite: volta segunda às 9h", () => {
-    expect(handoffNotice(hours, br("2026-10-02T21:30:00"))).toBe("Nossa equipe volta segunda às 9h. Deixei seu pedido registrado e respondemos assim que possível.");
+    expect(handoffNotice(hours, br("2026-10-02T21:30:00"))).toBe("Nossa equipe volta segunda, das 9h às 18h. Deixei seu pedido registrado e respondemos assim que possível.");
   });
 
   it("de madrugada: volta hoje; depois do expediente: amanhã", () => {
-    expect(handoffNotice(hours, br("2026-10-01T06:00:00"))).toContain("volta hoje às 9h");
-    expect(handoffNotice(hours, br("2026-09-30T19:00:00"))).toContain("volta amanhã às 9h");
+    expect(handoffNotice(hours, br("2026-10-01T06:00:00"))).toContain("volta hoje, das 9h às 18h");
+    expect(handoffNotice(hours, br("2026-09-30T19:00:00"))).toContain("volta amanhã, das 9h às 18h");
   });
 
   it("sem horário configurado: texto padrão, sem data", () => {
@@ -28,8 +28,15 @@ describe("horário de atendimento", () => {
     expect(handoffNotice({})).toBe("Deixei seu pedido registrado e nossa equipe responde assim que possível.");
   });
 
+  it("mesmo dia da semana, já fechado hoje: \"na próxima quinta\" (só \"quinta\" pareceria hoje)", () => {
+    // 2026-10-01 é quinta; aberto só quinta, das 7h47 às 9h47; agora são 10h47
+    expect(handoffNotice({ "4": ["07:47", "09:47"] }, br("2026-10-01T10:47:00"))).toBe("Nossa equipe volta na próxima quinta, das 7h47 às 9h47. Deixei seu pedido registrado e respondemos assim que possível.");
+    // sábado é masculino: "no próximo sábado" (2026-10-03 é sábado)
+    expect(handoffNotice({ "6": ["08:00", "12:00"] }, br("2026-10-03T13:00:00"))).toContain("volta no próximo sábado, das 8h às 12h");
+  });
+
   it("meia hora no horário de abertura", () => {
-    expect(handoffNotice({ "6": ["09:30", "12:00"] }, br("2026-10-02T20:00:00"))).toContain("volta amanhã às 9h30");
+    expect(handoffNotice({ "6": ["09:30", "12:00"] }, br("2026-10-02T20:00:00"))).toContain("volta amanhã, das 9h30 às 12h");
   });
 
   it("contatos para o prompt, só os preenchidos", () => {

@@ -39,7 +39,7 @@ export function hasHours(hours: BusinessHours | null | undefined): hours is Busi
  * Quando a equipe volta: null se está no horário agora (ou sem horário configurado); senão,
  * o dia (0 a 6, a partir de hoje) e o horário da próxima abertura.
  */
-export function nextOpening(hours: BusinessHours | null | undefined, now = new Date()): { inDays: number; day: number; time: string } | null {
+export function nextOpening(hours: BusinessHours | null | undefined, now = new Date()): { inDays: number; day: number; time: string; until: string } | null {
   if (!hasHours(hours)) return null;
   const { day, minute } = brasilia(now);
   const today = hours[String(day) as keyof BusinessHours];
@@ -49,17 +49,24 @@ export function nextOpening(hours: BusinessHours | null | undefined, now = new D
     const h = hours[String(d) as keyof BusinessHours];
     if (!h) continue;
     if (inDays === 0 && minute >= minutesOf(h[0])) continue; // hoje já abriu (e fechou)
-    return { inDays, day: d, time: h[0] };
+    return { inDays, day: d, time: h[0], until: h[1] };
   }
   return null;
 }
 
-/** "hoje às 14h", "amanhã às 9h", "segunda às 9h30". */
-export function whenLabel(o: { inDays: number; day: number; time: string }): string {
-  const [h, m] = o.time.split(":").map(Number);
-  const hour = `${h}h${m ? String(m).padStart(2, "0") : ""}`;
-  const day = o.inDays === 0 ? "hoje" : o.inDays === 1 ? "amanhã" : WEEKDAYS[o.day];
-  return `${day} às ${hour}`;
+/** "09:30" vira "9h30"; "09:00" vira "9h". */
+const hourLabel = (hhmm: string) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return `${h}h${m ? String(m).padStart(2, "0") : ""}`;
+};
+
+/**
+ * "hoje, das 14h às 18h", "amanhã, das 9h às 18h", "segunda, das 9h30 às 12h"; o mesmo dia da
+ * semana que vem vira "na próxima quinta" (só "quinta", numa quinta, pareceria hoje).
+ */
+export function whenLabel(o: { inDays: number; day: number; time: string; until: string }): string {
+  const day = o.inDays === 0 ? "hoje" : o.inDays === 1 ? "amanhã" : o.inDays === 7 ? `${o.day === 0 || o.day === 6 ? "no próximo" : "na próxima"} ${WEEKDAYS[o.day]}` : WEEKDAYS[o.day];
+  return `${day}, das ${hourLabel(o.time)} às ${hourLabel(o.until)}`;
 }
 
 /** Texto que o bot usa ao registrar o pedido de atendente (padrão editável no documento). */
