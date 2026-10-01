@@ -155,11 +155,17 @@ export async function crawlSite(startUrl: string, maxPages = Number(process.env.
   const profilePath = new URL(startUrl).pathname.replace(/\/?$/, "/");
   const minText = social ? 20 : 80;
   let rootHost: string | undefined;
+  const seenText = new Set<string>();
   while (queue.length && pages.length < maxPages) {
     const batch = queue.splice(0, 5);
     const results = await Promise.all(batch.map((u) => fetchPage(u)));
     for (const p of results) {
       if (!p) continue;
+      // páginas montadas por JavaScript costumam trazer só a mesma descrição: um trecho igual
+      // repetido ocuparia as vagas do contexto que deviam ir para o conteúdo de verdade
+      const fingerprint = p.text.trim().toLowerCase();
+      if (fingerprint && seenText.has(fingerprint)) continue;
+      seenText.add(fingerprint);
       // o site é onde a primeira página realmente abriu (depois dos redirecionamentos);
       // página que redireciona para outro domínio não puxa o rastreio para lá
       rootHost ??= new URL(p.url).hostname;
