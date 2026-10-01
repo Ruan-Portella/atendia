@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { conversationHistory, openConversation, runChat, type BotRow } from "./chat";
 import { markOwnMessage } from "./inbound-queue";
+import { isOptOutKeyword, optOutConfirmation, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded } from "./rate-limit";
@@ -139,6 +140,22 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const shown = (i: number) => texts[i] ?? igMediaLabel(burst[i].ev);
 
   let conv = await recentConversation(db, bot.id, igsid);
+
+  // opt-out fixo (SAIR, PARAR, STOP): antes da IA, em qualquer estado; vale para tudo no Instagram
+  const handled = new Set(texts.map((t, i) => (isOptOutKeyword(t) ? i : -1)).filter((i) => i >= 0));
+  if (handled.size) {
+    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
+    if (convId) {
+      if (!conv) conv = { id: convId, takeover_at: null, handled_at: null };
+      for (const i of handled) await storeOnce(db, convId, shown(i), burst[i].key);
+    }
+    await suppress(db, { channel: "instagram", scope: suppressionScope({ botId: bot.id }), contact: igsid, kind: "all", reason: "opt_out", source: "chat" });
+    const confirmation = optOutConfirmation("all", bot.client_name);
+    const mid = await reply(confirmation);
+    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: confirmation, channel_msg_id: mid ?? "enviada" });
+    if (handled.size === burst.length) return;
+  }
+
   const { data: appReply } = conv
     ? await db.from("messages").select("created_at").eq("conversation_id", conv.id).eq("role", "agent").eq("author", IG_APP_AUTHOR).order("id", { ascending: false }).limit(1).maybeSingle()
     : { data: null };
@@ -155,8 +172,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     return;
   }
 
-  const qi = texts.map((t, i) => (t ? i : -1)).filter((i) => i >= 0).pop();
+  const qi = texts.map((t, i) => (t && !handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
+    if (handled.size) return;
     const lastAudio = Boolean(burst[burst.length - 1].ev.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
     return void (await reply(lastAudio ? AUDIO_FAILED : ONLY_TEXT));
   }

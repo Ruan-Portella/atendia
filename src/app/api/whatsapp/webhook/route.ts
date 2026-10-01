@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { validSignature } from "@/lib/whatsapp";
 import type { EchoMessage, InboundMessage } from "@/lib/whatsapp-inbound";
 import { acceptInbound, sha256, type Group, type InboundInput } from "@/lib/inbound-queue";
-import { processAfterWebhook, type WaPayload, type WaStatus } from "@/lib/inbound-process";
+import { processAfterWebhook, type WaPayload, type WaPreference, type WaStatus } from "@/lib/inbound-process";
 import { deadline } from "@/lib/cron";
 
 export const maxDuration = 60;
@@ -21,6 +21,7 @@ interface WebhookBody {
         // coexistência: o que o negócio mandou pelo app do celular
         message_echoes?: EchoMessage[];
         statuses?: WaStatus[];
+        user_preferences?: WaPreference[];
         // account_update
         event?: string;
         waba_info?: { waba_id?: string };
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
   }
   if (body.object !== "whatsapp_business_account") return new Response("ok");
 
-  const changes: Change[] = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => ({ ...c, entryId: e.id }))).filter((c) => c.value && (c.field === "messages" || c.field === "account_update" || c.field === "smb_message_echoes"));
+  const changes: Change[] = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => ({ ...c, entryId: e.id }))).filter((c) => c.value && (c.field === "messages" || c.field === "account_update" || c.field === "smb_message_echoes" || c.field === "user_preferences"));
   if (!changes.length) return new Response("ok");
 
   const db = createAdminClient();
@@ -103,6 +104,12 @@ async function toEvents(db: ReturnType<typeof createAdminClient>, changes: Chang
       continue;
     }
     const phoneNumberId = v.metadata?.phone_number_id;
+    if (change.field === "user_preferences") {
+      // vale para a conta inteira (WABA = id da entrada); o número, quando vem, só ajuda a achar o bot
+      const payload: WaPayload = { type: "prefs", phoneNumberId, wabaId: change.entryId, prefs: v.user_preferences ?? [] };
+      out.push({ key: `wa:pref:${sha256(JSON.stringify(v))}`, source: "whatsapp", kind: "status", botId: phoneNumberId ? await bot(phoneNumberId) : null, payload });
+      continue;
+    }
     if (!phoneNumberId) continue;
     const botId = await bot(phoneNumberId);
     if (!botId) continue;
@@ -111,7 +118,7 @@ async function toEvents(db: ReturnType<typeof createAdminClient>, changes: Chang
       out.push({ key: `wa:echo:${echo.id}`, source: "whatsapp", kind: "echo", botId, contact: echo.to, payload });
     }
     for (const status of v.statuses ?? []) {
-      const payload: WaPayload = { type: "status", phoneNumberId, status };
+      const payload: WaPayload = { type: "status", phoneNumberId, status, wabaId: change.entryId };
       out.push({ key: `wa:st:${status.id}:${status.status}`, source: "whatsapp", kind: "status", botId, payload });
     }
     for (const msg of (v.messages ?? []) as InboundMessage[]) {

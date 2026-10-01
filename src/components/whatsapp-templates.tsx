@@ -83,13 +83,12 @@ export async function WhatsAppTemplates({ botId }: { botId: string }) {
               <label htmlFor="tpl-category" className="label">Categoria</label>
               <select id="tpl-category" name="category" className="input" defaultValue="UTILITY">
                 <option value="UTILITY">Utilidade (retorno, confirmação, aviso)</option>
-                <option value="MARKETING">Marketing (promoção, novidade)</option>
               </select>
             </div>
           </div>
           <div><label htmlFor="tpl-body" className="label">Texto (variáveis: {"{{1}}"}, {"{{2}}"}…)</label><textarea id="tpl-body" name="body" required rows={4} maxLength={1024} className="input" placeholder={"Olá, {{1}}! Aqui é da equipe. Vimos sua mensagem sobre {{2}} e podemos continuar por aqui."} /></div>
           <div><label htmlFor="tpl-examples" className="label">Exemplos das variáveis (um por linha, na ordem)</label><textarea id="tpl-examples" name="examples" rows={2} className="input" placeholder={"Maria\nclareamento"} /></div>
-          <p className="text-xs text-muted">Idioma: português (Brasil). A Meta analisa em minutos. Modelos de marketing são cobrados mais caro e exigem que a pessoa tenha aceitado receber.</p>
+          <p className="text-xs text-muted">Idioma: português (Brasil). A Meta analisa em minutos. Por enquanto só modelos de utilidade: promoção e novidade (marketing) exigem o aceite registrado da pessoa, que ainda não existe aqui. Se a Meta reclassificar um modelo como marketing, ele deixa de aparecer para envio.</p>
           <SubmitButton pendingLabel="Enviando para a Meta…" className="btn-primary self-start">Enviar para análise</SubmitButton>
         </ActionForm>
       </details>

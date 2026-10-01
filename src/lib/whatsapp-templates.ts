@@ -20,8 +20,13 @@ export async function loadTemplateChannel(admin: SupabaseClient, botId: string):
   return data?.waba_id && !data.disconnected_at ? (data as TemplateChannel) : null;
 }
 
+/**
+ * Modelos que podem ser enviados pelo painel: aprovados e só de UTILIDADE até a leva B3 (sem
+ * prova de consentimento de marketing, nenhum modelo de marketing sai). Se a Meta reclassificar
+ * um modelo para marketing, ele some daqui sozinho.
+ */
 export async function listSendable(ch: TemplateChannel): Promise<SendableTemplate[]> {
-  return (await listTemplates(ch)).filter((t) => t.status === "APPROVED" && !unsupportedReason(t)).map(toSendable);
+  return (await listTemplates(ch)).filter((t) => t.status === "APPROVED" && t.category === "UTILITY" && !unsupportedReason(t)).map(toSendable);
 }
 
 export async function listTemplates(ch: TemplateChannel): Promise<Template[]> {

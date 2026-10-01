@@ -35,6 +35,8 @@ export const WHATSAPP_BILLING_URL = "https://business.facebook.com/wa/manage/hom
 export interface WaChannel {
   phone_number_id: string;
   access_token_enc?: string | null;
+  /** Conta do WhatsApp Business: escopo da lista de supressão (sem ela, o bot). */
+  waba_id?: string | null;
 }
 
 export function whatsappConfigured() {
@@ -93,6 +95,19 @@ export function graphFor<T>(ch: WaChannel, path: string, init?: { method?: strin
 export async function sendText(ch: WaChannel, to: string, body: string) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: { messaging_product: "whatsapp", recipient_type: "individual", to, type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true } },
+  });
+}
+
+/** Texto com até 3 botões de resposta (título de até 20 caracteres; o id volta no clique). */
+export async function sendButtons(ch: WaChannel, to: string, body: string, buttons: Array<{ id: string; title: string }>) {
+  return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "interactive",
+      interactive: { type: "button", body: { text: body.slice(0, 1024) }, action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) } },
+    },
   });
 }
 

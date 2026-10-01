@@ -4,7 +4,8 @@ import { conversationHistory, openConversation, runChat, type BotRow } from "./c
 import { firstExceeded } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
-import { downloadMedia, markReadTyping, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
+import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
+import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { isAccessError, isPaymentError } from "./whatsapp-access";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
@@ -47,7 +48,7 @@ export interface InboundMessage {
   type: string;
   text?: { body?: string };
   button?: { text?: string };
-  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
 }
 
@@ -177,6 +178,12 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const shown = (i: number) => texts[i] ?? mediaLabel(burst[i].msg.type);
 
   let conv = await recentConversation(db, bot.id, waId);
+
+  // opt-out fixo (SAIR, PARAR, STOP e os botões da confirmação): antes da IA, em qualquer estado
+  const optOut = await handleOptOuts(db, channel, bot, waId, burst, texts, shown, conv?.id ?? null);
+  if (optOut.conversationId && !conv) conv = { id: optOut.conversationId, takeover_at: null, handled_at: null };
+  if (optOut.handled.size === burst.length) return;
+
   const { data: phoneReply } = conv
     ? await db.from("messages").select("created_at").eq("conversation_id", conv.id).eq("role", "agent").eq("author", PHONE_AUTHOR).order("id", { ascending: false }).limit(1).maybeSingle()
     : { data: null };
@@ -196,8 +203,9 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   }
 
   // a resposta vai para a última mensagem com texto; as de antes (e a mídia) só entram no histórico
-  const qi = texts.map((t, i) => (t ? i : -1)).filter((i) => i >= 0).pop();
+  const qi = texts.map((t, i) => (t && !optOut.handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
+    if (optOut.handled.size) return;
     const lastAudio = last.msg.type === "audio" && canTranscribe();
     return void (await reply(lastAudio ? AUDIO_FAILED : ONLY_TEXT));
   }
@@ -235,6 +243,81 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     if (code !== "quota_exceeded" && code !== "trial_expired") console.error("whatsapp: falha ao responder", e);
     await reply(FALLBACK).catch(() => {});
   }
+}
+
+/** Categoria do último modelo enviado a este contato, neste bot, nos últimos 30 dias (sem nenhum, tudo). */
+async function lastTemplateKind(db: SupabaseClient, botId: string, waId: string): Promise<SuppressionKind> {
+  const { data: convs } = await db.from("conversations").select("id").eq("bot_id", botId).in("wa_id", waIdVariants(waId));
+  const ids = (convs ?? []).map((c) => c.id as string);
+  if (!ids.length) return "all";
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const { data } = await db.from("messages").select("template_category").in("conversation_id", ids).not("template_category", "is", null).gt("created_at", since).order("id", { ascending: false }).limit(1).maybeSingle();
+  if (!data) return "all";
+  return String(data.template_category).toUpperCase() === "MARKETING" ? "marketing" : "utility";
+}
+
+/**
+ * Opt-out fixo (Termos da Meta): SAIR, PARAR ou STOP descadastram da categoria do último modelo
+ * enviado (sem nenhum, de tudo), gravam a supressão e respondem a confirmação fixa, com os botões
+ * "Foi engano" e, quando cabe, "Parar os lembretes"/"Parar as promoções". A conversa normal
+ * continua: só mensagens iniciadas pela empresa (modelos) deixam de sair. Devolve as mensagens
+ * tratadas aqui (a IA não responde a elas).
+ */
+async function handleOptOuts(
+  db: SupabaseClient,
+  channel: ChannelRow,
+  bot: BotRow,
+  waId: string,
+  burst: QueuedMessage[],
+  texts: Array<string | null>,
+  shown: (i: number) => string,
+  conversationId: string | null,
+): Promise<{ handled: Set<number>; conversationId: string | null }> {
+  const handled = new Set<number>();
+  const target = { channel: "whatsapp" as const, scope: suppressionScope({ wabaId: channel.waba_id, botId: bot.id }), contact: waId };
+  const company = bot.client_name;
+  let convId = conversationId;
+  const conversation = async () => {
+    convId ??= (await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id").single()).data?.id ?? null;
+    return convId;
+  };
+  const answer = async (content: string, buttons?: Array<{ id: string; title: string }>) => {
+    const sent = buttons?.length ? await sendButtons(channel, waId, content, buttons) : await sendText(channel, waId, content);
+    const id = await conversation();
+    if (id) await db.from("messages").insert({ conversation_id: id, role: "assistant", content, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
+  };
+
+  let keywordDone = false;
+  for (let i = 0; i < burst.length; i++) {
+    const button = burst[i].msg.interactive?.button_reply?.id ?? "";
+    const keyword = isOptOutKeyword(texts[i]);
+    if (!button.startsWith(`${OPTOUT_UNDO}:`) && !button.startsWith(`${OPTOUT_ALSO}:`) && !keyword) continue;
+    handled.add(i);
+    const id = await conversation();
+    if (id) await storeOnce(db, id, shown(i), burst[i].key);
+
+    if (button.startsWith(`${OPTOUT_UNDO}:`)) {
+      // "Foi engano": desfaz e fica gravado como novo opt-in dado pela própria pessoa
+      const ids = button.slice(OPTOUT_UNDO.length + 1).split(",").map(Number).filter(Number.isFinite);
+      await revoke(db, { ...target, ids, source: "chat:foi_engano" });
+      await answer(`Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${company}.`);
+    } else if (button.startsWith(`${OPTOUT_ALSO}:`)) {
+      const kind = button.slice(OPTOUT_ALSO.length + 1) === "marketing" ? "marketing" : "utility";
+      await suppress(db, { ...target, kind, reason: "opt_out", source: "chat" });
+      await answer(optOutConfirmation("all", company));
+    } else if (!keywordDone) {
+      keywordDone = true;
+      const kind = await lastTemplateKind(db, bot.id, waId);
+      const active = (await activeSuppressions(db, target)).map((s) => s.kind);
+      const sid = await suppress(db, { ...target, kind, reason: "opt_out", source: "chat" });
+      const buttons = [{ id: `${OPTOUT_UNDO}:${sid}`, title: "Foi engano" }];
+      // a outra categoria só aparece se ainda estiver ativa
+      const other: SuppressionKind | null = kind === "marketing" ? "utility" : kind === "utility" ? "marketing" : null;
+      if (other && !active.includes(other) && !active.includes("all")) buttons.unshift({ id: `${OPTOUT_ALSO}:${other}`, title: other === "utility" ? "Parar os lembretes" : "Parar as promoções" });
+      await answer(optOutConfirmation(kind, company), buttons);
+    }
+  }
+  return { handled, conversationId: convId };
 }
 
 /** Mensagem que o próprio negócio mandou pelo app do celular (webhook smb_message_echoes). */

@@ -7,15 +7,26 @@ import { handleInstagramBurst, handleInstagramEcho, type IgChannelRow, type IgMe
 import { isInstagramAccessError } from "./instagram";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { processGroup, sweepInbound, type Group, type GroupHandler, type InboundEvent } from "./inbound-queue";
+import { revoke, suppress, suppressionScope } from "./suppression";
 
 /* ------------------------------------------------------------------ o que vai na fila */
 
 export type WaStatus = MessageStatus & { recipient_id?: string; errors?: Array<{ code?: number; title?: string }> };
+/** webhook user_preferences: a pessoa parou (ou voltou a aceitar) as mensagens de marketing. */
+export interface WaPreference {
+  wa_id?: string;
+  category?: string;
+  value?: string;
+}
+
+/** Erro da Meta: o contato bloqueou as mensagens de marketing deste negócio. */
+export const MARKETING_STOPPED_CODE = 131050;
 
 export type WaPayload =
   | { type: "msg"; phoneNumberId: string; msg: InboundMessage; profileName: string | null }
   | { type: "echo"; phoneNumberId: string; echo: EchoMessage }
-  | { type: "status"; phoneNumberId: string; status: WaStatus }
+  | { type: "status"; phoneNumberId: string; status: WaStatus; wabaId?: string }
+  | { type: "prefs"; phoneNumberId?: string; wabaId?: string; prefs: WaPreference[] }
   | { type: "account_update"; entryId?: string; event?: string; wabaId?: string };
 
 export type IgPayload = { type: "msg" | "echo"; igUserId: string; ev: IgMessagingEvent };
@@ -24,7 +35,7 @@ export type IgPayload = { type: "msg" | "echo"; igUserId: string; ev: IgMessagin
 
 /** Número ligado e com acesso, ou null (sem chatbot, ou desconectado: não dá nem para responder). */
 async function activeWaChannel(db: SupabaseClient, phoneNumberId: string) {
-  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, access_token_enc, disconnected_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
+  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, waba_id, access_token_enc, disconnected_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
   if (!channel) console.warn("whatsapp: número sem chatbot ligado", phoneNumberId);
   return channel && !channel.disconnected_at ? channel : null;
 }
@@ -44,8 +55,20 @@ const whatsappGroup: GroupHandler = async (db, events) => {
         // a recusa por pagamento às vezes só chega aqui, no status da mensagem
         if (p.status.errors?.some((err) => err.code === PAYMENT_ISSUE_CODE)) await markPaymentIssue(db, { column: "phone_number_id", value: p.phoneNumberId });
       }
+      // o contato bloqueou o marketing: entra na supressão de marketing (como um SAIR)
+      if (e.bot_id && p.status.recipient_id && p.status.errors?.some((err) => err.code === MARKETING_STOPPED_CODE)) {
+        await suppress(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id, kind: "marketing", reason: "meta_131050", source: "meta" });
+      }
       // consumo: cada status de mensagem enviada diz se a Meta cobrou e em qual categoria
       if (e.bot_id) await recordUsage(db, e.bot_id, p.phoneNumberId, [p.status]);
+    } else if (p?.type === "prefs" && (p.wabaId || e.bot_id)) {
+      // preferências do WhatsApp: "stop" suprime o marketing; "resume" é novo opt-in da própria pessoa
+      for (const pref of p.prefs) {
+        if (!pref.wa_id || !String(pref.category ?? "").startsWith("marketing")) continue;
+        const target = { channel: "whatsapp" as const, scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id ?? "" }), contact: pref.wa_id };
+        if (pref.value === "stop") await suppress(db, { ...target, kind: "marketing", reason: "user_preferences", source: "meta" });
+        else if (pref.value === "resume") await revoke(db, { ...target, kind: "marketing", source: "meta:resume" });
+      }
     }
   }
 

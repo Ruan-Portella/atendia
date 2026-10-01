@@ -76,11 +76,12 @@ export interface SendableTemplate {
   language: string;
   body: string;
   vars: number;
+  category: string;
 }
 
 export function toSendable(t: Template): SendableTemplate {
   const body = templateBody(t);
-  return { name: t.name, language: t.language, body, vars: templateVariables(body).length };
+  return { name: t.name, language: t.language, body, vars: templateVariables(body).length, category: t.category };
 }
 
 /** Valores das variáveis enviados pelo formulário (campos param_1, param_2…). */
