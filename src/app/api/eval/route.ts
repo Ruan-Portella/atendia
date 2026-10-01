@@ -15,6 +15,7 @@ function isPlatformAdmin(email: string | undefined): boolean {
 /**
  * Avaliação de um bot, aberta no navegador por quem opera a plataforma (logado):
  * /api/eval?bot=ID&q=pergunta&n=10&temp=0.3&model=gpt-4.1-mini&canal=whatsapp&formato=json
+ * (várias perguntas: repita &q=, até 8; aí cada uma roda no máximo 5 vezes)
  * Roda a pergunta N vezes pelo mesmo caminho do chat, sem gravar nada, e mostra os trechos que
  * a busca trouxe e cada resposta. Gasta IA de verdade (N respostas).
  */
@@ -24,8 +25,9 @@ export async function GET(req: Request) {
 
   const sp = new URL(req.url).searchParams;
   const botId = sp.get("bot") ?? "";
-  const question = (sp.get("q") ?? "").trim().slice(0, 2000);
-  if (!/^[0-9a-f-]{36}$/i.test(botId) || !question) {
+  // várias perguntas: &q=...&q=... (até 8), cada uma rodada N vezes
+  const questions = sp.getAll("q").map((q) => q.trim().slice(0, 2000)).filter(Boolean).slice(0, 8);
+  if (!/^[0-9a-f-]{36}$/i.test(botId) || !questions.length) {
     return new Response("Use: /api/eval?bot=ID_DO_BOT&q=pergunta&n=10 (opcionais: temp=0.3, model=gpt-4.1-mini, canal=whatsapp|instagram, formato=json)", { status: 400 });
   }
   const db = createAdminClient();
@@ -34,12 +36,22 @@ export async function GET(req: Request) {
 
   const temp = sp.get("temp");
   const canal = sp.get("canal");
-  const result = await evaluateQuestion(db, bot, question, {
-    runs: Number(sp.get("n") ?? 10) || 10,
+  const opts = {
+    // com várias perguntas, menos rodadas por pergunta para caber no tempo da função
+    runs: Math.min(Number(sp.get("n") ?? 10) || 10, questions.length > 1 ? 5 : 20),
     temperature: temp !== null && temp !== "" && Number.isFinite(Number(temp)) ? Math.min(Math.max(Number(temp), 0), 1.5) : undefined,
     model: sp.get("model")?.trim() || undefined,
-    channel: canal === "whatsapp" || canal === "instagram" ? canal : "widget",
-  });
-  if (sp.get("formato") === "json") return Response.json(result);
-  return new Response(evalReport(result), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+    channel: (canal === "whatsapp" || canal === "instagram" ? canal : "widget") as "widget" | "whatsapp" | "instagram",
+  };
+  const results = await Promise.all(questions.map((q) => evaluateQuestion(db, bot, q, opts)));
+  if (sp.get("formato") === "json") return Response.json(results.length === 1 ? results[0] : results);
+  const overview = results.length > 1
+    ? ["RESUMO", ...results.map((r, i) => `  ${i + 1}. respondeu ${r.summary.respondeu} · não tenho ${r.summary.nao_tenho} · recusou ${r.summary.recusou} · atendente ${r.summary.chamou_atendente} · de ${r.summary.runs} — ${r.question}`), "", ""].join("
+")
+    : "";
+  return new Response(overview + results.map(evalReport).join("
+
+==========
+
+"), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }
