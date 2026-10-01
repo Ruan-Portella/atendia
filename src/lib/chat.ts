@@ -168,8 +168,9 @@ export async function runChat(opts: {
   if (question) {
     const row = { conversation_id: convId, role: "user", content: question, ...(opts.questionKey ? { inbound_key: opts.questionKey } : {}) };
     // com a chave do evento, o reprocesso não grava a mesma pergunta duas vezes
-    if (opts.questionKey) await db.from("messages").upsert(row, { onConflict: "inbound_key", ignoreDuplicates: true });
-    else await db.from("messages").insert(row);
+    // erro aqui sobe: na fila, o evento volta e é tentado de novo (a mensagem não some)
+    const { error } = opts.questionKey ? await db.from("messages").upsert(row, { onConflict: "inbound_key", ignoreDuplicates: true }) : await db.from("messages").insert(row);
+    if (error) throw new Error(`mensagem do contato não gravada: ${error.message}`);
   }
 
   let unansweredRecorded = false;

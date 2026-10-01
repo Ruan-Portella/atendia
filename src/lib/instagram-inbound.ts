@@ -213,7 +213,8 @@ export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, 
     conv = created;
   }
   if (!conv) return;
-  const { data } = await db.from("messages").upsert({ conversation_id: conv.id, role: "agent", content, author: IG_APP_AUTHOR, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
+  const { data, error } = await db.from("messages").upsert({ conversation_id: conv.id, role: "agent", content, author: IG_APP_AUTHOR, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
+  if (error) throw new Error(`mensagem não gravada: ${error.message}`);
   if (!data?.length) return;
   const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id);
   await db.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conv.id);

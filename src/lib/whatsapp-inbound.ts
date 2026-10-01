@@ -113,7 +113,8 @@ export const isStale = (receivedAt: string, now = Date.now()) => now - new Date(
 
 /** Grava a mensagem do contato numa conversa uma vez só (a chave do evento segura o reprocesso). */
 export async function storeOnce(db: SupabaseClient, conversationId: string, content: string, key: string) {
-  const { data } = await db.from("messages").upsert({ conversation_id: conversationId, role: "user", content, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
+  const { data, error } = await db.from("messages").upsert({ conversation_id: conversationId, role: "user", content, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
+  if (error) throw new Error(`mensagem não gravada: ${error.message}`);
   if (!data?.length) return;
   const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
   const now = new Date().toISOString();
@@ -258,7 +259,8 @@ export async function handleEcho(db: SupabaseClient, channel: ChannelRow, echo: 
     conv = created;
   }
   if (!conv) return;
-  const { data } = await db.from("messages").upsert({ conversation_id: conv.id, role: "agent", content, author: PHONE_AUTHOR, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
+  const { data, error } = await db.from("messages").upsert({ conversation_id: conv.id, role: "agent", content, author: PHONE_AUTHOR, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
+  if (error) throw new Error(`mensagem não gravada: ${error.message}`);
   if (!data?.length) return;
   const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id);
   await db.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conv.id);
