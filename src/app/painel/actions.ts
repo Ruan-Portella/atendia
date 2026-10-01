@@ -23,6 +23,7 @@ import { createConnectLink } from "@/lib/whatsapp-connect-link";
 import { instagramAllowed, unsubscribeInstagram } from "@/lib/instagram";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { activeSuppressions, blocks, suppressionScope } from "@/lib/suppression";
+import { logDeletion } from "@/lib/deletions";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
 
@@ -87,6 +88,10 @@ export async function deleteClientRecord(clientId: string): Promise<ActionResult
   const supabase = await createClient();
   const { count: bots } = await supabase.from("bots").select("id", { count: "exact", head: true }).eq("client_id", clientId);
   if (bots) return fail(`Este cliente tem ${bots} chatbot${bots > 1 ? "s" : ""}. Exclua ${bots > 1 ? "os chatbots" : "o chatbot"} antes.`);
+  const { data: own } = await supabase.from("clients").select("id").eq("id", clientId).maybeSingle();
+  if (!own) return fail("Cliente não encontrado.");
+  // registro de exclusões antes de apagar: um backup restaurado não traz o cliente de volta
+  await logDeletion(createAdminClient(), "clients", [clientId]);
   const { error, count } = await supabase.from("clients").delete({ count: "exact" }).eq("id", clientId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
   if (!count) return fail("Cliente não encontrado.");
@@ -255,6 +260,10 @@ export async function convertDemo(botId: string, formData: FormData): Promise<Ac
  */
 export async function deleteBot(botId: string, redirectTo?: string): Promise<ActionResult> {
   const supabase = await createClient();
+  const { data: own } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!own) return fail("Chatbot não encontrado.");
+  // o bot leva junto conversas, mensagens e conexões (cascata); reaplicar apaga o bot de novo
+  await logDeletion(createAdminClient(), "bots", [botId]);
   const { error, count } = await supabase.from("bots").delete({ count: "exact" }).eq("id", botId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
   if (!count) return fail("Chatbot não encontrado.");
@@ -758,6 +767,9 @@ export async function removeClientMember(clientId: string, memberId: string): Pr
 export async function deleteConversation(conversationId: string): Promise<ActionResult> {
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
+  const { data: leadRows } = await owned.admin.from("leads").select("id").eq("conversation_id", conversationId);
+  await logDeletion(owned.admin, "leads", (leadRows ?? []).map((l) => l.id as string));
+  await logDeletion(owned.admin, "conversations", [conversationId]);
   await owned.admin.from("leads").delete().eq("conversation_id", conversationId);
   const { error } = await owned.admin.from("conversations").delete().eq("id", conversationId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
@@ -791,6 +803,9 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
 
   const admin = createAdminClient();
   const convIds = [...new Set(matches.map((l) => l.conversation_id).filter((c): c is string => Boolean(c)))];
+  // LGPD: registrado antes de apagar, para uma restauração de backup não trazer de volta
+  await logDeletion(admin, "leads", matches.map((l) => l.id as string));
+  await logDeletion(admin, "conversations", convIds);
   await admin.from("leads").delete().in("id", matches.map((l) => l.id));
   if (convIds.length) await admin.from("conversations").delete().in("id", convIds).in("bot_id", ids);
   revalidatePath(`/painel/clientes/${clientId}`);
