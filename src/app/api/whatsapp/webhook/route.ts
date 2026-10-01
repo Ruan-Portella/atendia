@@ -1,9 +1,10 @@
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { PAYMENT_ISSUE_CODE, validSignature } from "@/lib/whatsapp";
-import { handleEcho, handleInbound, type ChannelRow, type EchoMessage, type InboundMessage } from "@/lib/whatsapp-inbound";
-import { recordUsage, type MessageStatus } from "@/lib/whatsapp-usage";
-import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
+import { validSignature } from "@/lib/whatsapp";
+import type { EchoMessage, InboundMessage } from "@/lib/whatsapp-inbound";
+import { acceptInbound, sha256, type Group, type InboundInput } from "@/lib/inbound-queue";
+import { processAfterWebhook, type WaPayload, type WaStatus } from "@/lib/inbound-process";
+import { deadline } from "@/lib/cron";
 
 export const maxDuration = 60;
 
@@ -19,7 +20,7 @@ interface WebhookBody {
         messages?: InboundMessage[];
         // coexistência: o que o negócio mandou pelo app do celular
         message_echoes?: EchoMessage[];
-        statuses?: Array<MessageStatus & { recipient_id?: string; errors?: Array<{ code?: number; title?: string }> }>;
+        statuses?: WaStatus[];
         // account_update
         event?: string;
         waba_info?: { waba_id?: string };
@@ -43,9 +44,9 @@ export async function GET(req: Request) {
 /**
  * Eventos do WhatsApp: mensagens recebidas, status de entrega, mudanças na conta (account_update,
  * ex.: o cliente removeu o app) e, na coexistência, as respostas mandadas pelo app do celular
- * (smb_message_echoes). Responde 200 na hora e trata depois (after): a Meta reenvia o evento se
- * a resposta demora. Histórico e contatos sincronizados do celular (history, smb_app_state_sync)
- * só são confirmados: o Boavoz não guarda conversas antigas do aparelho.
+ * (smb_message_echoes). Cada evento é gravado na fila (inbound_events) ANTES de responder 200:
+ * se o banco falhar, responde 5xx e a Meta reenvia. O tratamento vem logo depois (after).
+ * Histórico e contatos sincronizados do celular (history, smb_app_state_sync) só são confirmados.
  */
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -61,77 +62,63 @@ export async function POST(req: Request) {
   if (body.object !== "whatsapp_business_account") return new Response("ok");
 
   const changes: Change[] = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => ({ ...c, entryId: e.id }))).filter((c) => c.value && (c.field === "messages" || c.field === "account_update" || c.field === "smb_message_echoes"));
-  if (changes.length) {
-    after(async () => {
-      const db = createAdminClient();
-      for (const change of changes) {
-        if (change.field === "account_update") await accountUpdate(db, change);
-        else if (change.field === "smb_message_echoes") await echoes(db, change);
-        else await messages(db, change);
-      }
-    });
+  if (!changes.length) return new Response("ok");
+
+  const db = createAdminClient();
+  const groups: Group[] = [];
+  try {
+    for (const input of await toEvents(db, changes)) {
+      const g = await acceptInbound(db, input);
+      if (g) groups.push(g);
+    }
+  } catch (e) {
+    console.error("whatsapp: evento não gravado na fila", e);
+    return new Response("retry", { status: 503 });
+  }
+  if (groups.length) {
+    const hasTime = deadline(50_000);
+    after(() => processAfterWebhook(createAdminClient(), groups, hasTime));
   }
   return new Response("ok");
 }
 
-/** A conta do cliente deixou de ser nossa: desliga os números dela e avisa a agência. */
-async function accountUpdate(db: ReturnType<typeof createAdminClient>, change: Change) {
-  const reason = ACCESS_LOST_EVENTS[change.value?.event ?? ""];
-  if (!reason) return;
-  // a Meta manda o id da conta em waba_info; o id da entrada fica de reserva
-  for (const wabaId of new Set([change.value?.waba_info?.waba_id, change.entryId].filter(Boolean) as string[])) {
-    await markDisconnected(db, { column: "waba_id", value: wabaId }, reason);
-  }
-}
-
-/** Número ligado e com acesso, ou null (sem chatbot, ou desconectado: não dá nem para responder). */
-async function activeChannel(db: ReturnType<typeof createAdminClient>, phoneNumberId: string) {
-  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, access_token_enc, disconnected_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
-  if (!channel) console.warn("whatsapp: número sem chatbot ligado", phoneNumberId);
-  return channel && !channel.disconnected_at ? channel : null;
-}
-
-async function echoes(db: ReturnType<typeof createAdminClient>, { value }: Change) {
-  const phoneNumberId = value?.metadata?.phone_number_id;
-  if (!phoneNumberId || !value?.message_echoes?.length) return;
-  const channel = await activeChannel(db, phoneNumberId);
-  if (!channel) return;
-  for (const echo of value.message_echoes) {
-    await handleEcho(db, channel, echo).catch((e) => console.error("whatsapp: erro no eco do celular", echo.id, e));
-  }
-}
-
-async function messages(db: ReturnType<typeof createAdminClient>, { value }: Change) {
-  const phoneNumberId = value?.metadata?.phone_number_id;
-  for (const s of value?.statuses ?? []) {
-    if (s.status !== "failed") continue;
-    console.warn("whatsapp: mensagem não entregue", phoneNumberId, s.errors?.[0]);
-    // a recusa por pagamento às vezes só chega aqui, no status da mensagem
-    if (phoneNumberId && s.errors?.some((err) => err.code === PAYMENT_ISSUE_CODE)) await markPaymentIssue(db, { column: "phone_number_id", value: phoneNumberId });
-  }
-  if (!phoneNumberId) return;
-  // consumo: cada status de mensagem enviada diz se a Meta cobrou e em qual categoria
-  if (value?.statuses?.length) {
-    const { data: owner } = await db.from("whatsapp_channels").select("bot_id").eq("phone_number_id", phoneNumberId).maybeSingle();
-    if (owner) await recordUsage(db, owner.bot_id, phoneNumberId, value.statuses);
-  }
-  if (!value?.messages?.length) return;
-  const channel = await activeChannel(db, phoneNumberId);
-  if (!channel) return;
-  for (const msg of value.messages) {
-    const profileName = value.contacts?.find((c) => c.wa_id === msg.from)?.profile?.name ?? null;
-    try {
-      await handleInbound(db, channel, msg, profileName);
-    } catch (e) {
-      if (isAccessError(e)) {
-        await markDisconnected(db, { column: "phone_number_id", value: phoneNumberId }, TOKEN_REJECTED);
-        return;
-      }
-      if (isPaymentError(e)) {
-        await markPaymentIssue(db, { column: "phone_number_id", value: phoneNumberId });
-        continue;
-      }
-      console.error("whatsapp: erro na mensagem", msg.id, e);
+/** Um evento da fila por mensagem, eco, status ou mudança de conta. */
+async function toEvents(db: ReturnType<typeof createAdminClient>, changes: Change[]): Promise<InboundInput[]> {
+  const out: InboundInput[] = [];
+  const botOf = new Map<string, string | null>();
+  const bot = async (phoneNumberId: string) => {
+    if (!botOf.has(phoneNumberId)) {
+      const { data, error } = await db.from("whatsapp_channels").select("bot_id").eq("phone_number_id", phoneNumberId).maybeSingle();
+      if (error) throw error;
+      if (!data) console.warn("whatsapp: número sem chatbot ligado", phoneNumberId);
+      botOf.set(phoneNumberId, data?.bot_id ?? null);
+    }
+    return botOf.get(phoneNumberId)!;
+  };
+  for (const change of changes) {
+    const v = change.value!;
+    if (change.field === "account_update") {
+      const payload: WaPayload = { type: "account_update", entryId: change.entryId, event: v.event, wabaId: v.waba_info?.waba_id };
+      out.push({ key: `account_update:${sha256(JSON.stringify(v))}`, source: "whatsapp", kind: "account_update", botId: null, payload });
+      continue;
+    }
+    const phoneNumberId = v.metadata?.phone_number_id;
+    if (!phoneNumberId) continue;
+    const botId = await bot(phoneNumberId);
+    if (!botId) continue;
+    for (const echo of (v.message_echoes ?? []) as EchoMessage[]) {
+      const payload: WaPayload = { type: "echo", phoneNumberId, echo };
+      out.push({ key: `wa:echo:${echo.id}`, source: "whatsapp", kind: "echo", botId, contact: echo.to, payload });
+    }
+    for (const status of v.statuses ?? []) {
+      const payload: WaPayload = { type: "status", phoneNumberId, status };
+      out.push({ key: `wa:st:${status.id}:${status.status}`, source: "whatsapp", kind: "status", botId, payload });
+    }
+    for (const msg of (v.messages ?? []) as InboundMessage[]) {
+      const profileName = v.contacts?.find((c) => c.wa_id === msg.from)?.profile?.name ?? null;
+      const payload: WaPayload = { type: "msg", phoneNumberId, msg, profileName };
+      out.push({ key: `wa:msg:${msg.id}`, source: "whatsapp", kind: "msg", botId, contact: msg.from, payload });
     }
   }
+  return out;
 }

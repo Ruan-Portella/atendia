@@ -1,9 +1,10 @@
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validSignature } from "@/lib/whatsapp";
-import { isInstagramAccessError } from "@/lib/instagram";
-import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "@/lib/instagram-channel";
-import { handleInstagramEcho, handleInstagramMessage, type IgChannelRow, type IgMessagingEvent } from "@/lib/instagram-inbound";
+import type { IgChannelRow, IgMessagingEvent } from "@/lib/instagram-inbound";
+import { acceptInbound, type Group } from "@/lib/inbound-queue";
+import { processAfterWebhook, type IgPayload } from "@/lib/inbound-process";
+import { deadline } from "@/lib/cron";
 
 export const maxDuration = 60;
 
@@ -63,7 +64,8 @@ export async function GET(req: Request) {
 
 /**
  * Mensagens diretas do Instagram (API com login do Instagram). Assinatura com a chave do app do
- * Instagram. Responde 200 na hora e trata depois (after): a Meta reenvia se a resposta demora.
+ * Instagram. Cada DM e eco é gravado na fila (inbound_events) ANTES de responder 200; se o banco
+ * falhar, responde 5xx e a Meta reenvia. O tratamento vem logo depois (after).
  * Cada entrada é uma conta profissional (entry.id); `messaging` traz as DMs e os ecos.
  */
 export async function POST(req: Request) {
@@ -85,33 +87,41 @@ export async function POST(req: Request) {
 
   const entries = (body.entry ?? []).map((e) => ({ ...e, messaging: messagingEvents(e) })).filter((e) => e.id && e.messaging.length);
   if (!entries.length) console.log("instagram: webhook sem mensagens", shape(body));
-  if (entries.length) {
-    after(async () => {
-      const db = createAdminClient();
-      for (const entry of entries) {
-        const ch = await findChannel(db, entry);
-        if (!ch) {
-          console.warn("instagram: conta sem chatbot ligado", { entry: entry.id, destinatario: entry.messaging?.[0]?.recipient?.id, remetente: entry.messaging?.[0]?.sender?.id });
-          continue;
-        }
-        if (ch.disconnected_at) {
-          console.log("instagram: conta desconectada, evento ignorado", ch.ig_user_id);
-          continue;
-        }
-        for (const ev of entry.messaging!) {
-          try {
-            if (ev.message?.is_echo) await handleInstagramEcho(db, ch, ev);
-            else if (ev.message || ev.postback) await handleInstagramMessage(db, ch, ev);
-          } catch (e) {
-            if (isInstagramAccessError(e)) {
-              await markInstagramDisconnected(db, { column: "ig_user_id", value: ch.ig_user_id }, IG_TOKEN_REJECTED);
-              break;
-            }
-            console.error("instagram: erro na mensagem", ev.message?.mid, e);
-          }
-        }
+  if (!entries.length) return new Response("ok");
+
+  const db = createAdminClient();
+  const groups: Group[] = [];
+  try {
+    for (const entry of entries) {
+      const ch = await findChannel(db, entry);
+      if (!ch) {
+        console.warn("instagram: conta sem chatbot ligado", { entry: entry.id, destinatario: entry.messaging?.[0]?.recipient?.id, remetente: entry.messaging?.[0]?.sender?.id });
+        continue;
       }
-    });
+      if (ch.disconnected_at) {
+        console.log("instagram: conta desconectada, evento ignorado", ch.ig_user_id);
+        continue;
+      }
+      for (const ev of entry.messaging!) {
+        const echo = Boolean(ev.message?.is_echo);
+        const mid = ev.message?.mid ?? ev.postback?.mid;
+        // DM apagada e evento sem id não têm o que tratar
+        if (!mid || ev.message?.is_deleted || (!echo && !ev.message && !ev.postback)) continue;
+        const contact = echo ? ev.recipient?.id : ev.sender?.id;
+        if (!contact) continue;
+        const payload: IgPayload = { type: echo ? "echo" : "msg", igUserId: ch.ig_user_id, ev };
+        const g = await acceptInbound(db, { key: `ig:${echo ? "echo" : "msg"}:${mid}`, source: "instagram", kind: echo ? "echo" : "msg", botId: ch.bot_id, contact, payload });
+        if (g) groups.push(g);
+        else console.log("instagram: evento repetido ignorado", mid);
+      }
+    }
+  } catch (e) {
+    console.error("instagram: evento não gravado na fila", e);
+    return new Response("retry", { status: 503 });
+  }
+  if (groups.length) {
+    const hasTime = deadline(50_000);
+    after(() => processAfterWebhook(createAdminClient(), groups, hasTime));
   }
   return new Response("ok");
 }

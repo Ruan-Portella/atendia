@@ -51,6 +51,8 @@ export async function trialReminders(db: SupabaseClient) {
 export async function applyRetention(db: SupabaseClient) {
   // ids de mensagens do WhatsApp já tratadas: só servem contra reentrega, que vem em minutos
   await db.from("whatsapp_inbound").delete().lt("created_at", daysAgoIso(7));
+  // fila de entrada: 8 dias seguram os reenvios do WhatsApp (até 7 dias)
+  await db.from("inbound_events").delete().lt("created_at", daysAgoIso(8));
   // consumo do WhatsApp: 13 meses bastam para comparar com o mesmo mês do ano anterior
   await db.from("whatsapp_usage").delete().lt("created_at", daysAgoIso(400));
   const { data: agencies } = await db.from("agencies").select("id, retention_months").not("retention_months", "is", null);

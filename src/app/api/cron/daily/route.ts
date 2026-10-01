@@ -5,6 +5,8 @@ import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
 import { refreshInstagramTokens } from "@/lib/instagram-channel";
 import { checkHealth } from "@/lib/health";
 import { notifyPlatform } from "@/lib/notify";
+import { sweepInbound } from "@/lib/inbound-queue";
+import { inboundHandlers } from "@/lib/inbound-process";
 
 export const maxDuration = 60;
 
@@ -36,6 +38,8 @@ async function daily() {
       return { error: (e as Error).message };
     }
   };
+  // fila da Meta primeiro: evento esquecido é contato sem resposta
+  const inbound = await run("fila da Meta", () => sweepInbound(db, inboundHandlers, hasTime));
   const trial = await run("avisos de teste", () => trialReminders(db));
   const retention = await run("limpeza LGPD", () => applyRetention(db));
   // o acesso ao Instagram vale 60 dias: renova antes de vencer
@@ -53,5 +57,5 @@ async function daily() {
     return { ratio: h.diskRatio };
   });
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
-  return { trial, retention, instagram, aiUsage, disk, sources };
+  return { inbound, trial, retention, instagram, aiUsage, disk, sources };
 }

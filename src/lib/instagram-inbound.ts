@@ -1,11 +1,12 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { conversationHistory, runChat, type BotRow } from "./chat";
+import { conversationHistory, openConversation, runChat, type BotRow } from "./chat";
+import { markOwnMessage } from "./inbound-queue";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded } from "./rate-limit";
 import { instagramTyping, isInstagramAccessError, sendInstagramText, toInstagramText, type IgChannel } from "./instagram";
-import { AUDIO_PREFIX, phonePauseActive, storeContactMessage } from "./whatsapp-inbound";
+import { AUDIO_PREFIX, isStale, phonePauseActive, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de resposta do Instagram). */
@@ -62,12 +63,6 @@ export function igMediaLabel(ev: IgMessagingEvent): string {
   return IG_MEDIA_LABEL[type] ?? "(mensagem sem texto)";
 }
 
-/** Marca um id de mensagem como já tratado; false se ele já estava (reentrega ou eco nosso). */
-async function firstTime(db: SupabaseClient, mid: string): Promise<boolean> {
-  const { data } = await db.from("whatsapp_inbound").upsert({ message_id: mid }, { onConflict: "message_id", ignoreDuplicates: true }).select("message_id");
-  return Boolean(data?.length);
-}
-
 /** Conversa recente do contato com o chatbot (dentro da janela de 24 h). */
 async function recentConversation(db: SupabaseClient, botId: string, igsid: string) {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
@@ -84,9 +79,10 @@ async function recentConversation(db: SupabaseClient, botId: string, igsid: stri
 }
 
 /** Manda a DM e guarda o id dela: o webhook ecoa as nossas mensagens, e assim o eco é ignorado. */
-export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string) {
+export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string): Promise<string | null> {
   const mid = await sendInstagramText(ch, to, text);
-  if (mid) await firstTime(db, mid);
+  if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
+  return mid;
 }
 
 async function transcribeFrom(url: string, onUsage?: Parameters<typeof transcribeAudio>[1]): Promise<string | null> {
@@ -98,66 +94,97 @@ async function transcribeFrom(url: string, onUsage?: Parameters<typeof transcrib
   return transcript ? AUDIO_PREFIX + transcript : null;
 }
 
-/**
- * Uma DM do começo ao fim: se alguém da equipe assumiu ou respondeu pelo app do Instagram há
- * pouco, só guarda a mensagem para o painel; senão roda o assistente e responde. Erro de acesso
- * (token recusado) sobe para o webhook marcar a conta como desconectada.
- */
-export async function handleInstagramMessage(db: SupabaseClient, ch: IgChannelRow, ev: IgMessagingEvent) {
-  const mid = ev.message?.mid ?? ev.postback?.mid;
-  const igsid = ev.sender?.id;
-  if (!mid || !igsid || ev.message?.is_deleted) return;
-  if (!(await firstTime(db, mid))) return console.log("instagram: mensagem repetida ignorada", mid);
+/** Uma DM recebida, já na fila (inbound_events), com a chave que a grava uma vez só. */
+export interface QueuedDm {
+  key: string;
+  ev: IgMessagingEvent;
+  receivedAt: string;
+}
 
+/**
+ * As DMs de um contato que chegaram juntas: todas são gravadas e o assistente responde uma vez,
+ * à última com texto. Se alguém da equipe assumiu ou respondeu pelo app do Instagram há pouco,
+ * só guarda para o painel. Erro de acesso (token recusado) sobe para quem chamou marcar a conta.
+ */
+export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedDm[]) {
+  const burst = all.filter((q) => (q.ev.message?.mid ?? q.ev.postback?.mid) && q.ev.sender?.id && !q.ev.message?.is_deleted);
+  if (!burst.length) return;
   const { data: bot } = await db.from("bots").select("*").eq("id", ch.bot_id).maybeSingle<BotRow>();
   if (!bot) return console.warn("instagram: chatbot não encontrado", ch.bot_id);
   if (bot.status !== "live") return console.log("instagram: chatbot não publicado, DM ignorada", bot.id);
-  console.log("instagram: DM recebida", { bot: bot.id, mid });
+  const igsid = burst[0].ev.sender!.id!;
+  console.log("instagram: DMs recebidas", { bot: bot.id, quantidade: burst.length });
 
   const reply = (text: string) => send(db, ch, igsid, text);
-  const typed = igText(ev);
-  const audioUrl = ev.message?.attachments?.find((a) => a.type === "audio")?.payload?.url;
+  for (let i = 0; i < burst.length; i++) {
+    const exceeded = await firstExceeded(db, [
+      { key: `ig:${bot.id}:${igsid}:m`, max: 15, windowSeconds: 60, message: "Você está mandando mensagens rápido demais. Espere um minutinho." },
+      { key: `ig:${bot.id}:${igsid}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
+    ]);
+    if (exceeded) return void (await reply(exceeded.message));
+  }
 
-  const exceeded = await firstExceeded(db, [
-    { key: `ig:${bot.id}:${igsid}:m`, max: 15, windowSeconds: 60, message: "Você está mandando mensagens rápido demais. Espere um minutinho." },
-    { key: `ig:${bot.id}:${igsid}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
-  ]);
-  if (exceeded) return reply(exceeded.message);
-
-  const transcribe = async () => {
+  const transcribe = async (ev: IgMessagingEvent) => {
+    const audioUrl = ev.message?.attachments?.find((a) => a.type === "audio")?.payload?.url;
     if (!audioUrl || !canTranscribe()) return null;
     try {
       return await transcribeFrom(audioUrl, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "instagram", ...u }));
     } catch (e) {
-      console.error("instagram: áudio não transcrito", mid, e);
+      console.error("instagram: áudio não transcrito", e);
       return null;
     }
   };
+  const texts: Array<string | null> = [];
+  for (const q of burst) texts.push((igText(q.ev) ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
+  const shown = (i: number) => texts[i] ?? igMediaLabel(burst[i].ev);
 
-  const conv = await recentConversation(db, bot.id, igsid);
+  let conv = await recentConversation(db, bot.id, igsid);
   const { data: appReply } = conv
     ? await db.from("messages").select("created_at").eq("conversation_id", conv.id).eq("role", "agent").eq("author", IG_APP_AUTHOR).order("id", { ascending: false }).limit(1).maybeSingle()
     : { data: null };
   if (conv && ((conv.takeover_at && !conv.handled_at) || phonePauseActive(appReply?.created_at as string | undefined))) {
-    const text = typed ?? (await transcribe()) ?? igMediaLabel(ev);
-    await storeContactMessage(db, conv.id, text.slice(0, MAX_MESSAGE_CHARS));
+    for (let i = 0; i < burst.length; i++) await storeOnce(db, conv.id, shown(i), burst[i].key);
     return;
   }
 
-  if (!typed && !(audioUrl && canTranscribe())) return reply(ONLY_TEXT);
+  if (isStale(burst[0].receivedAt)) {
+    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
+    if (!convId) return;
+    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    await db.from("conversations").update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null }).eq("id", convId);
+    return;
+  }
+
+  const qi = texts.map((t, i) => (t ? i : -1)).filter((i) => i >= 0).pop();
+  if (qi === undefined) {
+    const lastAudio = Boolean(burst[burst.length - 1].ev.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
+    return void (await reply(lastAudio ? AUDIO_FAILED : ONLY_TEXT));
+  }
+  const q = burst[qi];
+
+  const before = await previousAnswer(db, q.key);
+  if (before.state === "sent") return;
+  if (before.state === "unsent") {
+    const mid = await reply(before.content);
+    await db.from("messages").update({ channel_msg_id: mid ?? "enviada" }).eq("id", before.id);
+    return;
+  }
+
   await instagramTyping(ch, igsid);
-  const text = typed ?? (await transcribe());
-  if (!text) return reply(AUDIO_FAILED);
-  const question = text.slice(0, MAX_MESSAGE_CHARS);
-
-  const history: UIMessage[] = conv ? await conversationHistory(db, conv.id, HISTORY) : [];
-  history.push({ id: mid, role: "user", parts: [{ type: "text", text: question }] });
-
   try {
-    const { result, saved } = await runChat({ db, bot, messages: history, conversationId: conv?.id ?? null, visitorId: null, channel: "instagram", instagram: { igsid } });
+    if (!conv) conv = { id: await openConversation(db, bot, { channel: "instagram", igsid }), takeover_at: null, handled_at: null };
+    for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
+
+    // (no reprocesso "unanswered" a pergunta já está no banco, então já vem no histórico)
+    const history: UIMessage[] = await conversationHistory(db, conv.id, HISTORY);
+    if (before.state !== "unanswered") history.push({ id: q.key, role: "user", parts: [{ type: "text", text: texts[qi]! }] });
+    const { result, saved } = await runChat({ db, bot, messages: history, conversationId: conv.id, visitorId: null, channel: "instagram", instagram: { igsid }, questionKey: q.key });
     const answer = await result.text;
-    await saved;
-    if (answer.trim()) await reply(answer);
+    const answerId = await saved;
+    if (answer.trim()) {
+      const mid = await reply(answer);
+      if (answerId) await db.from("messages").update({ channel_msg_id: mid ?? "enviada" }).eq("id", answerId);
+    }
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;
     const code = (e as Error).message;
@@ -167,15 +194,13 @@ export async function handleInstagramMessage(db: SupabaseClient, ch: IgChannelRo
 }
 
 /**
- * Eco: mensagem que saiu da conta do cliente. As nossas (assistente ou painel) já estão marcadas
- * e são ignoradas; o resto é alguém da equipe respondendo pelo app do Instagram, que entra na
- * conversa do painel e pausa o assistente naquela conversa por 1 hora.
+ * Eco: mensagem que saiu da conta do cliente. As nossas (assistente ou painel) já entraram na
+ * fila como tratadas e nem chegam aqui; o resto é alguém da equipe respondendo pelo app do
+ * Instagram, que entra na conversa do painel e pausa o assistente naquela conversa por 1 hora.
  */
-export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, ev: IgMessagingEvent) {
-  const mid = ev.message?.mid;
+export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, ev: IgMessagingEvent, key: string) {
   const igsid = ev.recipient?.id;
-  if (!mid || !igsid) return;
-  if (!(await firstTime(db, mid))) return;
+  if (!ev.message?.mid || !igsid) return;
 
   const content = (igText(ev) ?? igMediaLabel(ev)).slice(0, MAX_MESSAGE_CHARS);
   let conv = await recentConversation(db, ch.bot_id, igsid);
@@ -188,7 +213,8 @@ export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, 
     conv = created;
   }
   if (!conv) return;
-  await db.from("messages").insert({ conversation_id: conv.id, role: "agent", content, author: IG_APP_AUTHOR });
+  const { data } = await db.from("messages").upsert({ conversation_id: conv.id, role: "agent", content, author: IG_APP_AUTHOR, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
+  if (!data?.length) return;
   const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id);
   await db.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conv.id);
 }

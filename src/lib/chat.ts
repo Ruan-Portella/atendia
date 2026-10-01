@@ -80,6 +80,36 @@ export function actionsNote(results: ToolResultRow[] | null | undefined): string
 }
 
 /**
+ * Abre uma conversa nova: confere o teste e a cota do mês da agência (cada conversa conta 1).
+ * Lança "trial_expired" ou "quota_exceeded" quando não pode.
+ */
+export async function openConversation(
+  db: SupabaseClient,
+  bot: Pick<BotRow, "id" | "agency_id">,
+  opts: { channel: string; visitorId?: string | null; waId?: string; igsid?: string },
+): Promise<string> {
+  const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", bot.agency_id).single();
+  const plan = getPlan(agency?.plan ?? "trial");
+  if (plan.id === "trial" && agency?.trial_ends_at && new Date(agency.trial_ends_at) < new Date()) {
+    throw new Error("trial_expired");
+  }
+  const { data: used } = await db.rpc("increment_usage", { p_agency_id: bot.agency_id, p_period: currentPeriodBR() });
+  if (typeof used === "number") {
+    // avisa a agência ao chegar em 80% e ao estourar (sem atrasar a resposta do visitante)
+    notifyUsageThreshold(db, bot.agency_id, used, plan.conversations).catch(() => {});
+    if (used > plan.conversations) throw new Error("quota_exceeded");
+  }
+
+  const { data: conv, error } = await db
+    .from("conversations")
+    .insert({ bot_id: bot.id, visitor_id: opts.visitorId ?? null, channel: opts.channel, ...(opts.waId ? { wa_id: opts.waId } : {}), ...(opts.igsid ? { ig_id: opts.igsid } : {}) })
+    .select("id")
+    .single();
+  if (error || !conv) throw new Error("Não foi possível abrir a conversa.");
+  return conv.id as string;
+}
+
+/**
  * Executa uma rodada de chat para um bot: recupera contexto (RAG), responde em streaming,
  * registra lead/pergunta sem resposta/pedido de atendente via ferramentas e persiste as mensagens.
  */
@@ -94,32 +124,13 @@ export async function runChat(opts: {
   whatsapp?: { waId: string; profileName?: string | null };
   /** Contato do Instagram Direct (IGSID). O WhatsApp da pessoa não é conhecido. */
   instagram?: { igsid: string };
+  /** Evento da fila (inbound_events): a pergunta é gravada uma vez só, mesmo no reprocesso. */
+  questionKey?: string;
 }) {
   const { db, bot, messages, channel } = opts;
 
   // 1. Conversa (cria na primeira mensagem) + cota mensal da agência
-  let conversationId = opts.conversationId;
-  if (!conversationId) {
-    const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", bot.agency_id).single();
-    const plan = getPlan(agency?.plan ?? "trial");
-    if (plan.id === "trial" && agency?.trial_ends_at && new Date(agency.trial_ends_at) < new Date()) {
-      throw new Error("trial_expired");
-    }
-    const { data: used } = await db.rpc("increment_usage", { p_agency_id: bot.agency_id, p_period: currentPeriodBR() });
-    if (typeof used === "number") {
-      // avisa a agência ao chegar em 80% e ao estourar (sem atrasar a resposta do visitante)
-      notifyUsageThreshold(db, bot.agency_id, used, plan.conversations).catch(() => {});
-      if (used > plan.conversations) throw new Error("quota_exceeded");
-    }
-
-    const { data: conv, error } = await db
-      .from("conversations")
-      .insert({ bot_id: bot.id, visitor_id: opts.visitorId, channel, ...(opts.whatsapp ? { wa_id: opts.whatsapp.waId } : {}), ...(opts.instagram ? { ig_id: opts.instagram.igsid } : {}) })
-      .select("id")
-      .single();
-    if (error || !conv) throw new Error("Não foi possível abrir a conversa.");
-    conversationId = conv.id as string;
-  }
+  const conversationId = opts.conversationId ?? (await openConversation(db, bot, { channel, visitorId: opts.visitorId, waId: opts.whatsapp?.waId, igsid: opts.instagram?.igsid }));
 
   // 2. Recuperação de contexto
   const question = lastUserText(messages);
@@ -155,13 +166,18 @@ export async function runChat(opts: {
 
   // 3. Persiste a pergunta do visitante
   if (question) {
-    await db.from("messages").insert({ conversation_id: convId, role: "user", content: question });
+    const row = { conversation_id: convId, role: "user", content: question, ...(opts.questionKey ? { inbound_key: opts.questionKey } : {}) };
+    // com a chave do evento, o reprocesso não grava a mesma pergunta duas vezes
+    if (opts.questionKey) await db.from("messages").upsert(row, { onConflict: "inbound_key", ignoreDuplicates: true });
+    else await db.from("messages").insert(row);
   }
 
   let unansweredRecorded = false;
   // resolve quando a resposta já está gravada (quem não usa o stream, como o WhatsApp, espera por ele)
-  let markSaved!: () => void;
-  const saved = new Promise<void>((resolve) => (markSaved = resolve));
+  // resolve com o id da resposta gravada (null se não houve texto ou deu erro)
+  let markSaved!: (id?: number | null) => void;
+  const saved = new Promise<number | null>((resolve) => (markSaved = (id) => resolve(id ?? null)));
+  let savedId: number | null = null;
   const result = streamText({
     model: chatModel(),
     system,
@@ -235,13 +251,18 @@ export async function runChat(opts: {
         if (!unansweredRecorded && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
         if (text) {
           const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, output: t.output })));
-          await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null });
+          const { data: savedRow } = await db
+            .from("messages")
+            .insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null })
+            .select("id")
+            .single();
+          savedId = (savedRow?.id as number | undefined) ?? null;
         }
         const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
         const now = new Date().toISOString();
         await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", convId);
       } finally {
-        markSaved();
+        markSaved(savedId);
       }
     },
   });

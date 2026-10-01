@@ -4,8 +4,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const diskLimitBytes = () => Number(process.env.DB_DISK_LIMIT_MB ?? 500) * 1024 * 1024;
 export const DISK_WARN_RATIO = 0.7;
 
+/** Evento da Meta pendente há mais que isto = fila parada (o health responde 503). */
+export const STUCK_MINUTES = 30;
+
 export interface HealthReport {
   ok: boolean;
+  oldestPendingSeconds: number | null;
+  queueStuck: boolean;
   dbWrite: boolean;
   dbWriteMs: number | null;
   diskBytes: number | null;
@@ -15,8 +20,8 @@ export interface HealthReport {
 }
 
 /**
- * Saúde da produção: o banco aceita escrita e quanto do disco está usado.
- * (A idade do evento pendente mais antigo entra junto com a fila inbound_events, no passo 2.)
+ * Saúde da produção: o banco aceita escrita, quanto do disco está usado e se a fila da Meta
+ * está andando (evento pendente há mais de 30 minutos = parada).
  */
 export async function checkHealth(db: SupabaseClient): Promise<HealthReport> {
   const started = Date.now();
@@ -24,9 +29,14 @@ export async function checkHealth(db: SupabaseClient): Promise<HealthReport> {
   const dbWrite = !write.error;
   const size = await db.rpc("db_size_bytes");
   const diskBytes = typeof size.data === "number" ? size.data : size.data ? Number(size.data) : null;
+  const pending = await db.rpc("inbound_oldest_pending_seconds");
+  const oldestPendingSeconds = pending.error ? null : Number(pending.data ?? 0);
+  const queueStuck = oldestPendingSeconds !== null && oldestPendingSeconds > STUCK_MINUTES * 60;
   const diskRatio = diskBytes === null ? null : Math.round((diskBytes / diskLimitBytes()) * 1000) / 1000;
   return {
-    ok: dbWrite,
+    ok: dbWrite && !queueStuck,
+    oldestPendingSeconds,
+    queueStuck,
     dbWrite,
     dbWriteMs: dbWrite ? Date.now() - started : null,
     diskBytes,
