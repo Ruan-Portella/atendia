@@ -107,7 +107,8 @@ export async function retrieveContext(db: SupabaseClient, botId: string, questio
     context = hits.map((r, i) => `[${i + 1}] ${r.metadata?.title ? r.metadata.title + "\n" : ""}${r.content}`).join("\n\n---\n\n");
     for (const r of hits) {
       const key = r.metadata?.url ?? r.metadata?.title;
-      if (key && !used.some((u) => (u.url ?? u.title) === key)) used.push({ title: r.metadata?.title, url: r.metadata?.url });
+      // fontes com o mesmo título (páginas diferentes do mesmo site) aparecem uma vez só
+      if (key && !used.some((u) => (u.url ?? u.title) === key || (r.metadata?.title && u.title === r.metadata.title))) used.push({ title: r.metadata?.title, url: r.metadata?.url });
     }
   }
   return { context, used, hits, embeddingUsage };
