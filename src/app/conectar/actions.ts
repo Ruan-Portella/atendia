@@ -10,6 +10,7 @@ import { connectBlockFor, getCompliance, parseAnswers, recordAcceptance } from "
 import { confirmLinkAcceptance } from "@/lib/acceptance-link";
 import { notifyPlatform } from "@/lib/notify";
 import { isEmail, text } from "@/lib/validation";
+import { audit, requestMeta } from "@/lib/audit";
 
 /**
  * O cliente terminou o cadastro da Meta pela página do link de conexão. A permissão é o próprio
@@ -27,6 +28,7 @@ export async function completeLinkSignup(token: string, input: SignupResult): Pr
   if (r.ok) {
     await markConnectLinkUsed(admin, token);
     await confirmLinkAcceptance(admin, link, token);
+    await audit(admin, { agencyId: link.agencyId, actorType: "link", actorId: null, action: "canal.conectar", targetType: "bot", targetId: link.botId, after: { channel: "whatsapp", via: "link", coexistence: Boolean(input.coexistence) }, ...(await requestMeta()) });
   }
   revalidatePath(`/conectar/${token}`);
   revalidatePath(`/painel/bots/${link.botId}`);
@@ -72,6 +74,7 @@ export async function acceptViaLink(token: string, fd: FormData): Promise<Action
     console.error("aceite pelo link: falhou", e);
     return fail("Não foi possível registrar agora. Tente de novo.");
   }
+  await audit(admin, { agencyId: link.agencyId, actorType: "link", actorId: email, action: "aceite.registrar", targetType: "client", targetId: link.clientId, after: { channel: link.channel, status, answered_now: Boolean(answers), pending: true }, ...(await requestMeta()) });
   if (answers && status !== "ativo") await notifyPlatform(`Negócio em revisão: ${link.bot.client_name}`, [`${link.bot.client_name} (agência ${link.agency.name}) respondeu a pergunta de atividades pelo link e ficou "${status}".`, "Veja em /admin/conformidade."]).catch(() => false);
   revalidatePath(`/conectar/${token}`);
   return ok(status === "aguardando_revisao" && link.channel === "whatsapp" ? "Registrado. O WhatsApp só ativa depois da revisão." : "Registrado. Agora é só conectar.");

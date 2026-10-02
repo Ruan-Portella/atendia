@@ -1,6 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isCustomHost } from "@/lib/domain";
+import { accessDay, logAccess, requestIp, type AccessActor } from "@/lib/access-log";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { hashId } from "@/lib/rate-limit";
+
+/** Cookie que marca "esta sessão já foi registrada hoje, deste IP" (evita gravar a cada página). */
+const ACCESS_MARK = "bv_al";
 
 /** O que um domínio de agência serve: demos, portal do cliente, widget e API. */
 const CUSTOM_HOST_PATHS = /^\/(demo|c|w)\/|^\/api\/|^\/widget\.js$|^\/dominio$/;
@@ -12,7 +18,7 @@ const PLATFORM_ICONS = /^\/(favicon\.ico|icon\.svg|apple-icon\.png)$/;
  * o resto (landing, login, painel) vira uma página neutra com a marca da agência.
  * (No Next 16 o antigo middleware.ts chama-se proxy.ts.)
  */
-export async function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const customHost = isCustomHost(request.headers.get("host"));
   // ícones da plataforma (public/favicon.ico, icon.svg, apple-icon.png) não saem no domínio da agência
   if (PLATFORM_ICONS.test(request.nextUrl.pathname)) return customHost ? new NextResponse(null, { status: 404 }) : NextResponse.next();
@@ -60,6 +66,18 @@ export async function proxy(request: NextRequest) {
     url.pathname = "/painel/clientes";
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  // Registro de acesso (Marco Civil): uma linha por pessoa, IP e dia, em segundo plano
+  const area: AccessActor | null = path === "/admin" || path.startsWith("/admin/") ? "support" : /^\/cliente\/./.test(path) ? "member" : path.startsWith("/painel") ? "user" : null;
+  if (user && area) {
+    const ip = requestIp(request.headers);
+    const mark = `${accessDay()}.${hashId(`${area}:${user.sub}:${ip}`).slice(0, 16)}`;
+    if (request.cookies.get(ACCESS_MARK)?.value !== mark) {
+      const email = typeof user.email === "string" ? user.email : null;
+      event.waitUntil(logAccess(createAdminClient(), { actorType: area, actorId: String(user.sub), email, event: "session", ip, userAgent: request.headers.get("user-agent") }));
+      response.cookies.set(ACCESS_MARK, mark, { httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 60 * 60 * 24 });
+    }
   }
 
   // Guarda o código de afiliado por 30 dias

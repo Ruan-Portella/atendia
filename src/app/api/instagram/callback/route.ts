@@ -6,6 +6,8 @@ import { connectInstagram } from "@/lib/instagram-channel";
 import { hashToken, markConnectLinkUsed, resolveConnectLink, type ResolvedLink } from "@/lib/whatsapp-connect-link";
 import { confirmAcceptance, connectBlockFor } from "@/lib/acceptance";
 import { confirmLinkAcceptance } from "@/lib/acceptance-link";
+import { audit } from "@/lib/audit";
+import { requestIp } from "@/lib/access-log";
 
 /**
  * Volta do login do Instagram (a URL cadastrada no app). Só aceita um `state` assinado por nós,
@@ -50,6 +52,11 @@ export async function GET(req: Request) {
   } catch (e) {
     console.error("instagram: retorno do login falhou", e);
     r = { ok: false, message: `Não foi possível concluir a conexão (${(e as Error).message}). Tente de novo; se continuar, fale com o suporte.` };
+  }
+  if (r.ok) {
+    const { data: owner } = await db.from("bots").select("agency_id, agencies(owner_id)").eq("id", origin.botId).maybeSingle();
+    const ag = (Array.isArray(owner?.agencies) ? owner.agencies[0] : owner?.agencies) as { owner_id?: string } | null | undefined;
+    await audit(db, { agencyId: (owner?.agency_id as string | undefined) ?? null, actorType: origin.via === "link" ? "link" : "user", actorId: origin.via === "link" ? null : (ag?.owner_id ?? null), action: "canal.conectar", targetType: "bot", targetId: origin.botId, after: { channel: "instagram", via: origin.via }, ip: requestIp(req.headers), userAgent: req.headers.get("user-agent") });
   }
   if (r.ok && origin.via === "link" && link) {
     await markConnectLinkUsed(db, origin.token);

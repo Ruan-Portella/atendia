@@ -7,9 +7,15 @@ import { text } from "@/lib/validation";
 import { extendedTrialEnd } from "@/lib/backoffice";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { reviewDecisionEmail, type ComplianceStatus } from "@/lib/acceptance";
-import { notifyAgencyOwner } from "@/lib/notify";
+import { notifyAgencyOwner, notifyPlatform } from "@/lib/notify";
 import { company } from "@/lib/company";
 import { appUrl } from "@/lib/utils";
+import { audit, requestMeta } from "@/lib/audit";
+
+/** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
+async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
+  await audit(createAdminClient(), { agencyId: o.agencyId ?? null, actorType: "support", actorId: email, action, targetType: o.targetType ?? null, targetId: o.targetId ?? null, after: o.after ?? null, ...(await requestMeta()) });
+}
 
 /*
  * Ações do backoffice que mudam o funcionamento: pausar a IA (de uma agência ou de todas, a
@@ -32,6 +38,7 @@ export async function pauseAllAi(fd: FormData): Promise<ActionResult> {
   const s = await requireAdmin(`/admin (CHAVE GERAL: pausou a IA de todos: ${reason})`);
   const { error } = await createAdminClient().from("platform_flags").update({ ai_paused_at: new Date().toISOString(), ai_paused_reason: reason, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
   if (error) return fail("Não foi possível pausar. Tente de novo.");
+  await auditAdmin(s.email, "plataforma.pausar_ia", { after: { reason } });
   revalidatePath("/admin", "layout");
   return ok("IA de todos pausada.");
 }
@@ -40,6 +47,7 @@ export async function resumeAllAi(): Promise<ActionResult> {
   const s = await requireAdmin("/admin (CHAVE GERAL: religou a IA de todos)");
   const { error } = await createAdminClient().from("platform_flags").update({ ai_paused_at: null, ai_paused_reason: null, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
   if (error) return fail("Não foi possível religar. Tente de novo.");
+  await auditAdmin(s.email, "plataforma.religar_ia");
   revalidatePath("/admin", "layout");
   return ok("IA de todos religada.");
 }
@@ -47,17 +55,19 @@ export async function resumeAllAi(): Promise<ActionResult> {
 export async function pauseAgencyAi(agencyId: string, fd: FormData): Promise<ActionResult> {
   const reason = reasonOf(fd);
   if (typeof reason !== "string") return fail(reason.error);
-  await requireAdmin(`/admin/clientes/${agencyId} (pausou a IA: ${reason})`);
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (pausou a IA: ${reason})`);
   const { error } = await createAdminClient().from("agencies").update({ ai_paused_at: new Date().toISOString(), ai_paused_reason: reason }).eq("id", agencyId);
   if (error) return fail("Não foi possível pausar. Tente de novo.");
+  await auditAdmin(s.email, "agencia.pausar_ia", { agencyId, targetType: "agency", targetId: agencyId, after: { reason } });
   revalidatePath("/admin", "layout");
   return ok("IA da agência pausada.");
 }
 
 export async function resumeAgencyAi(agencyId: string): Promise<ActionResult> {
-  await requireAdmin(`/admin/clientes/${agencyId} (religou a IA)`);
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (religou a IA)`);
   const { error } = await createAdminClient().from("agencies").update({ ai_paused_at: null, ai_paused_reason: null }).eq("id", agencyId);
   if (error) return fail("Não foi possível religar. Tente de novo.");
+  await auditAdmin(s.email, "agencia.religar_ia", { agencyId, targetType: "agency", targetId: agencyId });
   revalidatePath("/admin", "layout");
   return ok("IA da agência religada.");
 }
@@ -66,7 +76,7 @@ export async function resumeAgencyAi(agencyId: string): Promise<ActionResult> {
 export async function extendTrial(agencyId: string, fd: FormData): Promise<ActionResult> {
   const days = Number(fd.get("days"));
   if (!TRIAL_DAYS.has(days)) return fail("Escolha quantos dias.");
-  await requireAdmin(`/admin/clientes/${agencyId} (estendeu o teste em ${days} dias)`);
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (estendeu o teste em ${days} dias)`);
   const db = createAdminClient();
   const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", agencyId).maybeSingle();
   if (!agency) return fail("Agência não encontrada.");
@@ -74,6 +84,7 @@ export async function extendTrial(agencyId: string, fd: FormData): Promise<Actio
   const until = extendedTrialEnd(agency.trial_ends_at as string, days);
   const { error } = await db.from("agencies").update({ trial_ends_at: until, trial_reminder_sent_at: null, trial_expired_notified_at: null }).eq("id", agencyId);
   if (error) return fail("Não foi possível estender. Tente de novo.");
+  await auditAdmin(s.email, "agencia.estender_teste", { agencyId, targetType: "agency", targetId: agencyId, after: { days, until } });
   revalidatePath("/admin", "layout");
   return ok(`Teste estendido até ${new Date(until).toLocaleDateString("pt-BR")}.`);
 }
@@ -91,6 +102,7 @@ export async function disableWhatsAppAll(fd: FormData): Promise<ActionResult> {
   const s = await requireAdmin(`/admin (DESLIGOU O WHATSAPP DE TODOS: ${reason})`);
   const { error } = await createAdminClient().from("platform_flags").update({ whatsapp_disabled_at: new Date().toISOString(), whatsapp_disabled_reason: reason, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
   if (error) return fail("Não foi possível desligar. Tente de novo.");
+  await auditAdmin(s.email, "plataforma.desligar_whatsapp", { after: { reason } });
   revalidatePath("/admin", "layout");
   return ok("WhatsApp de todos desligado.");
 }
@@ -99,6 +111,7 @@ export async function enableWhatsAppAll(): Promise<ActionResult> {
   const s = await requireAdmin("/admin (religou o WhatsApp de todos)");
   const { error } = await createAdminClient().from("platform_flags").update({ whatsapp_disabled_at: null, whatsapp_disabled_reason: null, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
   if (error) return fail("Não foi possível religar. Tente de novo.");
+  await auditAdmin(s.email, "plataforma.religar_whatsapp");
   revalidatePath("/admin", "layout");
   return ok("WhatsApp de todos religado.");
 }
@@ -123,6 +136,7 @@ export async function suspendChannel(agencyId: string, fd: FormData): Promise<Ac
   }
   const { error } = await db.from("enforcement_actions").insert({ source: "boavoz", feature: "channel", channel, agency_id: agencyId, bot_id: botId, reason, created_by: s.email });
   if (error) return fail("Não foi possível suspender. Tente de novo.");
+  await auditAdmin(s.email, "canal.suspender", { agencyId, targetType: botId ? "bot" : "agency", targetId: botId ?? agencyId, after: { channel, reason } });
   revalidatePath("/admin", "layout");
   return ok("Canal suspenso.");
 }
@@ -130,8 +144,9 @@ export async function suspendChannel(agencyId: string, fd: FormData): Promise<Ac
 /** Levanta uma medida (da BoaVoz ou registrada da Meta): o canal volta a funcionar se nada mais o bloqueia. */
 export async function liftMeasure(id: number): Promise<ActionResult> {
   const s = await requireAdmin(`/admin (levantou a medida ${id})`);
-  const { error } = await createAdminClient().from("enforcement_actions").update({ lifted_at: new Date().toISOString(), lifted_by: s.email }).eq("id", id).is("lifted_at", null);
+  const { data: lifted, error } = await createAdminClient().from("enforcement_actions").update({ lifted_at: new Date().toISOString(), lifted_by: s.email }).eq("id", id).is("lifted_at", null).select("agency_id, source, channel");
   if (error) return fail("Não foi possível levantar. Tente de novo.");
+  if (lifted?.[0]) await auditAdmin(s.email, "medida.levantar", { agencyId: lifted[0].agency_id as string | null, targetType: "measure", targetId: String(id), after: { source: lifted[0].source, channel: lifted[0].channel } });
   revalidatePath("/admin", "layout");
   return ok("Medida levantada.");
 }
@@ -149,6 +164,7 @@ export async function approveBusiness(clientId: string): Promise<ActionResult> {
   if (error) return fail("Não foi possível aprovar. Tente de novo.");
   await db.from("enforcement_actions").update({ lifted_at: now, lifted_by: s.email }).eq("source", "boavoz").eq("detail->>client_id", clientId).is("lifted_at", null);
   const sent = await tellAgency(row, { decision: "aprovado" });
+  await auditAdmin(s.email, "negocio.aprovar", { agencyId: row.agencyId, targetType: "client", targetId: clientId, after: { previous: row.previous } });
   revalidatePath("/admin", "layout");
   return ok(`Negócio aprovado.${sent}`);
 }
@@ -187,6 +203,64 @@ export async function blockBusiness(clientId: string, fd: FormData): Promise<Act
   );
   if (measures.length) await db.from("enforcement_actions").insert(measures);
   const sent = await tellAgency(row, { decision: "bloqueado", reason });
+  await auditAdmin(s.email, "negocio.bloquear", { agencyId: row.agencyId, targetType: "client", targetId: clientId, after: { previous: row.previous, reason } });
   revalidatePath("/admin", "layout");
   return ok(`Negócio bloqueado.${sent}`);
+}
+
+/* ------------------------------------------------------------------ incidentes de segurança (docs/incidentes.md) */
+
+const SEVERITIES = new Set(["baixo", "medio", "alto"]);
+const INCIDENT_STATUS = new Set(["aberto", "contido", "encerrado"]);
+const longText = (fd: FormData, name: string) => String(fd.get(name) ?? "").trim().slice(0, 4000) || null;
+
+/** Abre o registro de um incidente (sem dado pessoal no texto: contagens e tipos). */
+export async function createIncident(fd: FormData): Promise<ActionResult> {
+  const title = text(fd.get("title")).slice(0, 200);
+  if (title.length < 3) return fail("Dê um título ao incidente.");
+  const severity = text(fd.get("severity"));
+  if (!SEVERITIES.has(severity)) return fail("Escolha a severidade.");
+  const detectedRaw = text(fd.get("detected_at"));
+  const detected = detectedRaw ? new Date(`${detectedRaw}:00-03:00`) : new Date();
+  if (Number.isNaN(detected.getTime())) return fail("Data de detecção inválida.");
+  const s = await requireAdmin(`/admin/conformidade (registrou incidente: ${title})`);
+  const { data, error } = await createAdminClient()
+    .from("security_incidents")
+    .insert({ title, severity, detected_at: detected.toISOString(), description: longText(fd, "description"), affected: longText(fd, "affected"), created_by: s.email, updated_by: s.email })
+    .select("id")
+    .single();
+  if (error || !data) return fail("Não foi possível registrar. Tente de novo.");
+  await auditAdmin(s.email, "incidente.registrar", { targetType: "incident", targetId: String(data.id), after: { title, severity } });
+  if (severity === "alto") await notifyPlatform(`Incidente de severidade alta: ${title}`, [`Registrado por ${s.email}.`, "Siga docs/incidentes.md e avise as pessoas da Continuidade.", "Backoffice: /admin/conformidade"]).catch(() => false);
+  revalidatePath("/admin", "layout");
+  return ok("Incidente registrado. Siga o roteiro (docs/incidentes.md).");
+}
+
+/** Atualiza o andamento: status, contenção, avaliação de risco e quem já foi avisado. */
+export async function updateIncident(id: number, fd: FormData): Promise<ActionResult> {
+  const status = text(fd.get("status"));
+  if (!INCIDENT_STATUS.has(status)) return fail("Escolha o status.");
+  const risk = text(fd.get("risk_relevant"));
+  const s = await requireAdmin(`/admin/conformidade (atualizou o incidente ${id})`);
+  const db = createAdminClient();
+  const { data: current } = await db.from("security_incidents").select("status, agencies_notified_at, anpd_notified_at, closed_at").eq("id", id).maybeSingle();
+  if (!current) return fail("Incidente não encontrado.");
+  const now = new Date().toISOString();
+  const patch = {
+    status,
+    actions: longText(fd, "actions"),
+    affected: longText(fd, "affected"),
+    risk_relevant: risk === "sim" ? true : risk === "nao" ? false : null,
+    // "marcar agora" só vale uma vez: a primeira data fica
+    agencies_notified_at: current.agencies_notified_at ?? (fd.get("agencies_notified") === "on" ? now : null),
+    anpd_notified_at: current.anpd_notified_at ?? (fd.get("anpd_notified") === "on" ? now : null),
+    closed_at: status === "encerrado" ? (current.closed_at ?? now) : null,
+    updated_by: s.email,
+    updated_at: now,
+  };
+  const { error } = await db.from("security_incidents").update(patch).eq("id", id);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditAdmin(s.email, "incidente.atualizar", { targetType: "incident", targetId: String(id), after: { status, risk_relevant: patch.risk_relevant, agencies_notified: Boolean(patch.agencies_notified_at), anpd_notified: Boolean(patch.anpd_notified_at) } });
+  revalidatePath("/admin", "layout");
+  return ok("Incidente atualizado.");
 }

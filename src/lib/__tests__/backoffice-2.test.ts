@@ -73,6 +73,7 @@ describe("qualidade e operação", () => {
       cronsScheduled: true,
       measures: { metaOrders: 0, metaNotices: 0 },
       reviews: { open: 0, holding: 0, overdue: 0 },
+      incidentsOpen: 0,
       bots: new Map(),
     };
     expect(operationAlerts(base)).toEqual([]);

@@ -28,6 +28,7 @@ import { activeSuppressions, blocks, suppressionScope } from "@/lib/suppression"
 import { sendBlockedReason } from "@/lib/conversation-mode";
 import { confirmAcceptance, connectBlockFor, dayLabel, getCompliance, parseAnswers, recordAcceptance, type AcceptanceChannel } from "@/lib/acceptance";
 import { notifyPlatform } from "@/lib/notify";
+import { audit, requestMeta } from "@/lib/audit";
 import { logDeletion } from "@/lib/deletions";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -45,6 +46,12 @@ const list = (v: FormDataEntryValue | null) =>
  * Resolve o cliente de um formulário com o seletor de cliente: `client_id` de um cliente
  * existente, ou `client_id=new` + campos `new_client_*`, que criam o cliente na hora.
  */
+/** Auditoria das ações do painel: quem fez é o dono logado da agência. */
+async function auditPanel(action: string, target: { type: string; id: string }, change: { before?: Record<string, unknown>; after?: Record<string, unknown> } = {}) {
+  const { agency } = await requireAgency();
+  await audit(createAdminClient(), { agencyId: agency.id, actorType: "user", actorId: agency.owner_id, action, targetType: target.type, targetId: target.id, ...change, ...(await requestMeta()) });
+}
+
 async function resolveClient(supabase: Db, agencyId: string, fd: FormData): Promise<{ id: string; name: string; site: string | null } | { error: string }> {
   const clientId = text(fd.get("client_id"));
   if (clientId && clientId !== "new") {
@@ -100,6 +107,7 @@ export async function deleteClientRecord(clientId: string): Promise<ActionResult
   const { error, count } = await supabase.from("clients").delete({ count: "exact" }).eq("id", clientId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
   if (!count) return fail("Cliente não encontrado.");
+  await auditPanel("cliente.excluir", { type: "client", id: clientId });
   revalidatePath("/painel", "layout");
   redirect("/painel/clientes");
 }
@@ -271,6 +279,7 @@ export async function setBotStatus(botId: string, status: "live" | "draft"): Pro
   }
   const { error } = await supabase.from("bots").update({ status }).eq("id", botId);
   if (error) return fail("Não foi possível mudar o status. Tente de novo.");
+  await auditPanel(status === "live" ? "bot.publicar" : "bot.tirar_do_ar", { type: "bot", id: botId });
   revalidatePath("/painel", "layout");
   return ok(status === "live" ? "Chatbot publicado. Ele já responde no site." : "Chatbot fora do ar. O balão some do site do cliente em até um minuto.");
 }
@@ -292,6 +301,7 @@ export async function pauseBot(botId: string, formData: FormData): Promise<Actio
     .select("id");
   if (error) return fail("Não foi possível pausar. Tente de novo.");
   if (!data?.length) return fail("Este chatbot já está pausado.");
+  await auditPanel("bot.pausar", { type: "bot", id: botId }, { after: { reason, notify: formData.get("notify") === "on" } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("IA pausada. As próximas mensagens ficam para a sua equipe responder.");
 }
@@ -300,6 +310,7 @@ export async function resumeBot(botId: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { error } = await supabase.from("bots").update({ paused_at: null, paused_by: null, pause_reason: null, pause_notify: false }).eq("id", botId);
   if (error) return fail("Não foi possível retomar. Tente de novo.");
+  await auditPanel("bot.retomar", { type: "bot", id: botId });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("IA retomada. O assistente volta a responder a partir da próxima mensagem.");
 }
@@ -334,6 +345,7 @@ export async function deleteBot(botId: string, redirectTo?: string): Promise<Act
   const { error, count } = await supabase.from("bots").delete({ count: "exact" }).eq("id", botId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
   if (!count) return fail("Chatbot não encontrado.");
+  await auditPanel("bot.excluir", { type: "bot", id: botId });
   revalidatePath("/painel", "layout");
   if (redirectTo) redirect(redirectTo);
   return ok("Chatbot excluído.");
@@ -381,6 +393,7 @@ export async function enablePortal(clientId: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { error, count } = await supabase.from("clients").update({ portal_token: newPortalToken() }, { count: "exact" }).eq("id", clientId);
   if (error || !count) return fail("Não foi possível gerar o link. Tente de novo.");
+  await auditPanel("portal.link_ligar", { type: "client", id: clientId });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok("Link do cliente pronto.");
 }
@@ -389,6 +402,7 @@ export async function disablePortal(clientId: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { error } = await supabase.from("clients").update({ portal_token: null }).eq("id", clientId);
   if (error) return fail("Não foi possível desligar o link. Tente de novo.");
+  await auditPanel("portal.link_desligar", { type: "client", id: clientId });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok("Link desligado. Quem tinha o endereço não consegue mais abrir.");
 }
@@ -443,6 +457,7 @@ export async function takeOverConversation(conversationId: string): Promise<Acti
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const r = await takeOver(owned.admin, conversationId);
+  if (r.ok) await auditPanel("conversa.assumir", { type: "conversation", id: conversationId });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return r;
 }
@@ -464,6 +479,7 @@ export async function resetConversationAge(conversationId: string): Promise<Acti
   if (!conv || !contact) return fail("Só conversas do WhatsApp e do Instagram têm confirmação de 18+.");
   await resetAge(owned.admin, { botId: owned.conv.bot_id, channel: conv.channel, contact });
   await owned.admin.from("conversations").update({ age_pending_question: null }).eq("id", conversationId);
+  await auditPanel("idade.zerar", { type: "conversation", id: conversationId }, { after: { channel: conv.channel } });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return ok("Confirmação de 18+ zerada. Se o contato pedir bebida ou remédio, ele é perguntado de novo.");
 }
@@ -473,6 +489,7 @@ export async function releaseConversation(conversationId: string): Promise<Actio
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const r = await release(owned.admin, conversationId);
+  if (r.ok) await auditPanel("conversa.devolver", { type: "conversation", id: conversationId });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   revalidatePath("/painel", "layout");
   return r;
@@ -540,6 +557,7 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   const { error } = await admin.from("whatsapp_channels").insert({ bot_id: botId, phone_number_id: phoneNumberId, waba_id: wabaId, display_phone: phone.display_phone_number ?? null, verified_name: phone.verified_name ?? null });
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   await confirmAcceptance(admin, { clientId: bot.client_id as string, channel: "whatsapp", metaAccount: wabaId ?? phoneNumberId, metaVerifiedName: phone.verified_name ?? null });
+  await auditPanel("canal.conectar", { type: "bot", id: botId }, { after: { channel: "whatsapp", via: "id", phone: phone.display_phone_number ?? null, waba_id: wabaId } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok(`WhatsApp ${phone.display_phone_number ?? ""} ligado. Mande uma mensagem para ele para testar.`);
 }
@@ -562,6 +580,7 @@ export async function completeWhatsAppSignup(botId: string, input: SignupResult)
   if (r.ok) {
     const { data: ch } = await admin.from("whatsapp_channels").select("waba_id, business_id, verified_name").eq("bot_id", botId).maybeSingle();
     await confirmAcceptance(admin, { clientId: bot.client_id as string, channel: "whatsapp", metaAccount: (ch?.waba_id as string | null) ?? null, metaBusinessId: (ch?.business_id as string | null) ?? null, metaVerifiedName: (ch?.verified_name as string | null) ?? null });
+    await auditPanel("canal.conectar", { type: "bot", id: botId }, { after: { channel: "whatsapp", via: "painel", waba_id: ch?.waba_id ?? null, coexistence: Boolean(input.coexistence) } });
   }
   revalidatePath(`/painel/bots/${botId}`);
   return r;
@@ -604,6 +623,7 @@ export async function acceptChannelTerms(botId: string, channel: AcceptanceChann
     return fail("Não foi possível registrar o aceite. Tente de novo.");
   }
   if (answers && status !== "ativo") await notifyReview(bot.client_name as string, agency.name, status);
+  await auditPanel("aceite.registrar", { type: "client", id: bot.client_id as string }, { after: { channel, status, answered_now: Boolean(answers) } });
   revalidatePath(`/painel/bots/${botId}`);
   revalidatePath(`/painel/clientes/${bot.client_id}`);
   const due = (await getCompliance(admin, bot.client_id as string))?.reviewDueAt;
@@ -627,6 +647,7 @@ export async function createWhatsAppConnectLink(botId: string, channel: "whatsap
   if (bot.is_demo) return { ok: false, message: "Converta a demo em chatbot antes de ligar o WhatsApp." };
   try {
     const { url } = await createConnectLink(createAdminClient(), botId, channel);
+    await auditPanel("canal.link_gerar", { type: "bot", id: botId }, { after: { channel } });
     return { ok: true, url };
   } catch {
     return { ok: false, message: "Não foi possível criar o link. Tente de novo." };
@@ -645,6 +666,7 @@ export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
   if (channel?.waba_id && channel.access_token_enc) await unsubscribeApp(channel.waba_id, unseal(channel.access_token_enc));
   const { error } = await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
   if (error) return fail("Não foi possível desconectar. Tente de novo.");
+  await auditPanel("canal.desconectar", { type: "bot", id: botId }, { before: { channel: "whatsapp", waba_id: channel?.waba_id ?? null } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("WhatsApp desconectado. O assistente parou de responder por ele.");
 }
@@ -663,6 +685,7 @@ export async function disconnectInstagram(botId: string): Promise<ActionResult> 
   if (ch?.access_token_enc) await unsubscribeInstagram(unseal(ch.access_token_enc));
   const { error } = await admin.from("instagram_channels").delete().eq("bot_id", botId);
   if (error) return fail("Não foi possível desconectar. Tente de novo.");
+  await auditPanel("canal.desconectar", { type: "bot", id: botId }, { before: { channel: "instagram" } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Instagram desconectado. O assistente parou de responder as mensagens diretas.");
 }
@@ -860,6 +883,7 @@ export async function setClientPermissions(clientId: string, formData: FormData)
   const patch = { allow_handoff: formData.get("allow_handoff") === "on", allow_knowledge: formData.get("allow_knowledge") === "on", handoff_notify: formData.get("handoff_notify") === "client" ? "client" : "all" };
   const { error, count } = await supabase.from("clients").update(patch, { count: "exact" }).eq("id", clientId);
   if (error || !count) return fail("Não foi possível salvar as permissões.");
+  await auditPanel("portal.permissoes", { type: "client", id: clientId }, { after: patch });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok("Permissões salvas. Valem na hora para quem já está logado.");
 }
@@ -881,6 +905,7 @@ export async function addClientMember(clientId: string, formData: FormData): Pro
   if ((count ?? 0) >= 20) return fail("Limite de 20 pessoas por cliente.");
   const { error } = await ctx.supabase.from("client_members").insert({ client_id: clientId, email });
   if (error) return fail(error.code === "23505" ? "Esse e-mail já tem acesso." : "Não foi possível adicionar. Tente de novo.");
+  await auditPanel("portal.pessoa_adicionar", { type: "client", id: clientId }, { after: { email } });
   revalidatePath(`/painel/clientes/${clientId}`);
   const sent = await sendMemberLink({ email, origin: agencyBaseUrl(ctx.agency), next: `/cliente/${clientId}`, clientName: ctx.client.name, agency: ctx.agency });
   if (!sent.ok) return fail(`Acesso criado, mas o convite não foi enviado: ${sent.message} A pessoa pode entrar pela área do cliente pedindo um link.`);
@@ -901,6 +926,7 @@ export async function removeClientMember(clientId: string, memberId: string): Pr
   const supabase = await createClient();
   const { error, count } = await supabase.from("client_members").delete({ count: "exact" }).eq("id", memberId).eq("client_id", clientId);
   if (error || !count) return fail("Não foi possível remover.");
+  await auditPanel("portal.pessoa_remover", { type: "client", id: clientId }, { before: { member_id: memberId } });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok("Acesso removido.");
 }
@@ -917,6 +943,7 @@ export async function deleteConversation(conversationId: string): Promise<Action
   await owned.admin.from("leads").delete().eq("conversation_id", conversationId);
   const { error } = await owned.admin.from("conversations").delete().eq("id", conversationId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
+  await auditPanel("conversa.excluir", { type: "conversation", id: conversationId }, { before: { leads: (leadRows ?? []).length } });
   revalidatePath("/painel", "layout");
   redirect(`/painel/bots/${owned.conv.bot_id}?tab=conversas`);
 }
@@ -952,6 +979,7 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
   await logDeletion(admin, "conversations", convIds);
   await admin.from("leads").delete().in("id", matches.map((l) => l.id));
   if (convIds.length) await admin.from("conversations").delete().in("id", convIds).in("bot_id", ids);
+  await auditPanel("contato.apagar_dados", { type: "client", id: clientId }, { after: { contatos: matches.length, conversas: convIds.length, por: byEmail ? "email" : "telefone" } });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok(`Apagados ${matches.length} contato${matches.length === 1 ? "" : "s"} e ${convIds.length} conversa${convIds.length === 1 ? "" : "s"}.`);
 }

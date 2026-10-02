@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { recordMfaResult } from "@/app/admin/2fa/actions";
 
 type Step = { kind: "carregando" } | { kind: "cadastrar"; factorId: string; qr: string; secret: string } | { kind: "verificar"; factorId: string } | { kind: "erro"; message: string };
 
@@ -39,6 +40,8 @@ export function MfaForm() {
     setError(null);
     const { error } = await createClient().auth.mfa.challengeAndVerify({ factorId: step.factorId, code: code.trim() });
     setBusy(false);
+    // registro de acesso da equipe interna (entrada ou falha); não segura a tela
+    void recordMfaResult(!error).catch(() => {});
     if (error) return setError("Código inválido ou vencido. Confira o app e tente de novo.");
     router.replace("/admin");
     router.refresh();

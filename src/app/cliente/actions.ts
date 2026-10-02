@@ -11,6 +11,8 @@ import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
 import { isEmail, text } from "@/lib/validation";
 import { postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion, deleteTextSource, dismissQuestion, saveTextSource } from "@/lib/knowledge";
+import { logAccess } from "@/lib/access-log";
+import { audit, requestMeta } from "@/lib/audit";
 import { headers } from "next/headers";
 
 const GENERIC = "Se esse e-mail tiver acesso, enviamos um link para entrar. Confira a caixa de entrada (e o spam).";
@@ -66,6 +68,7 @@ export async function memberTakeOver(clientId: string, conversationId: string): 
   const ctx = await ownConversation(clientId, conversationId);
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
   const r = await takeOver(ctx.admin, conversationId);
+  if (r.ok) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "conversa.assumir", targetType: "conversation", targetId: conversationId, ...(await requestMeta()) });
   revalidatePath(convPath(clientId, conversationId));
   return r;
 }
@@ -82,6 +85,7 @@ export async function memberRelease(clientId: string, conversationId: string): P
   const ctx = await ownConversation(clientId, conversationId);
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
   const r = await release(ctx.admin, conversationId);
+  if (r.ok) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "conversa.devolver", targetType: "conversation", targetId: conversationId, ...(await requestMeta()) });
   revalidatePath(convPath(clientId, conversationId));
   return r;
 }
@@ -142,5 +146,8 @@ export async function confirmAccess(tokenHash: string, type: string, nextRaw: st
     redirect(`/cliente/entrar?erro=link&next=${encodeURIComponent(next)}`);
   }
   await createAdminClient().from("client_members").update({ last_login_at: new Date().toISOString() }).eq("email", data.user.email.toLowerCase());
+  // registro de acesso (Marco Civil): entrada pelo link do e-mail
+  const meta = await requestMeta();
+  await logAccess(createAdminClient(), { actorType: "member", actorId: data.user.id, email: data.user.email, event: "magic_link", ip: meta.ip, userAgent: meta.userAgent });
   redirect(next);
 }

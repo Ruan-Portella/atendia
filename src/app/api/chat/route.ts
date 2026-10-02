@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { CORS_HEADERS, conversationHistory, lastUserText, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
 import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
+import { logWidgetAccess } from "@/lib/access-log";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 import { isResumable } from "@/lib/presence";
 
@@ -86,6 +88,8 @@ export async function POST(req: Request) {
   // Uma pessoa da agência assumiu: o assistente fica quieto; a mensagem vai para o painel
   // e a resposta chega ao widget por /api/chat/updates.
   if (convId && mode.step === 3) {
+    const activeConv = convId;
+    if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: activeConv, ip: clientIp(req), isNew: false }));
     await db.from("messages").insert({ conversation_id: convId, role: "user", content: text });
     const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
     const now = new Date().toISOString();
@@ -113,6 +117,9 @@ export async function POST(req: Request) {
       visitorId: visitorId ?? null,
       channel: bot.is_demo ? "demo" : channel,
     });
+    // registro de acesso do visitante (Marco Civil): IP quando a conversa começa e quando muda;
+    // o teste ao vivo do painel já fica no registro de acesso do painel
+    if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: activeId, ip: clientIp(req), isNew: !convId }));
     return createUIMessageStreamResponse({
       stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts()),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": activeId, ...(handoff ? { "X-Handoff": handoff } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },

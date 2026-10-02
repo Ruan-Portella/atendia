@@ -47,6 +47,12 @@ async function daily() {
   const retention = await run("limpeza LGPD", () => applyRetention(db));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
+  // auditoria (1 ano) e registros de acesso (6 meses): só a retenção apaga, em lotes
+  const logs = await run("registros vencidos", async () => {
+    const { data, error } = await db.rpc("purge_logs");
+    if (error) throw error;
+    return data;
+  });
   // o acesso ao Instagram vale 60 dias: renova antes de vencer
   const instagram = await run("tokens do Instagram", () => refreshInstagramTokens(db));
   // custo de IA: totais do mês e limpeza dos registros com mais de 90 dias
@@ -64,5 +70,5 @@ async function daily() {
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
   // portão: trechos novos que não couberam depois da leitura e os de regras antigas
   const base = await run("classificação da base", () => classifyPending(db, { budgetMs: 180_000 }));
-  return { inbound, trial, retention, acceptances, instagram, aiUsage, disk, sources, base };
+  return { inbound, trial, retention, acceptances, logs, instagram, aiUsage, disk, sources, base };
 }

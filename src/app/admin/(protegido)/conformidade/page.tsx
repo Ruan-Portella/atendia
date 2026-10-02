@@ -1,7 +1,8 @@
 import { Kpi } from "@/components/kpi";
 import { requireAdmin } from "@/lib/platform-admin";
 import { getCompliance } from "@/lib/backoffice-ops";
-import { getBusinessReviews, getMeasures, getRecentAcceptances, rangeFor } from "@/lib/backoffice";
+import { getBusinessReviews, getIncidents, getMeasures, getRecentAcceptances, rangeFor } from "@/lib/backoffice";
+import { IncidentRegister } from "@/components/admin/incidents";
 import { AcceptanceList, BusinessReviews } from "@/components/admin/business-reviews";
 import { MeasureList } from "@/components/admin/pause-controls";
 import { num } from "@/lib/plans";
@@ -18,7 +19,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const email = typeof sp.email === "string" ? sp.email.trim().slice(0, 120) : "";
   const range = rangeFor("30d");
-  const [c, measures, reviews, acceptances] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 }), getBusinessReviews(), getRecentAcceptances()]);
+  const [c, measures, reviews, acceptances, incidents] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 }), getBusinessReviews(), getRecentAcceptances(), getIncidents()]);
   const active = c.suppressions.reduce((t, s) => t + s.active, 0);
   const created = c.suppressions.reduce((t, s) => t + s.created_since, 0);
   const revoked = c.suppressions.reduce((t, s) => t + s.revoked_since, 0);
@@ -37,6 +38,8 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
         <Kpi label="Descadastros ativos" value={num(active)} sub={`${num(created)} novos e ${num(revoked)} desfeitos em 30 dias`} />
         <Kpi label="Acessos ao backoffice" value={num(c.access.length)} sub={email ? `de "${email}" (últimos 100)` : "últimos 100"} />
       </section>
+
+      <IncidentRegister incidents={incidents} />
 
       <BusinessReviews open={reviews.open} recent={reviews.recent} />
 

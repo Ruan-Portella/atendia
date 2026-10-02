@@ -572,3 +572,46 @@ export async function getRecentAcceptances(limit = 20): Promise<AcceptanceRow[]>
     at: (r.confirmed_at as string | null) ?? (r.created_at as string),
   }));
 }
+
+/* ------------------------------------------------------------------ incidentes de segurança */
+
+export interface IncidentRow {
+  id: number;
+  title: string;
+  severity: "baixo" | "medio" | "alto";
+  status: "aberto" | "contido" | "encerrado";
+  detectedAt: string;
+  description: string | null;
+  affected: string | null;
+  actions: string | null;
+  riskRelevant: boolean | null;
+  agenciesNotifiedAt: string | null;
+  anpdNotifiedAt: string | null;
+  closedAt: string | null;
+  createdBy: string | null;
+  updatedBy: string | null;
+  updatedAt: string;
+}
+
+/** Incidentes, os abertos primeiro (docs/incidentes.md). */
+export async function getIncidents(limit = 30): Promise<IncidentRow[]> {
+  const { data } = await createAdminClient().from("security_incidents").select("*").order("detected_at", { ascending: false }).limit(limit);
+  const rows = (data ?? []).map((r) => ({
+    id: r.id as number,
+    title: r.title as string,
+    severity: r.severity as IncidentRow["severity"],
+    status: r.status as IncidentRow["status"],
+    detectedAt: r.detected_at as string,
+    description: (r.description as string | null) ?? null,
+    affected: (r.affected as string | null) ?? null,
+    actions: (r.actions as string | null) ?? null,
+    riskRelevant: (r.risk_relevant as boolean | null) ?? null,
+    agenciesNotifiedAt: (r.agencies_notified_at as string | null) ?? null,
+    anpdNotifiedAt: (r.anpd_notified_at as string | null) ?? null,
+    closedAt: (r.closed_at as string | null) ?? null,
+    createdBy: (r.created_by as string | null) ?? null,
+    updatedBy: (r.updated_by as string | null) ?? null,
+    updatedAt: r.updated_at as string,
+  }));
+  return rows.sort((a, b) => Number(a.status === "encerrado") - Number(b.status === "encerrado"));
+}

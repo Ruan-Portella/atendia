@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl } from "./utils";
+import { audit } from "./audit";
 
 /*
  * Ordens, infrações e restrições que a Meta manda no webhook account_update viram medidas em
@@ -53,7 +54,10 @@ export async function recordMetaEnforcement(db: SupabaseClient, input: { event: 
   if (!measure) return;
   if (measure === "reinstate") {
     const { data } = await db.from("enforcement_actions").update({ lifted_at: new Date().toISOString(), lifted_by: "meta" }).eq("source", "meta_order").eq("waba_id", input.wabaId).is("lifted_at", null).select("id");
-    if (data?.length) console.warn("whatsapp: Meta reativou a conta", input.wabaId);
+    if (data?.length) {
+      console.warn("whatsapp: Meta reativou a conta", input.wabaId);
+      await audit(db, { agencyId: null, actorType: "system", actorId: "meta", action: "meta.levantar_ordem", targetType: "waba", targetId: input.wabaId });
+    }
     return;
   }
 
@@ -74,6 +78,7 @@ export async function recordMetaEnforcement(db: SupabaseClient, input: { event: 
     created_by: "meta",
   });
   console.warn("whatsapp: medida da Meta", input.wabaId, measure);
+  await audit(db, { agencyId: bot?.agency_id ?? null, actorType: "system", actorId: "meta", action: "meta.medida", targetType: "waba", targetId: input.wabaId, after: { ...measure } });
   if (!bot) return;
 
   const blocks = measure.feature === "channel";

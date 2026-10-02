@@ -101,7 +101,7 @@ export async function getOperations(now = Date.now()) {
   const week = new Date(now - 7 * 86_400_000).toISOString();
   const igLimit = new Date(now + IG_TOKEN_WARN_DAYS * 86_400_000).toISOString();
   const head = { count: "exact" as const, head: true };
-  const [health, pending, oldest, failed24, failed7, done24, failedList, waDown, waPay, igDown, igExp, crons, metaMeasures, openReviews] = await Promise.all([
+  const [health, pending, oldest, failed24, failed7, done24, failedList, waDown, waPay, igDown, igExp, crons, metaMeasures, openReviews, openIncidents] = await Promise.all([
     checkHealth(db).catch((e): HealthReport => ({ ok: false, oldestPendingSeconds: null, queueStuck: false, dbWrite: false, dbWriteMs: null, diskBytes: null, diskRatio: null, diskWarning: false, error: (e as Error).message })),
     db.from("inbound_events").select("key_hash", head).in("status", ["received", "processing"]),
     db.from("inbound_events").select("created_at").in("status", ["received", "processing"]).order("created_at").limit(1).maybeSingle(),
@@ -116,6 +116,7 @@ export async function getOperations(now = Date.now()) {
     db.from("cron_locks").select("name, last_run_at, last_ok_at").order("name"),
     db.from("enforcement_actions").select("source, feature").neq("source", "boavoz").is("lifted_at", null),
     db.from("business_compliance").select("status, review_due_at").in("status", ["em_revisao", "aguardando_revisao"]),
+    db.from("security_incidents").select("id", { count: "exact", head: true }).neq("status", "encerrado"),
   ]);
   const reviewRows = (openReviews.data ?? []) as Array<{ status: string; review_due_at: string | null }>;
   const meta = (metaMeasures.data ?? []) as Array<{ source: string; feature: string }>;
@@ -149,6 +150,7 @@ export async function getOperations(now = Date.now()) {
     cronsScheduled: scheduled,
     // medidas da Meta ativas: ordem (bloqueia o número) e o resto (só registro)
     // revisões abertas pela tela de aceite: as que seguram o WhatsApp e as com prazo vencido
+    incidentsOpen: openIncidents.count ?? 0,
     reviews: { open: reviewRows.length, holding: reviewRows.filter((r) => r.status === "aguardando_revisao").length, overdue: reviewRows.filter((r) => r.review_due_at && Date.parse(r.review_due_at) < now).length },
     measures: { metaOrders: meta.filter((m) => m.source === "meta_order" && m.feature === "channel").length, metaNotices: meta.filter((m) => !(m.source === "meta_order" && m.feature === "channel")).length },
     bots: await botRefs(ids),
@@ -199,6 +201,7 @@ export function operationAlerts(ops: Awaited<ReturnType<typeof getOperations>>):
   if (ops.channels.waPayment.length) out.push(`${ops.channels.waPayment.length} número(s) de WhatsApp com a Meta recusando por falta de pagamento.`);
   if (ops.channels.igExpiring.length) out.push(`${ops.channels.igExpiring.length} conta(s) do Instagram com token vencendo em até ${IG_TOKEN_WARN_DAYS} dias.`);
   for (const c of ops.crons) if (c.late) out.push(`Tarefa agendada atrasada: ${c.label}.`);
+  if (ops.incidentsOpen) out.push(`${ops.incidentsOpen} incidente(s) de segurança em aberto (ver Conformidade).`);
   if (ops.reviews.holding) out.push(`${ops.reviews.holding} negócio(s) esperando revisão para ativar o WhatsApp (ver Conformidade).`);
   if (ops.reviews.overdue) out.push(`${ops.reviews.overdue} revisão(ões) de negócio com prazo vencido (ver Conformidade).`);
   if (ops.measures.metaOrders) out.push(`${ops.measures.metaOrders} ordem(ns) da Meta bloqueando número(s) de WhatsApp (ver Conformidade).`);
