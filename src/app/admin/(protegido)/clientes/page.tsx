@@ -80,6 +80,7 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
                   <td className="px-3 py-2.5">
                     {a.planName}
                     <div className={cn("text-xs", st === "teste_vencido" || st === "cancelada" ? "text-danger" : "text-muted")}>{STATUS_LABEL[st]}</div>
+                    {a.aiPausedAt && <div className="text-xs font-semibold text-danger">IA pausada</div>}
                   </td>
                   <td className="px-3 py-2.5 tabular">{a.liveBots}/{a.bots}</td>
                   <td className="px-3 py-2.5 text-xs text-muted">{[a.whatsapp ? `WhatsApp ${a.whatsapp}` : "", a.instagram ? `Instagram ${a.instagram}` : ""].filter(Boolean).join(" · ") || "—"}</td>

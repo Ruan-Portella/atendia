@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Kpi } from "@/components/kpi";
 import { DayBars } from "@/components/admin/day-bars";
 import { requireAdmin } from "@/lib/platform-admin";
-import { agencyStatus, fixedMonthlyBrl, getActivity, getAgencies, getAiCosts, getBotCounts, getFixedCosts, getRevenue, rangeFor, usd, usdBrl } from "@/lib/backoffice";
+import { GlobalKillSwitch } from "@/components/admin/pause-controls";
+import { agencyStatus, fixedMonthlyBrl, getActivity, getAgencies, getAiCosts, getBotCounts, getFixedCosts, getPlatformFlags, getRevenue, rangeFor, usd, usdBrl } from "@/lib/backoffice";
 import { getOperations, operationAlerts } from "@/lib/backoffice-ops";
 import { brl, num } from "@/lib/plans";
 
@@ -13,7 +14,7 @@ const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram:
 export default async function AdminHome() {
   await requireAdmin("/admin");
   const month = rangeFor("mes");
-  const [agencies, bots, activity, ai, revenue, fixed, ops] = await Promise.all([getAgencies(), getBotCounts(), getActivity(30), getAiCosts(month.since, month.until), getRevenue(), getFixedCosts(), getOperations()]);
+  const [agencies, bots, activity, ai, revenue, fixed, ops, flags] = await Promise.all([getAgencies(), getBotCounts(), getActivity(30), getAiCosts(month.since, month.until), getRevenue(), getFixedCosts(), getOperations(), getPlatformFlags()]);
   const alerts = operationAlerts(ops);
   const fixedBrl = fixedMonthlyBrl(fixed);
 
@@ -34,6 +35,8 @@ export default async function AdminHome() {
         <h1 className="text-[26px] font-bold">Visão geral</h1>
         <p className="text-sm text-muted">Sem os bots de demonstração da landing. Custo e margem do mês corrente; dólar a {brl(usdBrl())} (USD_BRL).</p>
       </div>
+
+      <GlobalKillSwitch flags={flags} />
 
       {alerts.length > 0 ? (
         <section className="flex flex-col gap-1.5 rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-amber-ink">

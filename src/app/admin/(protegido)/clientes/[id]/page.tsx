@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Kpi } from "@/components/kpi";
+import { AgencyActions } from "@/components/admin/pause-controls";
 import { requireAdmin } from "@/lib/platform-admin";
 import { agencyStatus, daysAgoIso, getAgencies, kindLabel, usd, usdBrl } from "@/lib/backoffice";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -68,6 +69,8 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         <Kpi label="Mensalidade" value={agency.priceBrl ? brl(agency.priceBrl) : "—"} sub={agency.priceBrl ? `margem ${brl(agency.priceBrl - agency.aiCostMonthUsd * fx)}` : "sem plano pago"} />
         <Kpi label="Chatbots" value={`${agency.liveBots}/${agency.bots}`} sub={`publicados · WhatsApp ${agency.whatsapp} · Instagram ${agency.instagram}`} />
       </section>
+
+      <AgencyActions agency={agency} />
 
       <section className="card overflow-x-auto">
         <h2 className="px-5 pt-4 text-lg font-bold">Chatbots</h2>

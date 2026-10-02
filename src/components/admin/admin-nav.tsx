@@ -12,6 +12,7 @@ const ITEMS: Array<{ href: string; label: string; exact?: boolean }> = [
   { href: "/admin/qualidade", label: "Qualidade" },
   { href: "/admin/avaliacao", label: "Avaliação da IA" },
   { href: "/admin/operacao", label: "Operação" },
+  { href: "/admin/conformidade", label: "Conformidade" },
 ];
 
 /** Navegação do backoffice (rola de lado no celular). */

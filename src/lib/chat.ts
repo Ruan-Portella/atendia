@@ -9,6 +9,7 @@ import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } fro
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
 import { RISK_TEXT, detectRisk } from "./risk";
+import { isAiPaused } from "./ai-pause";
 import { ageNote, type AgeStatus } from "./gate/age";
 import { regulatedChannelNote, type RegulatedChannel } from "./gate/sales-channel";
 import { gatedContext, gatedHistory, hiddenNote } from "./gate/context";
@@ -288,14 +289,15 @@ export function chatTools(exec: {
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
-export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled";
+export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled" | "paused";
 
 /**
- * Conferido em TODA mensagem do WhatsApp e do Instagram (não só na conversa nova): plano
- * cancelado, teste vencido ou cota do mês esgotada param a IA também nas conversas abertas.
- * A cota continua contada só na abertura da conversa (openConversation); aqui só se lê.
+ * Conferido em TODA mensagem do WhatsApp e do Instagram (não só na conversa nova): IA pausada
+ * pelo backoffice, plano cancelado, teste vencido ou cota do mês esgotada param a IA também nas
+ * conversas abertas. A cota continua contada só na abertura da conversa (openConversation).
  */
 export async function aiBlockedReason(db: SupabaseClient, agencyId: string, opening: boolean): Promise<AiBlockReason | null> {
+  if (await isAiPaused(db, agencyId)) return "paused";
   const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", agencyId).maybeSingle();
   const plan = getPlan(agency?.plan ?? "trial");
   if (plan.id === "cancelado") return "cancelled";
@@ -312,6 +314,7 @@ export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
   quota_exceeded: "Assistente parado: a cota de conversas do mês acabou.",
   trial_expired: "Assistente parado: o teste grátis venceu.",
   cancelled: "Assistente parado: a assinatura foi cancelada.",
+  paused: "Assistente pausado pela equipe BoaVoz: as mensagens ficam aqui para a sua equipe responder.",
 };
 
 /** Texto fixo do modo só humano (Textos legais, seção 6): uma vez por conversa, sem prometer prazo. */

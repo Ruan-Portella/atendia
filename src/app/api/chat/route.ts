@@ -3,6 +3,7 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { CORS_HEADERS, conversationHistory, lastUserText, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { isAiPaused } from "@/lib/ai-pause";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 import { isResumable } from "@/lib/presence";
 
@@ -86,6 +87,9 @@ export async function POST(req: Request) {
       headers: { ...CORS_HEADERS, "X-Conversation-Id": convId, "X-Handoff": "agent", "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
     });
   }
+
+  // IA pausada pelo backoffice (esta agência ou a chave geral): o widget mostra o formulário de contato
+  if (await isAiPaused(db, bot.agency_id)) return contactFallback("ai_paused", 503);
 
   try {
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];

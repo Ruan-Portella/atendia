@@ -127,6 +127,40 @@ export async function getOperations(now = Date.now()) {
   };
 }
 
+/* ------------------------------------------------------------------ conformidade */
+
+export interface SuppressionCount {
+  channel: string;
+  kind: string;
+  reason: string;
+  active: number;
+  created_since: number;
+  revoked_since: number;
+}
+
+/**
+ * Pedidos de exclusão de dados (Meta), descadastros e o registro de acesso ao backoffice.
+ * `email` filtra o registro de acesso por quem entrou.
+ */
+export async function getCompliance(since: Date, email?: string | null) {
+  const db = createAdminClient();
+  let log = db.from("admin_access_log").select("id, email, path, created_at").order("created_at", { ascending: false }).limit(100);
+  if (email) log = log.ilike("email", `%${email.replace(/[%_]/g, "")}%`);
+  const [{ data: deletions }, { data: suppressions, error }, { data: access }, logged] = await Promise.all([
+    db.from("deletion_requests").select("code, source, status, summary, created_at, completed_at").order("created_at", { ascending: false }).limit(30),
+    db.rpc("admin_suppression_counts", { p_since: since.toISOString() }),
+    log,
+    db.from("deletion_log").select("id", { count: "exact", head: true }).gte("created_at", since.toISOString()),
+  ]);
+  if (error) throw new Error(`descadastros: ${error.message}`);
+  return {
+    deletions: deletions ?? [],
+    deletedRowsSince: logged.count ?? 0,
+    suppressions: ((suppressions ?? []) as SuppressionCount[]).map((s) => ({ ...s, active: Number(s.active) || 0, created_since: Number(s.created_since) || 0, revoked_since: Number(s.revoked_since) || 0 })),
+    access: access ?? [],
+  };
+}
+
 /** Avisos para o topo da visão geral (vazio = tudo certo). */
 export function operationAlerts(ops: Awaited<ReturnType<typeof getOperations>>): string[] {
   const out: string[] = [];

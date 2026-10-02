@@ -327,6 +327,9 @@ export interface AgencyRow {
   quota: number;
   aiCostMonthUsd: number;
   lastActivity: string | null;
+  /** IA pausada pelo backoffice só para esta agência. */
+  aiPausedAt: string | null;
+  aiPausedReason: string | null;
 }
 
 /** E-mail de quem é dono de cada agência (Auth do Supabase, até alguns milhares de contas). */
@@ -346,7 +349,7 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
   const db = createAdminClient();
   const period = currentPeriodBR();
   const [{ data: agencies, error }, { data: stats }, emails] = await Promise.all([
-    db.from("agencies").select("id, owner_id, name, plan, trial_ends_at, created_at, stripe_customer_id").not("owner_id", "is", null).order("created_at", { ascending: false }),
+    db.from("agencies").select("id, owner_id, name, plan, trial_ends_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
     db.rpc("admin_agency_stats", { p_period: period, p_month_start: monthStartBR(period).toISOString() }),
     ownerEmails(),
   ]);
@@ -373,6 +376,8 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
       quota: plan.conversations,
       aiCostMonthUsd: Number(s.ai_cost_month) || 0,
       lastActivity: (s.last_activity as string | null) ?? null,
+      aiPausedAt: (a.ai_paused_at as string | null) ?? null,
+      aiPausedReason: (a.ai_paused_reason as string | null) ?? null,
     };
   });
 });
@@ -410,4 +415,16 @@ export async function getBotCounts() {
     db.from("instagram_channels").select("bot_id", { count: "exact", head: true }).is("disconnected_at", null),
   ]);
   return { bots: all.count ?? 0, live: live.count ?? 0, demos: demos.count ?? 0, whatsapp: wa.count ?? 0, instagram: ig.count ?? 0 };
+}
+
+/** Novo fim do teste: a partir de hoje ou do fim atual, o que vier depois. */
+export function extendedTrialEnd(currentEnd: string | null | undefined, days: number, now = Date.now()): string {
+  const base = Math.max(now, (currentEnd && Date.parse(currentEnd)) || 0);
+  return new Date(base + days * 86_400_000).toISOString();
+}
+
+/** Chave geral da IA (todas as agências). */
+export async function getPlatformFlags(): Promise<{ aiPausedAt: string | null; aiPausedReason: string | null; updatedBy: string | null }> {
+  const { data } = await createAdminClient().from("platform_flags").select("ai_paused_at, ai_paused_reason, updated_by").eq("id", 1).maybeSingle();
+  return { aiPausedAt: (data?.ai_paused_at as string | null) ?? null, aiPausedReason: (data?.ai_paused_reason as string | null) ?? null, updatedBy: (data?.updated_by as string | null) ?? null };
 }
