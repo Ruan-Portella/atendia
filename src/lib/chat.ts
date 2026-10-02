@@ -5,7 +5,7 @@ import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, scope
 import { getPlan } from "./plans";
 import { currentPeriodBR } from "./utils";
 import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
-import { isNoInfoAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
+import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
 import { recordAiUsage } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
 import { RISK_TEXT, detectRisk } from "./risk";
@@ -517,12 +517,13 @@ export async function runChat(opts: {
         embeddingTokens: embeddingUsage?.tokens ?? 0,
       });
       try {
-        // "Não tenho essa informação" é pergunta do negócio que falta na base, não recusa: a IA às
-        // vezes chama registrar_recusa junto (ex.: depois de uma recusa na conversa); desfaz a recusa
-        const refusalStands = refusalIds.length > 0 && !isNoInfoAnswer(text);
+        // "Não tenho essa informação" e "vou confirmar com a equipe" são pergunta do negócio que falta
+        // na base, não recusa: a IA às vezes chama registrar_recusa junto (ex.: depois de uma recusa
+        // na conversa); desfaz a recusa
+        const refusalStands = refusalIds.length > 0 && !isGapAnswer(text);
         if (refusalIds.length && !refusalStands) await db.from("scope_refusals").delete().in("id", refusalIds);
         // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
-        if (!unansweredRecorded && !refusalStands && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
+        if (!unansweredRecorded && !refusalStands && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
         if (text) {
           const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, output: t.output })));
           const { data: savedRow } = await db

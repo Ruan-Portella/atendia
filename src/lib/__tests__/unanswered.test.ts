@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { looksUnanswered, NO_INFO_PHRASE, recordUnanswered } from "../unanswered";
+import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, NO_INFO_PHRASE, recordUnanswered } from "../unanswered";
 
 describe("looksUnanswered", () => {
   it.each([
@@ -18,6 +18,27 @@ describe("looksUnanswered", () => {
     "Tenho essa informação: custa R$ 120.",
     "Não se preocupe, a consulta dura 30 minutos.",
   ])("não confunde resposta normal: %s", (t) => expect(looksUnanswered(t)).toBe(false));
+});
+
+describe("resposta de lacuna da base (nunca é recusa)", () => {
+  it("\"vou confirmar com a equipe\" e variações", () => {
+    for (const t of [
+      "Sobre o tempo de entrega dos nossos serviços, vou confirmar com a equipe para te passar a informação correta.",
+      "Preciso verificar com a equipe e te retorno.",
+      "Confirmo com a equipe e já te aviso.",
+      "A equipe vai confirmar o valor para você.",
+    ]) {
+      expect(isTeamCheckAnswer(t), t).toBe(true);
+      expect(isGapAnswer(t), t).toBe(true);
+    }
+  });
+
+  it("recusa de verdade e chamar atendente não contam", () => {
+    for (const t of ["Não consigo escrever redações por aqui, mas posso ajudar com o nosso cardápio.", "Prefiro falar sobre o Bar do Zé.", "Vou chamar alguém da equipe para falar com você."]) {
+      expect(isGapAnswer(t), t).toBe(false);
+    }
+    expect(isGapAnswer(`${NO_INFO_PHRASE} sobre o prazo.`)).toBe(true);
+  });
 });
 
 describe("recordUnanswered", () => {

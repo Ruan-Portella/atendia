@@ -14,6 +14,7 @@ describe("classificação das respostas na avaliação", () => {
     expect(verdictOf("", ["pedir_confirmacao_18"])).toBe("pediu_18");
     // "não tenho" com registrar_recusa junto é lacuna da base (o chat desfaz a recusa)
     expect(verdictOf("Não tenho essa informação sobre o prazo. Posso anotar seu contato?", ["registrar_recusa"])).toBe("nao_tenho");
+    expect(verdictOf("Sobre o prazo, vou confirmar com a equipe. Posso anotar seu nome?", ["registrar_recusa"])).toBe("respondeu");
   });
 
   it("custo médio por resposta: só o que passou pela IA (texto fixo do portão não conta)", () => {

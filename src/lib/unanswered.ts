@@ -8,6 +8,18 @@ export const isNoInfoAnswer = (text: string | null | undefined) => Boolean(text?
 
 const strip = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+/** "Vou confirmar com a equipe": a frase que o prompt pede quando falta um dado do negócio na base. */
+export function isTeamCheckAnswer(text: string | null | undefined): boolean {
+  const t = strip(text ?? "");
+  return /\b(vou|vamos|posso|preciso|irei) (confirmar|verificar|checar|consultar)( isso| essa informacao| esse dado)? com a equipe|\bconfirmo com a equipe|\ba equipe (vai|pode|ira) (confirmar|verificar)/.test(t);
+}
+
+/**
+ * Resposta de lacuna da base ("Não tenho essa informação…" ou "vou confirmar com a equipe"):
+ * atende a pessoa, então nunca é recusa, mesmo que a IA tenha chamado registrar_recusa junto.
+ */
+export const isGapAnswer = (text: string | null | undefined) => isNoInfoAnswer(text) || isTeamCheckAnswer(text);
+
 /**
  * A resposta do assistente admite que não sabe? Rede de segurança para quando o modelo
  * esquece de chamar a ferramenta registrar_pergunta_sem_resposta.

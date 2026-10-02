@@ -4,7 +4,7 @@ import { buildPrompt, chatModel, chatModelId, modelCallOptions, scopeReminder, t
 import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { handoffNotice } from "./handoff-hours";
 import { RISK_TEXT } from "./risk";
-import { isNoInfoAnswer } from "./unanswered";
+import { isGapAnswer, isNoInfoAnswer } from "./unanswered";
 import { decideEntrance } from "./gate/entrance";
 import { GATE_TEXTS } from "./gate/rules";
 import { costUsd } from "./ai-usage";
@@ -48,10 +48,10 @@ const ONLY_REGISTERED = /^(registrei|anotei|deixei registrad)/i;
 export function verdictOf(text: string, tools: string[]): EvalRun["verdict"] {
   const t = text.trim();
   if (tools.includes("pedir_confirmacao_18")) return "pediu_18";
-  // como no chat: "Não tenho essa informação" é lacuna da base, mesmo com registrar_recusa junto
-  // (o chat desfaz essa recusa e registra a pergunta para a equipe)
+  // como no chat: "Não tenho essa informação" e "vou confirmar com a equipe" são lacuna da base,
+  // mesmo com registrar_recusa junto (o chat desfaz essa recusa e registra a pergunta para a equipe)
   if (isNoInfoAnswer(t)) return "nao_tenho";
-  if (tools.includes("registrar_recusa")) return "recusou";
+  if (tools.includes("registrar_recusa") && !isGapAnswer(t)) return "recusou";
   if (ONLY_REGISTERED.test(t) && tools.includes("registrar_pergunta_sem_resposta")) return "so_registrou";
   return "respondeu";
 }
