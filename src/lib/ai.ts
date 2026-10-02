@@ -35,11 +35,13 @@ export function chatModelId(): string {
 
 /**
  * Modelo do classificador do portão (o contato PEDE o item ou só menciona?, e a mensagem sem o
- * item barrado): tarefa curta e com formato fixo, então um modelo bem mais barato (¼ do preço).
+ * item barrado). O mesmo do chat: o gpt-4.1-nano (¼ do preço) foi medido em 01/10/2026 e errou
+ * casos obrigatórios (não viu a pergunta da pizza junto com a da cerveja; chamou "vendem cigarro
+ * eletrônico?" de menção), e o classificador só roda quando o dicionário acusa (~7% do custo).
  * OPENAI_CLASSIFIER_MODEL troca; a avaliação compara com &classificador=.
  */
 export function classifierModelId(): string {
-  return provider === "anthropic" ? chatModelId() : (process.env.OPENAI_CLASSIFIER_MODEL ?? "gpt-4.1-nano");
+  return provider === "anthropic" ? chatModelId() : (process.env.OPENAI_CLASSIFIER_MODEL ?? chatModelId());
 }
 
 /** Modelo do chat. `id` troca o modelo (a avaliação compara modelos do mesmo provedor). */

@@ -30,7 +30,7 @@ function isPlatformAdmin(email: string | undefined): boolean {
  * Conjunto fixo: /api/eval?bot=ID&casos=1 (opcionais: n=3, categoria=escopo_fixo, model=, temp=)
  * Casos de um bot de teste: &casos=bar (evals/casos-bar.jsonl)
  * Comparar modelos: &model=gpt-5-mini (opcional &esforco=minimal|low|none); o relatório mostra o custo por resposta
- * Classificador do portão: &classificador=gpt-4.1-mini (padrão: OPENAI_CLASSIFIER_MODEL ou gpt-4.1-nano)
+ * Classificador do portão: &classificador=gpt-4.1-nano (padrão: OPENAI_CLASSIFIER_MODEL ou o modelo do chat)
  * Roda a pergunta N vezes pelo mesmo caminho do chat, sem gravar nada, e mostra os trechos que
  * a busca trouxe e cada resposta. Gasta IA de verdade (N respostas).
  */
