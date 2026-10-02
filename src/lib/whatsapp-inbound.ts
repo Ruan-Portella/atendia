@@ -31,6 +31,7 @@ export const AUDIO_PREFIX = "🎤 ";
 export { PHONE_AUTHOR, PHONE_PAUSE_MINUTES, phonePauseActive } from "./authors";
 import { PHONE_AUTHOR } from "./authors";
 import { hasPendingFrom } from "./inbound-queue";
+import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
 const MEDIA_LABEL: Record<string, string> = {
@@ -120,7 +121,7 @@ export async function storeContactMessage(db: SupabaseClient, conversationId: st
  */
 async function recentConversation(db: SupabaseClient, botId: string, waId: string, contactId: string | null = null): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
-  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, unavailable_notice_reason, contact_id").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
+  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, unavailable_notice_reason, contact_id, unseen_media_at, unseen_media_kind").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
   if (contactId) {
     const { data } = await recent().eq("contact_id", contactId).maybeSingle<RecentConversation>();
     if (data) return data;
@@ -133,7 +134,7 @@ async function recentConversation(db: SupabaseClient, botId: string, waId: strin
   return data;
 }
 
-interface RecentConversation {
+interface RecentConversation extends UnseenMark {
   id: string;
   takeover_at: string | null;
   handled_at: string | null;
@@ -323,6 +324,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   if (conv && (contact?.unavailable_notice_reason || conv.unavailable_notice_reason)) await clearNotice(db, { contactId, conversationId: conv.id });
 
   // a resposta vai para a última mensagem com texto; as de antes (e a mídia) só entram no histórico
+  // foto, vídeo ou documento (o assistente não vê): o último desta rajada, fora o que foi opt-out
+  const burstUnseen = burst.map((q, i) => (optOut.handled.has(i) ? null : waUnseenKind(q.msg.type))).filter((k) => k !== null).pop() ?? null;
   // foto, vídeo ou documento sem legenda: a pergunta costuma vir logo atrás, em outra mensagem.
   // Se vier, esta rodada só grava, e a próxima responde tudo junto (uma resposta só)
   if (!texts[texts.length - 1] && last.msg.type !== "audio") {
@@ -338,8 +341,23 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
       }
       const convId = await plainConversation();
       if (convId) await storeAll(convId);
+      // a pergunta deve vir na próxima rodada: ela recebe o texto fixo, não uma resposta chutada
+      if (convId && burstUnseen) await markUnseen(db, convId, burstUnseen);
       return;
     }
+  }
+
+  // mídia que o assistente não vê (nesta rajada, ou chegou há menos de 2 minutos): não responde à
+  // pergunta sobre ela (seria chute); pede para a pessoa escrever o que é
+  const unseen = burstUnseen ?? recentUnseen(conv);
+  if (unseen) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    const text = unseenMediaText(unseen);
+    const r = await say("ia", text, fixedRecord(text), convId);
+    if (r.status === "sent") await clearUnseen(db, convId);
+    return;
   }
 
   const qi = texts.map((t, i) => (t && !optOut.handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();

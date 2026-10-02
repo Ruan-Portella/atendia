@@ -4,6 +4,7 @@ import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type M
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { instagramContact, touchInbound } from "./contacts";
 import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./instagram-edits";
+import { clearUnseen, igUnseenKind, markUnseen, recentUnseen, unseenMediaText, type UnseenMark } from "./unseen-media";
 import { hasPendingFrom, markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
@@ -85,7 +86,7 @@ const FOLLOW_UP_WAIT_MS = 3500;
 /** Conversa recente do contato com o chatbot (dentro da janela de 24 h). */
 async function recentConversation(db: SupabaseClient, botId: string, igsid: string, contactId: string | null = null): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
-  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, unavailable_notice_reason, contact_id").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
+  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, unavailable_notice_reason, contact_id, unseen_media_at, unseen_media_kind").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
   if (contactId) {
     const { data } = await recent().eq("contact_id", contactId).maybeSingle<RecentConversation>();
     if (data) return data;
@@ -99,7 +100,7 @@ async function recentConversation(db: SupabaseClient, botId: string, igsid: stri
   return data;
 }
 
-interface RecentConversation {
+interface RecentConversation extends UnseenMark {
   id: string;
   contact_id?: string | null;
   takeover_at: string | null;
@@ -299,6 +300,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   // compartilhou um post ou reel, ou mandou mídia, sem escrever nada: o comentário costuma vir logo
   // atrás, em outra DM. Se vier, esta rodada só grava, e a próxima responde tudo junto (uma resposta)
   const lastEv = burst[burst.length - 1].ev;
+  // foto, vídeo, arquivo, story ou post sem legenda (o assistente não vê): o último desta rajada
+  const burstUnseen = burst.map((q, i) => (handled.has(i) || deleted.has(q.key) ? null : igUnseenKind(q.ev.message?.attachments))).filter((k) => k !== null).pop() ?? null;
   if (!igText(lastEv) && lastEv.message?.attachments?.length && !deleted.has(burst[burst.length - 1].key)) {
     await new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS));
     if (await hasPendingFrom(db, "instagram", bot.id, igsid)) {
@@ -312,8 +315,23 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       }
       const convId = await plainConversation();
       if (convId) await storeAll(convId);
+      // a pergunta deve vir na próxima rodada: ela recebe o texto fixo, não uma resposta chutada
+      if (convId && burstUnseen) await markUnseen(db, convId, burstUnseen);
       return;
     }
+  }
+
+  // mídia que o assistente não vê (nesta rajada, ou chegou há menos de 2 minutos): não responde à
+  // pergunta sobre ela (seria chute); pede para a pessoa escrever o que é
+  const unseen = burstUnseen ?? recentUnseen(conv);
+  if (unseen) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    const text = unseenMediaText(unseen);
+    const r = await say("ia", text, fixedRecord(text), convId);
+    if (r.status === "sent") await clearUnseen(db, convId);
+    return;
   }
 
   const qi = texts.map((t, i) => (t && !handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
