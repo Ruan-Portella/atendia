@@ -2,9 +2,11 @@ import Link from "next/link";
 import { Kpi } from "@/components/kpi";
 import { DayBars } from "@/components/admin/day-bars";
 import { requireAdmin } from "@/lib/platform-admin";
-import { RANGE_LABEL, getAgencies, getAiCosts, getOpenAiCosts, isRangeKey, kindLabel, rangeFor, usd, usdBrl, type RangeKey } from "@/lib/backoffice";
+import { FixedCosts } from "@/components/admin/fixed-costs";
+import { RANGE_LABEL, fixedMonthlyBrl, getAgencies, getAiCosts, getFixedCosts, getOpenAiCosts, getWhatsAppUsage, isRangeKey, kindLabel, rangeFor, usd, usdBrl, type RangeKey } from "@/lib/backoffice";
+import { CATEGORY_LABEL } from "@/lib/whatsapp-usage";
 import { brl, num } from "@/lib/plans";
-import { cn } from "@/lib/utils";
+import { cn, currentPeriodBR } from "@/lib/utils";
 
 export const metadata = { title: "Custos" };
 
@@ -39,7 +41,9 @@ export default async function AdminCosts({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const key: RangeKey = typeof sp.periodo === "string" && isRangeKey(sp.periodo) ? sp.periodo : "mes";
   const range = rangeFor(key);
-  const [{ summary: s, daily }, openai, agencies] = await Promise.all([getAiCosts(range.since, range.until), getOpenAiCosts(range.since, range.until), getAgencies()]);
+  // WhatsApp é contado por mês: o do período (mês passado) ou o corrente
+  const waPeriod = currentPeriodBR(key === "mes-passado" ? range.since : undefined);
+  const [{ summary: s, daily }, openai, agencies, fixed, whatsapp] = await Promise.all([getAiCosts(range.since, range.until), getOpenAiCosts(range.since, range.until), getAgencies(), getFixedCosts(), getWhatsAppUsage(waPeriod)]);
   const agencyName = new Map(agencies.map((a) => [a.id, a.name]));
   const fx = usdBrl();
   const real = openai && !("error" in openai) ? openai : null;
@@ -79,6 +83,32 @@ export default async function AdminCosts({ searchParams }: { searchParams: Promi
         <Breakdown title="Por canal" rows={s.byChannel} label={(k) => CHANNEL_LABEL[k] ?? k} total={s.total.cost} />
         <Breakdown title="Agências que mais gastam" rows={s.byAgency} label={(k) => agencyName.get(k) ?? "agência vitrine (demos)"} total={s.total.cost} />
       </div>
+
+      <FixedCosts costs={fixed} totalBrl={fixedMonthlyBrl(fixed, fx)} />
+
+      <section className="card flex flex-col gap-4 p-5">
+        <div>
+          <h2 className="text-lg font-bold">WhatsApp (Meta) · {waPeriod}</h2>
+          <p className="text-sm text-muted">A Meta cobra no cartão de cada cliente, não da BoaVoz: não entra na margem. Serve para o suporte (quem está gastando com modelos, por exemplo). Estimativa pela tabela de referência (WHATSAPP_PRICES_BRL).</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Mensagens enviadas</div><div className="text-xl font-bold tabular">{num(whatsapp.sent)}</div></div>
+          <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Cobradas pela Meta</div><div className="text-xl font-bold tabular">{num(whatsapp.billed)}</div></div>
+          <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Estimativa (clientes)</div><div className="text-xl font-bold tabular">{brl(whatsapp.estimateBrl)}</div>{whatsapp.unpriced.length > 0 && <div className="text-xs text-muted">sem preço: {whatsapp.unpriced.join(", ")}</div>}</div>
+        </div>
+        {whatsapp.sent > 0 && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Categoria</th><th className="py-1.5 text-right font-semibold">Enviadas</th><th className="py-1.5 text-right font-semibold">Cobradas</th></tr></thead>
+              <tbody>{whatsapp.categories.map((c) => <tr key={c.category} className="border-t border-line-2"><td className="py-1.5">{CATEGORY_LABEL[c.category] ?? c.category}</td><td className="py-1.5 text-right tabular">{num(c.sent)}</td><td className="py-1.5 text-right tabular">{num(c.billed)}</td></tr>)}</tbody>
+            </table>
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Agência</th><th className="py-1.5 text-right font-semibold">Enviadas</th><th className="py-1.5 text-right font-semibold">Estimativa</th></tr></thead>
+              <tbody>{whatsapp.agencies.slice(0, 10).map((a) => <tr key={a.agency} className="border-t border-line-2"><td className="py-1.5">{agencyName.get(a.agency) ?? "agência vitrine (demos)"}</td><td className="py-1.5 text-right tabular">{num(a.sent)}</td><td className="py-1.5 text-right tabular">{brl(a.estimateBrl)}</td></tr>)}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="card flex flex-col gap-4 p-5">
         <h2 className="text-lg font-bold">Conta da OpenAI (valor real)</h2>

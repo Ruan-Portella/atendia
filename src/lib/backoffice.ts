@@ -4,6 +4,7 @@ import { createAdminClient } from "./supabase/admin";
 import { planFromPrice, stripe } from "./stripe";
 import { PLANS, getPlan, type PlanId } from "./plans";
 import { currentPeriodBR } from "./utils";
+import { estimateCost, referencePrices, type UsageLine } from "./whatsapp-usage";
 
 /*
  * Números do backoffice (/admin). Contas agregadas no banco (funções admin_* da migração 0037);
@@ -246,6 +247,65 @@ export const getRevenue = cache(async () => {
     return { error: (e as Error).message };
   }
 });
+
+/* ------------------------------------------------------------------ custos fixos (margem completa) */
+
+export interface FixedCost {
+  id: number;
+  name: string;
+  amount: number;
+  currency: "BRL" | "USD";
+  notes: string | null;
+  active: boolean;
+}
+
+export async function getFixedCosts(): Promise<FixedCost[]> {
+  const { data, error } = await createAdminClient().from("platform_costs").select("id, name, amount, currency, notes, active").order("active", { ascending: false }).order("name");
+  if (error) throw new Error(`custos fixos: ${error.message}`);
+  return (data ?? []).map((c) => ({ id: Number(c.id), name: c.name as string, amount: Number(c.amount) || 0, currency: c.currency === "USD" ? "USD" : "BRL", notes: (c.notes as string | null) ?? null, active: Boolean(c.active) }));
+}
+
+/** Soma mensal dos custos fixos ativos, em reais (os em dólar pelo USD_BRL). */
+export const fixedMonthlyBrl = (costs: FixedCost[], fx = usdBrl()) => costs.filter((c) => c.active).reduce((t, c) => t + (c.currency === "USD" ? c.amount * fx : c.amount), 0);
+
+/* ------------------------------------------------------------------ WhatsApp (cobrado pela Meta de cada cliente) */
+
+/**
+ * Mensagens do WhatsApp no mês, por categoria e por agência, com a estimativa em reais pela
+ * tabela de referência (WHATSAPP_PRICES_BRL). A Meta cobra no cartão de cada cliente: não é custo
+ * da BoaVoz, é informação para o suporte (quem está gastando muito com modelos, por exemplo).
+ */
+export async function getWhatsAppUsage(period: string) {
+  const { data, error } = await createAdminClient().rpc("admin_whatsapp_usage", { p_period: period });
+  if (error) throw new Error(`WhatsApp: ${error.message}`);
+  return summarizeWhatsApp((data ?? []) as Array<{ agency_id: string; category: string; sent: number; billed: number }>);
+}
+
+/** Soma por categoria e por agência, com a estimativa em reais (só o que tem preço de referência). */
+export function summarizeWhatsApp(data: Array<{ agency_id: string; category: string; sent: number; billed: number }>, prices = referencePrices()) {
+  const rows = data.map((r) => ({ agency: r.agency_id, category: r.category, sent: Number(r.sent) || 0, billed: Number(r.billed) || 0 }));
+  const byCategory = new Map<string, UsageLine>();
+  const byAgency = new Map<string, UsageLine[]>();
+  for (const r of rows) {
+    const c = byCategory.get(r.category) ?? { category: r.category, sent: 0, billed: 0 };
+    c.sent += r.sent;
+    c.billed += r.billed;
+    byCategory.set(r.category, c);
+    byAgency.set(r.agency, [...(byAgency.get(r.agency) ?? []), { category: r.category, sent: r.sent, billed: r.billed }]);
+  }
+  const categories = [...byCategory.values()].sort((a, b) => b.sent - a.sent);
+  const total = estimateCost(categories, prices);
+  return {
+    sent: categories.reduce((t, c) => t + c.sent, 0),
+    billed: categories.reduce((t, c) => t + c.billed, 0),
+    estimateBrl: total.total,
+    unpriced: total.unpriced,
+    categories,
+    agencies: [...byAgency.entries()]
+      .map(([agency, lines]) => ({ agency, sent: lines.reduce((t, l) => t + l.sent, 0), billed: lines.reduce((t, l) => t + l.billed, 0), estimateBrl: estimateCost(lines, prices).total }))
+      .sort((a, b) => b.estimateBrl - a.estimateBrl || b.sent - a.sent),
+  };
+}
 
 /* ------------------------------------------------------------------ plataforma */
 

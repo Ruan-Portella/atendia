@@ -20,6 +20,19 @@ export function parsePrice(v: Field): Checked<{ cents: number | null }> {
   return { cents: Math.round(n * 100) };
 }
 
+/** Custo fixo mensal da plataforma (backoffice): nome, valor, moeda, observação e se está ativo. */
+export function fixedCostFields(fd: FormData): Checked<{ name: string; amount: number; currency: "BRL" | "USD"; notes: string | null; active: boolean }> {
+  const name = text(fd.get("name"));
+  if (name.length < 2 || name.length > 80) return { error: "O nome do custo precisa ter de 2 a 80 caracteres." };
+  const price = parsePrice(fd.get("amount"));
+  if ("error" in price) return { error: "Informe um valor válido (ex.: 20 ou 129,90)." };
+  if (price.cents === null) return { error: "Informe o valor mensal." };
+  const currency = text(fd.get("currency")) === "USD" ? "USD" : "BRL";
+  const notes = text(fd.get("notes"));
+  if (notes.length > 200) return { error: "A observação pode ter no máximo 200 caracteres." };
+  return { name, amount: price.cents / 100, currency, notes: notes || null, active: fd.get("active") === "on" };
+}
+
 /** Nome, site e preço de um cliente (campos com `prefix`, ex.: "new_client_"). */
 export function clientFields(fd: FormData, prefix = ""): Checked<{ name: string; site: string | null; price_cents: number | null }> {
   const name = text(fd.get(`${prefix}name`));

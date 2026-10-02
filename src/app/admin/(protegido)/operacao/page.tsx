@@ -1,0 +1,113 @@
+import { Kpi } from "@/components/kpi";
+import { requireAdmin } from "@/lib/platform-admin";
+import { IG_TOKEN_WARN_DAYS, getOperations, operationAlerts, type BotRef } from "@/lib/backoffice-ops";
+import { num } from "@/lib/plans";
+import { cn, relativeTime } from "@/lib/utils";
+
+export const metadata = { title: "Operação" };
+
+const botLabel = (bots: Map<string, BotRef>, id: string | null) => {
+  const b = id ? bots.get(id) : undefined;
+  return b ? `${b.name} · ${b.client}${b.agency ? ` (${b.agency})` : ""}` : "—";
+};
+const mb = (bytes: number) => `${num(Math.round(bytes / 1024 / 1024))} MB`;
+
+export default async function AdminOperations() {
+  await requireAdmin("/admin/operacao");
+  const ops = await getOperations();
+  const alerts = operationAlerts(ops);
+  const h = ops.health;
+  const ch = ops.channels;
+
+  return (
+    <>
+      <div>
+        <h1 className="text-[26px] font-bold">Operação</h1>
+        <p className="text-sm text-muted">Saúde do banco, fila de mensagens da Meta, canais conectados e tarefas agendadas. Erros do código ficam no Sentry.</p>
+      </div>
+
+      {alerts.length > 0 ? (
+        <section className="flex flex-col gap-1.5 rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-amber-ink">
+          <strong>Precisa de atenção</strong>
+          <ul className="ml-4 list-disc">{alerts.map((a) => <li key={a}>{a}</li>)}</ul>
+        </section>
+      ) : (
+        <p className="rounded-xl border border-line bg-panel px-4 py-3 text-sm">✓ Tudo em dia.</p>
+      )}
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Kpi label="Banco" value={h.dbWrite ? "ok" : "com erro"} sub={h.dbWriteMs !== null ? `escrita em ${h.dbWriteMs} ms` : (h.error ?? "sem resposta")} />
+        <Kpi label="Disco do banco" value={h.diskRatio !== null ? `${Math.round(h.diskRatio * 100)}%` : "—"} sub={h.diskBytes !== null ? `${mb(h.diskBytes)} do limite do plano` : "sem leitura"} />
+        <Kpi label="Fila da Meta" value={num(ops.queue.pending)} sub={ops.queue.oldestPendingAt ? `pendente desde ${relativeTime(ops.queue.oldestPendingAt)}` : "nada pendente"} />
+        <Kpi label="Eventos com erro" value={num(ops.queue.failed24h)} sub={`nas últimas 24 h · ${num(ops.queue.failed7d)} em 7 dias · ${num(ops.queue.done24h)} processados em 24 h`} />
+      </section>
+
+      <section className="card flex flex-col gap-2 p-5">
+        <h2 className="text-base font-bold">Tarefas agendadas</h2>
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Tarefa</th><th className="py-1.5 font-semibold">Última execução</th><th className="py-1.5 font-semibold">Último sucesso</th></tr></thead>
+          <tbody>
+            {ops.crons.map((c) => (
+              <tr key={c.name} className="border-t border-line-2">
+                <td className="py-2">{c.label}</td>
+                <td className="py-2 text-muted">{c.lastRunAt ? relativeTime(c.lastRunAt) : "nunca"}</td>
+                <td className={cn("py-2", c.late ? "font-semibold text-danger" : "text-muted")}>{c.lastOkAt ? relativeTime(c.lastOkAt) : "nunca"}{c.late ? " · atrasada" : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="card flex flex-col gap-2 p-5">
+        <h2 className="text-base font-bold">Eventos da Meta com erro (7 dias)</h2>
+        {ops.queue.failed.length ? (
+          <ul className="flex flex-col divide-y divide-line-2 text-sm">
+            {ops.queue.failed.map((f) => (
+              <li key={f.key_hash as string} className="flex flex-col gap-0.5 py-2">
+                <span className="break-words">{(f.last_error as string | null) ?? "sem mensagem de erro"}</span>
+                <span className="text-xs text-muted">{f.source as string} · {f.kind as string} · {f.attempts as number} tentativas · {botLabel(ops.bots, f.bot_id as string | null)} · {relativeTime(f.created_at as string)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">Nenhum.</p>
+        )}
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="card flex flex-col gap-2 p-5">
+          <h2 className="text-base font-bold">WhatsApp</h2>
+          {ch.waPayment.map((w) => <p key={`p${w.bot_id}`} className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">Sem pagamento na Meta: {(w.display_phone as string | null) ?? "número"} · {botLabel(ops.bots, w.bot_id as string)} · desde {relativeTime(w.payment_issue_at as string)}</p>)}
+          {ch.waDisconnected.length ? (
+            <ul className="flex flex-col divide-y divide-line-2 text-sm">
+              {ch.waDisconnected.map((w) => (
+                <li key={w.bot_id as string} className="flex flex-col gap-0.5 py-2">
+                  <span>{(w.display_phone as string | null) ?? "número"} · {botLabel(ops.bots, w.bot_id as string)}</span>
+                  <span className="text-xs text-muted">desconectado {relativeTime(w.disconnected_at as string)}{w.disconnect_reason ? ` · ${w.disconnect_reason as string}` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            !ch.waPayment.length && <p className="text-sm text-muted">Nenhum número desconectado ou sem pagamento.</p>
+          )}
+        </section>
+        <section className="card flex flex-col gap-2 p-5">
+          <h2 className="text-base font-bold">Instagram</h2>
+          {ch.igExpiring.map((i) => <p key={`e${i.bot_id}`} className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Token vence {relativeTime(i.token_expires_at as string)}: @{(i.username as string | null) ?? "conta"} · {botLabel(ops.bots, i.bot_id as string)}</p>)}
+          {ch.igDisconnected.length ? (
+            <ul className="flex flex-col divide-y divide-line-2 text-sm">
+              {ch.igDisconnected.map((i) => (
+                <li key={i.bot_id as string} className="flex flex-col gap-0.5 py-2">
+                  <span>@{(i.username as string | null) ?? "conta"} · {botLabel(ops.bots, i.bot_id as string)}</span>
+                  <span className="text-xs text-muted">desconectado {relativeTime(i.disconnected_at as string)}{i.disconnect_reason ? ` · ${i.disconnect_reason as string}` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            !ch.igExpiring.length && <p className="text-sm text-muted">Nenhuma conta desconectada ou com token vencendo em até {IG_TOKEN_WARN_DAYS} dias.</p>
+          )}
+        </section>
+      </div>
+    </>
+  );
+}

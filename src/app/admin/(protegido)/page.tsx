@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Kpi } from "@/components/kpi";
 import { DayBars } from "@/components/admin/day-bars";
 import { requireAdmin } from "@/lib/platform-admin";
-import { agencyStatus, getActivity, getAgencies, getAiCosts, getBotCounts, getRevenue, rangeFor, usd, usdBrl } from "@/lib/backoffice";
+import { agencyStatus, fixedMonthlyBrl, getActivity, getAgencies, getAiCosts, getBotCounts, getFixedCosts, getRevenue, rangeFor, usd, usdBrl } from "@/lib/backoffice";
+import { getOperations, operationAlerts } from "@/lib/backoffice-ops";
 import { brl, num } from "@/lib/plans";
 
 export const metadata = { title: "Visão geral" };
@@ -12,7 +13,9 @@ const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram:
 export default async function AdminHome() {
   await requireAdmin("/admin");
   const month = rangeFor("mes");
-  const [agencies, bots, activity, ai, revenue] = await Promise.all([getAgencies(), getBotCounts(), getActivity(30), getAiCosts(month.since, month.until), getRevenue()]);
+  const [agencies, bots, activity, ai, revenue, fixed, ops] = await Promise.all([getAgencies(), getBotCounts(), getActivity(30), getAiCosts(month.since, month.until), getRevenue(), getFixedCosts(), getOperations()]);
+  const alerts = operationAlerts(ops);
+  const fixedBrl = fixedMonthlyBrl(fixed);
 
   const status = { pagante: 0, teste: 0, teste_vencido: 0, cancelada: 0 };
   for (const a of agencies) status[agencyStatus(a)] += 1;
@@ -32,6 +35,16 @@ export default async function AdminHome() {
         <p className="text-sm text-muted">Sem os bots de demonstração da landing. Custo e margem do mês corrente; dólar a {brl(usdBrl())} (USD_BRL).</p>
       </div>
 
+      {alerts.length > 0 ? (
+        <section className="flex flex-col gap-1.5 rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-amber-ink">
+          <strong>Precisa de atenção</strong>
+          <ul className="ml-4 list-disc">{alerts.map((a) => <li key={a}>{a}</li>)}</ul>
+          <Link href="/admin/operacao" className="self-start text-xs font-semibold underline">Ver operação</Link>
+        </section>
+      ) : (
+        <p className="text-sm text-muted">✓ Operação sem alertas: banco, fila da Meta, canais e tarefas agendadas em dia.</p>
+      )}
+
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Agências pagantes" value={num(status.pagante)} sub={`${status.teste} em teste · ${status.teste_vencido} teste vencido · ${status.cancelada} canceladas`} />
         <Kpi label="Chatbots" value={num(bots.bots)} sub={`${bots.live} publicados · ${bots.demos} demos`} />
@@ -40,7 +53,7 @@ export default async function AdminHome() {
         <Kpi label="Conversas (30 dias)" value={num(conv30)} sub={`hoje ${num(today?.conversations ?? 0)} · ${num(Math.round(conv30 / 30))} por dia`} />
         <Kpi label="Receita mensal (MRR)" value={mrr === null ? "—" : brl(mrr)} sub={stripeOk ? `${stripeOk.active} assinaturas ativas${stripeOk.testMode ? " · Stripe em teste" : ""}` : revenue && "error" in revenue ? "erro no Stripe" : "Stripe não configurado"} />
         <Kpi label="Custo de IA no mês" value={usd(ai.summary.total.cost)} sub={`≈ ${brl(aiBrl)} · ${usd(ai.summary.answers.perAnswer, 5)} por resposta`} />
-        <Kpi label="Margem do mês" value={mrr === null ? "—" : brl(mrr - aiBrl)} sub="receita − IA (sem WhatsApp e custos fixos)" />
+        <Kpi label="Margem do mês" value={mrr === null ? "—" : brl(mrr - aiBrl - fixedBrl)} sub={`receita − IA − custos fixos (${brl(fixedBrl)})`} />
       </section>
 
       <section className="card flex flex-col gap-4 p-5">
