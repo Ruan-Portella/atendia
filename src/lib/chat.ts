@@ -33,6 +33,9 @@ export interface BotRow {
   human_handoff?: HumanHandoff | null;
   /** "Assuntos do negócio": ampliam o nível flexível da trava de escopo. */
   business_topics?: string | null;
+  /** Pausa pelo dono (botão de emergência): a IA para, a equipe responde. */
+  paused_at?: string | null;
+  pause_notify?: boolean | null;
   /** Onde o contato finaliza o pedido de bebida ou remédio (nunca no chat da Meta). */
   regulated_channel?: RegulatedChannel | null;
 }
@@ -305,7 +308,7 @@ export function chatTools(exec: {
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
-export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled" | "paused";
+export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled" | "paused" | "bot_paused";
 
 /**
  * Conferido em TODA mensagem do WhatsApp e do Instagram (não só na conversa nova): IA pausada
@@ -331,16 +334,17 @@ export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
   trial_expired: "Assistente parado: o teste grátis venceu.",
   cancelled: "Assistente parado: a assinatura foi cancelada.",
   paused: "Assistente pausado pela equipe BoaVoz: as mensagens ficam aqui para a sua equipe responder.",
+  bot_paused: "Assistente pausado por vocês (botão de emergência): as mensagens ficam aqui para a sua equipe responder.",
 };
 
 /** Texto fixo do modo só humano (Textos legais, seção 6): uma vez por conversa, sem prometer prazo. */
 export const HUMAN_ONLY_NOTICE = "Deixei sua mensagem registrada, e nossa equipe responde por aqui assim que possível.";
 
 /**
- * Modo só humano numa conversa: vira pedido de atendente (a equipe é avisada na primeira vez) e
- * devolve se o texto fixo ainda precisa ir ao contato (uma vez por conversa).
+ * IA fora da conversa (bot pausado pelo dono ou modo só humano): vira pedido de atendente e a
+ * equipe é avisada na primeira vez. O aviso ao contato é da regra de estado (conversation-mode).
  */
-export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversationId: string, reason: AiBlockReason): Promise<{ notify: boolean }> {
+export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversationId: string, reason: AiBlockReason) {
   const { data: updated } = await db
     .from("conversations")
     .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
@@ -348,13 +352,6 @@ export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversati
     .or("handoff_requested_at.is.null,handled_at.not.is.null")
     .select("id");
   if (updated?.length) notifyHandoff({ db, bot, conversationId, reason: AI_BLOCK_LABEL[reason] }).catch(() => {});
-  const { data: conv } = await db.from("conversations").select("human_only_notice_at").eq("id", conversationId).maybeSingle();
-  return { notify: !conv?.human_only_notice_at };
-}
-
-/** Marca que o texto fixo do modo só humano já foi enviado nesta conversa. */
-export async function markHumanOnlyNotice(db: SupabaseClient, conversationId: string) {
-  await db.from("conversations").update({ human_only_notice_at: new Date().toISOString() }).eq("id", conversationId);
 }
 
 /**

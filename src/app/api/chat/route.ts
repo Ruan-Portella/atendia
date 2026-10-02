@@ -3,7 +3,7 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { CORS_HEADERS, conversationHistory, lastUserText, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
-import { isAiPaused } from "@/lib/ai-pause";
+import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 import { isResumable } from "@/lib/presence";
 
@@ -60,11 +60,15 @@ export async function POST(req: Request) {
   // Só continua uma conversa deste bot e do mesmo visitante; qualquer outro id vira conversa nova.
   let convId = conversationId ?? null;
   let handoff: "requested" | "agent" | null = null;
+  let conv: { id: string; takeover_at: string | null; handled_at: string | null } | null = null;
   if (convId) {
-    const { data: conv } = await db.from("conversations").select("id, visitor_id, handoff_requested_at, takeover_at, handled_at, last_message_at").eq("id", convId).eq("bot_id", bot.id).maybeSingle();
+    const { data } = await db.from("conversations").select("id, visitor_id, handoff_requested_at, takeover_at, handled_at, last_message_at").eq("id", convId).eq("bot_id", bot.id).maybeSingle();
     // outra conversa ou parada há horas: começa uma nova
-    if (!conv || conv.visitor_id !== (visitorId ?? null) || !isResumable(conv.last_message_at)) convId = null;
-    else if (!conv.handled_at) handoff = conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : null;
+    if (!data || data.visitor_id !== (visitorId ?? null) || !isResumable(data.last_message_at)) convId = null;
+    else {
+      conv = data;
+      if (!data.handled_at) handoff = data.takeover_at ? "agent" : data.handoff_requested_at ? "requested" : null;
+    }
   }
 
   const ip = hashId(clientIp(req));
@@ -75,9 +79,13 @@ export async function POST(req: Request) {
   ]);
   if (exceeded) return tooMany(exceeded, CORS_HEADERS);
 
+  // regra única de estado (conversation-mode): suspensão, equipe na conversa, pausa e modo só humano
+  const mode = await resolveMode(db, { bot, channel: "widget", conversation: conv, opening: !convId });
+  if (mode.step === 2) return Response.json({ error: "channel_suspended", message: SUSPENDED_NOTICE }, { status: 403, headers: CORS_HEADERS });
+
   // Uma pessoa da agência assumiu: o assistente fica quieto; a mensagem vai para o painel
   // e a resposta chega ao widget por /api/chat/updates.
-  if (convId && handoff === "agent") {
+  if (convId && mode.step === 3) {
     await db.from("messages").insert({ conversation_id: convId, role: "user", content: text });
     const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
     const now = new Date().toISOString();
@@ -88,8 +96,12 @@ export async function POST(req: Request) {
     });
   }
 
-  // IA pausada pelo backoffice (esta agência ou a chave geral): o widget mostra o formulário de contato
-  if (await isAiPaused(db, bot.agency_id)) return contactFallback("ai_paused", 503);
+  // bot pausado pelo dono, IA pausada pelo backoffice, plano, teste ou cota: o widget mostra o
+  // formulário de contato (o lead não se perde)
+  if (mode.handoff) {
+    const reason = mode.blockReason ?? "paused";
+    return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" ? 503 : 402);
+  }
 
   try {
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];

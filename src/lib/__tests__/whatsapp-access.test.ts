@@ -71,6 +71,7 @@ describe("pagamento da Meta", () => {
       update: (v: unknown) => ((calls.update = [v]), chain),
       eq: (...a: unknown[]) => ((calls.eq = a), chain),
       is: (...a: unknown[]) => ((calls.is = a), chain),
+      lt: (...a: unknown[]) => ((calls.lt = a), Promise.resolve({ data: null })),
       select: () => Promise.resolve({ data: [] }),
     };
     const db = { from: vi.fn(() => chain) } as unknown as SupabaseClient;
@@ -78,6 +79,8 @@ describe("pagamento da Meta", () => {
     expect(calls.eq).toEqual(["phone_number_id", "p1"]);
     expect(calls.is).toEqual(["payment_issue_at", null]);
     expect(calls.update?.[0]).toHaveProperty("payment_issue_at");
+    // já marcado: só renova a marca vencida (mais de 1 hora), sem novo aviso
+    expect(calls.lt?.[0]).toBe("payment_issue_at");
   });
 
   it("lê o cartão da conta pelo primary_funding_id", async () => {

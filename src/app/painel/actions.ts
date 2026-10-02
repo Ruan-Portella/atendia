@@ -25,6 +25,7 @@ import { createConnectLink } from "@/lib/whatsapp-connect-link";
 import { instagramAllowed, unsubscribeInstagram } from "@/lib/instagram";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { activeSuppressions, blocks, suppressionScope } from "@/lib/suppression";
+import { sendBlockedReason } from "@/lib/conversation-mode";
 import { logDeletion } from "@/lib/deletions";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -270,6 +271,35 @@ export async function setBotStatus(botId: string, status: "live" | "draft"): Pro
   if (error) return fail("Não foi possível mudar o status. Tente de novo.");
   revalidatePath("/painel", "layout");
   return ok(status === "live" ? "Chatbot publicado. Ele já responde no site." : "Chatbot fora do ar. O balão some do site do cliente em até um minuto.");
+}
+
+/**
+ * Botão de emergência: a IA deste chatbot para em todos os canais (regra de estado, degrau 4).
+ * As mensagens do WhatsApp e do Instagram ficam no painel como pedido de atendente; no site,
+ * aparece o formulário de contato. Com "avisar", o contato recebe o texto fixo uma vez por conversa.
+ */
+export async function pauseBot(botId: string, formData: FormData): Promise<ActionResult> {
+  const { email } = await requireAgency();
+  const supabase = await createClient();
+  const reason = text(formData.get("reason")).slice(0, 200) || null;
+  const { data, error } = await supabase
+    .from("bots")
+    .update({ paused_at: new Date().toISOString(), paused_by: `painel (${email})`, pause_reason: reason, pause_notify: formData.get("notify") === "on" })
+    .eq("id", botId)
+    .is("paused_at", null)
+    .select("id");
+  if (error) return fail("Não foi possível pausar. Tente de novo.");
+  if (!data?.length) return fail("Este chatbot já está pausado.");
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("IA pausada. As próximas mensagens ficam para a sua equipe responder.");
+}
+
+export async function resumeBot(botId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("bots").update({ paused_at: null, paused_by: null, pause_reason: null, pause_notify: false }).eq("id", botId);
+  if (error) return fail("Não foi possível retomar. Tente de novo.");
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("IA retomada. O assistente volta a responder a partir da próxima mensagem.");
 }
 
 /** Converte uma demo em chatbot de verdade (mantém a base de conhecimento), ligado a um cliente. */
@@ -598,6 +628,9 @@ function whatsappNumber(raw: string): string {
  * como o contato recebeu, para entrar no histórico da conversa.
  */
 async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: string, formData: FormData): Promise<{ text: string; category: string } | { error: string }> {
+  // regra de estado: ordem da Meta, desligamento geral ou suspensão pela BoaVoz
+  const blocked = await sendBlockedReason(createAdminClient(), botId, "whatsapp");
+  if (blocked) return { error: `${blocked} O modelo não foi enviado.` };
   let templates;
   try {
     templates = await listSendable(ch);

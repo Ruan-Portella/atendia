@@ -5,6 +5,7 @@ import { contactOf, type EchoMessage, type InboundMessage } from "@/lib/whatsapp
 import { acceptInbound, sha256, type Group, type InboundInput } from "@/lib/inbound-queue";
 import { processAfterWebhook, type WaPayload, type WaPreference, type WaStatus } from "@/lib/inbound-process";
 import { deadline } from "@/lib/cron";
+import type { MetaAccountDetail } from "@/lib/meta-enforcement";
 
 export const maxDuration = 60;
 
@@ -25,6 +26,10 @@ interface WebhookBody {
         // account_update
         event?: string;
         waba_info?: { waba_id?: string };
+        // ordens, infrações e restrições da Meta (viram medidas em enforcement_actions)
+        ban_info?: MetaAccountDetail["ban_info"];
+        violation_info?: MetaAccountDetail["violation_info"];
+        restriction_info?: MetaAccountDetail["restriction_info"];
       };
     }>;
   }>;
@@ -99,7 +104,8 @@ async function toEvents(db: ReturnType<typeof createAdminClient>, changes: Chang
   for (const change of changes) {
     const v = change.value!;
     if (change.field === "account_update") {
-      const payload: WaPayload = { type: "account_update", entryId: change.entryId, event: v.event, wabaId: v.waba_info?.waba_id };
+      const detail: MetaAccountDetail = { ban_info: v.ban_info, violation_info: v.violation_info, restriction_info: v.restriction_info };
+      const payload: WaPayload = { type: "account_update", entryId: change.entryId, event: v.event, wabaId: v.waba_info?.waba_id, detail };
       out.push({ key: `account_update:${sha256(JSON.stringify(v))}`, source: "whatsapp", kind: "account_update", botId: null, payload });
       continue;
     }

@@ -39,7 +39,16 @@ export async function markPaymentIssue(db: SupabaseClient, where: { column: "bot
     .eq(where.column, where.value)
     .is("payment_issue_at", null)
     .select("bot_id, display_phone, phone_number_id, bots(name, client_name, agency_id)");
-  for (const r of rows ?? []) {
+  // já marcado: a regra de estado tentou de novo depois de 1 hora e falhou, segura por mais 1 hora (sem novo aviso)
+  if (!rows?.length) {
+    await db
+      .from("whatsapp_channels")
+      .update({ payment_issue_at: new Date().toISOString() })
+      .eq(where.column, where.value)
+      .lt("payment_issue_at", new Date(Date.now() - 60 * 60_000).toISOString());
+    return;
+  }
+  for (const r of rows) {
     const bot = (Array.isArray(r.bots) ? r.bots[0] : r.bots) as { name: string; client_name: string; agency_id: string } | null;
     console.warn("whatsapp: mensagens recusadas por pagamento", r.phone_number_id);
     if (!bot) continue;

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, handleRiskWithoutAi, enterHumanOnly, markHumanOnlyNotice, openConversation, type AiBlockReason, type BotRow } from "./chat";
+import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
+import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
@@ -20,15 +21,9 @@ const AUDIO_FAILED = "Não consegui entender o áudio. Pode mandar de novo ou es
 /** Marca a mensagem que chegou como áudio (no painel e para o assistente). */
 export const AUDIO_PREFIX = "🎤 ";
 
-/** Autor das respostas mandadas pelo app WhatsApp Business do celular (coexistência). */
-export const PHONE_AUTHOR = "celular";
-/** Depois de uma resposta pelo celular, o assistente fica quieto na conversa por este tempo. */
-export const PHONE_PAUSE_MINUTES = 60;
-
-/** Alguém respondeu pelo celular há pouco? Então é gente atendendo: o assistente não fala por cima. */
-export function phonePauseActive(lastPhoneReplyAt: string | null | undefined, now = Date.now()): boolean {
-  return Boolean(lastPhoneReplyAt) && now - new Date(lastPhoneReplyAt!).getTime() < PHONE_PAUSE_MINUTES * 60_000;
-}
+// autores do celular e do app e a pausa de 60 minutos moram em authors.ts (a regra de estado usa)
+export { PHONE_AUTHOR, PHONE_PAUSE_MINUTES, phonePauseActive } from "./authors";
+import { PHONE_AUTHOR } from "./authors";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
 const MEDIA_LABEL: Record<string, string> = {
@@ -59,6 +54,9 @@ export interface ChannelRow extends WaChannel {
   bot_id: string;
   /** Número também no app WhatsApp Business do celular: o dono já vê cada mensagem lá. */
   coexistence?: boolean;
+  disconnected_at?: string | null;
+  /** A Meta recusou por falta de pagamento (a regra de estado segura o envio por 1 hora). */
+  payment_issue_at?: string | null;
 }
 
 /** Quem mandou: o telefone, ou o BSUID quando a Meta não manda o telefone. null = nenhum dos dois. */
@@ -96,18 +94,26 @@ export async function storeContactMessage(db: SupabaseClient, conversationId: st
 }
 
 /** Conversa recente do contato com o chatbot (dentro da janela), procurando com e sem o 9. */
-async function recentConversation(db: SupabaseClient, botId: string, waId: string) {
+async function recentConversation(db: SupabaseClient, botId: string, waId: string): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
   const { data } = await db
     .from("conversations")
-    .select("id, takeover_at, handled_at")
+    .select("id, takeover_at, handled_at, unavailable_notice_reason")
     .eq("bot_id", botId)
     .in("wa_id", waIdVariants(waId))
     .gt("last_message_at", since)
     .order("last_message_at", { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle<RecentConversation>();
   return data;
+}
+
+interface RecentConversation {
+  id: string;
+  takeover_at: string | null;
+  handled_at: string | null;
+  /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
+  unavailable_notice_reason?: string | null;
 }
 
 /** Uma mensagem recebida, já na fila (inbound_events), com a chave que a grava uma vez só. */
@@ -147,8 +153,8 @@ export async function previousAnswer(db: SupabaseClient, key: string): Promise<{
 
 /**
  * As mensagens de um contato que chegaram juntas (a rajada "oi", "quanto custa?", "e a barba?"):
- * todas são gravadas e o assistente responde uma vez, à última. Se um atendente assumiu ou alguém
- * respondeu pelo celular há pouco, só guarda para o painel. Erro de acesso ou de pagamento sobe
+ * todas são gravadas e o assistente responde uma vez, à última. Quem responde (IA, equipe ou
+ * ninguém) sai da regra única de estado (conversation-mode). Erro de acesso ou de pagamento sobe
  * para quem chamou marcar o número.
  */
 export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow, all: QueuedMessage[]) {
@@ -164,6 +170,9 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const profileName = last.profileName;
   const reply = (body: string) => sendText(channel, waId, toWhatsAppText(body));
 
+  let conv = await recentConversation(db, bot.id, waId);
+  const mode = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel, opening: !conv });
+
   // o limite vem antes de qualquer custo (transcrição, IA); cada mensagem conta
   for (let i = 0; i < burst.length; i++) {
     const exceeded = await firstExceeded(db, [
@@ -171,14 +180,15 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
       { key: `wa:${bot.id}:${waId}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
     ]);
     if (exceeded) {
-      if (await noticeOnce(db, exceeded)) await reply(exceeded.message);
+      if (mode.canSend && (await noticeOnce(db, exceeded))) await reply(exceeded.message);
       return;
     }
   }
 
   const transcribe = async (m: InboundMessage): Promise<string | null> => {
     const audioId = m.type === "audio" ? m.audio?.id : undefined;
-    if (!audioId || !canTranscribe()) return null;
+    // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio)
+    if (!audioId || !canTranscribe() || mode.step <= 2) return null;
     try {
       const { data } = await downloadMedia(channel, audioId);
       const transcript = await transcribeAudio(data, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "whatsapp", ...u }));
@@ -194,55 +204,81 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   for (const q of burst) texts.push((inboundText(q.msg) ?? (await transcribe(q.msg)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
   const shown = (i: number) => texts[i] ?? mediaLabel(burst[i].msg.type);
 
-  let conv = await recentConversation(db, bot.id, waId);
-
-  /**
-   * Modo só humano (cota esgotada, teste vencido, plano cancelado): a IA não responde, as
-   * mensagens ficam gravadas, vira pedido de atendente e o contato recebe o texto fixo uma vez
-   * por conversa (nunca na coexistência: o dono já vê a mensagem no celular).
-   */
-  const humanOnly = async (reason: AiBlockReason) => {
-    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id").single()).data?.id;
-    if (!convId) return;
-    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
-    // risco à vida tem prioridade sobre o texto do modo só humano
-    if (await handleRiskWithoutAi(db, bot, convId, texts, async (t) => (await reply(t)).messages?.[0]?.id ?? null, "whatsapp")) return;
-    const { notify } = await enterHumanOnly(db, bot, convId, reason);
-    if (notify && !channel.coexistence) {
-      const sent = await reply(HUMAN_ONLY_NOTICE);
-      await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: HUMAN_ONLY_NOTICE, author: SYSTEM_AUTHOR, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
-      await markHumanOnlyNotice(db, convId);
+  /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
+  const plainConversation = async (): Promise<string | null> => {
+    if (!conv) {
+      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id, takeover_at, handled_at").single<RecentConversation>();
+      conv = data;
     }
+    return conv?.id ?? null;
+  };
+  const storeAll = async (convId: string) => {
+    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+  };
+  const sendFixed = async (t: string) => (await reply(t)).messages?.[0]?.id ?? null;
+  /** Aviso ao contato do degrau atual, uma vez por episódio (gravado na conversa como do sistema). */
+  const sendNotice = async (convId: string, notice: Mode["notice"]) => {
+    if (!notice || !(await noticeDue(db, convId, notice.reason))) return;
+    const sent = await reply(notice.text);
+    await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: notice.text, author: SYSTEM_AUTHOR, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
+    await markNoticeSent(db, convId, notice.reason);
   };
 
-  // opt-out fixo (SAIR, PARAR, STOP e os botões da confirmação): antes da IA, em qualquer estado
-  const optOut = await handleOptOuts(db, channel, bot, waId, burst, texts, shown, conv?.id ?? null);
+  /**
+   * Bot pausado pelo dono (degrau 4) ou modo só humano (5: cota, teste, plano, IA pausada pela
+   * BoaVoz): a IA não responde, as mensagens ficam gravadas, vira pedido de atendente e o contato
+   * recebe o texto fixo uma vez por episódio (nunca na coexistência: o dono já vê no celular).
+   */
+  const humanOnly = async (m: Mode) => {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    // risco à vida tem prioridade sobre o texto do modo só humano
+    if (await handleRiskWithoutAi(db, bot, convId, texts, sendFixed, "whatsapp")) return;
+    await enterHumanOnly(db, bot, convId, m.blockReason ?? "paused");
+    await sendNotice(convId, m.notice);
+  };
+
+  // opt-out fixo (SAIR, PARAR, STOP e os botões da confirmação): antes de tudo, em qualquer estado;
+  // a supressão vale sempre, a confirmação só sai se dá para enviar
+  const optOut = await handleOptOuts(db, channel, bot, waId, burst, texts, shown, conv?.id ?? null, mode);
   if (optOut.conversationId && !conv) conv = { id: optOut.conversationId, takeover_at: null, handled_at: null };
   if (optOut.handled.size === burst.length) return;
 
-  const { data: phoneReply } = conv
-    ? await db.from("messages").select("created_at").eq("conversation_id", conv.id).eq("role", "agent").eq("author", PHONE_AUTHOR).order("id", { ascending: false }).limit(1).maybeSingle()
-    : { data: null };
-  // gente atendendo: o assistente fica quieto, sem "digitando…", e as mensagens vão para o painel
-  if (conv && ((conv.takeover_at && !conv.handled_at) || phonePauseActive(phoneReply?.created_at as string | undefined))) {
-    for (let i = 0; i < burst.length; i++) await storeOnce(db, conv.id, shown(i), burst[i].key);
-    // com gente atendendo, o risco à vida ainda é vigiado (alerta urgente e texto fixo)
-    await handleRiskWithoutAi(db, bot, conv.id, texts, async (t) => (await reply(t)).messages?.[0]?.id ?? null, "whatsapp");
+  // degrau 1 (ordem da Meta, desligamento geral): nem grava, nada passa pela Cloud API
+  if (!mode.storeInbound) return void console.warn("whatsapp: entrada descartada", mode.reason, channel.phone_number_id);
+  // degraus 1 e 2: nada sai pelo canal (fora o aviso da suspensão, uma vez); fica no painel
+  if (mode.step <= 2) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    if (mode.step === 2) await sendNotice(convId, mode.notice);
+    return;
+  }
+
+  // degrau 3, gente atendendo: o assistente fica quieto, sem "digitando…", e as mensagens vão
+  // para o painel; o risco à vida ainda é vigiado (alerta urgente e texto fixo)
+  if (mode.step === 3) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    await handleRiskWithoutAi(db, bot, convId, texts, sendFixed, "whatsapp");
     return;
   }
 
   // a fila ficou parada mais de 24 h: não responde com IA, vira pedido de atendente
   if (isStale(burst[0].receivedAt)) {
-    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id").single()).data?.id;
+    const convId = await plainConversation();
     if (!convId) return;
-    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    await storeAll(convId);
     await db.from("conversations").update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null }).eq("id", convId);
     return;
   }
 
-  // plano, teste e cota conferidos em toda mensagem, não só na conversa nova
-  const blocked = await aiBlockedReason(db, bot.agency_id, !conv);
-  if (blocked) return humanOnly(blocked);
+  // degraus 4 e 5: bot pausado pelo dono, ou plano, teste, cota e IA pausada (em toda mensagem)
+  if (mode.handoff) return humanOnly(mode);
+  // degrau 6, normal: o próximo episódio de indisponível avisa de novo
+  if (conv?.unavailable_notice_reason) await clearNotice(db, conv.id);
 
   // a resposta vai para a última mensagem com texto; as de antes (e a mídia) só entram no histórico
   const qi = texts.map((t, i) => (t && !optOut.handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
@@ -263,7 +299,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
 
   await markReadTyping(channel, last.msg.id);
   try {
-    if (!conv) conv = { id: await openConversation(db, bot, { channel: "whatsapp", waId }), takeover_at: null, handled_at: null };
+    conv ??= { id: await openConversation(db, bot, { channel: "whatsapp", waId }), takeover_at: null, handled_at: null };
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
@@ -286,12 +322,14 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
       },
       { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id },
     );
+    // saiu depois da recusa por pagamento: o cartão entrou, o número volta ao normal
+    if (channel.payment_issue_at) await db.from("whatsapp_channels").update({ payment_issue_at: null }).eq("bot_id", bot.id);
   } catch (e) {
     // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)
     if (isAccessError(e) || isPaymentError(e)) throw e;
     const code = (e as Error).message;
     // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
-    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(code);
+    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("whatsapp: falha ao responder", e);
     await reply(FALLBACK).catch(() => {});
   }
@@ -324,16 +362,21 @@ async function handleOptOuts(
   texts: Array<string | null>,
   shown: (i: number) => string,
   conversationId: string | null,
+  mode: Pick<Mode, "canSend" | "storeInbound">,
 ): Promise<{ handled: Set<number>; conversationId: string | null }> {
   const handled = new Set<number>();
   const target = { channel: "whatsapp" as const, scope: suppressionScope({ wabaId: channel.waba_id, botId: bot.id }), contact: waId };
   const company = bot.client_name;
   let convId = conversationId;
   const conversation = async () => {
+    // ordem da Meta e desligamento geral: a supressão vale, mas nada é gravado na conversa
+    if (!mode.storeInbound) return null;
     convId ??= (await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id").single()).data?.id ?? null;
     return convId;
   };
   const answer = async (content: string, buttons?: Array<{ id: string; title: string }>) => {
+    // envio bloqueado ou canal suspenso: o pedido é cumprido, a confirmação não sai
+    if (!mode.canSend) return;
     const sent = buttons?.length ? await sendButtons(channel, waId, content, buttons) : await sendText(channel, waId, content);
     const id = await conversation();
     if (id) await db.from("messages").insert({ conversation_id: id, role: "assistant", content, author: SYSTEM_AUTHOR, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });

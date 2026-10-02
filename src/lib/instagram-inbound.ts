@@ -1,12 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { HUMAN_ONLY_NOTICE, SYSTEM_AUTHOR, aiBlockedReason, handleRiskWithoutAi, enterHumanOnly, markHumanOnlyNotice, openConversation, type AiBlockReason, type BotRow } from "./chat";
+import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
+import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
 import { markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { instagramTyping, isInstagramAccessError, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
-import { AUDIO_PREFIX, isStale, phonePauseActive, previousAnswer, storeOnce } from "./whatsapp-inbound";
+import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
 import { answerWithGate, gateButtons } from "./gate/flow";
 
@@ -19,8 +20,8 @@ const FALLBACK = "No momento não consigo responder por aqui. A equipe vai retor
 const ONLY_TEXT = "Por enquanto eu entendo mensagens de texto e áudios. Fotos e vídeos ainda não. Pode escrever sua dúvida?";
 const AUDIO_FAILED = "Não consegui entender o áudio. Pode mandar de novo ou escrever?";
 
-/** Autor das respostas mandadas pelo próprio app do Instagram (alguém da equipe no celular). */
-export const IG_APP_AUTHOR = "instagram";
+export { IG_APP_AUTHOR } from "./authors";
+import { IG_APP_AUTHOR } from "./authors";
 
 const IG_MEDIA_LABEL: Record<string, string> = {
   image: "📷 (foto)",
@@ -51,6 +52,7 @@ export interface IgMessagingEvent {
 
 export interface IgChannelRow extends IgChannel {
   bot_id: string;
+  disconnected_at?: string | null;
 }
 
 /** Texto da mensagem (texto ou botão tocado); null para mídia. */
@@ -65,18 +67,26 @@ export function igMediaLabel(ev: IgMessagingEvent): string {
 }
 
 /** Conversa recente do contato com o chatbot (dentro da janela de 24 h). */
-async function recentConversation(db: SupabaseClient, botId: string, igsid: string) {
+async function recentConversation(db: SupabaseClient, botId: string, igsid: string): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
   const { data } = await db
     .from("conversations")
-    .select("id, takeover_at, handled_at")
+    .select("id, takeover_at, handled_at, unavailable_notice_reason")
     .eq("bot_id", botId)
     .eq("ig_id", igsid)
     .gt("last_message_at", since)
     .order("last_message_at", { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle<RecentConversation>();
   return data;
+}
+
+interface RecentConversation {
+  id: string;
+  takeover_at: string | null;
+  handled_at: string | null;
+  /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
+  unavailable_notice_reason?: string | null;
 }
 
 /** Manda a DM e guarda o id dela: o webhook ecoa as nossas mensagens, e assim o eco é ignorado. */
@@ -109,8 +119,8 @@ export interface QueuedDm {
 
 /**
  * As DMs de um contato que chegaram juntas: todas são gravadas e o assistente responde uma vez,
- * à última com texto. Se alguém da equipe assumiu ou respondeu pelo app do Instagram há pouco,
- * só guarda para o painel. Erro de acesso (token recusado) sobe para quem chamou marcar a conta.
+ * à última com texto. Quem responde (IA, equipe ou ninguém) sai da regra única de estado
+ * (conversation-mode). Erro de acesso (token recusado) sobe para quem chamou marcar a conta.
  */
 export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedDm[]) {
   // mensagem não suportada (enquete, efeito…) e apagada não recebem resposta
@@ -122,6 +132,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const igsid = burst[0].ev.sender!.id!;
   console.log("instagram: DMs recebidas", { bot: bot.id, quantidade: burst.length });
 
+  let conv = await recentConversation(db, bot.id, igsid);
+  const mode = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch, opening: !conv });
+
   const reply = (text: string) => send(db, ch, igsid, text);
   for (let i = 0; i < burst.length; i++) {
     const exceeded = await firstExceeded(db, [
@@ -129,14 +142,15 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       { key: `ig:${bot.id}:${igsid}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
     ]);
     if (exceeded) {
-      if (await noticeOnce(db, exceeded)) await reply(exceeded.message);
+      if (mode.canSend && (await noticeOnce(db, exceeded))) await reply(exceeded.message);
       return;
     }
   }
 
   const transcribe = async (ev: IgMessagingEvent) => {
     const audioUrl = ev.message?.attachments?.find((a) => a.type === "audio")?.payload?.url;
-    if (!audioUrl || !canTranscribe()) return null;
+    // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio)
+    if (!audioUrl || !canTranscribe() || mode.step <= 2) return null;
     try {
       return await transcribeFrom(audioUrl, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "instagram", ...u }));
     } catch (e) {
@@ -148,72 +162,92 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   for (const q of burst) texts.push((igText(q.ev) ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
   const shown = (i: number) => texts[i] ?? igMediaLabel(burst[i].ev);
 
-  let conv = await recentConversation(db, bot.id, igsid);
-
-  /** Modo só humano (cota, teste, plano): grava, vira pedido de atendente, texto fixo uma vez. */
-  const humanOnly = async (reason: AiBlockReason) => {
-    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
-    if (!convId) return;
-    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
-    // risco à vida tem prioridade sobre o texto do modo só humano
-    if (await handleRiskWithoutAi(db, bot, convId, texts, reply, "instagram")) return;
-    const { notify } = await enterHumanOnly(db, bot, convId, reason);
-    if (notify) {
-      const mid = await reply(HUMAN_ONLY_NOTICE);
-      await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: HUMAN_ONLY_NOTICE, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
-      await markHumanOnlyNotice(db, convId);
+  /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
+  const plainConversation = async (): Promise<string | null> => {
+    if (!conv) {
+      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id, takeover_at, handled_at").single<RecentConversation>();
+      conv = data;
     }
+    return conv?.id ?? null;
+  };
+  const storeAll = async (convId: string) => {
+    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+  };
+  /** Mensagem do sistema (confirmação, aviso): só sai se dá para enviar; gravada na conversa. */
+  const systemReply = async (convId: string | null, content: string, quickReplies?: Array<{ title: string; payload: string }>) => {
+    if (!mode.canSend) return;
+    const mid = await send(db, ch, igsid, content, quickReplies);
+    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
+  };
+  /** Aviso ao contato do degrau atual, uma vez por episódio (o da suspensão sai mesmo sem envio). */
+  const sendNotice = async (convId: string, notice: Mode["notice"]) => {
+    if (!notice || !(await noticeDue(db, convId, notice.reason))) return;
+    const mid = await reply(notice.text);
+    await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: notice.text, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
+    await markNoticeSent(db, convId, notice.reason);
   };
 
-  // opt-out fixo (SAIR, PARAR, STOP) e o "Foi engano": antes da IA, em qualquer estado; vale para tudo no Instagram
+  /** Bot pausado pelo dono (4) ou modo só humano (5): grava, vira pedido de atendente, texto fixo uma vez. */
+  const humanOnly = async (m: Mode) => {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    // risco à vida tem prioridade sobre o texto do modo só humano
+    if (await handleRiskWithoutAi(db, bot, convId, texts, reply, "instagram")) return;
+    await enterHumanOnly(db, bot, convId, m.blockReason ?? "paused");
+    await sendNotice(convId, m.notice);
+  };
+
+  // opt-out fixo (SAIR, PARAR, STOP) e o "Foi engano": antes de tudo, em qualquer estado; vale
+  // para tudo no Instagram. A supressão vale sempre; a confirmação só sai se dá para enviar.
   const target = { channel: "instagram" as const, scope: suppressionScope({ botId: bot.id }), contact: igsid };
   const undo = new Set(burst.map((q, i) => (q.ev.message?.quick_reply?.payload === OPTOUT_UNDO ? i : -1)).filter((i) => i >= 0));
   if (undo.size) {
-    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
-    if (convId) {
-      if (!conv) conv = { id: convId, takeover_at: null, handled_at: null };
-      for (const i of undo) await storeOnce(db, convId, shown(i), burst[i].key);
-    }
+    const convId = await plainConversation();
+    if (convId) for (const i of undo) await storeOnce(db, convId, shown(i), burst[i].key);
     await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" });
-    const done = `Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${bot.client_name}.`;
-    const mid = await reply(done);
-    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: done, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
+    await systemReply(convId, `Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${bot.client_name}.`);
   }
   const handled = new Set(texts.map((t, i) => (isOptOutKeyword(t) || undo.has(i) ? i : -1)).filter((i) => i >= 0));
   if (handled.size > undo.size) {
-    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
-    if (convId) {
-      if (!conv) conv = { id: convId, takeover_at: null, handled_at: null };
-      for (const i of handled) await storeOnce(db, convId, shown(i), burst[i].key);
-    }
+    const convId = await plainConversation();
+    if (convId) for (const i of handled) await storeOnce(db, convId, shown(i), burst[i].key);
     await suppress(db, { ...target, kind: "all", reason: "opt_out", source: "chat" });
-    const confirmation = optOutConfirmation("all", bot.client_name);
-    const mid = await send(db, ch, igsid, confirmation, [{ title: "Foi engano", payload: OPTOUT_UNDO }]);
-    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: confirmation, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
+    await systemReply(convId, optOutConfirmation("all", bot.client_name), [{ title: "Foi engano", payload: OPTOUT_UNDO }]);
   }
   if (handled.size === burst.length) return;
 
-  const { data: appReply } = conv
-    ? await db.from("messages").select("created_at").eq("conversation_id", conv.id).eq("role", "agent").eq("author", IG_APP_AUTHOR).order("id", { ascending: false }).limit(1).maybeSingle()
-    : { data: null };
-  if (conv && ((conv.takeover_at && !conv.handled_at) || phonePauseActive(appReply?.created_at as string | undefined))) {
-    for (let i = 0; i < burst.length; i++) await storeOnce(db, conv.id, shown(i), burst[i].key);
-    // com gente atendendo, o risco à vida ainda é vigiado (alerta urgente e texto fixo)
-    await handleRiskWithoutAi(db, bot, conv.id, texts, reply, "instagram");
+  // degraus 1 e 2 (conta desconectada, suspensão pela BoaVoz): nada sai pelo canal, fora o aviso
+  // da suspensão (uma vez); as mensagens ficam no painel
+  if (mode.step <= 2) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    if (mode.step === 2) await sendNotice(convId, mode.notice);
+    return;
+  }
+
+  // degrau 3, gente atendendo: só guarda para o painel; o risco à vida ainda é vigiado
+  if (mode.step === 3) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    await handleRiskWithoutAi(db, bot, convId, texts, reply, "instagram");
     return;
   }
 
   if (isStale(burst[0].receivedAt)) {
-    const convId = conv?.id ?? (await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id").single()).data?.id;
+    const convId = await plainConversation();
     if (!convId) return;
-    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    await storeAll(convId);
     await db.from("conversations").update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null }).eq("id", convId);
     return;
   }
 
-  // plano, teste e cota conferidos em toda mensagem, não só na conversa nova
-  const blocked = await aiBlockedReason(db, bot.agency_id, !conv);
-  if (blocked) return humanOnly(blocked);
+  // degraus 4 e 5: bot pausado pelo dono, ou plano, teste, cota e IA pausada (em toda mensagem)
+  if (mode.handoff) return humanOnly(mode);
+  // degrau 6, normal: o próximo episódio de indisponível avisa de novo
+  if (conv?.unavailable_notice_reason) await clearNotice(db, conv.id);
 
   const qi = texts.map((t, i) => (t && !handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
@@ -233,7 +267,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
 
   await instagramTyping(ch, igsid);
   try {
-    if (!conv) conv = { id: await openConversation(db, bot, { channel: "instagram", igsid }), takeover_at: null, handled_at: null };
+    conv ??= { id: await openConversation(db, bot, { channel: "instagram", igsid }), takeover_at: null, handled_at: null };
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
@@ -253,7 +287,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;
     const code = (e as Error).message;
-    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(code);
+    // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
+    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("instagram: falha ao responder", e);
     await reply(FALLBACK).catch(() => {});
   }

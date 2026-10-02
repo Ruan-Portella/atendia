@@ -73,3 +73,61 @@ export async function extendTrial(agencyId: string, fd: FormData): Promise<Actio
   revalidatePath("/admin", "layout");
   return ok(`Teste estendido até ${new Date(until).toLocaleDateString("pt-BR")}.`);
 }
+
+/* ------------------------------------------------------------------ envio (regra de estado, degraus 1 e 2) */
+
+/**
+ * Desligamento geral do WhatsApp (plano B se a Meta mandar parar a plataforma): nada entra nem
+ * sai pela Cloud API, nem a resposta da equipe pelo painel. Instagram e site seguem normais.
+ */
+export async function disableWhatsAppAll(fd: FormData): Promise<ActionResult> {
+  const reason = reasonOf(fd);
+  if (typeof reason !== "string") return fail(reason.error);
+  if (fd.get("confirm") !== "on") return fail("Marque a confirmação: nenhum WhatsApp recebe nem envia até religar.");
+  const s = await requireAdmin(`/admin (DESLIGOU O WHATSAPP DE TODOS: ${reason})`);
+  const { error } = await createAdminClient().from("platform_flags").update({ whatsapp_disabled_at: new Date().toISOString(), whatsapp_disabled_reason: reason, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) return fail("Não foi possível desligar. Tente de novo.");
+  revalidatePath("/admin", "layout");
+  return ok("WhatsApp de todos desligado.");
+}
+
+export async function enableWhatsAppAll(): Promise<ActionResult> {
+  const s = await requireAdmin("/admin (religou o WhatsApp de todos)");
+  const { error } = await createAdminClient().from("platform_flags").update({ whatsapp_disabled_at: null, whatsapp_disabled_reason: null, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) return fail("Não foi possível religar. Tente de novo.");
+  revalidatePath("/admin", "layout");
+  return ok("WhatsApp de todos religado.");
+}
+
+const SUSPEND_CHANNELS = new Set(["all", "whatsapp", "instagram", "widget"]);
+
+/**
+ * Suspende um canal de uma agência (ou de um chatbot dela) pela BoaVoz: nada sai, nem resposta
+ * da equipe; o contato recebe uma vez o aviso de canal indisponível (fora da coexistência).
+ */
+export async function suspendChannel(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const reason = reasonOf(fd);
+  if (typeof reason !== "string") return fail(reason.error);
+  const channel = text(fd.get("channel")) || "all";
+  if (!SUSPEND_CHANNELS.has(channel)) return fail("Escolha o canal.");
+  const botId = text(fd.get("bot_id")) || null;
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (suspendeu ${channel}${botId ? ` do bot ${botId}` : ""}: ${reason})`);
+  const db = createAdminClient();
+  if (botId) {
+    const { data: bot } = await db.from("bots").select("id").eq("id", botId).eq("agency_id", agencyId).maybeSingle();
+    if (!bot) return fail("Chatbot não encontrado nesta agência.");
+  }
+  const { error } = await db.from("enforcement_actions").insert({ source: "boavoz", feature: "channel", channel, agency_id: agencyId, bot_id: botId, reason, created_by: s.email });
+  if (error) return fail("Não foi possível suspender. Tente de novo.");
+  revalidatePath("/admin", "layout");
+  return ok("Canal suspenso.");
+}
+
+/** Levanta uma medida (da BoaVoz ou registrada da Meta): o canal volta a funcionar se nada mais o bloqueia. */
+export async function liftMeasure(id: number): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin (levantou a medida ${id})`);
+  const { error } = await createAdminClient().from("enforcement_actions").update({ lifted_at: new Date().toISOString(), lifted_by: s.email }).eq("id", id).is("lifted_at", null);
+  if (error) return fail("Não foi possível levantar. Tente de novo.");
+  revalidatePath("/admin", "layout");
+  return ok("Medida levantada.");
+}

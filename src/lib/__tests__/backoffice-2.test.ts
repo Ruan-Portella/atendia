@@ -71,14 +71,16 @@ describe("qualidade e operação", () => {
       channels: { waDisconnected: [], waPayment: [], igDisconnected: [], igExpiring: [] },
       crons: [{ name: "diario", label: "Rotina diária", lastRunAt: null, lastOkAt: null, late: false }],
       cronsScheduled: true,
+      measures: { metaOrders: 0, metaNotices: 0 },
       bots: new Map(),
     };
     expect(operationAlerts(base)).toEqual([]);
-    const bad: Ops = { ...base, health: { ...base.health, queueStuck: true }, queue: { ...base.queue, failed24h: 2 }, crons: [{ ...base.crons[0], late: true }] };
+    const bad: Ops = { ...base, health: { ...base.health, queueStuck: true }, queue: { ...base.queue, failed24h: 2 }, crons: [{ ...base.crons[0], late: true }], measures: { metaOrders: 1, metaNotices: 0 } };
     expect(operationAlerts(bad)).toEqual([
       "A fila de mensagens da Meta está parada (evento pendente há mais de 30 minutos).",
       "2 evento(s) da Meta com erro nas últimas 24 h.",
       "Tarefa agendada atrasada: Rotina diária.",
+      "1 ordem(ns) da Meta bloqueando número(s) de WhatsApp (ver Conformidade).",
     ]);
   });
 });

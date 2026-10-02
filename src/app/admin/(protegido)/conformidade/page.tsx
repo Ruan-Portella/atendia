@@ -1,7 +1,8 @@
 import { Kpi } from "@/components/kpi";
 import { requireAdmin } from "@/lib/platform-admin";
 import { getCompliance } from "@/lib/backoffice-ops";
-import { rangeFor } from "@/lib/backoffice";
+import { getMeasures, rangeFor } from "@/lib/backoffice";
+import { MeasureList } from "@/components/admin/pause-controls";
 import { num } from "@/lib/plans";
 import { relativeTime } from "@/lib/utils";
 
@@ -16,7 +17,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const email = typeof sp.email === "string" ? sp.email.trim().slice(0, 120) : "";
   const range = rangeFor("30d");
-  const c = await getCompliance(range.since, email || null);
+  const [c, measures] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 })]);
   const active = c.suppressions.reduce((t, s) => t + s.active, 0);
   const created = c.suppressions.reduce((t, s) => t + s.created_since, 0);
   const revoked = c.suppressions.reduce((t, s) => t + s.revoked_since, 0);
@@ -26,7 +27,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
     <>
       <div>
         <h1 className="text-[26px] font-bold">Conformidade</h1>
-        <p className="text-sm text-muted">Pedidos de exclusão de dados vindos da Meta, descadastros de mensagens e o registro de quem acessou o backoffice (Marco Civil). Contatos aparecem só como contagem.</p>
+        <p className="text-sm text-muted">Medidas (suspensões e avisos da Meta), pedidos de exclusão de dados vindos da Meta, descadastros de mensagens e o registro de quem acessou o backoffice (Marco Civil). Contatos aparecem só como contagem.</p>
       </div>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -34,6 +35,12 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
         <Kpi label="Registros apagados (30 dias)" value={num(c.deletedRowsSince)} sub="por exclusão de dados (deletion_log)" />
         <Kpi label="Descadastros ativos" value={num(active)} sub={`${num(created)} novos e ${num(revoked)} desfeitos em 30 dias`} />
         <Kpi label="Acessos ao backoffice" value={num(c.access.length)} sub={email ? `de "${email}" (últimos 100)` : "últimos 100"} />
+      </section>
+
+      <section className="card flex flex-col gap-2 p-5">
+        <h2 className="text-base font-bold">Medidas: suspensões da BoaVoz e avisos da Meta</h2>
+        <p className="text-xs text-muted">Ordem da Meta bloqueia o número (nada entra nem sai) e é levantada sozinha quando a Meta reativa a conta. Infrações e restrições ficam só registradas por enquanto. Suspensões da BoaVoz são criadas na página de cada cliente.</p>
+        <MeasureList measures={measures} showAgency empty="Nenhuma medida registrada." />
       </section>
 
       <section className="card flex flex-col gap-2 p-5">

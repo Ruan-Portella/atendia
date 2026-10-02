@@ -424,7 +424,67 @@ export function extendedTrialEnd(currentEnd: string | null | undefined, days: nu
 }
 
 /** Chave geral da IA (todas as agências). */
-export async function getPlatformFlags(): Promise<{ aiPausedAt: string | null; aiPausedReason: string | null; updatedBy: string | null }> {
-  const { data } = await createAdminClient().from("platform_flags").select("ai_paused_at, ai_paused_reason, updated_by").eq("id", 1).maybeSingle();
-  return { aiPausedAt: (data?.ai_paused_at as string | null) ?? null, aiPausedReason: (data?.ai_paused_reason as string | null) ?? null, updatedBy: (data?.updated_by as string | null) ?? null };
+export interface PlatformFlags {
+  aiPausedAt: string | null;
+  aiPausedReason: string | null;
+  whatsappDisabledAt: string | null;
+  whatsappDisabledReason: string | null;
+  updatedBy: string | null;
+}
+
+export async function getPlatformFlags(): Promise<PlatformFlags> {
+  const { data } = await createAdminClient().from("platform_flags").select("ai_paused_at, ai_paused_reason, whatsapp_disabled_at, whatsapp_disabled_reason, updated_by").eq("id", 1).maybeSingle();
+  const v = (k: string) => ((data as Record<string, unknown> | null)?.[k] as string | null) ?? null;
+  return { aiPausedAt: v("ai_paused_at"), aiPausedReason: v("ai_paused_reason"), whatsappDisabledAt: v("whatsapp_disabled_at"), whatsappDisabledReason: v("whatsapp_disabled_reason"), updatedBy: v("updated_by") };
+}
+
+/** Uma medida de enforcement_actions, com o nome da agência e do chatbot para a tela. */
+export interface MeasureRow {
+  id: number;
+  source: "boavoz" | "meta_order" | "meta_violation" | "meta_restriction";
+  feature: "channel" | "regulados" | "restricao" | "outro";
+  channel: string;
+  agencyId: string | null;
+  agencyName: string | null;
+  botId: string | null;
+  botLabel: string | null;
+  wabaId: string | null;
+  reason: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  liftedAt: string | null;
+  liftedBy: string | null;
+}
+
+/** Medidas ativas (e as levantadas há pouco, com active=false), da mais nova para a mais antiga. */
+export async function getMeasures(opts: { agencyId?: string; active?: boolean; limit?: number } = {}): Promise<MeasureRow[]> {
+  let q = createAdminClient()
+    .from("enforcement_actions")
+    .select("id, source, feature, channel, agency_id, bot_id, waba_id, reason, created_by, created_at, lifted_at, lifted_by, agencies(name), bots(name, client_name)")
+    .order("id", { ascending: false })
+    .limit(opts.limit ?? 50);
+  if (opts.agencyId) q = q.eq("agency_id", opts.agencyId);
+  if (opts.active) q = q.is("lifted_at", null);
+  const { data } = await q;
+  const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+  return (data ?? []).map((r) => {
+    const agency = one(r.agencies as { name: string } | { name: string }[] | null);
+    const bot = one(r.bots as { name: string; client_name: string } | { name: string; client_name: string }[] | null);
+    return {
+      id: r.id as number,
+      source: r.source as MeasureRow["source"],
+      feature: r.feature as MeasureRow["feature"],
+      channel: r.channel as string,
+      agencyId: (r.agency_id as string | null) ?? null,
+      agencyName: agency?.name ?? null,
+      botId: (r.bot_id as string | null) ?? null,
+      botLabel: bot ? `${bot.name} · ${bot.client_name}` : null,
+      wabaId: (r.waba_id as string | null) ?? null,
+      reason: (r.reason as string | null) ?? null,
+      createdBy: (r.created_by as string | null) ?? null,
+      createdAt: r.created_at as string,
+      liftedAt: (r.lifted_at as string | null) ?? null,
+      liftedBy: (r.lifted_by as string | null) ?? null,
+    };
+  });
 }

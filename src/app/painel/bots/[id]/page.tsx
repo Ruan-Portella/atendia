@@ -27,7 +27,8 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, resolveUnanswered, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { BotPauseButton } from "@/components/bot-pause";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
@@ -111,6 +112,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
           {demoUrl && <CopyButton text={demoUrl} label="Copiar link da demo" className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && <CopyButton text={embedSnippet} label="Copiar código" className="btn-ghost flex-1 sm:flex-none" />}
+          {!bot.is_demo && bot.status === "live" && !bot.paused_at && <BotPauseButton action={pauseBot.bind(null, id)} className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && (
             <ActionForm action={setBotStatus.bind(null, id, bot.status === "live" ? "draft" : "live")}>
               <SubmitButton pendingLabel={bot.status === "live" ? "Tirando do ar…" : "Publicando…"} className={bot.status === "live" ? "btn-ghost" : "btn-primary"} disabled={!readySources && bot.status !== "live"} title={!readySources ? "Adicione pelo menos uma fonte" : ""}>
@@ -120,6 +122,23 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
         </div>
       </div>
+
+      {bot.paused_at && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger sm:px-5 md:px-7">
+          <div className="min-w-0">
+            <strong>A IA deste chatbot está pausada</strong> desde {relativeTime(bot.paused_at)}{bot.pause_reason ? ` · ${bot.pause_reason}` : ""}.
+            <span className="block text-ink-2">
+              No WhatsApp e no Instagram, as mensagens ficam em Conversas como pedido de atendente{bot.pause_notify ? " e o contato recebe o aviso uma vez" : ", sem aviso ao contato"}; no site, aparece o formulário de contato.
+              {(waAllowed || igAllowed) && <> Para cortar o canal de vez, desconecte na aba {waAllowed && <Link href={`/painel/bots/${id}?tab=whatsapp`} className="underline">WhatsApp</Link>}{waAllowed && igAllowed && " ou "}{igAllowed && <Link href={`/painel/bots/${id}?tab=instagram`} className="underline">Instagram</Link>}.</>}
+            </span>
+          </div>
+          <div className="w-full sm:ml-auto sm:w-auto">
+            <ActionForm action={resumeBot.bind(null, id)}>
+              <SubmitButton pendingLabel="Retomando…" className="btn-primary w-full sm:w-auto">Retomar a IA</SubmitButton>
+            </ActionForm>
+          </div>
+        </div>
+      )}
 
       {bot.is_demo && (
         <div className="flex flex-wrap items-center gap-3 border-b border-line bg-amber-soft px-4 py-3 text-sm sm:px-5 md:px-7">

@@ -101,7 +101,7 @@ export async function getOperations(now = Date.now()) {
   const week = new Date(now - 7 * 86_400_000).toISOString();
   const igLimit = new Date(now + IG_TOKEN_WARN_DAYS * 86_400_000).toISOString();
   const head = { count: "exact" as const, head: true };
-  const [health, pending, oldest, failed24, failed7, done24, failedList, waDown, waPay, igDown, igExp, crons] = await Promise.all([
+  const [health, pending, oldest, failed24, failed7, done24, failedList, waDown, waPay, igDown, igExp, crons, metaMeasures] = await Promise.all([
     checkHealth(db).catch((e): HealthReport => ({ ok: false, oldestPendingSeconds: null, queueStuck: false, dbWrite: false, dbWriteMs: null, diskBytes: null, diskRatio: null, diskWarning: false, error: (e as Error).message })),
     db.from("inbound_events").select("key_hash", head).in("status", ["received", "processing"]),
     db.from("inbound_events").select("created_at").in("status", ["received", "processing"]).order("created_at").limit(1).maybeSingle(),
@@ -114,7 +114,9 @@ export async function getOperations(now = Date.now()) {
     db.from("instagram_channels").select("bot_id, username, disconnected_at, disconnect_reason").not("disconnected_at", "is", null).order("disconnected_at", { ascending: false }).limit(20),
     db.from("instagram_channels").select("bot_id, username, token_expires_at").is("disconnected_at", null).lt("token_expires_at", igLimit).limit(20),
     db.from("cron_locks").select("name, last_run_at, last_ok_at").order("name"),
+    db.from("enforcement_actions").select("source, feature").neq("source", "boavoz").is("lifted_at", null),
   ]);
+  const meta = (metaMeasures.data ?? []) as Array<{ source: string; feature: string }>;
   const channels = {
     waDisconnected: waDown.data ?? [],
     waPayment: waPay.data ?? [],
@@ -143,6 +145,8 @@ export async function getOperations(now = Date.now()) {
     channels,
     crons: cronList,
     cronsScheduled: scheduled,
+    // medidas da Meta ativas: ordem (bloqueia o número) e o resto (só registro)
+    measures: { metaOrders: meta.filter((m) => m.source === "meta_order" && m.feature === "channel").length, metaNotices: meta.filter((m) => !(m.source === "meta_order" && m.feature === "channel")).length },
     bots: await botRefs(ids),
   };
 }
@@ -191,5 +195,7 @@ export function operationAlerts(ops: Awaited<ReturnType<typeof getOperations>>):
   if (ops.channels.waPayment.length) out.push(`${ops.channels.waPayment.length} número(s) de WhatsApp com a Meta recusando por falta de pagamento.`);
   if (ops.channels.igExpiring.length) out.push(`${ops.channels.igExpiring.length} conta(s) do Instagram com token vencendo em até ${IG_TOKEN_WARN_DAYS} dias.`);
   for (const c of ops.crons) if (c.late) out.push(`Tarefa agendada atrasada: ${c.label}.`);
+  if (ops.measures.metaOrders) out.push(`${ops.measures.metaOrders} ordem(ns) da Meta bloqueando número(s) de WhatsApp (ver Conformidade).`);
+  if (ops.measures.metaNotices) out.push(`${ops.measures.metaNotices} aviso(s) da Meta registrado(s): infração, restrição ou desativação agendada (ver Conformidade).`);
   return out;
 }

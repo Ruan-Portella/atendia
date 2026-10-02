@@ -8,6 +8,7 @@ import { isInstagramAccessError } from "./instagram";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { processGroup, sweepInbound, type Group, type GroupHandler, type InboundEvent } from "./inbound-queue";
 import { revoke, suppress, suppressionScope } from "./suppression";
+import { recordMetaEnforcement, type MetaAccountDetail } from "./meta-enforcement";
 
 /* ------------------------------------------------------------------ o que vai na fila */
 
@@ -27,7 +28,7 @@ export type WaPayload =
   | { type: "echo"; phoneNumberId: string; echo: EchoMessage }
   | { type: "status"; phoneNumberId: string; status: WaStatus; wabaId?: string }
   | { type: "prefs"; phoneNumberId?: string; wabaId?: string; prefs: WaPreference[] }
-  | { type: "account_update"; entryId?: string; event?: string; wabaId?: string };
+  | { type: "account_update"; entryId?: string; event?: string; wabaId?: string; detail?: MetaAccountDetail };
 
 export type IgPayload = { type: "msg" | "echo"; igUserId: string; ev: IgMessagingEvent };
 
@@ -35,7 +36,7 @@ export type IgPayload = { type: "msg" | "echo"; igUserId: string; ev: IgMessagin
 
 /** Número ligado e com acesso, ou null (sem chatbot, ou desconectado: não dá nem para responder). */
 async function activeWaChannel(db: SupabaseClient, phoneNumberId: string) {
-  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, waba_id, access_token_enc, coexistence, disconnected_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
+  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, waba_id, access_token_enc, coexistence, disconnected_at, payment_issue_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
   if (!channel) console.warn("whatsapp: número sem chatbot ligado", phoneNumberId);
   return channel && !channel.disconnected_at ? channel : null;
 }
@@ -45,10 +46,13 @@ const whatsappGroup: GroupHandler = async (db, events) => {
   for (const e of all) {
     const p = e.payload;
     if (p?.type === "account_update") {
+      const wabaIds = [...new Set([p.wabaId, p.entryId].filter(Boolean) as string[])];
+      // ordem, infração ou restrição da Meta: vira medida (a ordem bloqueia o número; o resto fica registrado)
+      for (const wabaId of wabaIds) await recordMetaEnforcement(db, { event: p.event ?? "", wabaId, detail: p.detail ?? {} });
       // a conta do cliente deixou de ser nossa: desliga os números dela e avisa a agência
       const reason = ACCESS_LOST_EVENTS[p.event ?? ""];
       if (!reason) continue;
-      for (const wabaId of new Set([p.wabaId, p.entryId].filter(Boolean) as string[])) await markDisconnected(db, { column: "waba_id", value: wabaId }, reason);
+      for (const wabaId of wabaIds) await markDisconnected(db, { column: "waba_id", value: wabaId }, reason);
     } else if (p?.type === "status") {
       if (p.status.status === "failed") {
         console.warn("whatsapp: mensagem não entregue", p.phoneNumberId, p.status.errors?.[0]);

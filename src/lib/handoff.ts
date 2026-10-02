@@ -5,6 +5,7 @@ import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPa
 import { isInstagramAccessError, isOutsideWindow } from "./instagram";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { send as sendInstagram } from "./instagram-inbound";
+import { sendBlockedReason } from "./conversation-mode";
 
 /**
  * Atendimento humano: as mesmas operações para a agência (painel) e para o cliente final
@@ -42,6 +43,11 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
  */
 async function deliverOutside(admin: SupabaseClient, conversationId: string, content: string): Promise<true | ActionResult> {
   const { data: conv } = await admin.from("conversations").select("bot_id, channel, wa_id, ig_id").eq("id", conversationId).maybeSingle();
+  // regra de estado: ordem da Meta, desligamento geral, canal desconectado ou suspenso pela BoaVoz
+  if (conv) {
+    const blocked = await sendBlockedReason(admin, conv.bot_id, conv.channel === "whatsapp" || conv.channel === "instagram" ? conv.channel : "widget");
+    if (blocked) return fail(`${blocked} A mensagem não foi enviada.`);
+  }
   if (conv?.channel === "instagram" && conv.ig_id) return deliverToInstagram(admin, conv.bot_id, conv.ig_id, content);
   if (conv?.channel !== "whatsapp" || !conv.wa_id) return true;
   const { data: channel } = await admin.from("whatsapp_channels").select("phone_number_id, access_token_enc, disconnected_at").eq("bot_id", conv.bot_id).maybeSingle();

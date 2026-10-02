@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { SUSPENDED_NOTICE, isChannelSuspended } from "@/lib/conversation-mode";
 import { CORS_HEADERS, type BotRow } from "@/lib/chat";
 import { notifyLead } from "@/lib/notify";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("public_key", d.key).maybeSingle<BotRow>();
   if (!bot) return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
+  // canal suspenso pela BoaVoz (regra de estado, degrau 2): nem o formulário recebe contato
+  if (await isChannelSuspended(db, bot, "widget")) return Response.json({ error: "channel_suspended", message: SUSPENDED_NOTICE }, { status: 403, headers: CORS_HEADERS });
   const exceeded = await firstExceeded(db, [
     { key: `lead:${bot.id}:ip:${hashId(clientIp(req))}`, max: 5, windowSeconds: 3600, message: "Recebemos vários contatos seus agora. Nossa equipe já vai retornar." },
   ]);

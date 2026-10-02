@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Kpi } from "@/components/kpi";
 import { DayBars } from "@/components/admin/day-bars";
 import { requireAdmin } from "@/lib/platform-admin";
-import { GlobalKillSwitch } from "@/components/admin/pause-controls";
+import { GlobalKillSwitch, WhatsAppKillSwitch } from "@/components/admin/pause-controls";
 import { agencyStatus, fixedMonthlyBrl, getActivity, getAgencies, getAiCosts, getBotCounts, getFixedCosts, getPlatformFlags, getRevenue, rangeFor, usd, usdBrl } from "@/lib/backoffice";
 import { getOperations, operationAlerts } from "@/lib/backoffice-ops";
 import { brl, num } from "@/lib/plans";
@@ -37,6 +37,7 @@ export default async function AdminHome() {
       </div>
 
       <GlobalKillSwitch flags={flags} />
+      <WhatsAppKillSwitch flags={flags} />
 
       {alerts.length > 0 ? (
         <section className="flex flex-col gap-1.5 rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-amber-ink">
