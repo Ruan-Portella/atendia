@@ -158,7 +158,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     if (!convId) return;
     for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
     // risco à vida tem prioridade sobre o texto do modo só humano
-    if (await handleRiskWithoutAi(db, bot, convId, texts, reply)) return;
+    if (await handleRiskWithoutAi(db, bot, convId, texts, reply, "instagram")) return;
     const { notify } = await enterHumanOnly(db, bot, convId, reason);
     if (notify) {
       const mid = await reply(HUMAN_ONLY_NOTICE);
@@ -201,7 +201,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   if (conv && ((conv.takeover_at && !conv.handled_at) || phonePauseActive(appReply?.created_at as string | undefined))) {
     for (let i = 0; i < burst.length; i++) await storeOnce(db, conv.id, shown(i), burst[i].key);
     // com gente atendendo, o risco à vida ainda é vigiado (alerta urgente e texto fixo)
-    await handleRiskWithoutAi(db, bot, conv.id, texts, reply);
+    await handleRiskWithoutAi(db, bot, conv.id, texts, reply, "instagram");
     return;
   }
 

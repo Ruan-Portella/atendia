@@ -1,5 +1,6 @@
 import { generateText } from "ai";
-import { chatModel, chatModelId, modelCallOptions } from "../ai";
+import { chatModel, classifierModelId, modelCallOptions } from "../ai";
+import { usageFrom, type UsageTokens } from "../ai-usage";
 import { dictionaryHits, hitSummary, categoryLabel } from "./match";
 import { GATE_TEXTS, type GateCategory, type GateChannel } from "./rules";
 import type { AgeStatus } from "./age";
@@ -20,6 +21,10 @@ export interface EntranceInput {
   companyName: string;
   /** Classificador da etapa 2 (troca nos testes). */
   classify?: (text: string, categories: GateCategory[], companyName: string, blocked: GateCategory[]) => Promise<Classification>;
+  /** Modelo do classificador (a avaliação compara; padrão: classifierModelId()). */
+  classifierModel?: string;
+  /** Custo do classificador (tabela ai_usage). */
+  onUsage?: (u: UsageTokens) => void;
 }
 
 export interface Classification {
@@ -49,14 +54,21 @@ export type EntranceDecision =
  * escapou quando a IA tinha de listar o que era pedido). Com categorias barradas para esta
  * pessoa, devolve também a mensagem sem esses pedidos.
  */
-export async function classifyRequest(text: string, categories: GateCategory[], companyName: string, blocked: GateCategory[] = []): Promise<Classification> {
+export async function classifyRequest(
+  text: string,
+  categories: GateCategory[],
+  companyName: string,
+  blocked: GateCategory[] = [],
+  opts: { model?: string; onUsage?: (u: UsageTokens) => void } = {},
+): Promise<Classification> {
+  const modelId = opts.model ?? classifierModelId();
   const labels = categories.map((c) => `${c} (${categoryLabel(c)})`).join(", ");
   const rest = blocked.length
     ? `\nTambém devolva "resto": a mensagem reescrita sem os pedidos de ${blocked.map(categoryLabel).join(" e ")}, mantendo o resto com as mesmas palavras ("" se não sobrar nada).`
     : "";
   try {
     const r = await generateText({
-      model: chatModel(),
+      model: chatModel(modelId),
       system: "Você classifica mensagens de clientes de uma empresa. Responda só com JSON válido, sem texto antes ou depois.",
       prompt: `Empresa: ${companyName}. Mensagem do cliente: """${text.slice(0, 1500)}"""
 Um filtro de palavras marcou estas categorias: ${labels}.
@@ -65,9 +77,10 @@ Para cada categoria, diga se o cliente PEDE o item ou só o MENCIONA.
 - "menciona": cita sem pedir: conta o que fez, pergunta de saúde ou de uso (qual remédio tomar para um sintoma, dose, se pode misturar), receita, comparação (ex.: "tomei vinho no jantar, posso tomar paracetamol?": vinho e paracetamol mencionam; "estou com febre, que remédio eu tomo?": remédio menciona, é pergunta de saúde; "gastei 20 reais em cerveja": menciona).
 Na dúvida, "pede".${rest}
 Responda: {"categorias": {"categoria": "pede" | "menciona"}, "tem_outro_assunto": true|false${blocked.length ? ', "resto": "..."' : ""}}, onde tem_outro_assunto diz se a mensagem também pede ou pergunta outra coisa além desses itens.`,
-      ...modelCallOptions(chatModelId(), { temperature: 0, cacheKey: "boavoz-portao" }),
+      ...modelCallOptions(modelId, { temperature: 0, cacheKey: "boavoz-portao" }),
       maxRetries: 3,
     });
+    opts.onUsage?.(usageFrom(r.response?.modelId ?? modelId, r.totalUsage));
     return parseClassification(r.text, categories);
   } catch {
     return { pedidas: categories, tem_outro_assunto: true };
@@ -98,7 +111,8 @@ export async function decideEntrance(input: EntranceInput): Promise<EntranceDeci
   const summary = hitSummary(hits);
   // barrado para esta pessoa: proibido sempre; regulamentado para quem disse que não tem 18
   const blocked = [...summary.proibidos, ...(input.age === "nao" ? summary.regulamentados : [])];
-  const c = await (input.classify ?? classifyRequest)(input.text, [...summary.proibidos, ...summary.regulamentados], input.companyName, blocked);
+  const classify = input.classify ?? ((t, cats, co, b) => classifyRequest(t, cats, co, b, { model: input.classifierModel, onUsage: input.onUsage }));
+  const c = await classify(input.text, [...summary.proibidos, ...summary.regulamentados], input.companyName, blocked);
   const prohibited = [...new Set(c.pedidas.filter((x) => levelOf.get(x) === "proibido"))];
   const regulated = [...new Set(c.pedidas.filter((x) => levelOf.get(x) === "regulamentado"))];
 

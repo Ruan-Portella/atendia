@@ -1,5 +1,6 @@
 import { generateText } from "ai";
 import { chatModel, chatModelId, modelCallOptions } from "./ai";
+import { usageFrom, type UsageTokens } from "./ai-usage";
 import { normalizeGateText } from "./gate/match";
 
 /*
@@ -28,8 +29,11 @@ export function riskHits(text: string): string[] {
   return RISK_TERMS.filter((_, i) => PATTERNS[i].test(t));
 }
 
-/** Checagem barata de IA, só quando o dicionário acusa: "há risco imediato?". Na dúvida, sim. */
-export async function confirmRisk(text: string): Promise<boolean> {
+/**
+ * Checagem de IA, só quando o dicionário acusa: "há risco imediato?". Na dúvida, sim. Fica no
+ * modelo principal (não no barato do portão): roda pouco e é risco à vida.
+ */
+export async function confirmRisk(text: string, onUsage?: (u: UsageTokens) => void): Promise<boolean> {
   try {
     const r = await generateText({
       model: chatModel(),
@@ -38,6 +42,7 @@ export async function confirmRisk(text: string): Promise<boolean> {
       ...modelCallOptions(chatModelId(), { temperature: 0, cacheKey: "boavoz-risco" }),
       maxRetries: 3,
     });
+    onUsage?.(usageFrom(r.response?.modelId ?? chatModelId(), r.totalUsage));
     return !/^\s*n[aã]o\b/i.test(r.text);
   } catch {
     return true; // sem confirmação, vai o texto fixo: errar para o lado seguro
@@ -45,6 +50,6 @@ export async function confirmRisk(text: string): Promise<boolean> {
 }
 
 /** Risco confirmado na mensagem (dicionário + IA). */
-export async function detectRisk(text: string): Promise<boolean> {
-  return riskHits(text).length > 0 && (await confirmRisk(text));
+export async function detectRisk(text: string, onUsage?: (u: UsageTokens) => void): Promise<boolean> {
+  return riskHits(text).length > 0 && (await confirmRisk(text, onUsage));
 }

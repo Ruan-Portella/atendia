@@ -207,7 +207,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     if (!convId) return;
     for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
     // risco à vida tem prioridade sobre o texto do modo só humano
-    if (await handleRiskWithoutAi(db, bot, convId, texts, async (t) => (await reply(t)).messages?.[0]?.id ?? null)) return;
+    if (await handleRiskWithoutAi(db, bot, convId, texts, async (t) => (await reply(t)).messages?.[0]?.id ?? null, "whatsapp")) return;
     const { notify } = await enterHumanOnly(db, bot, convId, reason);
     if (notify && !channel.coexistence) {
       const sent = await reply(HUMAN_ONLY_NOTICE);
@@ -228,7 +228,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   if (conv && ((conv.takeover_at && !conv.handled_at) || phonePauseActive(phoneReply?.created_at as string | undefined))) {
     for (let i = 0; i < burst.length; i++) await storeOnce(db, conv.id, shown(i), burst[i].key);
     // com gente atendendo, o risco à vida ainda é vigiado (alerta urgente e texto fixo)
-    await handleRiskWithoutAi(db, bot, conv.id, texts, async (t) => (await reply(t)).messages?.[0]?.id ?? null);
+    await handleRiskWithoutAi(db, bot, conv.id, texts, async (t) => (await reply(t)).messages?.[0]?.id ?? null, "whatsapp");
     return;
   }
 

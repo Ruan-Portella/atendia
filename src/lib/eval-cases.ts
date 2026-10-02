@@ -105,7 +105,7 @@ export async function runCases(
   db: SupabaseClient,
   bot: BotRow,
   cases: EvalCase[],
-  opts: { runs: number; model?: string; temperature?: number; effort?: ReasoningEffort; stopAt?: number; onResult?: (r: CaseResult) => void },
+  opts: { runs: number; model?: string; temperature?: number; effort?: ReasoningEffort; classifierModel?: string; stopAt?: number; onResult?: (r: CaseResult) => void },
 ): Promise<{ results: CaseResult[]; skipped: EvalCase[] }> {
   const results: CaseResult[] = [];
   const started = Date.now();
@@ -116,7 +116,7 @@ export async function runCases(
     if (opts.stopAt && Date.now() + avgBatchMs * 1.5 > opts.stopAt) return { results, skipped: cases.slice(i) };
     const batch = await Promise.all(
       cases.slice(i, i + 3).map(async (c) => {
-        const r = await evaluateQuestion(db, bot, c.pergunta, { runs: opts.runs, model: opts.model, temperature: opts.temperature, effort: opts.effort, channel: c.canal ?? "whatsapp", history: c.historico, age: c.idade ?? null, foreign: c.fora });
+        const r = await evaluateQuestion(db, bot, c.pergunta, { runs: opts.runs, model: opts.model, temperature: opts.temperature, effort: opts.effort, classifierModel: opts.classifierModel, channel: c.canal ?? "whatsapp", history: c.historico, age: c.idade ?? null, foreign: c.fora });
         const allowed = [r.context, c.pergunta, ...(c.historico ?? [])].join("\n");
         // erro de chamada (ex.: limite da OpenAI) não é falha de comportamento: fica à parte
         const errors = r.runs.filter((run) => run.verdict === "erro").length;

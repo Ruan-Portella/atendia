@@ -3,6 +3,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { embed, embedMany, transcribe, type EmbeddingModel, type LanguageModel } from "ai";
 import { CATEGORIES } from "./gate/rules";
+import { audioDurationSeconds } from "./audio-duration";
 
 type ProviderOptions = NonNullable<Parameters<typeof embed>[0]["providerOptions"]>;
 
@@ -30,6 +31,15 @@ const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_API_KEY });
  */
 export function chatModelId(): string {
   return provider === "anthropic" ? (process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5") : (process.env.OPENAI_CHAT_MODEL ?? "gpt-4.1-mini");
+}
+
+/**
+ * Modelo do classificador do portão (o contato PEDE o item ou só menciona?, e a mensagem sem o
+ * item barrado): tarefa curta e com formato fixo, então um modelo bem mais barato (¼ do preço).
+ * OPENAI_CLASSIFIER_MODEL troca; a avaliação compara com &classificador=.
+ */
+export function classifierModelId(): string {
+  return provider === "anthropic" ? chatModelId() : (process.env.OPENAI_CLASSIFIER_MODEL ?? "gpt-4.1-nano");
 }
 
 /** Modelo do chat. `id` troca o modelo (a avaliação compara modelos do mesmo provedor). */
@@ -95,17 +105,18 @@ export function canTranscribe(): boolean {
 }
 
 /** `onUsage` recebe o modelo e a duração do áudio (custo em ai_usage). */
-export async function transcribeAudio(audio: Uint8Array, onUsage?: (u: { audioModel: string; audioSeconds: number }) => void): Promise<string> {
+export async function transcribeAudio(audio: Uint8Array, onUsage?: (u: { audioModel: string; audioSeconds: number | null }) => void): Promise<string> {
+  // o gpt-4o-mini-transcribe não devolve a duração (o custo é por minuto): lida do próprio arquivo
   if (process.env.OPENAI_API_KEY) {
     const model = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe";
     const { text, durationInSeconds } = await transcribe({ model: openai.transcription(model), audio, providerOptions: { openai: { language: "pt" } } });
-    onUsage?.({ audioModel: model, audioSeconds: durationInSeconds ?? 0 });
+    onUsage?.({ audioModel: model, audioSeconds: durationInSeconds ?? audioDurationSeconds(audio) });
     return text.trim();
   }
   if (process.env.GOOGLE_API_KEY) {
     const model = process.env.GOOGLE_TRANSCRIBE_MODEL ?? "gemini-3.5-transcribe";
     const { text, durationInSeconds } = await transcribe({ model: google.transcription(model), audio });
-    onUsage?.({ audioModel: model, audioSeconds: durationInSeconds ?? 0 });
+    onUsage?.({ audioModel: model, audioSeconds: durationInSeconds ?? audioDurationSeconds(audio) });
     return text.trim();
   }
   throw new Error("Nenhuma chave para transcrever áudio: defina OPENAI_API_KEY ou GOOGLE_API_KEY.");

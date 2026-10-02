@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { evalReport, evaluateQuestion } from "@/lib/eval";
 import { caseLine, casesReport, loadCases, runCases } from "@/lib/eval-cases";
-import { chatModelId, type ReasoningEffort } from "@/lib/ai";
+import { chatModelId, classifierModelId, type ReasoningEffort } from "@/lib/ai";
 import { CHAT_TEMPERATURE, type BotRow } from "@/lib/chat";
 
 // limite do plano Hobby da Vercel (fluid compute): o conjunto fixo inteiro cabe numa chamada
@@ -30,6 +30,7 @@ function isPlatformAdmin(email: string | undefined): boolean {
  * Conjunto fixo: /api/eval?bot=ID&casos=1 (opcionais: n=3, categoria=escopo_fixo, model=, temp=)
  * Casos de um bot de teste: &casos=bar (evals/casos-bar.jsonl)
  * Comparar modelos: &model=gpt-5-mini (opcional &esforco=minimal|low|none); o relatório mostra o custo por resposta
+ * Classificador do portão: &classificador=gpt-4.1-mini (padrão: OPENAI_CLASSIFIER_MODEL ou gpt-4.1-nano)
  * Roda a pergunta N vezes pelo mesmo caminho do chat, sem gravar nada, e mostra os trechos que
  * a busca trouxe e cada resposta. Gasta IA de verdade (N respostas).
  */
@@ -57,7 +58,8 @@ export async function GET(req: Request) {
     const model = sp.get("model")?.trim() || undefined;
     const runs = Math.min(Math.max(Number(sp.get("n") ?? 3) || 3, 1), 5);
     const effort = effortOf(sp.get("esforco"));
-    const label = `${model ?? `${chatModelId()} (padrão)`}${effort ? ` (raciocínio: ${effort})` : ""}`;
+    const classifierModel = sp.get("classificador")?.trim() || undefined;
+    const label = `${model ?? `${chatModelId()} (padrão)`}${effort ? ` (raciocínio: ${effort})` : ""} · classificador do portão: ${classifierModel ?? `${classifierModelId()} (padrão)`}`;
     const stopAt = Date.now() + CASES_BUDGET_MS;
     // o relatório vai aparecendo: cada caso assim que termina, o resumo no fim
     const stream = new ReadableStream<Uint8Array>({
@@ -66,7 +68,7 @@ export async function GET(req: Request) {
         const write = (t: string) => controller.enqueue(enc.encode(t));
         write(`Rodando ${cases.length} casos × ${runs} rodadas · ${label}. Cada caso aparece aqui quando termina; o resumo vem no fim.\n\n`);
         try {
-          const { results, skipped } = await runCases(db, bot, cases, { runs, model, temperature, effort, stopAt, onResult: (r) => write(`${caseLine(r)}\n`) });
+          const { results, skipped } = await runCases(db, bot, cases, { runs, model, temperature, effort, classifierModel, stopAt, onResult: (r) => write(`${caseLine(r)}\n`) });
           write(`\n==========\n\n${casesReport(results, { model: label, temperature: temperature ?? CHAT_TEMPERATURE, runs }, skipped)}\n`);
         } catch (e) {
           write(`\nERRO: ${(e as Error).message}\n`);
@@ -107,6 +109,7 @@ export async function GET(req: Request) {
     age: sp.get("idade") === "sim" ? ("sim" as const) : sp.get("idade") === "nao" ? ("nao" as const) : null,
     foreign: sp.get("fora") === "1",
     effort: effortOf(sp.get("esforco")),
+    classifierModel: sp.get("classificador")?.trim() || undefined,
   };
   const results = await Promise.all(questions.map((q) => evaluateQuestion(db, bot, q, opts)));
   if (sp.get("formato") === "json") return Response.json(results.length === 1 ? results[0] : results);

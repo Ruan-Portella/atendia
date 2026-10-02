@@ -42,7 +42,8 @@ export interface UsageTokens {
   embeddingModel?: string | null;
   embeddingTokens?: number;
   audioModel?: string | null;
-  audioSeconds?: number;
+  /** null: duração desconhecida (formato que não sabemos ler): custo "sem preço", nunca zero. */
+  audioSeconds?: number | null;
 }
 
 /** Custo em US$; null se alguma parte usada não tem preço conhecido. */
@@ -60,6 +61,7 @@ export function costUsd(u: UsageTokens): number | null {
     if (!p) return null;
     total += (u.embeddingTokens * p.input) / 1e6;
   }
+  if (u.audioModel && u.audioSeconds === null) return null;
   if (u.audioSeconds) {
     const perMin = priceOf(AUDIO_PER_MINUTE, u.audioModel);
     if (perMin === null) return null;
@@ -68,9 +70,14 @@ export function costUsd(u: UsageTokens): number | null {
   return Math.round(total * 1e6) / 1e6;
 }
 
+/** Uso de uma chamada (todos os passos) no formato da tabela. */
+export function usageFrom(model: string | undefined, u: { inputTokens?: number; outputTokens?: number; inputTokenDetails?: { cacheReadTokens?: number } } | undefined): UsageTokens {
+  return { model, inputTokens: u?.inputTokens ?? 0, cachedInputTokens: u?.inputTokenDetails?.cacheReadTokens ?? 0, outputTokens: u?.outputTokens ?? 0 };
+}
+
 export async function recordAiUsage(
   db: SupabaseClient,
-  row: { agencyId?: string; botId?: string | null; conversationId?: string | null; kind: "resposta" | "leitura" | "transcricao"; channel?: string | null } & UsageTokens,
+  row: { agencyId?: string; botId?: string | null; conversationId?: string | null; kind: "resposta" | "leitura" | "transcricao" | "classificacao"; channel?: string | null } & UsageTokens,
 ): Promise<void> {
   try {
     let agencyId = row.agencyId;

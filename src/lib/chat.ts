@@ -6,7 +6,7 @@ import { getPlan } from "./plans";
 import { currentPeriodBR } from "./utils";
 import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
 import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
-import { recordAiUsage } from "./ai-usage";
+import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
 import { RISK_TEXT, detectRisk } from "./risk";
 import { ageNote, type AgeStatus } from "./gate/age";
@@ -178,9 +178,11 @@ export async function handleRiskWithoutAi(
   conversationId: string,
   texts: Array<string | null>,
   send: (text: string) => Promise<string | null>,
+  channel?: "whatsapp" | "instagram",
 ): Promise<boolean> {
   const text = texts.filter(Boolean).join("\n");
-  if (!text || !(await detectRisk(text))) return false;
+  const onUsage = (u: UsageTokens) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId, kind: "classificacao", channel: channel ?? null, ...u });
+  if (!text || !(await detectRisk(text, onUsage))) return false;
   const now = new Date().toISOString();
   await db.from("conversations").update({ needs_human: true, handoff_requested_at: now, handoff_urgent_at: now, handled_at: null }).eq("id", conversationId);
   notifyHandoff({ db, bot, conversationId, reason: text.slice(0, 300), urgent: true }).catch(() => {});

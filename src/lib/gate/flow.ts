@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
 import { storeOnce } from "../whatsapp-inbound";
+import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
 import { decideEntrance } from "./entrance";
 import { normalizeGateText } from "./match";
@@ -135,7 +136,15 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   // 2. portão da entrada (o "Não" sempre vence: a idade é lida de novo depois do setAge)
   const age: AgeStatus = await getAge(db, who);
   const retrieval = await retrieveContext(db, bot.id, question);
-  const entrance = await decideEntrance({ text: question, channel, contactPhone, age, context: retrieval.context, companyName: bot.client_name });
+  const entrance = await decideEntrance({
+    text: question,
+    channel,
+    contactPhone,
+    age,
+    context: retrieval.context,
+    companyName: bot.client_name,
+    onUsage: (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId: convId, kind: "classificacao", channel, ...u }),
+  });
   if (entrance.kind === "proibido") {
     await storeOnce(db, convId, q.text, q.key);
     await sendFixed(GATE_TEXTS.prohibited);
