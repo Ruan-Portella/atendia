@@ -43,6 +43,7 @@ export default function TermsPage() {
       <Section title="5. Uso do WhatsApp">
         <ul>
           <li>Para conectar um número, a empresa precisa aceitar os Termos do WhatsApp Business e seguir a Política Comercial e a Política de Mensagens do WhatsApp Business.</li>
+          <li>Antes de conectar o WhatsApp ou o Instagram, o próprio negócio aceita os termos do canal e a <Link href="/uso-aceitavel">Política de Uso Aceitável</Link>, que faz parte destes termos.</li>
           <li>Só envie mensagens para quem aceitou recebê-las (opt-in). Fora da janela de atendimento de 24 horas, use apenas modelos de mensagem aprovados pela Meta.</li>
           <li>O assistente deve servir ao atendimento da empresa. É proibido usá-lo como assistente de IA de uso geral, para spam ou para produtos e conteúdos vedados pelas políticas da Meta.</li>
           <li>A Meta pode restringir ou bloquear números que violem as regras dela. A {brand} não responde por essas decisões.</li>

@@ -37,6 +37,8 @@ export interface ResolvedLink {
   channel: LinkChannel;
   botId: string;
   agencyId: string;
+  /** O negócio (cliente da agência): é nele que fica o aceite e a resposta de atividades. */
+  clientId: string | null;
   bot: { name: string; client_name: string; is_demo: boolean };
   agency: { name: string; logo_url: string | null; brand_color: string; support_whatsapp: string | null; custom_domain: string | null; custom_domain_verified_at: string | null };
 }
@@ -46,7 +48,7 @@ export async function resolveConnectLink(db: SupabaseClient, token: string, now 
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
   const { data: link } = await db.from("whatsapp_connect_links").select("bot_id, expires_at, used_at, channel").eq("token_hash", hashToken(token)).maybeSingle();
   if (!link) return null;
-  const { data: bot } = await db.from("bots").select("name, client_name, is_demo, agency_id").eq("id", link.bot_id).maybeSingle();
+  const { data: bot } = await db.from("bots").select("name, client_name, is_demo, agency_id, client_id").eq("id", link.bot_id).maybeSingle();
   if (!bot) return null;
   const { data: agency } = await db.from("agencies").select("name, logo_url, brand_color, support_whatsapp, custom_domain, custom_domain_verified_at").eq("id", bot.agency_id).single();
   return {
@@ -54,6 +56,7 @@ export async function resolveConnectLink(db: SupabaseClient, token: string, now 
     channel: link.channel === "instagram" ? "instagram" : "whatsapp",
     botId: link.bot_id as string,
     agencyId: bot.agency_id as string,
+    clientId: (bot.client_id as string | null) ?? null,
     bot: { name: bot.name, client_name: bot.client_name, is_demo: bot.is_demo },
     agency: agency ?? { name: "", logo_url: null, brand_color: "#1f4e3d", support_whatsapp: null, custom_domain: null, custom_domain_verified_at: null },
   };

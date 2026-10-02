@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -26,6 +26,8 @@ import { instagramAllowed, unsubscribeInstagram } from "@/lib/instagram";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { activeSuppressions, blocks, suppressionScope } from "@/lib/suppression";
 import { sendBlockedReason } from "@/lib/conversation-mode";
+import { confirmAcceptance, connectBlockFor, dayLabel, getCompliance, parseAnswers, recordAcceptance, type AcceptanceChannel } from "@/lib/acceptance";
+import { notifyPlatform } from "@/lib/notify";
 import { logDeletion } from "@/lib/deletions";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -511,10 +513,13 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   const { email } = await requireAgency();
   if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
   const supabase = await createClient();
-  const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
+  const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
   if (bot.is_demo) return fail("Converta a demo em chatbot antes de ligar o WhatsApp.");
   if (!whatsappConfigured()) return fail("O WhatsApp ainda não está configurado no servidor (WHATSAPP_TOKEN).");
+  // tela única de aceite: o negócio aceita antes de conectar (e não pode estar bloqueado ou aguardando revisão)
+  const blocked = await connectBlockFor(createAdminClient(), { clientId: bot.client_id as string | null, channel: "whatsapp" });
+  if (blocked) return fail(blocked);
 
   const phoneNumberId = text(formData.get("phone_number_id")).replace(/\D/g, "");
   const wabaId = text(formData.get("waba_id")).replace(/\D/g, "") || null;
@@ -534,6 +539,7 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
   const { error } = await admin.from("whatsapp_channels").insert({ bot_id: botId, phone_number_id: phoneNumberId, waba_id: wabaId, display_phone: phone.display_phone_number ?? null, verified_name: phone.verified_name ?? null });
   if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await confirmAcceptance(admin, { clientId: bot.client_id as string, channel: "whatsapp", metaAccount: wabaId ?? phoneNumberId, metaVerifiedName: phone.verified_name ?? null });
   revalidatePath(`/painel/bots/${botId}`);
   return ok(`WhatsApp ${phone.display_phone_number ?? ""} ligado. Mande uma mensagem para ele para testar.`);
 }
@@ -546,12 +552,69 @@ export async function completeWhatsAppSignup(botId: string, input: SignupResult)
   const { email, agency } = await requireAgency();
   if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
   const supabase = await createClient();
-  const { data: bot } = await supabase.from("bots").select("id, is_demo, client_name").eq("id", botId).maybeSingle();
+  const { data: bot } = await supabase.from("bots").select("id, is_demo, client_name, client_id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
   if (bot.is_demo) return fail("Converta a demo em chatbot antes de ligar o WhatsApp.");
-  const r = await connectFromSignup(createAdminClient(), { botId, agencyId: agency.id, clientName: bot.client_name, input, via: "painel" });
+  const admin = createAdminClient();
+  const blocked = await connectBlockFor(admin, { clientId: bot.client_id as string | null, channel: "whatsapp" });
+  if (blocked) return fail(blocked);
+  const r = await connectFromSignup(admin, { botId, agencyId: agency.id, clientName: bot.client_name, input, via: "painel" });
+  if (r.ok) {
+    const { data: ch } = await admin.from("whatsapp_channels").select("waba_id, business_id, verified_name").eq("bot_id", botId).maybeSingle();
+    await confirmAcceptance(admin, { clientId: bot.client_id as string, channel: "whatsapp", metaAccount: (ch?.waba_id as string | null) ?? null, metaBusinessId: (ch?.business_id as string | null) ?? null, metaVerifiedName: (ch?.verified_name as string | null) ?? null });
+  }
   revalidatePath(`/painel/bots/${botId}`);
   return r;
+}
+
+/**
+ * Tela única de aceite pelo painel: quem é da agência aceita os termos do canal e a Política de Uso
+ * Aceitável em nome do negócio (declarando ter poderes) e, na primeira vez, responde as atividades.
+ */
+export async function acceptChannelTerms(botId: string, channel: AcceptanceChannel, fd: FormData): Promise<ActionResult> {
+  const { email, agency } = await requireAgency();
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id, client_name").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  if (bot.is_demo) return fail("Converta a demo em chatbot antes de conectar.");
+  if (!bot.client_id) return fail("Ligue este chatbot a um cliente (aba Personalidade) antes de conectar.");
+  if (fd.get("aceite") !== "on" || fd.get("poderes") !== "on") return fail("Marque as duas caixas para continuar.");
+  const admin = createAdminClient();
+  const answered = await getCompliance(admin, bot.client_id as string);
+  const answers = answered ? null : parseAnswers(fd);
+  if (!answered && !answers) return fail("Responda todas as atividades (Não, Sim ou Não sei).");
+  const h = await headers();
+  let status;
+  try {
+    status = await recordAcceptance(admin, {
+      agencyId: agency.id,
+      clientId: bot.client_id as string,
+      botId,
+      channel,
+      via: "painel",
+      userId: agency.owner_id,
+      email,
+      declaresAuthority: true,
+      ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      userAgent: h.get("user-agent"),
+      answers,
+    });
+  } catch (e) {
+    console.error("aceite: falhou", e);
+    return fail("Não foi possível registrar o aceite. Tente de novo.");
+  }
+  if (answers && status !== "ativo") await notifyReview(bot.client_name as string, agency.name, status);
+  revalidatePath(`/painel/bots/${botId}`);
+  revalidatePath(`/painel/clientes/${bot.client_id}`);
+  const due = (await getCompliance(admin, bot.client_id as string))?.reviewDueAt;
+  if (status === "aguardando_revisao" && channel === "whatsapp") return ok(`Aceite registrado. O WhatsApp só ativa depois da revisão da BoaVoz${due ? `, até ${dayLabel(due)}` : ""}.`);
+  if (status === "em_revisao") return ok(`Aceite registrado. O negócio entrou em revisão${due ? ` (resposta até ${dayLabel(due)})` : ""}; pode conectar normalmente.`);
+  return ok("Aceite registrado. Pode conectar.");
+}
+
+/** Revisão aberta pela resposta de atividades: a BoaVoz fica sabendo na hora. */
+async function notifyReview(clientName: string, agencyName: string, status: string) {
+  await notifyPlatform(`Negócio em revisão: ${clientName}`, [`${clientName} (agência ${agencyName}) respondeu a pergunta de atividades e ficou "${status}".`, "Veja em /admin/conformidade."]).catch(() => false);
 }
 
 /** Link para o cliente conectar o próprio WhatsApp ou Instagram (vale 7 dias, uma conexão). */

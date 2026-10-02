@@ -29,6 +29,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
+import { ChannelAcceptGate } from "@/components/channel-accept-gate";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
@@ -350,7 +351,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   {signup && (
                     <div className="flex flex-col gap-3">
                       <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
-                      <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence={Boolean(whatsapp.coexistence)} label="Conectar de novo agora" primary={false} />
+                      <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
+                        <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence={Boolean(whatsapp.coexistence)} label="Conectar de novo agora" primary={false} />
+                      </ChannelAcceptGate>
                     </div>
                   )}
                   <ConfirmAction
@@ -374,6 +377,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     </div>
                     <p className="text-sm text-ink-2">Ligado {relativeTime(whatsapp.created_at)}. {bot.status === "live" ? "Mande uma mensagem para este número para testar." : "O chatbot não está publicado: ele só responde no WhatsApp depois de clicar em “Publicar” no topo."}</p>
                     <WhatsAppBilling botId={id} />
+                    <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp" connected />
                     <ConfirmAction
                       action={disconnectWhatsApp.bind(null, id)}
                       title="Desconectar o WhatsApp?"
@@ -397,6 +401,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                         <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
                       </div>
                       <p className="pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted">Ou conecte agora, com o cliente do lado</p>
+                      <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
                       <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
                         <div className="text-sm font-semibold">Já atende pelo WhatsApp Business no celular</div>
                         <p className="text-sm text-ink-2">O número continua funcionando no app do celular. {bot.name} responde as mensagens; quando alguém da equipe responde pelo celular, a resposta aparece em Conversas e {bot.name} fica quieto naquela conversa por 1 hora.</p>
@@ -408,18 +413,33 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                         <p className="text-sm text-ink-2">Um número que não está em nenhum WhatsApp. Ele passa a funcionar só pela API, sem app no celular.</p>
                         <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar número novo" primary={false} />
                       </div>
+                      </ChannelAcceptGate>
                     </>
                   ) : (
                     <p className="text-sm text-muted">O botão de conexão aparece quando META_APP_ID e WHATSAPP_CONFIG_ID estiverem configurados.</p>
                   )}
                   <details className="border-t border-line-2 pt-3 text-sm">
                     <summary className="cursor-pointer text-xs font-semibold text-muted">Ligar pelo ID (número de teste do app)</summary>
-                    <ActionForm action={connectWhatsApp.bind(null, id)} className="mt-3 flex flex-col gap-4">
-                      <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
-                      <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
-                      <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Usa o token do servidor (WHATSAPP_TOKEN).</p>
-                      <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
-                    </ActionForm>
+                    {/* sem o cadastro da Meta configurado (ex.: dev com o número de teste), o aceite fica aqui */}
+                    <div className="mt-3">
+                      {signup ? (
+                          <ActionForm action={connectWhatsApp.bind(null, id)} className="flex flex-col gap-4">
+                            <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
+                            <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
+                            <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Usa o token do servidor (WHATSAPP_TOKEN).</p>
+                            <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
+                          </ActionForm>
+                      ) : (
+                        <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
+                            <ActionForm action={connectWhatsApp.bind(null, id)} className="flex flex-col gap-4">
+                              <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
+                              <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
+                              <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Usa o token do servidor (WHATSAPP_TOKEN).</p>
+                              <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
+                            </ActionForm>
+                        </ChannelAcceptGate>
+                      )}
+                    </div>
                   </details>
                 </div>
               )}
@@ -443,6 +463,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <span className="display text-lg font-bold">@{instagram.username ?? instagram.ig_user_id}</span>
                   </div>
                   <p className="text-sm text-ink-2">Ligado {relativeTime(instagram.created_at)}. {bot.status === "live" ? "Mande uma DM para a conta para testar." : "O chatbot não está publicado: ele só responde no Instagram depois de clicar em “Publicar” no topo."}</p>
+                  <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="instagram" connected />
                   <p className="text-xs text-muted">Se o assistente não responder, confira no Instagram da conta: Configurações → Mensagens e respostas a stories → Ferramentas conectadas → “Permitir acesso às mensagens”. O acesso é renovado sozinho a cada 60 dias.</p>
                   <ConfirmAction
                     action={disconnectInstagram.bind(null, id)}
@@ -472,7 +493,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id, "instagram")} clientName={bot.client_name} channelName="Instagram" />
                   </div>
                   <p className="pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted">Ou conecte agora, com o login da conta</p>
-                  <a href={`/api/instagram/connect?bot=${id}`} className="btn-ghost self-start">Conectar Instagram</a>
+                  <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="instagram">
+                    <a href={`/api/instagram/connect?bot=${id}`} className="btn-ghost self-start">Conectar Instagram</a>
+                  </ChannelAcceptGate>
                 </div>
               )}
             </div>

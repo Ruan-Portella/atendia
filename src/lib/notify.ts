@@ -173,3 +173,13 @@ export async function notifyUsageThreshold(db: SupabaseClient, agencyId: string,
     ]);
   }
 }
+
+/** E-mail em texto para quem é da agência ou do cliente final: o remetente é a agência (white-label). */
+export async function sendAsAgency(agencyName: string, to: string, subject: string, lines: string[]): Promise<boolean> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return false;
+  const { Resend } = await import("resend");
+  const fromAddress = process.env.EMAIL_FROM?.match(/<([^>]+)>/)?.[1] ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev";
+  const { error } = await new Resend(apiKey).emails.send({ from: `${agencyName.replace(/["<>]/g, "")} <${fromAddress}>`, to, subject, text: lines.join("\n") });
+  return !error;
+}

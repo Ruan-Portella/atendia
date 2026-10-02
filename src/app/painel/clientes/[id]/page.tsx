@@ -18,6 +18,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { CopyButton } from "@/components/copy-button";
+import { ClientCompliance } from "@/components/client-compliance";
 import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
 import { addClientMember, deleteBot, eraseContactData, deleteClientRecord, disablePortal, enablePortal, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientPermissions, updateClientRecord } from "../../actions";
 
@@ -29,6 +30,7 @@ const TABS = [
   ["conversas", "Conversas"],
   ["relatorio", "Relatório e portal"],
   ["acesso", "Acesso do cliente"],
+  ["conformidade", "Conformidade"],
   ["dados", "Dados do cliente"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
@@ -304,6 +306,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           </section>
         </div>
       )}
+
+      {tab === "conformidade" && <ClientCompliance clientId={client.id} clientName={client.name} />}
 
       {tab === "dados" && (
         <div className="flex max-w-[560px] flex-col gap-5">

@@ -69,7 +69,7 @@ export default function PrivacyPage() {
         </ul>
       </Section>
 
-      <Section title="6. Com quem compartilhamos">
+      <Section title="6. Com quem compartilhamos" id="suboperadores">
         <p>Compartilhamos dados apenas com fornecedores necessários para operar a plataforma, sob contrato:</p>
         <ul>
           <li><strong>Supabase</strong>: banco de dados e autenticação.</li>

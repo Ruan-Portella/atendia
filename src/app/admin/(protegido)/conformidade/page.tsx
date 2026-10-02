@@ -1,7 +1,8 @@
 import { Kpi } from "@/components/kpi";
 import { requireAdmin } from "@/lib/platform-admin";
 import { getCompliance } from "@/lib/backoffice-ops";
-import { getMeasures, rangeFor } from "@/lib/backoffice";
+import { getBusinessReviews, getMeasures, getRecentAcceptances, rangeFor } from "@/lib/backoffice";
+import { AcceptanceList, BusinessReviews } from "@/components/admin/business-reviews";
 import { MeasureList } from "@/components/admin/pause-controls";
 import { num } from "@/lib/plans";
 import { relativeTime } from "@/lib/utils";
@@ -17,7 +18,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const email = typeof sp.email === "string" ? sp.email.trim().slice(0, 120) : "";
   const range = rangeFor("30d");
-  const [c, measures] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 })]);
+  const [c, measures, reviews, acceptances] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 }), getBusinessReviews(), getRecentAcceptances()]);
   const active = c.suppressions.reduce((t, s) => t + s.active, 0);
   const created = c.suppressions.reduce((t, s) => t + s.created_since, 0);
   const revoked = c.suppressions.reduce((t, s) => t + s.revoked_since, 0);
@@ -37,11 +38,15 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
         <Kpi label="Acessos ao backoffice" value={num(c.access.length)} sub={email ? `de "${email}" (últimos 100)` : "últimos 100"} />
       </section>
 
+      <BusinessReviews open={reviews.open} recent={reviews.recent} />
+
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="text-base font-bold">Medidas: suspensões da BoaVoz e avisos da Meta</h2>
         <p className="text-xs text-muted">Ordem da Meta bloqueia o número (nada entra nem sai) e é levantada sozinha quando a Meta reativa a conta. Infrações e restrições ficam só registradas por enquanto. Suspensões da BoaVoz são criadas na página de cada agência.</p>
         <MeasureList measures={measures} showAgency empty="Nenhuma medida registrada." />
       </section>
+
+      <AcceptanceList rows={acceptances} />
 
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="text-base font-bold">Pedidos de exclusão de dados (Meta)</h2>

@@ -1,12 +1,14 @@
 import { CheckCircle2, CreditCard, MessageCircle } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NEUTRAL_ICONS } from "@/lib/white-label";
-import { LINK_DAYS, resolveConnectLink } from "@/lib/whatsapp-connect-link";
+import { LINK_DAYS, hashToken, resolveConnectLink } from "@/lib/whatsapp-connect-link";
+import { connectBlock, getCompliance, hasAcceptance, pendingLinkAcceptance } from "@/lib/acceptance";
+import { AcceptanceForm } from "@/components/acceptance-form";
 import { WHATSAPP_BILLING_URL, embeddedSignupConfig, hasPaymentMethod } from "@/lib/whatsapp";
 import { instagramConfigured } from "@/lib/instagram";
 import { AgencyHeader, brandColor } from "@/components/report-view";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
-import { completeLinkSignup } from "../actions";
+import { acceptViaLink, completeLinkSignup } from "../actions";
 
 // só a marca da agência: título, ícone e textos neutros (a plataforma não aparece)
 export const metadata = { title: { absolute: "Conectar WhatsApp" }, robots: { index: false, follow: false }, icons: NEUTRAL_ICONS };
@@ -37,6 +39,29 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
   const color = brandColor(link.agency.brand_color);
   const { bot } = link;
 
+  // tela única de aceite: o próprio negócio aceita antes de conectar (o aceite fica pendente até a Meta concluir)
+  const [compliance, accepted] = link.clientId
+    ? await Promise.all([getCompliance(admin, link.clientId), hasAcceptance(admin, link.clientId, link.channel).then(async (yes) => yes || pendingLinkAcceptance(admin, hashToken(token)))])
+    : [null, false];
+  const hardBlock = link.clientId ? connectBlock({ channel: link.channel, compliance, accepted: true, neutral: true }) : "Este assistente ainda não está pronto para conectar. Fale com quem te enviou o link.";
+  const acceptStep = hardBlock ? (
+    <p className="card p-5 text-sm text-ink-2">{hardBlock} {link.agency.name} acompanha e avisa quando puder conectar.</p>
+  ) : !accepted ? (
+    <section className="card p-5">
+      <AcceptanceForm
+        action={acceptViaLink.bind(null, token)}
+        channel={link.channel}
+        clientName={bot.client_name}
+        agencyName={link.agency.name}
+        policyHref={`/conectar/${token}/uso-aceitavel`}
+        askActivities={!compliance}
+        askIdentity
+        neutral
+        color={color}
+      />
+    </section>
+  ) : null;
+
   if (link.channel === "instagram") {
     const error = typeof sp.ig_erro === "string" ? sp.ig_erro : null;
     if (link.state === "used") {
@@ -59,6 +84,7 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
           <p className="text-[15px] text-ink-2">{link.agency.name} preparou um assistente que responde as mensagens diretas do seu Instagram, a qualquer hora. Falta só você conectar a conta: leva 2 minutos, com o login do seu Instagram. As mensagens do Instagram não têm custo.</p>
         </div>
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2.5 text-sm text-danger">{error}</p>}
+        {acceptStep ?? (
         <section className="card flex flex-col gap-3 p-5">
           <h2 className="text-lg font-bold">Antes de conectar, confira no app do Instagram</h2>
           <ol className="ml-5 list-decimal space-y-1.5 text-sm text-ink-2">
@@ -71,6 +97,7 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
           </a>
           <p className="text-xs text-muted">Abre a tela de login do Instagram, onde você autoriza o acesso às mensagens. Ela pode mostrar o nome do aplicativo usado na conexão: é normal e seguro.</p>
         </section>
+        )}
       </Shell>
     );
   }
@@ -112,6 +139,8 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
 
       <CardStep color={color} />
 
+      {acceptStep ?? (
+      <>
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-bold">Como você quer conectar?</h2>
         <div className="card flex flex-col gap-2.5 p-5">
@@ -136,6 +165,8 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
         </ol>
         <p className="text-xs text-muted">A janela é da Meta, dona do WhatsApp. Ela pode mostrar o nome do aplicativo usado na conexão: é normal e seguro.</p>
       </section>
+      </>
+      )}
     </Shell>
   );
 }

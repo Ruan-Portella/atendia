@@ -131,3 +131,39 @@ export async function liftMeasure(id: number): Promise<ActionResult> {
   revalidatePath("/admin", "layout");
   return ok("Medida levantada.");
 }
+
+/* ------------------------------------------------------------------ revisão do negócio (tela de aceite) */
+
+/** Aprova o negócio: vira ativo (o WhatsApp pode conectar) e levanta as suspensões criadas pelo bloqueio. */
+export async function approveBusiness(clientId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/conformidade (aprovou o negócio ${clientId})`);
+  const db = createAdminClient();
+  const now = new Date().toISOString();
+  const { error } = await db.from("business_compliance").update({ status: "ativo", reviewed_at: now, reviewed_by: s.email, review_note: null }).eq("client_id", clientId);
+  if (error) return fail("Não foi possível aprovar. Tente de novo.");
+  await db.from("enforcement_actions").update({ lifted_at: now, lifted_by: s.email }).eq("source", "boavoz").eq("detail->>client_id", clientId).is("lifted_at", null);
+  revalidatePath("/admin", "layout");
+  return ok("Negócio aprovado.");
+}
+
+/**
+ * Bloqueia o negócio na revisão: não conecta WhatsApp nem Instagram e os canais já ligados dos
+ * chatbots dele ficam suspensos (medida da BoaVoz, levantada se ele for aprovado depois).
+ */
+export async function blockBusiness(clientId: string, fd: FormData): Promise<ActionResult> {
+  const reason = reasonOf(fd);
+  if (typeof reason !== "string") return fail(reason.error);
+  const s = await requireAdmin(`/admin/conformidade (bloqueou o negócio ${clientId}: ${reason})`);
+  const db = createAdminClient();
+  const { data: row } = await db.from("business_compliance").select("agency_id").eq("client_id", clientId).maybeSingle();
+  if (!row) return fail("Negócio não encontrado.");
+  const { error } = await db.from("business_compliance").update({ status: "bloqueado", reviewed_at: new Date().toISOString(), reviewed_by: s.email, review_note: reason }).eq("client_id", clientId);
+  if (error) return fail("Não foi possível bloquear. Tente de novo.");
+  const { data: bots } = await db.from("bots").select("id").eq("client_id", clientId).eq("is_demo", false);
+  const measures = (bots ?? []).flatMap((b) =>
+    (["whatsapp", "instagram"] as const).map((channel) => ({ source: "boavoz", feature: "channel", channel, agency_id: row.agency_id, bot_id: b.id, reason: `negócio bloqueado na revisão: ${reason}`, detail: { client_id: clientId }, created_by: s.email })),
+  );
+  if (measures.length) await db.from("enforcement_actions").insert(measures);
+  revalidatePath("/admin", "layout");
+  return ok("Negócio bloqueado.");
+}

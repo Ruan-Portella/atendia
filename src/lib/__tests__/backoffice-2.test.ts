@@ -72,6 +72,7 @@ describe("qualidade e operação", () => {
       crons: [{ name: "diario", label: "Rotina diária", lastRunAt: null, lastOkAt: null, late: false }],
       cronsScheduled: true,
       measures: { metaOrders: 0, metaNotices: 0 },
+      reviews: { open: 0, holding: 0, overdue: 0 },
       bots: new Map(),
     };
     expect(operationAlerts(base)).toEqual([]);

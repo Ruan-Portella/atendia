@@ -3,7 +3,8 @@ import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeUrl, instagramAllowed, instagramConfigured, signState } from "@/lib/instagram";
-import { resolveConnectLink } from "@/lib/whatsapp-connect-link";
+import { hashToken, resolveConnectLink } from "@/lib/whatsapp-connect-link";
+import { connectBlockFor } from "@/lib/acceptance";
 
 /**
  * Começo do login do Instagram. Dois jeitos de chegar:
@@ -19,6 +20,9 @@ export async function GET(req: Request) {
   if (linkToken) {
     const link = await resolveConnectLink(createAdminClient(), linkToken);
     if (!link || link.state !== "open" || link.channel !== "instagram" || link.bot.is_demo) redirect(`/conectar/${encodeURIComponent(linkToken)}`);
+    // tela única de aceite: sem o aceite (pendente deste link) ou com o negócio bloqueado, não abre o login
+    const blocked = await connectBlockFor(createAdminClient(), { clientId: link.clientId, channel: "instagram", linkTokenHash: hashToken(linkToken), neutral: true });
+    if (blocked) redirect(`/conectar/${encodeURIComponent(linkToken)}?ig_erro=${encodeURIComponent(blocked)}`);
     redirect(authorizeUrl(signState({ botId: link.botId, via: "link", token: linkToken })));
   }
 
@@ -26,7 +30,9 @@ export async function GET(req: Request) {
   const { email } = await requireAgency();
   if (!instagramAllowed(email)) redirect(`/painel/bots/${botId}`);
   const supabase = await createClient();
-  const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
+  const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) redirect("/painel/clientes");
+  const blocked = await connectBlockFor(createAdminClient(), { clientId: bot.client_id as string | null, channel: "instagram" });
+  if (blocked) redirect(`/painel/bots/${bot.id}?tab=instagram&ig_erro=${encodeURIComponent(blocked)}`);
   redirect(authorizeUrl(signState({ botId: bot.id, via: "painel" })));
 }

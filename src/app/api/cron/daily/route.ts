@@ -8,6 +8,7 @@ import { notifyPlatform } from "@/lib/notify";
 import { sweepInbound } from "@/lib/inbound-queue";
 import { inboundHandlers } from "@/lib/inbound-process";
 import { classifyPending } from "@/lib/gate/base";
+import { deleteStalePending } from "@/lib/acceptance";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
 export const maxDuration = 300;
@@ -44,6 +45,8 @@ async function daily() {
   const inbound = await run("fila da Meta", () => sweepInbound(db, inboundHandlers, hasTime));
   const trial = await run("avisos de teste", () => trialReminders(db));
   const retention = await run("limpeza LGPD", () => applyRetention(db));
+  // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
+  const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
   // o acesso ao Instagram vale 60 dias: renova antes de vencer
   const instagram = await run("tokens do Instagram", () => refreshInstagramTokens(db));
   // custo de IA: totais do mês e limpeza dos registros com mais de 90 dias
@@ -61,5 +64,5 @@ async function daily() {
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
   // portão: trechos novos que não couberam depois da leitura e os de regras antigas
   const base = await run("classificação da base", () => classifyPending(db, { budgetMs: 180_000 }));
-  return { inbound, trial, retention, instagram, aiUsage, disk, sources, base };
+  return { inbound, trial, retention, acceptances, instagram, aiUsage, disk, sources, base };
 }

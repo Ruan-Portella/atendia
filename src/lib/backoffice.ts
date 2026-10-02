@@ -488,3 +488,87 @@ export async function getMeasures(opts: { agencyId?: string; active?: boolean; l
     };
   });
 }
+
+/* ------------------------------------------------------------------ revisão do negócio (tela de aceite) */
+
+export interface ReviewRow {
+  clientId: string;
+  clientName: string;
+  agencyId: string;
+  agencyName: string | null;
+  status: "ativo" | "em_revisao" | "aguardando_revisao" | "bloqueado";
+  answers: Record<string, string>;
+  answeredAt: string;
+  answeredBy: string | null;
+  reviewDueAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  /** Prazo de resposta ao cliente já passou. */
+  overdue: boolean;
+}
+
+/** Negócios em revisão (primeiro os que seguram o WhatsApp) e os revisados há pouco. */
+export async function getBusinessReviews(): Promise<{ open: ReviewRow[]; recent: ReviewRow[] }> {
+  const db = createAdminClient();
+  const cols = "client_id, agency_id, status, answers, answered_at, answered_by, review_due_at, reviewed_at, reviewed_by, review_note, clients(name), agencies(name)";
+  const [{ data: open }, { data: recent }] = await Promise.all([
+    db.from("business_compliance").select(cols).in("status", ["aguardando_revisao", "em_revisao"]).order("review_due_at", { ascending: true }).limit(50),
+    db.from("business_compliance").select(cols).not("reviewed_at", "is", null).order("reviewed_at", { ascending: false }).limit(10),
+  ]);
+  const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+  const map = (r: Record<string, unknown>): ReviewRow => ({
+    clientId: r.client_id as string,
+    clientName: one(r.clients as { name: string } | null)?.name ?? "cliente apagado",
+    agencyId: r.agency_id as string,
+    agencyName: one(r.agencies as { name: string } | null)?.name ?? null,
+    status: r.status as ReviewRow["status"],
+    answers: (r.answers ?? {}) as Record<string, string>,
+    answeredAt: r.answered_at as string,
+    answeredBy: (r.answered_by as string | null) ?? null,
+    reviewDueAt: (r.review_due_at as string | null) ?? null,
+    reviewedAt: (r.reviewed_at as string | null) ?? null,
+    reviewedBy: (r.reviewed_by as string | null) ?? null,
+    reviewNote: (r.review_note as string | null) ?? null,
+    overdue: Boolean(r.review_due_at) && Date.parse(r.review_due_at as string) < Date.now(),
+  });
+  const rows = (open ?? []).map(map);
+  // os que seguram o WhatsApp primeiro; depois pelo prazo
+  rows.sort((a, b) => Number(b.status === "aguardando_revisao") - Number(a.status === "aguardando_revisao") || String(a.reviewDueAt).localeCompare(String(b.reviewDueAt)));
+  return { open: rows, recent: (recent ?? []).map(map) };
+}
+
+export interface AcceptanceRow {
+  id: number;
+  channel: string;
+  version: string;
+  via: string;
+  status: string;
+  who: string;
+  metaName: string | null;
+  clientName: string | null;
+  agencyName: string | null;
+  at: string;
+}
+
+/** Últimos aceites (confirmados e pendentes do link). */
+export async function getRecentAcceptances(limit = 20): Promise<AcceptanceRow[]> {
+  const { data } = await createAdminClient()
+    .from("business_acceptances")
+    .select("id, channel, version, via, status, accepted_by_name, accepted_by_email, meta_verified_name, created_at, confirmed_at, clients(name), agencies(name)")
+    .order("id", { ascending: false })
+    .limit(limit);
+  const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+  return (data ?? []).map((r) => ({
+    id: r.id as number,
+    channel: r.channel as string,
+    version: r.version as string,
+    via: r.via as string,
+    status: r.status as string,
+    who: r.accepted_by_name ? `${r.accepted_by_name} <${r.accepted_by_email}>` : (r.accepted_by_email as string),
+    metaName: (r.meta_verified_name as string | null) ?? null,
+    clientName: one(r.clients as { name: string } | { name: string }[] | null)?.name ?? null,
+    agencyName: one(r.agencies as { name: string } | { name: string }[] | null)?.name ?? null,
+    at: (r.confirmed_at as string | null) ?? (r.created_at as string),
+  }));
+}
