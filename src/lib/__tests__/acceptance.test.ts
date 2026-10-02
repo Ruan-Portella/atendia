@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCEPTANCE_VERSION, ACTIVITIES, acceptanceEmail, addBusinessDays, connectBlock, parseAnswers, statusFor, type ActivityAnswers, type Compliance } from "../acceptance";
+import { ACCEPTANCE_VERSION, ACTIVITIES, acceptanceEmail, addBusinessDays, connectBlock, parseAnswers, reviewDecisionEmail, statusFor, type ActivityAnswers, type Compliance } from "../acceptance";
 
 const allNo = Object.fromEntries(ACTIVITIES.map((a) => [a.id, "nao"])) as ActivityAnswers;
 const compliance = (status: Compliance["status"], extra: Partial<Compliance> = {}): Compliance => ({ status, answers: allNo, answeredAt: "2026-10-02T12:00:00Z", answeredBy: null, reviewDueAt: null, reviewNote: null, ...extra });
@@ -65,5 +65,30 @@ describe("cópia do aceite", () => {
     expect(body).toContain("https://x/conectar/t/uso-aceitavel");
     expect(body).toContain("Ruan Marketing");
     expect(body).not.toMatch(/boavoz/i);
+  });
+});
+
+describe("e-mail da decisão da revisão ao dono da agência", () => {
+  const base = { clientName: "Bar do Zé", link: "https://app/painel/clientes/c1?tab=conformidade", supportEmail: "contato@boavoz.com" };
+
+  const body = (m: { lines: string[] }) => m.lines.join(" ");
+
+  it("aprovado: o próximo passo depende do que estava travado", () => {
+    expect(body(reviewDecisionEmail({ ...base, decision: "aprovado", previous: "aguardando_revisao" }))).toContain("O WhatsApp já pode ser conectado");
+    expect(body(reviewDecisionEmail({ ...base, decision: "aprovado", previous: "bloqueado" }))).toContain("voltam a funcionar");
+    const m = reviewDecisionEmail({ ...base, decision: "aprovado", previous: "em_revisao" });
+    expect(m.subject).toBe("Bar do Zé: revisão aprovada");
+    expect(body(m)).toContain("Nada muda no atendimento");
+    expect(body(m)).toContain(base.link);
+  });
+
+  it("bloqueado: leva o motivo, o que acontece com os canais e como pedir nova revisão", () => {
+    const m = reviewDecisionEmail({ ...base, decision: "bloqueado", previous: "em_revisao", reason: "tabacaria" });
+    expect(m.subject).toBe("Bar do Zé: não pode usar o WhatsApp nem o Instagram");
+    const text = body(m);
+    expect(text).toContain("Motivo: tabacaria.");
+    expect(text).toContain("ficam suspensos");
+    expect(text).toContain("O chat do site continua funcionando");
+    expect(text).toContain("contato@boavoz.com");
   });
 });

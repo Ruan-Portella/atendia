@@ -236,3 +236,42 @@ export function acceptanceEmail(o: { name: string | null; clientName: string; ch
     ],
   };
 }
+
+/**
+ * E-mail ao dono da agência quando a BoaVoz decide a revisão do negócio. `previous` é o estado
+ * antes da decisão (diz se o WhatsApp estava seguro ou se havia suspensão a levantar).
+ */
+export function reviewDecisionEmail(o: {
+  decision: "aprovado" | "bloqueado";
+  clientName: string;
+  previous: ComplianceStatus;
+  reason?: string | null;
+  link: string;
+  supportEmail: string;
+}): { subject: string; lines: string[] } {
+  if (o.decision === "aprovado") {
+    const next =
+      o.previous === "aguardando_revisao"
+        ? "O WhatsApp já pode ser conectado: no chatbot, aba WhatsApp, ou mande o link de conexão para o cliente."
+        : o.previous === "bloqueado"
+          ? "Os canais que estavam suspensos voltam a funcionar, e o WhatsApp e o Instagram podem ser conectados normalmente."
+          : "Nada muda no atendimento: os canais continuam funcionando, com a trava automática de itens proibidos e regulamentados ligada.";
+    return {
+      subject: `${o.clientName}: revisão aprovada`,
+      lines: [`A BoaVoz revisou as respostas de ${o.clientName} sobre as atividades do negócio e aprovou.`, "", next, "", `Detalhes: ${o.link}`],
+    };
+  }
+  return {
+    subject: `${o.clientName}: não pode usar o WhatsApp nem o Instagram`,
+    lines: [
+      `A BoaVoz revisou as respostas de ${o.clientName} sobre as atividades do negócio e não liberou o uso do WhatsApp e do Instagram por aqui.`,
+      ...(o.reason ? [`Motivo: ${o.reason}.`] : []),
+      "",
+      "Os números e contas desse cliente que já estavam conectados ficam suspensos: nada sai por eles, nem a resposta da sua equipe, e quem escrever recebe uma vez o aviso de canal indisponível. O chat do site continua funcionando.",
+      "",
+      `Se achar que é um engano, escreva para ${o.supportEmail} pedindo uma nova revisão.`,
+      "",
+      `Detalhes: ${o.link}`,
+    ],
+  };
+}

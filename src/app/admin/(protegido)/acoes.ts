@@ -6,6 +6,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { text } from "@/lib/validation";
 import { extendedTrialEnd } from "@/lib/backoffice";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { reviewDecisionEmail, type ComplianceStatus } from "@/lib/acceptance";
+import { notifyAgencyOwner } from "@/lib/notify";
+import { company } from "@/lib/company";
+import { appUrl } from "@/lib/utils";
 
 /*
  * Ações do backoffice que mudam o funcionamento: pausar a IA (de uma agência ou de todas, a
@@ -138,12 +142,30 @@ export async function liftMeasure(id: number): Promise<ActionResult> {
 export async function approveBusiness(clientId: string): Promise<ActionResult> {
   const s = await requireAdmin(`/admin/conformidade (aprovou o negócio ${clientId})`);
   const db = createAdminClient();
+  const row = await reviewedBusiness(clientId);
+  if (!row) return fail("Negócio não encontrado.");
   const now = new Date().toISOString();
   const { error } = await db.from("business_compliance").update({ status: "ativo", reviewed_at: now, reviewed_by: s.email, review_note: null }).eq("client_id", clientId);
   if (error) return fail("Não foi possível aprovar. Tente de novo.");
   await db.from("enforcement_actions").update({ lifted_at: now, lifted_by: s.email }).eq("source", "boavoz").eq("detail->>client_id", clientId).is("lifted_at", null);
+  const sent = await tellAgency(row, { decision: "aprovado" });
   revalidatePath("/admin", "layout");
-  return ok("Negócio aprovado.");
+  return ok(`Negócio aprovado.${sent}`);
+}
+
+/** O negócio em revisão: estado atual, agência e nome (para o e-mail da decisão). */
+async function reviewedBusiness(clientId: string) {
+  const { data } = await createAdminClient().from("business_compliance").select("status, agency_id, clients(name)").eq("client_id", clientId).maybeSingle();
+  if (!data) return null;
+  const client = (Array.isArray(data.clients) ? data.clients[0] : data.clients) as { name: string } | null;
+  return { clientId, agencyId: data.agency_id as string, previous: data.status as ComplianceStatus, clientName: client?.name ?? "Cliente" };
+}
+
+/** Avisa o dono da agência da decisão; devolve o complemento da mensagem do backoffice. */
+async function tellAgency(row: NonNullable<Awaited<ReturnType<typeof reviewedBusiness>>>, o: { decision: "aprovado" | "bloqueado"; reason?: string }): Promise<string> {
+  const mail = reviewDecisionEmail({ ...o, clientName: row.clientName, previous: row.previous, link: appUrl(`/painel/clientes/${row.clientId}?tab=conformidade`), supportEmail: company.email });
+  const sent = await notifyAgencyOwner(createAdminClient(), row.agencyId, mail.subject, mail.lines).catch(() => false);
+  return sent ? " A agência foi avisada por e-mail." : " O e-mail para a agência não saiu (sem Resend neste ambiente ou sem e-mail do dono).";
 }
 
 /**
@@ -155,15 +177,16 @@ export async function blockBusiness(clientId: string, fd: FormData): Promise<Act
   if (typeof reason !== "string") return fail(reason.error);
   const s = await requireAdmin(`/admin/conformidade (bloqueou o negócio ${clientId}: ${reason})`);
   const db = createAdminClient();
-  const { data: row } = await db.from("business_compliance").select("agency_id").eq("client_id", clientId).maybeSingle();
+  const row = await reviewedBusiness(clientId);
   if (!row) return fail("Negócio não encontrado.");
   const { error } = await db.from("business_compliance").update({ status: "bloqueado", reviewed_at: new Date().toISOString(), reviewed_by: s.email, review_note: reason }).eq("client_id", clientId);
   if (error) return fail("Não foi possível bloquear. Tente de novo.");
   const { data: bots } = await db.from("bots").select("id").eq("client_id", clientId).eq("is_demo", false);
   const measures = (bots ?? []).flatMap((b) =>
-    (["whatsapp", "instagram"] as const).map((channel) => ({ source: "boavoz", feature: "channel", channel, agency_id: row.agency_id, bot_id: b.id, reason: `negócio bloqueado na revisão: ${reason}`, detail: { client_id: clientId }, created_by: s.email })),
+    (["whatsapp", "instagram"] as const).map((channel) => ({ source: "boavoz", feature: "channel", channel, agency_id: row.agencyId, bot_id: b.id, reason: `negócio bloqueado na revisão: ${reason}`, detail: { client_id: clientId }, created_by: s.email })),
   );
   if (measures.length) await db.from("enforcement_actions").insert(measures);
+  const sent = await tellAgency(row, { decision: "bloqueado", reason });
   revalidatePath("/admin", "layout");
-  return ok("Negócio bloqueado.");
+  return ok(`Negócio bloqueado.${sent}`);
 }
