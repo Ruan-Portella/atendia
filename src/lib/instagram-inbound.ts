@@ -4,12 +4,12 @@ import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type M
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { instagramContact, touchInbound } from "./contacts";
 import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./instagram-edits";
-import { markOwnMessage } from "./inbound-queue";
+import { hasPendingFrom, markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
-import { instagramTyping, isInstagramAccessError, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
+import { instagramTyping, isInstagramAccessError, mediaPermalink, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
 import { answerWithGate, gateButtons } from "./gate/flow";
@@ -71,8 +71,12 @@ export function igText(ev: IgMessagingEvent): string | null {
 
 export function igMediaLabel(ev: IgMessagingEvent): string {
   const type = ev.message?.attachments?.[0]?.type ?? "";
-  return IG_MEDIA_LABEL[type] ?? "(mensagem sem texto)";
+  if (IG_MEDIA_LABEL[type]) return IG_MEDIA_LABEL[type];
+  return type ? `(anexo do Instagram: ${type})` : "(mensagem sem texto)";
 }
+
+/** Depois de um post, reel ou mídia sem texto, a pessoa costuma mandar o comentário em outra DM, logo atrás. */
+const FOLLOW_UP_WAIT_MS = 3500;
 
 /** Conversa recente do contato com o chatbot (dentro da janela de 24 h). */
 async function recentConversation(db: SupabaseClient, botId: string, igsid: string, contactId: string | null = null): Promise<RecentConversation | null> {
@@ -180,6 +184,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const deleted = await deletedBeforeArrival(db, burst.map((q) => q.key));
   // post ou reel compartilhado: o assistente lê a legenda; a referência fica na mensagem
   const refs = burst.map((q) => sharedRef(q.ev));
+  await Promise.all(refs.map(async (r) => r?.id && (r.permalink = await mediaPermalink(ch, r.id))));
+  const unknown = burst.flatMap((q) => (q.ev.message?.attachments ?? []).map((a) => a.type ?? "?")).filter((t) => !IG_MEDIA_LABEL[t] && t !== "image" && t !== "audio");
+  if (unknown.length) console.log("instagram: anexos não reconhecidos", unknown);
   const texts: Array<string | null> = [];
   for (const [i, q] of burst.entries()) {
     if (deleted.has(q.key)) {
@@ -285,11 +292,34 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   // degrau 6, normal: o próximo episódio de indisponível avisa de novo
   if (conv && (contact?.unavailable_notice_reason || conv.unavailable_notice_reason)) await clearNotice(db, { contactId, conversationId: conv.id });
 
+  // compartilhou um post ou reel, ou mandou mídia, sem escrever nada: o comentário costuma vir logo
+  // atrás, em outra DM. Se vier, esta rodada só grava, e a próxima responde tudo junto (uma resposta)
+  const lastEv = burst[burst.length - 1].ev;
+  if (!igText(lastEv) && lastEv.message?.attachments?.length && !deleted.has(burst[burst.length - 1].key)) {
+    await new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS));
+    if (await hasPendingFrom(db, "instagram", bot.id, igsid)) {
+      // a conversa nasce contando no mês, como se a IA respondesse agora (ela responde na próxima rodada)
+      if (!conv) {
+        try {
+          conv = { id: await openConversation(db, bot, { channel: "instagram", igsid, contactId }), takeover_at: null, handled_at: null };
+        } catch {
+          // cota ou teste vencido: a próxima rodada cai no modo só humano
+        }
+      }
+      const convId = await plainConversation();
+      if (convId) await storeAll(convId);
+      return;
+    }
+  }
+
   const qi = texts.map((t, i) => (t && !handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
     // opt-out tratado, ou DM desfeita antes de chegar: nada a responder
     if (handled.size || deleted.size) return;
-    const lastAudio = Boolean(burst[burst.length - 1].ev.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
+    // foto ou vídeo sem texto: fica no painel e o contato recebe o aviso de que só entendemos texto e áudio
+    const convId = await plainConversation();
+    if (convId) await storeAll(convId);
+    const lastAudio = Boolean(lastEv.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
     return void (await say("ia", lastAudio ? AUDIO_FAILED : ONLY_TEXT, null));
   }
   const q = burst[qi];

@@ -113,3 +113,9 @@ export async function sweepInbound(db: SupabaseClient, handlers: Record<InboundS
   }
   return { groups };
 }
+
+/** Chegou outra mensagem deste contato que ainda não foi pega (a próxima rodada vai tratar)? */
+export async function hasPendingFrom(db: SupabaseClient, source: InboundSource, botId: string, contact: string): Promise<boolean> {
+  const { count } = await db.from("inbound_events").select("key_hash", { count: "exact", head: true }).eq("source", source).eq("bot_id", botId).eq("contact_hash", sha256(`${source}:${contact}`)).eq("status", "received");
+  return Boolean(count);
+}

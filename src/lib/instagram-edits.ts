@@ -24,6 +24,8 @@ export interface SharedRef {
   url: string | null;
   /** Legenda do post no momento da mensagem. */
   title: string | null;
+  /** Link do post no Instagram (só quando o post é da própria conta conectada). */
+  permalink?: string | null;
 }
 
 const POST_TYPES = new Set(["ig_post", "post", "share"]);

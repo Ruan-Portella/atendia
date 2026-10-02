@@ -236,3 +236,18 @@ export async function instagramTyping(ch: IgChannel, recipientId: string) {
   await api("me/messages", token, { body: { recipient: { id: recipientId }, sender_action: "mark_seen" } }).catch(() => {});
   await api("me/messages", token, { body: { recipient: { id: recipientId }, sender_action: "typing_on" } }).catch(() => {});
 }
+
+/**
+ * Link de verdade (permalink) de um post ou reel compartilhado na DM. Só dá para ler posts da
+ * própria conta conectada (o caso comum: o cliente manda o post da loja); de outras contas a Meta
+ * não deixa, e aí volta null.
+ */
+export async function mediaPermalink(ch: IgChannel, mediaId: string): Promise<string | null> {
+  if (!/^\d+$/.test(mediaId)) return null;
+  try {
+    const r = await api<{ permalink?: string }>(`${mediaId}?fields=permalink`, tokenOf(ch));
+    return r.permalink && /^https:\/\/(www\.)?instagram\.com\//i.test(r.permalink) ? r.permalink : null;
+  } catch {
+    return null;
+  }
+}

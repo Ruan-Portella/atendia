@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DELETED_LABEL, handleInstagramDelete, handleInstagramEdit, igMessageKey, sharedRef, sharedText } from "../instagram-edits";
 import { sha256 } from "../inbound-queue";
+import { igMediaLabel } from "../instagram-inbound";
+import { mediaPermalink } from "../instagram";
 
 describe("post e reel compartilhados", () => {
   it("reconhece post e reel (formatos novos e antigos) com id, link e legenda", () => {
@@ -77,5 +79,18 @@ describe("mensagem editada e desfeita", () => {
     const { db } = fakeDb([]);
     expect(await handleInstagramEdit(db, { message_edit: { mid: "m1" } })).toBe(false);
     vi.restoreAllMocks();
+  });
+});
+
+describe("anexos do Instagram", () => {
+  it("tipo que não conhecemos aparece com o nome (para sabermos o que a Meta mandou)", () => {
+    expect(igMediaLabel({ message: { attachments: [{ type: "image" }] } })).toBe("📷 (foto)");
+    expect(igMediaLabel({ message: { attachments: [{ type: "ig_post" }] } })).toBe("(publicação compartilhada)");
+    expect(igMediaLabel({ message: { attachments: [{ type: "ig_story" }] } })).toBe("(anexo do Instagram: ig_story)");
+    expect(igMediaLabel({ message: {} })).toBe("(mensagem sem texto)");
+  });
+
+  it("link do post: só para id numérico (sem chamar a Meta à toa)", async () => {
+    expect(await mediaPermalink({ ig_user_id: "1", access_token_enc: null }, "abc")).toBeNull();
   });
 });

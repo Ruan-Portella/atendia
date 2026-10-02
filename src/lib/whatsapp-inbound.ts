@@ -15,6 +15,8 @@ import { GATE_TEXTS } from "./gate/rules";
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
 const RESUME_HOURS = 24;
 const MAX_MESSAGE_CHARS = 2000;
+/** Depois de uma mídia sem legenda, a pergunta costuma chegar logo atrás, em outra mensagem. */
+const FOLLOW_UP_WAIT_MS = 3500;
 const HISTORY = 12;
 
 const FALLBACK = "No momento não consigo responder por aqui. A equipe vai retornar sua mensagem em breve.";
@@ -26,6 +28,7 @@ export const AUDIO_PREFIX = "🎤 ";
 // autores do celular e do app e a pausa de 60 minutos moram em authors.ts (a regra de estado usa)
 export { PHONE_AUTHOR, PHONE_PAUSE_MINUTES, phonePauseActive } from "./authors";
 import { PHONE_AUTHOR } from "./authors";
+import { hasPendingFrom } from "./inbound-queue";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
 const MEDIA_LABEL: Record<string, string> = {
@@ -311,9 +314,31 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   if (conv && (contact?.unavailable_notice_reason || conv.unavailable_notice_reason)) await clearNotice(db, { contactId, conversationId: conv.id });
 
   // a resposta vai para a última mensagem com texto; as de antes (e a mídia) só entram no histórico
+  // foto, vídeo ou documento sem legenda: a pergunta costuma vir logo atrás, em outra mensagem.
+  // Se vier, esta rodada só grava, e a próxima responde tudo junto (uma resposta só)
+  if (!texts[texts.length - 1] && last.msg.type !== "audio") {
+    await new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS));
+    if (await hasPendingFrom(db, "whatsapp", bot.id, waId)) {
+      // a conversa nasce contando no mês, como se a IA respondesse agora (ela responde na próxima rodada)
+      if (!conv) {
+        try {
+          conv = { id: await openConversation(db, bot, { channel: "whatsapp", waId, contactId }), takeover_at: null, handled_at: null };
+        } catch {
+          // cota ou teste vencido: a próxima rodada cai no modo só humano
+        }
+      }
+      const convId = await plainConversation();
+      if (convId) await storeAll(convId);
+      return;
+    }
+  }
+
   const qi = texts.map((t, i) => (t && !optOut.handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
     if (optOut.handled.size) return;
+    // mídia sem texto: fica no painel e o contato recebe o aviso de que só entendemos texto e áudio
+    const convId = await plainConversation();
+    if (convId) await storeAll(convId);
     const lastAudio = last.msg.type === "audio" && canTranscribe();
     return void (await say("ia", lastAudio ? AUDIO_FAILED : ONLY_TEXT, null));
   }
