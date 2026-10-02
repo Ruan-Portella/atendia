@@ -7,8 +7,8 @@ import { CHAT_TEMPERATURE, type BotRow } from "@/lib/chat";
 
 // limite do plano Hobby da Vercel (fluid compute): o conjunto fixo inteiro cabe numa chamada
 export const maxDuration = 300;
-/** Depois disso não começa outro lote de casos (o que está rodando ainda termina antes dos 300 s). */
-const CASES_BUDGET_MS = 230_000;
+/** Hora limite dos casos: um lote só começa se, pelo tempo médio dos anteriores, termina antes dela. */
+const CASES_BUDGET_MS = 280_000;
 export const dynamic = "force-dynamic";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high"] as const;

@@ -97,8 +97,9 @@ export interface CaseResult {
 
 /**
  * Roda os casos, 3 por vez. `onResult`: cada caso assim que termina (o relatório vai aparecendo
- * no navegador). `stopAt`: depois dessa hora não começa outro lote; os que faltaram voltam em
- * `skipped` (melhor que estourar o tempo da função e não mostrar nada).
+ * no navegador). `stopAt`: hora limite; um lote novo só começa se, pelo tempo médio dos lotes
+ * até aqui (com folga), ele termina antes dela. Os que faltaram voltam em `skipped` (melhor que
+ * estourar o tempo da função e não mostrar nada).
  */
 export async function runCases(
   db: SupabaseClient,
@@ -107,9 +108,12 @@ export async function runCases(
   opts: { runs: number; model?: string; temperature?: number; effort?: ReasoningEffort; stopAt?: number; onResult?: (r: CaseResult) => void },
 ): Promise<{ results: CaseResult[]; skipped: EvalCase[] }> {
   const results: CaseResult[] = [];
+  const started = Date.now();
   // poucos casos em paralelo: o limite de tokens por minuto da OpenAI estoura com muitos juntos
   for (let i = 0; i < cases.length; i += 3) {
-    if (opts.stopAt && Date.now() > opts.stopAt) return { results, skipped: cases.slice(i) };
+    const batches = i / 3;
+    const avgBatchMs = batches ? (Date.now() - started) / batches : 0;
+    if (opts.stopAt && Date.now() + avgBatchMs * 1.5 > opts.stopAt) return { results, skipped: cases.slice(i) };
     const batch = await Promise.all(
       cases.slice(i, i + 3).map(async (c) => {
         const r = await evaluateQuestion(db, bot, c.pergunta, { runs: opts.runs, model: opts.model, temperature: opts.temperature, effort: opts.effort, channel: c.canal ?? "whatsapp", history: c.historico, age: c.idade ?? null, foreign: c.fora });
