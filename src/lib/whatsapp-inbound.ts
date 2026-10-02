@@ -31,6 +31,7 @@ export const AUDIO_PREFIX = "🎤 ";
 export { PHONE_AUTHOR, PHONE_PAUSE_MINUTES, phonePauseActive } from "./authors";
 import { PHONE_AUTHOR } from "./authors";
 import { hasPendingFrom } from "./inbound-queue";
+import { requireAtendimento } from "./atendimentos";
 import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
@@ -209,7 +210,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const contact = await whatsappContact(db, bot, { phone: last.msg.from ?? null, bsuid: last.msg.from_user_id ?? null, name: profileName });
   const contactId = contact?.id ?? null;
   let conv = await recentConversation(db, bot.id, waId, contactId);
-  const mode = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel, opening: !conv });
+  const mode = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel });
   // "já conversou" e a janela de 24 h: só mensagem do próprio contato que chegou (ordem da Meta e desligamento geral: nada)
   if (contact && mode.storeInbound) await touchInbound(db, contact);
   /** Texto pela camada única de envio: regra de estado na hora do envio e registro na conversa. */
@@ -318,10 +319,11 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     return;
   }
 
-  // degraus 4 e 5: bot pausado pelo dono, ou plano, teste, cota e IA pausada (em toda mensagem)
+  // degraus 4 e 5: bot pausado pelo dono, ou plano, teste e IA pausada (em toda mensagem); a cota do
+  // mês é do atendimento, conferida logo antes de chamar a IA
   if (mode.handoff) return humanOnly(mode);
-  // degrau 6, normal: o próximo episódio de indisponível avisa de novo
-  if (conv && (contact?.unavailable_notice_reason || conv.unavailable_notice_reason)) await clearNotice(db, { contactId, conversationId: conv.id });
+  // aviso de indisponível já dado: sai quando a IA voltar a responder (o próximo episódio avisa de novo)
+  const noticeMarked = Boolean(contact?.unavailable_notice_reason || conv?.unavailable_notice_reason);
 
   // a resposta vai para a última mensagem com texto; as de antes (e a mídia) só entram no histórico
   // foto, vídeo ou documento (o assistente não vê): o último desta rajada, fora o que foi opt-out
@@ -331,14 +333,6 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   if (!texts[texts.length - 1] && last.msg.type !== "audio") {
     await new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS));
     if (await hasPendingFrom(db, "whatsapp", bot.id, waId)) {
-      // a conversa nasce contando no mês, como se a IA respondesse agora (ela responde na próxima rodada)
-      if (!conv) {
-        try {
-          conv = { id: await openConversation(db, bot, { channel: "whatsapp", waId, contactId }), takeover_at: null, handled_at: null };
-        } catch {
-          // cota ou teste vencido: a próxima rodada cai no modo só humano
-        }
-      }
       const convId = await plainConversation();
       if (convId) await storeAll(convId);
       // a pergunta deve vir na próxima rodada: ela recebe o texto fixo, não uma resposta chutada
@@ -379,9 +373,13 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     return;
   }
 
-  await markReadTyping(channel, last.msg.id);
   try {
     conv ??= { id: await openConversation(db, bot, { channel: "whatsapp", waId, contactId }), takeover_at: null, handled_at: null };
+    // cota do mês: o atendimento deste contato (24 horas) abre antes de chamar a IA; sem vaga, lança
+    // e cai no modo só humano (no catch)
+    await requireAtendimento(db, bot, { channel: "whatsapp", contactKey: contactId ?? waId, conversationId: conv.id });
+    if (noticeMarked) await clearNotice(db, { contactId, conversationId: conv.id });
+    await markReadTyping(channel, last.msg.id);
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
@@ -410,8 +408,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)
     if (isAccessError(e) || isPaymentError(e)) throw e;
     const code = (e as Error).message;
-    // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
-    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
+    // sem vaga na cota (agência ou sublimite do cliente) ou teste vencido: modo só humano, sem perder a mensagem
+    if (code === "quota_exceeded" || code === "client_quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("whatsapp: falha ao responder", e);
     await say("ia", FALLBACK, conv ? fixedRecord(FALLBACK) : null).catch(() => {});
   }

@@ -72,26 +72,21 @@ describe("aviso de limite", () => {
 });
 
 describe("modo só humano", () => {
-  /** Banco de mentira com a agência e o uso do mês. */
-  function db(agency: { plan: string; trial_ends_at?: string | null }, used: number) {
+  /** Banco de mentira com a agência. */
+  function db(agency: { plan: string; trial_ends_at?: string | null }) {
     const q = (row: unknown) => {
       const chain = { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: row, error: null }) };
       return chain;
     };
-    return { from: (t: string) => (t === "agencies" ? q(agency) : q({ conversations: used })) } as unknown as SupabaseClient;
+    return { from: (t: string) => (t === "agencies" ? q(agency) : q(null)) } as unknown as SupabaseClient;
   }
 
   it("plano cancelado e teste vencido param a IA também em conversa aberta", async () => {
-    expect(await aiBlockedReason(db({ plan: "cancelado" }, 0), "a1", false)).toBe("cancelled");
-    expect(await aiBlockedReason(db({ plan: "trial", trial_ends_at: "2020-01-01T00:00:00Z" }, 0), "a1", false)).toBe("trial_expired");
+    expect(await aiBlockedReason(db({ plan: "cancelado" }), "a1")).toBe("cancelled");
+    expect(await aiBlockedReason(db({ plan: "trial", trial_ends_at: "2020-01-01T00:00:00Z" }), "a1")).toBe("trial_expired");
   });
 
-  it("cota: conversa nova precisa de vaga; a aberta segue até alguém passar do limite", async () => {
-    const { PLANS } = await import("../plans");
-    const limit = PLANS.agencia.conversations;
-    expect(await aiBlockedReason(db({ plan: "agencia" }, limit), "a1", true)).toBe("quota_exceeded");
-    expect(await aiBlockedReason(db({ plan: "agencia" }, limit), "a1", false)).toBeNull();
-    expect(await aiBlockedReason(db({ plan: "agencia" }, limit + 1), "a1", false)).toBe("quota_exceeded");
-    expect(await aiBlockedReason(db({ plan: "agencia" }, limit - 1), "a1", true)).toBeNull();
+  it("a cota não é conferida aqui: é do atendimento, antes de chamar a IA", async () => {
+    expect(await aiBlockedReason(db({ plan: "agencia" }), "a1")).toBeNull();
   });
 });

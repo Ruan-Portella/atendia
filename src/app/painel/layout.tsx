@@ -11,7 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {
-  const { agency, plan, usage } = await requireAgency();
+  const { agency, plan, usage, quota } = await requireAgency();
   const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
   // pausa, desligamento e suspensão pelo backoffice, ordem da Meta: a agência precisa saber por que parou
   const notices = await panelNotices(createAdminClient(), agency.id);
@@ -29,12 +29,12 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       planName={plan.name}
       trialDays={trialDays}
       usage={usage}
-      limit={plan.conversations}
-      usageLabel={`${num(usage)} / ${num(plan.conversations)}`}
+      limit={quota}
+      usageLabel={`${num(usage)} / ${num(quota)}`}
       notices={
         <>
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
-          <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={plan.conversations} />
+          <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={quota} />
         </>
       }
     >

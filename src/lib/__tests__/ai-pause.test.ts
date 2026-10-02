@@ -29,11 +29,11 @@ describe("pausa da IA pelo backoffice", () => {
     expect(await isAiPaused(fakeDb({}), "a1")).toBe(false);
   });
 
-  it("no WhatsApp e no Instagram a pausa vira modo só humano (antes de plano e cota)", async () => {
-    const paused = fakeDb({ platform_flags: { ai_paused_at: "2026-10-02T00:00:00Z" }, agencies: { plan: "agencia", trial_ends_at: future, ai_paused_at: null }, usage: { conversations: 0 } });
-    expect(await aiBlockedReason(paused, "a1", true)).toBe("paused");
-    const ok = fakeDb({ platform_flags: { ai_paused_at: null }, agencies: { plan: "agencia", trial_ends_at: future, ai_paused_at: null }, usage: { conversations: 0 } });
-    expect(await aiBlockedReason(ok, "a1", true)).toBeNull();
+  it("no WhatsApp e no Instagram a pausa vira modo só humano (antes do plano)", async () => {
+    const paused = fakeDb({ platform_flags: { ai_paused_at: "2026-10-02T00:00:00Z" }, agencies: { plan: "agencia", trial_ends_at: future, ai_paused_at: null } });
+    expect(await aiBlockedReason(paused, "a1")).toBe("paused");
+    const ok = fakeDb({ platform_flags: { ai_paused_at: null }, agencies: { plan: "agencia", trial_ends_at: future, ai_paused_at: null } });
+    expect(await aiBlockedReason(ok, "a1")).toBeNull();
   });
 });
 

@@ -3,7 +3,8 @@ import type Stripe from "stripe";
 import { createAdminClient } from "./supabase/admin";
 import { planFromPrice, stripe } from "./stripe";
 import { PLANS, getPlan, type PlanId } from "./plans";
-import { currentPeriodBR } from "./utils";
+import { currentPeriodBR, monthStartBR } from "./utils";
+import { quotaOf } from "./quota";
 import { estimateCost, referencePrices, type UsageLine } from "./whatsapp-usage";
 
 /*
@@ -25,7 +26,7 @@ export type RangeKey = "mes" | "mes-passado" | "30d" | "7d";
 export const RANGE_LABEL: Record<RangeKey, string> = { mes: "Este mês", "mes-passado": "Mês passado", "30d": "Últimos 30 dias", "7d": "Últimos 7 dias" };
 
 /** Início do mês em Brasília (UTC-3, sem horário de verão desde 2019). */
-export const monthStartBR = (period: string) => new Date(`${period}-01T00:00:00-03:00`);
+export { monthStartBR };
 
 export function rangeFor(key: RangeKey, now = new Date()): { since: Date; until: Date; label: string } {
   const period = currentPeriodBR(now);
@@ -324,7 +325,8 @@ export interface AgencyRow {
   liveBots: number;
   whatsapp: number;
   instagram: number;
-  conversationsMonth: number;
+  /** Atendimentos do mês (a unidade da cota). */
+  atendimentosMonth: number;
   quota: number;
   aiCostMonthUsd: number;
   lastActivity: string | null;
@@ -350,7 +352,7 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
   const db = createAdminClient();
   const period = currentPeriodBR();
   const [{ data: agencies, error }, { data: stats }, emails] = await Promise.all([
-    db.from("agencies").select("id, owner_id, name, plan, trial_ends_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
+    db.from("agencies").select("id, owner_id, name, plan, quota_override, trial_ends_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
     db.rpc("admin_agency_stats", { p_period: period, p_month_start: monthStartBR(period).toISOString() }),
     ownerEmails(),
   ]);
@@ -373,8 +375,8 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
       liveBots: Number(s.live_bots) || 0,
       whatsapp: Number(s.whatsapp) || 0,
       instagram: Number(s.instagram) || 0,
-      conversationsMonth: Number(s.conversations_month) || 0,
-      quota: plan.conversations,
+      atendimentosMonth: Number(s.atendimentos_month) || 0,
+      quota: quotaOf({ plan: a.plan as string, quota_override: a.quota_override as number | null }),
       aiCostMonthUsd: Number(s.ai_cost_month) || 0,
       lastActivity: (s.last_activity as string | null) ?? null,
       aiPausedAt: (a.ai_paused_at as string | null) ?? null,

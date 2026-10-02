@@ -11,7 +11,7 @@ type Status = keyof typeof STATUS_LABEL;
 const SORTS = { recentes: "Mais recentes", custo: "Maior custo de IA", uso: "Maior uso da cota", atividade: "Atividade recente" } as const;
 type Sort = keyof typeof SORTS;
 
-const quotaShare = (a: AgencyRow) => (a.quota ? a.conversationsMonth / a.quota : 0);
+const quotaShare = (a: AgencyRow) => (a.quota ? a.atendimentosMonth / a.quota : 0);
 
 function sortRows(rows: AgencyRow[], sort: Sort) {
   const by = {
@@ -61,7 +61,7 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
               <th className="px-3 py-2.5 font-semibold">Plano</th>
               <th className="px-3 py-2.5 font-semibold">Bots</th>
               <th className="px-3 py-2.5 font-semibold">Canais</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Conversas no mês</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Atendimentos no mês</th>
               <th className="px-3 py-2.5 text-right font-semibold">IA no mês</th>
               <th className="px-3 py-2.5 text-right font-semibold">Margem</th>
               <th className="px-4 py-2.5 font-semibold">Última atividade</th>
@@ -85,7 +85,7 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
                   <td className="px-3 py-2.5 tabular">{a.liveBots}/{a.bots}</td>
                   <td className="px-3 py-2.5 text-xs text-muted">{[a.whatsapp ? `WhatsApp ${a.whatsapp}` : "", a.instagram ? `Instagram ${a.instagram}` : ""].filter(Boolean).join(" · ") || "—"}</td>
                   <td className="px-3 py-2.5 text-right tabular">
-                    {num(a.conversationsMonth)} / {num(a.quota)}
+                    {num(a.atendimentosMonth)} / {num(a.quota)}
                     <div className={cn("text-xs", quotaShare(a) >= 0.9 ? "text-danger" : "text-muted")}>{Math.round(quotaShare(a) * 100)}% da cota</div>
                   </td>
                   <td className="px-3 py-2.5 text-right tabular">{usd(a.aiCostMonthUsd)}</td>

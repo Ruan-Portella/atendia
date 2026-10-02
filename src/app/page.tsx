@@ -115,7 +115,8 @@ export default function LandingPage() {
         <div className="max-w-[640px]">
           <span className="eyebrow">Preços</span>
           <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Um plano por tamanho de agência.</h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente, à parte do plano. As mensagens do Instagram não são cobradas pela Meta.</p>
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">1 atendimento = 24 horas de conversa da IA com um contato, no site, no WhatsApp ou no Instagram. Respostas da sua equipe não contam.</p>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente, à parte do plano. As mensagens do Instagram não são cobradas pela Meta.</p>
         </div>
         <div className="grid gap-5 md:grid-cols-3">
           {(["freelancer", "agencia", "escala"] as const).map((id) => {
@@ -131,7 +132,7 @@ export default function LandingPage() {
                 </div>
                 <div className={featured ? "flex flex-col gap-2 text-[15px] text-[#dfe9e4]" : "flex flex-col gap-2 text-[15px] text-ink-2"}>
                   <span>{p.bots} chatbots</span>
-                  <span>{num(p.conversations)} conversas/mês</span>
+                  <span>{num(p.atendimentos)} atendimentos/mês</span>
                   <span>Sua marca no widget</span>
                   <span>Gerador de demos ilimitado</span>
                   {p.customDomain && <span>Painel com o seu domínio</span>}

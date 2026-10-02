@@ -11,7 +11,8 @@ import { IG_APP_AUTHOR, PHONE_AUTHOR, phonePauseActive } from "./authors";
  *   2. Suspensão pela BoaVoz (enforcement_actions): nada sai, nem resposta da equipe pelo painel
  *   3. Humano na conversa: "Assumir" ou resposta pelo celular/app há menos de 1 hora
  *   4. Bot pausado pelo dono (botão de emergência): aviso só se ele pediu
- *   5. Modo só humano: cota, teste vencido, assinatura cancelada, IA pausada pela BoaVoz
+ *   5. Modo só humano: teste vencido, assinatura cancelada, IA pausada pela BoaVoz; a cota (do
+ *      atendimento) entra aqui quando openAtendimento não abre, antes de chamar a IA
  *   6. Normal
  * O opt-out (SAIR, PARAR, STOP) roda antes de todos; a confirmação só sai se dá para enviar.
  * Risco à vida nunca roda nos degraus 1 e 2; nos 3 a 5, dispara o texto fixo de emergência.
@@ -100,8 +101,6 @@ export interface ModeInput {
   wa?: { disconnected_at?: string | null; payment_issue_at?: string | null; waba_id?: string | null; coexistence?: boolean | null } | null;
   /** Conta do Instagram ligada ao bot. */
   ig?: { disconnected_at?: string | null } | null;
-  /** Conversa nova (a cota só é conferida na abertura). */
-  opening: boolean;
 }
 
 export interface Measure {
@@ -143,7 +142,7 @@ export async function resolveMode(db: SupabaseClient, input: ModeInput, now = Da
     conversation && channel !== "widget"
       ? db.from("messages").select("created_at").eq("conversation_id", conversation.id).eq("role", "agent").in("author", [PHONE_AUTHOR, IG_APP_AUTHOR]).order("id", { ascending: false }).limit(1).maybeSingle()
       : Promise.resolve({ data: null }),
-    aiBlockedReason(db, bot.agency_id, input.opening),
+    aiBlockedReason(db, bot.agency_id),
   ]);
   const hits = (source: string) => measures.some((m) => m.source === source && measureApplies(m, bot, channel, input.wa?.waba_id));
   const paymentAt = input.wa?.payment_issue_at ? Date.parse(input.wa.payment_issue_at) : 0;
@@ -209,7 +208,7 @@ export async function sendBlockedReason(db: SupabaseClient, botId: string, chann
     channel === "whatsapp" ? db.from("whatsapp_channels").select("disconnected_at, payment_issue_at, waba_id, coexistence").eq("bot_id", botId).maybeSingle() : Promise.resolve({ data: null }),
     channel === "instagram" ? db.from("instagram_channels").select("disconnected_at").eq("bot_id", botId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
-  const { facts } = await resolveMode(db, { bot: bot as ModeInput["bot"], channel, conversation: null, wa, ig, opening: false });
+  const { facts } = await resolveMode(db, { bot: bot as ModeInput["bot"], channel, conversation: null, wa, ig });
   if (decideMode({ ...facts, metaPaymentIssue: false }).canSend) return null;
   const name = CHANNEL_NAME[channel];
   if (facts.metaOrder) return "A Meta mandou parar os envios deste número. Nada sai pelo WhatsApp até a ordem ser levantada.";

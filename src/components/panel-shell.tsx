@@ -44,9 +44,9 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
 
   const usageBlock = (
     <div className="flex flex-col gap-2 rounded-[10px] bg-[#262c29] px-3 py-3.5 text-xs text-[#c8cfcb]">
-      <div className="flex justify-between"><span>Conversas do mês</span><span className="font-semibold text-ground tabular">{usageLabel}</span></div>
+      <div className="flex justify-between"><span>Atendimentos do mês</span><span className="font-semibold text-ground tabular">{usageLabel}</span></div>
       <div className="h-1.5 overflow-hidden rounded-full bg-[#3a423e]"><div className="h-full bg-brand-tint" style={{ width: `${pct}%` }} /></div>
-      <Link href="/painel/cobranca" onClick={() => setOpen(false)} className="font-semibold text-brand-tint">Ver plano</Link>
+      <Link href="/painel/cobranca/uso" onClick={() => setOpen(false)} className="font-semibold text-brand-tint">Uso e custo</Link>
     </div>
   );
 
@@ -64,7 +64,7 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
           <MenuIcon size={20} />
         </button>
         <div className="min-w-0 flex-1">{brandBlock}</div>
-        <Link href="/painel/cobranca" className="rounded-full bg-[#262c29] px-2.5 py-1 text-[11px] font-semibold text-[#c8cfcb] tabular">{pct}%</Link>
+        <Link href="/painel/cobranca/uso" className="rounded-full bg-[#262c29] px-2.5 py-1 text-[11px] font-semibold text-[#c8cfcb] tabular">{pct}%</Link>
       </header>
 
       {/* menu deslizante (celular) */}

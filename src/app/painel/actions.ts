@@ -97,6 +97,24 @@ export async function updateClientRecord(clientId: string, formData: FormData): 
   return ok("Cliente atualizado.");
 }
 
+/**
+ * Sublimite de atendimentos do cliente no mês (Cobrança → Uso e custo); vazio = sem sublimite.
+ * Passando dele, só os chatbots deste cliente entram no modo só humano.
+ */
+export async function setClientQuotaCap(clientId: string, formData: FormData): Promise<ActionResult> {
+  const raw = text(formData.get("cap")).replace(/\D/g, "");
+  const cap = raw ? Number(raw) : null;
+  if (cap !== null && (!Number.isSafeInteger(cap) || cap > 10_000_000)) return fail("Limite inválido. Use um número inteiro de atendimentos por mês.");
+  const supabase = await createClient();
+  const { data: before } = await supabase.from("clients").select("monthly_quota_cap").eq("id", clientId).maybeSingle();
+  if (!before) return fail("Cliente não encontrado.");
+  const { error } = await supabase.from("clients").update({ monthly_quota_cap: cap }).eq("id", clientId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditPanel("cliente.sublimite", { type: "client", id: clientId }, { before: { monthly_quota_cap: before.monthly_quota_cap }, after: { monthly_quota_cap: cap } });
+  revalidatePath("/painel/cobranca/uso");
+  return ok(cap === null ? "Sem limite para este cliente: ele usa a cota da agência." : `Limite salvo: ${cap.toLocaleString("pt-BR")} atendimentos por mês.`);
+}
+
 /** Só apaga cliente sem chatbots, para ninguém perder base de conhecimento sem querer. */
 export async function deleteClientRecord(clientId: string): Promise<ActionResult> {
   const supabase = await createClient();

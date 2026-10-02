@@ -98,6 +98,9 @@ export function minutesSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 60000;
 }
 
+/** Início do mês ('AAAA-MM') em São Paulo (sem horário de verão desde 2019). */
+export const monthStartBR = (period: string) => new Date(`${period}-01T00:00:00-03:00`);
+
 /** Mês atual em São Paulo, 'AAAA-MM'. */
 export function currentPeriodBR(now = new Date()): string {
   const p = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).formatToParts(now);

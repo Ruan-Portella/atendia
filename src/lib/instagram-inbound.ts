@@ -4,6 +4,7 @@ import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type M
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { instagramContact, touchInbound } from "./contacts";
 import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./instagram-edits";
+import { requireAtendimento } from "./atendimentos";
 import { clearUnseen, igUnseenKind, markUnseen, recentUnseen, unseenMediaText, type UnseenMark } from "./unseen-media";
 import { hasPendingFrom, markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
@@ -156,7 +157,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const contact = await instagramContact(db, bot, igsid);
   const contactId = contact?.id ?? null;
   let conv = await recentConversation(db, bot.id, igsid, contactId);
-  const mode = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch, opening: !conv });
+  const mode = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch });
   if (contact && mode.storeInbound) await touchInbound(db, contact);
 
   const reply = (text: string) => send(db, ch, igsid, text);
@@ -292,10 +293,11 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     return;
   }
 
-  // degraus 4 e 5: bot pausado pelo dono, ou plano, teste, cota e IA pausada (em toda mensagem)
+  // degraus 4 e 5: bot pausado pelo dono, ou plano, teste e IA pausada (em toda mensagem); a cota do
+  // mês é do atendimento, conferida logo antes de chamar a IA
   if (mode.handoff) return humanOnly(mode);
-  // degrau 6, normal: o próximo episódio de indisponível avisa de novo
-  if (conv && (contact?.unavailable_notice_reason || conv.unavailable_notice_reason)) await clearNotice(db, { contactId, conversationId: conv.id });
+  // aviso de indisponível já dado: sai quando a IA voltar a responder (o próximo episódio avisa de novo)
+  const noticeMarked = Boolean(contact?.unavailable_notice_reason || conv?.unavailable_notice_reason);
 
   // compartilhou um post ou reel, ou mandou mídia, sem escrever nada: o comentário costuma vir logo
   // atrás, em outra DM. Se vier, esta rodada só grava, e a próxima responde tudo junto (uma resposta)
@@ -305,14 +307,6 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   if (!igText(lastEv) && lastEv.message?.attachments?.length && !deleted.has(burst[burst.length - 1].key)) {
     await new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS));
     if (await hasPendingFrom(db, "instagram", bot.id, igsid)) {
-      // a conversa nasce contando no mês, como se a IA respondesse agora (ela responde na próxima rodada)
-      if (!conv) {
-        try {
-          conv = { id: await openConversation(db, bot, { channel: "instagram", igsid, contactId }), takeover_at: null, handled_at: null };
-        } catch {
-          // cota ou teste vencido: a próxima rodada cai no modo só humano
-        }
-      }
       const convId = await plainConversation();
       if (convId) await storeAll(convId);
       // a pergunta deve vir na próxima rodada: ela recebe o texto fixo, não uma resposta chutada
@@ -354,9 +348,13 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     return;
   }
 
-  await instagramTyping(ch, igsid);
   try {
     conv ??= { id: await openConversation(db, bot, { channel: "instagram", igsid, contactId }), takeover_at: null, handled_at: null };
+    // cota do mês: o atendimento deste contato (24 horas) abre antes de chamar a IA; sem vaga, lança
+    // e cai no modo só humano (no catch)
+    await requireAtendimento(db, bot, { channel: "instagram", contactKey: contactId ?? igsid, conversationId: conv.id });
+    if (noticeMarked) await clearNotice(db, { contactId, conversationId: conv.id });
+    await instagramTyping(ch, igsid);
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
@@ -377,8 +375,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;
     const code = (e as Error).message;
-    // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
-    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
+    // sem vaga na cota (agência ou sublimite do cliente) ou teste vencido: modo só humano, sem perder a mensagem
+    if (code === "quota_exceeded" || code === "client_quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("instagram: falha ao responder", e);
     await say("ia", FALLBACK, conv ? fixedRecord(FALLBACK) : null).catch(() => {});
   }

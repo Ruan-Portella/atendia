@@ -3,17 +3,19 @@ import { PLANS, brl, num } from "@/lib/plans";
 import { billingEnabled } from "@/lib/stripe";
 import { PlanButtons } from "@/components/plan-buttons";
 import { daysUntil } from "@/lib/utils";
+import { BillingTabs } from "@/components/billing-tabs";
 
 export const metadata = { title: "Cobrança" };
 
 export default async function CobrancaPage({ searchParams }: PageProps<"/painel/cobranca">) {
   const sp = await searchParams;
-  const { agency, plan, usage } = await requireAgency();
+  const { agency, plan, usage, quota } = await requireAgency();
   const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
   return (
     <div className="max-w-[900px]">
       <h1 className="text-2xl font-bold sm:text-[28px]">Cobrança</h1>
-      <p className="text-sm text-muted">Plano atual: <strong>{plan.name}</strong>{trialDays !== null ? ` · ${trialDays} dias de teste restantes` : ""} · {num(usage)} de {num(plan.conversations)} conversas usadas este mês.</p>
+      <BillingTabs active="/painel/cobranca" />
+      <p className="mt-5 text-sm text-muted">Plano atual: <strong>{plan.name}</strong>{trialDays !== null ? ` · ${trialDays} dias de teste restantes` : ""} · {num(usage)} de {num(quota)} atendimentos usados este mês.</p>
       {sp.ok && <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Assinatura ativada. Obrigado!</p>}
       {sp.limite === "bots" && <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Você chegou ao limite de chatbots do plano {plan.name}. Faça upgrade para adicionar mais clientes.</p>}
       {!billingEnabled && <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Cobrança ainda não configurada neste servidor (STRIPE_SECRET_KEY). Todas as contas ficam em teste.</p>}

@@ -42,7 +42,7 @@ export async function sendCheck(db: SupabaseClient, o: { botId: string; channel:
     o.channel === "instagram" ? db.from("instagram_channels").select("disconnected_at").eq("bot_id", o.botId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   if (!bot) return "chatbot não encontrado";
-  const mode = await resolveMode(db, { bot: bot as ModeInput["bot"], channel: o.channel, conversation: conversation as ModeInput["conversation"], wa, ig, opening: false });
+  const mode = await resolveMode(db, { bot: bot as ModeInput["bot"], channel: o.channel, conversation: conversation as ModeInput["conversation"], wa, ig });
   return sendDecision(mode, mode.facts, o.kind);
 }
 

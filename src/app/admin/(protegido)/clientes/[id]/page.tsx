@@ -30,7 +30,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
   const [{ data: wa }, { data: ig }, { data: usage }, { data: monthly }, convCounts] = await Promise.all([
     botIds.length ? db.from("whatsapp_channels").select("bot_id, display_phone, disconnected_at").in("bot_id", botIds) : Promise.resolve({ data: [] }),
     botIds.length ? db.from("instagram_channels").select("bot_id, username, disconnected_at").in("bot_id", botIds) : Promise.resolve({ data: [] }),
-    db.from("usage").select("period, conversations").eq("agency_id", id).order("period", { ascending: false }).limit(6),
+    db.rpc("atendimentos_by_month", { p_agency_id: id, p_months: 6 }),
     db.from("ai_usage_monthly").select("period, kind, calls, cost_usd").eq("agency_id", id).order("period", { ascending: false }).limit(40),
     Promise.all(botIds.map(async (b) => [b, (await db.from("conversations").select("id", { count: "exact", head: true }).eq("bot_id", b).gte("started_at", since30)).count ?? 0] as const)),
   ]);
@@ -68,7 +68,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
       </div>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Conversas no mês" value={`${num(agency.conversationsMonth)} / ${num(agency.quota)}`} sub={`${agency.quota ? Math.round((agency.conversationsMonth / agency.quota) * 100) : 0}% da cota`} />
+        <Kpi label="Atendimentos no mês" value={`${num(agency.atendimentosMonth)} / ${num(agency.quota)}`} sub={`${agency.quota ? Math.round((agency.atendimentosMonth / agency.quota) * 100) : 0}% da cota`} />
         <Kpi label="IA no mês" value={usd(agency.aiCostMonthUsd)} sub={`≈ ${brl(agency.aiCostMonthUsd * fx)}`} />
         <Kpi label="Mensalidade" value={agency.priceBrl ? brl(agency.priceBrl) : "—"} sub={agency.priceBrl ? `margem ${brl(agency.priceBrl - agency.aiCostMonthUsd * fx)}` : "sem plano pago"} />
         <Kpi label="Chatbots" value={`${agency.liveBots}/${agency.bots}`} sub={`publicados · WhatsApp ${agency.whatsapp} · Instagram ${agency.instagram}`} />
@@ -106,14 +106,14 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         <section className="card flex flex-col gap-3 p-5">
           <h2 className="text-lg font-bold">Uso e custo por mês</h2>
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Mês</th><th className="py-1.5 text-right font-semibold">Conversas</th><th className="py-1.5 text-right font-semibold">Custo de IA</th></tr></thead>
+            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Mês</th><th className="py-1.5 text-right font-semibold">Atendimentos</th><th className="py-1.5 text-right font-semibold">Custo de IA</th></tr></thead>
             <tbody>
-              {(usage ?? []).map((u) => {
+              {((usage ?? []) as Array<{ period: string; total: number }>).map((u) => {
                 const m = months.get(u.period as string);
                 return (
                   <tr key={u.period as string} className="border-t border-line-2">
                     <td className="py-2">{u.period as string}</td>
-                    <td className="py-2 text-right tabular">{num(Number(u.conversations) || 0)}</td>
+                    <td className="py-2 text-right tabular">{num(Number(u.total) || 0)}</td>
                     <td className="py-2 text-right tabular" title={m?.kinds.map((k) => `${kindLabel(k.kind)}: ${usd(k.cost, 4)}`).join("\n")}>{m ? usd(m.cost) : "—"}</td>
                   </tr>
                 );

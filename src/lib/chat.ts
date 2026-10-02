@@ -3,8 +3,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, scopeReminder, type Persona } from "./ai";
 import { getPlan } from "./plans";
-import { currentPeriodBR } from "./utils";
-import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
+import { notifyHandoff, notifyLead } from "./notify";
 import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
@@ -312,29 +311,26 @@ export function chatTools(exec: {
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
-export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled" | "paused" | "bot_paused";
+export type AiBlockReason = "trial_expired" | "quota_exceeded" | "client_quota_exceeded" | "cancelled" | "paused" | "bot_paused";
 
 /**
- * Conferido em TODA mensagem do WhatsApp e do Instagram (não só na conversa nova): IA pausada
- * pelo backoffice, plano cancelado, teste vencido ou cota do mês esgotada param a IA também nas
- * conversas abertas. A cota continua contada só na abertura da conversa (openConversation).
+ * Conferido em TODA mensagem (não só na conversa nova): IA pausada pelo backoffice, plano
+ * cancelado ou teste vencido param a IA também nas conversas abertas. A cota é por atendimento,
+ * conferida antes de chamar a IA (openAtendimento): o atendimento aberto segue até o fim.
  */
-export async function aiBlockedReason(db: SupabaseClient, agencyId: string, opening: boolean): Promise<AiBlockReason | null> {
+export async function aiBlockedReason(db: SupabaseClient, agencyId: string): Promise<AiBlockReason | null> {
   if (await isAiPaused(db, agencyId)) return "paused";
   const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", agencyId).maybeSingle();
   const plan = getPlan(agency?.plan ?? "trial");
   if (plan.id === "cancelado") return "cancelled";
   if (plan.id === "trial" && agency?.trial_ends_at && new Date(agency.trial_ends_at) < new Date()) return "trial_expired";
-  const { data: usage } = await db.from("usage").select("conversations").eq("agency_id", agencyId).eq("period", currentPeriodBR()).maybeSingle();
-  const used = Number(usage?.conversations ?? 0);
-  // conversa nova: precisa de vaga; conversa aberta: só para depois que alguém já passou do limite
-  if (opening ? used >= plan.conversations : used > plan.conversations) return "quota_exceeded";
   return null;
 }
 
 /** Motivo do pedido de atendente automático, para a equipe. */
 export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
-  quota_exceeded: "Assistente parado: a cota de conversas do mês acabou.",
+  quota_exceeded: "Assistente parado: a cota de atendimentos do mês acabou.",
+  client_quota_exceeded: "Assistente parado: este cliente chegou ao limite de atendimentos do mês que a agência definiu.",
   trial_expired: "Assistente parado: o teste grátis venceu.",
   cancelled: "Assistente parado: a assinatura foi cancelada.",
   paused: "Assistente pausado pela equipe BoaVoz: as mensagens ficam aqui para a sua equipe responder.",
@@ -359,8 +355,8 @@ export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversati
 }
 
 /**
- * Abre uma conversa nova: confere o teste e a cota do mês da agência (cada conversa conta 1).
- * Lança "trial_expired" ou "quota_exceeded" quando não pode.
+ * Abre uma conversa nova. Não conta na cota: quem conta é o atendimento (openAtendimento, antes
+ * de chamar a IA). Lança "trial_expired" quando o teste venceu.
  */
 export async function openConversation(
   db: SupabaseClient,
@@ -372,13 +368,6 @@ export async function openConversation(
   if (plan.id === "trial" && agency?.trial_ends_at && new Date(agency.trial_ends_at) < new Date()) {
     throw new Error("trial_expired");
   }
-  const { data: used } = await db.rpc("increment_usage", { p_agency_id: bot.agency_id, p_period: currentPeriodBR() });
-  if (typeof used === "number") {
-    // avisa a agência ao chegar em 80% e ao estourar (sem atrasar a resposta do visitante)
-    notifyUsageThreshold(db, bot.agency_id, used, plan.conversations).catch(() => {});
-    if (used > plan.conversations) throw new Error("quota_exceeded");
-  }
-
   const { data: conv, error } = await db
     .from("conversations")
     .insert({ bot_id: bot.id, visitor_id: opts.visitorId ?? null, channel: opts.channel, ...(opts.waId ? { wa_id: opts.waId } : {}), ...(opts.igsid ? { ig_id: opts.igsid } : {}), ...(opts.contactId ? { contact_id: opts.contactId } : {}) })
@@ -414,7 +403,7 @@ export async function runChat(opts: {
 }) {
   const { db, bot, messages, channel } = opts;
 
-  // 1. Conversa (cria na primeira mensagem) + cota mensal da agência
+  // 1. Conversa (cria na primeira mensagem; a cota é do atendimento, conferida por quem chama)
   const conversationId = opts.conversationId ?? (await openConversation(db, bot, { channel, visitorId: opts.visitorId, waId: opts.whatsapp?.waId, igsid: opts.instagram?.igsid }));
 
   // 2. Recuperação de contexto

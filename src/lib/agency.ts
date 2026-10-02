@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
 import { createAdminClient } from "./supabase/admin";
 import { getPlan, type Plan } from "./plans";
-import { currentPeriodBR, slugify } from "./utils";
+import { slugify } from "./utils";
+import { monthAtendimentos, quotaOf } from "./atendimentos";
 
 export interface Agency {
   id: string;
@@ -19,6 +20,8 @@ export interface Agency {
   privacy_url: string | null;
   retention_months: number | null;
   plan: string;
+  /** Cota combinada fora do plano (assinantes de antes da cota nova); nula = a do plano. */
+  quota_override: number | null;
   trial_ends_at: string;
   stripe_customer_id: string | null;
   referral_code: string;
@@ -33,7 +36,7 @@ export interface Agency {
  * o banco. A identidade vem de `getClaims()` (JWT validado localmente), não de `getUser()`
  * (uma ida ao servidor de Auth por chamada).
  */
-export const requireAgency = cache(async (): Promise<{ agency: Agency; email: string; plan: Plan; usage: number }> => {
+export const requireAgency = cache(async (): Promise<{ agency: Agency; email: string; plan: Plan; usage: number; quota: number }> => {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
@@ -42,21 +45,7 @@ export const requireAgency = cache(async (): Promise<{ agency: Agency; email: st
   const email = (claims.email as string | undefined) ?? "";
   const meta = (claims.user_metadata ?? {}) as Record<string, unknown>;
 
-  // O uso do mês vem junto (embed do PostgREST): uma ida ao banco em vez de duas.
-  const period = currentPeriodBR(); // mês de Brasília, o mesmo do relatório e do uso do WhatsApp
-  const { data: row } = await supabase
-    .from("agencies")
-    .select("*, usage(conversations)")
-    .eq("owner_id", userId)
-    .eq("usage.period", period)
-    .maybeSingle<Agency & { usage: Array<{ conversations: number }> }>();
-  let agency: Agency | null = null;
-  let usage = 0;
-  if (row) {
-    const { usage: u, ...rest } = row;
-    agency = rest;
-    usage = u?.[0]?.conversations ?? 0;
-  }
+  let { data: agency } = await supabase.from("agencies").select("*").eq("owner_id", userId).maybeSingle<Agency>();
   if (!agency) {
     const admin = createAdminClient();
     // pessoa de um cliente (entrou pela área do cliente) não vira agência sem querer
@@ -83,5 +72,7 @@ export const requireAgency = cache(async (): Promise<{ agency: Agency; email: st
     agency = created;
   }
 
-  return { agency, email, plan: getPlan(agency.plan), usage };
+  // atendimentos do mês (São Paulo), a unidade da cota
+  const usage = await monthAtendimentos(supabase, agency.id);
+  return { agency, email, plan: getPlan(agency.plan), usage, quota: quotaOf(agency) };
 });

@@ -8,6 +8,7 @@ import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
 import { logWidgetAccess } from "@/lib/access-log";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 import { isResumable } from "@/lib/presence";
+import { openAtendimento } from "@/lib/atendimentos";
 
 const MAX_MESSAGE_CHARS = 2000;
 
@@ -77,12 +78,18 @@ export async function POST(req: Request) {
   const exceeded = await firstExceeded(db, [
     { key: `chat:${bot.id}:ip:${ip}:m`, max: 15, windowSeconds: 60, message: "Você está mandando mensagens rápido demais. Espere um minutinho." },
     { key: `chat:${bot.id}:ip:${ip}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
-    ...(convId ? [] : [{ key: `chat:${bot.id}:ip:${ip}:conv`, max: 10, windowSeconds: 3600, message: "Muitas conversas novas em pouco tempo. Tente de novo mais tarde." }]),
+    ...(convId
+      ? []
+      : [
+          { key: `chat:${bot.id}:ip:${ip}:conv`, max: 10, windowSeconds: 3600, message: "Muitas conversas novas em pouco tempo. Tente de novo mais tarde." },
+          // 30 conversas novas por dia por IP e bot: quem tenta esgotar a cota da agência pelo site
+          { key: `chat:${bot.id}:ip:${ip}:convd`, max: 30, windowSeconds: 86400, message: "Muitas conversas novas hoje. Tente de novo amanhã." },
+        ]),
   ]);
   if (exceeded) return tooMany(exceeded, CORS_HEADERS);
 
   // regra única de estado (conversation-mode): suspensão, equipe na conversa, pausa e modo só humano
-  const mode = await resolveMode(db, { bot, channel: "widget", conversation: conv, opening: !convId });
+  const mode = await resolveMode(db, { bot, channel: "widget", conversation: conv });
   if (mode.step === 2) return Response.json({ error: "channel_suspended", message: SUSPENDED_NOTICE }, { status: 403, headers: CORS_HEADERS });
 
   // Uma pessoa da agência assumiu: o assistente fica quieto; a mensagem vai para o painel
@@ -107,6 +114,11 @@ export async function POST(req: Request) {
     return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" ? 503 : 402);
   }
 
+  // cota do mês: o atendimento deste visitante (24 horas) abre antes de chamar a IA; o teste ao
+  // vivo do painel e as demos não contam. Sem vaga: formulário de contato
+  const slot = channel === "widget" && !bot.is_demo ? await openAtendimento(db, bot, { channel: "widget", contactKey: visitorId ?? convId ?? crypto.randomUUID(), conversationId: convId }) : null;
+  if (slot?.blocked) return contactFallback(slot.blocked, 402);
+
   try {
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];
     const { result, conversationId: activeId } = await runChat({
@@ -120,6 +132,8 @@ export async function POST(req: Request) {
     // registro de acesso do visitante (Marco Civil): IP quando a conversa começa e quando muda;
     // o teste ao vivo do painel já fica no registro de acesso do painel
     if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: activeId, ip: clientIp(req), isNew: !convId }));
+    // atendimento aberto antes da conversa existir: liga a primeira conversa a ele
+    if (slot?.isNew && slot.id && !convId) after(async () => void (await db.from("atendimentos").update({ first_conversation_id: activeId }).eq("id", slot.id)));
     return createUIMessageStreamResponse({
       stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts()),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": activeId, ...(handoff ? { "X-Handoff": handoff } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
@@ -128,7 +142,7 @@ export async function POST(req: Request) {
     const msg = (e as Error).message;
     // Sem cota, teste vencido ou falha do provedor de IA: o visitante nunca vê erro técnico nem
     // assunto de plano. O widget troca o chat por um formulário de contato (o lead não se perde).
-    if (msg === "quota_exceeded" || msg === "trial_expired") return contactFallback(msg, 402);
+    if (msg === "trial_expired") return contactFallback(msg, 402);
     console.error(e);
     return contactFallback("chat_failed", 503);
   }
