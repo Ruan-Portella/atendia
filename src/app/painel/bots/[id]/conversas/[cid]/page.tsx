@@ -27,7 +27,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, needs_human, handoff_requested_at, takeover_at, handled_at, bots(name, client_id, client_name)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, bots(name, client_id, client_name)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -44,7 +44,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com
   // ele (é por número); aberta por nós com modelo e sem resposta, ela nem abriu
   const isInstagram = conv.channel === "instagram" && Boolean(conv.ig_id);
-  const lastUserAt = isWhatsApp ? await lastContactMessageAt(supabase, id, { waId: conv.wa_id! }) : isInstagram ? await lastContactMessageAt(supabase, id, { igsid: conv.ig_id! }) : undefined;
+  const lastUserAt = isWhatsApp ? await lastContactMessageAt(supabase, id, { waId: conv.wa_id! }, conv.contact_id) : isInstagram ? await lastContactMessageAt(supabase, id, { igsid: conv.ig_id! }, conv.contact_id) : undefined;
   const handoffConv = isWhatsApp || isInstagram ? { ...conv, last_user_at: lastUserAt } : conv;
   const windowOpen = isWhatsApp && whatsappWindowOpen(handoffConv);
 

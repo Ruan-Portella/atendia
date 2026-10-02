@@ -196,6 +196,7 @@ export function operationAlerts(ops: Awaited<ReturnType<typeof getOperations>>):
   const out: string[] = [];
   if (!ops.health.dbWrite) out.push("O banco não aceitou escrita na checagem de saúde.");
   if (ops.health.queueStuck) out.push("A fila de mensagens da Meta está parada (evento pendente há mais de 30 minutos).");
+  if (ops.health.hashKeyOk === false) out.push("A chave de hash (CONTACT_HASH_KEY) mudou: contatos e pedidos de SAIR deixam de ser achados. Volte a chave anterior na Vercel.");
   if (ops.health.diskWarning) out.push(`Disco do banco em ${Math.round((ops.health.diskRatio ?? 0) * 100)}% do limite do plano.`);
   if (ops.queue.failed24h) out.push(`${ops.queue.failed24h} evento(s) da Meta com erro nas últimas 24 h.`);
   if (ops.channels.waPayment.length) out.push(`${ops.channels.waPayment.length} número(s) de WhatsApp com a Meta recusando por falta de pagamento.`);

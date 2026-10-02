@@ -16,6 +16,7 @@ import { gatedContext, gatedHistory, hiddenNote } from "./gate/context";
 import { visibleText, type Segment } from "./gate/base";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
 import { deliver } from "./send";
+import { metaPhoneHash, typedPhoneHash } from "./contacts";
 
 export interface BotRow {
   id: string;
@@ -364,7 +365,7 @@ export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversati
 export async function openConversation(
   db: SupabaseClient,
   bot: Pick<BotRow, "id" | "agency_id">,
-  opts: { channel: string; visitorId?: string | null; waId?: string; igsid?: string },
+  opts: { channel: string; visitorId?: string | null; waId?: string; igsid?: string; contactId?: string | null },
 ): Promise<string> {
   const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", bot.agency_id).single();
   const plan = getPlan(agency?.plan ?? "trial");
@@ -380,7 +381,7 @@ export async function openConversation(
 
   const { data: conv, error } = await db
     .from("conversations")
-    .insert({ bot_id: bot.id, visitor_id: opts.visitorId ?? null, channel: opts.channel, ...(opts.waId ? { wa_id: opts.waId } : {}), ...(opts.igsid ? { ig_id: opts.igsid } : {}) })
+    .insert({ bot_id: bot.id, visitor_id: opts.visitorId ?? null, channel: opts.channel, ...(opts.waId ? { wa_id: opts.waId } : {}), ...(opts.igsid ? { ig_id: opts.igsid } : {}), ...(opts.contactId ? { contact_id: opts.contactId } : {}) })
     .select("id")
     .single();
   if (error || !conv) throw new Error("Não foi possível abrir a conversa.");
@@ -479,7 +480,7 @@ export async function runChat(opts: {
         if (!leadEnabled) return { ok: false };
         const { data: lead } = await db
           .from("leads")
-          .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? waPhone, email: input.email ?? null, notes: input.interesse ?? null })
+          .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? waPhone, phone_hash: input.whatsapp ? typedPhoneHash(input.whatsapp) : metaPhoneHash(waPhone), email: input.email ?? null, notes: input.interesse ?? null })
           .select("id")
           .single();
         notifyLead({ db, bot, lead: { id: lead?.id, ...input } }).catch(() => {});

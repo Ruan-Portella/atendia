@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
 import { deliver, type SendKind, type SendRecord } from "./send";
+import { changeWhatsAppIdentity, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf } from "./contacts";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
@@ -49,6 +50,8 @@ export interface InboundMessage {
   button?: { text?: string };
   interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
+  /** Aviso do sistema (ex.: a pessoa trocou de número: user_changed_user_id / user_changed_number). */
+  system?: { body?: string; type?: string; wa_id?: string; user_id?: string };
 }
 
 export interface ChannelRow extends WaChannel {
@@ -71,7 +74,11 @@ const SILENT_TYPES = new Set(["reaction", "unsupported", "system", "ephemeral"])
  * da Meta é por número, não por conversa). null se ele nunca escreveu, ou se as conversas em que
  * escreveu foram apagadas.
  */
-export async function lastContactMessageAt(db: SupabaseClient, botId: string, contact: { waId: string } | { igsid: string }): Promise<string | null> {
+export async function lastContactMessageAt(db: SupabaseClient, botId: string, contact: { waId: string } | { igsid: string }, contactId?: string | null): Promise<string | null> {
+  if (contactId) {
+    const { data: c } = await db.from("contacts").select("last_inbound_at").eq("id", contactId).maybeSingle();
+    if (c?.last_inbound_at) return c.last_inbound_at as string;
+  }
   const base = db.from("conversations").select("id").eq("bot_id", botId);
   const { data: convs } = await ("waId" in contact ? base.in("wa_id", waIdVariants(contact.waId)) : base.eq("ig_id", contact.igsid));
   const ids = (convs ?? []).map((c) => c.id as string);
@@ -94,18 +101,23 @@ export async function storeContactMessage(db: SupabaseClient, conversationId: st
   await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", conversationId);
 }
 
-/** Conversa recente do contato com o chatbot (dentro da janela), procurando com e sem o 9. */
-async function recentConversation(db: SupabaseClient, botId: string, waId: string): Promise<RecentConversation | null> {
+/**
+ * Conversa recente do contato com o chatbot (dentro da janela): pelo contato (vale também quando a
+ * pessoa passa a aparecer só pelo BSUID); conversa antiga, de antes dos contatos, pelo wa_id com e
+ * sem o 9, e ela já passa a apontar para o contato.
+ */
+async function recentConversation(db: SupabaseClient, botId: string, waId: string, contactId: string | null = null): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
-  const { data } = await db
-    .from("conversations")
-    .select("id, takeover_at, handled_at, unavailable_notice_reason")
-    .eq("bot_id", botId)
-    .in("wa_id", waIdVariants(waId))
-    .gt("last_message_at", since)
-    .order("last_message_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<RecentConversation>();
+  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, unavailable_notice_reason, contact_id").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
+  if (contactId) {
+    const { data } = await recent().eq("contact_id", contactId).maybeSingle<RecentConversation>();
+    if (data) return data;
+  }
+  const { data } = await recent().in("wa_id", waIdVariants(waId)).maybeSingle<RecentConversation>();
+  if (data && contactId && !data.contact_id) {
+    await db.from("conversations").update({ contact_id: contactId }).eq("id", data.id);
+    data.contact_id = contactId;
+  }
   return data;
 }
 
@@ -113,6 +125,7 @@ interface RecentConversation {
   id: string;
   takeover_at: string | null;
   handled_at: string | null;
+  contact_id?: string | null;
   /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
   unavailable_notice_reason?: string | null;
 }
@@ -160,6 +173,13 @@ export async function previousAnswer(db: SupabaseClient, key: string): Promise<{
  * para quem chamou marcar o número.
  */
 export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow, all: QueuedMessage[]) {
+  // a pessoa trocou de número (aviso do sistema da Meta): o mesmo contato fica com o telefone e o BSUID novos
+  for (const q of all) {
+    const sys = q.msg.type === "system" ? q.msg.system : undefined;
+    if (sys?.type !== "user_changed_user_id" && sys?.type !== "user_changed_number") continue;
+    const ok = await changeWhatsAppIdentity(db, channel.bot_id, { phone: q.msg.from, bsuid: previousBsuid(sys.body) ?? q.msg.from_user_id }, { phone: sys.wa_id, bsuid: sys.user_id });
+    console.log("whatsapp: troca de número", sys.type, ok ? "aplicada" : "contato não encontrado");
+  }
   // reação, não suportada e sistema: nem resposta nem "só entendo texto" (o joinha não é pergunta)
   const burst = all.filter((q) => !SILENT_TYPES.has(q.msg.type) && contactOf(q.msg));
   if (burst.length < all.length) console.log("whatsapp: sem resposta", all.filter((q) => !burst.includes(q)).map((q) => q.msg.type));
@@ -172,8 +192,13 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const profileName = last.profileName;
   const reply = (body: string) => sendText(channel, waId, toWhatsAppText(body));
 
-  let conv = await recentConversation(db, bot.id, waId);
+  // o contato (achado pelo BSUID ou pelo telefone canônico) e a conversa recente dele
+  const contact = await whatsappContact(db, bot, { phone: last.msg.from ?? null, bsuid: last.msg.from_user_id ?? null, name: profileName });
+  const contactId = contact?.id ?? null;
+  let conv = await recentConversation(db, bot.id, waId, contactId);
   const mode = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel, opening: !conv });
+  // "já conversou" e a janela de 24 h: só mensagem do próprio contato que chegou (ordem da Meta e desligamento geral: nada)
+  if (contact && mode.storeInbound) await touchInbound(db, contact);
   /** Texto pela camada única de envio: regra de estado na hora do envio e registro na conversa. */
   const say = (kind: SendKind, text: string, record: SendRecord, conversationId: string | null = conv?.id ?? null) =>
     deliver(db, { botId: bot.id, channel: "whatsapp", conversationId, kind, record, transport: async () => (await reply(text)).messages?.[0]?.id ?? null });
@@ -212,7 +237,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
   const plainConversation = async (): Promise<string | null> => {
     if (!conv) {
-      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id, takeover_at, handled_at").single<RecentConversation>();
+      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, contact_id: contactId, visitor_id: null }).select("id, takeover_at, handled_at").single<RecentConversation>();
       conv = data;
     }
     return conv?.id ?? null;
@@ -245,7 +270,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
 
   // opt-out fixo (SAIR, PARAR, STOP e os botões da confirmação): antes de tudo, em qualquer estado;
   // a supressão vale sempre, a confirmação só sai se dá para enviar
-  const optOut = await handleOptOuts(db, channel, bot, waId, burst, texts, shown, conv?.id ?? null, mode);
+  const optOut = await handleOptOuts(db, channel, bot, waId, burst, texts, shown, conv?.id ?? null, mode, contactId);
   if (optOut.conversationId && !conv) conv = { id: optOut.conversationId, takeover_at: null, handled_at: null };
   if (optOut.handled.size === burst.length) return;
 
@@ -302,7 +327,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
 
   await markReadTyping(channel, last.msg.id);
   try {
-    conv ??= { id: await openConversation(db, bot, { channel: "whatsapp", waId }), takeover_at: null, handled_at: null };
+    conv ??= { id: await openConversation(db, bot, { channel: "whatsapp", waId, contactId }), takeover_at: null, handled_at: null };
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
@@ -366,6 +391,7 @@ async function handleOptOuts(
   shown: (i: number) => string,
   conversationId: string | null,
   mode: Pick<Mode, "canSend" | "storeInbound">,
+  contactId: string | null = null,
 ): Promise<{ handled: Set<number>; conversationId: string | null }> {
   const handled = new Set<number>();
   const target = { channel: "whatsapp" as const, scope: suppressionScope({ wabaId: channel.waba_id, botId: bot.id }), contact: waId };
@@ -374,7 +400,7 @@ async function handleOptOuts(
   const conversation = async () => {
     // ordem da Meta e desligamento geral: a supressão vale, mas nada é gravado na conversa
     if (!mode.storeInbound) return null;
-    convId ??= (await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, visitor_id: null }).select("id").single()).data?.id ?? null;
+    convId ??= (await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, contact_id: contactId, visitor_id: null }).select("id").single()).data?.id ?? null;
     return convId;
   };
   const answer = async (content: string, buttons?: Array<{ id: string; title: string }>) => {
@@ -441,9 +467,11 @@ export interface EchoMessage {
  */
 export async function handleEcho(db: SupabaseClient, channel: ChannelRow, echo: EchoMessage, key: string) {
   const content = (echo.text?.body?.trim() || mediaLabel(echo.type)).slice(0, MAX_MESSAGE_CHARS);
-  let conv = await recentConversation(db, channel.bot_id, echo.to);
+  const { data: bot } = await db.from("bots").select("id, agency_id").eq("id", channel.bot_id).maybeSingle();
+  const contact = bot ? await whatsappContact(db, bot, whatsappIdentityOf(echo.to)) : null;
+  let conv = await recentConversation(db, channel.bot_id, echo.to, contact?.id ?? null);
   if (!conv) {
-    const { data: created } = await db.from("conversations").insert({ bot_id: channel.bot_id, channel: "whatsapp", wa_id: echo.to, visitor_id: null }).select("id, takeover_at, handled_at").single();
+    const { data: created } = await db.from("conversations").insert({ bot_id: channel.bot_id, channel: "whatsapp", wa_id: echo.to, contact_id: contact?.id ?? null, visitor_id: null }).select("id, takeover_at, handled_at").single();
     conv = created;
   }
   if (!conv) return;

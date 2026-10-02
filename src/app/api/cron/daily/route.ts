@@ -9,6 +9,7 @@ import { sweepInbound } from "@/lib/inbound-queue";
 import { inboundHandlers } from "@/lib/inbound-process";
 import { classifyPending } from "@/lib/gate/base";
 import { deleteStalePending } from "@/lib/acceptance";
+import { linkLegacyConversations } from "@/lib/contacts";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
 export const maxDuration = 300;
@@ -47,6 +48,8 @@ async function daily() {
   const retention = await run("limpeza LGPD", () => applyRetention(db));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
+  // conversas de antes dos contatos ganham a ficha do contato, em lotes
+  const contacts = await run("contatos das conversas antigas", () => linkLegacyConversations(db));
   // auditoria (1 ano) e registros de acesso (6 meses): só a retenção apaga, em lotes
   const logs = await run("registros vencidos", async () => {
     const { data, error } = await db.rpc("purge_logs");
@@ -70,5 +73,5 @@ async function daily() {
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
   // portão: trechos novos que não couberam depois da leitura e os de regras antigas
   const base = await run("classificação da base", () => classifyPending(db, { budgetMs: 180_000 }));
-  return { inbound, trial, retention, acceptances, logs, instagram, aiUsage, disk, sources, base };
+  return { inbound, trial, retention, acceptances, contacts, logs, instagram, aiUsage, disk, sources, base };
 }

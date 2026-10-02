@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SUSPENDED_NOTICE, isChannelSuspended } from "@/lib/conversation-mode";
+import { typedPhoneHash } from "@/lib/contacts";
 import { CORS_HEADERS, type BotRow } from "@/lib/chat";
 import { notifyLead } from "@/lib/notify";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
   }
   const { data: lead } = await db
     .from("leads")
-    .insert({ bot_id: bot.id, conversation_id: conversationId, name: d.name, phone: d.phone ?? null, email: d.email ?? null, notes: d.notes ?? null })
+    .insert({ bot_id: bot.id, conversation_id: conversationId, name: d.name, phone: d.phone ?? null, phone_hash: typedPhoneHash(d.phone), email: d.email ?? null, notes: d.notes ?? null })
     .select("id")
     .single();
   notifyLead({ db, bot, lead: { id: lead?.id, nome: d.name, whatsapp: d.phone, email: d.email, interesse: d.notes } }).catch(() => {});

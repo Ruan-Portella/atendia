@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { checkHashSentinel } from "./hash";
 
 /** Disco do banco no plano atual (Supabase Free: 500 MB). Trocar DB_DISK_LIMIT_MB ao migrar para o Pro. */
 const diskLimitBytes = () => Number(process.env.DB_DISK_LIMIT_MB ?? 500) * 1024 * 1024;
@@ -16,6 +17,8 @@ export interface HealthReport {
   diskBytes: number | null;
   diskRatio: number | null;
   diskWarning: boolean;
+  /** A chave de hash (CONTACT_HASH_KEY) é a mesma de sempre? false: mudou (contatos e supressões somem). */
+  hashKeyOk?: boolean | null;
   error?: string;
 }
 
@@ -33,8 +36,10 @@ export async function checkHealth(db: SupabaseClient): Promise<HealthReport> {
   const oldestPendingSeconds = pending.error ? null : Number(pending.data ?? 0);
   const queueStuck = oldestPendingSeconds !== null && oldestPendingSeconds > STUCK_MINUTES * 60;
   const diskRatio = diskBytes === null ? null : Math.round((diskBytes / diskLimitBytes()) * 1000) / 1000;
+  const hashKeyOk = await checkHashSentinel(db).catch(() => null);
   return {
-    ok: dbWrite && !queueStuck,
+    ok: dbWrite && !queueStuck && hashKeyOk !== false,
+    hashKeyOk,
     oldestPendingSeconds,
     queueStuck,
     dbWrite,

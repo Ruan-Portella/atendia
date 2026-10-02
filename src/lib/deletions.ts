@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * se o registro falhar, a exclusão não acontece (senão uma restauração traria o dado de volta).
  */
 
-export type DeletableTable = "conversations" | "leads" | "instagram_channels" | "whatsapp_channels" | "bots" | "clients" | "unanswered";
+export type DeletableTable = "conversations" | "leads" | "instagram_channels" | "whatsapp_channels" | "bots" | "clients" | "unanswered" | "contacts";
 
 export async function logDeletion(db: SupabaseClient, table: DeletableTable, ids: string[], requestCode?: string | null) {
   if (!ids.length) return;
@@ -82,6 +82,11 @@ export async function deleteInstagramAccountData(db: SupabaseClient, igUserId: s
       conversations += ids.length;
       leads += leadIds.length;
     }
+    // as fichas dos contatos do Instagram deste chatbot
+    const { data: contactRows } = await db.from("contacts").select("id").eq("bot_id", ch.bot_id).eq("channel", "instagram");
+    const contactIds = (contactRows ?? []).map((c) => c.id as string);
+    await logDeletion(db, "contacts", contactIds, code);
+    if (contactIds.length) await db.from("contacts").delete().in("id", contactIds);
     await logDeletion(db, "instagram_channels", [ch.id as string], code);
     const { error } = await db.from("instagram_channels").delete().eq("id", ch.id);
     if (error) throw new Error(`exclusão da conexão: ${error.message}`);

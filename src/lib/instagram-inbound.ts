@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
 import { deliver, type SendKind, type SendRecord } from "./send";
+import { instagramContact, touchInbound } from "./contacts";
 import { markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
@@ -68,22 +69,25 @@ export function igMediaLabel(ev: IgMessagingEvent): string {
 }
 
 /** Conversa recente do contato com o chatbot (dentro da janela de 24 h). */
-async function recentConversation(db: SupabaseClient, botId: string, igsid: string): Promise<RecentConversation | null> {
+async function recentConversation(db: SupabaseClient, botId: string, igsid: string, contactId: string | null = null): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
-  const { data } = await db
-    .from("conversations")
-    .select("id, takeover_at, handled_at, unavailable_notice_reason")
-    .eq("bot_id", botId)
-    .eq("ig_id", igsid)
-    .gt("last_message_at", since)
-    .order("last_message_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<RecentConversation>();
+  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, unavailable_notice_reason, contact_id").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
+  if (contactId) {
+    const { data } = await recent().eq("contact_id", contactId).maybeSingle<RecentConversation>();
+    if (data) return data;
+  }
+  // conversa de antes dos contatos: pelo IGSID, e ela já passa a apontar para o contato
+  const { data } = await recent().eq("ig_id", igsid).maybeSingle<RecentConversation>();
+  if (data && contactId && !data.contact_id) {
+    await db.from("conversations").update({ contact_id: contactId }).eq("id", data.id);
+    data.contact_id = contactId;
+  }
   return data;
 }
 
 interface RecentConversation {
   id: string;
+  contact_id?: string | null;
   takeover_at: string | null;
   handled_at: string | null;
   /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
@@ -133,8 +137,12 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const igsid = burst[0].ev.sender!.id!;
   console.log("instagram: DMs recebidas", { bot: bot.id, quantidade: burst.length });
 
-  let conv = await recentConversation(db, bot.id, igsid);
+  // o contato (pelo IGSID, em hash) e a conversa recente dele; "já conversou" e a janela de 24 h
+  const contact = await instagramContact(db, bot, igsid);
+  const contactId = contact?.id ?? null;
+  let conv = await recentConversation(db, bot.id, igsid, contactId);
   const mode = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch, opening: !conv });
+  if (contact && mode.storeInbound) await touchInbound(db, contact);
 
   const reply = (text: string) => send(db, ch, igsid, text);
   /** Texto pela camada única de envio: regra de estado na hora do envio e registro na conversa. */
@@ -169,7 +177,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
   const plainConversation = async (): Promise<string | null> => {
     if (!conv) {
-      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id, takeover_at, handled_at").single<RecentConversation>();
+      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, contact_id: contactId, visitor_id: null }).select("id, takeover_at, handled_at").single<RecentConversation>();
       conv = data;
     }
     return conv?.id ?? null;
@@ -268,7 +276,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
 
   await instagramTyping(ch, igsid);
   try {
-    conv ??= { id: await openConversation(db, bot, { channel: "instagram", igsid }), takeover_at: null, handled_at: null };
+    conv ??= { id: await openConversation(db, bot, { channel: "instagram", igsid, contactId }), takeover_at: null, handled_at: null };
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
@@ -305,13 +313,15 @@ export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, 
   if (!ev.message?.mid || !igsid) return;
 
   const content = (igText(ev) ?? igMediaLabel(ev)).slice(0, MAX_MESSAGE_CHARS);
-  let conv = await recentConversation(db, ch.bot_id, igsid);
+  const { data: botRow } = await db.from("bots").select("id, agency_id").eq("id", ch.bot_id).maybeSingle();
+  const contact = botRow ? await instagramContact(db, botRow, igsid) : null;
+  let conv = await recentConversation(db, ch.bot_id, igsid, contact?.id ?? null);
   if (conv) {
     // reserva, caso o eco chegue antes de guardarmos o id: é a mesma frase que acabamos de mandar?
     const { data: last } = await db.from("messages").select("content, role, created_at").eq("conversation_id", conv.id).in("role", ["assistant", "agent"]).order("id", { ascending: false }).limit(1).maybeSingle();
     if (last && toInstagramText(String(last.content)) === content && Date.now() - new Date(last.created_at as string).getTime() < 5 * 60_000) return;
   } else {
-    const { data: created } = await db.from("conversations").insert({ bot_id: ch.bot_id, channel: "instagram", ig_id: igsid, visitor_id: null }).select("id, takeover_at, handled_at").single();
+    const { data: created } = await db.from("conversations").insert({ bot_id: ch.bot_id, channel: "instagram", ig_id: igsid, contact_id: contact?.id ?? null, visitor_id: null }).select("id, takeover_at, handled_at").single();
     conv = created;
   }
   if (!conv) return;

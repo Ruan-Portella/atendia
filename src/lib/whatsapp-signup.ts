@@ -3,6 +3,7 @@ import { fail, ok, type ActionResult } from "./action-result";
 import { notifyAgencyOwner } from "./notify";
 import { seal, unseal } from "./secret-box";
 import { appUrl } from "./utils";
+import { forgetBsuids } from "./contacts";
 import { WHATSAPP_BILLING_URL, WhatsAppError, exchangeSignupCode, getPhoneNumber, listWabaPhoneNumbers, newPin, registerNumber, startAppSync, subscribeApp } from "./whatsapp";
 
 export interface SignupResult {
@@ -62,6 +63,8 @@ export async function connectFromSignup(admin: SupabaseClient, opts: { botId: st
     return fail(`A Meta recusou a conexão: ${e instanceof WhatsAppError ? e.message : "erro desconhecido"}. Tente de novo em instantes.`);
   }
 
+  // portfólio anterior do chatbot: o BSUID é por portfólio, então trocar de portfólio anula os antigos
+  const { data: previous } = await admin.from("whatsapp_channels").select("business_id").eq("bot_id", botId).maybeSingle();
   await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
   const { error } = await admin.from("whatsapp_channels").insert({
     bot_id: botId,
@@ -75,6 +78,7 @@ export async function connectFromSignup(admin: SupabaseClient, opts: { botId: st
     coexistence,
   });
   if (error) return fail("O número foi conectado na Meta, mas não deu para salvar. Tente de novo.");
+  if (previous?.business_id && businessId && previous.business_id !== businessId) await forgetBsuids(admin, botId);
 
   // coexistência: contatos primeiro, depois o histórico (a Meta desconecta se não pedirmos em 24 h)
   let syncFailed = false;

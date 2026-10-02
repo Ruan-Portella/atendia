@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { waIdVariants } from "./whatsapp";
 import { hmacHex } from "./hash";
+import { canonicalPhone as canonicalPhoneOf } from "./phone";
 
 /*
  * Lista de supressão (migração 0030): quem pediu para não receber mensagens iniciadas pela
@@ -11,11 +11,8 @@ import { hmacHex } from "./hash";
 export type SuppressionKind = "marketing" | "utility" | "all";
 export type SuppressionChannel = "whatsapp" | "instagram";
 
-/** Celular brasileiro sempre com o 9: o mesmo contato com e sem o 9 vira um hash só. */
-export function canonicalPhone(waId: string): string {
-  const v = waIdVariants(waId);
-  return v.find((x) => x.length === 13) ?? v[0];
-}
+/** Celular brasileiro sempre com o 9 (src/lib/phone.ts); BSUID e o que não é telefone vão como estão. */
+export const canonicalPhone = (waId: string): string => canonicalPhoneOf(waId) ?? waId;
 
 export function contactHash(channel: SuppressionChannel, contact: string): string {
   const id = channel === "whatsapp" ? canonicalPhone(contact) : contact;

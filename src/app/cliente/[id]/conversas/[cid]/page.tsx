@@ -18,7 +18,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, handoff_requested_at, takeover_at, handled_at")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
@@ -34,7 +34,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const handoffOpen = member.allowHandoff && !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com ele
   const contact = conv.channel === "whatsapp" && conv.wa_id ? { waId: conv.wa_id } : conv.channel === "instagram" && conv.ig_id ? { igsid: conv.ig_id } : null;
-  const handoffConv = contact ? { ...conv, last_user_at: await lastContactMessageAt(admin, conv.bot_id, contact) } : conv;
+  const handoffConv = contact ? { ...conv, last_user_at: await lastContactMessageAt(admin, conv.bot_id, contact, conv.contact_id) } : conv;
 
   // Tela de chat: preenche o espaço abaixo das abas (a casca do portal rola só o conteúdo);
   // cabeçalho e resposta fixos, e só as mensagens rolam.

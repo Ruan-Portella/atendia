@@ -30,6 +30,7 @@ import { confirmAcceptance, connectBlockFor, dayLabel, getCompliance, parseAnswe
 import { notifyPlatform } from "@/lib/notify";
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
+import { typedPhoneHash, whatsappContact } from "@/lib/contacts";
 import { logDeletion } from "@/lib/deletions";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -827,10 +828,13 @@ export async function startWhatsAppConversation(botId: string, formData: FormDat
 
   const admin = createAdminClient();
   const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
-  const { data: recent } = await admin.from("conversations").select("id").eq("bot_id", botId).in("wa_id", waIdVariants(to)).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1).maybeSingle();
+  const { agency } = await requireAgency();
+  const contact = await whatsappContact(admin, { id: botId, agency_id: agency.id }, { phone: to });
+  const recentBy = admin.from("conversations").select("id").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
+  const { data: recent } = await (contact ? recentBy.eq("contact_id", contact.id) : recentBy.in("wa_id", waIdVariants(to))).maybeSingle();
   let conversationId = recent?.id as string | undefined;
   if (!conversationId) {
-    const { data: created, error } = await admin.from("conversations").insert({ bot_id: botId, channel: "whatsapp", wa_id: to, visitor_id: null }).select("id").single();
+    const { data: created, error } = await admin.from("conversations").insert({ bot_id: botId, channel: "whatsapp", wa_id: to, contact_id: contact?.id ?? null, visitor_id: null }).select("id").single();
     if (error || !created) return fail("A mensagem foi enviada, mas não deu para abrir a conversa aqui. Ela aparece quando o contato responder.");
     conversationId = created.id as string;
   }
@@ -972,15 +976,27 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
   // telefone: compara só os números, pelo final (com ou sem +55 e DDD formatado)
   const tail = digits.slice(-10);
   const matches = (leads ?? []).filter((l) => byEmail || digitsOf(String((l as { phone?: string }).phone ?? "")).endsWith(tail));
-  if (!matches.length) return ok("Nenhum dado encontrado para esse contato.");
 
   const admin = createAdminClient();
-  const convIds = [...new Set(matches.map((l) => l.conversation_id).filter((c): c is string => Boolean(c)))];
+  // a ficha do contato (WhatsApp, pelo telefone canônico em hash, ou pelo e-mail) e todas as conversas dela
+  const ph = byEmail ? null : typedPhoneHash(contact);
+  const { data: contactRows } = byEmail
+    ? await admin.from("contacts").select("id").in("bot_id", ids).ilike("email", contact)
+    : ph
+      ? await admin.from("contacts").select("id").in("bot_id", ids).eq("phone_hash", ph)
+      : { data: [] as Array<{ id: string }> };
+  const contactIds = (contactRows ?? []).map((c) => c.id as string);
+  const { data: contactConvs } = contactIds.length ? await admin.from("conversations").select("id").in("contact_id", contactIds) : { data: [] as Array<{ id: string }> };
+  if (!matches.length && !contactIds.length) return ok("Nenhum dado encontrado para esse contato.");
+
+  const convIds = [...new Set([...matches.map((l) => l.conversation_id), ...(contactConvs ?? []).map((c) => c.id)].filter((c): c is string => Boolean(c)))];
   // LGPD: registrado antes de apagar, para uma restauração de backup não trazer de volta
   await logDeletion(admin, "leads", matches.map((l) => l.id as string));
   await logDeletion(admin, "conversations", convIds);
-  await admin.from("leads").delete().in("id", matches.map((l) => l.id));
+  await logDeletion(admin, "contacts", contactIds);
+  if (matches.length) await admin.from("leads").delete().in("id", matches.map((l) => l.id));
   if (convIds.length) await admin.from("conversations").delete().in("id", convIds).in("bot_id", ids);
+  if (contactIds.length) await admin.from("contacts").delete().in("id", contactIds).in("bot_id", ids);
   await auditPanel("contato.apagar_dados", { type: "client", id: clientId }, { after: { contatos: matches.length, conversas: convIds.length, por: byEmail ? "email" : "telefone" } });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok(`Apagados ${matches.length} contato${matches.length === 1 ? "" : "s"} e ${convIds.length} conversa${convIds.length === 1 ? "" : "s"}.`);
