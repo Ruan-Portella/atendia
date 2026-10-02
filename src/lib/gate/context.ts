@@ -22,6 +22,19 @@ export function gatedContext(context: string, o: { channel: Exclude<GateChannel,
   return { context: out, hidden: [...hidden] };
 }
 
+/**
+ * O mesmo corte nas respostas antigas do bot que vão no histórico: sem isso, depois de zerar o
+ * 18+ no painel, a IA repetia "Brahma R$ 7" de uma resposta de antes. Só as do bot: a fala da
+ * pessoa fica como ela escreveu.
+ */
+export function gatedHistory<M extends { role: string; parts: Array<{ type: string; text?: string }> }>(messages: M[], o: Parameters<typeof gatedContext>[1]): M[] {
+  return messages.map((m) =>
+    m.role !== "assistant"
+      ? m
+      : { ...m, parts: m.parts.map((p) => (p.type === "text" && typeof p.text === "string" ? { ...p, text: gatedContext(p.text, o).context.trim() || "(omitido)" } : p)) },
+  );
+}
+
 /** Linha para o prompt quando a base tinha bebida ou remédio que ficaram de fora. null sem nada oculto. */
 export function hiddenNote(hidden: GateCategory[], age: AgeStatus): string | null {
   const regulated = hidden.filter((c) => CATEGORIES[c].level === "regulamentado");

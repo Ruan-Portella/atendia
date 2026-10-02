@@ -11,7 +11,7 @@ import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./ha
 import { RISK_TEXT, detectRisk } from "./risk";
 import { ageNote, type AgeStatus } from "./gate/age";
 import { regulatedChannelNote, type RegulatedChannel } from "./gate/sales-channel";
-import { gatedContext, hiddenNote } from "./gate/context";
+import { gatedContext, gatedHistory, hiddenNote } from "./gate/context";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
 
 export interface BotRow {
@@ -446,7 +446,8 @@ export async function runChat(opts: {
     allowSystemInMessages: true,
     messages: [
       { role: "system" as const, content: prompt.variable },
-      ...(await convertToModelMessages(messages.slice(-12))),
+      // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
+      ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null }) : messages.slice(-12))),
       ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
     ],
     ...modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) }),

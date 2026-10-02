@@ -39,8 +39,10 @@ export interface ExitResult {
 }
 
 const NEGATION = /\b(nao|nunca|nem|jamais)\b/;
-/** Sinal de oferta: preço, ou dizer que tem, vende, oferece, está no cardápio. */
-const OFFER = /r\$\s?\d|\b(temos|tem sim|vendemos|vende|oferecemos|disponivel|disponiveis|a venda|pode pedir|peca|cardapio|custa|sai por|por apenas)\b/;
+/** Sinal de oferta: preço (no texto original: o normalizado perde o "$"), ou dizer que tem, vende, oferece, está no cardápio. */
+const PRICE = /R\$\s?\d/i;
+const OFFER_WORDS = /\b(temos|tem sim|vendemos|vende|oferecemos|disponivel|disponiveis|a venda|pode pedir|peca|cardapio|custa|sai por|por apenas)\b/;
+const offers = (sentence: string, norm: string) => PRICE.test(sentence) || OFFER_WORDS.test(norm);
 /**
  * Dado de pagamento: código do Pix, link de meio de pagamento, ou chave (e-mail, documento,
  * telefone) junto de Pix/boleto. Link do site da empresa não conta: finalizar lá é o caminho certo.
@@ -70,7 +72,7 @@ export function checkExit(input: ExitInput): ExitResult {
     const hits = negated ? [] : dictionaryHits(s, { channel: input.channel, contactPhone: input.contactPhone });
     const banned = hits.filter((h) => h.level === "proibido");
     // bebida ou remédio só sai se a frase oferece o item e a pessoa não confirmou 18+
-    const adult = input.age === "sim" || !OFFER.test(norm) ? [] : hits.filter((h) => h.level === "regulamentado");
+    const adult = input.age === "sim" || !offers(s, norm) ? [] : hits.filter((h) => h.level === "regulamentado");
     const pay = input.regulatedConversation && isPayment(s);
     banned.forEach((h) => prohibited.add(h.category));
     adult.forEach((h) => regulated.add(h.category));

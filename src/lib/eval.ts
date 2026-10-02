@@ -8,6 +8,7 @@ import { isGapAnswer, isNoInfoAnswer } from "./unanswered";
 import { decideEntrance } from "./gate/entrance";
 import { GATE_TEXTS } from "./gate/rules";
 import { checkExit, exitDecision } from "./gate/exit";
+import { gatedHistory } from "./gate/context";
 import { regulatedDestination } from "./gate/sales-channel";
 import { costUsd } from "./ai-usage";
 import type { AgeStatus } from "./gate/age";
@@ -89,6 +90,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
   const scopeLock = opts.channel === "whatsapp" || opts.channel === "instagram";
   const age = opts.age ?? null;
   const noop = async () => ({ ok: true });
+  const historyParts = (opts.history ?? []).map((text, i) => ({ role: i % 2 === 0 ? ("user" as const) : ("assistant" as const), parts: [{ type: "text" as const, text }] }));
 
   const one = async (): Promise<EvalRun> => {
     let urgent = false;
@@ -124,7 +126,8 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         allowSystemInMessages: true,
         messages: [
           { role: "system" as const, content: prompt.variable },
-          ...(opts.history ?? []).map((content, i) => ({ role: i % 2 === 0 ? ("user" as const) : ("assistant" as const), content })),
+          // histórico com o mesmo corte do chat nas respostas do bot
+          ...(scopeLock ? gatedHistory(historyParts, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age }) : historyParts).map((m) => ({ role: m.role, content: m.parts[0].text })),
           // item barrado junto com outro assunto: a IA responde à mensagem sem o item, como no canal
           { role: "user" as const, content: entrance?.kind === "ia" && entrance.question ? entrance.question : question },
           ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),

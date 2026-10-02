@@ -43,6 +43,13 @@ describe("portão na saída: o que sai", () => {
     expect(exitDecision(r)).toBe("pede_18");
   });
 
+  it("preço sem palavra de oferta também conta (caso real: 18+ zerado e a IA repetiu os preços)", () => {
+    const r = exit("Claro! Pizza de calabresa por R$ 45, cerveja Brahma lata por R$ 7, e Heineken long neck por R$ 12. Posso ajudar com mais alguma coisa?");
+    expect(r.text).toBe("Claro! Posso ajudar com mais alguma coisa?");
+    expect(r.regulated).toEqual(["bebida"]);
+    expect(r.offerAdult).toBe(true);
+  });
+
   it("quem disse que não tem 18: a frase sai, sem botão", () => {
     const r = exit("A pizza custa R$ 45. A caipirinha custa R$ 18.", { age: "nao" });
     expect(r.text).toBe("A pizza custa R$ 45.");

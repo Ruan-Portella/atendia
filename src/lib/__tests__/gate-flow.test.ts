@@ -5,7 +5,7 @@ import { AGE_NO, AGE_YES, AGE_NO_REASK_DAYS, ageNote, getAge, resetAge, setAge }
 import { decideEntrance, parseClassification, type Classification } from "../gate/entrance";
 import { isChatLink, regulatedChannelNote, regulatedDestination } from "../gate/sales-channel";
 import { ageAnswer, historyUpTo, withLastUserText } from "../gate/flow";
-import { gatedContext, hiddenNote } from "../gate/context";
+import { gatedContext, gatedHistory, hiddenNote } from "../gate/context";
 import { scopeReminder } from "../ai";
 import { gateNotesFor } from "../chat";
 import type { GateCategory } from "../gate/rules";
@@ -73,6 +73,20 @@ describe("base sem os itens barrados", () => {
 
   it("WhatsApp de fora do Brasil: bebida some mesmo com Sim", () => {
     expect(view("sim", "14155550123").context).not.toContain("Heineken");
+  });
+
+  it("histórico: respostas antigas do bot perdem o item 18+ sem o Sim; a fala da pessoa fica", () => {
+    const msgs = [
+      { role: "user", parts: [{ type: "text", text: "Tem Heineken?" }] },
+      { role: "assistant", parts: [{ type: "text", text: "Sim, temos Heineken long neck por R$ 12. Você pode pedir pelo site bardoze.com.br/cardapio." }] },
+      { role: "assistant", parts: [{ type: "text", text: "Cerveja Brahma lata por R$ 7." }] },
+    ];
+    const zerado = gatedHistory(msgs, { channel: "whatsapp", contactPhone: "5521999990000", age: null });
+    expect(zerado[0].parts[0].text).toBe("Tem Heineken?");
+    expect(zerado[1].parts[0].text).toBe("Você pode pedir pelo site bardoze.com.br/cardapio.");
+    expect(zerado[2].parts[0].text).toBe("(omitido)");
+    // com o Sim, o histórico fica como está
+    expect(gatedHistory(msgs, { channel: "whatsapp", contactPhone: "5521999990000", age: "sim" })[1].parts[0].text).toContain("R$ 12");
   });
 
   it("nota dos itens ocultos só quando bebida ou remédio ficaram de fora", () => {
