@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
+import { deliver, type SendKind, type SendRecord } from "./send";
 import { markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
@@ -136,13 +137,16 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const mode = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch, opening: !conv });
 
   const reply = (text: string) => send(db, ch, igsid, text);
+  /** Texto pela camada única de envio: regra de estado na hora do envio e registro na conversa. */
+  const say = (kind: SendKind, text: string, record: SendRecord, conversationId: string | null = conv?.id ?? null, quickReplies?: Array<{ title: string; payload: string }>) =>
+    deliver(db, { botId: bot.id, channel: "instagram", conversationId, kind, record, transport: () => send(db, ch, igsid, text, quickReplies) });
   for (let i = 0; i < burst.length; i++) {
     const exceeded = await firstExceeded(db, [
       { key: `ig:${bot.id}:${igsid}:m`, max: 15, windowSeconds: 60, message: "Você está mandando mensagens rápido demais. Espere um minutinho." },
       { key: `ig:${bot.id}:${igsid}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
     ]);
     if (exceeded) {
-      if (mode.canSend && (await noticeOnce(db, exceeded))) await reply(exceeded.message);
+      if (mode.canSend && (await noticeOnce(db, exceeded))) await say("sistema", exceeded.message, null);
       return;
     }
   }
@@ -176,15 +180,13 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   /** Mensagem do sistema (confirmação, aviso): só sai se dá para enviar; gravada na conversa. */
   const systemReply = async (convId: string | null, content: string, quickReplies?: Array<{ title: string; payload: string }>) => {
     if (!mode.canSend) return;
-    const mid = await send(db, ch, igsid, content, quickReplies);
-    if (convId) await db.from("messages").insert({ conversation_id: convId, role: "assistant", content, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
+    await say("sistema", content, convId ? { insert: { role: "assistant", content, author: SYSTEM_AUTHOR } } : null, convId, quickReplies);
   };
   /** Aviso ao contato do degrau atual, uma vez por episódio (o da suspensão sai mesmo sem envio). */
   const sendNotice = async (convId: string, notice: Mode["notice"]) => {
     if (!notice || !(await noticeDue(db, convId, notice.reason))) return;
-    const mid = await reply(notice.text);
-    await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: notice.text, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
-    await markNoticeSent(db, convId, notice.reason);
+    const r = await say(notice.reason === "suspenso" ? "aviso_suspenso" : "sistema", notice.text, { insert: { role: "assistant", content: notice.text, author: SYSTEM_AUTHOR } }, convId);
+    if (r.status === "sent") await markNoticeSent(db, convId, notice.reason);
   };
 
   /** Bot pausado pelo dono (4) ou modo só humano (5): grava, vira pedido de atendente, texto fixo uma vez. */
@@ -253,15 +255,14 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   if (qi === undefined) {
     if (handled.size) return;
     const lastAudio = Boolean(burst[burst.length - 1].ev.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
-    return void (await reply(lastAudio ? AUDIO_FAILED : ONLY_TEXT));
+    return void (await say("ia", lastAudio ? AUDIO_FAILED : ONLY_TEXT, null));
   }
   const q = burst[qi];
 
   const before = await previousAnswer(db, q.key);
   if (before.state === "sent") return;
   if (before.state === "unsent") {
-    const mid = await reply(before.content);
-    await db.from("messages").update({ channel_msg_id: mid ?? "enviada" }).eq("id", before.id);
+    await say("ia", before.content, { update: before.id });
     return;
   }
 
@@ -290,7 +291,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
     if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("instagram: falha ao responder", e);
-    await reply(FALLBACK).catch(() => {});
+    await say("ia", FALLBACK, null).catch(() => {});
   }
 }
 

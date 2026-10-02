@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
+import { deliver, type SendKind, type SendRecord } from "./send";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
@@ -146,9 +147,10 @@ export async function storeOnce(db: SupabaseClient, conversationId: string, cont
 export async function previousAnswer(db: SupabaseClient, key: string): Promise<{ state: "new" } | { state: "sent" } | { state: "unsent"; id: number; content: string } | { state: "unanswered" }> {
   const { data: q } = await db.from("messages").select("id, conversation_id").eq("inbound_key", key).maybeSingle();
   if (!q) return { state: "new" };
-  const { data: a } = await db.from("messages").select("id, content, channel_msg_id").eq("conversation_id", q.conversation_id).eq("role", "assistant").gt("id", q.id).order("id").limit(1).maybeSingle();
+  const { data: a } = await db.from("messages").select("id, content, channel_msg_id, blocked_reason, failed_at").eq("conversation_id", q.conversation_id).eq("role", "assistant").gt("id", q.id).order("id").limit(1).maybeSingle();
   if (!a) return { state: "unanswered" };
-  return a.channel_msg_id ? { state: "sent" } : { state: "unsent", id: a.id as number, content: String(a.content) };
+  // barrada pela regra de estado ou recusada pelo canal também já foi resolvida: não reenvia
+  return a.channel_msg_id || a.blocked_reason || a.failed_at ? { state: "sent" } : { state: "unsent", id: a.id as number, content: String(a.content) };
 }
 
 /**
@@ -172,6 +174,9 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
 
   let conv = await recentConversation(db, bot.id, waId);
   const mode = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel, opening: !conv });
+  /** Texto pela camada única de envio: regra de estado na hora do envio e registro na conversa. */
+  const say = (kind: SendKind, text: string, record: SendRecord, conversationId: string | null = conv?.id ?? null) =>
+    deliver(db, { botId: bot.id, channel: "whatsapp", conversationId, kind, record, transport: async () => (await reply(text)).messages?.[0]?.id ?? null });
 
   // o limite vem antes de qualquer custo (transcrição, IA); cada mensagem conta
   for (let i = 0; i < burst.length; i++) {
@@ -180,7 +185,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
       { key: `wa:${bot.id}:${waId}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
     ]);
     if (exceeded) {
-      if (mode.canSend && (await noticeOnce(db, exceeded))) await reply(exceeded.message);
+      if (mode.canSend && (await noticeOnce(db, exceeded))) await say("sistema", exceeded.message, null);
       return;
     }
   }
@@ -219,9 +224,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   /** Aviso ao contato do degrau atual, uma vez por episódio (gravado na conversa como do sistema). */
   const sendNotice = async (convId: string, notice: Mode["notice"]) => {
     if (!notice || !(await noticeDue(db, convId, notice.reason))) return;
-    const sent = await reply(notice.text);
-    await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: notice.text, author: SYSTEM_AUTHOR, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
-    await markNoticeSent(db, convId, notice.reason);
+    const r = await say(notice.reason === "suspenso" ? "aviso_suspenso" : "sistema", notice.text, { insert: { role: "assistant", content: notice.text, author: SYSTEM_AUTHOR } }, convId);
+    if (r.status === "sent") await markNoticeSent(db, convId, notice.reason);
   };
 
   /**
@@ -285,15 +289,14 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   if (qi === undefined) {
     if (optOut.handled.size) return;
     const lastAudio = last.msg.type === "audio" && canTranscribe();
-    return void (await reply(lastAudio ? AUDIO_FAILED : ONLY_TEXT));
+    return void (await say("ia", lastAudio ? AUDIO_FAILED : ONLY_TEXT, null));
   }
   const q = burst[qi];
 
   const before = await previousAnswer(db, q.key);
   if (before.state === "sent") return;
   if (before.state === "unsent") {
-    const sent = await reply(before.content);
-    await db.from("messages").update({ channel_msg_id: sent.messages?.[0]?.id ?? "enviada" }).eq("id", before.id);
+    await say("ia", before.content, { update: before.id });
     return;
   }
 
@@ -331,7 +334,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
     if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("whatsapp: falha ao responder", e);
-    await reply(FALLBACK).catch(() => {});
+    await say("ia", FALLBACK, null).catch(() => {});
   }
 }
 
@@ -377,9 +380,15 @@ async function handleOptOuts(
   const answer = async (content: string, buttons?: Array<{ id: string; title: string }>) => {
     // envio bloqueado ou canal suspenso: o pedido é cumprido, a confirmação não sai
     if (!mode.canSend) return;
-    const sent = buttons?.length ? await sendButtons(channel, waId, content, buttons) : await sendText(channel, waId, content);
     const id = await conversation();
-    if (id) await db.from("messages").insert({ conversation_id: id, role: "assistant", content, author: SYSTEM_AUTHOR, channel_msg_id: sent.messages?.[0]?.id ?? "enviada" });
+    await deliver(db, {
+      botId: bot.id,
+      channel: "whatsapp",
+      conversationId: id,
+      kind: "sistema",
+      record: id ? { insert: { role: "assistant", content, author: SYSTEM_AUTHOR } } : null,
+      transport: async () => (buttons?.length ? await sendButtons(channel, waId, content, buttons) : await sendText(channel, waId, content)).messages?.[0]?.id ?? null,
+    });
   };
 
   let keywordDone = false;

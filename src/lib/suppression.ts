@@ -1,6 +1,6 @@
-import { createHmac } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { waIdVariants } from "./whatsapp";
+import { hmacHex } from "./hash";
 
 /*
  * Lista de supressão (migração 0030): quem pediu para não receber mensagens iniciadas pela
@@ -11,13 +11,6 @@ import { waIdVariants } from "./whatsapp";
 export type SuppressionKind = "marketing" | "utility" | "all";
 export type SuppressionChannel = "whatsapp" | "instagram";
 
-/** Chave de hash única da plataforma (CONTACT_HASH_KEY; sem ela, derivada da chave de cifra). */
-function hashKey(): string {
-  const k = process.env.CONTACT_HASH_KEY ?? (process.env.WHATSAPP_TOKEN_KEY ? `hash:${process.env.WHATSAPP_TOKEN_KEY}` : "");
-  if (k.length < 16) throw new Error("CONTACT_HASH_KEY (ou WHATSAPP_TOKEN_KEY) não configurada");
-  return k;
-}
-
 /** Celular brasileiro sempre com o 9: o mesmo contato com e sem o 9 vira um hash só. */
 export function canonicalPhone(waId: string): string {
   const v = waIdVariants(waId);
@@ -26,7 +19,7 @@ export function canonicalPhone(waId: string): string {
 
 export function contactHash(channel: SuppressionChannel, contact: string): string {
   const id = channel === "whatsapp" ? canonicalPhone(contact) : contact;
-  return createHmac("sha256", hashKey()).update(`${channel}:${id}`).digest("hex");
+  return hmacHex(`${channel}:${id}`);
 }
 
 /** Escopo da supressão: o número do negócio (WABA) quando existe; senão, o bot. */

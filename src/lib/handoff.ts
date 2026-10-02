@@ -6,6 +6,7 @@ import { isInstagramAccessError, isOutsideWindow } from "./instagram";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { send as sendInstagram } from "./instagram-inbound";
 import { sendBlockedReason } from "./conversation-mode";
+import { deliver } from "./send";
 
 /**
  * Atendimento humano: as mesmas operações para a agência (painel) e para o cliente final
@@ -23,13 +24,14 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   const content = rawContent.trim();
   if (!content) return fail("Escreva uma mensagem.");
   if (content.length > 2000) return fail("Mensagem muito longa (até 2.000 caracteres).");
-  const sent = await deliverOutside(admin, conversationId, content);
-  if (sent !== true) return sent;
+  const sent = await deliverOutside(admin, conversationId, content, author);
+  if (sent !== "widget" && sent !== "gravada") return sent;
   const now = new Date().toISOString();
-  let { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, author });
-  // banco sem a migração 0009 (coluna author): envia sem o autor
-  if (error) ({ error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content }));
-  if (error) return fail("A mensagem não foi enviada. Tente de novo.");
+  // no WhatsApp e no Instagram a camada de envio já gravou (com o hash do id da Meta); no site, grava aqui
+  if (sent === "widget") {
+    const { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, author });
+    if (error) return fail("A mensagem não foi enviada. Tente de novo.");
+  }
   const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
   // responder já assume a conversa (o assistente não fala por cima)
   const { data: conv } = await admin.from("conversations").select("takeover_at").eq("id", conversationId).single();
@@ -38,23 +40,34 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
 }
 
 /**
- * Conversa do WhatsApp ou do Instagram: a resposta da equipe sai pelo canal ligado ao chatbot
- * (antes de gravar, para não mostrar no painel algo que o cliente não recebeu). Site: nada a fazer.
+ * Conversa do WhatsApp ou do Instagram: a resposta da equipe sai pelo canal ligado ao chatbot,
+ * pela camada única de envio (regra de estado na hora, e só gravada se o cliente recebeu).
+ * Site: só confere a regra (canal suspenso) e quem chamou grava.
  */
-async function deliverOutside(admin: SupabaseClient, conversationId: string, content: string): Promise<true | ActionResult> {
+async function deliverOutside(admin: SupabaseClient, conversationId: string, content: string, author: string): Promise<"widget" | "gravada" | ActionResult> {
   const { data: conv } = await admin.from("conversations").select("bot_id, channel, wa_id, ig_id").eq("id", conversationId).maybeSingle();
-  // regra de estado: ordem da Meta, desligamento geral, canal desconectado ou suspenso pela BoaVoz
-  if (conv) {
-    const blocked = await sendBlockedReason(admin, conv.bot_id, conv.channel === "whatsapp" || conv.channel === "instagram" ? conv.channel : "widget");
+  const metaChannel = conv?.channel === "whatsapp" || conv?.channel === "instagram" ? (conv.channel as "whatsapp" | "instagram") : null;
+  if (conv && !metaChannel) {
+    // regra de estado no site: canal suspenso pela BoaVoz
+    const blocked = await sendBlockedReason(admin, conv.bot_id, "widget");
     if (blocked) return fail(`${blocked} A mensagem não foi enviada.`);
   }
-  if (conv?.channel === "instagram" && conv.ig_id) return deliverToInstagram(admin, conv.bot_id, conv.ig_id, content);
-  if (conv?.channel !== "whatsapp" || !conv.wa_id) return true;
+  if (conv?.channel === "instagram" && conv.ig_id) return deliverToInstagram(admin, conv.bot_id, conversationId, conv.ig_id, content, author);
+  if (conv?.channel !== "whatsapp" || !conv.wa_id) return "widget";
   const { data: channel } = await admin.from("whatsapp_channels").select("phone_number_id, access_token_enc, disconnected_at").eq("bot_id", conv.bot_id).maybeSingle();
   if (!channel || channel.disconnected_at) return fail("O WhatsApp deste chatbot foi desconectado. A mensagem não foi enviada: conecte de novo na aba WhatsApp.");
   try {
-    await sendText(channel, conv.wa_id, content);
-    return true;
+    const r = await deliver(admin, {
+      botId: conv.bot_id,
+      channel: "whatsapp",
+      conversationId,
+      kind: "equipe",
+      recordFailures: false,
+      record: { insert: { role: "agent", content, author } },
+      transport: async () => (await sendText(channel, conv.wa_id!, content)).messages?.[0]?.id ?? null,
+    });
+    if (r.status === "blocked") return fail(`${(await sendBlockedReason(admin, conv.bot_id, "whatsapp")) ?? `Envio barrado: ${r.reason}.`} A mensagem não foi enviada.`);
+    return "gravada";
   } catch (e) {
     if (isAccessError(e)) {
       await markDisconnected(admin, { column: "bot_id", value: conv.bot_id }, TOKEN_REJECTED);
@@ -72,12 +85,21 @@ async function deliverOutside(admin: SupabaseClient, conversationId: string, con
   }
 }
 
-async function deliverToInstagram(admin: SupabaseClient, botId: string, igsid: string, content: string): Promise<true | ActionResult> {
+async function deliverToInstagram(admin: SupabaseClient, botId: string, conversationId: string, igsid: string, content: string, author: string): Promise<"gravada" | ActionResult> {
   const { data: ch } = await admin.from("instagram_channels").select("bot_id, ig_user_id, access_token_enc, disconnected_at").eq("bot_id", botId).maybeSingle();
   if (!ch || ch.disconnected_at) return fail("O Instagram deste chatbot foi desconectado. A mensagem não foi enviada: conecte de novo na aba Instagram.");
   try {
-    await sendInstagram(admin, ch, igsid, content);
-    return true;
+    const r = await deliver(admin, {
+      botId,
+      channel: "instagram",
+      conversationId,
+      kind: "equipe",
+      recordFailures: false,
+      record: { insert: { role: "agent", content, author } },
+      transport: () => sendInstagram(admin, ch, igsid, content),
+    });
+    if (r.status === "blocked") return fail(`${(await sendBlockedReason(admin, botId, "instagram")) ?? `Envio barrado: ${r.reason}.`} A mensagem não foi enviada.`);
+    return "gravada";
   } catch (e) {
     if (isInstagramAccessError(e)) {
       await markInstagramDisconnected(admin, { column: "bot_id", value: botId }, IG_TOKEN_REJECTED);

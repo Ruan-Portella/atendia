@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
+import { deliver } from "../send";
 import { storeOnce } from "../whatsapp-inbound";
 import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
@@ -83,7 +84,8 @@ export interface GateIO {
   contact: string;
   conversationId: string;
   /**
-   * Envia ao contato e devolve o id da mensagem no canal. Botões: "idade" (Sim e Não, da pergunta
+   * Transporte do canal: envia ao contato e devolve o id da mensagem na Meta. Quem chama é a
+   * camada única de envio (regra de estado e registro). Botões: "idade" (Sim e Não, da pergunta
    * de 18+) ou "adulto" ("Ver opções 18+", na resposta refeita sem os itens 18+).
    */
   send: (text: string, buttons?: GateButtons) => Promise<string | null>;
@@ -110,13 +112,16 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   const who = { botId: bot.id, channel, contact };
   const contactPhone = channel === "whatsapp" ? contact : null;
 
-  /** Texto fixo do sistema: vai ao contato e fica no painel (o aviso de IA não conta esse). */
+  /**
+   * Texto fixo da vez do assistente: vai ao contato pela camada única de envio e fica no painel
+   * (o aviso de IA não conta esse). Devolve se saiu (alguém pode ter assumido no meio-tempo).
+   */
   const sendFixed = async (text: string, buttons?: GateButtons) => {
-    const mid = await io.send(text, buttons);
-    await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
+    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR } }, transport: () => io.send(text, buttons) });
+    return r.status === "sent";
   };
   const askAge = async (question: string) => {
-    await sendFixed(GATE_TEXTS.ageQuestion, "idade");
+    if (!(await sendFixed(GATE_TEXTS.ageQuestion, "idade"))) return;
     const now = new Date().toISOString();
     await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_asked_at: now, regulated_at: now }).eq("id", convId);
   };
@@ -251,8 +256,9 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     // item proibido junto com outro assunto: o aviso fixo vai antes, na mesma mensagem
     if (entrance.prefix) answer = `${entrance.prefix}\n\n${answer}`;
     const out = disclosure ? `${disclosure}\n\n${answer}` : answer;
-    const mid = await io.send(out, adultButton ? "adulto" : undefined);
-    if (answerId) await db.from("messages").update({ channel_msg_id: mid ?? "enviada", ...(out !== raw ? { content: out } : {}) }).eq("id", answerId);
+    // camada única de envio: se alguém assumiu ou pausou durante a resposta, ela não sai (fica "Não enviada" no painel)
+    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== raw ? { content: out } : {}) } : null, transport: () => io.send(out, adultButton ? "adulto" : undefined) });
+    if (r.status === "blocked") return;
   }
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).
   // Com o botão "Ver opções 18+", esta pergunta fica guardada para depois do "Sim" (a idade ainda

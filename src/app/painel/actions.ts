@@ -29,6 +29,7 @@ import { sendBlockedReason } from "@/lib/conversation-mode";
 import { confirmAcceptance, connectBlockFor, dayLabel, getCompliance, parseAnswers, recordAcceptance, type AcceptanceChannel } from "@/lib/acceptance";
 import { notifyPlatform } from "@/lib/notify";
 import { audit, requestMeta } from "@/lib/audit";
+import { channelMsgHash } from "@/lib/hash";
 import { logDeletion } from "@/lib/deletions";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -713,7 +714,7 @@ function whatsappNumber(raw: string): string {
  * Manda um modelo aprovado (campos `template` e `param_N` do formulário) e devolve o texto
  * como o contato recebeu, para entrar no histórico da conversa.
  */
-async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: string, formData: FormData): Promise<{ text: string; category: string } | { error: string }> {
+async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: string, formData: FormData): Promise<{ text: string; category: string; msgHash: string | null } | { error: string }> {
   // regra de estado: ordem da Meta, desligamento geral ou suspensão pela BoaVoz
   const blocked = await sendBlockedReason(createAdminClient(), botId, "whatsapp");
   if (blocked) return { error: `${blocked} O modelo não foi enviado.` };
@@ -730,19 +731,20 @@ async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: stri
   // envio iniciado pela empresa: quem pediu para sair não recebe
   const kinds = (await activeSuppressions(createAdminClient(), { channel: "whatsapp", scope: suppressionScope({ wabaId: ch.waba_id, botId }), contact: to })).map((s) => s.kind);
   if (blocks(kinds, t.category)) return { error: "Este contato pediu para não receber esse tipo de mensagem (respondeu SAIR, PARAR ou STOP). O modelo não foi enviado. Se ele escrever, a conversa continua normal." };
+  let wamid: string | null;
   try {
-    await sendTemplate(ch, to, t, params);
+    wamid = (await sendTemplate(ch, to, t, params)).messages?.[0]?.id ?? null;
   } catch (e) {
     return { error: `O WhatsApp não aceitou o envio: ${await metaError(botId, e)}` };
   }
-  return { text: renderTemplate(t.body, params), category: t.category };
+  return { text: renderTemplate(t.body, params), category: t.category, msgHash: wamid ? channelMsgHash("whatsapp", wamid) : null };
 }
 
 /** Grava o modelo enviado como resposta da equipe e atualiza a conversa. */
-async function recordTemplateMessage(admin: ReturnType<typeof createAdminClient>, conversationId: string, content: string, category: string) {
+async function recordTemplateMessage(admin: ReturnType<typeof createAdminClient>, conversationId: string, content: string, category: string, msgHash: string | null) {
   // a categoria decide o alcance de um SAIR respondido depois (descadastro da categoria do último modelo)
-  const { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, author: AGENCY_AUTHOR, template_category: category });
-  if (error) await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, template_category: category });
+  const { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, author: AGENCY_AUTHOR, template_category: category, channel_msg_id: "enviada", channel_msg_hash: msgHash });
+  if (error) console.error("modelo enviado, mas não gravado na conversa", error.message);
   const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
   await admin.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conversationId);
 }
@@ -806,7 +808,7 @@ export async function sendConversationTemplate(conversationId: string, formData:
   if (conv?.channel !== "whatsapp" || !conv.wa_id) return fail("Esta conversa não é do WhatsApp.");
   const sent = await sendApprovedTemplate(owned.conv.bot_id, ch, conv.wa_id, formData);
   if ("error" in sent) return fail(sent.error);
-  await recordTemplateMessage(owned.admin, conversationId, sent.text, sent.category);
+  await recordTemplateMessage(owned.admin, conversationId, sent.text, sent.category, sent.msgHash);
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return ok("Modelo enviado. Quando o contato responder, a conversa continua aqui.");
 }
@@ -832,7 +834,7 @@ export async function startWhatsAppConversation(botId: string, formData: FormDat
     if (error || !created) return fail("A mensagem foi enviada, mas não deu para abrir a conversa aqui. Ela aparece quando o contato responder.");
     conversationId = created.id as string;
   }
-  await recordTemplateMessage(admin, conversationId, sent.text, sent.category);
+  await recordTemplateMessage(admin, conversationId, sent.text, sent.category, sent.msgHash);
   revalidatePath(`/painel/bots/${botId}`);
   redirect(`/painel/bots/${botId}/conversas/${conversationId}`);
 }

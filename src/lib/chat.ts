@@ -15,6 +15,7 @@ import { regulatedChannelNote, type RegulatedChannel } from "./gate/sales-channe
 import { gatedContext, gatedHistory, hiddenNote } from "./gate/context";
 import { visibleText, type Segment } from "./gate/base";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
+import { deliver } from "./send";
 
 export interface BotRow {
   id: string;
@@ -75,7 +76,8 @@ export function withoutToolParts() {
  * assistente ou da equipe.
  */
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000): Promise<UIMessage[]> {
-  const { data: rows } = await db.from("messages").select("id, role, content, tool_results").eq("conversation_id", conversationId).order("id", { ascending: false }).limit(limit);
+  // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) fica fora
+  const { data: rows } = await db.from("messages").select("id, role, content, tool_results").eq("conversation_id", conversationId).is("blocked_reason", null).is("failed_at", null).order("id", { ascending: false }).limit(limit);
   return (rows ?? []).reverse().map((r) => {
     const text = String(r.content).slice(0, maxChars);
     // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
@@ -191,11 +193,12 @@ export async function handleRiskWithoutAi(
   bot: BotRow,
   conversationId: string,
   texts: Array<string | null>,
+  /** Transporte do canal (devolve o id da mensagem na Meta); a camada única de envio confere e registra. */
   send: (text: string) => Promise<string | null>,
-  channel?: "whatsapp" | "instagram",
+  channel: "whatsapp" | "instagram",
 ): Promise<boolean> {
   const text = texts.filter(Boolean).join("\n");
-  const onUsage = (u: UsageTokens) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId, kind: "classificacao", channel: channel ?? null, ...u });
+  const onUsage = (u: UsageTokens) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId, kind: "classificacao", channel, ...u });
   if (!text || !(await detectRisk(text, onUsage))) return false;
   const now = new Date().toISOString();
   await db.from("conversations").update({ needs_human: true, handoff_requested_at: now, handoff_urgent_at: now, handled_at: null }).eq("id", conversationId);
@@ -203,8 +206,8 @@ export async function handleRiskWithoutAi(
   const since = new Date(Date.now() - 10 * 60_000).toISOString();
   const { data: recentAgent } = await db.from("messages").select("id").eq("conversation_id", conversationId).eq("role", "agent").gt("created_at", since).limit(1).maybeSingle();
   if (!recentAgent) {
-    const mid = await send(RISK_TEXT);
-    await db.from("messages").insert({ conversation_id: conversationId, role: "assistant", content: RISK_TEXT, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
+    // texto fixo de emergência: sai com gente atendendo (degraus 3 a 5), nunca com o canal bloqueado
+    await deliver(db, { botId: bot.id, channel, conversationId, kind: "sistema", record: { insert: { role: "assistant", content: RISK_TEXT, author: SYSTEM_AUTHOR } }, transport: () => send(RISK_TEXT) });
   }
   return true;
 }

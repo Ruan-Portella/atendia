@@ -34,7 +34,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   if (!conv) notFound();
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
   const [{ data: messages }, { data: leads }, { email }] = await Promise.all([
-    supabase.from("messages").select("id, role, content, sources, author, created_at").eq("conversation_id", cid).order("id"),
+    supabase.from("messages").select("id, role, content, sources, author, created_at, blocked_reason, failed_at, error_code").eq("conversation_id", cid).order("id"),
     supabase.from("leads").select("name, phone, email, notes").eq("conversation_id", cid),
     requireAgency(),
   ]);

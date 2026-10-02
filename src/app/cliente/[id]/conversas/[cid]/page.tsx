@@ -24,7 +24,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
     .maybeSingle();
   if (!conv) notFound();
   const [{ data: messages }, { data: leads }] = await Promise.all([
-    admin.from("messages").select("id, role, content, author, created_at").eq("conversation_id", cid).order("id"),
+    admin.from("messages").select("id, role, content, author, created_at, blocked_reason, failed_at, error_code").eq("conversation_id", cid).order("id"),
     admin.from("leads").select("name, phone, email, notes").eq("conversation_id", cid),
   ]);
   const agencyName = member.agency.name;

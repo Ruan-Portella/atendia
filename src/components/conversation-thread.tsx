@@ -4,6 +4,11 @@ export interface ThreadMessage {
   content: string;
   author?: string | null;
   sources?: unknown;
+  /** Barrada pela regra de estado na hora do envio (ex.: alguém assumiu enquanto a IA respondia). */
+  blocked_reason?: string | null;
+  /** O canal recusou: o contato não recebeu. */
+  failed_at?: string | null;
+  error_code?: string | null;
 }
 
 interface Props {
@@ -38,6 +43,8 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
           >
             {m.role === "agent" && <div className="mb-0.5 text-[11px] font-semibold text-brand">{agentLabel(m.author ?? null)}</div>}
             <div className="whitespace-pre-wrap">{m.content}</div>
+            {m.blocked_reason && <div className="mt-1.5 text-[11px] font-semibold text-amber-ink">Não enviada: {m.blocked_reason}. O contato não recebeu esta mensagem.</div>}
+            {m.failed_at && <div className="mt-1.5 text-[11px] font-semibold text-danger">Não entregue{m.error_code ? ` (erro ${m.error_code})` : ""}: o canal recusou e o contato não recebeu.</div>}
             {showSources && Array.isArray(m.sources) && m.sources.length > 0 && (
               <div className="mt-1.5 text-[11px] text-muted">Fontes: {(m.sources as Array<{ title?: string; url?: string }>).map((s) => s.title ?? s.url).join(" · ")}</div>
             )}
