@@ -55,6 +55,8 @@ Bebidas sem álcool: refrigerante lata R$ 6, suco natural R$ 9, água R$ 4.
 Cervejas: Heineken long neck R$ 12, Brahma lata R$ 7, chopp Brahma 300 ml R$ 10.
 Drinks: caipirinha de limão R$ 18, caipiroska R$ 22.
 Vinhos: vinho tinto da casa (taça) R$ 20.
+Drinks especiais: Moscow Mule R$ 28.
+Cervejas artesanais: Colorado Appia R$ 22.
 Atendemos de terça a domingo, das 18h às 23h. Endereço: Rua das Palmeiras, 100, Centro.
 Pedidos pelo site: bardoze.com.br/cardapio ou pelo iFood.
 ```

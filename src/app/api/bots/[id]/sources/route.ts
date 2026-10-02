@@ -2,9 +2,11 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestSource, type SourceRow } from "@/lib/ingest";
+import { classifyLater } from "@/lib/gate/base";
 import { normalizeUrl } from "@/lib/utils";
 
-export const maxDuration = 60;
+// a leitura da fonte responde na hora; a classificação do portão (parte 6) roda depois, no mesmo tempo
+export const maxDuration = 300;
 
 /**
  * Adiciona uma fonte ao bot e processa na hora.
@@ -54,6 +56,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sourc
 
   try {
     const r = await ingestSource(admin, source as SourceRow, pdfBuffer);
+    classifyLater(admin, botId);
     return Response.json({ ok: true, sourceId: source.id, ...r });
   } catch (e) {
     return Response.json({ error: "ingest_failed", message: (e as Error).message, sourceId: source.id }, { status: 422 });
@@ -130,6 +133,7 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
 
   try {
     const r = await ingestSource(admin, { ...(source as SourceRow), ...patch }, pdfBuffer);
+    classifyLater(admin, (source as SourceRow).bot_id);
     return Response.json({ ok: true, ...r });
   } catch (e) {
     return Response.json({ error: "ingest_failed", message: (e as Error).message }, { status: 422 });

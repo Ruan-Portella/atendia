@@ -18,6 +18,8 @@ export interface EntranceInput {
   age: AgeStatus;
   /** Contexto que a busca trouxe para esta pergunta (atalho do 18+ só se ele tem item regulamentado). */
   context: string;
+  /** Categorias que a classificação da base (parte 6) achou nesses trechos. */
+  contextCategories?: GateCategory[];
   companyName: string;
   /** Classificador da etapa 2 (troca nos testes). */
   classify?: (text: string, categories: GateCategory[], companyName: string, blocked: GateCategory[]) => Promise<Classification>;
@@ -123,7 +125,7 @@ export async function decideEntrance(input: EntranceInput): Promise<EntranceDeci
 
   // atalho determinístico do 18+: pediu regulamentado, idade vazia e a base tem o item
   if (regulated.length && input.age === null && !prohibited.length) {
-    const contextHasItem = scan(input.context).some((h) => regulated.includes(h.category));
+    const contextHasItem = scan(input.context).some((h) => regulated.includes(h.category)) || (input.contextCategories ?? []).some((c) => regulated.includes(c));
     if (contextHasItem) return { kind: "pede_18", categories: regulated };
   }
 

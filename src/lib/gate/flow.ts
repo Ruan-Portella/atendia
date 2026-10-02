@@ -172,6 +172,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     contactPhone,
     age,
     context: retrieval.context,
+    contextCategories: retrieval.hits.flatMap((h) => h.gate_categories ?? []),
     companyName: bot.client_name,
     onUsage: (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId: convId, kind: "classificacao", channel, ...u }),
   });

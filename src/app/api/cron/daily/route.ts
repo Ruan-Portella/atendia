@@ -7,8 +7,10 @@ import { checkHealth } from "@/lib/health";
 import { notifyPlatform } from "@/lib/notify";
 import { sweepInbound } from "@/lib/inbound-queue";
 import { inboundHandlers } from "@/lib/inbound-process";
+import { classifyPending } from "@/lib/gate/base";
 
-export const maxDuration = 60;
+// a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
+export const maxDuration = 300;
 
 /**
  * Cron diário (vercel.json). As tarefas rápidas primeiro; a releitura de sites usa o tempo
@@ -17,11 +19,11 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return new Response("unauthorized", { status: 401 });
   // vigia de fora: o Sentry avisa se o job não rodar no horário ou falhar
-  const result = await Sentry.withMonitor("cron-diario", () => withCronLock(createAdminClient(), "diario", 90, daily), {
+  const result = await Sentry.withMonitor("cron-diario", () => withCronLock(createAdminClient(), "diario", 300, daily), {
     schedule: { type: "crontab", value: "0 6 * * *" },
     timezone: "UTC",
     checkinMargin: 30,
-    maxRuntime: 2,
+    maxRuntime: 5,
   });
   await Sentry.flush(2000);
   return Response.json(result);
@@ -57,5 +59,7 @@ async function daily() {
     return { ratio: h.diskRatio };
   });
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
-  return { inbound, trial, retention, instagram, aiUsage, disk, sources };
+  // portão: trechos novos que não couberam depois da leitura e os de regras antigas
+  const base = await run("classificação da base", () => classifyPending(db, { budgetMs: 180_000 }));
+  return { inbound, trial, retention, instagram, aiUsage, disk, sources, base };
 }

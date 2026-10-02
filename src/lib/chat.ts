@@ -13,6 +13,7 @@ import { isAiPaused } from "./ai-pause";
 import { ageNote, type AgeStatus } from "./gate/age";
 import { regulatedChannelNote, type RegulatedChannel } from "./gate/sales-channel";
 import { gatedContext, gatedHistory, hiddenNote } from "./gate/context";
+import { visibleText, type Segment } from "./gate/base";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
 
 export interface BotRow {
@@ -102,6 +103,15 @@ export interface ContextHit {
   content: string;
   metadata: { title?: string; url?: string };
   similarity: number;
+  /** Classificação do portão (parte 6): versão, frases com as categorias e o resumo. */
+  gate_version?: string | null;
+  gate_segments?: Segment[] | null;
+  gate_categories?: GateCategory[] | null;
+}
+
+/** Texto do contexto a partir dos trechos (o mesmo formato na busca e no portão). */
+export function formatContext(hits: Array<Pick<ContextHit, "content" | "metadata">>): string {
+  return hits.map((r, i) => `[${i + 1}] ${r.metadata?.title ? r.metadata.title + "\n" : ""}${r.content}`).join("\n\n---\n\n");
 }
 
 /** Trechos da base mais parecidos com a pergunta (busca exata no bot) e o texto do contexto. */
@@ -115,7 +125,7 @@ export async function retrieveContext(db: SupabaseClient, botId: string, questio
     embeddingUsage = usage;
     const { data } = await db.rpc("match_chunks", { p_bot_id: botId, p_query: JSON.stringify(embedding), p_count: 6, p_min_similarity: 0.15 });
     hits = (data ?? []) as ContextHit[];
-    context = hits.map((r, i) => `[${i + 1}] ${r.metadata?.title ? r.metadata.title + "\n" : ""}${r.content}`).join("\n\n---\n\n");
+    context = formatContext(hits);
     for (const r of hits) {
       const key = r.metadata?.url ?? r.metadata?.title;
       // fontes com o mesmo título (páginas diferentes do mesmo site) aparecem uma vez só
@@ -223,9 +233,15 @@ export function gateNotesFor(bot: Pick<BotRow, "regulated_channel" | "human_hand
 }
 
 /** O que o portão muda no prompt: a base sem os itens barrados, as linhas do portão e o lembrete final. */
-export function gatePrompt(bot: Pick<BotRow, "regulated_channel" | "human_handoff">, context: string, o: { channel: "whatsapp" | "instagram"; contactPhone: string | null; gate?: GateState }) {
-  const view = gatedContext(context, { channel: o.channel, contactPhone: o.contactPhone, age: o.gate?.age ?? null });
-  const gateNotes = gateNotesFor(bot, o.gate, view.hidden);
+export function gatePrompt(bot: Pick<BotRow, "regulated_channel" | "human_handoff">, retrieval: { context: string; hits: ContextHit[] }, o: { channel: "whatsapp" | "instagram"; contactPhone: string | null; gate?: GateState }) {
+  const who = { channel: o.channel, contactPhone: o.contactPhone, age: o.gate?.age ?? null };
+  // trechos classificados pela IA (parte 6) já saem sem o que esta pessoa não pode ver
+  const parts = retrieval.hits.map((h) => visibleText(h, who));
+  const base = retrieval.hits.length ? formatContext(retrieval.hits.map((h, i) => ({ ...h, content: parts[i].text }))) : retrieval.context;
+  // o dicionário corta por cima (as duas marcações valem juntas)
+  const view = gatedContext(base, who);
+  const hidden = [...new Set([...parts.flatMap((p) => p.hidden), ...view.hidden])];
+  const gateNotes = gateNotesFor(bot, o.gate, hidden);
   return { context: view.context, gateNotes, reminder: o.gate?.remind ? gateNotes : [] };
 }
 
@@ -402,7 +418,8 @@ export async function runChat(opts: {
 
   // 2. Recuperação de contexto
   const question = lastUserText(messages);
-  const { context, used, embeddingUsage } = opts.retrieval ?? (await retrieveContext(db, bot.id, question));
+  const retrieval = opts.retrieval ?? (await retrieveContext(db, bot.id, question));
+  const { context, used, embeddingUsage } = retrieval;
 
   const leadEnabled = bot.lead_capture?.enabled !== false;
   // o que um atendente humano já escreveu (quando a conversa volta para o assistente)
@@ -418,7 +435,7 @@ export async function runChat(opts: {
   // no chat do site de um bot que também atende no WhatsApp: nunca mandar pedir item 18+ por lá
   const widgetWithWhatsapp = !scopeLock && Boolean((await db.from("whatsapp_channels").select("bot_id").eq("bot_id", bot.id).is("disconnected_at", null).maybeSingle()).data);
   // portão: a base sem os itens barrados para esta pessoa e as linhas do portão no prompt
-  const gated = scopeLock ? gatePrompt(bot, context, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [] };
+  const gated = scopeLock ? gatePrompt(bot, retrieval, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [] };
   // regras primeiro (iguais em toda a plataforma: cache da OpenAI); o que é deste bot e desta conversa depois
   const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: gated.context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes });
   const convId = conversationId;

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fail, ok, type ActionResult } from "./action-result";
 import { ingestSource, type SourceRow } from "./ingest";
+import { classifyLater } from "./gate/base";
 
 /**
  * Base de conhecimento editável por texto: responder perguntas sem resposta e criar/editar
@@ -32,6 +33,7 @@ export async function answerQuestion(admin: SupabaseClient, opts: { botId: strin
   }
   try {
     await ingestSource(admin, source);
+    classifyLater(admin, opts.botId);
   } catch (e) {
     return fail(`A resposta foi salva, mas não deu para treinar o assistente agora: ${(e as Error).message}`);
   }
@@ -66,6 +68,7 @@ export async function saveTextSource(admin: SupabaseClient, opts: { botId: strin
   }
   try {
     const r = await ingestSource(admin, source);
+    classifyLater(admin, opts.botId);
     return ok(`Pronto: o assistente aprendeu (${r.chunks} trecho${r.chunks === 1 ? "" : "s"}).`);
   } catch (e) {
     return fail(`Salvo, mas não deu para treinar agora: ${(e as Error).message}`);

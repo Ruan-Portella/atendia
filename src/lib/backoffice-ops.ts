@@ -1,5 +1,6 @@
 import { createAdminClient } from "./supabase/admin";
 import { checkHealth, type HealthReport } from "./health";
+import { BASE_GATE_VERSION } from "./gate/base";
 
 /*
  * Backoffice: qualidade da IA (perguntas sem resposta, recusas, portão, pedidos urgentes) e
@@ -60,6 +61,20 @@ export async function getQuality(since: Date) {
     ...(grouped.recusa_bot ?? []).map((x) => x.key),
   ];
   return { grouped, unanswered: unanswered ?? [], refusals: refusals ?? [], urgent: urgent ?? [], bots: await botRefs(ids) };
+}
+
+/** Classificação da base (portão, parte 6): trechos, quantos faltam na versão atual e quantos têm item restrito. */
+export async function getBaseGateStats() {
+  const { data, error } = await createAdminClient().rpc("admin_gate_pending", { p_version: BASE_GATE_VERSION });
+  if (error) throw new Error(`classificação da base: ${error.message}`);
+  const rows = ((data ?? []) as Array<{ bot_id: string; total: number; pending: number; restricted: number }>).map((r) => ({ bot: r.bot_id, total: Number(r.total) || 0, pending: Number(r.pending) || 0, restricted: Number(r.restricted) || 0 }));
+  return {
+    version: BASE_GATE_VERSION,
+    total: rows.reduce((t, r) => t + r.total, 0),
+    pending: rows.reduce((t, r) => t + r.pending, 0),
+    restricted: rows.reduce((t, r) => t + r.restricted, 0),
+    bots: rows.filter((r) => r.restricted || r.pending).sort((a, b) => b.restricted - a.restricted || b.pending - a.pending),
+  };
 }
 
 /* ------------------------------------------------------------------ operação */

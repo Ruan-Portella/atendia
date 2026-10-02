@@ -1,12 +1,17 @@
 import Link from "next/link";
 import { Kpi } from "@/components/kpi";
 import { requireAdmin } from "@/lib/platform-admin";
-import { getQuality, type BotRef } from "@/lib/backoffice-ops";
+import { botRefs, getBaseGateStats, getQuality, type BotRef } from "@/lib/backoffice-ops";
+import { ActionForm } from "@/components/ui/action-form";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { classifyBaseNow } from "./actions";
 import { RANGE_LABEL, isRangeKey, rangeFor, type RangeKey } from "@/lib/backoffice";
 import { num } from "@/lib/plans";
 import { cn, relativeTime } from "@/lib/utils";
 
 export const metadata = { title: "Qualidade da IA" };
+// o botão "Classificar agora" roda até ~4 minutos (server action desta página)
+export const maxDuration = 300;
 
 const GATE_LABEL: Record<string, string> = {
   "entrada:proibido": "Entrada · item proibido (texto fixo)",
@@ -46,7 +51,8 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const key: RangeKey = typeof sp.periodo === "string" && isRangeKey(sp.periodo) && RANGES.includes(sp.periodo) ? sp.periodo : "30d";
   const range = rangeFor(key);
-  const q = await getQuality(range.since);
+  const [q, base] = await Promise.all([getQuality(range.since), getBaseGateStats()]);
+  const baseBots = await botRefs(base.bots.map((b) => b.bot));
   const g = q.grouped;
   const total = (m: string) => (g[m] ?? []).reduce((t, r) => t + r.n, 0);
   const handoff = Object.fromEntries((g.atendente ?? []).map((r) => [r.key, r.n]));
@@ -83,6 +89,34 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
           </ul>
         </section>
       )}
+
+      <section className="card flex flex-col gap-3 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold">Classificação da base (portão)</h2>
+            <p className="text-sm text-muted">Cada trecho das fontes passa uma vez pela IA, que marca as frases que oferecem bebida, remédio (conferido com a lista da Anvisa) ou item proibido. Sem classificação, o portão usa só o dicionário. Roda sozinha depois de cada fonte nova e na rotina diária (que não roda na dev).</p>
+          </div>
+          <ActionForm action={classifyBaseNow} className="shrink-0">
+            <SubmitButton className="btn-ghost" pendingLabel="Classificando… (até 4 min)" disabled={!base.pending}>Classificar agora</SubmitButton>
+          </ActionForm>
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span><strong className="tabular">{num(base.total - base.pending)}</strong> de {num(base.total)} trechos classificados</span>
+          <span><strong className="tabular">{num(base.restricted)}</strong> com item restrito</span>
+          {base.pending > 0 && <span className="text-amber-ink"><strong className="tabular">{num(base.pending)}</strong> pendentes</span>}
+          <span className="text-xs text-muted">versão {base.version}</span>
+        </div>
+        {base.bots.length > 0 && (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Bot</th><th className="py-1.5 text-right font-semibold">Com item restrito</th><th className="py-1.5 text-right font-semibold">Pendentes</th><th className="py-1.5 text-right font-semibold">Trechos</th></tr></thead>
+            <tbody>
+              {base.bots.slice(0, 10).map((b) => (
+                <tr key={b.bot} className="border-t border-line-2"><td className="py-1.5">{botLabel(baseBots, b.bot)}</td><td className="py-1.5 text-right tabular">{num(b.restricted)}</td><td className="py-1.5 text-right tabular">{num(b.pending)}</td><td className="py-1.5 text-right tabular">{num(b.total)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Counts title="Bots com mais perguntas sem resposta" rows={g.sem_resposta_bot} label={(k) => botLabel(q.bots, k)} empty="Nenhuma pendente." />
