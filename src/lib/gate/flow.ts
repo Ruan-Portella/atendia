@@ -3,8 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
 import { storeOnce } from "../whatsapp-inbound";
 import { recordAiUsage } from "../ai-usage";
-import { AGE_IGNORED_HOURS, AGE_NO, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
+import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
 import { decideEntrance } from "./entrance";
+import { checkExit, exitDecision } from "./exit";
+import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
 import { GATE_TEXTS, RULES_VERSION, type GateCategory } from "./rules";
 
@@ -61,6 +63,18 @@ export async function logGate(db: SupabaseClient, row: { botId: string; conversa
   if (error) console.error("portão: registro não gravado", error.message);
 }
 
+export type GateButtons = "idade" | "adulto";
+
+/** Botões do portão (WhatsApp: botões de resposta; Instagram: respostas rápidas). */
+export function gateButtons(kind: GateButtons): Array<{ id: string; title: string }> {
+  return kind === "idade"
+    ? [
+        { id: AGE_YES, title: GATE_TEXTS.ageYes },
+        { id: AGE_NO, title: GATE_TEXTS.ageNo },
+      ]
+    : [{ id: AGE_SHOW, title: GATE_TEXTS.showAdultOptions }];
+}
+
 export interface GateIO {
   db: SupabaseClient;
   bot: BotRow;
@@ -68,8 +82,11 @@ export interface GateIO {
   /** Telefone (WhatsApp) ou IGSID (Instagram). */
   contact: string;
   conversationId: string;
-  /** Envia ao contato; com ageButtons, vai com os botões Sim e Não. Devolve o id da mensagem no canal. */
-  send: (text: string, ageButtons?: boolean) => Promise<string | null>;
+  /**
+   * Envia ao contato e devolve o id da mensagem no canal. Botões: "idade" (Sim e Não, da pergunta
+   * de 18+) ou "adulto" ("Ver opções 18+", na resposta refeita sem os itens 18+).
+   */
+  send: (text: string, buttons?: GateButtons) => Promise<string | null>;
   /** Dados do contato para o runChat (nome do perfil no WhatsApp). */
   chat: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: { igsid: string } };
   historySize: number;
@@ -94,20 +111,33 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   const contactPhone = channel === "whatsapp" ? contact : null;
 
   /** Texto fixo do sistema: vai ao contato e fica no painel (o aviso de IA não conta esse). */
-  const sendFixed = async (text: string, ageButtons = false) => {
-    const mid = await io.send(text, ageButtons);
+  const sendFixed = async (text: string, buttons?: GateButtons) => {
+    const mid = await io.send(text, buttons);
     await db.from("messages").insert({ conversation_id: convId, role: "assistant", content: text, author: SYSTEM_AUTHOR, channel_msg_id: mid ?? "enviada" });
   };
   const askAge = async (question: string) => {
-    await sendFixed(GATE_TEXTS.ageQuestion, true);
+    await sendFixed(GATE_TEXTS.ageQuestion, "idade");
     const now = new Date().toISOString();
     await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_asked_at: now, regulated_at: now }).eq("id", convId);
   };
 
-  // 1. resposta da pergunta de 18+
-  const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_asked_at").eq("id", convId).maybeSingle();
+  // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
+  const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_asked_at, regulated_at").eq("id", convId).maybeSingle();
   const pending: PendingAge | null = pendingRow ? { question: (pendingRow.age_pending_question as string | null) ?? null, askedAt: (pendingRow.age_asked_at as string | null) ?? null } : null;
-  const answered = ageAnswer(q.text, q.button, pending);
+  const regulatedAt = (pendingRow?.regulated_at as string | null | undefined) ?? null;
+  if (q.button === AGE_SHOW) {
+    // "Ver opções 18+": pergunta a idade (e depois do "Sim" responde de novo à pergunta de antes)
+    const current = await getAge(db, who);
+    if (current !== "sim") {
+      await storeOnce(db, convId, q.text, q.key);
+      if (current === "nao") await sendFixed(GATE_TEXTS.under18);
+      else await askAge(pending?.question ?? q.text);
+      await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: current === "nao" ? "nao_18" : "pede_18", categories: [] });
+      return;
+    }
+  }
+  // já confirmou e tocou em "Ver opções 18+": segue como um "Sim"
+  const answered = ageAnswer(q.text, q.button, pending) ?? (q.button === AGE_SHOW ? "sim" : null);
   let question = q.text;
   let storeQuestion = true;
   let history: UIMessage[];
@@ -201,14 +231,34 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "pede_18", categories: entrance.regulated });
     return;
   }
-  let answer = withRiskText(raw, urgent()).trim();
+  // 4. portão na saída: item proibido, item 18+ sem o "Sim" e pagamento numa conversa com esses itens
+  const regulatedConversation = entrance.regulated.length > 0 || (regulatedAt !== null && Date.now() - Date.parse(regulatedAt) < REGULATED_WINDOW_MS);
+  const exit = checkExit({ text: raw, channel, contactPhone, age, regulatedConversation, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) });
+  if (exit.prohibited.length || exit.regulated.length || exit.payment) {
+    await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: exitDecision(exit), categories: [...exit.prohibited, ...exit.regulated] });
+  }
+  if (exit.emptied && exit.regulated.length && age === null && !urgent()) {
+    // não sobrou nada além do item 18+: a pergunta de idade vai no lugar
+    if (answerId) await db.from("messages").delete().eq("id", answerId);
+    await askAge(question);
+    return;
+  }
+  const safe = exit.emptied ? (exit.prohibited.length ? GATE_TEXTS.prohibited : GATE_TEXTS.under18) : exit.text;
+  const adultButton = exit.offerAdult && !exit.emptied;
+  let answer = withRiskText(safe, urgent()).trim();
   if (answer) {
     // item proibido junto com outro assunto: o aviso fixo vai antes, na mesma mensagem
     if (entrance.prefix) answer = `${entrance.prefix}\n\n${answer}`;
     const out = disclosure ? `${disclosure}\n\n${answer}` : answer;
-    const mid = await io.send(out);
+    const mid = await io.send(out, adultButton ? "adulto" : undefined);
     if (answerId) await db.from("messages").update({ channel_msg_id: mid ?? "enviada", ...(out !== raw ? { content: out } : {}) }).eq("id", answerId);
   }
-  // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale)
-  if (pending?.question) await db.from("conversations").update({ age_pending_question: null }).eq("id", convId);
+  // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).
+  // Com o botão "Ver opções 18+", esta pergunta fica guardada para depois do "Sim" (a idade ainda
+  // não foi perguntada, então "sim" digitado não conta)
+  if (adultButton) await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_asked_at: null, regulated_at: new Date().toISOString() }).eq("id", convId);
+  else if (pending?.question) await db.from("conversations").update({ age_pending_question: null }).eq("id", convId);
 }
+
+/** Conversa com bebida ou remédio: vale enquanto a janela de 24 h da Meta estiver aberta. */
+const REGULATED_WINDOW_MS = 24 * 3_600_000;

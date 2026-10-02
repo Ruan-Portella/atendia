@@ -8,9 +8,7 @@ import { firstExceeded, noticeOnce } from "./rate-limit";
 import { instagramTyping, isInstagramAccessError, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, phonePauseActive, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
-import { answerWithGate } from "./gate/flow";
-import { AGE_NO, AGE_YES } from "./gate/age";
-import { GATE_TEXTS } from "./gate/rules";
+import { answerWithGate, gateButtons } from "./gate/flow";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de resposta do Instagram). */
 const RESUME_HOURS = 24;
@@ -246,7 +244,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         channel: "instagram",
         contact: igsid,
         conversationId: conv.id,
-        send: (text, ageButtons) => send(db, ch, igsid, text, ageButtons ? [{ title: GATE_TEXTS.ageYes, payload: AGE_YES }, { title: GATE_TEXTS.ageNo, payload: AGE_NO }] : undefined),
+        send: (text, buttons) => send(db, ch, igsid, text, buttons ? gateButtons(buttons).map((b) => ({ title: b.title, payload: b.id })) : undefined),
         chat: { instagram: { igsid } },
         historySize: HISTORY,
       },

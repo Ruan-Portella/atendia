@@ -7,6 +7,8 @@ import { RISK_TEXT } from "./risk";
 import { isGapAnswer, isNoInfoAnswer } from "./unanswered";
 import { decideEntrance } from "./gate/entrance";
 import { GATE_TEXTS } from "./gate/rules";
+import { checkExit, exitDecision } from "./gate/exit";
+import { regulatedDestination } from "./gate/sales-channel";
 import { costUsd } from "./ai-usage";
 import type { AgeStatus } from "./gate/age";
 
@@ -153,7 +155,15 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       // o que o contato recebe no WhatsApp e no Instagram: a pergunta fixa de 18+ no lugar da
       // resposta; o texto fixo de risco garantido; o aviso do item proibido antes da resposta
       if (scopeLock && age === null && tools.includes("pedir_confirmacao_18")) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, ...usage };
-      let text = scopeLock ? withRiskText(r.text, urgent) : r.text;
+      // portão na saída, como no canal (a conversa conta como "com bebida ou remédio" se a entrada acusou)
+      const exit = scopeLock
+        ? checkExit({ text: r.text, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, regulatedConversation: entrance?.kind === "ia" && entrance.regulated.length > 0, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) })
+        : null;
+      if (exit && (exit.prohibited.length || exit.regulated.length || exit.payment)) tools.push(`saida:${exitDecision(exit)}`);
+      if (exit?.emptied && exit.regulated.length && age === null && !urgent) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, ...usage };
+      const safe = !exit ? r.text : exit.emptied ? (exit.prohibited.length ? GATE_TEXTS.prohibited : GATE_TEXTS.under18) : exit.text;
+      let text = scopeLock ? withRiskText(safe, urgent) : r.text;
+      if (exit?.offerAdult && !exit.emptied) text += ` [botão: ${GATE_TEXTS.showAdultOptions}]`;
       if (entrance?.kind === "ia" && entrance.prefix) text = `${entrance.prefix}\n\n${text}`;
       return { verdict: verdictOf(text, tools.filter((t) => t !== "pedir_confirmacao_18")), text, tools, ...usage };
     } catch (e) {

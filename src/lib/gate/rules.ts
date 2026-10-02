@@ -181,8 +181,14 @@ export const GATE_TEXTS = {
   under18: "Por aqui não posso falar sobre esse tipo de produto, mas sigo à disposição para o resto.",
   /** Botão nas respostas refeitas sem os itens 18+ (até 20 caracteres, limite da Meta). */
   showAdultOptions: "Ver opções 18+",
+  /** Texto do botão quando a resposta é longa demais para ir junto (WhatsApp: 1.024 caracteres). */
+  showAdultPrompt: "Quer ver também as opções para maiores de 18 anos?",
   /** Item regulamentado, 18+ confirmado, na hora de pedir. */
   orderElsewhere: (categoria: string, canal: string, destino: string) => `${categoria} você pede direto pelo ${canal}: ${destino}. Posso ajudar com mais alguma coisa?`,
   /** Sem nenhum canal declarado para itens regulamentados. */
   cannotSellHere: "Esse item não conseguimos vender por aqui.",
+  /** Saída: dado de pagamento tirado da resposta numa conversa com bebida ou remédio. */
+  paymentNotHere: "O pagamento deste pedido não é feito por aqui.",
+  /** Saída: para onde ir finalizar (site, app, telefone ou retirada). */
+  finishOrder: (destino: string) => `Para finalizar o pedido: ${destino}.`,
 } as const;

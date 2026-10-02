@@ -1,0 +1,98 @@
+import { dictionaryHits, normalizeGateText } from "./match";
+import { GATE_TEXTS, type GateCategory, type GateChannel } from "./rules";
+import type { AgeStatus } from "./age";
+
+/*
+ * Portão na saída (WhatsApp e Instagram): a última conferência da resposta da IA antes de ela
+ * ir para o contato, só com o dicionário (sem IA, sem custo). É a rede de segurança: a entrada
+ * já tira da base o que a pessoa não pode ver, mas a IA ainda pode trazer do histórico ou do
+ * próprio conhecimento. Corta por frase, como a base: o resto da resposta fica.
+ * - item proibido oferecido: a frase sai;
+ * - bebida ou remédio oferecido sem o "Sim" do 18+: a frase sai (e, sem resposta de idade, vai o
+ *   botão "Ver opções 18+");
+ * - conversa com bebida ou remédio: dado de pagamento (chave Pix, copia e cola, link de
+ *   pagamento, boleto) sai, e vai o caminho para finalizar fora do chat.
+ * Só sai frase que OFERECE: negação ("não posso indicar remédio") e conselho de saúde ficam.
+ */
+
+export interface ExitInput {
+  text: string;
+  channel: Exclude<GateChannel, "widget">;
+  contactPhone?: string | null;
+  age: AgeStatus;
+  /** Conversa com pedido de bebida ou remédio nas últimas 24 h (ou nesta mensagem). */
+  regulatedConversation: boolean;
+  /** Onde o contato finaliza o pedido desses itens (regulatedDestination); null sem canal. */
+  destination: { canal: string; destino: string } | null;
+}
+
+export interface ExitResult {
+  /** A resposta que pode sair (igual à da IA quando nada foi tirado). */
+  text: string;
+  prohibited: GateCategory[];
+  regulated: GateCategory[];
+  payment: boolean;
+  /** Bebida ou remédio tirados de quem ainda não respondeu à idade: vai o botão "Ver opções 18+". */
+  offerAdult: boolean;
+  /** Não sobrou nada da resposta (o canal decide o texto fixo ou a pergunta de 18+). */
+  emptied: boolean;
+}
+
+const NEGATION = /\b(nao|nunca|nem|jamais)\b/;
+/** Sinal de oferta: preço, ou dizer que tem, vende, oferece, está no cardápio. */
+const OFFER = /r\$\s?\d|\b(temos|tem sim|vendemos|vende|oferecemos|disponivel|disponiveis|a venda|pode pedir|peca|cardapio|custa|sai por|por apenas)\b/;
+/**
+ * Dado de pagamento: código do Pix, link de meio de pagamento, ou chave (e-mail, documento,
+ * telefone) junto de Pix/boleto. Link do site da empresa não conta: finalizar lá é o caminho certo.
+ */
+const PAYMENT_CODE = /br\.gov\.bcb|\b000201\d|mpago\.la|mercadopago\.com|pag\.ae|pagseguro\.uol|picpay\.me|buy\.stripe\.com|checkout\.stripe\.com|pay\.hotmart|link\.pagar\.me|sumup\.com|cielolink/i;
+const PAYMENT_WORD = /\b(pix|boleto|pagamento|pagar|transferencia|deposito)\b/;
+const PAYMENT_KEY = /[\w.+-]+@[\w-]+\.[\w.]+|\d[\d.\-/ ]{9,}\d/;
+
+function isPayment(sentence: string): boolean {
+  if (PAYMENT_CODE.test(sentence)) return true;
+  return PAYMENT_WORD.test(normalizeGateText(sentence)) && PAYMENT_KEY.test(sentence);
+}
+
+/** Frases (pontuação final ou quebra de linha), mantendo a separação original para remontar. */
+function sentences(text: string): string[] {
+  return text.split(/(?<=[.!?;])\s+|\n+/).filter((s) => s.trim());
+}
+
+export function checkExit(input: ExitInput): ExitResult {
+  const prohibited = new Set<GateCategory>();
+  const regulated = new Set<GateCategory>();
+  let payment = false;
+  const keep: string[] = [];
+  for (const s of sentences(input.text)) {
+    const norm = normalizeGateText(s);
+    const negated = NEGATION.test(norm);
+    const hits = negated ? [] : dictionaryHits(s, { channel: input.channel, contactPhone: input.contactPhone });
+    const banned = hits.filter((h) => h.level === "proibido");
+    // bebida ou remédio só sai se a frase oferece o item e a pessoa não confirmou 18+
+    const adult = input.age === "sim" || !OFFER.test(norm) ? [] : hits.filter((h) => h.level === "regulamentado");
+    const pay = input.regulatedConversation && isPayment(s);
+    banned.forEach((h) => prohibited.add(h.category));
+    adult.forEach((h) => regulated.add(h.category));
+    if (pay) payment = true;
+    if (!banned.length && !adult.length && !pay) keep.push(s.trim());
+  }
+  const touched = prohibited.size > 0 || regulated.size > 0 || payment;
+  if (!touched) return { text: input.text, prohibited: [], regulated: [], payment: false, offerAdult: false, emptied: false };
+  if (payment) {
+    keep.push(GATE_TEXTS.paymentNotHere);
+    if (input.destination) keep.push(GATE_TEXTS.finishOrder(input.destination.destino));
+  }
+  const text = keep.join(" ").trim();
+  return {
+    text,
+    prohibited: [...prohibited],
+    regulated: [...regulated],
+    payment,
+    offerAdult: regulated.size > 0 && input.age === null,
+    emptied: !text,
+  };
+}
+
+/** Rótulo curto para o registro do portão (gate_detections). */
+export const exitDecision = (r: ExitResult) => (r.prohibited.length ? "proibido" : r.regulated.length ? (r.offerAdult ? "pede_18" : "nao_18") : "pagamento");

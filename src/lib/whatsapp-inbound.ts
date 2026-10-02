@@ -6,8 +6,7 @@ import { recordAiUsage } from "./ai-usage";
 import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { isAccessError, isPaymentError } from "./whatsapp-access";
-import { answerWithGate } from "./gate/flow";
-import { AGE_NO, AGE_YES } from "./gate/age";
+import { answerWithGate, gateButtons } from "./gate/flow";
 import { GATE_TEXTS } from "./gate/rules";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
@@ -275,10 +274,11 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         channel: "whatsapp",
         contact: waId,
         conversationId: conv.id,
-        send: async (text, ageButtons) => {
-          const sent = ageButtons
-            ? await sendButtons(channel, waId, text, [{ id: AGE_YES, title: GATE_TEXTS.ageYes }, { id: AGE_NO, title: GATE_TEXTS.ageNo }])
-            : await reply(text);
+        send: async (text, buttons) => {
+          const body = toWhatsAppText(text);
+          // mensagem com botão tem no máximo 1.024 caracteres: resposta longa vai inteira e o botão logo depois
+          if (buttons && body.length > 1024) await reply(text);
+          const sent = buttons ? await sendButtons(channel, waId, body.length > 1024 ? GATE_TEXTS.showAdultPrompt : body, gateButtons(buttons)) : await reply(text);
           return sent.messages?.[0]?.id ?? null;
         },
         chat: { whatsapp: { waId, profileName } },

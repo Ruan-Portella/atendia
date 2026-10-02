@@ -16,6 +16,8 @@ export const AGE_IGNORED_HOURS = 24;
 /** Ids dos botões (WhatsApp) e das respostas rápidas (Instagram). */
 export const AGE_YES = "age_yes";
 export const AGE_NO = "age_no";
+/** Botão "Ver opções 18+" (resposta refeita sem os itens 18+): leva à pergunta de idade. */
+export const AGE_SHOW = "age_show";
 
 interface Who {
   botId: string;
