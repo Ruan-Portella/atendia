@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fixedMonthlyBrl, summarizeWhatsApp, type FixedCost } from "../backoffice";
-import { cronLate, groupQuality, operationAlerts, type getOperations } from "../backoffice-ops";
+import { cronLate, cronsScheduledHere, groupQuality, operationAlerts, type getOperations } from "../backoffice-ops";
 import { fixedCostFields } from "../validation";
 
 const form = (o: Record<string, string>) => {
@@ -57,6 +57,12 @@ describe("qualidade e operação", () => {
     expect(cronLate(null, "desconhecida", now)).toBe(false);
   });
 
+  it("tarefas agendadas só contam como atrasadas em produção (a Vercel não agenda na dev nem local)", () => {
+    expect(cronsScheduledHere("production")).toBe(true);
+    expect(cronsScheduledHere("preview")).toBe(false);
+    expect(cronsScheduledHere(undefined)).toBe(false);
+  });
+
   it("avisos da visão geral só quando algo precisa de atenção", () => {
     type Ops = Awaited<ReturnType<typeof getOperations>>;
     const base: Ops = {
@@ -64,6 +70,7 @@ describe("qualidade e operação", () => {
       queue: { pending: 0, oldestPendingAt: null, failed24h: 0, failed7d: 0, done24h: 10, failed: [] },
       channels: { waDisconnected: [], waPayment: [], igDisconnected: [], igExpiring: [] },
       crons: [{ name: "diario", label: "Rotina diária", lastRunAt: null, lastOkAt: null, late: false }],
+      cronsScheduled: true,
       bots: new Map(),
     };
     expect(operationAlerts(base)).toEqual([]);

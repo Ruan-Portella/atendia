@@ -68,6 +68,9 @@ export async function getQuality(since: Date) {
 export const CRON_EXPECTED_HOURS: Record<string, number> = { diario: 26, drain: 26 };
 export const CRON_LABEL: Record<string, string> = { diario: "Rotina diária (retenção, tokens, avisos)", drain: "Varredura da fila da Meta" };
 
+/** A Vercel só dispara tarefas agendadas em produção: na dev (pré-visualização) e local, nunca rodam sozinhas. */
+export const cronsScheduledHere = (env = process.env.VERCEL_ENV) => env === "production";
+
 export function cronLate(lastOkAt: string | null, name: string, now = Date.now()): boolean {
   const hours = CRON_EXPECTED_HOURS[name];
   if (!hours) return false;
@@ -104,12 +107,13 @@ export async function getOperations(now = Date.now()) {
     igExpiring: igExp.data ?? [],
   };
   const ids = [...(failedList.data ?? []).map((f) => f.bot_id as string), ...Object.values(channels).flatMap((list) => list.map((c) => c.bot_id as string))];
-  // tarefas que ainda não rodaram nenhuma vez também aparecem (atrasadas)
+  // tarefas que ainda não rodaram nenhuma vez também aparecem (atrasadas, só onde a Vercel agenda)
+  const scheduled = cronsScheduledHere();
   const cronRows = new Map((crons.data ?? []).map((c) => [c.name as string, c]));
   const cronList = Object.keys(CRON_EXPECTED_HOURS).map((name) => {
     const c = cronRows.get(name);
     const lastOkAt = (c?.last_ok_at as string | null) ?? null;
-    return { name, label: CRON_LABEL[name] ?? name, lastRunAt: (c?.last_run_at as string | null) ?? null, lastOkAt, late: cronLate(lastOkAt, name, now) };
+    return { name, label: CRON_LABEL[name] ?? name, lastRunAt: (c?.last_run_at as string | null) ?? null, lastOkAt, late: scheduled && cronLate(lastOkAt, name, now) };
   });
   return {
     health,
@@ -123,6 +127,7 @@ export async function getOperations(now = Date.now()) {
     },
     channels,
     crons: cronList,
+    cronsScheduled: scheduled,
     bots: await botRefs(ids),
   };
 }

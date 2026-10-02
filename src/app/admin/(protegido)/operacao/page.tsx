@@ -44,6 +44,7 @@ export default async function AdminOperations() {
 
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="text-base font-bold">Tarefas agendadas</h2>
+        {!ops.cronsScheduled && <p className="text-xs text-muted">Neste ambiente as tarefas não rodam sozinhas: a Vercel só agenda em produção. Aqui elas só rodam se alguém chamar a rota à mão, então não contam como atrasadas.</p>}
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Tarefa</th><th className="py-1.5 font-semibold">Última execução</th><th className="py-1.5 font-semibold">Último sucesso</th></tr></thead>
           <tbody>
@@ -51,7 +52,7 @@ export default async function AdminOperations() {
               <tr key={c.name} className="border-t border-line-2">
                 <td className="py-2">{c.label}</td>
                 <td className="py-2 text-muted">{c.lastRunAt ? relativeTime(c.lastRunAt) : "nunca"}</td>
-                <td className={cn("py-2", c.late ? "font-semibold text-danger" : "text-muted")}>{c.lastOkAt ? relativeTime(c.lastOkAt) : "nunca"}{c.late ? " · atrasada" : ""}</td>
+                <td className={cn("py-2", c.late ? "font-semibold text-danger" : "text-muted")}>{c.lastOkAt ? relativeTime(c.lastOkAt) : "nunca"}{c.late ? " · atrasada" : !ops.cronsScheduled ? " · não roda neste ambiente" : ""}</td>
               </tr>
             ))}
           </tbody>
