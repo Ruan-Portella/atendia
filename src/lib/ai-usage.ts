@@ -75,28 +75,47 @@ export function usageFrom(model: string | undefined, u: { inputTokens?: number; 
   return { model, inputTokens: u?.inputTokens ?? 0, cachedInputTokens: u?.inputTokenDetails?.cacheReadTokens ?? 0, outputTokens: u?.outputTokens ?? 0 };
 }
 
+/** avaliacao: o conjunto de casos do backoffice (custo da plataforma, fora da margem da agência). */
+export type AiUsageKind = "resposta" | "leitura" | "transcricao" | "classificacao" | "avaliacao";
+
+/** Linha da tabela para uma chamada. */
+function usageRow(base: { agencyId: string; botId?: string | null; conversationId?: string | null; kind: AiUsageKind; channel?: string | null }, u: UsageTokens) {
+  return {
+    agency_id: base.agencyId,
+    bot_id: base.botId ?? null,
+    conversation_id: base.conversationId ?? null,
+    kind: base.kind,
+    channel: base.channel ?? null,
+    model: u.model ?? u.embeddingModel ?? u.audioModel ?? null,
+    input_tokens: u.inputTokens ?? 0,
+    cached_input_tokens: u.cachedInputTokens ?? 0,
+    output_tokens: u.outputTokens ?? 0,
+    embedding_tokens: u.embeddingTokens ?? 0,
+    audio_seconds: u.audioSeconds ?? null,
+    cost_usd: costUsd(u),
+  };
+}
+
+/** Várias chamadas de uma vez (avaliação: uma linha por chamada, num insert só). */
+export async function recordAiUsageMany(db: SupabaseClient, base: { agencyId: string; botId?: string | null; kind: AiUsageKind; channel?: string | null }, rows: UsageTokens[]): Promise<void> {
+  if (!rows.length) return;
+  try {
+    const { error } = await db.from("ai_usage").insert(rows.map((u) => usageRow(base, u)));
+    if (error) console.error("ai_usage: não gravou", error.message);
+  } catch (e) {
+    console.error("ai_usage: não gravou", e);
+  }
+}
+
 export async function recordAiUsage(
   db: SupabaseClient,
-  row: { agencyId?: string; botId?: string | null; conversationId?: string | null; kind: "resposta" | "leitura" | "transcricao" | "classificacao"; channel?: string | null } & UsageTokens,
+  row: { agencyId?: string; botId?: string | null; conversationId?: string | null; kind: AiUsageKind; channel?: string | null } & UsageTokens,
 ): Promise<void> {
   try {
     let agencyId = row.agencyId;
     if (!agencyId && row.botId) agencyId = (await db.from("bots").select("agency_id").eq("id", row.botId).maybeSingle()).data?.agency_id;
     if (!agencyId) return;
-    const { error } = await db.from("ai_usage").insert({
-      agency_id: agencyId,
-      bot_id: row.botId ?? null,
-      conversation_id: row.conversationId ?? null,
-      kind: row.kind,
-      channel: row.channel ?? null,
-      model: row.model ?? row.embeddingModel ?? row.audioModel ?? null,
-      input_tokens: row.inputTokens ?? 0,
-      cached_input_tokens: row.cachedInputTokens ?? 0,
-      output_tokens: row.outputTokens ?? 0,
-      embedding_tokens: row.embeddingTokens ?? 0,
-      audio_seconds: row.audioSeconds ?? null,
-      cost_usd: costUsd(row),
-    });
+    const { error } = await db.from("ai_usage").insert(usageRow({ ...row, agencyId }, row));
     if (error) console.error("ai_usage: não gravou", error.message);
   } catch (e) {
     console.error("ai_usage: não gravou", e);

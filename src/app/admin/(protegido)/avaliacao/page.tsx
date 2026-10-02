@@ -14,7 +14,7 @@ export default async function AdminEval() {
   const db = createAdminClient();
   const [{ data: bots }, { data: runs }] = await Promise.all([
     db.from("bots").select("id, name, client_name, agencies(name)").eq("is_demo", false).order("name"),
-    db.from("eval_runs").select("id, bot_name, case_file, categories, model, effort, classifier, runs, passed, total, must_ok, cost_usd_per_answer, cache_pct, skipped, created_by, created_at").order("created_at", { ascending: false }).limit(30),
+    db.from("eval_runs").select("id, bot_name, case_file, categories, model, effort, classifier, runs, passed, total, must_ok, cost_usd_per_answer, total_cost_usd, cache_pct, skipped, created_by, created_at").order("created_at", { ascending: false }).limit(30),
   ]);
   const botOptions = (bots ?? []).map((b) => {
     const agency = (Array.isArray(b.agencies) ? b.agencies[0] : b.agencies) as { name?: string } | null;
@@ -66,7 +66,7 @@ export default async function AdminEval() {
                   <span className={cn("font-semibold tabular", r.must_ok ? "text-ink" : "text-danger")}>{r.passed as number}/{r.total as number}</span>
                   <div className={cn("text-xs", r.must_ok ? "text-muted" : "text-danger")}>{r.must_ok ? "obrigatórios ok" : "obrigatório falhou"}{(r.skipped as number) ? ` · ${r.skipped} fora por tempo` : ""}</div>
                 </td>
-                <td className="px-3 py-2.5 text-right text-xs tabular">{r.cost_usd_per_answer !== null ? usd(Number(r.cost_usd_per_answer), 5) : "—"}{r.cache_pct !== null ? <div className="text-muted">{r.cache_pct as number}% cache</div> : null}</td>
+                <td className="px-3 py-2.5 text-right text-xs tabular">{r.cost_usd_per_answer !== null ? usd(Number(r.cost_usd_per_answer), 5) : "—"}{r.cache_pct !== null ? <div className="text-muted">{r.cache_pct as number}% cache</div> : null}{r.total_cost_usd !== null && r.total_cost_usd !== undefined ? <div className="text-muted">rodada {usd(Number(r.total_cost_usd), 3)}</div> : null}</td>
                 <td className="px-5 py-2.5 text-right"><Link href={`/admin/avaliacao/${r.id}`} className="text-xs font-semibold underline">relatório</Link></td>
               </tr>
             ))}

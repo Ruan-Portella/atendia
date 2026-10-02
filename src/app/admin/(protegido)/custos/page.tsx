@@ -125,7 +125,7 @@ export default async function AdminCosts({ searchParams }: { searchParams: Promi
         {openai && "error" in openai && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">Não deu para consultar a OpenAI: {openai.error}</p>}
         {real && (
           <>
-            <p className="text-sm text-muted">Inclui tudo da organização: produção, dev, avaliações e testes. A diferença para o medido é o que o sistema não registra (principalmente as avaliações) e os arredondamentos da OpenAI.</p>
+            <p className="text-sm text-muted">Inclui tudo da organização: produção, dev, avaliações e testes. As avaliações da IA entram no medido como &ldquo;Avaliações da IA&rdquo; (desde 02/10/2026; as de antes não foram registradas). A diferença que sobra é o que roda fora do sistema (testes locais, outros projetos na mesma conta) e os arredondamentos da OpenAI.</p>
             <DayBars caption="Custo real por dia" days={real.daily.map((d) => ({ day: d.day, value: d.cost }))} format={(v) => usd(v, v < 1 ? 4 : 2)} />
             <div className="grid gap-6 lg:grid-cols-2">
               <Breakdown title="Por projeto da OpenAI" rows={real.byProject} total={real.total} />

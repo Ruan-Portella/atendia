@@ -4,6 +4,28 @@ import { caseLine, casesReport, casesSummary, loadCases, runCases } from "@/lib/
 import { requireAdminApi } from "@/lib/platform-admin";
 import { chatModelId, classifierModelId, type ReasoningEffort } from "@/lib/ai";
 import { CHAT_TEMPERATURE, type BotRow } from "@/lib/chat";
+import { costUsd, recordAiUsageMany, type UsageTokens } from "@/lib/ai-usage";
+
+/**
+ * Custo da avaliação: cada chamada (resposta, classificador do portão, busca) vai para o ai_usage
+ * como "avaliacao", gravada aos poucos (uma rodada cortada no meio não perde o que já gastou).
+ */
+function evalUsage(db: ReturnType<typeof createAdminClient>, bot: BotRow) {
+  const pending: UsageTokens[] = [];
+  let total = 0;
+  let unpriced = 0;
+  return {
+    onUsage: (u: UsageTokens) => {
+      pending.push(u);
+      const c = costUsd(u);
+      if (c === null) unpriced++;
+      else total += c;
+    },
+    flush: async () => recordAiUsageMany(db, { agencyId: bot.agency_id, botId: bot.id, kind: "avaliacao" }, pending.splice(0)),
+    line: () => `CUSTO TOTAL DA RODADA: US$ ${total.toFixed(4)} (respostas, classificador do portão e busca)${unpriced ? ` · ${unpriced} chamada(s) sem preço na tabela` : ""}`,
+    total: () => total,
+  };
+}
 
 // limite do plano Hobby da Vercel (fluid compute): o conjunto fixo inteiro cabe numa chamada
 export const maxDuration = 300;
@@ -59,6 +81,7 @@ export async function GET(req: Request) {
     const classifierModel = sp.get("classificador")?.trim() || undefined;
     const label = `${model ?? `${chatModelId()} (padrão)`}${effort ? ` (raciocínio: ${effort})` : ""} · classificador do portão: ${classifierModel ?? `${classifierModelId()} (padrão)`}`;
     const stopAt = Date.now() + CASES_BUDGET_MS;
+    const usage = evalUsage(db, bot);
     // o relatório vai aparecendo: cada caso assim que termina, o resumo no fim
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -66,8 +89,21 @@ export async function GET(req: Request) {
         const write = (t: string) => controller.enqueue(enc.encode(t));
         write(`Rodando ${cases.length} casos × ${runs} rodadas · ${label}. Cada caso aparece aqui quando termina; o resumo vem no fim.\n\n`);
         try {
-          const { results, skipped } = await runCases(db, bot, cases, { runs, model, temperature, effort, classifierModel, stopAt, onResult: (r) => write(`${caseLine(r)}\n`) });
-          const report = casesReport(results, { model: label, temperature: temperature ?? CHAT_TEMPERATURE, runs }, skipped);
+          const { results, skipped } = await runCases(db, bot, cases, {
+            runs,
+            model,
+            temperature,
+            effort,
+            classifierModel,
+            stopAt,
+            onUsage: usage.onUsage,
+            onResult: (r) => {
+              write(`${caseLine(r)}\n`);
+              void usage.flush();
+            },
+          });
+          await usage.flush();
+          const report = `${casesReport(results, { model: label, temperature: temperature ?? CHAT_TEMPERATURE, runs }, skipped)}\n${usage.line()}`;
           write(`\n==========\n\n${report}\n`);
           // histórico do backoffice: comparar antes e depois de uma mudança de prompt ou modelo
           const s = casesSummary(results);
@@ -84,6 +120,7 @@ export async function GET(req: Request) {
             total: s.total,
             must_ok: s.mustOk,
             cost_usd_per_answer: s.cost.custoMedioUsd,
+            total_cost_usd: usage.total(),
             cache_pct: s.cost.respostasIa ? s.cost.cachePct : null,
             skipped: skipped.length,
             report,
@@ -91,6 +128,7 @@ export async function GET(req: Request) {
           });
           if (error) console.error("avaliação: rodada não salva", error.message);
         } catch (e) {
+          await usage.flush();
           write(`\nERRO: ${(e as Error).message}\n`);
         }
         controller.close();
@@ -131,10 +169,12 @@ export async function GET(req: Request) {
     effort: effortOf(sp.get("esforco")),
     classifierModel: sp.get("classificador")?.trim() || undefined,
   };
-  const results = await Promise.all(questions.map((q) => evaluateQuestion(db, bot, q, opts)));
+  const usage = evalUsage(db, bot);
+  const results = await Promise.all(questions.map((q) => evaluateQuestion(db, bot, q, { ...opts, onUsage: usage.onUsage })));
+  await usage.flush();
   if (sp.get("formato") === "json") return Response.json(results.length === 1 ? results[0] : results);
   const overview = results.length > 1
     ? ["RESUMO", ...results.map((r, i) => `  ${i + 1}. respondeu ${r.summary.respondeu} · não tenho ${r.summary.nao_tenho} · recusou ${r.summary.recusou} · barrou ${r.summary.barrou} · 18+ ${r.summary.pediu_18} · atendente ${r.summary.chamou_atendente} · ERRO ${r.summary.erro} · de ${r.summary.runs} — ${r.question}`), "", ""].join("\n")
     : "";
-  return new Response(overview + results.map(evalReport).join("\n\n==========\n\n"), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  return new Response(`${overview}${results.map(evalReport).join("\n\n==========\n\n")}\n\n${usage.line()}\n`, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }

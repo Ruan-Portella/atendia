@@ -66,15 +66,15 @@ interface Bucket {
   calls: number;
 }
 
-const KIND_LABEL: Record<string, string> = { resposta: "Respostas", leitura: "Leitura de fontes", transcricao: "Áudio (transcrição)", classificacao: "Classificação (portão e risco)" };
+const KIND_LABEL: Record<string, string> = { resposta: "Respostas", leitura: "Leitura de fontes", transcricao: "Áudio (transcrição)", classificacao: "Classificação (portão e risco)", avaliacao: "Avaliações da IA (testes do backoffice)" };
 export const kindLabel = (k: string) => KIND_LABEL[k] ?? k;
 
 /** Agrupa as linhas do banco por tipo, modelo, canal e agência; resposta média e % de cache. */
 export function summarizeAiCosts(rows: AiCostRow[]) {
   const n = (v: unknown) => Number(v) || 0;
-  const group = (key: (r: AiCostRow) => string): Bucket[] => {
+  const group = (key: (r: AiCostRow) => string, list: AiCostRow[] = rows): Bucket[] => {
     const m = new Map<string, Bucket>();
-    for (const r of rows) {
+    for (const r of list) {
       const k = key(r);
       const b = m.get(k) ?? { key: k, cost: 0, calls: 0 };
       b.cost += n(r.cost_usd);
@@ -101,7 +101,8 @@ export function summarizeAiCosts(rows: AiCostRow[]) {
     byKind: group((r) => r.kind),
     byModel: group((r) => (r.model ?? "—").replace(/-\d{4}-\d{2}-\d{2}$/, "")),
     byChannel: group((r) => r.channel ?? "—"),
-    byAgency: group((r) => r.agency_id),
+    // avaliações (testes do backoffice) são custo da plataforma, não da agência dona do bot de teste
+    byAgency: group((r) => r.agency_id, rows.filter((r) => r.kind !== "avaliacao")),
   };
 }
 

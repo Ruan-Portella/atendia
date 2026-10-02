@@ -10,7 +10,7 @@ import { GATE_TEXTS } from "./gate/rules";
 import { checkExit, exitDecision } from "./gate/exit";
 import { gatedHistory } from "./gate/context";
 import { regulatedDestination } from "./gate/sales-channel";
-import { costUsd } from "./ai-usage";
+import { costUsd, usageFrom, type UsageTokens } from "./ai-usage";
 import type { AgeStatus } from "./gate/age";
 
 /*
@@ -34,6 +34,8 @@ export interface EvalOptions {
   effort?: ReasoningEffort;
   /** Modelo do classificador do portão (padrão: classifierModelId()). */
   classifierModel?: string;
+  /** Uso de cada chamada (resposta, classificador do portão, busca), para gravar como avaliação. */
+  onUsage?: (u: UsageTokens) => void;
 }
 
 export interface EvalRun {
@@ -84,6 +86,7 @@ export function costLine(c: ReturnType<typeof costSummary>): string {
 
 export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question: string, opts: EvalOptions) {
   const retrieval = await retrieveContext(db, bot.id, question);
+  if (retrieval.embeddingUsage?.tokens) opts.onUsage?.({ embeddingModel: retrieval.embeddingUsage.model, embeddingTokens: retrieval.embeddingUsage.tokens });
   const { context, hits } = retrieval;
   const phone = opts.foreign ? "14155550123" : "5521999990000";
   const channelNote = opts.channel === "whatsapp" ? channelNoteFor({ whatsapp: { waId: phone } }) : opts.channel === "instagram" ? channelNoteFor({ instagram: { igsid: "teste" } }) : undefined;
@@ -96,7 +99,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
     let urgent = false;
     try {
       // portão na entrada, como no canal: proibido e pergunta de 18+ nem chegam à IA principal
-      const entrance = scopeLock ? await decideEntrance({ text: question, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, context, contextCategories: retrieval.hits.flatMap((h) => h.gate_categories ?? []), companyName: bot.client_name, classifierModel: opts.classifierModel }) : null;
+      const entrance = scopeLock ? await decideEntrance({ text: question, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, context, contextCategories: retrieval.hits.flatMap((h) => h.gate_categories ?? []), companyName: bot.client_name, classifierModel: opts.classifierModel, onUsage: opts.onUsage }) : null;
       if (entrance?.kind === "proibido") return { verdict: "barrou", text: GATE_TEXTS.prohibited, tools: [`portao:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0, costUsd: 0 };
       if (entrance?.kind === "nao_18") return { verdict: "barrou", text: GATE_TEXTS.under18, tools: [`portao:nao_18:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0, costUsd: 0 };
       if (entrance?.kind === "pede_18") return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools: ["portao:pede_18"], inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -148,6 +151,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           pedir_confirmacao_18: noop,
         }),
       });
+      opts.onUsage?.(usageFrom(r.response?.modelId ?? opts.model ?? chatModelId(), r.totalUsage));
       const tools = r.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
       const inputTokens = r.totalUsage?.inputTokens ?? 0;
       const cachedInputTokens = r.totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0;

@@ -40,7 +40,8 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
 
   // custo de IA por mês (totais fechados) e por tipo
   const months = new Map<string, { cost: number; calls: number; kinds: Array<{ kind: string; cost: number }> }>();
-  for (const r of monthly ?? []) {
+  // avaliações da IA (testes do backoffice) são custo da plataforma, não desta agência
+  for (const r of (monthly ?? []).filter((x) => x.kind !== "avaliacao")) {
     const m = months.get(r.period as string) ?? { cost: 0, calls: 0, kinds: [] };
     m.cost += Number(r.cost_usd) || 0;
     m.calls += Number(r.calls) || 0;
