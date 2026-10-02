@@ -56,7 +56,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
             ) : !m.deleted_at && m.channel_ref?.url && /^https:\/\//i.test(m.channel_ref.url) ? (
               // post de outra conta: a Meta só manda a imagem (a capa, no carrossel)
               <a href={m.channel_ref.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[11px] underline opacity-80">
-                Ver a imagem {m.channel_ref.kind === "reel" ? "do reel" : "do post"} (capa)
+                Ver a imagem {m.channel_ref.kind === "reel" ? "do reel (capa)" : m.channel_ref.kind === "story" ? "do story" : "do post (capa)"}
               </a>
             ) : null}
             {m.blocked_reason && <div className="mt-1.5 text-[11px] font-semibold text-amber-ink">Não enviada: {m.blocked_reason}. O contato não recebeu esta mensagem.</div>}

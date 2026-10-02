@@ -22,6 +22,8 @@ const HISTORY = 12;
 const FALLBACK = "No momento não consigo responder por aqui. A equipe vai retornar sua mensagem em breve.";
 const ONLY_TEXT = "Por enquanto eu entendo mensagens de texto e áudios. Fotos, vídeos e documentos ainda não. Pode escrever sua dúvida?";
 const AUDIO_FAILED = "Não consegui entender o áudio. Pode mandar de novo ou escrever?";
+/** Texto fixo que sai ao contato e também fica na conversa do painel (como do sistema). */
+const fixedRecord = (content: string): SendRecord => ({ insert: { role: "assistant", content, author: SYSTEM_AUTHOR } });
 /** Marca a mensagem que chegou como áudio (no painel e para o assistente). */
 export const AUDIO_PREFIX = "🎤 ";
 
@@ -53,6 +55,10 @@ export interface InboundMessage {
   button?: { text?: string };
   interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
+  /** Foto, vídeo e documento podem vir com legenda (é uma mensagem só, no WhatsApp). */
+  image?: { caption?: string };
+  video?: { caption?: string };
+  document?: { caption?: string; filename?: string };
   /** Aviso do sistema (ex.: a pessoa trocou de número: user_changed_user_id / user_changed_number). */
   system?: { body?: string; type?: string; wa_id?: string; user_id?: string };
 }
@@ -93,7 +99,10 @@ export async function lastContactMessageAt(db: SupabaseClient, botId: string, co
 /** Texto da mensagem (texto, botão ou item de lista); null para áudio, imagem, figurinha… */
 export function inboundText(m: InboundMessage): string | null {
   const t = m.text?.body ?? m.button?.text ?? m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title;
-  return t?.trim() ? t.trim() : null;
+  if (t?.trim()) return t.trim();
+  // mídia com legenda: o assistente lê a legenda e sabe que veio uma foto que ele não vê
+  const caption = (m.image ?? m.video ?? m.document)?.caption?.trim();
+  return caption ? `${mediaLabel(m.type)} ${caption}` : null;
 }
 
 /** Grava uma mensagem do contato numa conversa e atualiza contadores (sem o assistente responder). */
@@ -213,7 +222,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
       { key: `wa:${bot.id}:${waId}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
     ]);
     if (exceeded) {
-      if (mode.canSend && (await noticeOnce(db, exceeded))) await say("sistema", exceeded.message, null);
+      if (mode.canSend && (await noticeOnce(db, exceeded))) await say("sistema", exceeded.message, conv ? fixedRecord(exceeded.message) : null);
       return;
     }
   }
@@ -340,7 +349,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     const convId = await plainConversation();
     if (convId) await storeAll(convId);
     const lastAudio = last.msg.type === "audio" && canTranscribe();
-    return void (await say("ia", lastAudio ? AUDIO_FAILED : ONLY_TEXT, null));
+    const fixed = lastAudio ? AUDIO_FAILED : ONLY_TEXT;
+    return void (await say("ia", fixed, convId ? fixedRecord(fixed) : null, convId));
   }
   const q = burst[qi];
 
@@ -385,7 +395,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
     if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("whatsapp: falha ao responder", e);
-    await say("ia", FALLBACK, null).catch(() => {});
+    await say("ia", FALLBACK, conv ? fixedRecord(FALLBACK) : null).catch(() => {});
   }
 }
 

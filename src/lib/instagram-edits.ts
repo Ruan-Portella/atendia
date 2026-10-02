@@ -18,7 +18,7 @@ export const DELETED_LABEL = "(mensagem apagada pelo contato)";
 export const igMessageKey = (mid: string) => sha256(`ig:msg:${mid}`);
 
 export interface SharedRef {
-  kind: "post" | "reel";
+  kind: "post" | "reel" | "story";
   /** Id do post (ig_post) ou do vídeo (ig_reel). */
   id: string | null;
   url: string | null;
@@ -30,14 +30,16 @@ export interface SharedRef {
 
 const POST_TYPES = new Set(["ig_post", "post", "share"]);
 const REEL_TYPES = new Set(["ig_reel", "reel"]);
+/** Story de outra conta encaminhado na DM: só vem a imagem (story não tem legenda). */
+const STORY_TYPES = new Set(["ig_story", "story"]);
 
-/** Post ou reel compartilhado nesta DM, ou null. Função pura. */
+/** Post, reel ou story compartilhado nesta DM, ou null. Função pura. */
 export function sharedRef(ev: IgMessagingEvent): SharedRef | null {
   for (const a of ev.message?.attachments ?? []) {
     const type = a.type ?? "";
-    if (!POST_TYPES.has(type) && !REEL_TYPES.has(type)) continue;
+    if (!POST_TYPES.has(type) && !REEL_TYPES.has(type) && !STORY_TYPES.has(type)) continue;
     return {
-      kind: REEL_TYPES.has(type) ? "reel" : "post",
+      kind: REEL_TYPES.has(type) ? "reel" : STORY_TYPES.has(type) ? "story" : "post",
       id: a.payload?.reel_video_id ?? a.payload?.id ?? null,
       url: a.payload?.url ?? null,
       title: a.payload?.title?.trim() || null,
@@ -46,8 +48,10 @@ export function sharedRef(ev: IgMessagingEvent): SharedRef | null {
   return null;
 }
 
-/** O que o assistente (e o painel) leem de um post ou reel compartilhado. */
+/** O que o assistente (e o painel) leem de um post, reel ou story compartilhado. */
 export function sharedText(ref: SharedRef): string {
+  // story não tem legenda: o texto fica na imagem, que o assistente ainda não lê
+  if (ref.kind === "story") return "📎 Story compartilhado do Instagram (o assistente não vê a imagem)";
   const what = ref.kind === "reel" ? "Reel" : "Post";
   return ref.title ? `📎 ${what} compartilhado do Instagram: "${ref.title.slice(0, 500)}"` : `📎 ${what} compartilhado do Instagram (sem legenda)`;
 }

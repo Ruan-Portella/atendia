@@ -11,6 +11,9 @@ describe("post e reel compartilhados", () => {
     expect(sharedRef({ message: { mid: "m1", attachments: [{ type: "ig_reel", payload: { reel_video_id: "v1", url: "https://x/v1", title: "" } }] } })).toEqual({ kind: "reel", id: "v1", url: "https://x/v1", title: null });
     expect(sharedRef({ message: { mid: "m1", attachments: [{ type: "share", payload: { url: "https://x" } }] } })?.kind).toBe("post");
     expect(sharedRef({ message: { mid: "m1", attachments: [{ type: "image", payload: { url: "https://x" } }] } })).toBeNull();
+    // story encaminhado: só a imagem, sem legenda
+    expect(sharedRef({ message: { mid: "m1", attachments: [{ type: "ig_story", payload: { url: "https://x/s" } }] } })).toMatchObject({ kind: "story", url: "https://x/s", title: null });
+    expect(sharedText({ kind: "story", id: null, url: null, title: null })).toBe("📎 Story compartilhado do Instagram (o assistente não vê a imagem)");
   });
 
   it("o assistente lê a legenda (cortada); sem legenda, diz que não tem", () => {
@@ -86,7 +89,8 @@ describe("anexos do Instagram", () => {
   it("tipo que não conhecemos aparece com o nome (para sabermos o que a Meta mandou)", () => {
     expect(igMediaLabel({ message: { attachments: [{ type: "image" }] } })).toBe("📷 (foto)");
     expect(igMediaLabel({ message: { attachments: [{ type: "ig_post" }] } })).toBe("(publicação compartilhada)");
-    expect(igMediaLabel({ message: { attachments: [{ type: "ig_story" }] } })).toBe("(anexo do Instagram: ig_story)");
+    expect(igMediaLabel({ message: { attachments: [{ type: "ig_story" }] } })).toBe("(story compartilhado)");
+    expect(igMediaLabel({ message: { attachments: [{ type: "ig_xyz" }] } })).toBe("(anexo do Instagram: ig_xyz)");
     expect(igMediaLabel({ message: {} })).toBe("(mensagem sem texto)");
   });
 

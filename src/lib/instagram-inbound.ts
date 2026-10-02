@@ -22,6 +22,8 @@ const HISTORY = 12;
 const FALLBACK = "No momento não consigo responder por aqui. A equipe vai retornar sua mensagem em breve.";
 const ONLY_TEXT = "Por enquanto eu entendo mensagens de texto e áudios. Fotos e vídeos ainda não. Pode escrever sua dúvida?";
 const AUDIO_FAILED = "Não consegui entender o áudio. Pode mandar de novo ou escrever?";
+/** Texto fixo que sai ao contato e também fica na conversa do painel (como do sistema). */
+const fixedRecord = (content: string): SendRecord => ({ insert: { role: "assistant", content, author: SYSTEM_AUTHOR } });
 
 export { IG_APP_AUTHOR } from "./authors";
 import { IG_APP_AUTHOR } from "./authors";
@@ -37,6 +39,8 @@ const IG_MEDIA_LABEL: Record<string, string> = {
   reel: "(reel)",
   ig_post: "(publicação compartilhada)",
   post: "(publicação compartilhada)",
+  ig_story: "(story compartilhado)",
+  story: "(story compartilhado)",
 };
 
 export interface IgMessagingEvent {
@@ -164,7 +168,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       { key: `ig:${bot.id}:${igsid}:d`, max: 300, windowSeconds: 86400, message: "Limite de mensagens por hoje atingido. Tente de novo amanhã." },
     ]);
     if (exceeded) {
-      if (mode.canSend && (await noticeOnce(db, exceeded))) await say("sistema", exceeded.message, null);
+      if (mode.canSend && (await noticeOnce(db, exceeded))) await say("sistema", exceeded.message, conv ? fixedRecord(exceeded.message) : null);
       return;
     }
   }
@@ -320,7 +324,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     const convId = await plainConversation();
     if (convId) await storeAll(convId);
     const lastAudio = Boolean(lastEv.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
-    return void (await say("ia", lastAudio ? AUDIO_FAILED : ONLY_TEXT, null));
+    const fixed = lastAudio ? AUDIO_FAILED : ONLY_TEXT;
+    return void (await say("ia", fixed, convId ? fixedRecord(fixed) : null, convId));
   }
   const q = burst[qi];
 
@@ -357,7 +362,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     // a cota acabou entre a checagem e a abertura da conversa: modo só humano, sem perder a mensagem
     if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("instagram: falha ao responder", e);
-    await say("ia", FALLBACK, null).catch(() => {});
+    await say("ia", FALLBACK, conv ? fixedRecord(FALLBACK) : null).catch(() => {});
   }
 }
 
