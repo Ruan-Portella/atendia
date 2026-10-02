@@ -48,7 +48,8 @@ export async function proxy(request: NextRequest) {
   const user = claims?.claims?.sub ? claims.claims : null;
 
   const path = request.nextUrl.pathname;
-  if (!user && path.startsWith("/painel")) {
+  // backoffice (/admin) também exige login; quem é admin e a segunda etapa são conferidos na página
+  if (!user && (path.startsWith("/painel") || path === "/admin" || path.startsWith("/admin/"))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BotRow } from "./chat";
@@ -142,9 +142,28 @@ export function caseLine(r: CaseResult): string {
   return `  ${caseIcon(r)} ${r.c.id} (${r.passed}/${r.runs}${r.errors ? `, ${r.errors} com erro de chamada` : ""}) — ${r.c.pergunta}`;
 }
 
+/** Passou: nenhuma rodada errou o comportamento e pelo menos uma rodou (⚠️ = só erro de chamada). */
+const caseOk = (r: CaseResult) => r.failures.length === 0 && r.passed > 0;
+
+/** Resumo de uma rodada do conjunto (histórico do backoffice). */
+export function casesSummary(results: CaseResult[]) {
+  return { passed: results.filter(caseOk).length, total: results.length, mustOk: results.filter((r) => MUST_PASS.has(r.c.categoria)).every(caseOk), cost: costSummary(results.flatMap((r) => r.runList)) };
+}
+
+/** Arquivos de casos em evals/: casos.jsonl é o geral ("1"); casos-NOME.jsonl é o de um bot de teste. */
+export function listCaseFiles(): Array<{ value: string; label: string; categories: string[] }> {
+  // o geral primeiro (em ordem alfabética, "casos-bar" viria antes de "casos")
+  const files = readdirSync(join(process.cwd(), "evals"))
+    .filter((f) => /^casos(-[a-z0-9_-]+)?\.jsonl$/.test(f))
+    .sort((a, b) => (a === "casos.jsonl" ? -1 : b === "casos.jsonl" ? 1 : a.localeCompare(b)));
+  return files.map((f) => {
+    const name = f === "casos.jsonl" ? undefined : f.slice("casos-".length, -".jsonl".length);
+    return { value: name ?? "1", label: name ? `casos-${name}.jsonl` : "casos.jsonl (geral)", categories: [...new Set(loadCases(name).map((c) => c.categoria))] };
+  });
+}
+
 export function casesReport(results: CaseResult[], meta: { model: string; temperature: number; runs: number }, skipped: EvalCase[] = []): string {
-  // passou: nenhuma rodada errou o comportamento e pelo menos uma rodou; ⚠️ = só erro de chamada
-  const ok = (r: CaseResult) => r.failures.length === 0 && r.passed > 0;
+  const ok = caseOk;
   const cats = [...new Set(results.map((r) => r.c.categoria))];
   const allMust = results.filter((r) => MUST_PASS.has(r.c.categoria)).every(ok);
   const lines = [

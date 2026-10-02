@@ -1,0 +1,353 @@
+import { cache } from "react";
+import type Stripe from "stripe";
+import { createAdminClient } from "./supabase/admin";
+import { planFromPrice, stripe } from "./stripe";
+import { PLANS, getPlan, type PlanId } from "./plans";
+import { currentPeriodBR } from "./utils";
+
+/*
+ * Números do backoffice (/admin). Contas agregadas no banco (funções admin_* da migração 0037);
+ * receita direto do Stripe; custo real direto da OpenAI (chave de admin). Tudo só leitura.
+ */
+
+/** Dólar para a margem em reais (USD_BRL troca; é estimativa, não câmbio do dia). */
+export const usdBrl = () => {
+  const v = Number(process.env.USD_BRL);
+  return Number.isFinite(v) && v > 0 ? v : 5.5;
+};
+
+export const usd = (v: number, digits = 2) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v);
+
+/* ------------------------------------------------------------------ períodos */
+
+export type RangeKey = "mes" | "mes-passado" | "30d" | "7d";
+export const RANGE_LABEL: Record<RangeKey, string> = { mes: "Este mês", "mes-passado": "Mês passado", "30d": "Últimos 30 dias", "7d": "Últimos 7 dias" };
+
+/** Início do mês em Brasília (UTC-3, sem horário de verão desde 2019). */
+export const monthStartBR = (period: string) => new Date(`${period}-01T00:00:00-03:00`);
+
+export function rangeFor(key: RangeKey, now = new Date()): { since: Date; until: Date; label: string } {
+  const period = currentPeriodBR(now);
+  if (key === "mes") return { since: monthStartBR(period), until: now, label: RANGE_LABEL[key] };
+  if (key === "mes-passado") {
+    const [y, m] = period.split("-").map(Number);
+    const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+    return { since: monthStartBR(prev), until: monthStartBR(period), label: RANGE_LABEL[key] };
+  }
+  const days = key === "7d" ? 7 : 30;
+  return { since: new Date(now.getTime() - days * 86_400_000), until: now, label: RANGE_LABEL[key] };
+}
+
+/** Instante de N dias atrás (ISO), para filtros "nos últimos N dias". */
+export const daysAgoIso = (days: number, now = Date.now()) => new Date(now - days * 86_400_000).toISOString();
+
+export const isRangeKey =(v: string | undefined): v is RangeKey => v === "mes" || v === "mes-passado" || v === "30d" || v === "7d";
+
+/* ------------------------------------------------------------------ custo de IA medido */
+
+export interface AiCostRow {
+  kind: string;
+  model: string | null;
+  channel: string | null;
+  agency_id: string;
+  calls: number;
+  input_tokens: number;
+  cached_input_tokens: number;
+  output_tokens: number;
+  audio_seconds: number;
+  cost_usd: number;
+  unpriced: number;
+}
+
+interface Bucket {
+  key: string;
+  cost: number;
+  calls: number;
+}
+
+const KIND_LABEL: Record<string, string> = { resposta: "Respostas", leitura: "Leitura de fontes", transcricao: "Áudio (transcrição)", classificacao: "Classificação (portão e risco)" };
+export const kindLabel = (k: string) => KIND_LABEL[k] ?? k;
+
+/** Agrupa as linhas do banco por tipo, modelo, canal e agência; resposta média e % de cache. */
+export function summarizeAiCosts(rows: AiCostRow[]) {
+  const n = (v: unknown) => Number(v) || 0;
+  const group = (key: (r: AiCostRow) => string): Bucket[] => {
+    const m = new Map<string, Bucket>();
+    for (const r of rows) {
+      const k = key(r);
+      const b = m.get(k) ?? { key: k, cost: 0, calls: 0 };
+      b.cost += n(r.cost_usd);
+      b.calls += n(r.calls);
+      m.set(k, b);
+    }
+    return [...m.values()].sort((a, b) => b.cost - a.cost);
+  };
+  const answers = rows.filter((r) => r.kind === "resposta");
+  const sum = (rs: AiCostRow[], f: (r: AiCostRow) => number) => rs.reduce((t, r) => t + f(r), 0);
+  const answerCalls = sum(answers, (r) => n(r.calls));
+  const answerInput = sum(answers, (r) => n(r.input_tokens));
+  return {
+    total: { cost: sum(rows, (r) => n(r.cost_usd)), calls: sum(rows, (r) => n(r.calls)), unpriced: sum(rows, (r) => n(r.unpriced)) },
+    answers: {
+      calls: answerCalls,
+      cost: sum(answers, (r) => n(r.cost_usd)),
+      perAnswer: answerCalls ? sum(answers, (r) => n(r.cost_usd)) / answerCalls : 0,
+      avgInput: answerCalls ? Math.round(answerInput / answerCalls) : 0,
+      avgOutput: answerCalls ? Math.round(sum(answers, (r) => n(r.output_tokens)) / answerCalls) : 0,
+      cachePct: answerInput ? Math.round((sum(answers, (r) => n(r.cached_input_tokens)) / answerInput) * 100) : 0,
+    },
+    audioMinutes: sum(rows, (r) => n(r.audio_seconds)) / 60,
+    byKind: group((r) => r.kind),
+    byModel: group((r) => (r.model ?? "—").replace(/-\d{4}-\d{2}-\d{2}$/, "")),
+    byChannel: group((r) => r.channel ?? "—"),
+    byAgency: group((r) => r.agency_id),
+  };
+}
+
+export async function getAiCosts(since: Date, until: Date) {
+  const db = createAdminClient();
+  const [{ data: rows, error }, { data: daily }] = await Promise.all([
+    db.rpc("admin_ai_costs", { p_since: since.toISOString(), p_until: until.toISOString() }),
+    db.rpc("admin_ai_daily", { p_since: since.toISOString(), p_until: until.toISOString() }),
+  ]);
+  if (error) throw new Error(`custos de IA: ${error.message}`);
+  return { summary: summarizeAiCosts((rows ?? []) as AiCostRow[]), daily: ((daily ?? []) as Array<{ day: string; cost_usd: number; calls: number }>).map((d) => ({ day: d.day, cost: Number(d.cost_usd) || 0, calls: Number(d.calls) || 0 })) };
+}
+
+/* ------------------------------------------------------------------ custo real da OpenAI */
+
+export interface OpenAiCostBucket {
+  start_time: number;
+  results: Array<{ amount?: { value?: number; currency?: string }; line_item?: string | null; project_id?: string | null }>;
+}
+
+/** Soma os dias da API de custos: total, por item (modelo, entrada/saída), por projeto e por dia. */
+export function sumOpenAiCosts(buckets: OpenAiCostBucket[], projectNames: Record<string, string> = {}) {
+  const byItem = new Map<string, number>();
+  const byProject = new Map<string, number>();
+  const daily: Array<{ day: string; cost: number }> = [];
+  let total = 0;
+  for (const b of buckets) {
+    let dayCost = 0;
+    for (const r of b.results) {
+      const v = Number(r.amount?.value) || 0;
+      dayCost += v;
+      const item = r.line_item ?? "outros";
+      byItem.set(item, (byItem.get(item) ?? 0) + v);
+      const project = r.project_id ? (projectNames[r.project_id] ?? r.project_id) : "sem projeto";
+      byProject.set(project, (byProject.get(project) ?? 0) + v);
+    }
+    total += dayCost;
+    daily.push({ day: new Date(b.start_time * 1000).toISOString().slice(0, 10), cost: dayCost });
+  }
+  const sorted = (m: Map<string, number>) => [...m.entries()].map(([key, cost]) => ({ key, cost })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost);
+  return { total, byItem: sorted(byItem), byProject: sorted(byProject), daily };
+}
+
+/**
+ * Custo real da conta da OpenAI (API de custos da organização; precisa de OPENAI_ADMIN_KEY).
+ * null sem a chave. Inclui tudo da organização (produção, dev, avaliações), separado por projeto.
+ */
+export async function getOpenAiCosts(since: Date, until: Date): Promise<ReturnType<typeof sumOpenAiCosts> | { error: string } | null> {
+  const key = process.env.OPENAI_ADMIN_KEY;
+  if (!key) return null;
+  const headers = { Authorization: `Bearer ${key}` };
+  try {
+    const buckets: OpenAiCostBucket[] = [];
+    let page: string | null = null;
+    for (let i = 0; i < 10; i++) {
+      const q = new URLSearchParams({ start_time: String(Math.floor(since.getTime() / 1000)), end_time: String(Math.ceil(until.getTime() / 1000)), bucket_width: "1d", limit: "62" });
+      q.append("group_by", "line_item");
+      q.append("group_by", "project_id");
+      if (page) q.set("page", page);
+      const res = await fetch(`https://api.openai.com/v1/organization/costs?${q}`, { headers, cache: "no-store" });
+      if (!res.ok) return { error: `a OpenAI respondeu ${res.status}: ${(await res.text()).slice(0, 200)}` };
+      const json = (await res.json()) as { data?: OpenAiCostBucket[]; has_more?: boolean; next_page?: string | null };
+      buckets.push(...(json.data ?? []));
+      if (!json.has_more || !json.next_page) break;
+      page = json.next_page;
+    }
+    // nomes dos projetos (se a chave puder listar; sem isso, fica o id)
+    const names: Record<string, string> = {};
+    const projects = await fetch("https://api.openai.com/v1/organization/projects?limit=100", { headers, cache: "no-store" }).catch(() => null);
+    if (projects?.ok) for (const p of ((await projects.json()) as { data?: Array<{ id: string; name: string }> }).data ?? []) names[p.id] = p.name;
+    return sumOpenAiCosts(buckets, names);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+/* ------------------------------------------------------------------ receita (Stripe) */
+
+/** Valor mensal de um item de assinatura em centavos (anual ÷ 12, etc.). Descontos não entram. */
+export function monthlyCents(item: { price?: { unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number } | null } | null; quantity?: number | null }): number {
+  const r = item.price?.recurring;
+  if (!r) return 0;
+  const amount = (item.price?.unit_amount ?? 0) * (item.quantity ?? 1);
+  const count = r.interval_count || 1;
+  const months = r.interval === "year" ? 12 * count : r.interval === "month" ? count : r.interval === "week" ? (count * 7) / 30.44 : count / 30.44;
+  return amount / months;
+}
+
+export interface SubscriptionLike {
+  id: string;
+  status: string;
+  customer: string | { id: string };
+  canceled_at?: number | null;
+  items: { data: Array<{ price?: { id?: string; unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number } | null } | null; quantity?: number | null }> };
+}
+
+/** MRR (ativas e com pagamento atrasado), assinaturas por plano e cancelamentos recentes. */
+export function summarizeSubscriptions(subs: SubscriptionLike[], now = Date.now()) {
+  const live = subs.filter((s) => s.status === "active" || s.status === "past_due");
+  const byPlan = new Map<string, { plan: string; count: number; mrrCents: number }>();
+  let mrrCents = 0;
+  for (const s of live) {
+    const cents = s.items.data.reduce((t, i) => t + monthlyCents(i), 0);
+    mrrCents += cents;
+    const planId = s.items.data.map((i) => planFromPrice(i.price?.id)).find(Boolean) ?? null;
+    const label = planId ? getPlan(planId).name : "outro preço";
+    const b = byPlan.get(label) ?? { plan: label, count: 0, mrrCents: 0 };
+    b.count += 1;
+    b.mrrCents += cents;
+    byPlan.set(label, b);
+  }
+  return {
+    mrrCents: Math.round(mrrCents),
+    active: subs.filter((s) => s.status === "active").length,
+    pastDue: subs.filter((s) => s.status === "past_due" || s.status === "unpaid").length,
+    canceled30d: subs.filter((s) => s.status === "canceled" && s.canceled_at && now - s.canceled_at * 1000 < 30 * 86_400_000).length,
+    byPlan: [...byPlan.values()].sort((a, b) => b.mrrCents - a.mrrCents),
+  };
+}
+
+export const getRevenue = cache(async () => {
+  if (!stripe) return null;
+  try {
+    const subs: Stripe.Subscription[] = [];
+    for await (const s of stripe.subscriptions.list({ status: "all", limit: 100 })) {
+      subs.push(s);
+      if (subs.length >= 2000) break;
+    }
+    const since30 = Math.floor(Date.now() / 1000) - 30 * 86_400;
+    const paid: Stripe.Invoice[] = [];
+    for await (const inv of stripe.invoices.list({ status: "paid", created: { gte: since30 }, limit: 100 })) {
+      paid.push(inv);
+      if (paid.length >= 2000) break;
+    }
+    const open = (await stripe.invoices.list({ status: "open", limit: 50 })).data.filter((i) => (i.attempt_count ?? 0) > 0);
+    return {
+      ...summarizeSubscriptions(subs as unknown as SubscriptionLike[]),
+      paid30dCents: paid.reduce((t, i) => t + (i.amount_paid ?? 0), 0),
+      failed: open.map((i) => ({ id: i.id, customer: typeof i.customer === "string" ? i.customer : (i.customer?.id ?? ""), amountCents: i.amount_due ?? 0, attempts: i.attempt_count ?? 0, url: i.hosted_invoice_url ?? null })),
+      testMode: process.env.STRIPE_SECRET_KEY?.startsWith("sk_test") ?? false,
+    };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+});
+
+/* ------------------------------------------------------------------ plataforma */
+
+export interface AgencyRow {
+  id: string;
+  name: string;
+  email: string | null;
+  plan: PlanId | string;
+  planName: string;
+  priceBrl: number;
+  trialEndsAt: string;
+  createdAt: string;
+  stripeCustomerId: string | null;
+  bots: number;
+  liveBots: number;
+  whatsapp: number;
+  instagram: number;
+  conversationsMonth: number;
+  quota: number;
+  aiCostMonthUsd: number;
+  lastActivity: string | null;
+}
+
+/** E-mail de quem é dono de cada agência (Auth do Supabase, até alguns milhares de contas). */
+async function ownerEmails(): Promise<Map<string, string>> {
+  const db = createAdminClient();
+  const map = new Map<string, string>();
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error || !data.users.length) break;
+    for (const u of data.users) if (u.email) map.set(u.id, u.email);
+    if (data.users.length < 1000) break;
+  }
+  return map;
+}
+
+export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
+  const db = createAdminClient();
+  const period = currentPeriodBR();
+  const [{ data: agencies, error }, { data: stats }, emails] = await Promise.all([
+    db.from("agencies").select("id, owner_id, name, plan, trial_ends_at, created_at, stripe_customer_id").not("owner_id", "is", null).order("created_at", { ascending: false }),
+    db.rpc("admin_agency_stats", { p_period: period, p_month_start: monthStartBR(period).toISOString() }),
+    ownerEmails(),
+  ]);
+  if (error) throw new Error(`agências: ${error.message}`);
+  const byId = new Map(((stats ?? []) as Array<Record<string, unknown>>).map((s) => [s.agency_id as string, s]));
+  return (agencies ?? []).map((a) => {
+    const s = byId.get(a.id as string) ?? {};
+    const plan = getPlan(a.plan as string);
+    return {
+      id: a.id as string,
+      name: a.name as string,
+      email: emails.get(a.owner_id as string) ?? null,
+      plan: a.plan as string,
+      planName: plan.name,
+      priceBrl: plan.priceBrl,
+      trialEndsAt: a.trial_ends_at as string,
+      createdAt: a.created_at as string,
+      stripeCustomerId: (a.stripe_customer_id as string | null) ?? null,
+      bots: Number(s.bots) || 0,
+      liveBots: Number(s.live_bots) || 0,
+      whatsapp: Number(s.whatsapp) || 0,
+      instagram: Number(s.instagram) || 0,
+      conversationsMonth: Number(s.conversations_month) || 0,
+      quota: plan.conversations,
+      aiCostMonthUsd: Number(s.ai_cost_month) || 0,
+      lastActivity: (s.last_activity as string | null) ?? null,
+    };
+  });
+});
+
+/** Situação da agência para os filtros: em teste, teste vencido, pagante, cancelada. */
+export function agencyStatus(a: Pick<AgencyRow, "plan" | "trialEndsAt">, now = Date.now()): "teste" | "teste_vencido" | "pagante" | "cancelada" {
+  if (a.plan === "trial") return new Date(a.trialEndsAt).getTime() > now ? "teste" : "teste_vencido";
+  if (a.plan in PLANS) return "pagante";
+  return "cancelada";
+}
+
+export async function getActivity(days: number) {
+  const db = createAdminClient();
+  const [{ data: daily, error }, { data: channels }] = await Promise.all([db.rpc("admin_daily_activity", { p_days: days }), db.rpc("admin_channel_split", { p_days: days })]);
+  if (error) throw new Error(`atividade: ${error.message}`);
+  return {
+    daily: ((daily ?? []) as Array<Record<string, unknown>>).map((d) => ({
+      day: String(d.day),
+      conversations: Number(d.conversations) || 0,
+      contact: Number(d.contact_messages) || 0,
+      bot: Number(d.bot_messages) || 0,
+      team: Number(d.team_messages) || 0,
+    })),
+    channels: ((channels ?? []) as Array<{ channel: string; conversations: number }>).map((c) => ({ channel: c.channel, conversations: Number(c.conversations) || 0 })),
+  };
+}
+
+export async function getBotCounts() {
+  const db = createAdminClient();
+  const [all, live, demos, wa, ig] = await Promise.all([
+    db.from("bots").select("id", { count: "exact", head: true }).eq("is_demo", false),
+    db.from("bots").select("id", { count: "exact", head: true }).eq("is_demo", false).eq("status", "live"),
+    db.from("bots").select("id", { count: "exact", head: true }).eq("is_demo", true),
+    db.from("whatsapp_channels").select("bot_id", { count: "exact", head: true }).is("disconnected_at", null),
+    db.from("instagram_channels").select("bot_id", { count: "exact", head: true }).is("disconnected_at", null),
+  ]);
+  return { bots: all.count ?? 0, live: live.count ?? 0, demos: demos.count ?? 0, whatsapp: wa.count ?? 0, instagram: ig.count ?? 0 };
+}
