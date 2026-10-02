@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Menu as MenuIcon, X, LogOut } from "lucide-react";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ interface Props {
   limit: number;
   usageLabel: string; // "1.240 / 2.000"
   children: React.ReactNode;
+  /** Faixas de aviso no topo do conteúdo (fora do espaçamento das páginas). */
+  notices?: React.ReactNode;
 }
 
 /**
@@ -21,7 +23,7 @@ interface Props {
  *  - celular e tablet (< lg): barra no topo com botão hambúrguer + menu lateral deslizante;
  *  - desktop (lg+): sidebar completa.
  */
-export function PanelShell({ agency, planName, trialDays, usage, limit, usageLabel, children }: Props) {
+export function PanelShell({ agency, planName, trialDays, usage, limit, usageLabel, children, notices }: Props) {
   const [open, setOpen] = useState(false);
   const pct = Math.min(100, Math.round((usage / Math.max(1, limit)) * 100));
 
@@ -89,7 +91,33 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
         {signOut}
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-5 sm:px-6 sm:py-7 md:gap-6 lg:px-9">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* avisos (plano, pausa, suspensão): faixa de ponta a ponta acima do conteúdo */}
+        <NoticeArea>{notices}</NoticeArea>
+        <main className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-5 sm:px-6 sm:py-7 md:gap-6 lg:px-9">{children}</main>
+      </div>
     </div>
   );
+}
+
+/**
+ * Mede a faixa de avisos e expõe a altura em --panel-notices-h: telas de altura fixa (a conversa)
+ * descontam, para o rodapé com a resposta e o "Assumir" não sair da tela.
+ */
+function NoticeArea({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const set = () => root.style.setProperty("--panel-notices-h", `${el.offsetHeight}px`);
+    set();
+    const observer = new ResizeObserver(set);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--panel-notices-h");
+    };
+  }, []);
+  return <div ref={ref}>{children}</div>;
 }

@@ -39,7 +39,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
 
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="text-base font-bold">Medidas: suspensões da BoaVoz e avisos da Meta</h2>
-        <p className="text-xs text-muted">Ordem da Meta bloqueia o número (nada entra nem sai) e é levantada sozinha quando a Meta reativa a conta. Infrações e restrições ficam só registradas por enquanto. Suspensões da BoaVoz são criadas na página de cada cliente.</p>
+        <p className="text-xs text-muted">Ordem da Meta bloqueia o número (nada entra nem sai) e é levantada sozinha quando a Meta reativa a conta. Infrações e restrições ficam só registradas por enquanto. Suspensões da BoaVoz são criadas na página de cada agência.</p>
         <MeasureList measures={measures} showAgency empty="Nenhuma medida registrada." />
       </section>
 

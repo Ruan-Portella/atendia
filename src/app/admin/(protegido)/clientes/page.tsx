@@ -4,7 +4,7 @@ import { agencyStatus, getAgencies, usd, usdBrl, type AgencyRow } from "@/lib/ba
 import { brl, num } from "@/lib/plans";
 import { cn, relativeTime } from "@/lib/utils";
 
-export const metadata = { title: "Clientes" };
+export const metadata = { title: "Agências" };
 
 const STATUS_LABEL = { pagante: "Pagante", teste: "Em teste", teste_vencido: "Teste vencido", cancelada: "Cancelada" } as const;
 type Status = keyof typeof STATUS_LABEL;
@@ -36,8 +36,8 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
   return (
     <>
       <div>
-        <h1 className="text-[26px] font-bold">Clientes</h1>
-        <p className="text-sm text-muted">Agências da plataforma. Uso e custo do mês corrente; margem = mensalidade − custo de IA (dólar a {brl(fx)}).</p>
+        <h1 className="text-[26px] font-bold">Agências</h1>
+        <p className="text-sm text-muted">Quem assina a BoaVoz (cada agência tem os próprios clientes e chatbots). Uso e custo do mês corrente; margem = mensalidade − custo de IA (dólar a {brl(fx)}).</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-sm">

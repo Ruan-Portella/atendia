@@ -31,30 +31,29 @@ function VisitorPresence({ conv }: { conv: HandoffConversation }) {
   );
 }
 
-/** Faixa de status (pediu atendente / você está atendendo) + atualização ao vivo. Vai no topo. */
+/**
+ * Status do atendimento (pediu atendente / você está atendendo) + atualização ao vivo. Vai no
+ * rodapé fixo, acima da resposta: com muitas mensagens, o aviso e o botão de assumir continuam à vista.
+ */
 export function HandoffStatus({ conv, onTakeOver }: { conv: HandoffConversation; onTakeOver: () => Promise<ActionResult> }) {
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
   const waiting = open && !conv.takeover_at && Boolean(conv.handoff_requested_at);
+  if (!active && !waiting) return null;
+  const who = conv.channel === "whatsapp" || conv.channel === "instagram" ? "O contato" : "O visitante";
   return (
     <>
-      {(active || waiting) && <AutoRefresh ms={active ? 3000 : 5000} />}
-      {(active || waiting) && (
-        <div className="rounded-lg border border-line bg-panel px-4 py-2 text-sm"><VisitorPresence conv={conv} /></div>
-      )}
-      {waiting && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#efd9a9] bg-amber-soft px-4 py-3 text-sm">
-          <Headset size={18} className="text-amber-ink" />
-          <span className="flex-1 text-amber-ink"><strong>O visitante pediu para falar com alguém</strong> {relativeTime(conv.handoff_requested_at!)}. Assuma para responder por aqui.</span>
+      <AutoRefresh ms={active ? 3000 : 5000} />
+      {waiting ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-sm">
+          <Headset size={16} className="shrink-0 text-amber-ink" />
+          <span className="min-w-0 flex-1 text-amber-ink"><strong>{who} pediu para falar com alguém</strong> {relativeTime(conv.handoff_requested_at!)}. Assuma para responder por aqui.</span>
           <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir conversa</SubmitButton></ActionForm>
         </div>
+      ) : (
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-brand"><Headset size={14} className="shrink-0" />Atendimento humano em andamento: o assistente pausou nesta conversa.</p>
       )}
-      {active && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#cfe3d8] bg-brand-soft px-4 py-3 text-sm text-brand">
-          <Headset size={18} />
-          <span className="flex-1"><strong>Atendimento humano em andamento.</strong> O assistente pausou nesta conversa; o visitante vê as respostas em segundos.</span>
-        </div>
-      )}
+      <p className="text-xs"><VisitorPresence conv={conv} /></p>
     </>
   );
 }

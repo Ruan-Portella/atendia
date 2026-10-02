@@ -61,10 +61,10 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const allMessages = (messages ?? []) as ThreadMessage[];
   const templateAction = sendConversationTemplate.bind(null, cid);
 
-  // Tela de chat: ocupa a tela toda (a barra do celular tem 60 px), cabeçalho e resposta
-  // fixos, e só as mensagens rolam.
+  // Tela de chat: ocupa a tela toda (a barra do celular tem 60 px; a faixa de avisos do painel,
+  // quando há, mede --panel-notices-h), cabeçalho e resposta fixos, e só as mensagens rolam.
   return (
-    <div className="-mx-4 -my-5 flex h-[calc(100dvh-60px)] min-h-0 flex-col sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-dvh">
+    <div className="-mx-4 -my-5 flex h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 flex-col sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-7">
         <div className="min-w-0 flex-1">
           <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-semibold text-muted">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>
@@ -102,7 +102,6 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
 
       <MessageScroller count={allMessages.length} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-4 py-5 sm:px-5 md:px-7">
-          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
           <ConversationThread
             messages={allMessages}
             leads={leads}
@@ -125,6 +124,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
               {lastUserAt === null ? "Até ele responder, o WhatsApp só deixa enviar modelos aprovados" : "O WhatsApp só deixa retomar com um modelo aprovado"}: use “Enviar modelo” no topo. Quando ele responder, a conversa continua aqui.
             </p>
           )}
+          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
           <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked />
         </div>
       </footer>

@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
 import { num } from "@/lib/plans";
+import { NoticeStrip } from "@/components/notice-strip";
 
 interface Props {
   planId: string;
@@ -35,10 +35,8 @@ export function PlanAlert({ planId, trialDays, usage, limit }: Props) {
   }
   if (!tone) return null;
   return (
-    <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm ${tone === "danger" ? "border-[#f0c9c9] bg-danger-soft text-danger" : "border-[#efd9a9] bg-amber-soft text-amber-ink"}`}>
-      <AlertTriangle size={17} className="shrink-0" />
-      <span className="min-w-0 flex-1">{text}</span>
-      <Link href="/painel/cobranca" className={tone === "danger" ? "btn-danger-solid py-1.5" : "btn-dark py-1.5"}>Ver planos</Link>
-    </div>
+    <NoticeStrip tone={tone} action={<Link href="/painel/cobranca" className={tone === "danger" ? "btn-danger-solid py-1" : "btn-dark py-1"}>Ver planos</Link>}>
+      {text}
+    </NoticeStrip>
   );
 }

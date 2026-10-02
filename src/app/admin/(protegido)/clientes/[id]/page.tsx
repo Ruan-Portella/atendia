@@ -9,7 +9,7 @@ import { stripe } from "@/lib/stripe";
 import { brl, num } from "@/lib/plans";
 import { relativeTime } from "@/lib/utils";
 
-export const metadata = { title: "Cliente" };
+export const metadata = { title: "Agência" };
 
 const STATUS_LABEL = { pagante: "Pagante", teste: "Em teste", teste_vencido: "Teste vencido", cancelada: "Cancelada" } as const;
 const BOT_STATUS: Record<string, string> = { live: "publicado", draft: "rascunho", training: "lendo fontes", error: "com erro" };
@@ -57,7 +57,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href="/admin/clientes" className="text-xs font-semibold text-muted">← Clientes</Link>
+          <Link href="/admin/clientes" className="text-xs font-semibold text-muted">← Agências</Link>
           <h1 className="text-[26px] font-bold">{agency.name}</h1>
           <p className="text-sm text-muted">{agency.email ?? "sem e-mail"} · desde {new Date(agency.createdAt).toLocaleDateString("pt-BR")} · {agency.planName} ({STATUS_LABEL[st]}{st === "teste" ? `, até ${new Date(agency.trialEndsAt).toLocaleDateString("pt-BR")}` : ""})</p>
         </div>
@@ -80,7 +80,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         <h2 className="px-5 pt-4 text-lg font-bold">Chatbots</h2>
         <table className="mt-2 w-full min-w-[640px] text-sm">
           <thead className="border-b border-line text-left text-xs text-muted">
-            <tr><th className="px-5 py-2 font-semibold">Bot</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
+            <tr><th className="px-5 py-2 font-semibold">Chatbot · cliente da agência</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
           </thead>
           <tbody>
             {(bots ?? []).map((b) => {

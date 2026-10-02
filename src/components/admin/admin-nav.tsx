@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 const ITEMS: Array<{ href: string; label: string; exact?: boolean }> = [
   { href: "/admin", label: "Visão geral", exact: true },
-  { href: "/admin/clientes", label: "Clientes" },
+  { href: "/admin/clientes", label: "Agências" },
   { href: "/admin/custos", label: "Custos" },
   { href: "/admin/receita", label: "Receita" },
   { href: "/admin/qualidade", label: "Qualidade" },

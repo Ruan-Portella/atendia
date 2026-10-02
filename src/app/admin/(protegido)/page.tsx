@@ -87,7 +87,7 @@ export default async function AdminHome() {
           ) : (
             <p className="text-sm text-muted">Nenhuma conversa nos últimos 30 dias.</p>
           )}
-          <p className="mt-auto text-xs text-muted">Detalhe por cliente em <Link href="/admin/clientes" className="font-semibold text-ink underline">Clientes</Link>; custo por modelo e canal em <Link href="/admin/custos" className="font-semibold text-ink underline">Custos</Link>.</p>
+          <p className="mt-auto text-xs text-muted">Detalhe por agência em <Link href="/admin/clientes" className="font-semibold text-ink underline">Agências</Link>; custo por modelo e canal em <Link href="/admin/custos" className="font-semibold text-ink underline">Custos</Link>.</p>
         </section>
       </div>
     </>

@@ -4,7 +4,7 @@ import { daysUntil, initials } from "@/lib/utils";
 import { PanelShell } from "@/components/panel-shell";
 import { PlanAlert } from "@/components/plan-alert";
 import { HandoffWatcher } from "@/components/handoff-watcher";
-import { AlertTriangle } from "lucide-react";
+import { NoticeStrip } from "@/components/notice-strip";
 import { panelNotices } from "@/lib/ai-pause";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -31,15 +31,14 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       usage={usage}
       limit={plan.conversations}
       usageLabel={`${num(usage)} / ${num(plan.conversations)}`}
+      notices={
+        <>
+          {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
+          <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={plan.conversations} />
+        </>
+      }
     >
       <HandoffWatcher endpoint="/api/painel/pending" />
-      {banners.map((text) => (
-        <div key={text} className="flex items-center gap-3 rounded-xl border border-[#f0c9c9] bg-danger-soft px-4 py-3 text-sm text-danger">
-          <AlertTriangle size={17} className="shrink-0" />
-          <span>{text}</span>
-        </div>
-      ))}
-      <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={plan.conversations} />
       {children}
     </PanelShell>
   );

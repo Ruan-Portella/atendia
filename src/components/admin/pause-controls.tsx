@@ -79,7 +79,7 @@ export function WhatsAppKillSwitch({ flags }: { flags: PlatformFlags }) {
     return (
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger">
         <div>
-          <strong>O WhatsApp de TODOS os clientes está desligado</strong> desde {relativeTime(flags.whatsappDisabledAt)}{flags.updatedBy ? ` (${flags.updatedBy})` : ""}. Nada entra nem sai, nem a resposta da equipe.
+          <strong>O WhatsApp de TODAS as agências está desligado</strong> desde {relativeTime(flags.whatsappDisabledAt)}{flags.updatedBy ? ` (${flags.updatedBy})` : ""}. Nada entra nem sai, nem a resposta da equipe.
           {flags.whatsappDisabledReason && <div className="text-xs">Motivo: {flags.whatsappDisabledReason}</div>}
         </div>
         <ConfirmAction action={enableWhatsAppAll} title="Religar o WhatsApp de todos?" description="As mensagens que chegarem a partir de agora voltam a ser recebidas e respondidas. As que chegaram com ele desligado não foram gravadas." confirmLabel="Religar" danger={false} className="btn-primary">

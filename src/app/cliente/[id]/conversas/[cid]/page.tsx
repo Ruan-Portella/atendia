@@ -50,7 +50,6 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
 
       <MessageScroller count={allMessages.length} className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4 sm:-mx-6 sm:px-6">
         <div className="flex flex-col gap-4 py-5">
-          {member.allowHandoff && <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />}
           <ConversationThread
             messages={allMessages}
             leads={leads}
@@ -60,7 +59,8 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
       </MessageScroller>
 
       {member.allowHandoff && (
-        <footer className="border-t border-line py-3">
+        <footer className="flex flex-col gap-2 border-t border-line py-3">
+          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
           <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked />
         </footer>
       )}
