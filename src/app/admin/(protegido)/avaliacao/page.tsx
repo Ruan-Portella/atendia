@@ -18,8 +18,15 @@ export default async function AdminEval() {
   ]);
   const botOptions = (bots ?? []).map((b) => {
     const agency = (Array.isArray(b.agencies) ? b.agencies[0] : b.agencies) as { name?: string } | null;
-    return { id: b.id as string, label: `${b.name as string} · ${b.client_name as string}${agency?.name ? ` (${agency.name})` : ""}` };
+    return { id: b.id as string, name: b.name as string, client: b.client_name as string, label: `${b.name as string} · ${b.client_name as string}${agency?.name ? ` (${agency.name})` : ""}` };
   });
+  // o formulário abre com o bot da última rodada de cada arquivo de casos (casos → "1")
+  const { data: recent } = await db.from("eval_runs").select("case_file, bot_id").not("bot_id", "is", null).order("created_at", { ascending: false }).limit(50);
+  const lastBotByFile: Record<string, string> = {};
+  for (const r of recent ?? []) {
+    const key = r.case_file === "casos" ? "1" : (r.case_file as string);
+    lastBotByFile[key] ??= r.bot_id as string;
+  }
 
   return (
     <>
@@ -28,7 +35,7 @@ export default async function AdminEval() {
         <p className="text-sm text-muted">O conjunto fixo de casos (pasta evals/) roda pelo mesmo caminho do chat, sem gravar conversa. Toda mudança de prompt, modelo ou temperatura passa por aqui antes de produção.</p>
       </div>
 
-      <EvalRunner bots={botOptions} files={listCaseFiles()} defaultModel={chatModelId()} />
+      <EvalRunner bots={botOptions} files={listCaseFiles()} defaultModel={chatModelId()} lastBotByFile={lastBotByFile} />
 
       <section className="card overflow-x-auto">
         <h2 className="px-5 pt-4 text-lg font-bold">Histórico</h2>

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { agencyStatus, monthlyCents, rangeFor, summarizeAiCosts, summarizeSubscriptions, sumOpenAiCosts, type AiCostRow, type SubscriptionLike } from "../backoffice";
 import { isPlatformAdmin } from "../platform-admin";
-import { listCaseFiles } from "../eval-cases";
+import { botHint, listCaseFiles } from "../eval-cases";
+import { matchesHint, pickBot } from "../../components/admin/eval-runner";
 
 describe("períodos do backoffice (mês de Brasília)", () => {
   const now = new Date("2026-10-02T15:00:00Z");
@@ -99,6 +100,33 @@ describe("quem entra no backoffice", () => {
     expect(isPlatformAdmin(null)).toBe(false);
     vi.stubEnv("PLATFORM_ADMIN_EMAILS", "");
     expect(isPlatformAdmin("admin@boavoz.com")).toBe(false);
+  });
+});
+
+describe("bot certo para cada arquivo de casos", () => {
+  const bots = [
+    { id: "dasd", name: "dasd", client: "dasd", label: "dasd" },
+    { id: "bar", name: "Bar do Zé", client: "BoaVoz", label: "Bar do Zé · BoaVoz" },
+    { id: "ruan", name: "Ruan", client: "Portfólio", label: "Ruan · Portfólio" },
+  ];
+  const bar = { value: "bar", label: "casos-bar.jsonl", categories: [], forBot: "Bar do Zé (teste)" };
+  const geral = { value: "1", label: "casos.jsonl (geral)", categories: [], forBot: null };
+
+  it("o comentário do arquivo diz o bot (casa pelo nome do bot ou do cliente, sem acento nem \"(teste)\")", () => {
+    expect(botHint('// Casos do bot de teste "Bar do Zé (teste)" (cardápio em evals/README.md).\n{"id":"x"}')).toBe("Bar do Zé (teste)");
+    expect(botHint('{"id":"x"}')).toBeNull();
+    expect(matchesHint({ name: "Bar do Zé", client: "BoaVoz" }, "Bar do Zé (teste)")).toBe(true);
+    expect(matchesHint({ name: "Zé", client: "bar do ze" }, "Bar do Zé (teste)")).toBe(true);
+    expect(matchesHint({ name: "dasd", client: "dasd" }, "Bar do Zé (teste)")).toBe(false);
+  });
+
+  it("arquivo de um bot de teste abre nele, mesmo que a última rodada tenha sido em outro", () => {
+    expect(pickBot(bar, bots, { bar: "dasd" })).toBe("bar");
+  });
+
+  it("arquivo geral abre no bot da última rodada; sem histórico, no primeiro", () => {
+    expect(pickBot(geral, bots, { "1": "ruan" })).toBe("ruan");
+    expect(pickBot(geral, bots, {})).toBe("dasd");
   });
 });
 

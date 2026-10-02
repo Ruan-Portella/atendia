@@ -4,9 +4,29 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface Props {
-  bots: Array<{ id: string; label: string }>;
-  files: Array<{ value: string; label: string; categories: string[] }>;
+  bots: Array<{ id: string; label: string; client: string; name: string }>;
+  files: Array<{ value: string; label: string; categories: string[]; forBot: string | null }>;
   defaultModel: string;
+  /** Bot da última rodada de cada arquivo de casos. */
+  lastBotByFile: Record<string, string>;
+}
+
+const loose = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\(teste\)/g, "").replace(/\s+/g, " ").trim();
+
+/** O bot é o do comentário do arquivo? Pelo nome do bot ou do cliente, sem acento, caixa e "(teste)". */
+export function matchesHint(b: { name: string; client: string }, hint: string): boolean {
+  const h = loose(hint);
+  return Boolean(h) && (loose(b.name) === h || loose(b.client) === h);
+}
+
+/**
+ * Bot que o formulário escolhe para um arquivo: o que o arquivo pede (casos de um bot de teste),
+ * senão o da última rodada daquele arquivo, senão o primeiro da lista.
+ */
+export function pickBot(file: Props["files"][number] | undefined, bots: Props["bots"], lastBotByFile: Props["lastBotByFile"]): string {
+  const named = file?.forBot ? bots.find((b) => matchesHint(b, file.forBot!)) : undefined;
+  const last = file ? bots.find((b) => b.id === lastBotByFile[file.value]) : undefined;
+  return (named ?? last ?? bots[0])?.id ?? "";
 }
 
 const MODELS = ["gpt-4.1-mini", "gpt-5-mini", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1-nano", "gpt-4o-mini"];
@@ -22,10 +42,10 @@ const EFFORTS = [
  * Roda o conjunto fixo pela própria /api/eval (o mesmo caminho do chat) e mostra o relatório à
  * medida que os casos terminam. Cada rodada fica salva no histórico logo abaixo.
  */
-export function EvalRunner({ bots, files, defaultModel }: Props) {
+export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) {
   const router = useRouter();
-  const [bot, setBot] = useState(bots[0]?.id ?? "");
   const [file, setFile] = useState(files[0]?.value ?? "1");
+  const [bot, setBot] = useState(() => pickBot(files[0], bots, lastBotByFile));
   const [categories, setCategories] = useState<string[]>([]);
   const [model, setModel] = useState("");
   const [customModel, setCustomModel] = useState("");
@@ -37,7 +57,11 @@ export function EvalRunner({ bots, files, defaultModel }: Props) {
   const abort = useRef<AbortController | null>(null);
   const pre = useRef<HTMLPreElement | null>(null);
 
-  const available = files.find((f) => f.value === file)?.categories ?? [];
+  const fileInfo = files.find((f) => f.value === file);
+  const available = fileInfo?.categories ?? [];
+  // casos escritos para um bot de teste rodando em outro bot: o resultado não vale
+  const chosen = bots.find((b) => b.id === bot);
+  const wrongBot = fileInfo?.forBot && !(chosen && matchesHint(chosen, fileInfo.forBot)) ? fileInfo.forBot : null;
   const chosenModel = model === "outro" ? customModel.trim() : model;
 
   useEffect(() => {
@@ -92,7 +116,7 @@ export function EvalRunner({ bots, files, defaultModel }: Props) {
           </div>
           <div>
             <label htmlFor="ev-file" className="label">Casos</label>
-            <select id="ev-file" value={file} onChange={(e) => { setFile(e.target.value); setCategories([]); }} className="input">
+            <select id="ev-file" value={file} onChange={(e) => { setFile(e.target.value); setCategories([]); setBot(pickBot(files.find((f) => f.value === e.target.value), bots, lastBotByFile)); }} className="input">
               {files.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
           </div>
@@ -126,6 +150,12 @@ export function EvalRunner({ bots, files, defaultModel }: Props) {
             </select>
           </div>
         </div>
+
+        {wrongBot && (
+          <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+            Estes casos foram escritos para o bot <strong>{wrongBot}</strong> (eles conferem preços e itens do cardápio dele). Com outro bot, o resultado não vale.
+          </p>
+        )}
 
         <fieldset className="flex flex-col gap-2">
           <legend className="label">Categorias {categories.length ? `(${categories.length} escolhidas)` : "(todas)"}</legend>
