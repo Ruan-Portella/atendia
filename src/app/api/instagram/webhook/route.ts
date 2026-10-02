@@ -103,6 +103,16 @@ export async function POST(req: Request) {
         continue;
       }
       for (const ev of entry.messaging!) {
+        // a pessoa editou ou desfez uma DM: entra na fila (depois da mensagem original, que vem antes)
+        const edit = ev.message_edit;
+        const removed = ev.message?.is_deleted ? ev.message.mid : undefined;
+        if ((edit?.mid || removed) && ev.sender?.id) {
+          const kind = edit?.mid ? "edit" : "delete";
+          const key = edit?.mid ? `ig:edit:${edit.mid}:${edit.num_edit ?? 0}` : `ig:del:${removed}`;
+          const g = await acceptInbound(db, { key, source: "instagram", kind, botId: ch.bot_id, contact: ev.sender.id, payload: { type: kind, igUserId: ch.ig_user_id, ev } satisfies IgPayload });
+          if (g) groups.push(g);
+          continue;
+        }
         const echo = Boolean(ev.message?.is_echo);
         const mid = ev.message?.mid ?? ev.postback?.mid;
         // DM apagada e evento sem id não têm o que tratar

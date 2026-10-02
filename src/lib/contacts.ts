@@ -41,9 +41,11 @@ export interface ContactRow {
   ig_hash: string | null;
   first_inbound_at: string | null;
   last_inbound_at: string | null;
+  /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
+  unavailable_notice_reason?: string | null;
 }
 
-const COLS = "id, phone_hash, wa_user_hash, ig_hash, first_inbound_at, last_inbound_at";
+const COLS = "id, phone_hash, wa_user_hash, ig_hash, first_inbound_at, last_inbound_at, unavailable_notice_reason";
 
 export interface WhatsAppIdentity {
   /** wa_id / from: telefone com DDI (some quando a pessoa usa nome de usuário). */

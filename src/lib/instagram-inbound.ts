@@ -3,6 +3,7 @@ import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, t
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { instagramContact, touchInbound } from "./contacts";
+import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./instagram-edits";
 import { markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
@@ -34,6 +35,8 @@ const IG_MEDIA_LABEL: Record<string, string> = {
   story_mention: "(menção nos stories)",
   ig_reel: "(reel)",
   reel: "(reel)",
+  ig_post: "(publicação compartilhada)",
+  post: "(publicação compartilhada)",
 };
 
 export interface IgMessagingEvent {
@@ -46,10 +49,13 @@ export interface IgMessagingEvent {
     is_echo?: boolean;
     is_deleted?: boolean;
     is_unsupported?: boolean;
-    attachments?: Array<{ type?: string; payload?: { url?: string } }>;
+    /** Anexos: mídia, e post (ig_post) ou reel (ig_reel) compartilhado, com o id e a legenda. */
+    attachments?: Array<{ type?: string; payload?: { url?: string; title?: string; id?: string; reel_video_id?: string } }>;
     quick_reply?: { payload?: string };
   };
   postback?: { mid?: string; title?: string; payload?: string };
+  /** A pessoa editou uma DM já enviada (webhook message_edit). */
+  message_edit?: { mid?: string; text?: string; num_edit?: number | string };
 }
 
 export interface IgChannelRow extends IgChannel {
@@ -170,9 +176,27 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       return null;
     }
   };
+  // DM desfeita antes de chegar (o aviso veio primeiro): grava já apagada e não responde
+  const deleted = await deletedBeforeArrival(db, burst.map((q) => q.key));
+  // post ou reel compartilhado: o assistente lê a legenda; a referência fica na mensagem
+  const refs = burst.map((q) => sharedRef(q.ev));
   const texts: Array<string | null> = [];
-  for (const q of burst) texts.push((igText(q.ev) ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
-  const shown = (i: number) => texts[i] ?? igMediaLabel(burst[i].ev);
+  for (const [i, q] of burst.entries()) {
+    if (deleted.has(q.key)) {
+      texts.push(null);
+      continue;
+    }
+    const typed = [igText(q.ev), refs[i] ? sharedText(refs[i]!) : null].filter(Boolean).join("\n") || null;
+    texts.push((typed ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
+  }
+  const shown = (i: number) => (deleted.has(burst[i].key) ? DELETED_LABEL : (texts[i] ?? igMediaLabel(burst[i].ev)));
+  /** Depois de gravar: a referência do post ou reel e a marca de apagada nas mensagens. */
+  const afterStore = async () => {
+    for (const [i, q] of burst.entries()) {
+      if (deleted.has(q.key)) await db.from("messages").update({ deleted_at: new Date().toISOString() }).eq("inbound_key", q.key).is("deleted_at", null);
+      else if (refs[i]) await db.from("messages").update({ channel_ref: refs[i] }).eq("inbound_key", q.key).is("channel_ref", null);
+    }
+  };
 
   /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
   const plainConversation = async (): Promise<string | null> => {
@@ -184,6 +208,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   };
   const storeAll = async (convId: string) => {
     for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    await afterStore();
   };
   /** Mensagem do sistema (confirmação, aviso): só sai se dá para enviar; gravada na conversa. */
   const systemReply = async (convId: string | null, content: string, quickReplies?: Array<{ title: string; payload: string }>) => {
@@ -192,9 +217,10 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   };
   /** Aviso ao contato do degrau atual, uma vez por episódio (o da suspensão sai mesmo sem envio). */
   const sendNotice = async (convId: string, notice: Mode["notice"]) => {
-    if (!notice || !(await noticeDue(db, convId, notice.reason))) return;
+    const target = { contactId, conversationId: convId };
+    if (!notice || !(await noticeDue(db, target, notice.reason))) return;
     const r = await say(notice.reason === "suspenso" ? "aviso_suspenso" : "sistema", notice.text, { insert: { role: "assistant", content: notice.text, author: SYSTEM_AUTHOR } }, convId);
-    if (r.status === "sent") await markNoticeSent(db, convId, notice.reason);
+    if (r.status === "sent") await markNoticeSent(db, target, notice.reason);
   };
 
   /** Bot pausado pelo dono (4) ou modo só humano (5): grava, vira pedido de atendente, texto fixo uma vez. */
@@ -257,11 +283,12 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   // degraus 4 e 5: bot pausado pelo dono, ou plano, teste, cota e IA pausada (em toda mensagem)
   if (mode.handoff) return humanOnly(mode);
   // degrau 6, normal: o próximo episódio de indisponível avisa de novo
-  if (conv?.unavailable_notice_reason) await clearNotice(db, conv.id);
+  if (conv && (contact?.unavailable_notice_reason || conv.unavailable_notice_reason)) await clearNotice(db, { contactId, conversationId: conv.id });
 
   const qi = texts.map((t, i) => (t && !handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
-    if (handled.size) return;
+    // opt-out tratado, ou DM desfeita antes de chegar: nada a responder
+    if (handled.size || deleted.size) return;
     const lastAudio = Boolean(burst[burst.length - 1].ev.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
     return void (await say("ia", lastAudio ? AUDIO_FAILED : ONLY_TEXT, null));
   }
@@ -293,6 +320,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       },
       { text: texts[qi]!, key: q.key, msgId: q.key, stored: before.state === "unanswered", button: q.ev.message?.quick_reply?.payload },
     );
+    await afterStore();
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;
     const code = (e as Error).message;

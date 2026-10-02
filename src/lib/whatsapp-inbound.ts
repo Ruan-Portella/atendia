@@ -248,9 +248,10 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const sendFixed = async (t: string) => (await reply(t)).messages?.[0]?.id ?? null;
   /** Aviso ao contato do degrau atual, uma vez por episódio (gravado na conversa como do sistema). */
   const sendNotice = async (convId: string, notice: Mode["notice"]) => {
-    if (!notice || !(await noticeDue(db, convId, notice.reason))) return;
+    const target = { contactId, conversationId: convId };
+    if (!notice || !(await noticeDue(db, target, notice.reason))) return;
     const r = await say(notice.reason === "suspenso" ? "aviso_suspenso" : "sistema", notice.text, { insert: { role: "assistant", content: notice.text, author: SYSTEM_AUTHOR } }, convId);
-    if (r.status === "sent") await markNoticeSent(db, convId, notice.reason);
+    if (r.status === "sent") await markNoticeSent(db, target, notice.reason);
   };
 
   /**
@@ -307,7 +308,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   // degraus 4 e 5: bot pausado pelo dono, ou plano, teste, cota e IA pausada (em toda mensagem)
   if (mode.handoff) return humanOnly(mode);
   // degrau 6, normal: o próximo episódio de indisponível avisa de novo
-  if (conv?.unavailable_notice_reason) await clearNotice(db, conv.id);
+  if (conv && (contact?.unavailable_notice_reason || conv.unavailable_notice_reason)) await clearNotice(db, { contactId, conversationId: conv.id });
 
   // a resposta vai para a última mensagem com texto; as de antes (e a mídia) só entram no histórico
   const qi = texts.map((t, i) => (t && !optOut.handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();

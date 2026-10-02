@@ -5,6 +5,7 @@ import { recordUsage, type MessageStatus } from "./whatsapp-usage";
 import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 import { handleInstagramBurst, handleInstagramEcho, type IgChannelRow, type IgMessagingEvent } from "./instagram-inbound";
 import { isInstagramAccessError } from "./instagram";
+import { handleInstagramDelete, handleInstagramEdit } from "./instagram-edits";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { processGroup, sweepInbound, type Group, type GroupHandler, type InboundEvent } from "./inbound-queue";
 import { revoke, suppress, suppressionScope } from "./suppression";
@@ -30,7 +31,7 @@ export type WaPayload =
   | { type: "prefs"; phoneNumberId?: string; wabaId?: string; prefs: WaPreference[] }
   | { type: "account_update"; entryId?: string; event?: string; wabaId?: string; detail?: MetaAccountDetail };
 
-export type IgPayload = { type: "msg" | "echo"; igUserId: string; ev: IgMessagingEvent };
+export type IgPayload = { type: "msg" | "echo" | "edit" | "delete"; igUserId: string; ev: IgMessagingEvent };
 
 /* ------------------------------------------------------------------ WhatsApp */
 
@@ -104,6 +105,11 @@ const instagramGroup: GroupHandler = async (db, events) => {
   try {
     for (const e of all) if (e.payload.type === "echo") await handleInstagramEcho(db, ch, e.payload.ev, e.key_hash);
     await handleInstagramBurst(db, ch, all.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, ev: e.payload.ev, receivedAt: e.created_at }] : [])));
+    // edição e mensagem desfeita depois das mensagens (a original já está gravada)
+    for (const e of all) {
+      if (e.payload.type === "edit") await handleInstagramEdit(db, e.payload.ev);
+      else if (e.payload.type === "delete") console.log("instagram: mensagem desfeita pelo contato", await handleInstagramDelete(db, e.payload.ev));
+    }
   } catch (err) {
     if (isInstagramAccessError(err)) return void (await markInstagramDisconnected(db, { column: "ig_user_id", value: igUserId }, IG_TOKEN_REJECTED));
     throw err;

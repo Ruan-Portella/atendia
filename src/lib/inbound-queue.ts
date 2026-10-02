@@ -10,7 +10,7 @@ import { notifyPlatform } from "./notify";
  */
 
 export type InboundSource = "whatsapp" | "instagram";
-export type InboundKind = "msg" | "echo" | "status" | "account_update";
+export type InboundKind = "msg" | "echo" | "status" | "account_update" | "edit" | "delete";
 
 /** A trava de um contato vale isto; precisa ficar acima do maxDuration (60 s) dos webhooks. */
 export const LEASE_SECONDS = 90;

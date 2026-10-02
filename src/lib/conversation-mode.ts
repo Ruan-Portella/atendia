@@ -165,19 +165,34 @@ export async function resolveMode(db: SupabaseClient, input: ModeInput, now = Da
 
 /* ------------------------------------------------------------------ aviso ao contato, uma vez por episódio */
 
-/** O aviso deste motivo ainda não saiu nesta conversa (ou saiu por outro motivo: o estado mudou). */
-export async function noticeDue(db: SupabaseClient, conversationId: string, reason: NoticeReason): Promise<boolean> {
-  const { data } = await db.from("conversations").select("unavailable_notice_reason").eq("id", conversationId).maybeSingle();
+/**
+ * Onde fica a marca do aviso: no contato (uma vez por contato e episódio, mesmo numa conversa
+ * nova); conversa de antes dos contatos, sem ficha, na própria conversa.
+ */
+export interface NoticeTarget {
+  contactId?: string | null;
+  conversationId: string;
+}
+
+/** O aviso deste motivo ainda não saiu neste episódio (ou saiu por outro motivo: o estado mudou). */
+export async function noticeDue(db: SupabaseClient, t: NoticeTarget, reason: NoticeReason): Promise<boolean> {
+  const { data } = t.contactId
+    ? await db.from("contacts").select("unavailable_notice_reason").eq("id", t.contactId).maybeSingle()
+    : await db.from("conversations").select("unavailable_notice_reason").eq("id", t.conversationId).maybeSingle();
   return data?.unavailable_notice_reason !== reason;
 }
 
-export async function markNoticeSent(db: SupabaseClient, conversationId: string, reason: NoticeReason) {
-  await db.from("conversations").update({ unavailable_notice_at: new Date().toISOString(), unavailable_notice_reason: reason }).eq("id", conversationId);
+export async function markNoticeSent(db: SupabaseClient, t: NoticeTarget, reason: NoticeReason) {
+  const mark = { unavailable_notice_at: new Date().toISOString(), unavailable_notice_reason: reason };
+  if (t.contactId) await db.from("contacts").update(mark).eq("id", t.contactId);
+  else await db.from("conversations").update(mark).eq("id", t.conversationId);
 }
 
-/** Voltou ao normal: o próximo episódio avisa de novo. */
-export async function clearNotice(db: SupabaseClient, conversationId: string) {
-  await db.from("conversations").update({ unavailable_notice_at: null, unavailable_notice_reason: null }).eq("id", conversationId).not("unavailable_notice_reason", "is", null);
+/** Voltou ao normal: o próximo episódio avisa de novo (no contato e na marca antiga da conversa). */
+export async function clearNotice(db: SupabaseClient, t: NoticeTarget) {
+  const clear = { unavailable_notice_at: null, unavailable_notice_reason: null };
+  if (t.contactId) await db.from("contacts").update(clear).eq("id", t.contactId).not("unavailable_notice_reason", "is", null);
+  await db.from("conversations").update(clear).eq("id", t.conversationId).not("unavailable_notice_reason", "is", null);
 }
 
 const CHANNEL_NAME: Record<ModeChannel, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };

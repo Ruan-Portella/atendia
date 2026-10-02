@@ -77,8 +77,8 @@ export function withoutToolParts() {
  * assistente ou da equipe.
  */
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000): Promise<UIMessage[]> {
-  // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) fica fora
-  const { data: rows } = await db.from("messages").select("id, role, content, tool_results").eq("conversation_id", conversationId).is("blocked_reason", null).is("failed_at", null).order("id", { ascending: false }).limit(limit);
+  // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora
+  const { data: rows } = await db.from("messages").select("id, role, content, tool_results").eq("conversation_id", conversationId).is("blocked_reason", null).is("failed_at", null).is("deleted_at", null).order("id", { ascending: false }).limit(limit);
   return (rows ?? []).reverse().map((r) => {
     const text = String(r.content).slice(0, maxChars);
     // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
