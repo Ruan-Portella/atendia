@@ -5,7 +5,7 @@ import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, scope
 import { getPlan } from "./plans";
 import { currentPeriodBR } from "./utils";
 import { notifyHandoff, notifyLead, notifyUsageThreshold } from "./notify";
-import { looksUnanswered, recordUnanswered } from "./unanswered";
+import { isNoInfoAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
 import { recordAiUsage } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
 import { RISK_TEXT, detectRisk } from "./risk";
@@ -428,6 +428,7 @@ export async function runChat(opts: {
   }
 
   let unansweredRecorded = false;
+  const refusalIds: number[] = [];
   let urgentCalled = false;
   let askAgeCalled = false;
   // resolve quando a resposta já está gravada (quem não usa o stream, como o WhatsApp, espera por ele)
@@ -488,9 +489,9 @@ export async function runChat(opts: {
       },
       registrar_recusa: async ({ nivel, pedido }) => {
         // registro próprio, separado das perguntas sem resposta (que são lacuna na base)
-        unansweredRecorded = true;
-        const { error } = await db.from("scope_refusals").insert({ bot_id: bot.id, conversation_id: convId, level: nivel, request: pedido?.slice(0, 300) ?? null });
+        const { data: row, error } = await db.from("scope_refusals").insert({ bot_id: bot.id, conversation_id: convId, level: nivel, request: pedido?.slice(0, 300) ?? null }).select("id").single();
         if (error) console.error("recusa não registrada", error.message);
+        else refusalIds.push(row.id as number);
         return { ok: true };
       },
       pedir_confirmacao_18: async () => {
@@ -516,8 +517,12 @@ export async function runChat(opts: {
         embeddingTokens: embeddingUsage?.tokens ?? 0,
       });
       try {
+        // "Não tenho essa informação" é pergunta do negócio que falta na base, não recusa: a IA às
+        // vezes chama registrar_recusa junto (ex.: depois de uma recusa na conversa); desfaz a recusa
+        const refusalStands = refusalIds.length > 0 && !isNoInfoAnswer(text);
+        if (refusalIds.length && !refusalStands) await db.from("scope_refusals").delete().in("id", refusalIds);
         // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
-        if (!unansweredRecorded && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
+        if (!unansweredRecorded && !refusalStands && question && text && looksUnanswered(text)) await recordUnanswered(db, bot.id, convId, question);
         if (text) {
           const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, output: t.output })));
           const { data: savedRow } = await db

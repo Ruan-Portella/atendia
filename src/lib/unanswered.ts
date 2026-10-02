@@ -3,6 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /** Frase que o prompt pede quando a resposta não está na base (ver buildSystemPrompt). */
 export const NO_INFO_PHRASE = "Não tenho essa informação";
 
+/** A resposta abre com a frase fixa de "não tenho" (pergunta do negócio que falta na base). */
+export const isNoInfoAnswer = (text: string | null | undefined) => Boolean(text?.trim().startsWith(NO_INFO_PHRASE));
+
 const strip = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 /**

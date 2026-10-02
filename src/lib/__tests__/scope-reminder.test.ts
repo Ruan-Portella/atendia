@@ -23,4 +23,11 @@ describe("lembrete da trava de escopo depois da conversa", () => {
     expect(await r.text).toBe("ok");
     expect(seen.at(-1)?.role).toBe("system");
   });
+
+  it("opinião sobre assunto distante é recusa leve registrada, nunca \"Não tenho essa informação\"", () => {
+    const r = scopeReminder("Bar do Zé");
+    expect(r).toContain("política, futebol, notícias");
+    expect(r).toContain('registrar_recusa com nivel "flexivel"');
+    expect(r).toContain('Não use "Não tenho essa informação" para isso');
+  });
 });
