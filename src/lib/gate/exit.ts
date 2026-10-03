@@ -102,5 +102,12 @@ export function checkActionReply(input: Omit<ExitInput, "text" | "destination"> 
   return { ok: !prohibited.length && !regulated.length && !payment, prohibited, regulated, payment };
 }
 
+/** Texto fixo no lugar de um reply barrado (o reply nunca é editado). Função pura. */
+export function replyFallback(rc: { prohibited: GateCategory[]; regulated: GateCategory[] }, destination: { destino: string } | null): string {
+  if (rc.prohibited.length) return GATE_TEXTS.prohibited;
+  if (rc.regulated.length) return GATE_TEXTS.under18;
+  return [GATE_TEXTS.paymentNotHere, destination ? GATE_TEXTS.finishOrder(destination.destino) : ""].filter(Boolean).join(" ");
+}
+
 /** Rótulo curto para o registro do portão (gate_detections). */
 export const exitDecision = (r: ExitResult) => (r.prohibited.length ? "proibido" : r.regulated.length ? (r.offerAdult ? "pede_18" : "nao_18") : "pagamento");

@@ -122,3 +122,24 @@ describe("reply das ações", () => {
     expect(JSON.stringify(out)).not.toMatch(/123\.456|Outro texto/);
   });
 });
+
+describe("reply esperando o 18+", () => {
+  it("sai depois do Sim só se a pergunta foi feita há até 15 minutos", async () => {
+    const { pendingReplyOf, PENDING_REPLY_MS } = await import("../gate/flow");
+    const askedAt = "2026-10-03T14:44:52Z";
+    const at = Date.parse(askedAt);
+    const p = { question: "status do pedido 123?", askedAt, reply: "Seu pedido: 1 pizza e 2 Heineken." };
+    expect(pendingReplyOf(p, at + 60_000)).toBe(p.reply);
+    expect(pendingReplyOf(p, at + PENDING_REPLY_MS + 1)).toBeNull();
+    expect(pendingReplyOf({ ...p, reply: null }, at)).toBeNull();
+    expect(pendingReplyOf(null, at)).toBeNull();
+  });
+
+  it("reply barrado vira texto fixo, nunca editado", async () => {
+    const { replyFallback } = await import("../gate/exit");
+    const { GATE_TEXTS } = await import("../gate/rules");
+    expect(replyFallback({ prohibited: ["tabaco"], regulated: [] }, null)).toBe(GATE_TEXTS.prohibited);
+    expect(replyFallback({ prohibited: [], regulated: ["bebida"] }, null)).toBe(GATE_TEXTS.under18);
+    expect(replyFallback({ prohibited: [], regulated: [] }, { destino: "o site" })).toBe(`${GATE_TEXTS.paymentNotHere} ${GATE_TEXTS.finishOrder("o site")}`);
+  });
+});

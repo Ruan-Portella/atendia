@@ -526,7 +526,7 @@ export async function resetConversationAge(conversationId: string): Promise<Acti
   const contact = conv?.channel === "whatsapp" ? conv.wa_id : conv?.channel === "instagram" ? conv.ig_id : null;
   if (!conv || !contact) return fail("Só conversas do WhatsApp e do Instagram têm confirmação de 18+.");
   await resetAge(owned.admin, { botId: owned.conv.bot_id, channel: conv.channel, contact });
-  await owned.admin.from("conversations").update({ age_pending_question: null }).eq("id", conversationId);
+  await owned.admin.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", conversationId);
   await auditPanel("idade.zerar", { type: "conversation", id: conversationId }, { after: { channel: conv.channel } });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return ok("Confirmação de 18+ zerada. Se o contato pedir bebida ou remédio, ele é perguntado de novo.");

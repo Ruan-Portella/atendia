@@ -7,7 +7,7 @@ import { storeOnce } from "../whatsapp-inbound";
 import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
 import { decideEntrance } from "./entrance";
-import { checkActionReply, checkExit, exitDecision } from "./exit";
+import { checkActionReply, checkExit, exitDecision, replyFallback } from "./exit";
 import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
@@ -27,7 +27,16 @@ const TYPED_NO = new Set(["nao", "n", "nao tenho", "nao sou", "sou menor", "meno
 export interface PendingAge {
   question: string | null;
   askedAt: string | null;
+  /** Reply de ação que esperava o 18+ (sai como veio depois do "Sim"). */
+  reply?: string | null;
 }
+
+/** Reply guardado vale por 15 minutos: depois disso o dado pode ter mudado, e a IA consulta de novo. */
+export const PENDING_REPLY_MS = 15 * 60_000;
+
+/** O reply guardado ainda pode sair? Função pura. */
+export const pendingReplyOf = (p: PendingAge | null, now = Date.now()): string | null =>
+  p?.reply && p.askedAt && now - Date.parse(p.askedAt) <= PENDING_REPLY_MS ? p.reply : null;
 
 /**
  * Sim/Não à pergunta de 18+: botão (sempre) ou texto curto digitado com a pergunta ainda em aberto
@@ -123,15 +132,18 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR } }, transport: () => io.send(text, buttons) });
     return r.status === "sent";
   };
-  const askAge = async (question: string) => {
+  /** reply: resposta exata de uma ação que só esperava o 18+ (sai depois do "Sim", sem chamar de novo). */
+  const askAge = async (question: string, reply: string | null = null) => {
     if (!(await sendFixed(GATE_TEXTS.ageQuestion, "idade"))) return;
     const now = new Date().toISOString();
-    await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_asked_at: now, regulated_at: now }).eq("id", convId);
+    await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_pending_reply_enc: reply, age_asked_at: now, regulated_at: now }).eq("id", convId);
   };
 
   // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
-  const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_asked_at, regulated_at").eq("id", convId).maybeSingle();
-  const pending: PendingAge | null = pendingRow ? { question: (pendingRow.age_pending_question as string | null) ?? null, askedAt: (pendingRow.age_asked_at as string | null) ?? null } : null;
+  const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_pending_reply_enc, age_asked_at, regulated_at").eq("id", convId).maybeSingle();
+  const pending: PendingAge | null = pendingRow
+    ? { question: (pendingRow.age_pending_question as string | null) ?? null, askedAt: (pendingRow.age_asked_at as string | null) ?? null, reply: (pendingRow.age_pending_reply_enc as string | null) ?? null }
+    : null;
   const regulatedAt = (pendingRow?.regulated_at as string | null | undefined) ?? null;
   if (q.button === AGE_SHOW) {
     // "Ver opções 18+": pergunta a idade (e depois do "Sim" responde de novo à pergunta de antes)
@@ -153,12 +165,26 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     await storeOnce(db, convId, q.text, q.key);
     await setAge(db, who, answered, "chat");
     if (answered === "nao") {
-      await db.from("conversations").update({ age_pending_question: null }).eq("id", convId);
+      await db.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", convId);
       await sendFixed(GATE_TEXTS.ageDenied);
       await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "nao_18", categories: [] });
       return;
     }
     storeQuestion = false;
+    // "Sim" logo depois de um reply de ação barrado só pelo 18+: ele sai como veio, sem a IA e sem
+    // chamar a ação de novo (o "Não" vence: a idade é lida de novo)
+    const held = pendingReplyOf(pending);
+    if (held && (await getAge(db, who)) === "sim") {
+      const exempt = await botGateExemptions(db, bot.id);
+      const rc = checkActionReply({ text: held, channel, contactPhone, age: "sim", regulatedConversation: true, exempt });
+      if (!rc.ok) await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "reply_descartado", categories: [...rc.prohibited, ...rc.regulated] });
+      const text = rc.ok ? held : replyFallback(rc, regulatedDestination(bot.regulated_channel, bot.human_handoff?.address));
+      const disclosure = await aiDisclosure(db, bot, convId);
+      const out = disclosure ? `${disclosure}\n\n${text}` : text;
+      await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null } }, transport: () => io.send(out) });
+      await db.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", convId);
+      return;
+    }
     history = await conversationHistory(db, convId, io.historySize);
     // "Sim": a IA responde agora à pergunta que ficou esperando (sem pergunta guardada, ao "Sim")
     if (pending?.question) {
@@ -255,10 +281,11 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
       await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "reply_descartado", categories: [...rc.prohibited, ...rc.regulated] });
       if (!rc.prohibited.length && rc.regulated.length && age === null) {
         if (answerId) await deleteMessage(db, answerId);
-        await askAge(question);
+        // o reply fica guardado: depois do "Sim" ele sai como veio, sem chamar a ação de novo
+        await askAge(question, reply);
         return;
       }
-      text = rc.prohibited.length ? GATE_TEXTS.prohibited : rc.regulated.length ? GATE_TEXTS.under18 : [GATE_TEXTS.paymentNotHere, destination ? GATE_TEXTS.finishOrder(destination.destino) : ""].filter(Boolean).join(" ");
+      text = replyFallback(rc, destination);
     }
   }
   // 5. portão na saída: item proibido, item 18+ sem o "Sim" e pagamento numa conversa com esses itens
@@ -287,8 +314,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).
   // Com o botão "Ver opções 18+", esta pergunta fica guardada para depois do "Sim" (a idade ainda
   // não foi perguntada, então "sim" digitado não conta)
-  if (adultButton) await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_asked_at: null, regulated_at: new Date().toISOString() }).eq("id", convId);
-  else if (pending?.question) await db.from("conversations").update({ age_pending_question: null }).eq("id", convId);
+  if (adultButton) await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_pending_reply_enc: null, age_asked_at: null, regulated_at: new Date().toISOString() }).eq("id", convId);
+  else if (pending?.question) await db.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", convId);
 }
 
 /** Conversa com bebida ou remédio: vale enquanto a janela de 24 h da Meta estiver aberta. */
