@@ -4,7 +4,7 @@ import { Kpi } from "@/components/kpi";
 import { AgencyActions, ChannelSuspension } from "@/components/admin/pause-controls";
 import { AgencyFeatures } from "@/components/admin/release-controls";
 import { requireAdmin } from "@/lib/platform-admin";
-import { agencyStatus, daysAgoIso, getAgencies, getMeasures, kindLabel, usd, usdBrl } from "@/lib/backoffice";
+import { agencyStatus, botChunkCounts, daysAgoIso, getAgencies, getMeasures, kindLabel, usd, usdBrl } from "@/lib/backoffice";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { stripe } from "@/lib/stripe";
 import { brl, num } from "@/lib/plans";
@@ -28,12 +28,13 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
     getMeasures({ agencyId: id, active: true }),
   ]);
   const botIds = (bots ?? []).map((b) => b.id as string);
-  const [{ data: wa }, { data: ig }, { data: usage }, { data: monthly }, convCounts] = await Promise.all([
+  const [{ data: wa }, { data: ig }, { data: usage }, { data: monthly }, convCounts, chunkCounts] = await Promise.all([
     botIds.length ? db.from("whatsapp_channels").select("bot_id, display_phone, disconnected_at").in("bot_id", botIds) : Promise.resolve({ data: [] }),
     botIds.length ? db.from("instagram_channels").select("bot_id, username, disconnected_at").in("bot_id", botIds) : Promise.resolve({ data: [] }),
     db.rpc("atendimentos_by_month", { p_agency_id: id, p_months: 6 }),
     db.from("ai_usage_monthly").select("period, kind, calls, cost_usd").eq("agency_id", id).order("period", { ascending: false }).limit(40),
     Promise.all(botIds.map(async (b) => [b, (await db.from("conversations").select("id", { count: "exact", head: true }).eq("bot_id", b).gte("started_at", since30)).count ?? 0] as const)),
+    botChunkCounts(botIds),
   ]);
   const conv30 = new Map(convCounts);
   const waBy = new Map((wa ?? []).map((w) => [w.bot_id as string, w]));
@@ -83,7 +84,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         <h2 className="px-5 pt-4 text-lg font-bold">Chatbots</h2>
         <table className="mt-2 w-full min-w-[640px] text-sm">
           <thead className="border-b border-line text-left text-xs text-muted">
-            <tr><th className="px-5 py-2 font-semibold">Chatbot · cliente da agência</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
+            <tr><th className="px-5 py-2 font-semibold">Chatbot · cliente da agência</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-3 py-2 text-right font-semibold">Trechos da base</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
           </thead>
           <tbody>
             {(bots ?? []).map((b) => {
@@ -95,11 +96,12 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
                   <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}</td>
                   <td className="px-3 py-2.5 text-xs">{w ? (w.disconnected_at ? <span className="text-danger">desconectado</span> : ((w.display_phone as string | null) ?? "conectado")) : <span className="text-muted">—</span>}</td>
                   <td className="px-3 py-2.5 text-xs">{i ? (i.disconnected_at ? <span className="text-danger">desconectado</span> : `@${(i.username as string | null) ?? "conectado"}`) : <span className="text-muted">—</span>}</td>
+                  <td className="px-3 py-2.5 text-right tabular">{num(chunkCounts.get(b.id as string) ?? 0)}</td>
                   <td className="px-5 py-2.5 text-right tabular">{num(conv30.get(b.id as string) ?? 0)}</td>
                 </tr>
               );
             })}
-            {!bots?.length && <tr><td colSpan={5} className="px-5 py-5 text-center text-muted">Nenhum chatbot.</td></tr>}
+            {!bots?.length && <tr><td colSpan={6} className="px-5 py-5 text-center text-muted">Nenhum chatbot.</td></tr>}
           </tbody>
         </table>
       </section>

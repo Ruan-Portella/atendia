@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/platform-admin";
-import { agencyStatus, getAgencies, usd, usdBrl, type AgencyRow } from "@/lib/backoffice";
+import { agencyStatus, getAgencies, getClientExport, usd, usdBrl, type AgencyRow } from "@/lib/backoffice";
+import { sharedPortfolios } from "@/lib/client-export";
 import { brl, num } from "@/lib/plans";
 import { cn, relativeTime } from "@/lib/utils";
 
@@ -28,17 +29,36 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const situacao = (typeof sp.situacao === "string" && sp.situacao in STATUS_LABEL ? sp.situacao : null) as Status | null;
   const ordem = (typeof sp.ordem === "string" && sp.ordem in SORTS ? sp.ordem : "recentes") as Sort;
-  const all = await getAgencies();
+  const [all, exportRows] = await Promise.all([getAgencies(), getClientExport()]);
+  // mesmo portfólio da Meta em clientes diferentes: só alerta (a agência pode ter conectado com o portfólio dela)
+  const shared = sharedPortfolios(exportRows);
   const rows = sortRows(situacao ? all.filter((a) => agencyStatus(a) === situacao) : all, ordem);
   const fx = usdBrl();
   const href = (s: Status | null, o: Sort) => `/admin/clientes?${new URLSearchParams({ ...(s ? { situacao: s } : {}), ...(o !== "recentes" ? { ordem: o } : {}) })}`;
 
   return (
     <>
-      <div>
-        <h1 className="text-[26px] font-bold">Agências</h1>
-        <p className="text-sm text-muted">Quem assina a BoaVoz (cada agência tem os próprios clientes e chatbots). Uso e custo do mês corrente; margem = mensalidade − custo de IA (dólar a {brl(fx)}).</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[26px] font-bold">Agências</h1>
+          <p className="text-sm text-muted">Quem assina a BoaVoz (cada agência tem os próprios clientes e chatbots). Uso e custo do mês corrente; margem = mensalidade − custo de IA (dólar a {brl(fx)}).</p>
+        </div>
+        {/* download de arquivo (rota com a segunda etapa e a auditoria), não navegação: <a> comum */}
+        <a href="/admin/clientes/exportar" download className="btn-ghost shrink-0">Exportar clientes (CSV)</a>
       </div>
+
+      {shared.length > 0 && (
+        <section className="rounded-xl border border-[#efd9a9] bg-amber-soft px-4 py-3 text-sm text-amber-ink">
+          <strong>Mesmo portfólio da Meta em clientes diferentes.</strong> Pode ser a agência conectando o WhatsApp com o portfólio dela (o cliente perde o número se sair, e a Meta proíbe revenda) ou um negócio com várias lojas. Nada foi bloqueado.
+          <ul className="mt-1.5 list-disc pl-5">
+            {shared.map((p) => (
+              <li key={p.businessId}>
+                <span className="font-mono text-xs">{p.businessId}</span>: {p.clients.map((c) => `${c.clientName} (${c.agencyName} · ${c.botName})`).join("; ")}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Link href={href(null, ordem)} className={cn("rounded-full border px-3 py-1", !situacao ? "border-ink bg-ink text-ground" : "border-line bg-panel")}>Todas ({all.length})</Link>

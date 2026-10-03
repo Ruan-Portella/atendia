@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fail, ok, type ActionResult } from "./action-result";
-import { notifyAgencyOwner } from "./notify";
+import { notifyAgencyOwner, notifyPlatform } from "./notify";
 import { seal, unseal } from "./secret-box";
 import { appUrl } from "./utils";
 import { forgetBsuids } from "./contacts";
@@ -15,6 +15,28 @@ export interface SignupResult {
   businessId?: string | null;
   /** O cliente conectou o WhatsApp Business do celular (o número continua funcionando no app). */
   coexistence?: boolean;
+}
+
+/**
+ * O mesmo portfólio da Meta (business_id) já está em outro cliente? Avisa a equipe, sem bloquear:
+ * pode ser a agência conectando com o portfólio dela (o cliente perde o número se sair; a Meta
+ * proíbe revenda) ou um negócio com várias lojas.
+ */
+async function alertSharedPortfolio(admin: SupabaseClient, botId: string, businessId: string) {
+  const { data: rows } = await admin.from("whatsapp_channels").select("bot_id, display_phone, bots(client_id, client_name, name, agencies(name))").eq("business_id", businessId).is("disconnected_at", null);
+  type Row = { bot_id: string; display_phone: string | null; bots: { client_id: string | null; client_name: string; name: string; agencies: { name: string } | null } | null };
+  const list = (rows ?? []) as unknown as Row[];
+  const me = list.find((r) => r.bot_id === botId)?.bots;
+  const others = list.filter((r) => r.bot_id !== botId && r.bots && (r.bots.client_id ?? r.bots.client_name) !== (me?.client_id ?? me?.client_name));
+  if (!others.length) return;
+  const line = (r: Row) => `- ${r.bots?.client_name} (${r.bots?.agencies?.name ?? "?"} · ${r.bots?.name}${r.display_phone ? ` · ${r.display_phone}` : ""})`;
+  await notifyPlatform(`Mesmo portfólio da Meta em clientes diferentes (${businessId})`, [
+    `Um número do WhatsApp acabou de ser conectado com o portfólio ${businessId}, que já está em outro cliente.`,
+    "",
+    ...list.map(line),
+    "",
+    "Nada foi bloqueado. Confira se a agência conectou com o portfólio dela (o cliente perde o número se sair) ou se é um negócio com várias lojas. Lista completa em /admin/clientes.",
+  ]);
 }
 
 /**
@@ -83,6 +105,7 @@ export async function connectFromSignup(admin: SupabaseClient, opts: { botId: st
   });
   if (error) return fail("O número foi conectado na Meta, mas não deu para salvar. Tente de novo.");
   if (previous?.business_id && businessId && previous.business_id !== businessId) await forgetBsuids(admin, botId);
+  if (businessId) await alertSharedPortfolio(admin, botId, businessId).catch((e) => console.error("whatsapp: alerta de portfólio", e));
 
   // coexistência: contatos primeiro, depois o histórico (a Meta desconecta se não pedirmos em 24 h)
   let syncFailed = false;

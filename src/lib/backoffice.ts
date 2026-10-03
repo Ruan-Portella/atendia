@@ -6,6 +6,7 @@ import { PLANS, getPlan, type PlanId } from "./plans";
 import { currentPeriodBR, monthStartBR } from "./utils";
 import { quotaOf } from "./quota";
 import { estimateCost, referencePrices, type UsageLine } from "./whatsapp-usage";
+import type { ClientExportRow } from "./client-export";
 
 /*
  * Números do backoffice (/admin). Contas agregadas no banco (funções admin_* da migração 0037);
@@ -623,4 +624,53 @@ export async function getIncidents(limit = 30): Promise<IncidentRow[]> {
     updatedAt: r.updated_at as string,
   }));
   return rows.sort((a, b) => Number(a.status === "encerrado") - Number(b.status === "encerrado"));
+}
+
+/* ------------------------------------------------------------------ lista de clientes exportável */
+
+export const AGENCY_STATUS_LABEL = { pagante: "Pagante", teste: "Em teste", teste_vencido: "Teste vencido", cancelada: "Cancelada" } as const;
+
+/** Trechos da base por chatbot. */
+export async function botChunkCounts(botIds: string[]): Promise<Map<string, number>> {
+  if (!botIds.length) return new Map();
+  const { data, error } = await createAdminClient().rpc("admin_bot_chunk_counts", { p_bot_ids: botIds });
+  if (error) throw new Error(`trechos por chatbot: ${error.message}`);
+  return new Map(((data ?? []) as Array<{ bot_id: string; chunks: number | string }>).map((r) => [r.bot_id, Number(r.chunks) || 0]));
+}
+
+/** Uma linha por chatbot (sem as demos), para a tela e para o CSV. */
+export async function getClientExport(): Promise<ClientExportRow[]> {
+  const [{ data, error }, agencies] = await Promise.all([createAdminClient().rpc("admin_client_export"), getAgencies()]);
+  if (error) throw new Error(`lista de clientes: ${error.message}`);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const chunks = await botChunkCounts(rows.map((r) => r.bot_id as string));
+  const byId = new Map(agencies.map((a) => [a.id, a]));
+  const s = (v: unknown) => (v as string | null) ?? null;
+  return rows.map((r) => {
+    const a = byId.get(r.agency_id as string);
+    return {
+      agencyId: r.agency_id as string,
+      agencyName: r.agency_name as string,
+      ownerEmail: a?.email ?? null,
+      planName: a?.planName ?? getPlan(r.plan as string).name,
+      agencySituation: a ? AGENCY_STATUS_LABEL[agencyStatus(a)] : "",
+      clientId: s(r.client_id),
+      clientName: (r.client_name as string | null) ?? "",
+      botId: r.bot_id as string,
+      botName: r.bot_name as string,
+      botStatus: r.bot_status as string,
+      botCreatedAt: r.bot_created_at as string,
+      chunks: chunks.get(r.bot_id as string) ?? 0,
+      waPhone: s(r.wa_phone),
+      wabaId: s(r.waba_id),
+      businessId: s(r.business_id),
+      coexistence: Boolean(r.coexistence),
+      waConnectedAt: s(r.wa_connected_at),
+      waDisconnectedAt: s(r.wa_disconnected_at),
+      waDisconnectReason: s(r.wa_disconnect_reason),
+      igUsername: s(r.ig_username),
+      igConnected: r.has_instagram ? !r.ig_disconnected_at : null,
+      complianceStatus: s(r.compliance_status),
+    };
+  });
 }
