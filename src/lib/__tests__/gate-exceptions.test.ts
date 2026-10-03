@@ -17,7 +17,7 @@ describe("exceção do portão por chatbot", () => {
   });
 
   it("a base classificada e o contexto mostram o item liberado", () => {
-    const hit = { content: "Vodka R$ 30. Pão R$ 5.", gate_version: "v", gate_segments: [{ t: "Vodka R$ 30.", c: ["bebida" as const] }, { t: "Pão R$ 5.", c: [] }] };
+    const hit = { content: "Vodka R$ 30. Pão R$ 5.", gate_version: "v", gate_segments: [{ t: "Vodka R$ 30.", l: 0, c: ["bebida" as const] }, { t: "Pão R$ 5.", l: 0, c: [] }] };
     expect(visibleText(hit, { channel: "whatsapp", age: null }).text).not.toContain("Vodka");
     expect(visibleText(hit, { channel: "whatsapp", age: null, exempt: ["bebida"] }).text).toContain("Vodka");
     expect(gatedContext("Vodka R$ 30.", { channel: "whatsapp", age: null, exempt: ["bebida"] }).context).toContain("Vodka");
