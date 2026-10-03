@@ -350,7 +350,7 @@ export function chatTools(exec: {
     }),
     // sempre na lista (ordem fixa ajuda o cache do provedor); só é usada com a trava de escopo
     registrar_recusa: tool({
-      description: "Registra que você recusou um pedido fora do escopo do atendimento. nivel \"fixo\": tarefa sem relação com o negócio ou executar o serviço que a empresa vende; \"flexivel\": assunto distante do negócio. Chame junto com a sua resposta de recusa.",
+      description: "Registra que você recusou um pedido fora do escopo do atendimento. nivel \"fixo\": tarefa sem relação com o negócio ou executar o serviço que a empresa vende; \"flexivel\": assunto distante do negócio. Chame só quando ESTA resposta é uma recusa; nunca numa resposta que atende a pergunta, mesmo que antes na conversa você tenha recusado outro pedido.",
       inputSchema: z.object({ nivel: z.enum(["fixo", "flexivel"]), pedido: z.string().optional().describe("resumo curto do que foi pedido") }),
       execute: exec.registrar_recusa,
     }),
