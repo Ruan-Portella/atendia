@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_MEDIA_BYTES, downloadMedia, toWhatsAppText, validSignature, waIdVariants, whatsappAllowed } from "../whatsapp";
+import { MAX_MEDIA_BYTES, downloadMedia, toWhatsAppText, validSignature, waIdVariants } from "../whatsapp";
 import { PHONE_PAUSE_MINUTES, inboundText, phonePauseActive } from "../whatsapp-inbound";
 
 const sign = (body: string, secret: string) => "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
@@ -42,25 +42,6 @@ describe("inboundText", () => {
   it("áudio, imagem e texto vazio não têm texto", () => {
     expect(inboundText({ ...base, type: "audio" })).toBeNull();
     expect(inboundText({ ...base, type: "text", text: { body: "   " } })).toBeNull();
-  });
-});
-
-describe("whatsappAllowed", () => {
-  afterEach(() => vi.unstubAllEnvs());
-
-  it("sem configuração, só o e-mail de teste (sem diferenciar maiúsculas)", () => {
-    vi.stubEnv("WHATSAPP_BETA_EMAILS", undefined);
-    expect(whatsappAllowed("RuanMorales29@gmail.com")).toBe(true);
-    expect(whatsappAllowed("outra@agencia.com")).toBe(false);
-    expect(whatsappAllowed("")).toBe(false);
-  });
-
-  it("lista do .env e * para liberar todo mundo", () => {
-    vi.stubEnv("WHATSAPP_BETA_EMAILS", "a@x.com, b@y.com");
-    expect(whatsappAllowed("b@y.com")).toBe(true);
-    expect(whatsappAllowed("ruanmorales29@gmail.com")).toBe(false);
-    vi.stubEnv("WHATSAPP_BETA_EMAILS", "*");
-    expect(whatsappAllowed("qualquer@um.com")).toBe(true);
   });
 });
 

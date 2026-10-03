@@ -5,8 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
-import { embeddedSignupConfig, whatsappAllowed } from "@/lib/whatsapp";
-import { instagramAllowed } from "@/lib/instagram";
+import { embeddedSignupConfig } from "@/lib/whatsapp";
+import { TRIAL_WHATSAPP_LOCKED, channelAccessOf, trialContentProblem } from "@/lib/features";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { ConnectLinkButton } from "@/components/connect-link-button";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
@@ -51,12 +51,14 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
-  const [{ id }, sp, { email }] = await Promise.all([params, searchParams, requireAgency()]);
-  // WhatsApp em teste: a aba só existe para os e-mails liberados
-  const waAllowed = whatsappAllowed(email);
-  // Instagram: só quem está na lista INSTAGRAM_BETA_EMAILS (o teste do WhatsApp não libera)
-  const igAllowed = instagramAllowed(email);
-  const tabs = TABS.filter(([t]) => (t === "whatsapp" ? waAllowed : t === "instagram" ? igAllowed : true));
+  const [{ id }, sp, { agency: owner }] = await Promise.all([params, searchParams, requireAgency()]);
+  // canais da Meta: liberação da agência no backoffice, ou abertura geral; no teste grátis, a aba
+  // do WhatsApp aparece com o aviso de liberação manual
+  const access = await channelAccessOf(createAdminClient(), owner);
+  const waAllowed = access.whatsapp === "liberado";
+  const waWaiting = access.whatsapp === "aguardando";
+  const igAllowed = access.instagram === "liberado";
+  const tabs = TABS.filter(([t]) => (t === "whatsapp" ? waAllowed || waWaiting : t === "instagram" ? igAllowed : true));
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
   const supabase = await createClient();
 
@@ -90,6 +92,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const base = agencyBaseUrl(agency);
   const demoUrl = bot.is_demo && bot.demo_slug ? `${base}/demo/${bot.demo_slug}` : null;
   const signup = embeddedSignupConfig();
+  // teste grátis: o número real só conecta com 1 fonte pronta e as instruções escritas
+  const trialProblem = owner.plan === "trial" ? trialContentProblem(readySources ?? 0, (bot.persona as { instructions?: string } | null)?.instructions) : null;
   // "+ Nova conversa" pelo WhatsApp: precisa do número conectado e de modelos aprovados
   let newChatTemplates: SendableTemplate[] | null = null;
   if (tab === "conversas" && waAllowed && !bot.is_demo) {
@@ -337,7 +341,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <h2 className="text-[22px] font-bold">WhatsApp</h2>
                 <p className="text-sm text-muted">{bot.name} responde no WhatsApp do cliente com a mesma base de conhecimento. Pedidos de atendente aparecem em Conversas, e a sua resposta sai pelo WhatsApp.</p>
               </div>
-              {bot.is_demo ? (
+              {!waWaiting && !bot.is_demo && !whatsapp && trialProblem && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">{trialProblem}</p>}
+              {waWaiting ? (
+                <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">{TRIAL_WHATSAPP_LOCKED}</p>
+              ) : bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
               ) : whatsapp?.disconnected_at ? (
                 <div className="flex flex-col gap-4 rounded-xl border border-[#efd9a9] bg-amber-soft p-5">

@@ -12,7 +12,7 @@ import { conversationState, whatsappWindowOpen } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
-import { whatsappAllowed } from "@/lib/whatsapp";
+import { channelAccessOf } from "@/lib/features";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
@@ -34,7 +34,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
     .maybeSingle();
   if (!conv) notFound();
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
-  const [messages, { data: leads }, { email }] = await Promise.all([
+  const [messages, { data: leads }, { agency }] = await Promise.all([
     loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     supabase.from("leads").select("name, phone, email, notes").eq("conversation_id", cid),
     requireAgency(),
@@ -49,9 +49,9 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const handoffConv = isWhatsApp || isInstagram ? { ...conv, last_user_at: lastUserAt } : conv;
   const windowOpen = isWhatsApp && whatsappWindowOpen(handoffConv);
 
-  // modelos aprovados, para retomar a conversa (só quem está no teste do WhatsApp)
+  // modelos aprovados, para retomar a conversa (só com o WhatsApp liberado para a agência)
   let templates: SendableTemplate[] | null = null;
-  if (isWhatsApp && whatsappAllowed(email)) {
+  if (isWhatsApp && (await channelAccessOf(createAdminClient(), agency)).whatsapp === "liberado") {
     const ch = await loadTemplateChannel(createAdminClient(), id);
     templates = ch ? await listSendable(ch).catch(() => []) : null;
   }

@@ -50,15 +50,6 @@ export function embeddedSignupConfig(): { appId: string; configId: string; graph
   return appId && configId ? { appId, configId, graphVersion: GRAPH_VERSION } : null;
 }
 
-/**
- * Enquanto o WhatsApp está em teste, só estes e-mails veem a aba e ligam números.
- * WHATSAPP_BETA_EMAILS: lista separada por vírgula; "*" libera para todos.
- */
-export function whatsappAllowed(email: string): boolean {
-  const list = (process.env.WHATSAPP_BETA_EMAILS ?? "ruanmorales29@gmail.com").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-  return list.includes("*") || (Boolean(email) && list.includes(email.trim().toLowerCase()));
-}
-
 function envToken(): string {
   const token = process.env.WHATSAPP_TOKEN;
   if (!token) throw new WhatsAppError("WHATSAPP_TOKEN não configurado");

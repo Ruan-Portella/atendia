@@ -11,6 +11,7 @@ import { notifyAgencyOwner, notifyPlatform } from "@/lib/notify";
 import { company } from "@/lib/company";
 import { appUrl } from "@/lib/utils";
 import { audit, requestMeta } from "@/lib/audit";
+import { FEATURES, isFeature, type Feature } from "@/lib/features";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -263,4 +264,58 @@ export async function updateIncident(id: number, fd: FormData): Promise<ActionRe
   await auditAdmin(s.email, "incidente.atualizar", { targetType: "incident", targetId: String(id), after: { status, risk_relevant: patch.risk_relevant, agencies_notified: Boolean(patch.agencies_notified_at), anpd_notified: Boolean(patch.anpd_notified_at) } });
   revalidatePath("/admin", "layout");
   return ok("Incidente atualizado.");
+}
+
+/* ------------------------------------------------------------------ liberação (recursos por agência e abertura dos canais) */
+
+/**
+ * Recursos liberados para uma agência (WhatsApp no beta e no teste grátis, Instagram no beta).
+ * Liberar avisa o dono por e-mail; tirar não desconecta o que já está ligado (só impede conectar
+ * de novo e os modelos do WhatsApp).
+ */
+export async function setAgencyFeatures(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const wanted = (Object.keys(FEATURES) as Feature[]).filter((f) => fd.get(f) === "on");
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (liberação: ${wanted.join(", ") || "nenhum recurso"})`);
+  const db = createAdminClient();
+  const { data: agency } = await db.from("agencies").select("features").eq("id", agencyId).maybeSingle();
+  if (!agency) return fail("Agência não encontrada.");
+  const before = (agency.features as string[] | null) ?? [];
+  // recursos que esta tela não conhece (de fases seguintes) ficam como estão
+  const after = [...before.filter((f) => !isFeature(f)), ...wanted];
+  const { error } = await db.from("agencies").update({ features: after }).eq("id", agencyId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditAdmin(s.email, "agencia.liberacao", { agencyId, targetType: "agency", targetId: agencyId, after: { antes: before, depois: after } });
+  const added = wanted.filter((f) => !before.includes(f));
+  if (added.length) {
+    const names = added.map((f) => FEATURES[f].label).join(" e ");
+    await notifyAgencyOwner(db, agencyId, `${names} liberado na sua conta ${company.brand}`, [
+      `O ${names} foi liberado na sua conta.`,
+      "",
+      `Para conectar, abra o chatbot do cliente no painel, na aba ${names}: ${appUrl("/painel/clientes")}`,
+    ]).catch(() => false);
+  }
+  revalidatePath("/admin", "layout");
+  return ok(added.length ? `Liberado e avisado por e-mail: ${added.map((f) => FEATURES[f].label).join(", ")}.` : "Liberação salva.");
+}
+
+const OPEN_COLUMN: Record<Feature, "whatsapp_open_at" | "instagram_open_at"> = { whatsapp: "whatsapp_open_at", instagram: "instagram_open_at" };
+
+/** Abertura geral de um canal: o WhatsApp para os planos pagos (teste grátis segue manual), o Instagram para todos. */
+export async function openChannel(channel: Feature, fd: FormData): Promise<ActionResult> {
+  if (fd.get("confirm") !== "on") return fail("Marque a confirmação.");
+  const s = await requireAdmin(`/admin (ABRIU o ${FEATURES[channel].label} para todos)`);
+  const { error } = await createAdminClient().from("platform_flags").update({ [OPEN_COLUMN[channel]]: new Date().toISOString(), updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) return fail("Não foi possível abrir. Tente de novo.");
+  await auditAdmin(s.email, "plataforma.abrir_canal", { after: { channel } });
+  revalidatePath("/admin", "layout");
+  return ok(`${FEATURES[channel].label} aberto.`);
+}
+
+export async function closeChannel(channel: Feature): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin (fechou a abertura do ${FEATURES[channel].label})`);
+  const { error } = await createAdminClient().from("platform_flags").update({ [OPEN_COLUMN[channel]]: null, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) return fail("Não foi possível fechar. Tente de novo.");
+  await auditAdmin(s.email, "plataforma.fechar_canal", { after: { channel } });
+  revalidatePath("/admin", "layout");
+  return ok(`Abertura do ${FEATURES[channel].label} fechada: só as agências liberadas conectam.`);
 }

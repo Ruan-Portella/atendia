@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Kpi } from "@/components/kpi";
 import { AgencyActions, ChannelSuspension } from "@/components/admin/pause-controls";
+import { AgencyFeatures } from "@/components/admin/release-controls";
 import { requireAdmin } from "@/lib/platform-admin";
 import { agencyStatus, daysAgoIso, getAgencies, getMeasures, kindLabel, usd, usdBrl } from "@/lib/backoffice";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -75,6 +76,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
       </section>
 
       <AgencyActions agency={agency} />
+      <AgencyFeatures agencyId={id} plan={agency.plan} features={agency.features} />
       <ChannelSuspension agencyId={id} bots={(bots ?? []).filter((b) => !b.is_demo).map((b) => ({ id: b.id as string, label: `${b.name} · ${b.client_name}` }))} measures={measures} />
 
       <section className="card overflow-x-auto">

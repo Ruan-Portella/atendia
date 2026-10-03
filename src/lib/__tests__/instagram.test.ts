@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InstagramError, authorizeUrl, fitDm, instagramAllowed, isInstagramAccessError, isOutsideWindow, readState, signState, toInstagramText } from "../instagram";
+import { InstagramError, authorizeUrl, fitDm, isInstagramAccessError, isOutsideWindow, readState, signState, toInstagramText } from "../instagram";
 import { igMediaLabel, igText } from "../instagram-inbound";
 
 describe("state do login", () => {
@@ -33,25 +33,6 @@ describe("state do login", () => {
     expect(url.searchParams.get("scope")).toBe("instagram_business_basic,instagram_business_manage_messages");
     expect(url.searchParams.get("redirect_uri")).toMatch(/\/api\/instagram\/callback$/);
     expect(url.searchParams.get("state")).toBe("st");
-  });
-});
-
-describe("quem vê o Instagram", () => {
-  afterEach(() => vi.unstubAllEnvs());
-
-  it("só a lista INSTAGRAM_BETA_EMAILS libera; o teste do WhatsApp não", () => {
-    vi.stubEnv("WHATSAPP_BETA_EMAILS", "wa@x.com");
-    vi.stubEnv("INSTAGRAM_BETA_EMAILS", " IG@x.com , b@y.com");
-    expect(instagramAllowed("ig@X.com")).toBe(true);
-    expect(instagramAllowed("wa@x.com")).toBe(false);
-    expect(instagramAllowed(null)).toBe(false);
-    vi.stubEnv("INSTAGRAM_BETA_EMAILS", "*");
-    expect(instagramAllowed("qualquer@z.com")).toBe(true);
-  });
-
-  it("sem a lista, ninguém vê", () => {
-    vi.stubEnv("INSTAGRAM_BETA_EMAILS", undefined);
-    expect(instagramAllowed("ruanmorales29@gmail.com")).toBe(false);
   });
 });
 

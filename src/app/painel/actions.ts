@@ -18,11 +18,12 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
-import { WhatsAppError, waIdVariants, getPhoneNumber, subscribeApp, unsubscribeApp, whatsappAllowed, whatsappConfigured } from "@/lib/whatsapp";
+import { WhatsAppError, waIdVariants, getPhoneNumber, subscribeApp, unsubscribeApp, whatsappConfigured } from "@/lib/whatsapp";
+import { channelBlock } from "@/lib/features";
 import { unseal } from "@/lib/secret-box";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
 import { createConnectLink } from "@/lib/whatsapp-connect-link";
-import { instagramAllowed, unsubscribeInstagram } from "@/lib/instagram";
+import { unsubscribeInstagram } from "@/lib/instagram";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { activeSuppressions, blocks, suppressionScope } from "@/lib/suppression";
 import { sendBlockedReason } from "@/lib/conversation-mode";
@@ -548,8 +549,10 @@ export async function setAutoRefresh(botId: string, formData: FormData): Promise
  * o cadastro incorporado vai preencher isso sozinho.
  */
 export async function connectWhatsApp(botId: string, formData: FormData): Promise<ActionResult> {
-  const { email } = await requireAgency();
-  if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
+  const { agency } = await requireAgency();
+  // liberação da agência (backoffice) e, no teste grátis, o conteúdo mínimo do chatbot
+  const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp", botId);
+  if (locked) return fail(locked);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -588,8 +591,7 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
  * Facebook dele). O trabalho de verdade está em lib/whatsapp-signup.ts, junto com o link de conexão.
  */
 export async function completeWhatsAppSignup(botId: string, input: SignupResult): Promise<ActionResult> {
-  const { email, agency } = await requireAgency();
-  if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
+  const { agency } = await requireAgency();
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_name, client_id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -660,8 +662,10 @@ async function notifyReview(clientName: string, agencyName: string, status: stri
 
 /** Link para o cliente conectar o próprio WhatsApp ou Instagram (vale 7 dias, uma conexão). */
 export async function createWhatsAppConnectLink(botId: string, channel: "whatsapp" | "instagram" = "whatsapp"): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
-  const { email } = await requireAgency();
-  if (channel === "instagram" ? !instagramAllowed(email) : !whatsappAllowed(email)) return { ok: false, message: `O ${channel === "instagram" ? "Instagram" : "WhatsApp"} ainda não está disponível na sua conta.` };
+  const { agency } = await requireAgency();
+  // WhatsApp no teste grátis: o conteúdo mínimo já vale para gerar o link
+  const locked = await channelBlock(createAdminClient(), agency.id, channel, channel === "whatsapp" ? botId : undefined);
+  if (locked) return { ok: false, message: locked };
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
   if (!bot) return { ok: false, message: "Chatbot não encontrado." };
@@ -676,8 +680,6 @@ export async function createWhatsAppConnectLink(botId: string, channel: "whatsap
 }
 
 export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
-  const { email } = await requireAgency();
-  if (!whatsappAllowed(email)) return fail("O WhatsApp ainda não está disponível na sua conta.");
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -696,8 +698,6 @@ export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
 
 /** Desliga a conta do Instagram do chatbot: o app sai das mensagens dela e o token é apagado. */
 export async function disconnectInstagram(botId: string): Promise<ActionResult> {
-  const { email } = await requireAgency();
-  if (!instagramAllowed(email)) return fail("O Instagram ainda não está disponível na sua conta.");
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -713,10 +713,11 @@ export async function disconnectInstagram(botId: string): Promise<ActionResult> 
 
 /* ------------------------------------------------------------------ modelos de mensagem (whatsapp) */
 
-/** Número do WhatsApp do chatbot, conferindo e-mail liberado e dono do chatbot. */
+/** Número do WhatsApp do chatbot, conferindo a liberação da agência e o dono do chatbot. */
 async function ownedTemplateChannel(botId: string): Promise<TemplateChannel | { error: string }> {
-  const { email } = await requireAgency();
-  if (!whatsappAllowed(email)) return { error: "O WhatsApp ainda não está disponível na sua conta." };
+  const { agency } = await requireAgency();
+  const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp");
+  if (locked) return { error: locked };
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return { error: "Chatbot não encontrado." };

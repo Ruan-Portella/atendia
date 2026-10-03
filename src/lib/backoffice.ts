@@ -325,6 +325,8 @@ export interface AgencyRow {
   liveBots: number;
   whatsapp: number;
   instagram: number;
+  /** Recursos liberados pelo BoaVoz (features.ts). */
+  features: string[];
   /** Atendimentos do mês (a unidade da cota). */
   atendimentosMonth: number;
   quota: number;
@@ -352,7 +354,7 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
   const db = createAdminClient();
   const period = currentPeriodBR();
   const [{ data: agencies, error }, { data: stats }, emails] = await Promise.all([
-    db.from("agencies").select("id, owner_id, name, plan, quota_override, trial_ends_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
+    db.from("agencies").select("id, owner_id, name, plan, quota_override, features, trial_ends_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
     db.rpc("admin_agency_stats", { p_period: period, p_month_start: monthStartBR(period).toISOString() }),
     ownerEmails(),
   ]);
@@ -375,6 +377,7 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
       liveBots: Number(s.live_bots) || 0,
       whatsapp: Number(s.whatsapp) || 0,
       instagram: Number(s.instagram) || 0,
+      features: (a.features as string[] | null) ?? [],
       atendimentosMonth: Number(s.atendimentos_month) || 0,
       quota: quotaOf({ plan: a.plan as string, quota_override: a.quota_override as number | null }),
       aiCostMonthUsd: Number(s.ai_cost_month) || 0,
@@ -432,13 +435,16 @@ export interface PlatformFlags {
   aiPausedReason: string | null;
   whatsappDisabledAt: string | null;
   whatsappDisabledReason: string | null;
+  /** Abertura geral dos canais (features.ts). */
+  whatsappOpenAt: string | null;
+  instagramOpenAt: string | null;
   updatedBy: string | null;
 }
 
 export async function getPlatformFlags(): Promise<PlatformFlags> {
-  const { data } = await createAdminClient().from("platform_flags").select("ai_paused_at, ai_paused_reason, whatsapp_disabled_at, whatsapp_disabled_reason, updated_by").eq("id", 1).maybeSingle();
+  const { data } = await createAdminClient().from("platform_flags").select("ai_paused_at, ai_paused_reason, whatsapp_disabled_at, whatsapp_disabled_reason, whatsapp_open_at, instagram_open_at, updated_by").eq("id", 1).maybeSingle();
   const v = (k: string) => ((data as Record<string, unknown> | null)?.[k] as string | null) ?? null;
-  return { aiPausedAt: v("ai_paused_at"), aiPausedReason: v("ai_paused_reason"), whatsappDisabledAt: v("whatsapp_disabled_at"), whatsappDisabledReason: v("whatsapp_disabled_reason"), updatedBy: v("updated_by") };
+  return { aiPausedAt: v("ai_paused_at"), aiPausedReason: v("ai_paused_reason"), whatsappDisabledAt: v("whatsapp_disabled_at"), whatsappDisabledReason: v("whatsapp_disabled_reason"), whatsappOpenAt: v("whatsapp_open_at"), instagramOpenAt: v("instagram_open_at"), updatedBy: v("updated_by") };
 }
 
 /** Uma medida de enforcement_actions, com o nome da agência e do chatbot para a tela. */

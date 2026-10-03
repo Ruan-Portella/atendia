@@ -4,6 +4,7 @@ import { notifyAgencyOwner } from "./notify";
 import { seal, unseal } from "./secret-box";
 import { appUrl } from "./utils";
 import { forgetBsuids } from "./contacts";
+import { channelBlock } from "./features";
 import { WHATSAPP_BILLING_URL, WhatsAppError, exchangeSignupCode, getPhoneNumber, listWabaPhoneNumbers, newPin, registerNumber, startAppSync, subscribeApp } from "./whatsapp";
 
 export interface SignupResult {
@@ -28,6 +29,9 @@ export interface SignupResult {
  */
 export async function connectFromSignup(admin: SupabaseClient, opts: { botId: string; agencyId: string; clientName: string; input: SignupResult; via: "painel" | "link" }): Promise<ActionResult> {
   const { botId, input, via } = opts;
+  // liberação da agência (backoffice) e, no teste grátis, o conteúdo mínimo do chatbot
+  const locked = await channelBlock(admin, opts.agencyId, "whatsapp", botId);
+  if (locked) return fail(via === "link" ? "A conexão do WhatsApp ainda não está liberada para este assistente. Fale com a agência." : locked);
   const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "");
   const coexistence = Boolean(input.coexistence);
   const wabaId = digits(input.wabaId);

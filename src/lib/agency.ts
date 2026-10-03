@@ -22,6 +22,8 @@ export interface Agency {
   plan: string;
   /** Cota combinada fora do plano (assinantes de antes da cota nova); nula = a do plano. */
   quota_override: number | null;
+  /** Recursos liberados pelo BoaVoz para esta conta (ver features.ts). */
+  features: string[];
   trial_ends_at: string;
   stripe_customer_id: string | null;
   referral_code: string;

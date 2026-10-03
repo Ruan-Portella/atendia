@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { authorizeUrl, instagramAllowed, instagramConfigured, signState } from "@/lib/instagram";
+import { authorizeUrl, instagramConfigured, signState } from "@/lib/instagram";
+import { channelBlock } from "@/lib/features";
 import { hashToken, resolveConnectLink } from "@/lib/whatsapp-connect-link";
 import { connectBlockFor } from "@/lib/acceptance";
 
@@ -20,6 +21,7 @@ export async function GET(req: Request) {
   if (linkToken) {
     const link = await resolveConnectLink(createAdminClient(), linkToken);
     if (!link || link.state !== "open" || link.channel !== "instagram" || link.bot.is_demo) redirect(`/conectar/${encodeURIComponent(linkToken)}`);
+    if (await channelBlock(createAdminClient(), link.agencyId, "instagram")) redirect(`/conectar/${encodeURIComponent(linkToken)}?ig_erro=${encodeURIComponent("A conexão do Instagram ainda não está liberada para este assistente. Fale com a agência.")}`);
     // tela única de aceite: sem o aceite (pendente deste link) ou com o negócio bloqueado, não abre o login
     const blocked = await connectBlockFor(createAdminClient(), { clientId: link.clientId, channel: "instagram", linkTokenHash: hashToken(linkToken), neutral: true });
     if (blocked) redirect(`/conectar/${encodeURIComponent(linkToken)}?ig_erro=${encodeURIComponent(blocked)}`);
@@ -27,8 +29,8 @@ export async function GET(req: Request) {
   }
 
   const botId = p.get("bot") ?? "";
-  const { email } = await requireAgency();
-  if (!instagramAllowed(email)) redirect(`/painel/bots/${botId}`);
+  const { agency } = await requireAgency();
+  if (await channelBlock(createAdminClient(), agency.id, "instagram")) redirect(`/painel/bots/${botId}`);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) redirect("/painel/clientes");
