@@ -56,13 +56,15 @@ function loadSdk(appId: string, version: string): Promise<FacebookSdk> {
  * conta do WhatsApp e o número, e a Meta devolve um código (FB.login) e os IDs (postMessage).
  * Com os dois em mãos, a server action termina a conexão.
  */
-export function WhatsAppConnect({ appId, configId, graphVersion, action, coexistence = false, label = "Conectar WhatsApp", primary = true }: {
+export function WhatsAppConnect({ appId, configId, graphVersion, action, coexistence = false, autoRepliesOff = false, label = "Conectar WhatsApp", primary = true }: {
   appId: string;
   configId: string;
   graphVersion: string;
-  action: (input: SessionInfo & { code: string; coexistence?: boolean }) => Promise<ActionResult>;
+  action: (input: SessionInfo & { code: string; coexistence?: boolean; autoRepliesOff?: boolean }) => Promise<ActionResult>;
   /** Conectar o WhatsApp Business que o cliente já usa no celular, sem tirar o número do app. */
   coexistence?: boolean;
+  /** Coexistência: o dono marcou que desligou a saudação e a ausência do app. */
+  autoRepliesOff?: boolean;
   label?: string;
   primary?: boolean;
 }) {
@@ -99,7 +101,7 @@ export function WhatsAppConnect({ appId, configId, graphVersion, action, coexist
       return setBusy(false);
     }
     try {
-      const r = await action({ code, ...info, coexistence });
+      const r = await action({ code, ...info, coexistence, autoRepliesOff });
       if (r.ok) {
         toast.success(r.message ?? "WhatsApp conectado.");
         router.refresh();

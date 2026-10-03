@@ -15,6 +15,8 @@ export interface SignupResult {
   businessId?: string | null;
   /** O cliente conectou o WhatsApp Business do celular (o número continua funcionando no app). */
   coexistence?: boolean;
+  /** Coexistência: marcou que desligou a saudação e a ausência do app (registro, sem bloquear). */
+  autoRepliesOff?: boolean;
 }
 
 /**
@@ -102,6 +104,7 @@ export async function connectFromSignup(admin: SupabaseClient, opts: { botId: st
     access_token_enc: seal(token),
     pin_enc: coexistence ? null : seal(pin),
     coexistence,
+    auto_replies_off_at: coexistence && input.autoRepliesOff ? new Date().toISOString() : null,
   });
   if (error) return fail("O número foi conectado na Meta, mas não deu para salvar. Tente de novo.");
   if (previous?.business_id && businessId && previous.business_id !== businessId) await forgetBsuids(admin, botId);

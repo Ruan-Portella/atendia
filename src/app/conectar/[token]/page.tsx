@@ -8,6 +8,8 @@ import { WHATSAPP_BILLING_URL, embeddedSignupConfig, hasPaymentMethod } from "@/
 import { instagramConfigured } from "@/lib/instagram";
 import { AgencyHeader, brandColor } from "@/components/report-view";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
+import { CoexistenceConnect } from "@/components/coexistence-connect";
+import { ConnectChecklist } from "@/components/connect-checklist";
 import { acceptViaLink, completeLinkSignup } from "../actions";
 
 // só a marca da agência: título, ícone e textos neutros (a plataforma não aparece)
@@ -143,10 +145,11 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
       <>
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-bold">Como você quer conectar?</h2>
+        <ConnectChecklist />
         <div className="card flex flex-col gap-2.5 p-5">
           <div className="font-semibold">Já atendo pelo WhatsApp Business no celular</div>
           <p className="text-sm text-ink-2">O número continua funcionando no app do celular, como hoje. O assistente responde as mensagens; quando você ou sua equipe responde pelo celular, ele fica quieto naquela conversa por 1 hora.</p>
-          <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={action} coexistence label="Conectar meu WhatsApp Business" />
+          <CoexistenceConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={action} label="Conectar meu WhatsApp Business" />
           <p className="text-xs text-muted">Use o WhatsApp Business atualizado e, quando a janela pedir, aceite compartilhar os contatos e o histórico.</p>
         </div>
         <div className="card flex flex-col gap-2.5 p-5">

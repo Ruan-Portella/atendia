@@ -8,6 +8,8 @@ import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig } from "@/lib/whatsapp";
 import { TRIAL_WHATSAPP_LOCKED, channelAccessOf, trialContentProblem } from "@/lib/features";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
+import { CoexistenceConnect } from "@/components/coexistence-connect";
+import { ConnectChecklist } from "@/components/connect-checklist";
 import { ConnectLinkButton } from "@/components/connect-link-button";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
 import { WhatsAppDiagnostics } from "@/components/whatsapp-diagnostics";
@@ -463,11 +465,12 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                         <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
                       </div>
                       <p className="pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted">Ou conecte agora, com o cliente do lado</p>
+                      <ConnectChecklist />
                       <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
                       <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
                         <div className="text-sm font-semibold">Já atende pelo WhatsApp Business no celular</div>
                         <p className="text-sm text-ink-2">O número continua funcionando no app do celular. {bot.name} responde as mensagens; quando alguém da equipe responde pelo celular, a resposta aparece em Conversas e {bot.name} fica quieto naquela conversa por 1 hora.</p>
-                        <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence label="Conectar o WhatsApp Business do celular" />
+                        <CoexistenceConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar o WhatsApp Business do celular" />
                         <p className="text-xs text-muted">No celular, abra o WhatsApp Business atualizado e aceite quando a Meta pedir para compartilhar contatos e histórico.</p>
                       </div>
                       <div className="flex flex-col gap-2 rounded-xl border border-line p-4">

@@ -727,6 +727,18 @@ export async function requestGateReview(conversationId: string, category: string
   return ok("Pedido enviado. A equipe BoaVoz revisa e avisa por e-mail.");
 }
 
+/** Coexistência: "já desliguei a saudação e a ausência do app" (registro, sem bloquear nada). */
+export async function markAutoRepliesOff(botId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  const { error } = await createAdminClient().from("whatsapp_channels").update({ auto_replies_off_at: new Date().toISOString() }).eq("bot_id", botId).eq("coexistence", true);
+  if (error) return fail("Não foi possível registrar. Tente de novo.");
+  await auditPanel("canal.respostas_automaticas_desligadas", { type: "bot", id: botId });
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Registrado. Assim o cliente recebe só a resposta do assistente.");
+}
+
 /** "Já cadastrei o cartão": confere na Meta agora; com cartão, o alerta de pagamento sai. */
 export async function recheckWhatsAppPayment(botId: string): Promise<ActionResult> {
   const supabase = await createClient();

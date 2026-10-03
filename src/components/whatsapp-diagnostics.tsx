@@ -5,7 +5,7 @@ import { nameLine, qualityLine, restrictionLines, statusLine, type DiagLine, typ
 import type { MetaAccountDetail } from "@/lib/meta-enforcement";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { recheckWhatsAppPayment } from "@/app/painel/actions";
+import { markAutoRepliesOff, recheckWhatsAppPayment } from "@/app/painel/actions";
 
 const DOT: Record<DiagTone, string> = { ok: "bg-brand", atencao: "bg-amber", problema: "bg-danger" };
 
@@ -16,7 +16,7 @@ const DOT: Record<DiagTone, string> = { ok: "bg-brand", atencao: "bg-amber", pro
  */
 export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
   const admin = createAdminClient();
-  const { data: ch } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc, business_id, payment_issue_at, coexistence").eq("bot_id", botId).maybeSingle();
+  const { data: ch } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc, business_id, payment_issue_at, coexistence, auto_replies_off_at").eq("bot_id", botId).maybeSingle();
   if (!ch) return null;
   // número de teste do app (sem portfólio do cliente): não tem pagamento próprio na Meta
   const ownBilling = Boolean(ch.waba_id && ch.business_id);
@@ -61,6 +61,11 @@ export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
   }
   if (ch.coexistence) {
     lines.push({ label: "App do celular", value: "o número também está no app WhatsApp Business", tone: "ok", hint: "Abra o app no celular pelo menos 1 vez por semana: parado uns 14 dias, a Meta desconecta o número." });
+    lines.push(
+      ch.auto_replies_off_at
+        ? { label: "Saudação e ausência do app", value: `desligadas (registrado ${relativeTime(ch.auto_replies_off_at as string)})`, tone: "ok" }
+        : { label: "Saudação e ausência do app", value: "não confirmado", tone: "atencao", hint: "Desligue no app a mensagem de saudação e a de ausência (e o agente de IA da Meta, se aparecer): senão o cliente recebe duas respostas." },
+    );
   }
 
   const payable = ownBilling && (paymentIssue || funded === false);
@@ -80,6 +85,11 @@ export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
         ))}
       </ul>
       <div className="flex flex-wrap items-center gap-3 pt-1">
+        {ch.coexistence && !ch.auto_replies_off_at && (
+          <ActionForm action={markAutoRepliesOff.bind(null, botId)}>
+            <SubmitButton className="btn-ghost py-1 text-xs" pendingLabel="Registrando…">Já desliguei</SubmitButton>
+          </ActionForm>
+        )}
         {payable && (
           <ActionForm action={recheckWhatsAppPayment.bind(null, botId)}>
             <SubmitButton className="btn-ghost py-1 text-xs" pendingLabel="Conferindo na Meta…">Já cadastrei o cartão</SubmitButton>
