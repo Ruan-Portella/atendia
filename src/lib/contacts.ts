@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { canonicalPhone } from "./phone";
 import { hmacHex } from "./hash";
-import { sealNullable } from "./field-cipher";
+import { openField, sealNullable, type CipherField } from "./field-cipher";
 
 /*
  * Contatos (L1): a identidade de quem conversa com cada chatbot, por canal, achada por hash com
@@ -184,6 +184,73 @@ export async function contactNoticeReason(db: SupabaseClient, contactId: string)
 export async function setContactNotice(db: SupabaseClient, contactId: string, reason: string | null): Promise<void> {
   const q = db.from("contacts").update({ unavailable_notice_at: reason ? new Date().toISOString() : null, unavailable_notice_reason: reason }).eq("id", contactId);
   await (reason ? q : q.not("unavailable_notice_reason", "is", null));
+}
+
+/* ------------------------------------------------------------------ API pública: {contact} nas rotas */
+
+/** {contact} das rotas da API (spec "Formatos de payload", "Contato em rotas"). */
+export type ContactAddress =
+  | { kind: "id"; id: string }
+  | { kind: "phone"; phone: string }
+  | { kind: "wa"; bsuid: string }
+  | { kind: "ig"; igsid: string }
+  | { kind: "ext"; externalId: string };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** ctc_<id>, phone:<número> (forma canônica), wa:<BSUID>, ig:<id> ou ext:<id externo>; null se inválido. Função pura. */
+export function parseContactAddress(raw: string): ContactAddress | null {
+  const v = raw.trim();
+  if (v.startsWith("ctc_")) return UUID.test(v.slice(4)) ? { kind: "id", id: v.slice(4).toLowerCase() } : null;
+  const m = /^(phone|wa|ig|ext):(.{1,128})$/.exec(v);
+  if (!m || !m[2].trim()) return null;
+  const value = m[2].trim();
+  if (m[1] === "phone") {
+    const c = canonicalPhone(value, { typed: true });
+    return c ? { kind: "phone", phone: c } : null;
+  }
+  if (m[1] === "wa") return { kind: "wa", bsuid: value };
+  if (m[1] === "ig") return { kind: "ig", igsid: value };
+  return { kind: "ext", externalId: value };
+}
+
+/** Contato achado pela API, com as identidades do canal abertas (para a idade e o portão). */
+export interface ApiContact {
+  id: string;
+  bot_id: string;
+  channel: "widget" | "whatsapp" | "instagram";
+  phone: string | null;
+  bsuid: string | null;
+  igsid: string | null;
+}
+
+const openNullable = (field: CipherField, v: unknown) => (typeof v === "string" && v ? openField(field, v) : null);
+
+/**
+ * Contatos destes chatbots (os do escopo da chave) por um {contact} da API. ext: (id externo)
+ * chega com o vínculo na P2; até lá nenhum contato tem, então volta vazio (a rota dá 404).
+ */
+export async function apiContacts(db: SupabaseClient, botIds: string[], addr: ContactAddress): Promise<ApiContact[]> {
+  if (!botIds.length || addr.kind === "ext") return [];
+  const base = db.from("contacts").select("id, bot_id, channel, phone_enc, wa_user_enc, ig_enc").in("bot_id", botIds);
+  const q =
+    addr.kind === "id"
+      ? base.eq("id", addr.id)
+      : addr.kind === "phone"
+        ? base.eq("channel", "whatsapp").eq("phone_hash", phoneHash(addr.phone))
+        : addr.kind === "wa"
+          ? base.eq("channel", "whatsapp").eq("wa_user_hash", waUserHash(addr.bsuid))
+          : base.eq("channel", "instagram").eq("ig_hash", igHash(addr.igsid));
+  const { data, error } = await q.limit(50);
+  if (error) throw new Error(`contatos da API: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    bot_id: r.bot_id as string,
+    channel: r.channel as ApiContact["channel"],
+    phone: openNullable("contacts.phone_enc", r.phone_enc),
+    bsuid: openNullable("contacts.wa_user_enc", r.wa_user_enc),
+    igsid: openNullable("contacts.ig_enc", r.ig_enc),
+  }));
 }
 
 /** Fichas para o pedido de exclusão (LGPD), nestes chatbots: pelo e-mail ou pelo hash do telefone. */

@@ -505,6 +505,7 @@ export async function runChat(opts: {
     channel,
     waPhone,
     age: opts.gate?.age ?? null,
+    contactKey: opts.whatsapp?.waId ?? opts.instagram?.igsid ?? null,
     exempt: opts.gate?.exempt,
     messageKey: opts.questionKey ?? `${convId}|${question}`,
     onReply: (r) => void (actionReply ??= r),

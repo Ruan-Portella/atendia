@@ -25,12 +25,44 @@ interface Who {
   contact: string;
 }
 
-/** Idade do contato neste bot. "nao" com mais de 60 dias volta a ser "não confirmada". */
+/**
+ * Idade do contato neste bot. "nao" dado no chat com mais de 60 dias volta a ser "não confirmada";
+ * o "nao" informado pela empresa (menor de idade) fica até ela mudar.
+ */
 export async function getAge(db: SupabaseClient, w: Who, now = Date.now()): Promise<AgeStatus> {
-  const { data } = await db.from("contact_ages").select("status, decided_at").eq("bot_id", w.botId).eq("contact_hash", contactHash(w.channel, w.contact)).maybeSingle();
+  const { data } = await db.from("contact_ages").select("status, decided_at, source").eq("bot_id", w.botId).eq("contact_hash", contactHash(w.channel, w.contact)).maybeSingle();
   if (!data) return null;
-  if (data.status === "nao" && now - new Date(data.decided_at as string).getTime() > AGE_NO_REASK_DAYS * 86_400_000) return null;
+  if (data.status === "nao" && data.source !== "empresa" && now - new Date(data.decided_at as string).getTime() > AGE_NO_REASK_DAYS * 86_400_000) return null;
   return data.status as AgeStatus;
+}
+
+/** Origem da idade no formato da API e das ações: chat (botão de 18+) ou company (a empresa informou). */
+export async function ageSource(db: SupabaseClient, w: Who): Promise<"chat" | "company" | null> {
+  const { data } = await db.from("contact_ages").select("source").eq("bot_id", w.botId).eq("contact_hash", contactHash(w.channel, w.contact)).maybeSingle();
+  return data ? (data.source === "empresa" ? "company" : "chat") : null;
+}
+
+/** "Não" dado no chat que ainda vale (60 dias): vence qualquer origem. Função pura. */
+export const chatNoStands = (r: { status: string; source: string; decided_at: string }, now = Date.now()) =>
+  r.status === "nao" && r.source !== "empresa" && now - Date.parse(r.decided_at) <= AGE_NO_REASK_DAYS * 86_400_000;
+
+/**
+ * Idade informada pela empresa (PUT /v1/contacts/{contact}/age), com o texto de origem: vale para
+ * o chat (o contato não vê o botão de 18+) e para campanhas. Um "Não" dado no chat sempre vence;
+ * a empresa informar menor vale como "Não". Grava em todas as identidades do contato (telefone e
+ * BSUID no WhatsApp). Devolve o que vale agora.
+ */
+export async function setCompanyAge(db: SupabaseClient, botId: string, who: Array<Omit<Who, "botId">>, verified: boolean, o: { origin: string; apiKeyId: string | null }, now = Date.now()): Promise<{ confirmed: boolean; source: "company" | "chat" }> {
+  const hashes = [...new Set(who.map((w) => contactHash(w.channel, w.contact)))];
+  if (!hashes.length) throw new Error("idade: contato sem identidade no canal");
+  const { data, error: readError } = await db.from("contact_ages").select("status, source, decided_at").eq("bot_id", botId).in("contact_hash", hashes);
+  if (readError) throw new Error(`idade: ${readError.message}`);
+  if ((data ?? []).some((r) => chatNoStands(r as { status: string; source: string; decided_at: string }, now))) return { confirmed: false, source: "chat" };
+  const decided = new Date(now).toISOString();
+  const rows = hashes.map((h) => ({ bot_id: botId, contact_hash: h, status: verified ? "sim" : "nao", source: "empresa", origin: o.origin, api_key_id: o.apiKeyId, decided_at: decided }));
+  const { error } = await db.from("contact_ages").upsert(rows, { onConflict: "bot_id,contact_hash" });
+  if (error) throw new Error(`idade: ${error.message}`);
+  return { confirmed: verified, source: "company" };
 }
 
 export async function setAge(db: SupabaseClient, w: Who, status: "sim" | "nao", source: "chat" | "empresa" | "equipe" = "chat") {
@@ -40,14 +72,15 @@ export async function setAge(db: SupabaseClient, w: Who, status: "sim" | "nao", 
     const current = await getAge(db, w);
     if (current === "nao") return;
   }
-  const { error } = await db.from("contact_ages").upsert({ bot_id: w.botId, contact_hash: hash, status, source, decided_at: new Date().toISOString() }, { onConflict: "bot_id,contact_hash" });
+  // a origem da empresa (texto e chave) sai quando a idade passa a vir de outro lugar
+  const { error } = await db.from("contact_ages").upsert({ bot_id: w.botId, contact_hash: hash, status, source, origin: null, api_key_id: null, decided_at: new Date().toISOString() }, { onConflict: "bot_id,contact_hash" });
   if (error) throw new Error(`idade: ${error.message}`);
 }
 
 /** O que está gravado (para o painel), sem a regra dos 60 dias. */
-export async function ageRecord(db: SupabaseClient, w: Who): Promise<{ status: "sim" | "nao"; decidedAt: string; source: string } | null> {
-  const { data } = await db.from("contact_ages").select("status, decided_at, source").eq("bot_id", w.botId).eq("contact_hash", contactHash(w.channel, w.contact)).maybeSingle();
-  return data ? { status: data.status as "sim" | "nao", decidedAt: data.decided_at as string, source: data.source as string } : null;
+export async function ageRecord(db: SupabaseClient, w: Who): Promise<{ status: "sim" | "nao"; decidedAt: string; source: string; origin: string | null } | null> {
+  const { data } = await db.from("contact_ages").select("status, decided_at, source, origin").eq("bot_id", w.botId).eq("contact_hash", contactHash(w.channel, w.contact)).maybeSingle();
+  return data ? { status: data.status as "sim" | "nao", decidedAt: data.decided_at as string, source: data.source as string, origin: (data.origin as string | null) ?? null } : null;
 }
 
 /** Qualquer pessoa da equipe pode zerar pela conversa (o contato volta a ser perguntado). */

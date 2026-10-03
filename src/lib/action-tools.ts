@@ -4,7 +4,7 @@ import { callAction, type ActionLevel, type ActionRow, type CallContact } from "
 import { gateActionData, saveIdMap } from "./action-gate";
 import { firstExceeded } from "./rate-limit";
 import { hiddenNote } from "./gate/context";
-import type { AgeStatus } from "./gate/age";
+import { ageSource, type AgeStatus } from "./gate/age";
 import type { GateCategory } from "./gate/rules";
 
 /*
@@ -40,6 +40,8 @@ export interface ActionToolsInput {
   channel: "widget" | "demo" | "painel" | "whatsapp" | "instagram";
   waPhone: string | null;
   age: AgeStatus;
+  /** Quem fala no canal (wa_id ou BSUID no WhatsApp, IGSID no Instagram), para a origem da idade. */
+  contactKey?: string | null;
   exempt?: GateCategory[];
   /** Chave da mensagem: forma o call_id (o mesmo no reprocesso). */
   messageKey: string;
@@ -54,6 +56,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
   if (!actions.length) return {};
   const { data: conv } = await db.from("conversations").select("contact_id").eq("id", i.conversationId).maybeSingle();
   const gateChannel = i.channel === "whatsapp" || i.channel === "instagram" ? i.channel : "widget";
+  const source = i.age !== null && gateChannel !== "widget" && i.contactKey ? await ageSource(db, { botId: i.bot.id, channel: gateChannel, contact: i.contactKey }) : null;
   const contact: CallContact = {
     id: (conv?.contact_id as string | null) ?? null,
     level,
@@ -61,7 +64,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
     phone: i.waPhone,
     whatsapp_user_id: null,
     age_confirmed: i.age === "sim" ? true : i.age === "nao" ? false : null,
-    age_confirmed_source: i.age ? "chat" : null,
+    age_confirmed_source: i.age ? (source ?? "chat") : null,
   };
 
   const tools: Record<string, Tool> = {};

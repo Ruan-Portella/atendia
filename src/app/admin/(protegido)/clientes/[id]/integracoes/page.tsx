@@ -7,8 +7,9 @@ import { relativeTime } from "@/lib/utils";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { deleteAction, generateActionSecret, saveAction, testAction } from "../../../acoes";
+import { createPilotApiKey, deleteAction, generateActionSecret, revokePilotApiKey, saveAction, testAction } from "../../../acoes";
 import type { ActionRow } from "@/lib/actions";
+import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from "@/lib/api-keys";
 
 export const metadata = { title: "Integrações (piloto)" };
 // o Testar chama o endpoint (até 8 s) e salvar classifica a ação com IA
@@ -47,6 +48,15 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
     ? await db.from("action_calls").select("id, action_id, call_id, attempt, mode, status, http_status, duration_ms, created_at").in("action_id", actions.map((a) => a.id)).order("created_at", { ascending: false }).limit(20)
     : { data: [] };
   const actionName = new Map(actions.map((a) => [a.id, a.name]));
+  const [{ data: keyRows }, { data: clients }] = await Promise.all([
+    db.from("api_keys").select(`${API_KEY_COLS}, created_at, created_by`).eq("agency_id", id).order("created_at", { ascending: false }),
+    db.from("clients").select("id, name").eq("agency_id", id).order("name"),
+  ]);
+  const keys = (keyRows ?? []) as unknown as Array<ApiKeyRow & { created_at: string; created_by: string | null }>;
+  const botName = new Map((bots ?? []).map((b) => [b.id as string, b.name as string]));
+  const clientName = new Map((clients ?? []).map((c) => [c.id as string, c.name as string]));
+  const scopeText = (k: ApiKeyRow) =>
+    k.scope_type === "all" ? "todos os chatbots (inclusive os futuros)" : k.scope_type === "client" ? `cliente ${clientName.get(k.scope_client_id ?? "") ?? "?"} (inclusive bots futuros)` : k.scope_bot_ids.map((b) => botName.get(b) ?? "?").join(", ");
 
   return (
     <>
@@ -114,6 +124,61 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
           </section>
         );
       })}
+
+      <section className="card flex flex-col gap-4 p-5">
+        <div>
+          <h2 className="text-lg font-bold">Chaves de API</h2>
+          <p className="text-xs text-muted">
+            Para a API pública (/api/v1), com escopo de chatbots e permissões. Na P1 só existe <span className="font-mono">PUT /api/v1/contacts/{"{contact}"}/age</span> (permissão contacts). A chave aparece uma vez; o dono da agência recebe um aviso a cada chave criada.
+          </p>
+        </div>
+        {keys.map((k) => (
+          <div key={k.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-line-2 p-3 text-sm">
+            <div>
+              <strong>{k.name}</strong> <span className="font-mono text-xs text-muted">{k.prefix}…</span>
+              {k.revoked_at && <span className="text-danger"> · revogada {relativeTime(k.revoked_at)}</span>}
+              <span className="block text-xs text-muted">Escopo: {scopeText(k)}</span>
+              <span className="block text-xs text-muted">Permissões: {k.permissions.join(", ")}</span>
+              <span className="block text-xs text-muted">
+                Criada {relativeTime(k.created_at)}{k.created_by ? ` por ${k.created_by}` : ""} · {k.last_used_at ? `último uso ${relativeTime(k.last_used_at)}` : "nunca usada"}
+              </span>
+            </div>
+            {!k.revoked_at && (
+              <ConfirmAction action={revokePilotApiKey.bind(null, id, k.id)} title={`Revogar a chave ${k.name}?`} description="A próxima requisição com ela recebe 401. Não dá para desfazer: para voltar, crie outra chave." confirmLabel="Revogar" className="text-xs font-semibold text-danger hover:underline">
+                Revogar
+              </ConfirmAction>
+            )}
+          </div>
+        ))}
+        <details className="rounded-lg border border-dashed border-line p-3">
+          <summary className="cursor-pointer text-sm font-semibold">+ Nova chave de API</summary>
+          <ResultForm action={createPilotApiKey.bind(null, id)} copy className="mt-3">
+            <div><label className="label" htmlFor="key-name">Nome</label><input id="key-name" name="name" required maxLength={80} className="input" placeholder="DuckDelivery produção" /></div>
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="label">Escopo</legend>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="bots" defaultChecked /> Estes chatbots:</label>
+              <div className="ml-6 flex flex-col gap-1">
+                {(bots ?? []).map((b) => (
+                  <label key={b.id as string} className="flex items-center gap-2 text-xs"><input type="checkbox" name="bot" value={b.id as string} /> {b.name as string} <span className="text-muted">({b.client_name as string})</span></label>
+                ))}
+              </div>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="client" /> Todos os chatbots do cliente:</label>
+              <select name="client_id" className="input ml-6 w-auto text-xs" defaultValue="">
+                <option value="">escolha…</option>
+                {(clients ?? []).map((c) => <option key={c.id as string} value={c.id as string}>{c.name as string}</option>)}
+              </select>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="all" /> Todos os chatbots da agência (inclusive os futuros)</label>
+            </fieldset>
+            <fieldset className="flex flex-col gap-1">
+              <legend className="label">Permissões</legend>
+              {API_PERMISSIONS.map((perm) => (
+                <label key={perm} className="flex items-center gap-2 text-xs"><input type="checkbox" name="permission" value={perm} defaultChecked={perm === "contacts"} /> <span className="font-mono">{perm}</span> <span className="text-muted">· {PERMISSION_LABEL[perm]}</span></label>
+              ))}
+            </fieldset>
+            <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar chave</SubmitButton>
+          </ResultForm>
+        </details>
+      </section>
 
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="text-base font-bold">Últimas chamadas</h2>

@@ -20,6 +20,10 @@ const PLATFORM_ICONS = /^\/(favicon\.ico|icon\.svg|apple-icon\.png)$/;
  */
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const customHost = isCustomHost(request.headers.get("host"));
+  // API pública (/api/v1): só no domínio do BoaVoz, sem sessão (a chave é conferida na rota)
+  if (/^\/api\/v1(\/|$)/.test(request.nextUrl.pathname)) {
+    return customHost ? Response.json({ error: { code: "not_found", message: "A API do BoaVoz responde só em boavoz.com." } }, { status: 404 }) : NextResponse.next();
+  }
   // ícones da plataforma (public/favicon.ico, icon.svg, apple-icon.png) não saem no domínio da agência
   if (PLATFORM_ICONS.test(request.nextUrl.pathname)) return customHost ? new NextResponse(null, { status: 404 }) : NextResponse.next();
 

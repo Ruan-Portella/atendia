@@ -15,6 +15,7 @@ import { FEATURES, isFeature, type Feature } from "@/lib/features";
 import { CATEGORIES, type GateCategory } from "@/lib/gate/rules";
 import { analyzeBot, runDueAnalyses } from "@/lib/bot-analysis";
 import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
+import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiKeyScope } from "@/lib/api-keys";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -518,4 +519,48 @@ export async function testAction(agencyId: string, actionId: string, fd: FormDat
   const lines = [head, ...r.warnings.map((w) => `aviso: ${w}`), ...(r.error ? [`erro: ${r.error}`] : [])];
   if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined }, null, 2).slice(0, 6000));
   return r.status === "ok" || r.status === "not_found" ? ok(lines.join("\n")) : fail(lines.join("\n"));
+}
+
+/**
+ * Chave da API pública para o piloto (P1: escopo por bot). Aparece uma vez só; o banco guarda o
+ * hash. O dono da agência recebe o aviso (uma chave que ele não combinou é sinal de problema).
+ */
+export async function createPilotApiKey(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (criou chave de API)`);
+  const db = createAdminClient();
+  const scopeType = text(fd.get("scope_type"));
+  const permissions = fd.getAll("permission").map(String);
+  let scope: ApiKeyScope;
+  if (scopeType === "all") scope = { type: "all" };
+  else if (scopeType === "client") {
+    const clientId = text(fd.get("client_id"));
+    const { data: client } = await db.from("clients").select("id").eq("id", clientId).eq("agency_id", agencyId).maybeSingle();
+    if (!client) return fail("Escolha um cliente desta agência.");
+    scope = { type: "client", clientId };
+  } else {
+    const wanted = fd.getAll("bot").map(String);
+    const { data: bots } = wanted.length ? await db.from("bots").select("id").in("id", wanted).eq("agency_id", agencyId).eq("is_demo", false) : { data: [] };
+    scope = { type: "bots", botIds: (bots ?? []).map((b) => b.id as string) };
+  }
+  const name = text(fd.get("name"));
+  const problem = apiKeyProblem({ name, scope, permissions });
+  if (problem) return fail(problem);
+  const created = await createApiKey(db, { agencyId, name, scope, permissions: permissions.filter(isApiPermission), createdBy: s.email });
+  await auditAdmin(s.email, "api.chave.criar", { agencyId, targetType: "api_key", targetId: created.id, after: { name, prefix: created.prefix, escopo: scope, permissoes: permissions } });
+  await notifyAgencyOwner(db, agencyId, "Chave de API criada", [
+    `A equipe BoaVoz criou a chave de API "${name}" (${created.prefix}…) na sua conta, para o piloto de Integrações.`,
+    `Permissões: ${permissions.join(", ")}.`,
+    "Se não foi combinado com você, fale com o suporte para revogar.",
+  ]).catch(() => false);
+  revalidatePath("/admin", "layout");
+  return ok(`${created.key}\n\nCopie agora: ela não aparece de novo. Use no cabeçalho Authorization: Bearer <chave>.`);
+}
+
+export async function revokePilotApiKey(agencyId: string, keyId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (revogou a chave ${keyId})`);
+  const key = await revokeApiKey(createAdminClient(), agencyId, keyId, s.email);
+  if (!key) return fail("Chave não encontrada ou já revogada.");
+  await auditAdmin(s.email, "api.chave.revogar", { agencyId, targetType: "api_key", targetId: keyId, after: { name: key.name, prefix: key.prefix } });
+  revalidatePath("/admin", "layout");
+  return ok(`Chave ${key.prefix}… revogada: a próxima requisição com ela já recebe 401.`);
 }

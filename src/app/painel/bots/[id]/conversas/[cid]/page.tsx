@@ -101,7 +101,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
             <ConfirmAction
               action={resetConversationAge.bind(null, cid)}
               title="Zerar a confirmação de 18+?"
-              description={`O contato ${age.status === "sim" ? "confirmou ter 18 anos ou mais" : "disse que não tem 18 anos"} (${relativeTime(age.decidedAt)}). Zerando, na próxima vez que pedir bebida ou remédio o assistente pergunta de novo.`}
+              description={`${age.source === "empresa" ? `A empresa informou pela API que o contato ${age.status === "sim" ? "tem 18 anos ou mais" : "não tem 18 anos"}${age.origin ? ` (${age.origin})` : ""}` : `O contato ${age.status === "sim" ? "confirmou ter 18 anos ou mais" : "disse que não tem 18 anos"}`} (${relativeTime(age.decidedAt)}). Zerando, na próxima vez que pedir bebida ou remédio o assistente pergunta de novo.`}
               confirmLabel="Zerar 18+"
               danger={false}
               className="btn-ghost"
