@@ -68,9 +68,10 @@ describe("ações no histórico", () => {
   it("só a última chamada de cada ação leva o data", () => {
     const seen = new Set<string>();
     // da mais nova para a mais antiga, como o conversationHistory lê
-    const newest = actionsNote([{ name: "acao_extrato", input: { mes: "09" }, output: { ok: true, data: { total: 120 } } }], seen);
-    const older = actionsNote([{ name: "acao_extrato", input: { mes: "08" }, output: { ok: true, data: { total: 90 } } }], seen);
-    expect(newest).toBe('(ações desta resposta: acao_extrato({"mes":"09"}) → ok: {"total":120})');
+    const newest = actionsNote([{ name: "acao_extrato", input: { mes: "09" }, output: { ok: true, data: { total: 120 } } }], seen, "2026-10-03T14:31:12Z");
+    const older = actionsNote([{ name: "acao_extrato", input: { mes: "08" }, output: { ok: true, data: { total: 90 } } }], seen, "2026-10-03T14:20:00Z");
+    // a hora (São Paulo) e o aviso de que o dado pode ter mudado: a IA consulta de novo
+    expect(newest).toBe('(ações desta resposta: acao_extrato({"mes":"09"}) → ok às 11:31: {"total":120} Esses dados são da hora da consulta e podem ter mudado: se a pessoa perguntar de novo, chame a ação de novo.)');
     expect(older).toBe('(ações desta resposta: acao_extrato({"mes":"08"}) → ok)');
   });
 

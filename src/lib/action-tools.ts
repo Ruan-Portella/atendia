@@ -15,6 +15,9 @@ import type { GateCategory } from "./gate/rules";
  */
 
 const LEVELS: ActionLevel[] = ["anonimo", "canal", "usuario"];
+
+/** Regra do BoaVoz que vai depois da descrição do dev em toda ação. */
+export const ACTION_RULE = "Chame a cada pergunta que precise desses dados, mesmo que já tenha consultado antes nesta conversa: o resultado pode ter mudado. Se faltar um dado para consultar, peça à pessoa.";
 export const reaches = (contact: ActionLevel, min: ActionLevel) => LEVELS.indexOf(contact) >= LEVELS.indexOf(min);
 
 /** Nível do contato na P1: canal quando a Meta garante quem é (telefone no WhatsApp, Instagram); senão anônimo. */
@@ -70,7 +73,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
   const tools: Record<string, Tool> = {};
   for (const a of actions) {
     tools[`acao_${a.name}`] = tool({
-      description: a.description,
+      description: `${a.description}\n\n${ACTION_RULE}`,
       inputSchema: jsonSchema<Record<string, unknown>>(a.params_schema as Parameters<typeof jsonSchema>[0]),
       execute: async (params: Record<string, unknown>) => {
         const limited = await firstExceeded(db, [

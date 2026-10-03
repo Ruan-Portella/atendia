@@ -92,10 +92,10 @@ export function withoutToolParts() {
  */
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000): Promise<UIMessage[]> {
   // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora
-  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit }, ["id", "role", "content", "tool_results"] as const);
+  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit }, ["id", "role", "content", "tool_results", "created_at"] as const);
   // da mais nova para a mais antiga: a primeira vez que uma ação aparece é a última chamada dela
   const seen = new Set<string>();
-  const notes = rows.map((r) => actionsNote(r.tool_results as ToolResultRow[] | null, seen));
+  const notes = rows.map((r) => actionsNote(r.tool_results as ToolResultRow[] | null, seen, r.created_at as string));
   return rows
     .map((r, i) => {
       const text = String(r.content).slice(0, maxChars);
@@ -116,11 +116,14 @@ export interface ToolResultRow {
 /**
  * "(ações desta resposta: registrar_lead ok)" para o histórico do modelo; null sem ações. Ações do
  * dev (acao_<nome>): a última chamada de cada uma leva o data inteiro (a IA lembra para "e o mês
- * passado?"); as anteriores viram uma linha "ação(parâmetros) → ok". `seen` acumula da mais nova
- * para a mais antiga.
+ * passado?"), com a hora da consulta e o aviso de que pode ter mudado (sem isso a IA repete o dado
+ * velho em vez de consultar de novo); as anteriores viram uma linha "ação(parâmetros) → ok".
+ * `seen` acumula da mais nova para a mais antiga.
  */
-export function actionsNote(results: ToolResultRow[] | null | undefined, seen = new Set<string>()): string | null {
+export function actionsNote(results: ToolResultRow[] | null | undefined, seen = new Set<string>(), at?: string): string | null {
   if (!results?.length) return null;
+  const when = at ? ` às ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }).format(new Date(at))}` : "";
+  let withData = false;
   const parts = results.map((r) => {
     const out = r.output as { ok?: boolean; data?: unknown; motivo?: string } | null;
     const status = out?.ok === false ? `falhou${out.motivo ? ` (${out.motivo})` : ""}` : "ok";
@@ -128,9 +131,11 @@ export function actionsNote(results: ToolResultRow[] | null | undefined, seen = 
     const call = `${r.name}(${JSON.stringify(r.input ?? {}).slice(0, 300)}) → ${status}`;
     if (seen.has(r.name) || out?.ok === false) return call;
     seen.add(r.name);
-    return `${call}: ${JSON.stringify(out?.data ?? null).slice(0, 4000)}`;
+    withData = true;
+    return `${call}${when}: ${JSON.stringify(out?.data ?? null).slice(0, 4000)}`;
   });
-  return `(ações desta resposta: ${parts.join(", ")})`;
+  const stale = withData ? " Esses dados são da hora da consulta e podem ter mudado: se a pessoa perguntar de novo, chame a ação de novo." : "";
+  return `(ações desta resposta: ${parts.join(", ")}${stale})`;
 }
 
 /** Chave de cache da OpenAI por canal (o começo do prompt é igual em todos os bots do mesmo canal). */
@@ -344,7 +349,7 @@ export function chatTools(exec: {
       execute: exec.chamar_atendente,
     }),
     registrar_pergunta_sem_resposta: tool({
-      description: "Registra uma pergunta que não pôde ser respondida com o conteúdo disponível, para a empresa completar depois.",
+      description: "Registra uma pergunta que não pôde ser respondida com o conteúdo disponível, para a empresa completar depois. Não chame quando você só está pedindo à pessoa um dado para consultar (ex.: o número do pedido).",
       inputSchema: z.object({ pergunta: z.string().min(3) }),
       execute: exec.registrar_pergunta_sem_resposta,
     }),
