@@ -10,6 +10,7 @@ import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channe
 import { processGroup, sweepInbound, type Group, type GroupHandler, type InboundEvent } from "./inbound-queue";
 import { revoke, suppress, suppressionScope } from "./suppression";
 import { recordMetaEnforcement, type MetaAccountDetail } from "./meta-enforcement";
+import { disconnectionDetail } from "./whatsapp-diagnostics";
 
 /* ------------------------------------------------------------------ o que vai na fila */
 
@@ -51,8 +52,11 @@ const whatsappGroup: GroupHandler = async (db, events) => {
       // ordem, infração ou restrição da Meta: vira medida (a ordem bloqueia o número; o resto fica registrado)
       for (const wabaId of wabaIds) await recordMetaEnforcement(db, { event: p.event ?? "", wabaId, detail: p.detail ?? {} });
       // a conta do cliente deixou de ser nossa: desliga os números dela e avisa a agência
-      const reason = ACCESS_LOST_EVENTS[p.event ?? ""];
-      if (!reason) continue;
+      const lost = ACCESS_LOST_EVENTS[p.event ?? ""];
+      if (!lost) continue;
+      // PARTNER_REMOVED traz o motivo e quem iniciou: aparece no Diagnóstico do número
+      const extra = disconnectionDetail(p.detail?.disconnection_info);
+      const reason = extra ? `${lost} (${extra})` : lost;
       for (const wabaId of wabaIds) await markDisconnected(db, { column: "waba_id", value: wabaId }, reason);
     } else if (p?.type === "status") {
       if (p.status.status === "failed") {

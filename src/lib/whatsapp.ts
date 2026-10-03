@@ -188,6 +188,11 @@ export async function hasPaymentMethod(ch: WaChannel & { waba_id: string }): Pro
   return Boolean(res.primary_funding_id);
 }
 
+/** O que a Meta diz do número: nota de qualidade, nome de exibição e situação (Diagnóstico do número). */
+export async function phoneDiagnostics(ch: WaChannel): Promise<import("./whatsapp-diagnostics").PhoneInfo> {
+  return graph(`${ch.phone_number_id}?fields=quality_rating,name_status,status,verified_name,code_verification_status`, channelToken(ch));
+}
+
 export function newPin(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }

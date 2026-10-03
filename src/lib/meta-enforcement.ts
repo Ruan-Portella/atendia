@@ -16,7 +16,9 @@ import { audit } from "./audit";
 export interface MetaAccountDetail {
   ban_info?: { waba_ban_state?: string; waba_ban_date?: string };
   violation_info?: { violation_type?: string };
-  restriction_info?: Array<{ restriction_type?: string; expiration?: string }>;
+  restriction_info?: Array<{ restriction_type?: string; expiration?: string | number }>;
+  /** PARTNER_REMOVED: motivo e quem iniciou a remoção. */
+  disconnection_info?: { reason?: string; initiated_by?: string };
 }
 
 export type MetaMeasure = {

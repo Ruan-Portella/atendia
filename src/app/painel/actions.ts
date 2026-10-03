@@ -18,7 +18,7 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
-import { WhatsAppError, waIdVariants, getPhoneNumber, subscribeApp, unsubscribeApp, whatsappConfigured } from "@/lib/whatsapp";
+import { WhatsAppError, waIdVariants, getPhoneNumber, hasPaymentMethod, subscribeApp, unsubscribeApp, whatsappConfigured } from "@/lib/whatsapp";
 import { channelBlock } from "@/lib/features";
 import { unseal } from "@/lib/secret-box";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
@@ -677,6 +677,26 @@ export async function createWhatsAppConnectLink(botId: string, channel: "whatsap
   } catch {
     return { ok: false, message: "Não foi possível criar o link. Tente de novo." };
   }
+}
+
+/** "Já cadastrei o cartão": confere na Meta agora; com cartão, o alerta de pagamento sai. */
+export async function recheckWhatsAppPayment(botId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  const admin = createAdminClient();
+  const { data: ch } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
+  if (!ch?.waba_id) return fail("Este número não tem conta do WhatsApp Business ligada.");
+  let funded: boolean;
+  try {
+    funded = await hasPaymentMethod({ ...ch, waba_id: ch.waba_id });
+  } catch {
+    return fail("Não consegui consultar a Meta agora. Tente de novo em alguns minutos.");
+  }
+  if (!funded) return fail("A Meta ainda não mostra cartão nesta conta. Confira no Gerenciador do WhatsApp, em Configurações de pagamento (pode levar alguns minutos para aparecer).");
+  await admin.from("whatsapp_channels").update({ payment_issue_at: null }).eq("bot_id", botId);
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Cartão encontrado na Meta. O número volta a responder normalmente.");
 }
 
 export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {

@@ -10,7 +10,8 @@ import { TRIAL_WHATSAPP_LOCKED, channelAccessOf, trialContentProblem } from "@/l
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { ConnectLinkButton } from "@/components/connect-link-button";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
-import { WhatsAppBilling } from "@/components/whatsapp-billing";
+import { WhatsAppDiagnostics } from "@/components/whatsapp-diagnostics";
+import { disconnectNextStep } from "@/lib/whatsapp-diagnostics";
 import { WhatsAppUsage } from "@/components/whatsapp-usage";
 import { TemplateSender } from "@/components/template-sender";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -355,6 +356,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   <p className="text-sm text-amber-ink">
                     Desconectado {relativeTime(whatsapp.disconnected_at)}{whatsapp.disconnect_reason ? `: ${whatsapp.disconnect_reason}` : ""}. {bot.name} parou de responder por este número. As conversas antigas continuam no painel.
                   </p>
+                  <p className="text-sm text-amber-ink"><strong>Próximo passo:</strong> {disconnectNextStep(whatsapp.disconnect_reason, Boolean(whatsapp.coexistence))}</p>
                   {signup && (
                     <div className="flex flex-col gap-3">
                       <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
@@ -383,7 +385,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                       {whatsapp.verified_name && <span className="text-sm text-muted">· {whatsapp.verified_name}</span>}
                     </div>
                     <p className="text-sm text-ink-2">Ligado {relativeTime(whatsapp.created_at)}. {bot.status === "live" ? "Mande uma mensagem para este número para testar." : "O chatbot não está publicado: ele só responde no WhatsApp depois de clicar em “Publicar” no topo."}</p>
-                    <WhatsAppBilling botId={id} />
+                    <WhatsAppDiagnostics botId={id} />
                     <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp" connected />
                     <ConfirmAction
                       action={disconnectWhatsApp.bind(null, id)}
