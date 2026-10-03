@@ -92,12 +92,13 @@ export function checkExit(input: ExitInput): ExitResult {
 /**
  * Reply de uma ação (Integrações): o texto exato sai inteiro ou não sai, então a conferência é mais
  * dura que a da IA (sem cortar frase, sem olhar negação ou oferta): qualquer item proibido; item
- * 18+ sem o "Sim"; dado de pagamento numa conversa com esses itens.
+ * 18+ sem o "Sim" (em transação, com qualquer idade); dado de pagamento numa conversa com esses itens.
  */
-export function checkActionReply(input: Omit<ExitInput, "text" | "destination"> & { text: string }): { ok: boolean; prohibited: GateCategory[]; regulated: GateCategory[]; payment: boolean } {
+export function checkActionReply(input: Omit<ExitInput, "text" | "destination"> & { text: string; transactional?: boolean }): { ok: boolean; prohibited: GateCategory[]; regulated: GateCategory[]; payment: boolean } {
   const hits = dictionaryHits(input.text, { channel: input.channel, contactPhone: input.contactPhone, exempt: input.exempt });
   const prohibited = [...new Set(hits.filter((h) => h.level === "proibido").map((h) => h.category))];
-  const regulated = input.age === "sim" ? [] : [...new Set(hits.filter((h) => h.level === "regulamentado").map((h) => h.category))];
+  // em transação (pedido, carrinho), o 18+ não libera
+  const regulated = input.age === "sim" && !input.transactional ? [] : [...new Set(hits.filter((h) => h.level === "regulamentado").map((h) => h.category))];
   const payment = input.regulatedConversation && sentences(input.text).some(isPayment);
   return { ok: !prohibited.length && !regulated.length && !payment, prohibited, regulated, payment };
 }

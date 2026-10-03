@@ -39,6 +39,8 @@ export interface ActionRow {
   headers_enc: string | null;
   active: boolean;
   creates_order: boolean | null;
+  /** Transação (pedido, carrinho, reserva, cobrança): bebida e remédio nunca listados nos canais da Meta. */
+  transactional: boolean;
 }
 
 export interface ParamsSchema {
@@ -345,20 +347,21 @@ async function logCall(db: SupabaseClient, c: { action: ActionRow; callId: strin
  * BoaVoz no cadastro e na edição (registro de dados do usuário não conta). Erro da IA: "sim"
  * (lado seguro: fica desativada até a revisão).
  */
-export async function classifyCreatesOrder(db: SupabaseClient, agencyId: string, a: Pick<ActionInput, "name" | "description" | "params_schema">): Promise<boolean> {
+export async function classifyAction(db: SupabaseClient, agencyId: string, a: Pick<ActionInput, "name" | "description" | "params_schema">): Promise<{ createsOrder: boolean; transactional: boolean }> {
   const modelId = classifierModelId();
   try {
     const r = await generateText({
       model: chatModel(modelId),
       system: "Você classifica ações de integração de um chatbot de atendimento. Responda só com JSON válido.",
-      prompt: `Ação: ${a.name}\nDescrição: ${a.description}\nParâmetros (JSON Schema): ${JSON.stringify(a.params_schema).slice(0, 2000)}\n\nChamar esta ação CRIA um pedido, uma reserva ou uma cobrança do negócio para o contato (ex.: criar pedido, agendar, reservar mesa, gerar Pix ou boleto, cobrar)? Consultar informação (cardápio, status de pedido, horários, saldo) não cria. Registrar dados do próprio usuário (cadastro, endereço) não conta.\nResponda só: {"cria_pedido": true} ou {"cria_pedido": false}`,
+      prompt: `Ação: ${a.name}\nDescrição: ${a.description}\nParâmetros (JSON Schema): ${JSON.stringify(a.params_schema).slice(0, 2000)}\n\n1. cria_pedido: chamar esta ação CRIA um pedido, uma reserva ou uma cobrança do negócio para o contato (ex.: criar pedido, agendar, reservar mesa, gerar Pix ou boleto, cobrar)? Consultar informação (cardápio, status de pedido, horários, saldo) não cria. Registrar dados do próprio usuário (cadastro, endereço) não conta.\n2. transacao: a resposta traz uma transação da pessoa (pedido, carrinho, compra, reserva, cobrança, fatura, itens comprados, status de entrega)? Catálogo, cardápio, produtos, preços, estoque, horários e informações gerais não são transação.\nResponda só: {"cria_pedido": true|false, "transacao": true|false}`,
       ...modelCallOptions(modelId, { temperature: 0 }),
       maxRetries: 2,
     });
     void recordAiUsage(db, { agencyId, kind: "classificacao", ...usageFrom(r.response?.modelId ?? modelId, r.totalUsage) });
-    const j = JSON.parse(r.text.replace(/^\s*```(?:json)?|```\s*$/g, "").trim()) as { cria_pedido?: unknown };
-    return j.cria_pedido !== false;
+    const j = JSON.parse(r.text.replace(/^\s*```(?:json)?|```\s*$/g, "").trim()) as { cria_pedido?: unknown; transacao?: unknown };
+    // na dúvida, o mais restrito
+    return { createsOrder: j.cria_pedido !== false, transactional: j.transacao !== false };
   } catch {
-    return true;
+    return { createsOrder: true, transactional: true };
   }
 }

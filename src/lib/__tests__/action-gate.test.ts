@@ -143,3 +143,37 @@ describe("reply esperando o 18+", () => {
     expect(replyFallback({ prohibited: [], regulated: [] }, { destino: "o site" })).toBe(`${GATE_TEXTS.paymentNotHere} ${GATE_TEXTS.finishOrder("o site")}`);
   });
 });
+
+describe("transação × catálogo", () => {
+  const pedido = { pedido: { id: "ped_123", status: "saiu para entrega", itens: [{ id: "p1", nome: "Pizza calabresa" }, { id: "b7", nome: "Heineken long neck" }, { id: "c9", nome: "Maço de cigarro" }] } };
+
+  it("transação: a bebida sai mesmo com o Sim; o status e a pizza ficam", () => {
+    const r = gateActionData(pedido, { channel: "instagram", age: "sim", transactional: true });
+    expect(r.data).toEqual({ pedido: { id: "ped_123", status: "saiu para entrega", itens: [{ id: "p1", nome: "Pizza calabresa" }] } });
+    expect(r.hidden.sort()).toEqual(["bebida", "tabaco"]);
+  });
+
+  it("catálogo: com o Sim, a bebida aparece", () => {
+    const r = gateActionData(pedido, { channel: "instagram", age: "sim", transactional: false });
+    expect((r.data as typeof pedido).pedido.itens.map((i) => i.id)).toEqual(["p1", "b7"]);
+  });
+
+  it("reply: em transação o Sim não libera a bebida", () => {
+    const base = { channel: "whatsapp" as const, contactPhone: "5521999999999", regulatedConversation: false };
+    expect(checkActionReply({ ...base, text: "Seu pedido: 1 pizza e 2 Heineken.", age: "sim", transactional: true })).toMatchObject({ ok: false, regulated: ["bebida"] });
+    expect(checkActionReply({ ...base, text: "Seu pedido: 1 pizza e 2 Heineken.", age: "sim", transactional: false }).ok).toBe(true);
+  });
+
+  it("o que fazer com o reply barrado", async () => {
+    const { replyOutcome } = await import("../action-tools");
+    const rc = (o: Partial<{ ok: boolean; prohibited: import("../gate/rules").GateCategory[]; regulated: import("../gate/rules").GateCategory[]; payment: boolean }>) => ({ ok: false, prohibited: [], regulated: [], payment: false, ...o });
+    expect(replyOutcome(rc({ ok: true }), { age: null, transactional: true })).toBe("enviar");
+    // só o 18+ de um catálogo espera a pergunta de idade
+    expect(replyOutcome(rc({ regulated: ["bebida"] }), { age: null, transactional: false })).toBe("esperar_idade");
+    // transação, proibido, pagamento ou depois do Não: a IA responde com o data filtrado
+    expect(replyOutcome(rc({ regulated: ["bebida"] }), { age: null, transactional: true })).toBe("descartar");
+    expect(replyOutcome(rc({ prohibited: ["tabaco"] }), { age: "sim", transactional: false })).toBe("descartar");
+    expect(replyOutcome(rc({ payment: true }), { age: "sim", transactional: false })).toBe("descartar");
+    expect(replyOutcome(rc({ regulated: ["bebida"] }), { age: "nao", transactional: false })).toBe("descartar");
+  });
+});

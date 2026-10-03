@@ -49,9 +49,9 @@ function ownCategories(o: Record<string, unknown>, opts: { channel: Exclude<Gate
 /**
  * Filtra o data de uma ação para esta pessoa. Função pura. Widget: sem trava (devolve igual).
  * O que é tirado: objeto (em lista) com item proibido; com regulamentado (ou regulated: true),
- * se a idade não foi confirmada.
+ * se a idade não foi confirmada ou se a ação é de transação.
  */
-export function gateActionData(data: unknown, o: { channel: GateChannel; contactPhone?: string | null; age: AgeStatus; exempt?: readonly GateCategory[] }): GatedData {
+export function gateActionData(data: unknown, o: { channel: GateChannel; contactPhone?: string | null; age: AgeStatus; exempt?: readonly GateCategory[]; transactional?: boolean }): GatedData {
   if (o.channel === "widget") return { data, hidden: [], ids: {} };
   const channel = o.channel;
   const hidden = new Set<GateCategory>();
@@ -84,7 +84,8 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
     const prohibited = hits.find((h) => h.level === "proibido");
     if (prohibited) return { value: null, blocked: prohibited.category };
     const regulated = hits.find((h) => h.level === "regulamentado")?.category ?? (obj.regulated === true ? ("bebida" as GateCategory) : undefined);
-    if (regulated && o.age !== "sim") return { value: null, blocked: regulated };
+    // transação (pedido, carrinho): bebida e remédio nunca listados, com qualquer idade
+    if (regulated && (o.age !== "sim" || o.transactional)) return { value: null, blocked: regulated };
     const out: Record<string, unknown> = {};
     let removed: GateCategory | undefined;
     for (const [k, child] of Object.entries(obj)) {

@@ -99,6 +99,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
                   <strong className="font-mono">{a.name}</strong>{" "}
                   <span className={a.active ? "text-brand" : "text-muted"}>{a.active ? "ativa" : "desativada"}</span>
                   {a.creates_order && <span className="text-danger"> · parece criar pedido (fica desativada até a C pública)</span>}
+                  <span className="text-muted"> · {a.transactional ? "transação" : "catálogo"}</span>
                   <span className="block truncate text-xs text-muted">{a.url}</span>
                 </summary>
                 <div className="mt-3 flex flex-col gap-4">

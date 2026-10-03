@@ -12,7 +12,8 @@ import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
 import { botGateExemptions } from "./exceptions";
-import { GATE_TEXTS, RULES_VERSION, type GateCategory } from "./rules";
+import { GATE_TEXTS } from "./rules";
+import { logGate } from "./log";
 
 /*
  * Portão nos canais da Meta (WhatsApp e Instagram), entre a fila e a IA: resposta da pergunta de
@@ -71,10 +72,7 @@ export function withLastUserText(history: UIMessage[], text: string): UIMessage[
 }
 
 /** Registro do portão (conformidade): só o que acusou, nunca o texto da conversa. */
-export async function logGate(db: SupabaseClient, row: { botId: string; conversationId: string | null; stage: "entrada" | "saida"; decision: string; categories: GateCategory[] }) {
-  const { error } = await db.from("gate_detections").insert({ bot_id: row.botId, conversation_id: row.conversationId, stage: row.stage, decision: row.decision, categories: row.categories, rules_version: RULES_VERSION });
-  if (error) console.error("portão: registro não gravado", error.message);
-}
+export { logGate };
 
 export type GateButtons = "idade" | "adulto";
 

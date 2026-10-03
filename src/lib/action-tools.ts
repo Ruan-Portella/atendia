@@ -5,7 +5,10 @@ import { gateActionData, saveIdMap } from "./action-gate";
 import { firstExceeded } from "./rate-limit";
 import { hiddenNote } from "./gate/context";
 import { ageSource, type AgeStatus } from "./gate/age";
-import type { GateCategory } from "./gate/rules";
+import { CATEGORIES, type GateCategory } from "./gate/rules";
+import { checkActionReply } from "./gate/exit";
+import { REGULATED_WINDOW_MS } from "./gate/payment";
+import { logGate } from "./gate/log";
 
 /*
  * As ações do bot como ferramentas da IA (spec "Peça 1"): acao_<nome>, só as de consulta ativas
@@ -18,6 +21,24 @@ const LEVELS: ActionLevel[] = ["anonimo", "canal", "usuario"];
 
 /** Regra do BoaVoz que vai depois da descrição do dev em toda ação. */
 export const ACTION_RULE = "Chame a cada pergunta que precise desses dados, mesmo que já tenha consultado antes nesta conversa: o resultado pode ter mudado. Se a pessoa não deu um parâmetro obrigatório, não chame: peça a ela (nunca mande vazio nem inventado).";
+
+/** Itens tirados de uma transação: a IA informa o resto (status, previsão) sem citá-los. */
+export const TRANSACTION_HIDDEN_NOTE = "Alguns itens desta transação não podem ser citados por este canal: informe o resto (status, previsão, outros itens) sem citá-los e sem dizer que foram removidos. Se a pessoa perguntar por eles, diga que os detalhes desses itens não podem ser mostrados por aqui. Não peça confirmação de idade por causa deles.";
+
+/** Reply barrado: a IA responde com o data (já filtrado), e a pessoa não perde o resto. */
+export const REPLY_DROPPED_NOTE = "A resposta pronta da empresa não pode ser enviada por este canal. Responda você com os dados acima, sem citar itens que não estão neles; se os dados não bastarem, diga que esses detalhes não podem ser mostrados por aqui e ofereça o resto do atendimento.";
+
+/**
+ * O que fazer com o reply nos canais da Meta. Função pura.
+ * - enviar: passou no portão;
+ * - esperar_idade: só item 18+ de um catálogo, sem resposta de idade (o canal pergunta e guarda o reply);
+ * - descartar: item proibido, pagamento, ou 18+ numa transação ou depois do "Não" (a IA responde com o data).
+ */
+export function replyOutcome(rc: { ok: boolean; prohibited: GateCategory[]; regulated: GateCategory[]; payment: boolean }, o: { age: AgeStatus; transactional: boolean }): "enviar" | "esperar_idade" | "descartar" {
+  if (rc.ok) return "enviar";
+  if (!rc.prohibited.length && !rc.payment && rc.regulated.length && o.age === null && !o.transactional) return "esperar_idade";
+  return "descartar";
+}
 
 /** Linha do prompt para bots com ações: consultar antes de dizer que não tem a informação. */
 export const ACTIONS_PROMPT_NOTE = "As ferramentas acao_ consultam os sistemas da empresa (pedidos, cadastro, agenda, estoque). Antes de dizer que não tem uma informação ou que vai confirmar com a equipe, veja se uma delas consulta isso e chame, mesmo que antes nesta conversa você tenha respondido que não tinha.";
@@ -60,7 +81,8 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
   const level = contactLevel(i.channel, i.waPhone);
   const actions = (await loadBotActions(db, i.bot.id)).filter((a) => a.context_required === "none" && reaches(level, a.min_level));
   if (!actions.length) return {};
-  const { data: conv } = await db.from("conversations").select("contact_id").eq("id", i.conversationId).maybeSingle();
+  const { data: conv } = await db.from("conversations").select("contact_id, regulated_at").eq("id", i.conversationId).maybeSingle();
+  const regulatedAt = (conv?.regulated_at as string | null | undefined) ?? null;
   const gateChannel = i.channel === "whatsapp" || i.channel === "instagram" ? i.channel : "widget";
   const source = i.age !== null && gateChannel !== "widget" && i.contactKey ? await ageSource(db, { botId: i.bot.id, channel: gateChannel, contact: i.contactKey }) : null;
   const contact: CallContact = {
@@ -96,15 +118,26 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         if (r.status !== "ok") return { ok: false, motivo: "falha", instrucao: "Diga que não conseguiu consultar agora e siga a conversa (sem inventar o resultado)." };
 
         // portão do canal no data (como na base): o que sai entra no mapa de ids da conversa
-        const gated = gateActionData(r.data, { channel: gateChannel, contactPhone: i.waPhone, age: i.age, exempt: i.exempt });
+        const gated = gateActionData(r.data, { channel: gateChannel, contactPhone: i.waPhone, age: i.age, exempt: i.exempt, transactional: a.transactional });
         if (Object.keys(gated.ids).length) await saveIdMap(db, i.conversationId, gated.ids);
-        if (r.reply) i.onReply(r.reply);
+        // reply nos canais da Meta: conferido aqui, para a IA ainda poder responder com o data se ele cair
+        let reply = r.reply;
+        if (reply && gateChannel !== "widget") {
+          const regulatedConversation = gated.hidden.some((c) => CATEGORIES[c].level === "regulamentado") || (regulatedAt !== null && Date.now() - Date.parse(regulatedAt) < REGULATED_WINDOW_MS);
+          const rc = checkActionReply({ text: reply, channel: gateChannel, contactPhone: i.waPhone, age: i.age, regulatedConversation, exempt: i.exempt, transactional: a.transactional });
+          if (replyOutcome(rc, { age: i.age, transactional: a.transactional }) === "descartar") {
+            await logGate(db, { botId: i.bot.id, conversationId: i.conversationId, stage: "saida", decision: "reply_descartado", categories: [...rc.prohibited, ...rc.regulated] });
+            reply = null;
+          }
+        }
+        if (reply) i.onReply(reply);
+        const hiddenAviso = !gated.hidden.length ? null : a.transactional && gateChannel !== "widget" ? TRANSACTION_HIDDEN_NOTE : (hiddenNote(gated.hidden, i.age) ?? "Alguns itens ficaram de fora desta resposta: não cite nem diga que a empresa não tem.");
         return {
           ok: true,
           data: gated.data,
-          ...(gated.hidden.length ? { aviso: hiddenNote(gated.hidden, i.age) ?? "Alguns itens ficaram de fora desta resposta: não cite nem diga que a empresa não tem." } : {}),
+          ...(hiddenAviso ? { aviso: hiddenAviso } : {}),
           // com reply, a resposta exata já vai para o contato: não escreva mais nada
-          ...(r.reply ? { resposta_exata: r.reply, instrucao: "A resposta exata desta ação já vai para a pessoa. Não escreva nada." } : {}),
+          ...(reply ? { resposta_exata: reply, instrucao: "A resposta exata desta ação já vai para a pessoa. Não escreva nada." } : r.reply ? { instrucao: REPLY_DROPPED_NOTE } : {}),
         };
       },
     });
