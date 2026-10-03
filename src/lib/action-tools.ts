@@ -22,8 +22,17 @@ const LEVELS: ActionLevel[] = ["anonimo", "canal", "usuario"];
 /** Regra do BoaVoz que vai depois da descrição do dev em toda ação. */
 export const ACTION_RULE = "Chame a cada pergunta que precise desses dados, mesmo que já tenha consultado antes nesta conversa: o resultado pode ter mudado. Se a pessoa não deu um parâmetro obrigatório, não chame: peça a ela (nunca mande vazio nem inventado).";
 
-/** Itens tirados de uma transação: a IA informa o resto (status, previsão) sem citá-los. */
-export const TRANSACTION_HIDDEN_NOTE = "Alguns itens desta transação não podem ser citados por este canal: informe o resto (status, previsão, outros itens) sem citá-los e sem dizer que foram removidos. Se a pessoa perguntar por eles, diga que os detalhes desses itens não podem ser mostrados por aqui. Não peça confirmação de idade por causa deles.";
+/**
+ * Item proibido tirado dos dados (cigarro, arma…), com qualquer idade: a IA informa o resto sem
+ * citá-lo e mostra onde ver a versão completa: o link do pedido nos dados, senão o canal que a
+ * empresa declarou para esses itens (site, app, telefone). Função pura.
+ */
+export function prohibitedNote(links: string[], destination: { destino: string } | null): string {
+  const base = "Alguns itens não podem ser citados por este canal: informe o resto sem citá-los e sem dizer que foram removidos.";
+  if (links.length) return `${base} Diga que a versão completa está em ${links[0]}.`;
+  if (destination) return `${base} Se a pessoa perguntar por eles, diga que os detalhes desses itens ficam fora do chat: ${destination.destino}.`;
+  return `${base} Se a pessoa perguntar por eles, diga que os detalhes desses itens não podem ser mostrados por aqui.`;
+}
 
 /** Reply barrado: a IA responde com o data (já filtrado), e a pessoa não perde o resto. */
 export const REPLY_DROPPED_NOTE = "A resposta pronta da empresa não pode ser enviada por este canal. Responda você com os dados acima, sem citar itens que não estão neles; se os dados não bastarem, diga que esses detalhes não podem ser mostrados por aqui e ofereça o resto do atendimento.";
@@ -31,12 +40,12 @@ export const REPLY_DROPPED_NOTE = "A resposta pronta da empresa não pode ser en
 /**
  * O que fazer com o reply nos canais da Meta. Função pura.
  * - enviar: passou no portão;
- * - esperar_idade: só item 18+ de um catálogo, sem resposta de idade (o canal pergunta e guarda o reply);
- * - descartar: item proibido, pagamento, ou 18+ numa transação ou depois do "Não" (a IA responde com o data).
+ * - esperar_idade: só item 18+, sem resposta de idade (o canal pergunta e guarda o reply);
+ * - descartar: item proibido, pagamento, ou 18+ depois do "Não" (a IA responde com o data filtrado).
  */
-export function replyOutcome(rc: { ok: boolean; prohibited: GateCategory[]; regulated: GateCategory[]; payment: boolean }, o: { age: AgeStatus; transactional: boolean }): "enviar" | "esperar_idade" | "descartar" {
+export function replyOutcome(rc: { ok: boolean; prohibited: GateCategory[]; regulated: GateCategory[]; payment: boolean }, o: { age: AgeStatus }): "enviar" | "esperar_idade" | "descartar" {
   if (rc.ok) return "enviar";
-  if (!rc.prohibited.length && !rc.payment && rc.regulated.length && o.age === null && !o.transactional) return "esperar_idade";
+  if (!rc.prohibited.length && !rc.payment && rc.regulated.length && o.age === null) return "esperar_idade";
   return "descartar";
 }
 
@@ -63,6 +72,8 @@ export async function loadBotActions(db: SupabaseClient, botId: string): Promise
 
 export interface ActionToolsInput {
   bot: { id: string };
+  /** Canal declarado para bebida e remédio (regulatedDestination): onde ver o que não sai no chat. */
+  destination?: { destino: string } | null;
   conversationId: string;
   channel: "widget" | "demo" | "painel" | "whatsapp" | "instagram";
   waPhone: string | null;
@@ -118,20 +129,23 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         if (r.status !== "ok") return { ok: false, motivo: "falha", instrucao: "Diga que não conseguiu consultar agora e siga a conversa (sem inventar o resultado)." };
 
         // portão do canal no data (como na base): o que sai entra no mapa de ids da conversa
-        const gated = gateActionData(r.data, { channel: gateChannel, contactPhone: i.waPhone, age: i.age, exempt: i.exempt, transactional: a.transactional });
+        const gated = gateActionData(r.data, { channel: gateChannel, contactPhone: i.waPhone, age: i.age, exempt: i.exempt });
         if (Object.keys(gated.ids).length) await saveIdMap(db, i.conversationId, gated.ids);
         // reply nos canais da Meta: conferido aqui, para a IA ainda poder responder com o data se ele cair
         let reply = r.reply;
         if (reply && gateChannel !== "widget") {
           const regulatedConversation = gated.hidden.some((c) => CATEGORIES[c].level === "regulamentado") || (regulatedAt !== null && Date.now() - Date.parse(regulatedAt) < REGULATED_WINDOW_MS);
-          const rc = checkActionReply({ text: reply, channel: gateChannel, contactPhone: i.waPhone, age: i.age, regulatedConversation, exempt: i.exempt, transactional: a.transactional });
-          if (replyOutcome(rc, { age: i.age, transactional: a.transactional }) === "descartar") {
+          const rc = checkActionReply({ text: reply, channel: gateChannel, contactPhone: i.waPhone, age: i.age, regulatedConversation, exempt: i.exempt });
+          if (replyOutcome(rc, { age: i.age }) === "descartar") {
             await logGate(db, { botId: i.bot.id, conversationId: i.conversationId, stage: "saida", decision: "reply_descartado", categories: [...rc.prohibited, ...rc.regulated] });
             reply = null;
           }
         }
         if (reply) i.onReply(reply);
-        const hiddenAviso = !gated.hidden.length ? null : a.transactional && gateChannel !== "widget" ? TRANSACTION_HIDDEN_NOTE : (hiddenNote(gated.hidden, i.age) ?? "Alguns itens ficaram de fora desta resposta: não cite nem diga que a empresa não tem.");
+        // o que saiu: proibido (com a saída para ver fora do chat) e 18+ (a pergunta de idade)
+        const prohibitedHidden = gated.hidden.some((c) => CATEGORIES[c].level === "proibido");
+        const notes = [prohibitedHidden ? prohibitedNote(gated.links, i.destination ?? null) : null, hiddenNote(gated.hidden, i.age)].filter(Boolean);
+        const hiddenAviso = !gated.hidden.length ? null : notes.length ? notes.join(" ") : "Alguns itens ficaram de fora desta resposta: não cite nem diga que a empresa não tem.";
         return {
           ok: true,
           data: gated.data,

@@ -14,7 +14,7 @@ import { audit, requestMeta } from "@/lib/audit";
 import { FEATURES, isFeature, type Feature } from "@/lib/features";
 import { CATEGORIES, type GateCategory } from "@/lib/gate/rules";
 import { analyzeBot, runDueAnalyses } from "@/lib/bot-analysis";
-import { actionInputProblem, callAction, classifyAction, rotateActionSecret, type ActionRow } from "@/lib/actions";
+import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
 import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiKeyScope } from "@/lib/api-keys";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
@@ -481,16 +481,15 @@ export async function saveAction(agencyId: string, botId: string, actionId: stri
   if (problem) return fail(problem);
   const db = createAdminClient();
   // efeito classificado pela IA do BoaVoz: pedido, reserva ou cobrança só com confirmação por botão (C pública)
-  // e transação × catálogo: em transação, bebida e remédio nunca são listados nos canais da Meta
-  const { createsOrder, transactional } = await classifyAction(db, agencyId, input);
-  const row = { bot_id: botId, ...input, type: "query", active: input.active && !createsOrder, creates_order: createsOrder, transactional, updated_at: new Date().toISOString() };
+  const createsOrder = await classifyCreatesOrder(db, agencyId, input);
+  const row = { bot_id: botId, ...input, type: "query", active: input.active && !createsOrder, creates_order: createsOrder, updated_at: new Date().toISOString() };
   const { error } = actionId ? await db.from("actions").update(row).eq("id", actionId).eq("bot_id", botId) : await db.from("actions").insert(row);
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : `Não foi possível salvar: ${error.message}`);
-  await auditAdmin(s.email, actionId ? "acoes.editar" : "acoes.criar", { agencyId, targetType: "bot", targetId: botId, after: { name: input.name, url: input.url, creates_order: createsOrder, transactional } });
+  await auditAdmin(s.email, actionId ? "acoes.editar" : "acoes.criar", { agencyId, targetType: "bot", targetId: botId, after: { name: input.name, url: input.url, creates_order: createsOrder } });
   revalidatePath("/admin", "layout");
   return createsOrder
     ? ok(`Ação salva e DESATIVADA: ela parece criar pedido, reserva ou cobrança, e isso precisa da confirmação por botão, que chega na C pública.`)
-    : ok(`Ação ${input.name} salva${input.active ? " e ativa" : " (desativada)"}. Ela não cria pedido. Devolve ${transactional ? "pedido ou compra da pessoa: bebida e remédio nunca são listados no WhatsApp e no Instagram, com qualquer idade" : "catálogo (produtos, preços): bebida e remédio aparecem no WhatsApp e no Instagram depois do 18+"}.`);
+    : ok(`Ação ${input.name} salva${input.active ? " e ativa" : " (desativada)"}.`);
 }
 
 export async function deleteAction(agencyId: string, actionId: string): Promise<ActionResult> {

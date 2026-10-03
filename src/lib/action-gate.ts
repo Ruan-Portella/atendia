@@ -24,7 +24,16 @@ export interface GatedData {
   hidden: GateCategory[];
   /** Identificadores dos objetos tirados (e dos que os contêm). */
   ids: IdMap;
+  /** Links (http/https) dos objetos que perderam itens: onde ver o pedido ou a lista completa. */
+  links: string[];
 }
+
+/** Campos de link de um objeto: url, link, *_url, *_link. */
+const LINK_FIELD = /^(url|link|.+_url|.+_link)$/i;
+const linksOf = (o: Record<string, unknown>) =>
+  Object.entries(o)
+    .filter(([k, v]) => LINK_FIELD.test(k) && typeof v === "string" && /^https?:\/\//i.test(v))
+    .map(([, v]) => v as string);
 
 /** Campos que identificam um objeto: id, *_id, sku, codigo, ref e slug. */
 const ID_FIELD = /^(id|.+_id|sku|codigo|ref|slug)$/i;
@@ -49,13 +58,14 @@ function ownCategories(o: Record<string, unknown>, opts: { channel: Exclude<Gate
 /**
  * Filtra o data de uma ação para esta pessoa. Função pura. Widget: sem trava (devolve igual).
  * O que é tirado: objeto (em lista) com item proibido; com regulamentado (ou regulated: true),
- * se a idade não foi confirmada ou se a ação é de transação.
+ * se a idade não foi confirmada.
  */
-export function gateActionData(data: unknown, o: { channel: GateChannel; contactPhone?: string | null; age: AgeStatus; exempt?: readonly GateCategory[]; transactional?: boolean }): GatedData {
-  if (o.channel === "widget") return { data, hidden: [], ids: {} };
+export function gateActionData(data: unknown, o: { channel: GateChannel; contactPhone?: string | null; age: AgeStatus; exempt?: readonly GateCategory[] }): GatedData {
+  if (o.channel === "widget") return { data, hidden: [], ids: {}, links: [] };
   const channel = o.channel;
   const hidden = new Set<GateCategory>();
   const ids: IdMap = {};
+  const links = new Set<string>();
   const record = (obj: Record<string, unknown>, categoria: GateCategory) => {
     for (const id of idsOf(obj)) ids[id] = { categoria, rotulo: labelOf(obj) };
   };
@@ -84,8 +94,9 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
     const prohibited = hits.find((h) => h.level === "proibido");
     if (prohibited) return { value: null, blocked: prohibited.category };
     const regulated = hits.find((h) => h.level === "regulamentado")?.category ?? (obj.regulated === true ? ("bebida" as GateCategory) : undefined);
-    // transação (pedido, carrinho): bebida e remédio nunca listados, com qualquer idade
-    if (regulated && (o.age !== "sim" || o.transactional)) return { value: null, blocked: regulated };
+    // ver não é vender: com o "Sim", bebida e remédio aparecem também num pedido (o pagamento
+    // nunca sai no chat, e a compra desses itens pelo chat é barrada)
+    if (regulated && o.age !== "sim") return { value: null, blocked: regulated };
     const out: Record<string, unknown> = {};
     let removed: GateCategory | undefined;
     for (const [k, child] of Object.entries(obj)) {
@@ -98,13 +109,17 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
       removed ??= r.removed;
       out[k] = r.value;
     }
-    // algo dentro saiu: o objeto que o contém (pedido, carrinho) também entra no mapa
-    if (removed) record(obj, removed);
+    // algo dentro saiu: o objeto que o contém (pedido, carrinho) também entra no mapa, e o link
+    // dele (se houver) é onde a pessoa vê o que ficou de fora
+    if (removed) {
+      record(obj, removed);
+      linksOf(obj).forEach((l) => links.add(l));
+    }
     return { value: out, removed };
   };
 
   const r = visit(data);
-  return { data: r.blocked ? null : r.value, hidden: [...hidden], ids };
+  return { data: r.blocked ? null : r.value, hidden: [...hidden], ids, links: [...links] };
 }
 
 /** Grava o mapa de ids da conversa por 24 horas (junta com o que ainda vale). */

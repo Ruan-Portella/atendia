@@ -11,7 +11,7 @@ import { backNotice, contactLines, handoffNotice, hoursLines, renderAiNotice, ty
 import { RISK_TEXT, detectRisk } from "./risk";
 import { isAiPaused } from "./ai-pause";
 import { ageNote, type AgeStatus } from "./gate/age";
-import { regulatedChannelNote, type RegulatedChannel } from "./gate/sales-channel";
+import { regulatedChannelNote, regulatedDestination, type RegulatedChannel } from "./gate/sales-channel";
 import { gatedContext, gatedHistory, hiddenNote } from "./gate/context";
 import { visibleText, type Segment } from "./gate/base";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
@@ -506,6 +506,7 @@ export async function runChat(opts: {
   let actionReply: string | null = null;
   const actionTools = await actionToolsFor(db, {
     bot,
+    destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address),
     conversationId: convId,
     channel,
     waPhone,
