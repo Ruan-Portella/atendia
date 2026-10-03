@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
-import { initials, relativeTime } from "@/lib/utils";
+import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig } from "@/lib/whatsapp";
@@ -94,6 +94,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const appearance = bot.appearance ?? {};
   const leadCapture = bot.lead_capture ?? {};
   const handoff = (bot.human_handoff ?? {}) as HumanHandoff;
+  // pedidos fora do assunto (trava de escopo): separados das perguntas sem resposta; tabela interna,
+  // lida com a service role depois de a sessão confirmar o dono do chatbot
+  const refusals = tab === "fontes" && !bot.is_demo
+    ? ((await createAdminClient().from("scope_refusals").select("id, level, request, conversation_id, created_at").eq("bot_id", id).gte("created_at", daysAgoIso(30)).order("created_at", { ascending: false }).limit(10)).data ?? [])
+    : [];
   // exemplo do {volta} na prévia: a próxima abertura pelo horário salvo (ou um exemplo fixo)
   const nextOpen = nextOpening(handoff.hours);
   const awayExample = nextOpen ? whenLabel(nextOpen) : "segunda, das 9h às 18h";
@@ -214,6 +219,27 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   ))}
                   <p className="text-xs text-muted">Clique em “Responder” e escreva o que o assistente deve dizer: ele aprende na hora.</p>
                 </div>
+              )}
+              {refusals.length > 0 && (
+                <details className="rounded-xl border border-line px-[18px] py-3 text-sm">
+                  <summary className="cursor-pointer font-semibold">
+                    {refusals.length === 1 ? "1 pedido fora do assunto" : `${refusals.length} pedidos fora do assunto`} nos últimos 30 dias
+                  </summary>
+                  <p className="mt-1 text-xs text-muted">
+                    {bot.name} recusou porque não tem a ver com o negócio: não é falta de informação na base. Se algum for do negócio, inclua o assunto em &ldquo;Assuntos do negócio&rdquo;, na aba Personalidade.
+                  </p>
+                  <ul className="mt-2 flex flex-col gap-1.5">
+                    {refusals.map((r) => (
+                      <li key={r.id as number} className="flex flex-wrap items-baseline gap-x-2">
+                        <span>{(r.request as string | null) || "(pedido sem resumo)"}</span>
+                        <span className="text-xs text-muted">
+                          {r.level === "fixo" ? "regra fixa (tarefa sem relação com o negócio)" : "fora do assunto"} · {relativeTime(r.created_at as string)}
+                          {r.conversation_id && <> · <Link href={`/painel/bots/${id}/conversas/${r.conversation_id as string}`} className="underline">ver conversa</Link></>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </>
           )}

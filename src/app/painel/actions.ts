@@ -20,12 +20,11 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
-import { WhatsAppError, waIdVariants, getPhoneNumber, hasPaymentMethod, subscribeApp, unsubscribeApp, whatsappConfigured } from "@/lib/whatsapp";
+import { WhatsAppError, waIdVariants, getPhoneNumber, hasPaymentMethod, subscribeApp, whatsappConfigured } from "@/lib/whatsapp";
 import { channelBlock } from "@/lib/features";
-import { unseal } from "@/lib/secret-box";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
 import { createConnectLink } from "@/lib/whatsapp-connect-link";
-import { unsubscribeInstagram } from "@/lib/instagram";
+import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "@/lib/channel-disconnect";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "@/lib/whatsapp-access";
 import { activeSuppressions, blocks, suppressionScope } from "@/lib/suppression";
 import { sendBlockedReason } from "@/lib/conversation-mode";
@@ -763,13 +762,10 @@ export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
-  const admin = createAdminClient();
-  const { data: channel } = await admin.from("whatsapp_channels").select("waba_id, access_token_enc").eq("bot_id", botId).maybeSingle();
   // o app deixa de receber os eventos da conta do cliente (o número de teste fica como está)
-  if (channel?.waba_id && channel.access_token_enc) await unsubscribeApp(channel.waba_id, unseal(channel.access_token_enc));
-  const { error } = await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
-  if (error) return fail("Não foi possível desconectar. Tente de novo.");
-  await auditPanel("canal.desconectar", { type: "bot", id: botId }, { before: { channel: "whatsapp", waba_id: channel?.waba_id ?? null } });
+  const r = await disconnectWhatsAppChannel(createAdminClient(), botId);
+  if (!r.ok) return fail("Não foi possível desconectar. Tente de novo.");
+  await auditPanel("canal.desconectar", { type: "bot", id: botId }, { before: { channel: "whatsapp", waba_id: r.wabaId } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("WhatsApp desconectado. O assistente parou de responder por ele.");
 }
@@ -781,11 +777,8 @@ export async function disconnectInstagram(botId: string): Promise<ActionResult> 
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
-  const admin = createAdminClient();
-  const { data: ch } = await admin.from("instagram_channels").select("access_token_enc").eq("bot_id", botId).maybeSingle();
-  if (ch?.access_token_enc) await unsubscribeInstagram(unseal(ch.access_token_enc));
-  const { error } = await admin.from("instagram_channels").delete().eq("bot_id", botId);
-  if (error) return fail("Não foi possível desconectar. Tente de novo.");
+  const r = await disconnectInstagramChannel(createAdminClient(), botId);
+  if (!r.ok) return fail("Não foi possível desconectar. Tente de novo.");
   await auditPanel("canal.desconectar", { type: "bot", id: botId }, { before: { channel: "instagram" } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Instagram desconectado. O assistente parou de responder as mensagens diretas.");

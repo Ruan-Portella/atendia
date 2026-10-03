@@ -13,6 +13,9 @@ import { postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion, deleteTextSource, dismissQuestion, saveTextSource } from "@/lib/knowledge";
 import { logAccess } from "@/lib/access-log";
 import { audit, requestMeta } from "@/lib/audit";
+import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "@/lib/channel-disconnect";
+import { notifyAgencyOwner } from "@/lib/notify";
+import { appUrl } from "@/lib/utils";
 import { headers } from "next/headers";
 
 const GENERIC = "Se esse e-mail tiver acesso, enviamos um link para entrar. Confira a caixa de entrada (e o spam).";
@@ -150,4 +153,29 @@ export async function confirmAccess(tokenHash: string, type: string, nextRaw: st
   const meta = await requestMeta();
   await logAccess(createAdminClient(), { actorType: "member", actorId: data.user.id, email: data.user.email, event: "magic_link", ip: meta.ip, userAgent: meta.userAgent });
   redirect(next);
+}
+
+/* ------------------------------------------------------------------ canais */
+
+/**
+ * O negócio desconecta o WhatsApp ou o Instagram de um assistente dele (área do cliente). Nada é
+ * apagado na Meta (o número e a conta continuam dele); a agência é avisada e fica na auditoria.
+ */
+export async function memberDisconnectChannel(clientId: string, botId: string, channel: "whatsapp" | "instagram"): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");
+  const r = channel === "whatsapp" ? await disconnectWhatsAppChannel(ctx.admin, botId) : await disconnectInstagramChannel(ctx.admin, botId);
+  if (!r.ok) return fail("Não foi possível desconectar. Tente de novo.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "canal.desconectar", targetType: "bot", targetId: botId, before: { channel }, ...(await requestMeta()) });
+  const { data: bot } = await ctx.admin.from("bots").select("name").eq("id", botId).maybeSingle();
+  const name = channel === "whatsapp" ? "WhatsApp" : "Instagram";
+  await notifyAgencyOwner(ctx.admin, ctx.member.agencyId, `${ctx.member.clientName} desconectou o ${name}`, [
+    `${ctx.email}, do cliente ${ctx.member.clientName}, desconectou o ${name} do assistente ${bot?.name ?? ""} pela área do cliente.`,
+    "",
+    "O assistente parou de responder por esse canal. Para conectar de novo, mande um link de conexão pelo painel.",
+    "",
+    `Painel: ${appUrl(`/painel/bots/${botId}?tab=${channel}`)}`,
+  ]).catch(() => false);
+  revalidatePath(`/cliente/${clientId}/canais`);
+  return ok(`${name} desconectado. O assistente parou de responder por ele.`);
 }

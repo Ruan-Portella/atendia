@@ -12,6 +12,7 @@ export function MemberNav({ clientId, handoff, knowledge, waiting }: { clientId:
     { href: base, label: "Relatório", active: path === base, badge: 0 },
     { href: `${base}/conversas`, label: handoff ? "Atendimento" : "Conversas", active: path.startsWith(`${base}/conversas`), badge: handoff ? waiting : 0 },
     ...(knowledge ? [{ href: `${base}/aprender`, label: "Ensinar o assistente", active: path.startsWith(`${base}/aprender`), badge: 0 }] : []),
+    { href: `${base}/canais`, label: "Canais", active: path.startsWith(`${base}/canais`), badge: 0 },
   ];
   return (
     <nav className="mx-auto flex max-w-[980px] gap-1 overflow-x-auto px-4 [scrollbar-width:none] sm:px-6 print:hidden">
