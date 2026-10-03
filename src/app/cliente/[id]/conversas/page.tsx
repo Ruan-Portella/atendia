@@ -2,9 +2,10 @@ import Link from "next/link";
 import { requireMember } from "@/lib/member";
 import { getPendingHandoffs } from "@/lib/panel";
 import { relativeTime } from "@/lib/utils";
-import { conversationState } from "@/lib/presence";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ConversationStateBadge } from "@/components/conversation-state";
+import { HandoffBadge } from "@/components/handoff-badge";
+import { PendingHandoffs } from "@/components/pending-handoffs";
 
 export const metadata = { title: { absolute: "Conversas" }, robots: { index: false, follow: false } };
 
@@ -15,7 +16,7 @@ export default async function MemberConversationsPage({ params }: PageProps<"/cl
   const ids = botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"];
   const [pending, { data: conversations }, { data: bots }] = await Promise.all([
     member.allowHandoff ? getPendingHandoffs(admin, botIds) : Promise.resolve([]),
-    admin.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, handoff_requested_at, handled_at").in("bot_id", ids).order("last_message_at", { ascending: false }).limit(50),
+    admin.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").in("bot_id", ids).order("last_message_at", { ascending: false }).limit(50),
     admin.from("bots").select("id, name").in("id", ids),
   ]);
   const botName = new Map((bots ?? []).map((b) => [b.id, b.name]));
@@ -30,19 +31,7 @@ export default async function MemberConversationsPage({ params }: PageProps<"/cl
             : "As últimas conversas do assistente com os visitantes do seu site."}
         </p>
       </div>
-      {pending.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-xl border border-[#efd9a9] bg-amber-soft px-4 py-3">
-          <div className="text-sm font-semibold text-amber-ink">{pending.length === 1 ? "1 visitante quer falar com alguém" : `${pending.length} visitantes querem falar com alguém`}</div>
-          {pending.map((h) => (
-            <Link key={h.id} href={`/cliente/${id}/conversas/${h.id}`} className="flex items-center gap-2 rounded-lg px-1 py-1.5 text-sm hover:bg-white/60">
-              <span className="font-medium">{h.bots?.name}</span>
-              <span className="text-xs text-muted">pediu {relativeTime(h.handoff_requested_at)}</span>
-              {conversationState(h) === "online" ? <span className="text-xs font-semibold text-brand">● online</span> : <span className="text-xs text-muted">saiu do site</span>}
-              <span className="ml-auto text-xs font-semibold text-amber-ink">{h.takeover_at ? "em atendimento" : "responder →"}</span>
-            </Link>
-          ))}
-        </div>
-      )}
+      <PendingHandoffs items={pending} showClient={false} hrefFor={(h) => `/cliente/${id}/conversas/${h.id}`} />
       <div className="card overflow-hidden">
         {(conversations ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma conversa ainda.</p>}
         {(conversations ?? []).map((c) => (
@@ -51,7 +40,7 @@ export default async function MemberConversationsPage({ params }: PageProps<"/cl
             {(bots ?? []).length > 1 && <span className="font-medium">{botName.get(c.bot_id)}</span>}
             <span>{c.message_count} mensagens</span>
             <ConversationStateBadge conv={c} />
-            {c.handoff_requested_at && !c.handled_at && <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">esperando atendente</span>}
+            <HandoffBadge conv={c} className="ml-auto" />
           </Link>
         ))}
       </div>

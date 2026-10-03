@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
 import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
 import { PendingHandoffs } from "@/components/pending-handoffs";
+import { handoffStatus } from "@/lib/handoff-status";
+import { HandoffBadge } from "@/components/handoff-badge";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { agencyBaseUrl } from "@/lib/domain";
@@ -74,12 +76,13 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       ? supabase.from("leads").select("id, bot_id, conversation_id, name, phone, email, notes, created_at").in("bot_id", botIds).order("created_at", { ascending: false }).limit(200)
       : Promise.resolve({ data: [] as LeadRow[] }),
     tab === "conversas" && botIds.length
-      ? supabase.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, handled_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
-      : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; last_message_at: string; visitor_seen_at: string | null; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; handled_at: string | null }> }),
+      ? supabase.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
+      : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; last_message_at: string; visitor_seen_at: string | null; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; takeover_at: string | null; handled_at: string | null; handoff_urgent_at: string | null; last_contact_at: string | null; last_reply_at: string | null }> }),
     tab === "acesso" || (tab === "relatorio" && client.report_email)
       ? supabase.from("client_members").select("id, email, last_login_at, created_at").eq("client_id", id).order("created_at")
       : Promise.resolve({ data: [] as Array<{ id: string; email: string; last_login_at: string | null; created_at: string }> }),
   ]);
+  const waitingCount = pending.filter((h) => handoffStatus(h)?.waiting).length;
 
   return (
     <>
@@ -109,7 +112,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       <nav className="-mb-1 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]">
         {TABS.map(([key, label]) => (
           <Link key={key} href={`/painel/clientes/${id}?tab=${key}`} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm ${tab === key ? "border-brand font-semibold text-brand" : "border-transparent font-medium text-ink-2 hover:text-ink"}`}>
-            {label}{key === "conversas" && pending.length > 0 ? <span className="ml-1.5 rounded-full bg-amber-soft px-1.5 py-0.5 text-[11px] font-semibold text-amber-ink">{pending.length}</span> : null}
+            {label}{key === "conversas" && waitingCount > 0 ? <span className="ml-1.5 rounded-full bg-amber-soft px-1.5 py-0.5 text-[11px] font-semibold text-amber-ink">{waitingCount}</span> : null}
           </Link>
         ))}
       </nav>
@@ -177,7 +180,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               <span>{c.message_count} mensagens</span>
               <span className="text-xs text-muted">{c.channel}</span>
               <ConversationStateBadge conv={c} />
-              {c.handoff_requested_at && !c.handled_at ? <span className="ml-auto rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">esperando atendente</span> : c.needs_human ? <span className="ml-auto text-xs text-muted">precisou de ajuda</span> : null}
+              {handoffStatus(c) ? <HandoffBadge conv={c} className="ml-auto" /> : c.needs_human ? <span className="ml-auto text-xs text-muted">precisou de ajuda</span> : null}
             </Link>
           ))}
         </div>

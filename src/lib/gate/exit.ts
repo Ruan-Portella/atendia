@@ -1,4 +1,5 @@
 import { dictionaryHits, normalizeGateText } from "./match";
+import { isPaymentData } from "./payment";
 import { GATE_TEXTS, type GateCategory, type GateChannel } from "./rules";
 import type { AgeStatus } from "./age";
 
@@ -43,18 +44,8 @@ const NEGATION = /\b(nao|nunca|nem|jamais)\b/;
 const PRICE = /R\$\s?\d/i;
 const OFFER_WORDS = /\b(temos|tem sim|vendemos|vende|oferecemos|disponivel|disponiveis|a venda|pode pedir|peca|cardapio|custa|sai por|por apenas)\b/;
 const offers = (sentence: string, norm: string) => PRICE.test(sentence) || OFFER_WORDS.test(norm);
-/**
- * Dado de pagamento: código do Pix, link de meio de pagamento, ou chave (e-mail, documento,
- * telefone) junto de Pix/boleto. Link do site da empresa não conta: finalizar lá é o caminho certo.
- */
-const PAYMENT_CODE = /br\.gov\.bcb|\b000201\d|mpago\.la|mercadopago\.com|pag\.ae|pagseguro\.uol|picpay\.me|buy\.stripe\.com|checkout\.stripe\.com|pay\.hotmart|link\.pagar\.me|sumup\.com|cielolink/i;
-const PAYMENT_WORD = /\b(pix|boleto|pagamento|pagar|transferencia|deposito)\b/;
-const PAYMENT_KEY = /[\w.+-]+@[\w-]+\.[\w.]+|\d[\d.\-/ ]{9,}\d/;
-
-function isPayment(sentence: string): boolean {
-  if (PAYMENT_CODE.test(sentence)) return true;
-  return PAYMENT_WORD.test(normalizeGateText(sentence)) && PAYMENT_KEY.test(sentence);
-}
+/** Dado de pagamento: código do Pix, link de meio de pagamento, ou chave junto de Pix/boleto (payment.ts). */
+const isPayment = isPaymentData;
 
 /** Frases (pontuação final ou quebra de linha), mantendo a separação original para remontar. */
 function sentences(text: string): string[] {

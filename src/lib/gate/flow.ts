@@ -10,6 +10,7 @@ import { decideEntrance } from "./entrance";
 import { checkExit, exitDecision } from "./exit";
 import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
+import { REGULATED_WINDOW_MS } from "./payment";
 import { GATE_TEXTS, RULES_VERSION, type GateCategory } from "./rules";
 
 /*
@@ -269,4 +270,3 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
 }
 
 /** Conversa com bebida ou remédio: vale enquanto a janela de 24 h da Meta estiver aberta. */
-const REGULATED_WINDOW_MS = 24 * 3_600_000;

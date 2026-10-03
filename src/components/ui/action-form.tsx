@@ -11,6 +11,8 @@ interface Props {
   success?: string;
   /** Chamado depois de um ok (ex.: fechar o modal). */
   onSuccess?: () => void;
+  /** Antes de enviar (ex.: pedir confirmação); preventDefault() segura o envio. */
+  onSubmit?: (e: React.FormEvent<HTMLFormElement>) => void;
   className?: string;
   children: React.ReactNode;
 }
@@ -25,7 +27,7 @@ function isNextControlError(err: unknown) {
  * Os campos continuam sendo HTML puro; só o feedback muda. Nunca deixa um erro da action
  * derrubar a página: vira toast.
  */
-export function ActionForm({ action, success = "Salvo.", onSuccess, className, children }: Props) {
+export function ActionForm({ action, success = "Salvo.", onSuccess, onSubmit, className, children }: Props) {
   const toast = useToast();
   const [, formAction] = useActionState(async (_prev: ActionResult | null, fd: FormData) => {
     let r: ActionResult | void;
@@ -45,7 +47,7 @@ export function ActionForm({ action, success = "Salvo.", onSuccess, className, c
     return r;
   }, null);
   return (
-    <form action={formAction} className={className}>
+    <form action={formAction} onSubmit={onSubmit} className={className}>
       {children}
     </form>
   );

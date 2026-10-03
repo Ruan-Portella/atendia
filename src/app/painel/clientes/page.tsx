@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
 import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
 import { PendingHandoffs } from "@/components/pending-handoffs";
+import { handoffStatus } from "@/lib/handoff-status";
 import { Kpi } from "@/components/kpi";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { getOnboarding, ONBOARDING_COOKIE } from "@/lib/onboarding";
@@ -31,7 +32,7 @@ export default async function ClientesPage() {
     getPendingHandoffs(supabase),
     hideOnboarding ? null : getOnboarding(supabase, agency),
   ]);
-  const waitingBy = (c: ClientRow) => pending.filter((h) => h.bots?.client_id === c.id).length;
+  const waitingBy = (c: ClientRow) => pending.filter((h) => h.bots?.client_id === c.id && handoffStatus(h)?.waiting).length;
   const clients = (data ?? []) as ClientRow[];
   const total = clients.reduce((s, c) => s + (c.price_cents ?? 0), 0) / 100;
   const sum = (c: ClientRow, k: "conversations" | "leads" | "needsHuman") => c.bots.reduce((s, b) => s + stats.of(b.id)[k], 0);

@@ -12,6 +12,8 @@ import { conversationState, whatsappWindowOpen } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
+import { regulatedConversation } from "@/lib/gate/payment";
+import { RegulatedNotice } from "@/components/regulated-notice";
 import { channelAccessOf } from "@/lib/features";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
@@ -28,7 +30,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, bots(name, client_id, client_name)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, regulated_at, bots(name, client_id, client_name)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -60,6 +62,9 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const age = isWhatsApp || isInstagram ? await ageRecord(createAdminClient(), { botId: id, channel: isWhatsApp ? "whatsapp" : "instagram", contact: (isWhatsApp ? conv.wa_id : conv.ig_id)! }) : null;
 
   const allMessages = (messages ?? []) as ThreadMessage[];
+  // conversa com bebida ou remédio (portão): faixa de aviso e pergunta antes de instrução de pagamento
+  const regulated = (isWhatsApp || isInstagram) && regulatedConversation(conv.regulated_at as string | null);
+  const coexistence = regulated && isWhatsApp ? Boolean((await createAdminClient().from("whatsapp_channels").select("coexistence").eq("bot_id", id).maybeSingle()).data?.coexistence) : false;
   const templateAction = sendConversationTemplate.bind(null, cid);
 
   // Tela de chat: ocupa a tela toda (a barra do celular tem 60 px; a faixa de avisos do painel,
@@ -125,8 +130,9 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
               {lastUserAt === null ? "Até ele responder, o WhatsApp só deixa enviar modelos aprovados" : "O WhatsApp só deixa retomar com um modelo aprovado"}: use “Enviar modelo” no topo. Quando ele responder, a conversa continua aqui.
             </p>
           )}
+          {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
           <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
-          <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked />
+          <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked paymentCheck={regulated} />
         </div>
       </footer>
     </div>

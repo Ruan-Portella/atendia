@@ -1,5 +1,6 @@
 import { requireMember } from "@/lib/member";
 import { getPendingHandoffs } from "@/lib/panel";
+import { handoffStatus } from "@/lib/handoff-status";
 import { AgencyHeader } from "@/components/report-view";
 import { MemberNav } from "@/components/member-nav";
 import { HandoffWatcher } from "@/components/handoff-watcher";
@@ -19,7 +20,7 @@ export default async function MemberLayout({ children, params }: LayoutProps<"/c
         <form action="/cliente/sair" method="post"><button type="submit" className="btn-ghost" title={email}>Sair</button></form>
       </AgencyHeader>
       <div className="border-b border-line bg-panel">
-        <MemberNav clientId={id} handoff={member.allowHandoff} knowledge={member.allowKnowledge} waiting={pending.filter((p) => !p.takeover_at).length} />
+        <MemberNav clientId={id} handoff={member.allowHandoff} knowledge={member.allowKnowledge} waiting={pending.filter((p) => handoffStatus(p)?.waiting).length} />
       </div>
       {member.allowHandoff && <HandoffWatcher endpoint={`/api/cliente/pending?clientId=${id}`} />}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">

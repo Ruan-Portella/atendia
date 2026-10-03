@@ -8,6 +8,8 @@ import { ConversationLive } from "@/components/conversation-live";
 import { MessageScroller } from "@/components/message-scroller";
 import { conversationState } from "@/lib/presence";
 import { loadMessages } from "@/lib/messages";
+import { regulatedConversation } from "@/lib/gate/payment";
+import { RegulatedNotice } from "@/components/regulated-notice";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { memberRelease, memberSend, memberTakeOver } from "../../../actions";
@@ -19,7 +21,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at, regulated_at")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
@@ -36,6 +38,9 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com ele
   const contact = conv.channel === "whatsapp" && conv.wa_id ? { waId: conv.wa_id } : conv.channel === "instagram" && conv.ig_id ? { igsid: conv.ig_id } : null;
   const handoffConv = contact ? { ...conv, last_user_at: await lastContactMessageAt(admin, conv.bot_id, contact, conv.contact_id) } : conv;
+  // conversa com bebida ou remédio (portão): faixa de aviso e pergunta antes de instrução de pagamento
+  const regulated = Boolean(contact) && regulatedConversation(conv.regulated_at as string | null);
+  const coexistence = regulated && conv.channel === "whatsapp" ? Boolean((await admin.from("whatsapp_channels").select("coexistence").eq("bot_id", conv.bot_id).maybeSingle()).data?.coexistence) : false;
 
   // Tela de chat: preenche o espaço abaixo das abas (a casca do portal rola só o conteúdo);
   // cabeçalho e resposta fixos, e só as mensagens rolam.
@@ -61,8 +66,9 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
 
       {member.allowHandoff && (
         <footer className="flex flex-col gap-2 border-t border-line py-3">
+          {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
           <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
-          <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked />
+          <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked paymentCheck={regulated} />
         </footer>
       )}
     </div>

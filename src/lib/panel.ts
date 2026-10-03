@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { handoffOrder } from "./handoff-status";
 
 export interface BotStats {
   conversations: number;
@@ -39,24 +40,32 @@ export async function getClientOptions(supabase: SupabaseClient, agencyId: strin
 export interface PendingHandoff {
   id: string;
   bot_id: string;
-  handoff_requested_at: string;
+  handoff_requested_at: string | null;
   takeover_at: string | null;
+  handled_at: string | null;
+  handoff_urgent_at: string | null;
+  last_contact_at: string | null;
+  last_reply_at: string | null;
   last_message_at: string;
   visitor_seen_at: string | null;
   bots: { name: string; client_name: string; client_id: string | null } | null;
 }
 
-/** Conversas em que o visitante pediu atendente e ninguém encerrou (últimos 7 dias). */
+/**
+ * Atendimento humano aberto (últimos 7 dias): pediu atendente ou alguém assumiu, e ninguém
+ * encerrou. Urgentes primeiro, depois quem espera (inclusive "assumida, sem resposta").
+ */
 export async function getPendingHandoffs(supabase: SupabaseClient, botIds?: string[]): Promise<PendingHandoff[]> {
   let q = supabase
     .from("conversations")
-    .select("id, bot_id, handoff_requested_at, takeover_at, last_message_at, visitor_seen_at, bots(name, client_name, client_id)")
-    .not("handoff_requested_at", "is", null)
+    .select("id, bot_id, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at, visitor_seen_at, bots(name, client_name, client_id)")
+    .or("handoff_requested_at.not.is.null,takeover_at.not.is.null")
     .is("handled_at", null)
-    .gte("handoff_requested_at", new Date(Date.now() - 7 * 86400000).toISOString())
-    .order("handoff_requested_at", { ascending: false })
-    .limit(20);
+    .gte("last_message_at", new Date(Date.now() - 7 * 86400000).toISOString())
+    .order("last_message_at", { ascending: false })
+    .limit(40);
   if (botIds) q = q.in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"]);
   const { data } = await q;
-  return ((data ?? []) as Array<Omit<PendingHandoff, "bots"> & { bots: PendingHandoff["bots"] | PendingHandoff["bots"][] }>).map((r) => ({ ...r, bots: Array.isArray(r.bots) ? r.bots[0] ?? null : r.bots }));
+  const rows = ((data ?? []) as Array<Omit<PendingHandoff, "bots"> & { bots: PendingHandoff["bots"] | PendingHandoff["bots"][] }>).map((r) => ({ ...r, bots: Array.isArray(r.bots) ? r.bots[0] ?? null : r.bots }));
+  return rows.sort((x, y) => handoffOrder(x, y));
 }

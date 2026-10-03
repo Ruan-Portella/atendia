@@ -1,4 +1,5 @@
 import { CATEGORIES, DICTIONARY, EXCEPTIONS, effectiveLevel, type GateCategory, type GateChannel, type GateLevel } from "./rules";
+import { normalizeGateText } from "./payment";
 
 /*
  * Etapa 1 do portão: dicionário, em toda mensagem, custo quase zero. Acusa candidatos; quem decide
@@ -6,15 +7,8 @@ import { CATEGORIES, DICTIONARY, EXCEPTIONS, effectiveLevel, type GateCategory, 
  * é a etapa 2, com IA, que só roda quando o dicionário acusa.
  */
 
-/** Sem acento, minúsculas, pontuação vira espaço, espaços simples, com espaço nas pontas. */
-export function normalizeGateText(text: string): string {
-  return ` ${text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()} `;
-}
+/** Sem acento, minúsculas, pontuação vira espaço, espaços simples, com espaço nas pontas (payment.ts, leve para o navegador). */
+export { normalizeGateText };
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
