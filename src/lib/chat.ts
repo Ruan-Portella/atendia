@@ -7,7 +7,7 @@ import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
 import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
-import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
+import { backNotice, contactLines, handoffNotice, hoursLines, renderAiNotice, type HumanHandoff } from "./handoff-hours";
 import { RISK_TEXT, detectRisk } from "./risk";
 import { isAiPaused } from "./ai-pause";
 import { ageNote, type AgeStatus } from "./gate/age";
@@ -161,19 +161,36 @@ export const SYSTEM_AUTHOR = "sistema";
  * Aviso de IA (escolha da BoaVoz, por transparência), como prefixo da resposta, nunca como
  * mensagem própria (cada mensagem a mais é cobrada do negócio pela Meta):
  * - primeira resposta da IA na conversa (conversa nova também depois de 24 h sem mensagem):
- *   "Sou {nome}, assistente virtual de {empresa}."
+ *   o aviso editável da aba Atendimento (padrão "Sou {nome}, assistente virtual de {empresa}.")
  * - a conversa voltou de um atendente (ou de alguém no celular): "Voltei! Sou {nome}, …"
  * null = a IA já falou por último, sem aviso.
  */
-export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" | "client_name">, conversationId: string): Promise<string | null> {
+export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" | "client_name" | "human_handoff">, conversationId: string): Promise<string | null> {
   const [last, ai] = await Promise.all([
     findMessage(db, { conversationId, notRole: "user", notAuthor: SYSTEM_AUTHOR, newestFirst: true }, ["role"] as const),
     findMessage(db, { conversationId, roles: ["assistant"], notAuthor: SYSTEM_AUTHOR }, ["id"] as const),
   ]);
   // a IA nunca falou nesta conversa (mesmo que a equipe tenha aberto com um modelo): apresenta
-  if (!ai) return `Sou ${bot.name}, assistente virtual de ${bot.client_name}.`;
-  if (last?.role === "agent") return `Voltei! Sou ${bot.name}, assistente virtual. Se precisar, é só pedir um atendente.`;
+  if (!ai) return renderAiNotice(bot.human_handoff?.ai_notice, bot);
+  if (last?.role === "agent") return backNotice(bot.name);
   return null;
+}
+
+/**
+ * Pedido de atendente (ferramenta da IA ou botão "Falar com uma pessoa" do widget): marca a
+ * conversa e avisa a equipe na primeira vez (ou de novo, se o atendimento anterior foi encerrado).
+ * Devolve o aviso ao contato: fora do horário, diz quando a equipe volta; nunca promete resposta imediata.
+ */
+export async function requestHandoff(db: SupabaseClient, bot: BotRow, conversationId: string, reason: string): Promise<string> {
+  const { data: updated } = await db
+    .from("conversations")
+    .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
+    .eq("id", conversationId)
+    .or("handoff_requested_at.is.null,handled_at.not.is.null")
+    .select("id");
+  if (updated?.length) notifyHandoff({ db, bot, conversationId, reason }).catch(() => {});
+  else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", conversationId);
+  return handoffNotice(bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message);
 }
 
 /** Garante o texto fixo de risco à vida na resposta quando a IA chamou atendente com urgência. */
@@ -481,17 +498,7 @@ export async function runChat(opts: {
           notifyHandoff({ db, bot, conversationId: convId, reason: motivo ?? question, urgent: true }).catch(() => {});
           return { ok: true, aviso: RISK_TEXT };
         }
-        const { data: updated } = await db
-          .from("conversations")
-          .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
-          .eq("id", convId)
-          .or("handoff_requested_at.is.null,handled_at.not.is.null")
-          .select("id");
-        // avisa na primeira vez (ou de novo, se o atendimento anterior já tinha sido encerrado)
-        if (updated?.length) notifyHandoff({ db, bot, conversationId: convId, reason: motivo ?? question }).catch(() => {});
-        else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", convId);
-        // fora do horário, o aviso diz quando a equipe volta; nunca promete resposta imediata
-        return { ok: true, aviso: handoffNotice(bot.human_handoff?.hours) };
+        return { ok: true, aviso: await requestHandoff(db, bot, convId, motivo ?? question) };
       },
       registrar_pergunta_sem_resposta: async ({ pergunta }) => {
         unansweredRecorded = true;

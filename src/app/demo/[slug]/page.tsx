@@ -71,7 +71,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
         <div className="h-[600px] overflow-hidden rounded-2xl shadow-[0_16px_40px_rgba(27,31,29,0.12)]">
           <ChatWindow
             channel="demo"
-            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou o assistente de ${bot.client_name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null }}
+            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou o assistente de ${bot.client_name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button) }}
           />
         </div>
       </main>

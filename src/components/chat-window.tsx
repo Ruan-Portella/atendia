@@ -18,6 +18,8 @@ export interface ChatBotPublic {
   leadForm?: boolean;
   /** política de privacidade da agência (link no aviso LGPD do chat) */
   privacyUrl?: string | null;
+  /** botão "Falar com uma pessoa" (Bot → Atendimento) */
+  handoffButton?: boolean;
 }
 
 type HandoffMode = "bot" | "requested" | "agent";
@@ -266,6 +268,37 @@ export function ChatWindow({
 
   const showSuggestions = messages.length === 0 && bot.suggestedQuestions.length > 0;
 
+  // botão "Falar com uma pessoa": pede atendente sem passar pela IA (a conversa vai para a equipe)
+  const [askingHuman, setAskingHuman] = useState(false);
+  const askHuman = async () => {
+    if (askingHuman || busy) return;
+    setAskingHuman(true);
+    try {
+      const res = await fetch(`${apiBase}/api/chat/handoff`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: bot.key, conversationId, visitorId, channel }) });
+      const j = (await res.json().catch(() => ({}))) as { conversationId?: string; userText?: string; notice?: string; fallback?: string; message?: string };
+      if (!res.ok || !j.conversationId) {
+        if (j.fallback === "contact") setFallback(j.message ?? "Deixe seu contato que a equipe retorna.");
+        else setErrorText(j.message ?? "Não consegui chamar a equipe agora. Tente de novo.");
+        return;
+      }
+      setConversationId(j.conversationId);
+      const now = Date.now();
+      const next: UIMessage[] = [
+        ...messages,
+        { id: `hu${now}`, role: "user", parts: [{ type: "text", text: j.userText ?? "Quero falar com uma pessoa" }] },
+        { id: `ha${now}`, role: "assistant", parts: [{ type: "text", text: j.notice ?? "" }] },
+      ];
+      setMessages(next);
+      dispatch({ type: "count", n: next.length });
+      dispatch({ type: "asked" });
+      setErrorText(null);
+    } catch {
+      setErrorText("Sem conexão. Tente de novo.");
+    } finally {
+      setAskingHuman(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col bg-white text-[#1b1f1d]" style={{ fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" }}>
       <div className="flex items-center gap-2.5 px-4 py-3 text-white" style={{ background: bot.color }}>
@@ -328,6 +361,13 @@ export function ChatWindow({
         <div ref={bottomRef} />
       </div>
 
+      {!fallback && bot.handoffButton && mode === "bot" && (
+        <div className="flex justify-center border-t border-[#e1e6ea] px-2.5 pt-2">
+          <button type="button" onClick={askHuman} disabled={askingHuman || busy} className="rounded-full border bg-white px-3 py-1 text-[12.5px] font-medium disabled:opacity-50" style={{ borderColor: bot.color, color: bot.color }}>
+            {askingHuman ? "Chamando a equipe…" : "Falar com uma pessoa"}
+          </button>
+        </div>
+      )}
       {fallback ? (
         <ContactFallback bot={bot} apiBase={apiBase} conversationId={conversationId} message={fallback} />
       ) : (

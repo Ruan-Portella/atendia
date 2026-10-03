@@ -11,7 +11,7 @@ import { postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
 import { initials, normalizeUrl, slugify } from "@/lib/utils";
-import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
 import { isGateCategory } from "@/lib/gate/exceptions";
@@ -161,6 +161,8 @@ export async function createBot(formData: FormData): Promise<ActionResult> {
       client_site: site || client.site,
       persona: { tone: "amigável, direto e profissional", welcome: `Olá! Sou ${n.name}, assistente de ${client.name}. Como posso ajudar?` },
       appearance: { color: agency.brand_color, avatar_text: initials(client.name), suggested_questions: ["Quais são os horários?", "Quanto custa?", "Como entro em contato?"] },
+      // bots novos já vêm com o botão "Falar com uma pessoa" no chat do site
+      human_handoff: { widget_button: true },
     })
     .select("id")
     .single();
@@ -209,7 +211,26 @@ async function parseHumanHandoff(supabase: Awaited<ReturnType<typeof createClien
     hours[String(d) as keyof BusinessHours] = [open!, close!];
   }
   const address = f.handoff_address?.trim().slice(0, 200) || null;
-  return { value: { email, phone, site: site as string | null, form_url: form as string | null, address, hours: Object.keys(hours).length ? hours : null } };
+  // textos editáveis: vazio ou igual ao padrão fica nulo (o padrão pode melhorar depois)
+  const aiNotice = f.ai_notice?.trim() ?? "";
+  const aiProblem = aiNoticeProblem(aiNotice);
+  if (aiProblem) return { error: aiProblem };
+  const away = f.away_message?.trim() ?? "";
+  const awayProblem = awayMessageProblem(away, Object.keys(hours).length > 0);
+  if (awayProblem) return { error: awayProblem };
+  return {
+    value: {
+      email,
+      phone,
+      site: site as string | null,
+      form_url: form as string | null,
+      address,
+      hours: Object.keys(hours).length ? hours : null,
+      ai_notice: aiNotice && aiNotice !== DEFAULT_AI_NOTICE ? aiNotice : null,
+      away_message: away && away !== DEFAULT_AWAY_MESSAGE ? away : null,
+      widget_button: f.widget_button === "on",
+    },
+  };
 }
 
 /**

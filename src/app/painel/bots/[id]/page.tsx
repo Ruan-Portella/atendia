@@ -35,7 +35,10 @@ import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { HandoffBadge } from "@/components/handoff-badge";
 import { handoffStatus } from "@/lib/handoff-status";
-import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, NO_DATE_NOTICE, WEEKDAYS, backNotice, nextOpening, whenLabel, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import { HUMAN_ONLY_NOTICE } from "@/lib/chat";
+import { GATE_TEXTS } from "@/lib/gate/rules";
+import { TemplateField } from "@/components/template-field";
 import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 
 export const metadata = { title: "Editor do chatbot" };
@@ -89,6 +92,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const appearance = bot.appearance ?? {};
   const leadCapture = bot.lead_capture ?? {};
   const handoff = (bot.human_handoff ?? {}) as HumanHandoff;
+  // exemplo do {volta} na prévia: a próxima abertura pelo horário salvo (ou um exemplo fixo)
+  const nextOpen = nextOpening(handoff.hours);
+  const awayExample = nextOpen ? whenLabel(nextOpen) : "segunda, das 9h às 18h";
   const regulated = (bot.regulated_channel ?? {}) as RegulatedChannel;
   const color = appearance.color ?? agency.brand_color;
   // domínio próprio da agência (quando verificado) nos links que o cliente e o prospect veem
@@ -293,6 +299,51 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     );
                   })}
                 </div>
+              </section>
+
+              <section className="flex flex-col gap-4 border-t border-line pt-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Textos do assistente</h3>
+                  <p className="text-xs text-muted">Vêm preenchidos com o padrão. Para salvar, precisam ter o que é obrigatório: o aviso de IA diz que é um assistente virtual; com horário configurado, a mensagem de fora do horário diz quando a equipe volta.</p>
+                </div>
+                <TemplateField
+                  id="ai_notice"
+                  label="Aviso de IA (começo da primeira resposta no WhatsApp e no Instagram)"
+                  hint="Variáveis: {nome} (o assistente) e {empresa} (o negócio)."
+                  defaultValue={handoff.ai_notice ?? DEFAULT_AI_NOTICE}
+                  fallback={DEFAULT_AI_NOTICE}
+                  vars={{ nome: bot.name, empresa: bot.client_name }}
+                  maxLength={300}
+                />
+                <TemplateField
+                  id="away_message"
+                  label="Mensagem de fora do horário (quando pedem atendente)"
+                  hint="Variável: {volta} (quando a equipe volta, pelo horário acima). No horário, ou sem horário configurado, vai o texto fixo sem data."
+                  defaultValue={handoff.away_message ?? DEFAULT_AWAY_MESSAGE}
+                  fallback={DEFAULT_AWAY_MESSAGE}
+                  vars={{ volta: awayExample }}
+                  maxLength={400}
+                />
+                <details className="rounded-lg border border-line-2 px-3 py-2 text-sm">
+                  <summary className="cursor-pointer text-xs font-semibold text-muted">Textos fixos (conformidade, só para consulta)</summary>
+                  <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-ink-2">
+                    <li>Volta da equipe para o assistente: &ldquo;{backNotice(bot.name)}&rdquo;</li>
+                    <li>Pedido de atendente no horário ou sem horário: &ldquo;{NO_DATE_NOTICE}&rdquo;</li>
+                    <li>Assistente pausado ou modo só humano: &ldquo;{HUMAN_ONLY_NOTICE}&rdquo;</li>
+                    <li>Bebida e remédio no WhatsApp e no Instagram: &ldquo;{GATE_TEXTS.ageQuestion}&rdquo;</li>
+                  </ul>
+                </details>
+              </section>
+
+              <section className="flex flex-col gap-2 border-t border-line pt-4">
+                <h3 className="text-sm font-semibold">Chat do site</h3>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" name="widget_button" defaultChecked={Boolean(handoff.widget_button)} className="mt-1" />
+                  <span>
+                    Mostrar o botão &ldquo;Falar com uma pessoa&rdquo; no chat do site
+                    <span className="block text-xs text-muted">Com um toque, o visitante pede atendente sem precisar escrever; a conversa aparece em Conversas. Sem o botão, ele ainda pode pedir escrevendo.</span>
+                  </span>
+                </label>
               </section>
 
               <section className="flex flex-col gap-3 border-t border-line pt-4">
@@ -539,7 +590,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               {readySources ? (
                 <ChatWindow
                   channel="painel"
-                  bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url }}
+                  bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center bg-white p-6 text-center text-sm text-muted">Adicione uma fonte para testar o assistente.</div>
@@ -552,7 +603,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         <ChatPreviewSheet disabledReason={!readySources ? "Adicione uma fonte para testar o assistente." : null}>
           <ChatWindow
             channel="painel"
-            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url }}
+            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
           />
         </ChatPreviewSheet>
       </div>

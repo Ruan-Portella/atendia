@@ -145,7 +145,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           registrar_lead: noop,
           chamar_atendente: async ({ urgente }) => {
             if (urgente) urgent = true;
-            return { ok: true, aviso: urgente ? RISK_TEXT : handoffNotice(bot.human_handoff?.hours) };
+            return { ok: true, aviso: urgente ? RISK_TEXT : handoffNotice(bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message) };
           },
           registrar_pergunta_sem_resposta: noop,
           registrar_recusa: noop,

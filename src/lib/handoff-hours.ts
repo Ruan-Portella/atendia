@@ -14,6 +14,12 @@ export interface HumanHandoff {
   address?: string | null;
   form_url?: string | null;
   hours?: BusinessHours | null;
+  /** Aviso de IA editado (null = o padrão). */
+  ai_notice?: string | null;
+  /** Mensagem de fora do horário editada (null = o padrão). */
+  away_message?: string | null;
+  /** Botão "Falar com uma pessoa" no chat do site (bots novos: ligado; antigos: desligado). */
+  widget_button?: boolean | null;
 }
 
 export const WEEKDAYS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"] as const;
@@ -69,12 +75,54 @@ export function whenLabel(o: { inDays: number; day: number; time: string; until:
   return `${day}, das ${hourLabel(o.time)} às ${hourLabel(o.until)}`;
 }
 
-/** Texto que o bot usa ao registrar o pedido de atendente (padrão editável no documento). */
-export function handoffNotice(hours: BusinessHours | null | undefined, now = new Date()): string {
+/* ------------------------------------------------------------------ textos editáveis (Bot → Atendimento) */
+
+/** Aviso de IA da primeira resposta (WhatsApp e Instagram). {nome} e {empresa} viram o nome do assistente e do negócio. */
+export const DEFAULT_AI_NOTICE = "Sou {nome}, assistente virtual de {empresa}.";
+/** Pedido de atendente fora do horário. {volta} vira "segunda, das 9h às 18h". */
+export const DEFAULT_AWAY_MESSAGE = "Nossa equipe volta {volta}. Deixei seu pedido registrado e respondemos assim que possível.";
+/** A conversa voltou de um atendente: texto fixo (conformidade, sem edição). */
+export const backNotice = (name: string) => `Voltei! Sou ${name}, assistente virtual. Se precisar, é só pedir um atendente.`;
+/** No horário, ou sem horário configurado: texto fixo, sem data. */
+export const NO_DATE_NOTICE = "Deixei seu pedido registrado e nossa equipe responde assim que possível.";
+
+/** Diz que é um assistente virtual (obrigatório no aviso de IA). */
+// sem \b depois de letra acentuada ("robô"): em JS, "ô" não conta como letra para o \b
+const SAYS_VIRTUAL = /assistente virtual|assistente de ia|intelig[eê]ncia artificial|\bIA\b|\brob[oô](?![a-z])|chatbot|assistente autom[aá]tico/i;
+
+const unknownVars = (text: string, allowed: string[]) => [...text.matchAll(/\{([^}]*)\}/g)].map((m) => m[1]).filter((v) => !allowed.includes(v));
+
+/** O que falta no aviso de IA (null = pode salvar). Função pura. */
+export function aiNoticeProblem(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null; // vazio = volta ao padrão
+  if (t.length > 300) return "O aviso de IA pode ter no máximo 300 caracteres.";
+  const bad = unknownVars(t, ["nome", "empresa"]);
+  if (bad.length) return `O aviso de IA só aceita {nome} e {empresa} (veio {${bad[0]}}).`;
+  if (!SAYS_VIRTUAL.test(t)) return "O aviso de IA precisa dizer que é um assistente virtual (por exemplo: “assistente virtual” ou “IA”).";
+  return null;
+}
+
+/** O que falta na mensagem de fora do horário (null = pode salvar). Com horário, ela diz quando a equipe volta. */
+export function awayMessageProblem(text: string, hasHours: boolean): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  if (t.length > 400) return "A mensagem de fora do horário pode ter no máximo 400 caracteres.";
+  const bad = unknownVars(t, ["volta"]);
+  if (bad.length) return `A mensagem de fora do horário só aceita {volta} (veio {${bad[0]}}).`;
+  if (hasHours && !t.includes("{volta}")) return "A mensagem de fora do horário precisa dizer quando a equipe volta: inclua {volta}.";
+  return null;
+}
+
+/** Aviso de IA pronto para o contato. */
+export function renderAiNotice(template: string | null | undefined, bot: { name: string; client_name: string }): string {
+  return (template?.trim() || DEFAULT_AI_NOTICE).replaceAll("{nome}", bot.name).replaceAll("{empresa}", bot.client_name);
+}
+
+/** Texto que o bot usa ao registrar o pedido de atendente: fora do horário, diz quando a equipe volta. */
+export function handoffNotice(hours: BusinessHours | null | undefined, now = new Date(), awayMessage?: string | null): string {
   const next = nextOpening(hours, now);
-  return next
-    ? `Nossa equipe volta ${whenLabel(next)}. Deixei seu pedido registrado e respondemos assim que possível.`
-    : "Deixei seu pedido registrado e nossa equipe responde assim que possível.";
+  return next ? (awayMessage?.trim() || DEFAULT_AWAY_MESSAGE).replaceAll("{volta}", whenLabel(next)) : NO_DATE_NOTICE;
 }
 
 /** Os outros contatos, para o prompt ("ofereça quando pedirem para falar com alguém"). */
