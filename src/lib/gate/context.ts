@@ -8,10 +8,10 @@ import type { AgeStatus } from "./age";
  * não citar (a IA cita o que está na frente dela). O corte é por frase, para não perder o resto
  * da linha ("Pedidos pelo site: …" fica). A classificação da base por IA (parte 6) refina isto.
  */
-export function gatedContext(context: string, o: { channel: Exclude<GateChannel, "widget">; contactPhone?: string | null; age: AgeStatus }): { context: string; hidden: GateCategory[] } {
+export function gatedContext(context: string, o: { channel: Exclude<GateChannel, "widget">; contactPhone?: string | null; age: AgeStatus; exempt?: readonly GateCategory[] }): { context: string; hidden: GateCategory[] } {
   const hidden = new Set<GateCategory>();
   const keep = (sentence: string) => {
-    const hits = dictionaryHits(sentence, { channel: o.channel, contactPhone: o.contactPhone }).filter((h) => h.level === "proibido" || o.age !== "sim");
+    const hits = dictionaryHits(sentence, { channel: o.channel, contactPhone: o.contactPhone, exempt: o.exempt }).filter((h) => h.level === "proibido" || o.age !== "sim");
     for (const h of hits) hidden.add(h.category);
     return !hits.length;
   };

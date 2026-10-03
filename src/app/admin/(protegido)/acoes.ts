@@ -12,6 +12,7 @@ import { company } from "@/lib/company";
 import { appUrl } from "@/lib/utils";
 import { audit, requestMeta } from "@/lib/audit";
 import { FEATURES, isFeature, type Feature } from "@/lib/features";
+import { CATEGORIES, type GateCategory } from "@/lib/gate/rules";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -318,4 +319,61 @@ export async function closeChannel(channel: Feature): Promise<ActionResult> {
   await auditAdmin(s.email, "plataforma.fechar_canal", { after: { channel } });
   revalidatePath("/admin", "layout");
   return ok(`Abertura do ${FEATURES[channel].label} fechada: só as agências liberadas conectam.`);
+}
+
+/* ------------------------------------------------------------------ portão: "isto não é {categoria}" */
+
+const gateLabel = (c: string) => CATEGORIES[c as GateCategory]?.label ?? c;
+
+/** Aprova o pedido: a categoria deixa de ser tratada pelo portão só naquele chatbot. Avisa o dono. */
+export async function approveGateReview(id: number): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/conformidade (aprovou a revisão do portão ${id})`);
+  const db = createAdminClient();
+  const { data: req } = await db.from("gate_review_requests").select("id, agency_id, bot_id, category, status, bots(name, client_name)").eq("id", id).maybeSingle();
+  if (!req || req.status !== "pendente") return fail("Pedido não encontrado ou já decidido.");
+  const { error } = await db.from("bot_gate_exceptions").upsert({ bot_id: req.bot_id, category: req.category, request_id: id, approved_by: s.email }, { onConflict: "bot_id,category" });
+  if (error) return fail("Não foi possível aprovar. Tente de novo.");
+  await db.from("gate_review_requests").update({ status: "aprovado", decided_by: s.email, decided_at: new Date().toISOString() }).eq("id", id);
+  await auditAdmin(s.email, "portao.aprovar_excecao", { agencyId: req.agency_id as string, targetType: "bot", targetId: req.bot_id as string, after: { category: req.category } });
+  const bot = (Array.isArray(req.bots) ? req.bots[0] : req.bots) as { name: string; client_name: string } | null;
+  const label = gateLabel(req.category as string);
+  await notifyAgencyOwner(db, req.agency_id as string, `Revisão aprovada: ${label} no chatbot ${bot?.name ?? ""}`, [
+    `A equipe ${company.brand} revisou o pedido "isto não é ${label}" do chatbot ${bot?.name ?? ""} (${bot?.client_name ?? ""}) e aprovou.`,
+    "",
+    `A partir de agora, o assistente desse chatbot não trata mais "${label}" como item restrito. Vale só para ele.`,
+  ]).catch(() => false);
+  revalidatePath("/admin", "layout");
+  return ok("Aprovado: a exceção vale para este chatbot.");
+}
+
+/** Recusa o pedido, com o motivo (vai para o dono por e-mail). */
+export async function rejectGateReview(id: number, fd: FormData): Promise<ActionResult> {
+  const reason = reasonOf(fd);
+  if (typeof reason !== "string") return fail(reason.error);
+  const s = await requireAdmin(`/admin/conformidade (recusou a revisão do portão ${id})`);
+  const db = createAdminClient();
+  const { data: req } = await db.from("gate_review_requests").update({ status: "recusado", decided_by: s.email, decided_at: new Date().toISOString(), decision_note: reason }).eq("id", id).eq("status", "pendente").select("agency_id, bot_id, category, bots(name, client_name)").maybeSingle();
+  if (!req) return fail("Pedido não encontrado ou já decidido.");
+  await auditAdmin(s.email, "portao.recusar_excecao", { agencyId: req.agency_id as string, targetType: "bot", targetId: req.bot_id as string, after: { category: req.category, reason } });
+  const bot = (Array.isArray(req.bots) ? req.bots[0] : req.bots) as { name: string; client_name: string } | null;
+  const label = gateLabel(req.category as string);
+  await notifyAgencyOwner(db, req.agency_id as string, `Revisão recusada: ${label} no chatbot ${bot?.name ?? ""}`, [
+    `A equipe ${company.brand} revisou o pedido "isto não é ${label}" do chatbot ${bot?.name ?? ""} (${bot?.client_name ?? ""}) e manteve a regra.`,
+    "",
+    `Motivo: ${reason}`,
+  ]).catch(() => false);
+  revalidatePath("/admin", "layout");
+  return ok("Pedido recusado e o dono avisado.");
+}
+
+/** Tira uma exceção: o portão volta a tratar a categoria naquele chatbot. */
+export async function revokeGateException(botId: string, category: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/conformidade (revogou a exceção ${category} do bot ${botId})`);
+  const { data, error } = await createAdminClient().from("bot_gate_exceptions").delete().eq("bot_id", botId).eq("category", category).select("bot_id, bots(agency_id)");
+  if (error) return fail("Não foi possível revogar. Tente de novo.");
+  if (!data?.length) return fail("Exceção não encontrada.");
+  const agencyId = ((Array.isArray(data[0].bots) ? data[0].bots[0] : data[0].bots) as { agency_id: string } | null)?.agency_id ?? null;
+  await auditAdmin(s.email, "portao.revogar_excecao", { agencyId, targetType: "bot", targetId: botId, after: { category } });
+  revalidatePath("/admin", "layout");
+  return ok("Exceção revogada: o portão volta a valer para essa categoria.");
 }

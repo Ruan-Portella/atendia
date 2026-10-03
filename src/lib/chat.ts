@@ -219,6 +219,8 @@ export interface GateState {
   instruction?: string;
   /** A pergunta envolve item proibido ou regulamentado: as linhas do portão vão também no lembrete final. */
   remind?: boolean;
+  /** Categorias liberadas pelo BoaVoz para este chatbot ("isto não é {categoria}"). */
+  exempt?: GateCategory[];
 }
 
 /** Linhas do portão para o prompt: idade, itens ocultos, canal de venda dos itens 18+ e instrução da entrada. */
@@ -240,7 +242,7 @@ export function gateNotesFor(bot: Pick<BotRow, "regulated_channel" | "human_hand
 
 /** O que o portão muda no prompt: a base sem os itens barrados, as linhas do portão e o lembrete final. */
 export function gatePrompt(bot: Pick<BotRow, "regulated_channel" | "human_handoff">, retrieval: { context: string; hits: ContextHit[] }, o: { channel: "whatsapp" | "instagram"; contactPhone: string | null; gate?: GateState }) {
-  const who = { channel: o.channel, contactPhone: o.contactPhone, age: o.gate?.age ?? null };
+  const who = { channel: o.channel, contactPhone: o.contactPhone, age: o.gate?.age ?? null, exempt: o.gate?.exempt };
   // trechos classificados pela IA (parte 6) já saem sem o que esta pessoa não pode ver
   const parts = retrieval.hits.map((h) => visibleText(h, who));
   const base = retrieval.hits.length ? formatContext(retrieval.hits.map((h, i) => ({ ...h, content: parts[i].text }))) : retrieval.context;
@@ -453,7 +455,7 @@ export async function runChat(opts: {
     messages: [
       { role: "system" as const, content: prompt.variable },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
-      ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null }) : messages.slice(-12))),
+      ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
       ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
     ],
     ...modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) }),

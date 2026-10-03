@@ -31,14 +31,15 @@ export interface GateHit {
  * Termos do dicionário presentes no texto, já sem as exceções da categoria ("frango na cerveja"
  * não acusa bebida). `extraTerms`: nomes classificados naquele bot (ex.: remédios da base).
  */
-export function dictionaryHits(text: string, opts: { channel?: GateChannel; contactPhone?: string | null; extraTerms?: Array<{ category: GateCategory; term: string }> } = {}): GateHit[] {
+export function dictionaryHits(text: string, opts: { channel?: GateChannel; contactPhone?: string | null; extraTerms?: Array<{ category: GateCategory; term: string }>; exempt?: readonly GateCategory[] } = {}): GateHit[] {
   const channel = opts.channel ?? "whatsapp";
   const base = normalizeGateText(text);
   const hits: GateHit[] = [];
   const seen = new Set<string>();
   const add = (category: GateCategory, term: string) => {
     const key = `${category}:${term}`;
-    if (seen.has(key)) return;
+    // "isto não é {categoria}" aprovado pelo BoaVoz para este chatbot
+    if (seen.has(key) || opts.exempt?.includes(category)) return;
     seen.add(key);
     hits.push({ category, level: effectiveLevel(category, channel, opts.contactPhone), term });
   };

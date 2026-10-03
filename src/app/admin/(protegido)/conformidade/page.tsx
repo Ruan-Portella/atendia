@@ -1,7 +1,8 @@
 import { Kpi } from "@/components/kpi";
 import { requireAdmin } from "@/lib/platform-admin";
 import { getCompliance } from "@/lib/backoffice-ops";
-import { getBusinessReviews, getIncidents, getMeasures, getRecentAcceptances, rangeFor } from "@/lib/backoffice";
+import { getBusinessReviews, getGateReviews, getIncidents, getMeasures, getRecentAcceptances, rangeFor } from "@/lib/backoffice";
+import { GateReviews } from "@/components/admin/gate-reviews";
 import { IncidentRegister } from "@/components/admin/incidents";
 import { AcceptanceList, BusinessReviews } from "@/components/admin/business-reviews";
 import { MeasureList } from "@/components/admin/pause-controls";
@@ -19,7 +20,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const email = typeof sp.email === "string" ? sp.email.trim().slice(0, 120) : "";
   const range = rangeFor("30d");
-  const [c, measures, reviews, acceptances, incidents] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 }), getBusinessReviews(), getRecentAcceptances(), getIncidents()]);
+  const [c, measures, reviews, acceptances, incidents, gate] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 }), getBusinessReviews(), getRecentAcceptances(), getIncidents(), getGateReviews()]);
   const active = c.suppressions.reduce((t, s) => t + s.active, 0);
   const created = c.suppressions.reduce((t, s) => t + s.created_since, 0);
   const revoked = c.suppressions.reduce((t, s) => t + s.revoked_since, 0);
@@ -42,6 +43,8 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
       <IncidentRegister incidents={incidents} />
 
       <BusinessReviews open={reviews.open} recent={reviews.recent} />
+
+      <GateReviews open={gate.open} recent={gate.recent} exceptions={gate.exceptions} />
 
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="text-base font-bold">Medidas: suspensões da BoaVoz e avisos da Meta</h2>

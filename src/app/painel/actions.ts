@@ -14,6 +14,8 @@ import { initials, normalizeUrl, slugify } from "@/lib/utils";
 import { WEEKDAYS, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
+import { isGateCategory } from "@/lib/gate/exceptions";
+import { CATEGORIES } from "@/lib/gate/rules";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
@@ -677,6 +679,31 @@ export async function createWhatsAppConnectLink(botId: string, channel: "whatsap
   } catch {
     return { ok: false, message: "Não foi possível criar o link. Tente de novo." };
   }
+}
+
+/**
+ * "Isto não é {categoria}": a agência pede ao BoaVoz para o portão deixar de tratar a categoria
+ * neste chatbot. Só o BoaVoz aprova (backoffice, Conformidade); a exceção vale só para o chatbot.
+ */
+export async function requestGateReview(conversationId: string, category: string, formData: FormData): Promise<ActionResult> {
+  if (!isGateCategory(category)) return fail("Categoria inválida.");
+  const { agency, email } = await requireAgency();
+  const supabase = await createClient();
+  const { data: conv } = await supabase.from("conversations").select("id, bot_id, bots(name, client_name)").eq("id", conversationId).maybeSingle();
+  if (!conv) return fail("Conversa não encontrada.");
+  const note = text(formData.get("note")).slice(0, 500) || null;
+  const { error } = await createAdminClient().from("gate_review_requests").insert({ agency_id: agency.id, bot_id: conv.bot_id, conversation_id: conversationId, category, note, requested_by: email });
+  if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe um pedido de revisão aberto para este item neste chatbot." : "Não foi possível pedir a revisão. Tente de novo.");
+  await auditPanel("portao.pedir_revisao", { type: "bot", id: conv.bot_id as string }, { after: { category, conversationId } });
+  const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { name: string; client_name: string } | null;
+  await notifyPlatform(`Pedido de revisão do portão: ${CATEGORIES[category].label}`, [
+    `${agency.name} pediu revisão: "isto não é ${CATEGORIES[category].label}" no chatbot ${bot?.name ?? ""} (${bot?.client_name ?? ""}).`,
+    ...(note ? ["", `Explicação: ${note}`] : []),
+    "",
+    "Decida em /admin/conformidade.",
+  ]).catch(() => false);
+  revalidatePath(`/painel/bots/${conv.bot_id}/conversas/${conversationId}`);
+  return ok("Pedido enviado. A equipe BoaVoz revisa e avisa por e-mail.");
 }
 
 /** "Já cadastrei o cartão": confere na Meta agora; com cartão, o alerta de pagamento sai. */

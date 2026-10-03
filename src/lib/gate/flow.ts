@@ -11,6 +11,7 @@ import { checkExit, exitDecision } from "./exit";
 import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
+import { botGateExemptions } from "./exceptions";
 import { GATE_TEXTS, RULES_VERSION, type GateCategory } from "./rules";
 
 /*
@@ -172,12 +173,13 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
 
   // 2. portão da entrada (o "Não" sempre vence: a idade é lida de novo depois do setAge)
   const age: AgeStatus = await getAge(db, who);
-  const retrieval = await retrieveContext(db, bot.id, question);
+  const [retrieval, exempt] = await Promise.all([retrieveContext(db, bot.id, question), botGateExemptions(db, bot.id)]);
   const entrance = await decideEntrance({
     text: question,
     channel,
     contactPhone,
     age,
+    exempt,
     context: retrieval.context,
     contextCategories: retrieval.hits.flatMap((h) => h.gate_categories ?? []),
     companyName: bot.client_name,
@@ -227,7 +229,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     questionKey: q.key,
     storeQuestion,
     retrieval,
-    gate: { age, instruction: entrance.instruction, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 },
+    gate: { age, instruction: entrance.instruction, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0, exempt },
   });
   const raw = await result.text;
   const answerId = await saved;
@@ -241,7 +243,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   }
   // 4. portão na saída: item proibido, item 18+ sem o "Sim" e pagamento numa conversa com esses itens
   const regulatedConversation = entrance.regulated.length > 0 || (regulatedAt !== null && Date.now() - Date.parse(regulatedAt) < REGULATED_WINDOW_MS);
-  const exit = checkExit({ text: raw, channel, contactPhone, age, regulatedConversation, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) });
+  const exit = checkExit({ text: raw, channel, contactPhone, age, regulatedConversation, exempt, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) });
   if (exit.prohibited.length || exit.regulated.length || exit.payment) {
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: exitDecision(exit), categories: [...exit.prohibited, ...exit.regulated] });
   }

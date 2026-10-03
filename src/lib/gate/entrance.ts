@@ -20,6 +20,8 @@ export interface EntranceInput {
   context: string;
   /** Categorias que a classificação da base (parte 6) achou nesses trechos. */
   contextCategories?: GateCategory[];
+  /** Categorias liberadas pelo BoaVoz para este chatbot ("isto não é {categoria}"). */
+  exempt?: readonly GateCategory[];
   companyName: string;
   /** Classificador da etapa 2 (troca nos testes). */
   classify?: (text: string, categories: GateCategory[], companyName: string, blocked: GateCategory[]) => Promise<Classification>;
@@ -105,7 +107,7 @@ export function parseClassification(raw: string, categories: GateCategory[]): Cl
 }
 
 export async function decideEntrance(input: EntranceInput): Promise<EntranceDecision> {
-  const scan = (text: string) => dictionaryHits(text, { channel: input.channel, contactPhone: input.contactPhone });
+  const scan = (text: string) => dictionaryHits(text, { channel: input.channel, contactPhone: input.contactPhone, exempt: input.exempt });
   const hits = scan(input.text);
   if (!hits.length) return { kind: "ia", regulated: [], prohibited: [] };
   // o nível vem do dicionário (canal e país já aplicados); a IA só diz o que foi pedido

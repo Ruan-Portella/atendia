@@ -9,6 +9,7 @@ import { decideEntrance } from "./gate/entrance";
 import { GATE_TEXTS } from "./gate/rules";
 import { checkExit, exitDecision } from "./gate/exit";
 import { gatedHistory } from "./gate/context";
+import { botGateExemptions } from "./gate/exceptions";
 import { regulatedDestination } from "./gate/sales-channel";
 import { costUsd, usageFrom, type UsageTokens } from "./ai-usage";
 import type { AgeStatus } from "./gate/age";
@@ -85,7 +86,7 @@ export function costLine(c: ReturnType<typeof costSummary>): string {
 }
 
 export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question: string, opts: EvalOptions) {
-  const retrieval = await retrieveContext(db, bot.id, question);
+  const [retrieval, exempt] = await Promise.all([retrieveContext(db, bot.id, question), botGateExemptions(db, bot.id)]);
   if (retrieval.embeddingUsage?.tokens) opts.onUsage?.({ embeddingModel: retrieval.embeddingUsage.model, embeddingTokens: retrieval.embeddingUsage.tokens });
   const { context, hits } = retrieval;
   const phone = opts.foreign ? "14155550123" : "5521999990000";
@@ -99,7 +100,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
     let urgent = false;
     try {
       // portão na entrada, como no canal: proibido e pergunta de 18+ nem chegam à IA principal
-      const entrance = scopeLock ? await decideEntrance({ text: question, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, context, contextCategories: retrieval.hits.flatMap((h) => h.gate_categories ?? []), companyName: bot.client_name, classifierModel: opts.classifierModel, onUsage: opts.onUsage }) : null;
+      const entrance = scopeLock ? await decideEntrance({ text: question, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, context, contextCategories: retrieval.hits.flatMap((h) => h.gate_categories ?? []), exempt, companyName: bot.client_name, classifierModel: opts.classifierModel, onUsage: opts.onUsage }) : null;
       if (entrance?.kind === "proibido") return { verdict: "barrou", text: GATE_TEXTS.prohibited, tools: [`portao:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0, costUsd: 0 };
       if (entrance?.kind === "nao_18") return { verdict: "barrou", text: GATE_TEXTS.under18, tools: [`portao:nao_18:${entrance.categories.join(",")}`], inputTokens: 0, outputTokens: 0, costUsd: 0 };
       if (entrance?.kind === "pede_18") return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools: ["portao:pede_18"], inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -107,7 +108,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       // mesmo corte do chat: a base sem os itens barrados para esta pessoa e as linhas do portão
       const remind = entrance?.kind === "ia" && (entrance.regulated.length > 0 || entrance.prohibited.length > 0);
       const gated = scopeLock
-        ? gatePrompt(bot, retrieval, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, gate: { age, instruction: entrance?.kind === "ia" ? entrance.instruction : undefined, remind } })
+        ? gatePrompt(bot, retrieval, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, gate: { age, exempt, instruction: entrance?.kind === "ia" ? entrance.instruction : undefined, remind } })
         : { context, gateNotes: [], reminder: [] };
       const prompt = buildPrompt({
         assistantName: bot.name,
@@ -130,7 +131,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         messages: [
           { role: "system" as const, content: prompt.variable },
           // histórico com o mesmo corte do chat nas respostas do bot
-          ...(scopeLock ? gatedHistory(historyParts, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age }) : historyParts).map((m) => ({ role: m.role, content: m.parts[0].text })),
+          ...(scopeLock ? gatedHistory(historyParts, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, exempt }) : historyParts).map((m) => ({ role: m.role, content: m.parts[0].text })),
           // item barrado junto com outro assunto: a IA responde à mensagem sem o item, como no canal
           { role: "user" as const, content: entrance?.kind === "ia" && entrance.question ? entrance.question : question },
           ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
@@ -164,7 +165,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       if (scopeLock && age === null && tools.includes("pedir_confirmacao_18")) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, ...usage };
       // portão na saída, como no canal (a conversa conta como "com bebida ou remédio" se a entrada acusou)
       const exit = scopeLock
-        ? checkExit({ text: r.text, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, regulatedConversation: entrance?.kind === "ia" && entrance.regulated.length > 0, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) })
+        ? checkExit({ text: r.text, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, exempt, regulatedConversation: entrance?.kind === "ia" && entrance.regulated.length > 0, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) })
         : null;
       if (exit && (exit.prohibited.length || exit.regulated.length || exit.payment)) tools.push(`saida:${exitDecision(exit)}`);
       if (exit?.emptied && exit.regulated.length && age === null && !urgent) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, ...usage };

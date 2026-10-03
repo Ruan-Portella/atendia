@@ -674,3 +674,84 @@ export async function getClientExport(): Promise<ClientExportRow[]> {
     };
   });
 }
+
+/* ------------------------------------------------------------------ "isto não é {categoria}" (portão) */
+
+export interface GateReviewRow {
+  id: number;
+  agencyId: string;
+  agencyName: string | null;
+  botId: string;
+  botName: string;
+  clientName: string;
+  conversationId: string | null;
+  category: string;
+  note: string | null;
+  status: "pendente" | "aprovado" | "recusado";
+  requestedBy: string;
+  createdAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+}
+
+export interface GateExceptionRow {
+  botId: string;
+  botName: string;
+  clientName: string;
+  agencyId: string;
+  agencyName: string | null;
+  category: string;
+  approvedBy: string;
+  createdAt: string;
+}
+
+/** Pedidos de revisão do portão (abertos e os últimos decididos) e as exceções ativas. */
+export async function getGateReviews(): Promise<{ open: GateReviewRow[]; recent: GateReviewRow[]; exceptions: GateExceptionRow[] }> {
+  const db = createAdminClient();
+  const cols = "id, agency_id, bot_id, conversation_id, category, note, status, requested_by, created_at, decided_by, decided_at, decision_note, bots(name, client_name), agencies(name)";
+  const [{ data: open }, { data: recent }, { data: exceptions }] = await Promise.all([
+    db.from("gate_review_requests").select(cols).eq("status", "pendente").order("created_at").limit(50),
+    db.from("gate_review_requests").select(cols).neq("status", "pendente").order("decided_at", { ascending: false }).limit(10),
+    db.from("bot_gate_exceptions").select("bot_id, category, approved_by, created_at, bots(name, client_name, agency_id, agencies(name))").order("created_at", { ascending: false }).limit(100),
+  ]);
+  const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+  const map = (r: Record<string, unknown>): GateReviewRow => {
+    const bot = one(r.bots as { name: string; client_name: string } | null);
+    return {
+      id: r.id as number,
+      agencyId: r.agency_id as string,
+      agencyName: one(r.agencies as { name: string } | null)?.name ?? null,
+      botId: r.bot_id as string,
+      botName: bot?.name ?? "chatbot apagado",
+      clientName: bot?.client_name ?? "",
+      conversationId: (r.conversation_id as string | null) ?? null,
+      category: r.category as string,
+      note: (r.note as string | null) ?? null,
+      status: r.status as GateReviewRow["status"],
+      requestedBy: r.requested_by as string,
+      createdAt: r.created_at as string,
+      decidedBy: (r.decided_by as string | null) ?? null,
+      decidedAt: (r.decided_at as string | null) ?? null,
+      decisionNote: (r.decision_note as string | null) ?? null,
+    };
+  };
+  return {
+    open: (open ?? []).map(map),
+    recent: (recent ?? []).map(map),
+    exceptions: (exceptions ?? []).map((e) => {
+      type BotRef = { name: string; client_name: string; agency_id: string; agencies: { name: string } | { name: string }[] | null };
+      const bot = one(e.bots as unknown as BotRef | BotRef[] | null);
+      return {
+        botId: e.bot_id as string,
+        botName: bot?.name ?? "chatbot apagado",
+        clientName: bot?.client_name ?? "",
+        agencyId: bot?.agency_id ?? "",
+        agencyName: one(bot?.agencies)?.name ?? null,
+        category: e.category as string,
+        approvedBy: e.approved_by as string,
+        createdAt: e.created_at as string,
+      };
+    }),
+  };
+}

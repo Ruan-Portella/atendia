@@ -127,11 +127,12 @@ export interface GatedHit {
  * até o "Sim" do 18+ (e nunca no WhatsApp de fora do Brasil). Trecho sem classificação: inteiro
  * (o dicionário corta por cima).
  */
-export function visibleText(hit: GatedHit, o: { channel: Exclude<GateChannel, "widget">; contactPhone?: string | null; age: AgeStatus }): { text: string; hidden: GateCategory[] } {
+export function visibleText(hit: GatedHit, o: { channel: Exclude<GateChannel, "widget">; contactPhone?: string | null; age: AgeStatus; exempt?: readonly GateCategory[] }): { text: string; hidden: GateCategory[] } {
   if (!hit.gate_version || !hit.gate_segments?.length) return { text: hit.content, hidden: [] };
   const hidden = new Set<GateCategory>();
   const keep = hit.gate_segments.filter((s) => {
     const blocked = (s.c ?? []).filter((c) => {
+      if (o.exempt?.includes(c)) return false;
       const level = effectiveLevel(c, o.channel, o.contactPhone);
       return level === "proibido" || (level === "regulamentado" && o.age !== "sim");
     });

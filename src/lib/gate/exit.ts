@@ -25,6 +25,8 @@ export interface ExitInput {
   regulatedConversation: boolean;
   /** Onde o contato finaliza o pedido desses itens (regulatedDestination); null sem canal. */
   destination: { canal: string; destino: string } | null;
+  /** Categorias liberadas pelo BoaVoz para este chatbot ("isto não é {categoria}"). */
+  exempt?: readonly GateCategory[];
 }
 
 export interface ExitResult {
@@ -60,7 +62,7 @@ export function checkExit(input: ExitInput): ExitResult {
   for (const s of sentences(input.text)) {
     const norm = normalizeGateText(s);
     const negated = NEGATION.test(norm);
-    const hits = negated ? [] : dictionaryHits(s, { channel: input.channel, contactPhone: input.contactPhone });
+    const hits = negated ? [] : dictionaryHits(s, { channel: input.channel, contactPhone: input.contactPhone, exempt: input.exempt });
     const banned = hits.filter((h) => h.level === "proibido");
     // bebida ou remédio só sai se a frase oferece o item e a pessoa não confirmou 18+
     const adult = input.age === "sim" || !offers(s, norm) ? [] : hits.filter((h) => h.level === "regulamentado");

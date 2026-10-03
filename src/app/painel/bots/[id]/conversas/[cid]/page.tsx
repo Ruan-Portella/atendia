@@ -20,7 +20,10 @@ import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { deleteConversation, releaseConversation, resetConversationAge, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
+import { deleteConversation, releaseConversation, requestGateReview, resetConversationAge, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
+import { botGateExemptions, conversationGateCategories } from "@/lib/gate/exceptions";
+import { CATEGORIES } from "@/lib/gate/rules";
+import { GateReviewButton } from "@/components/gate-review-button";
 import { ageRecord } from "@/lib/gate/age";
 
 export const metadata = { title: "Conversa" };
@@ -64,6 +67,10 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const allMessages = (messages ?? []) as ThreadMessage[];
   // conversa com bebida ou remédio (portão): faixa de aviso e pergunta antes de instrução de pagamento
   const regulated = (isWhatsApp || isInstagram) && regulatedConversation(conv.regulated_at as string | null);
+  // itens que o portão acusou nesta conversa: a agência pode pedir "isto não é {categoria}"
+  const gateCats = isWhatsApp || isInstagram ? await conversationGateCategories(createAdminClient(), cid, await botGateExemptions(createAdminClient(), id)) : [];
+  const { data: openReviews } = gateCats.length ? await createAdminClient().from("gate_review_requests").select("category").eq("bot_id", id).eq("status", "pendente") : { data: [] as Array<{ category: string }> };
+  const reviewing = new Set((openReviews ?? []).map((r) => r.category as string));
   const coexistence = regulated && isWhatsApp ? Boolean((await createAdminClient().from("whatsapp_channels").select("coexistence").eq("bot_id", id).maybeSingle()).data?.coexistence) : false;
   const templateAction = sendConversationTemplate.bind(null, cid);
 
@@ -76,6 +83,17 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
           <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-semibold text-muted">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>
           <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa {relativeTime(conv.started_at)} <ConversationStateBadge conv={conv} withTime /></h1>
           <p className="text-xs text-muted">canal: {conv.channel}{conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
+          {gateCats.length > 0 && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+              <span>O portão acusou:</span>
+              {gateCats.map((c) => (
+                <span key={c} className="inline-flex items-center gap-1.5 rounded-full bg-ground px-2 py-0.5">
+                  {CATEGORIES[c].label} ·{" "}
+                  {reviewing.has(c) ? <span className="font-semibold">revisão pedida</span> : <GateReviewButton label={CATEGORIES[c].label} action={requestGateReview.bind(null, cid, c)} />}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
