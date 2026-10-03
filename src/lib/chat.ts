@@ -507,7 +507,8 @@ export async function runChat(opts: {
     age: opts.gate?.age ?? null,
     contactKey: opts.whatsapp?.waId ?? opts.instagram?.igsid ?? null,
     exempt: opts.gate?.exempt,
-    messageKey: opts.questionKey ?? `${convId}|${question}`,
+    // WhatsApp e Instagram: o id do evento (o reprocesso reaproveita a resposta); widget: uma por mensagem
+    messageKey: opts.questionKey ?? `${convId}|${crypto.randomUUID()}`,
     onReply: (r) => void (actionReply ??= r),
   });
   // até 5 passos com ações (o último sem ferramentas, para sempre sair texto); sem ações, 3 como antes
