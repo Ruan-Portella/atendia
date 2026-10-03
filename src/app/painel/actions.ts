@@ -30,8 +30,9 @@ import { confirmAcceptance, connectBlockFor, dayLabel, getCompliance, parseAnswe
 import { notifyPlatform } from "@/lib/notify";
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
-import { typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { deleteContacts, findContactIds, typedPhoneHash, whatsappContact } from "@/lib/contacts";
 import { logDeletion } from "@/lib/deletions";
+import { saveMessage } from "@/lib/messages";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
 
@@ -762,10 +763,11 @@ async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: stri
 /** Grava o modelo enviado como resposta da equipe e atualiza a conversa. */
 async function recordTemplateMessage(admin: ReturnType<typeof createAdminClient>, conversationId: string, content: string, category: string, msgHash: string | null) {
   // a categoria decide o alcance de um SAIR respondido depois (descadastro da categoria do último modelo)
-  const { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, author: AGENCY_AUTHOR, template_category: category, channel_msg_id: "enviada", channel_msg_hash: msgHash });
-  if (error) console.error("modelo enviado, mas não gravado na conversa", error.message);
-  const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
-  await admin.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conversationId);
+  try {
+    await saveMessage(admin, { conversation_id: conversationId, role: "agent", content, author: AGENCY_AUTHOR, template_category: category, channel_msg_id: "enviada", channel_msg_hash: msgHash }, { touch: "equipe" });
+  } catch (e) {
+    console.error("modelo enviado, mas não gravado na conversa", (e as Error).message);
+  }
 }
 
 /**
@@ -998,12 +1000,7 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
   const admin = createAdminClient();
   // a ficha do contato (WhatsApp, pelo telefone canônico em hash, ou pelo e-mail) e todas as conversas dela
   const ph = byEmail ? null : typedPhoneHash(contact);
-  const { data: contactRows } = byEmail
-    ? await admin.from("contacts").select("id").in("bot_id", ids).ilike("email", contact)
-    : ph
-      ? await admin.from("contacts").select("id").in("bot_id", ids).eq("phone_hash", ph)
-      : { data: [] as Array<{ id: string }> };
-  const contactIds = (contactRows ?? []).map((c) => c.id as string);
+  const contactIds = byEmail ? await findContactIds(admin, ids, { email: contact }) : ph ? await findContactIds(admin, ids, { phoneHash: ph }) : [];
   const { data: contactConvs } = contactIds.length ? await admin.from("conversations").select("id").in("contact_id", contactIds) : { data: [] as Array<{ id: string }> };
   if (!matches.length && !contactIds.length) return ok("Nenhum dado encontrado para esse contato.");
 
@@ -1014,7 +1011,7 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
   await logDeletion(admin, "contacts", contactIds);
   if (matches.length) await admin.from("leads").delete().in("id", matches.map((l) => l.id));
   if (convIds.length) await admin.from("conversations").delete().in("id", convIds).in("bot_id", ids);
-  if (contactIds.length) await admin.from("contacts").delete().in("id", contactIds).in("bot_id", ids);
+  await deleteContacts(admin, contactIds, ids);
   await auditPanel("contato.apagar_dados", { type: "client", id: clientId }, { after: { contatos: matches.length, conversas: convIds.length, por: byEmail ? "email" : "telefone" } });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok(`Apagados ${matches.length} contato${matches.length === 1 ? "" : "s"} e ${convIds.length} conversa${convIds.length === 1 ? "" : "s"}.`);

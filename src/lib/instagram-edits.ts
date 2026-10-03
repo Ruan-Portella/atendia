@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sha256 } from "./inbound-queue";
 import { logDeletion } from "./deletions";
+import { loadMessages, updateMessages } from "./messages";
 import type { IgMessagingEvent } from "./instagram-inbound";
 
 /*
@@ -60,15 +61,9 @@ export function sharedText(ref: SharedRef): string {
 export async function handleInstagramEdit(db: SupabaseClient, ev: IgMessagingEvent): Promise<boolean> {
   const edit = ev.message_edit;
   if (!edit?.mid || typeof edit.text !== "string") return false;
-  const { data, error } = await db
-    .from("messages")
-    .update({ content: edit.text.trim().slice(0, 2000), edited_at: new Date().toISOString() })
-    .eq("inbound_key", igMessageKey(edit.mid))
-    .is("deleted_at", null)
-    .select("id");
-  if (error) throw new Error(`edição não gravada: ${error.message}`);
-  if (!data?.length) console.log("instagram: edição de mensagem que não está no painel", edit.num_edit);
-  return Boolean(data?.length);
+  const ids = await updateMessages(db, { inboundKey: igMessageKey(edit.mid) }, { content: edit.text.trim().slice(0, 2000), edited_at: new Date().toISOString() }, { notDeleted: true });
+  if (!ids.length) console.log("instagram: edição de mensagem que não está no painel", edit.num_edit);
+  return ids.length > 0;
 }
 
 /**
@@ -79,15 +74,13 @@ export async function handleInstagramDelete(db: SupabaseClient, ev: IgMessagingE
   const mid = ev.message?.mid;
   if (!mid) return "marcada";
   const key = igMessageKey(mid);
-  const { data: rows } = await db.from("messages").select("id").eq("inbound_key", key);
-  const ids = (rows ?? []).map((r) => String(r.id));
+  const ids = (await loadMessages(db, { inboundKey: key }, ["id"] as const)).map((r) => String(r.id));
   if (!ids.length) {
     await logDeletion(db, "inbound_key", [key]);
     return "marcada";
   }
   await logDeletion(db, "message_content", ids);
-  const { error } = await db.from("messages").update({ content: DELETED_LABEL, channel_ref: null, deleted_at: new Date().toISOString() }).in("id", ids);
-  if (error) throw new Error(`lápide não gravada: ${error.message}`);
+  await updateMessages(db, { ids }, { content: DELETED_LABEL, channel_ref: null, deleted_at: new Date().toISOString() });
   return "apagada";
 }
 

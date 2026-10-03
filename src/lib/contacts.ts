@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { canonicalPhone } from "./phone";
 import { hmacHex } from "./hash";
+import { sealNullable } from "./field-cipher";
 
 /*
  * Contatos (L1): a identidade de quem conversa com cada chatbot, por canal, achada por hash com
@@ -11,7 +12,13 @@ import { hmacHex } from "./hash";
  *     reciclado): contato novo, sem o vínculo, o consentimento e o 18+ do anterior.
  *   - first_inbound_at / last_inbound_at: só mensagem do próprio contato recebida pelo canal
  *     (nunca eco, status, histórico ou envio). "Já conversou" e a janela de 24 h saem daqui.
+ * Camada única: toda leitura e gravação da tabela contacts passa por este arquivo (as colunas
+ * _enc são cifradas na leva S, em field-cipher.ts). Um teste confere que ninguém usa a tabela direto.
  */
+
+const phoneEnc = (v: string | null | undefined) => sealNullable("contacts.phone_enc", v);
+const waUserEnc = (v: string | null | undefined) => sealNullable("contacts.wa_user_enc", v);
+const igEnc = (v: string | null | undefined) => sealNullable("contacts.ig_enc", v);
 
 export type ContactChannel = "whatsapp" | "instagram";
 
@@ -74,7 +81,7 @@ export async function whatsappContact(db: SupabaseClient, bot: { id: string; age
     // achou pelo BSUID: completa o telefone (se outro contato tinha esse telefone sem BSUID, ele é o antigo registro da mesma pessoa)
     if (ph && byUser.phone_hash !== ph) {
       if (byPhone && byPhone.id !== byUser.id) await db.from("contacts").update({ phone_hash: null, updated_at: new Date().toISOString() }).eq("id", byPhone.id);
-      await db.from("contacts").update({ phone_hash: ph, phone_enc: who.phone, updated_at: new Date().toISOString() }).eq("id", byUser.id);
+      await db.from("contacts").update({ phone_hash: ph, phone_enc: phoneEnc(who.phone), updated_at: new Date().toISOString() }).eq("id", byUser.id);
       byUser.phone_hash = ph;
     }
     return byUser;
@@ -83,15 +90,15 @@ export async function whatsappContact(db: SupabaseClient, bot: { id: string; age
     if (uh && byPhone.wa_user_hash && byPhone.wa_user_hash !== uh) {
       // mesmo telefone, outro BSUID, sem o aviso de troca: número reciclado, é outra pessoa
       await db.from("contacts").update({ phone_hash: null, updated_at: new Date().toISOString() }).eq("id", byPhone.id);
-      return createContact(db, bot, "whatsapp", { phone_hash: ph, phone_enc: who.phone, wa_user_hash: uh, wa_user_enc: who.bsuid, name: who.name ?? null });
+      return createContact(db, bot, "whatsapp", { phone_hash: ph, phone_enc: phoneEnc(who.phone), wa_user_hash: uh, wa_user_enc: waUserEnc(who.bsuid), name: who.name ?? null });
     }
     if (uh && !byPhone.wa_user_hash) {
-      await db.from("contacts").update({ wa_user_hash: uh, wa_user_enc: who.bsuid, updated_at: new Date().toISOString() }).eq("id", byPhone.id);
+      await db.from("contacts").update({ wa_user_hash: uh, wa_user_enc: waUserEnc(who.bsuid), updated_at: new Date().toISOString() }).eq("id", byPhone.id);
       byPhone.wa_user_hash = uh;
     }
     return byPhone;
   }
-  return createContact(db, bot, "whatsapp", { phone_hash: ph, phone_enc: who.phone ?? null, wa_user_hash: uh, wa_user_enc: who.bsuid ?? null, name: who.name ?? null });
+  return createContact(db, bot, "whatsapp", { phone_hash: ph, phone_enc: phoneEnc(who.phone), wa_user_hash: uh, wa_user_enc: waUserEnc(who.bsuid), name: who.name ?? null });
 }
 
 /** Contato do Instagram deste chatbot (pelo IGSID); cria se não existir. Service role. */
@@ -99,7 +106,7 @@ export async function instagramContact(db: SupabaseClient, bot: { id: string; ag
   if (!igsid) return null;
   const h = igHash(igsid);
   const { data } = await db.from("contacts").select(COLS).eq("bot_id", bot.id).eq("channel", "instagram").eq("ig_hash", h).maybeSingle<ContactRow>();
-  return data ?? createContact(db, bot, "instagram", { ig_hash: h, ig_enc: igsid });
+  return data ?? createContact(db, bot, "instagram", { ig_hash: h, ig_enc: igEnc(igsid) });
 }
 
 async function createContact(db: SupabaseClient, bot: { id: string; agency_id: string }, channel: ContactChannel, fields: Record<string, unknown>): Promise<ContactRow | null> {
@@ -138,8 +145,8 @@ export async function changeWhatsAppIdentity(db: SupabaseClient, botId: string, 
   if (!found) return false;
   const newPhone = canonicalPhone(to.phone);
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (newPhone) Object.assign(patch, { phone_hash: phoneHash(newPhone), phone_enc: to.phone });
-  if (to.bsuid) Object.assign(patch, { wa_user_hash: waUserHash(to.bsuid), wa_user_enc: to.bsuid });
+  if (newPhone) Object.assign(patch, { phone_hash: phoneHash(newPhone), phone_enc: phoneEnc(to.phone) });
+  if (to.bsuid) Object.assign(patch, { wa_user_hash: waUserHash(to.bsuid), wa_user_enc: waUserEnc(to.bsuid) });
   // quem já tinha o telefone ou o BSUID novos (contato criado antes do aviso) cede para o contato antigo
   if (patch.phone_hash) await db.from("contacts").update({ phone_hash: null }).eq("bot_id", botId).eq("channel", "whatsapp").eq("phone_hash", patch.phone_hash as string).neq("id", found.id);
   if (patch.wa_user_hash) await db.from("contacts").update({ wa_user_hash: null }).eq("bot_id", botId).eq("channel", "whatsapp").eq("wa_user_hash", patch.wa_user_hash as string).neq("id", found.id);
@@ -160,6 +167,45 @@ export async function forgetBsuids(db: SupabaseClient, botId: string): Promise<v
 
 /** Um id do WhatsApp guardado sozinho (wa_id antigo, destino do eco): telefone ou BSUID? */
 export const whatsappIdentityOf = (id: string): WhatsAppIdentity => (/[a-z]/i.test(id) ? { bsuid: id } : { phone: id });
+
+/** Quando chegou a última mensagem do próprio contato (janela de 24 h da Meta), ou null. */
+export async function contactLastInbound(db: SupabaseClient, contactId: string): Promise<string | null> {
+  const { data } = await db.from("contacts").select("last_inbound_at").eq("id", contactId).maybeSingle();
+  return (data?.last_inbound_at as string | null | undefined) ?? null;
+}
+
+/** Motivo do aviso de indisponível já enviado ao contato neste episódio, ou null. */
+export async function contactNoticeReason(db: SupabaseClient, contactId: string): Promise<string | null> {
+  const { data } = await db.from("contacts").select("unavailable_notice_reason").eq("id", contactId).maybeSingle();
+  return (data?.unavailable_notice_reason as string | null | undefined) ?? null;
+}
+
+/** Grava (ou zera, com reason null) a marca do aviso de indisponível no contato. */
+export async function setContactNotice(db: SupabaseClient, contactId: string, reason: string | null): Promise<void> {
+  const q = db.from("contacts").update({ unavailable_notice_at: reason ? new Date().toISOString() : null, unavailable_notice_reason: reason }).eq("id", contactId);
+  await (reason ? q : q.not("unavailable_notice_reason", "is", null));
+}
+
+/** Fichas para o pedido de exclusão (LGPD), nestes chatbots: pelo e-mail ou pelo hash do telefone. */
+export async function findContactIds(db: SupabaseClient, botIds: string[], by: { email: string } | { phoneHash: string }): Promise<string[]> {
+  const base = db.from("contacts").select("id").in("bot_id", botIds);
+  const { data } = await ("email" in by ? base.ilike("email", by.email) : base.eq("phone_hash", by.phoneHash));
+  return (data ?? []).map((c) => c.id as string);
+}
+
+/** Todas as fichas de um canal de um chatbot (ex.: a conta do Instagram desconectada pela Meta). */
+export async function contactIdsOfChannel(db: SupabaseClient, botId: string, channel: ContactChannel): Promise<string[]> {
+  const { data } = await db.from("contacts").select("id").eq("bot_id", botId).eq("channel", channel);
+  return (data ?? []).map((c) => c.id as string);
+}
+
+/** Apaga fichas (quem chama já gravou no registro de exclusões); botIds limita a estes chatbots. */
+export async function deleteContacts(db: SupabaseClient, ids: string[], botIds?: string[]): Promise<void> {
+  if (!ids.length) return;
+  const q = db.from("contacts").delete().in("id", ids);
+  const { error } = await (botIds ? q.in("bot_id", botIds) : q);
+  if (error) throw new Error(`exclusão de contatos: ${error.message}`);
+}
 
 /**
  * Conversas de antes dos contatos (sem contact_id): ganham a ficha do contato, em lotes (rotina

@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isResumable } from "@/lib/presence";
+import { loadMessages } from "@/lib/messages";
 
 const HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -35,8 +36,8 @@ export async function GET(req: Request) {
   if (!conv || conv.visitor_id !== visitorId || !isResumable(conv.last_message_at)) {
     return Response.json({ resumable: false }, { headers: HEADERS });
   }
-  const { data: messages } = await db.from("messages").select("id, role, content").eq("conversation_id", conversationId).order("id").limit(200);
+  const messages = await loadMessages(db, { conversationId, limit: 200 }, ["id", "role", "content"] as const);
   const mode = conv.handled_at ? "bot" : conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : "bot";
   await db.from("conversations").update({ visitor_seen_at: new Date().toISOString() }).eq("id", conversationId);
-  return Response.json({ resumable: true, mode, messages: messages ?? [] }, { headers: HEADERS });
+  return Response.json({ resumable: true, mode, messages }, { headers: HEADERS });
 }

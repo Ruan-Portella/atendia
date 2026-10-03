@@ -9,6 +9,7 @@ import { logWidgetAccess } from "@/lib/access-log";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 import { isResumable } from "@/lib/presence";
 import { openAtendimento } from "@/lib/atendimentos";
+import { saveMessage } from "@/lib/messages";
 
 const MAX_MESSAGE_CHARS = 2000;
 
@@ -97,10 +98,7 @@ export async function POST(req: Request) {
   if (convId && mode.step === 3) {
     const activeConv = convId;
     if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: activeConv, ip: clientIp(req), isNew: false }));
-    await db.from("messages").insert({ conversation_id: convId, role: "user", content: text });
-    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
-    const now = new Date().toISOString();
-    await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", convId);
+    await saveMessage(db, { conversation_id: convId, role: "user", content: text }, { touch: "visitante" });
     return createUIMessageStreamResponse({
       stream: createUIMessageStream({ execute: () => {} }),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": convId, "X-Handoff": "agent", "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },

@@ -56,7 +56,8 @@ describe("aviso de IA", () => {
       or: () => chain,
       order: () => chain,
       limit: () => chain,
-      maybeSingle: async () => (call++ === 0 ? { data: last } : { data: aiSpoke ? { id: 1 } : null }),
+      // a camada de mensagens lê listas: a 1ª leitura é a última mensagem, a 2ª diz se a IA já falou
+      then: (resolve: (x: { data: unknown[]; error: null }) => unknown) => resolve({ data: call++ === 0 ? (last ? [last] : []) : aiSpoke ? [{ id: 1 }] : [], error: null }),
     };
     return { from: () => chain } as unknown as SupabaseClient;
   }

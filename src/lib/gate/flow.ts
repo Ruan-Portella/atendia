@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
 import { deliver } from "../send";
+import { deleteMessage } from "../messages";
 import { storeOnce } from "../whatsapp-inbound";
 import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
@@ -232,7 +233,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   // a IA pediu a confirmação de 18+: a pergunta fixa com botões vai no lugar da resposta
   // (risco à vida vem antes: aí a resposta com os telefones sai de qualquer jeito)
   if (aiAskedAge() && age === null && !urgent()) {
-    if (answerId) await db.from("messages").delete().eq("id", answerId);
+    if (answerId) await deleteMessage(db, answerId);
     await askAge(question);
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "pede_18", categories: entrance.regulated });
     return;
@@ -245,7 +246,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   }
   if (exit.emptied && exit.regulated.length && age === null && !urgent()) {
     // não sobrou nada além do item 18+: a pergunta de idade vai no lugar
-    if (answerId) await db.from("messages").delete().eq("id", answerId);
+    if (answerId) await deleteMessage(db, answerId);
     await askAge(question);
     return;
   }

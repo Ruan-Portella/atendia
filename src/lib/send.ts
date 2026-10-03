@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decideMode, resolveMode, type Mode, type ModeFacts, type ModeInput } from "./conversation-mode";
 import { channelMsgHash } from "./hash";
+import { saveMessage, updateMessages, type MessagePatch } from "./messages";
 
 /*
  * Camada única de envio (L1): toda mensagem que sai pelo WhatsApp ou pelo Instagram passa por
@@ -71,14 +72,13 @@ export async function deliver(
   o: { botId: string; channel: SendChannel; conversationId: string | null; kind: SendKind; record: SendRecord; recordFailures?: boolean; transport: () => Promise<string | null> },
 ): Promise<SendOutcome> {
   const recordFailures = o.recordFailures ?? true;
-  const write = async (fields: Record<string, unknown>) => {
+  const write = async (fields: MessagePatch) => {
     if (!o.record) return;
-    if ("update" in o.record) {
-      const { error } = await db.from("messages").update({ ...fields, ...(o.record.content !== undefined ? { content: o.record.content } : {}) }).eq("id", o.record.update);
-      if (error) console.error("envio: registro não atualizado", error.message);
-    } else if (o.conversationId) {
-      const { error } = await db.from("messages").insert({ conversation_id: o.conversationId, ...o.record.insert, ...fields });
-      if (error) console.error("envio: registro não gravado", error.message);
+    try {
+      if ("update" in o.record) await updateMessages(db, { id: o.record.update }, { ...fields, ...(o.record.content !== undefined ? { content: o.record.content } : {}) });
+      else if (o.conversationId) await saveMessage(db, { conversation_id: o.conversationId, ...o.record.insert, ...fields });
+    } catch (e) {
+      console.error("envio: registro não gravado", (e as Error).message);
     }
   };
 

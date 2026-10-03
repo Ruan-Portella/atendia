@@ -7,6 +7,7 @@ import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { MessageScroller } from "@/components/message-scroller";
 import { conversationState } from "@/lib/presence";
+import { loadMessages } from "@/lib/messages";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { memberRelease, memberSend, memberTakeOver } from "../../../actions";
@@ -23,8 +24,8 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
   if (!conv) notFound();
-  const [{ data: messages }, { data: leads }] = await Promise.all([
-    admin.from("messages").select("id, role, content, author, created_at, blocked_reason, failed_at, error_code, edited_at, deleted_at, channel_ref").eq("conversation_id", cid).order("id"),
+  const [messages, { data: leads }] = await Promise.all([
+    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     admin.from("leads").select("name, phone, email, notes").eq("conversation_id", cid),
   ]);
   const agencyName = member.agency.name;

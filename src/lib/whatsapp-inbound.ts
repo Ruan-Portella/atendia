@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
 import { deliver, type SendKind, type SendRecord } from "./send";
-import { changeWhatsAppIdentity, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf } from "./contacts";
+import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf } from "./contacts";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
@@ -32,6 +32,7 @@ export { PHONE_AUTHOR, PHONE_PAUSE_MINUTES, phonePauseActive } from "./authors";
 import { PHONE_AUTHOR } from "./authors";
 import { hasPendingFrom } from "./inbound-queue";
 import { requireAtendimento } from "./atendimentos";
+import { findMessage, saveMessage } from "./messages";
 import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
@@ -87,15 +88,14 @@ const SILENT_TYPES = new Set(["reaction", "unsupported", "system", "ephemeral"])
  */
 export async function lastContactMessageAt(db: SupabaseClient, botId: string, contact: { waId: string } | { igsid: string }, contactId?: string | null): Promise<string | null> {
   if (contactId) {
-    const { data: c } = await db.from("contacts").select("last_inbound_at").eq("id", contactId).maybeSingle();
-    if (c?.last_inbound_at) return c.last_inbound_at as string;
+    const last = await contactLastInbound(db, contactId);
+    if (last) return last;
   }
   const base = db.from("conversations").select("id").eq("bot_id", botId);
   const { data: convs } = await ("waId" in contact ? base.in("wa_id", waIdVariants(contact.waId)) : base.eq("ig_id", contact.igsid));
   const ids = (convs ?? []).map((c) => c.id as string);
   if (!ids.length) return null;
-  const { data } = await db.from("messages").select("created_at").in("conversation_id", ids).eq("role", "user").order("created_at", { ascending: false }).limit(1).maybeSingle();
-  return (data?.created_at as string | undefined) ?? null;
+  return (await findMessage(db, { conversationIds: ids, roles: ["user"], newestFirst: true }, ["created_at"] as const))?.created_at ?? null;
 }
 
 /** Texto da mensagem (texto, botão ou item de lista); null para áudio, imagem, figurinha… */
@@ -105,14 +105,6 @@ export function inboundText(m: InboundMessage): string | null {
   // mídia com legenda: o assistente lê a legenda e sabe que veio uma foto que ele não vê
   const caption = (m.image ?? m.video ?? m.document)?.caption?.trim();
   return caption ? `${mediaLabel(m.type)} ${caption}` : null;
-}
-
-/** Grava uma mensagem do contato numa conversa e atualiza contadores (sem o assistente responder). */
-export async function storeContactMessage(db: SupabaseClient, conversationId: string, content: string) {
-  await db.from("messages").insert({ conversation_id: conversationId, role: "user", content });
-  const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
-  const now = new Date().toISOString();
-  await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", conversationId);
 }
 
 /**
@@ -159,12 +151,7 @@ export const isStale = (receivedAt: string, now = Date.now()) => now - new Date(
 
 /** Grava a mensagem do contato numa conversa uma vez só (a chave do evento segura o reprocesso). */
 export async function storeOnce(db: SupabaseClient, conversationId: string, content: string, key: string) {
-  const { data, error } = await db.from("messages").upsert({ conversation_id: conversationId, role: "user", content, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
-  if (error) throw new Error(`mensagem não gravada: ${error.message}`);
-  if (!data?.length) return;
-  const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
-  const now = new Date().toISOString();
-  await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", conversationId);
+  await saveMessage(db, { conversation_id: conversationId, role: "user", content, inbound_key: key }, { touch: "visitante" });
 }
 
 /**
@@ -172,12 +159,12 @@ export async function storeOnce(db: SupabaseClient, conversationId: string, cont
  * fazer), ou foi gerada e não enviada (só envia), ou não foi gerada (a IA roda de novo).
  */
 export async function previousAnswer(db: SupabaseClient, key: string): Promise<{ state: "new" } | { state: "sent" } | { state: "unsent"; id: number; content: string } | { state: "unanswered" }> {
-  const { data: q } = await db.from("messages").select("id, conversation_id").eq("inbound_key", key).maybeSingle();
+  const q = await findMessage(db, { inboundKey: key }, ["id", "conversation_id"] as const);
   if (!q) return { state: "new" };
-  const { data: a } = await db.from("messages").select("id, content, channel_msg_id, blocked_reason, failed_at").eq("conversation_id", q.conversation_id).eq("role", "assistant").gt("id", q.id).order("id").limit(1).maybeSingle();
+  const a = await findMessage(db, { conversationId: q.conversation_id, roles: ["assistant"], afterId: q.id }, ["id", "content", "channel_msg_id", "blocked_reason", "failed_at"] as const);
   if (!a) return { state: "unanswered" };
   // barrada pela regra de estado ou recusada pelo canal também já foi resolvida: não reenvia
-  return a.channel_msg_id || a.blocked_reason || a.failed_at ? { state: "sent" } : { state: "unsent", id: a.id as number, content: String(a.content) };
+  return a.channel_msg_id || a.blocked_reason || a.failed_at ? { state: "sent" } : { state: "unsent", id: a.id, content: a.content };
 }
 
 /**
@@ -421,7 +408,7 @@ async function lastTemplateKind(db: SupabaseClient, botId: string, waId: string)
   const ids = (convs ?? []).map((c) => c.id as string);
   if (!ids.length) return "all";
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const { data } = await db.from("messages").select("template_category").in("conversation_id", ids).not("template_category", "is", null).gt("created_at", since).order("id", { ascending: false }).limit(1).maybeSingle();
+  const data = await findMessage(db, { conversationIds: ids, templates: true, createdAfter: since, newestFirst: true }, ["template_category"] as const);
   if (!data) return "all";
   return String(data.template_category).toUpperCase() === "MARKETING" ? "marketing" : "utility";
 }
@@ -527,9 +514,5 @@ export async function handleEcho(db: SupabaseClient, channel: ChannelRow, echo: 
     conv = created;
   }
   if (!conv) return;
-  const { data, error } = await db.from("messages").upsert({ conversation_id: conv.id, role: "agent", content, author: PHONE_AUTHOR, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
-  if (error) throw new Error(`mensagem não gravada: ${error.message}`);
-  if (!data?.length) return;
-  const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id);
-  await db.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conv.id);
+  await saveMessage(db, { conversation_id: conv.id, role: "agent", content, author: PHONE_AUTHOR, inbound_key: key }, { touch: "equipe" });
 }

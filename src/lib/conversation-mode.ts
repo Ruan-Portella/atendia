@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { HUMAN_ONLY_NOTICE, aiBlockedReason, type AiBlockReason } from "./chat";
 import { IG_APP_AUTHOR, PHONE_AUTHOR, phonePauseActive } from "./authors";
+import { contactNoticeReason, setContactNotice } from "./contacts";
+import { findMessage } from "./messages";
 
 /*
  * Regra única de estado da conversa (L1; spec "Estados da conversa e precedência"): decide se a
@@ -140,8 +142,8 @@ export async function resolveMode(db: SupabaseClient, input: ModeInput, now = Da
     channel === "whatsapp" ? db.from("platform_flags").select("whatsapp_disabled_at").eq("id", 1).maybeSingle() : Promise.resolve({ data: null }),
     channelMeasures(db, bot, input.wa?.waba_id),
     conversation && channel !== "widget"
-      ? db.from("messages").select("created_at").eq("conversation_id", conversation.id).eq("role", "agent").in("author", [PHONE_AUTHOR, IG_APP_AUTHOR]).order("id", { ascending: false }).limit(1).maybeSingle()
-      : Promise.resolve({ data: null }),
+      ? findMessage(db, { conversationId: conversation.id, roles: ["agent"], authors: [PHONE_AUTHOR, IG_APP_AUTHOR], newestFirst: true }, ["created_at"] as const).catch(() => null)
+      : Promise.resolve(null),
     aiBlockedReason(db, bot.agency_id),
   ]);
   const hits = (source: string) => measures.some((m) => m.source === source && measureApplies(m, bot, channel, input.wa?.waba_id));
@@ -153,7 +155,7 @@ export async function resolveMode(db: SupabaseClient, input: ModeInput, now = Da
     whatsappDisabled: Boolean((flags.data as { whatsapp_disabled_at?: string | null } | null)?.whatsapp_disabled_at),
     metaPaymentIssue: Boolean(paymentAt) && now - paymentAt < PAYMENT_RETRY_MS,
     boavozSuspended: hits("boavoz"),
-    humanInConversation: Boolean(conversation?.takeover_at && !conversation.handled_at) || phonePauseActive((lastHumanReply.data as { created_at?: string } | null)?.created_at, now),
+    humanInConversation: Boolean(conversation?.takeover_at && !conversation.handled_at) || phonePauseActive(lastHumanReply?.created_at, now),
     botPaused: Boolean(bot.paused_at),
     botPauseNotify: Boolean(bot.pause_notify),
     humanOnly,
@@ -175,22 +177,20 @@ export interface NoticeTarget {
 
 /** O aviso deste motivo ainda não saiu neste episódio (ou saiu por outro motivo: o estado mudou). */
 export async function noticeDue(db: SupabaseClient, t: NoticeTarget, reason: NoticeReason): Promise<boolean> {
-  const { data } = t.contactId
-    ? await db.from("contacts").select("unavailable_notice_reason").eq("id", t.contactId).maybeSingle()
-    : await db.from("conversations").select("unavailable_notice_reason").eq("id", t.conversationId).maybeSingle();
+  if (t.contactId) return (await contactNoticeReason(db, t.contactId)) !== reason;
+  const { data } = await db.from("conversations").select("unavailable_notice_reason").eq("id", t.conversationId).maybeSingle();
   return data?.unavailable_notice_reason !== reason;
 }
 
 export async function markNoticeSent(db: SupabaseClient, t: NoticeTarget, reason: NoticeReason) {
-  const mark = { unavailable_notice_at: new Date().toISOString(), unavailable_notice_reason: reason };
-  if (t.contactId) await db.from("contacts").update(mark).eq("id", t.contactId);
-  else await db.from("conversations").update(mark).eq("id", t.conversationId);
+  if (t.contactId) return setContactNotice(db, t.contactId, reason);
+  await db.from("conversations").update({ unavailable_notice_at: new Date().toISOString(), unavailable_notice_reason: reason }).eq("id", t.conversationId);
 }
 
 /** Voltou ao normal: o próximo episódio avisa de novo (no contato e na marca antiga da conversa). */
 export async function clearNotice(db: SupabaseClient, t: NoticeTarget) {
   const clear = { unavailable_notice_at: null, unavailable_notice_reason: null };
-  if (t.contactId) await db.from("contacts").update(clear).eq("id", t.contactId).not("unavailable_notice_reason", "is", null);
+  if (t.contactId) await setContactNotice(db, t.contactId, null);
   await db.from("conversations").update(clear).eq("id", t.conversationId).not("unavailable_notice_reason", "is", null);
 }
 

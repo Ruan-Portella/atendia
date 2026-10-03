@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadMessages } from "@/lib/messages";
 
 const HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
     .eq("id", conversationId)
     .or(`visitor_seen_at.is.null,visitor_seen_at.lt.${new Date(now - 20_000).toISOString()}`);
 
-  const { data: messages } = await db.from("messages").select("id, content").eq("conversation_id", conversationId).eq("role", "agent").gt("id", after).order("id").limit(50);
+  const messages = await loadMessages(db, { conversationId, roles: ["agent"], afterId: after, limit: 50 }, ["id", "content"] as const);
   const mode = conv.handled_at ? "bot" : conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : "bot";
-  return Response.json({ mode, messages: messages ?? [] }, { headers: HEADERS });
+  return Response.json({ mode, messages }, { headers: HEADERS });
 }

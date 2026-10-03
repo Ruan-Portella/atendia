@@ -5,6 +5,7 @@ import { deliver, type SendKind, type SendRecord } from "./send";
 import { instagramContact, touchInbound } from "./contacts";
 import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./instagram-edits";
 import { requireAtendimento } from "./atendimentos";
+import { findMessage, saveMessage, updateMessages } from "./messages";
 import { clearUnseen, igUnseenKind, markUnseen, recentUnseen, unseenMediaText, type UnseenMark } from "./unseen-media";
 import { hasPendingFrom, markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
@@ -206,8 +207,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   /** Depois de gravar: a referência do post ou reel e a marca de apagada nas mensagens. */
   const afterStore = async () => {
     for (const [i, q] of burst.entries()) {
-      if (deleted.has(q.key)) await db.from("messages").update({ deleted_at: new Date().toISOString() }).eq("inbound_key", q.key).is("deleted_at", null);
-      else if (refs[i]) await db.from("messages").update({ channel_ref: refs[i] }).eq("inbound_key", q.key).is("channel_ref", null);
+      // falha aqui não derruba a resposta (já saiu): só a marca fica para trás
+      if (deleted.has(q.key)) await updateMessages(db, { inboundKey: q.key }, { deleted_at: new Date().toISOString() }, { notDeleted: true }).catch((e) => console.error("instagram: marca de apagada", e));
+      else if (refs[i]) await updateMessages(db, { inboundKey: q.key }, { channel_ref: refs[i] }, { withoutRef: true }).catch((e) => console.error("instagram: referência do post", e));
     }
   };
 
@@ -397,16 +399,12 @@ export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, 
   let conv = await recentConversation(db, ch.bot_id, igsid, contact?.id ?? null);
   if (conv) {
     // reserva, caso o eco chegue antes de guardarmos o id: é a mesma frase que acabamos de mandar?
-    const { data: last } = await db.from("messages").select("content, role, created_at").eq("conversation_id", conv.id).in("role", ["assistant", "agent"]).order("id", { ascending: false }).limit(1).maybeSingle();
-    if (last && toInstagramText(String(last.content)) === content && Date.now() - new Date(last.created_at as string).getTime() < 5 * 60_000) return;
+    const last = await findMessage(db, { conversationId: conv.id, roles: ["assistant", "agent"], newestFirst: true }, ["content", "created_at"] as const);
+    if (last && toInstagramText(last.content) === content && Date.now() - new Date(last.created_at).getTime() < 5 * 60_000) return;
   } else {
     const { data: created } = await db.from("conversations").insert({ bot_id: ch.bot_id, channel: "instagram", ig_id: igsid, contact_id: contact?.id ?? null, visitor_id: null }).select("id, takeover_at, handled_at").single();
     conv = created;
   }
   if (!conv) return;
-  const { data, error } = await db.from("messages").upsert({ conversation_id: conv.id, role: "agent", content, author: IG_APP_AUTHOR, inbound_key: key }, { onConflict: "inbound_key", ignoreDuplicates: true }).select("id");
-  if (error) throw new Error(`mensagem não gravada: ${error.message}`);
-  if (!data?.length) return;
-  const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id);
-  await db.from("conversations").update({ last_message_at: new Date().toISOString(), message_count: count ?? 0 }).eq("id", conv.id);
+  await saveMessage(db, { conversation_id: conv.id, role: "agent", content, author: IG_APP_AUTHOR, inbound_key: key }, { touch: "equipe" });
 }

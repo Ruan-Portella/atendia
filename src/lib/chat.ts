@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, scopeReminder, type Persona } from "./ai";
 import { getPlan } from "./plans";
 import { notifyHandoff, notifyLead } from "./notify";
+import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
 import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, type HumanHandoff } from "./handoff-hours";
@@ -77,8 +78,8 @@ export function withoutToolParts() {
  */
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000): Promise<UIMessage[]> {
   // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora
-  const { data: rows } = await db.from("messages").select("id, role, content, tool_results").eq("conversation_id", conversationId).is("blocked_reason", null).is("failed_at", null).is("deleted_at", null).order("id", { ascending: false }).limit(limit);
-  return (rows ?? []).reverse().map((r) => {
+  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit }, ["id", "role", "content", "tool_results"] as const);
+  return rows.reverse().map((r) => {
     const text = String(r.content).slice(0, maxChars);
     // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
     const done = actionsNote(r.tool_results as ToolResultRow[] | null);
@@ -165,10 +166,9 @@ export const SYSTEM_AUTHOR = "sistema";
  * null = a IA já falou por último, sem aviso.
  */
 export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" | "client_name">, conversationId: string): Promise<string | null> {
-  const notSystem = `author.is.null,author.neq.${SYSTEM_AUTHOR}`;
-  const [{ data: last }, { data: ai }] = await Promise.all([
-    db.from("messages").select("role").eq("conversation_id", conversationId).neq("role", "user").or(notSystem).order("id", { ascending: false }).limit(1).maybeSingle(),
-    db.from("messages").select("id").eq("conversation_id", conversationId).eq("role", "assistant").or(notSystem).limit(1).maybeSingle(),
+  const [last, ai] = await Promise.all([
+    findMessage(db, { conversationId, notRole: "user", notAuthor: SYSTEM_AUTHOR, newestFirst: true }, ["role"] as const),
+    findMessage(db, { conversationId, roles: ["assistant"], notAuthor: SYSTEM_AUTHOR }, ["id"] as const),
   ]);
   // a IA nunca falou nesta conversa (mesmo que a equipe tenha aberto com um modelo): apresenta
   if (!ai) return `Sou ${bot.name}, assistente virtual de ${bot.client_name}.`;
@@ -204,7 +204,7 @@ export async function handleRiskWithoutAi(
   await db.from("conversations").update({ needs_human: true, handoff_requested_at: now, handoff_urgent_at: now, handled_at: null }).eq("id", conversationId);
   notifyHandoff({ db, bot, conversationId, reason: text.slice(0, 300), urgent: true }).catch(() => {});
   const since = new Date(Date.now() - 10 * 60_000).toISOString();
-  const { data: recentAgent } = await db.from("messages").select("id").eq("conversation_id", conversationId).eq("role", "agent").gt("created_at", since).limit(1).maybeSingle();
+  const recentAgent = await findMessage(db, { conversationId, roles: ["agent"], createdAfter: since }, ["id"] as const);
   if (!recentAgent) {
     // texto fixo de emergência: sai com gente atendendo (degraus 3 a 5), nunca com o canal bloqueado
     await deliver(db, { botId: bot.id, channel, conversationId, kind: "sistema", record: { insert: { role: "assistant", content: RISK_TEXT, author: SYSTEM_AUTHOR } }, transport: () => send(RISK_TEXT) });
@@ -413,10 +413,8 @@ export async function runChat(opts: {
 
   const leadEnabled = bot.lead_capture?.enabled !== false;
   // o que um atendente humano já escreveu (quando a conversa volta para o assistente)
-  const { data: agentRows } = opts.conversationId
-    ? await db.from("messages").select("content").eq("conversation_id", conversationId).eq("role", "agent").order("id", { ascending: false }).limit(6)
-    : { data: [] };
-  const agentMessages = (agentRows ?? []).map((r) => String(r.content).slice(0, 500)).reverse();
+  const agentRows = opts.conversationId ? await loadMessages(db, { conversationId, roles: ["agent"], newestFirst: true, limit: 6 }, ["content"] as const) : [];
+  const agentMessages = agentRows.map((r) => r.content.slice(0, 500)).reverse();
   const wa = opts.whatsapp;
   const waPhone = wa && /^\d+$/.test(wa.waId) ? wa.waId : null;
   const channelNote = channelNoteFor(opts);
@@ -432,11 +430,9 @@ export async function runChat(opts: {
 
   // 3. Persiste a pergunta do visitante
   if (question && opts.storeQuestion !== false) {
-    const row = { conversation_id: convId, role: "user", content: question, ...(opts.questionKey ? { inbound_key: opts.questionKey } : {}) };
     // com a chave do evento, o reprocesso não grava a mesma pergunta duas vezes
     // erro aqui sobe: na fila, o evento volta e é tentado de novo (a mensagem não some)
-    const { error } = opts.questionKey ? await db.from("messages").upsert(row, { onConflict: "inbound_key", ignoreDuplicates: true }) : await db.from("messages").insert(row);
-    if (error) throw new Error(`mensagem do contato não gravada: ${error.message}`);
+    await saveMessage(db, { conversation_id: convId, role: "user", content: question, inbound_key: opts.questionKey ?? null });
   }
 
   let unansweredRecorded = false;
@@ -539,16 +535,12 @@ export async function runChat(opts: {
         if (!unansweredRecorded && !refusalStands && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
         if (text) {
           const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, output: t.output })));
-          const { data: savedRow } = await db
-            .from("messages")
-            .insert({ conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null })
-            .select("id")
-            .single();
-          savedId = (savedRow?.id as number | undefined) ?? null;
+          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null }).catch((e) => {
+            console.error("chat: resposta não gravada", (e as Error).message);
+            return null;
+          });
         }
-        const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", convId);
-        const now = new Date().toISOString();
-        await db.from("conversations").update({ last_message_at: now, visitor_seen_at: now, message_count: count ?? 0 }).eq("id", convId);
+        await touchConversation(db, convId, { visitorSeen: true });
       } finally {
         markSaved(savedId);
       }

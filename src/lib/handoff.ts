@@ -7,6 +7,7 @@ import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channe
 import { send as sendInstagram } from "./instagram-inbound";
 import { sendBlockedReason } from "./conversation-mode";
 import { deliver } from "./send";
+import { saveMessage, touchConversation } from "./messages";
 
 /**
  * Atendimento humano: as mesmas operações para a agência (painel) e para o cliente final
@@ -29,13 +30,15 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   const now = new Date().toISOString();
   // no WhatsApp e no Instagram a camada de envio já gravou (com o hash do id da Meta); no site, grava aqui
   if (sent === "widget") {
-    const { error } = await admin.from("messages").insert({ conversation_id: conversationId, role: "agent", content, author });
-    if (error) return fail("A mensagem não foi enviada. Tente de novo.");
+    try {
+      await saveMessage(admin, { conversation_id: conversationId, role: "agent", content, author });
+    } catch {
+      return fail("A mensagem não foi enviada. Tente de novo.");
+    }
   }
-  const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", conversationId);
   // responder já assume a conversa (o assistente não fala por cima)
   const { data: conv } = await admin.from("conversations").select("takeover_at").eq("id", conversationId).single();
-  await admin.from("conversations").update({ takeover_at: conv?.takeover_at ?? now, handled_at: null, last_message_at: now, message_count: count ?? 0 }).eq("id", conversationId);
+  await touchConversation(admin, conversationId, { extra: { takeover_at: conv?.takeover_at ?? now, handled_at: null } });
   return ok("Enviada. O visitante vê em alguns segundos.");
 }
 

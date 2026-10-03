@@ -11,6 +11,7 @@ import { ConversationLive } from "@/components/conversation-live";
 import { conversationState, whatsappWindowOpen } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadMessages } from "@/lib/messages";
 import { whatsappAllowed } from "@/lib/whatsapp";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
@@ -33,8 +34,8 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
     .maybeSingle();
   if (!conv) notFound();
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
-  const [{ data: messages }, { data: leads }, { email }] = await Promise.all([
-    supabase.from("messages").select("id, role, content, sources, author, created_at, blocked_reason, failed_at, error_code, edited_at, deleted_at, channel_ref").eq("conversation_id", cid).order("id"),
+  const [messages, { data: leads }, { email }] = await Promise.all([
+    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     supabase.from("leads").select("name, phone, email, notes").eq("conversation_id", cid),
     requireAgency(),
   ]);
