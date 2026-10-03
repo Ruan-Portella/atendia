@@ -12,6 +12,9 @@
 /** Sobe a cada mudança no dicionário, nas exceções, nos níveis ou no quadro canal × categoria. */
 export const RULES_VERSION = "2026-10-01.1";
 
+/** Versão da classificação dos trechos da base (parte 6): muda com as regras (e a lista da Anvisa, que sobe RULES_VERSION) ou o prompt. */
+export const BASE_GATE_VERSION = `${RULES_VERSION}/base-1`;
+
 export type GateLevel = "permitido" | "regulamentado" | "proibido";
 export type GateChannel = "whatsapp" | "instagram" | "widget";
 

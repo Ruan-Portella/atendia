@@ -68,7 +68,7 @@ interface Bucket {
   calls: number;
 }
 
-const KIND_LABEL: Record<string, string> = { resposta: "Respostas", leitura: "Leitura de fontes", transcricao: "Áudio (transcrição)", classificacao: "Classificação (portão e risco)", avaliacao: "Avaliações da IA (testes do backoffice)" };
+const KIND_LABEL: Record<string, string> = { resposta: "Respostas", leitura: "Leitura de fontes", transcricao: "Áudio (transcrição)", classificacao: "Classificação (portão e risco)", avaliacao: "Avaliações da IA (testes do backoffice)", analise: "Análise do bot (conformidade)" };
 export const kindLabel = (k: string) => KIND_LABEL[k] ?? k;
 
 /** Agrupa as linhas do banco por tipo, modelo, canal e agência; resposta média e % de cache. */
@@ -754,4 +754,63 @@ export async function getGateReviews(): Promise<{ open: GateReviewRow[]; recent:
       };
     }),
   };
+}
+
+/* ------------------------------------------------------------------ análise do bot */
+
+export interface BotAnalysisRow {
+  id: number;
+  botId: string;
+  botName: string;
+  clientId: string | null;
+  clientName: string;
+  agencyId: string;
+  agencyName: string | null;
+  iaComoProduto: string;
+  modeloProibido: string;
+  categoriaPrincipal: string | null;
+  categorias: Array<{ categoria: string; nivel: string; trechos: number; exemplos: string[] }>;
+  fontes: number;
+  summary: string | null;
+  reviewState: "none" | "pending" | "resolved";
+  resolution: string | null;
+  resolvedBy: string | null;
+  createdAt: string;
+}
+
+/** Pendências da análise do bot, as últimas análises e quantas estão agendadas para rodar. */
+export async function getBotAnalyses(): Promise<{ pending: BotAnalysisRow[]; recent: BotAnalysisRow[]; due: number }> {
+  const db = createAdminClient();
+  const cols = "id, bot_id, client_id, agency_id, labels, summary_enc, summary_expires_at, review_state, resolution, resolved_by, created_at, bots(name, client_name), agencies(name)";
+  const [{ data: pending }, { data: recent }, { count: due }] = await Promise.all([
+    db.from("compliance_checks").select(cols).eq("kind", "bot_analysis").eq("review_state", "pending").order("created_at").limit(50),
+    db.from("compliance_checks").select(cols).eq("kind", "bot_analysis").order("created_at", { ascending: false }).limit(15),
+    db.from("bots").select("id", { count: "exact", head: true }).eq("is_demo", false).lte("analysis_due_at", new Date().toISOString()),
+  ]);
+  const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+  const map = (r: Record<string, unknown>): BotAnalysisRow => {
+    const bot = one(r.bots as { name: string; client_name: string } | null);
+    const l = (r.labels ?? {}) as { ia_como_produto?: string; modelo_proibido?: string; categoria_principal?: string | null; categorias?: BotAnalysisRow["categorias"]; fontes?: number };
+    const expired = r.summary_expires_at && Date.parse(r.summary_expires_at as string) < Date.now();
+    return {
+      id: r.id as number,
+      botId: r.bot_id as string,
+      botName: bot?.name ?? "chatbot apagado",
+      clientId: (r.client_id as string | null) ?? null,
+      clientName: bot?.client_name ?? "",
+      agencyId: r.agency_id as string,
+      agencyName: one(r.agencies as { name: string } | null)?.name ?? null,
+      iaComoProduto: l.ia_como_produto ?? "incerto",
+      modeloProibido: l.modelo_proibido ?? "incerto",
+      categoriaPrincipal: l.categoria_principal ?? null,
+      categorias: l.categorias ?? [],
+      fontes: l.fontes ?? 0,
+      summary: expired ? null : ((r.summary_enc as string | null) ?? null),
+      reviewState: r.review_state as BotAnalysisRow["reviewState"],
+      resolution: (r.resolution as string | null) ?? null,
+      resolvedBy: (r.resolved_by as string | null) ?? null,
+      createdAt: r.created_at as string,
+    };
+  };
+  return { pending: (pending ?? []).map(map), recent: (recent ?? []).map(map), due: due ?? 0 };
 }

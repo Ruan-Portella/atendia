@@ -35,6 +35,7 @@ import { channelMsgHash } from "@/lib/hash";
 import { deleteContacts, findContactIds, typedPhoneHash, whatsappContact } from "@/lib/contacts";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
+import { markAnalysisDue } from "@/lib/bot-analysis";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
 
@@ -311,6 +312,8 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   const { error, count } = await supabase.from("bots").update(patch, { count: "exact" }).eq("id", botId);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   if (!count) return fail("Chatbot não encontrado.");
+  // mudar as instruções ou os "Assuntos do negócio" dispara de novo a análise do bot (agrupada, ~10 min)
+  if ("persona" in patch || "business_topics" in patch) await markAnalysisDue(createAdminClient(), botId);
   revalidatePath("/painel", "layout");
   return ok("Alterações salvas.");
 }
@@ -605,6 +608,7 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   await confirmAcceptance(admin, { clientId: bot.client_id as string, channel: "whatsapp", metaAccount: wabaId ?? phoneNumberId, metaVerifiedName: phone.verified_name ?? null });
   await auditPanel("canal.conectar", { type: "bot", id: botId }, { after: { channel: "whatsapp", via: "id", phone: phone.display_phone_number ?? null, waba_id: wabaId } });
   revalidatePath(`/painel/bots/${botId}`);
+  await markAnalysisDue(createAdminClient(), botId);
   return ok(`WhatsApp ${phone.display_phone_number ?? ""} ligado. Mande uma mensagem para ele para testar.`);
 }
 
@@ -877,6 +881,7 @@ export async function createWhatsAppTemplate(botId: string, formData: FormData):
   } catch (e) {
     return fail(`A Meta recusou o modelo: ${await metaError(botId, e)}`);
   }
+  await markAnalysisDue(createAdminClient(), botId);
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Modelo enviado para análise da Meta. Costuma sair em minutos; recarregue para ver o status.");
 }

@@ -5,8 +5,9 @@ import { chatModel, classifierModelId, modelCallOptions } from "../ai";
 import { recordAiUsage, usageFrom, type UsageTokens } from "../ai-usage";
 import { dictionaryHits } from "./match";
 import { lmipCheck } from "./lmip-check";
-import { CATEGORIES, RULES_VERSION, effectiveLevel, type GateCategory, type GateChannel } from "./rules";
+import { BASE_GATE_VERSION, CATEGORIES, effectiveLevel, type GateCategory, type GateChannel } from "./rules";
 import type { AgeStatus } from "./age";
+import { flagNewProhibited } from "../bot-analysis";
 
 /*
  * Portão, parte 6: a base de cada empresa classificada por IA, uma vez por trecho (depois da
@@ -18,8 +19,8 @@ import type { AgeStatus } from "./age";
  * Remédio: a IA só lê fármaco, forma e concentração; isento ou com receita é a lista da Anvisa.
  */
 
-/** Versão da classificação: muda com as regras (e a lista da Anvisa, que sobe RULES_VERSION) ou o prompt. */
-export const BASE_GATE_VERSION = `${RULES_VERSION}/base-1`;
+/** Versão da classificação (rules.ts): muda com as regras ou o prompt. */
+export { BASE_GATE_VERSION };
 
 /** Frase de um trecho, com a linha (para remontar) e as categorias restritas que oferece. */
 export interface Segment {
@@ -156,6 +157,8 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
   const started = Date.now();
   const pendingFilter = `gate_version.is.null,gate_version.neq."${BASE_GATE_VERSION}"`;
   const company = new Map<string, string>();
+  /** Categorias achadas nesta rodada, por chatbot (proibida nova reagenda a análise do bot). */
+  const foundByBot = new Map<string, Set<GateCategory>>();
   let classified = 0;
   let failed = 0;
   let lastId = 0;
@@ -178,6 +181,7 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
             const { error: upd } = await db.from("chunks").update({ gate_version: BASE_GATE_VERSION, gate_segments: r.segments, gate_categories: r.categories }).eq("id", row.id);
             if (upd) throw new Error(upd.message);
             classified += 1;
+            if (r.categories.length) foundByBot.set(row.bot_id as string, new Set([...(foundByBot.get(row.bot_id as string) ?? []), ...r.categories]));
           } catch (e) {
             failed += 1;
             console.error("classificação da base: trecho não classificado", row.id, (e as Error).message);
@@ -187,6 +191,7 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
       if (Date.now() - started > opts.budgetMs - 20_000) break;
     }
   }
+  for (const [botId, cats] of foundByBot) await flagNewProhibited(db, botId, [...cats]).catch((e) => console.error("análise do bot:", (e as Error).message));
   let rq = db.from("chunks").select("id, bots!inner(is_demo)", { count: "exact", head: true }).or(pendingFilter).eq("bots.is_demo", false);
   if (opts.botId) rq = rq.eq("bot_id", opts.botId);
   const { count } = await rq;

@@ -76,7 +76,7 @@ export function usageFrom(model: string | undefined, u: { inputTokens?: number; 
 }
 
 /** avaliacao: o conjunto de casos do backoffice (custo da plataforma, fora da margem da agência). */
-export type AiUsageKind = "resposta" | "leitura" | "transcricao" | "classificacao" | "avaliacao";
+export type AiUsageKind = "resposta" | "leitura" | "transcricao" | "classificacao" | "avaliacao" | "analise";
 
 /** Linha da tabela para uma chamada. */
 function usageRow(base: { agencyId: string; botId?: string | null; conversationId?: string | null; kind: AiUsageKind; channel?: string | null }, u: UsageTokens) {

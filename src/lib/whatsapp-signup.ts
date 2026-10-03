@@ -5,6 +5,7 @@ import { seal, unseal } from "./secret-box";
 import { appUrl } from "./utils";
 import { forgetBsuids } from "./contacts";
 import { channelBlock } from "./features";
+import { markAnalysisDue } from "./bot-analysis";
 import { WHATSAPP_BILLING_URL, WhatsAppError, exchangeSignupCode, getPhoneNumber, listWabaPhoneNumbers, newPin, registerNumber, startAppSync, subscribeApp } from "./whatsapp";
 
 export interface SignupResult {
@@ -141,6 +142,8 @@ export async function connectFromSignup(admin: SupabaseClient, opts: { botId: st
   ]).catch(() => false);
 
   const syncWarning = syncFailed ? " Atenção: a sincronização com o app do celular falhou; conecte de novo em até 24 h para o número não ser desconectado pela Meta." : "";
+  // canal ativado: a análise do bot roda (agrupada, ~10 min)
+  await markAnalysisDue(admin, botId);
   if (via === "link") return ok(`WhatsApp ${number} conectado!${syncWarning}`);
   return ok(`WhatsApp ${number} conectado.${coexistence ? " Ele continua funcionando no app do celular." : ""} Último passo: o cliente cadastra um cartão na Meta (as instruções foram para o seu e-mail).${syncWarning}`);
 }

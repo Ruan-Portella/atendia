@@ -13,6 +13,7 @@ import { appUrl } from "@/lib/utils";
 import { audit, requestMeta } from "@/lib/audit";
 import { FEATURES, isFeature, type Feature } from "@/lib/features";
 import { CATEGORIES, type GateCategory } from "@/lib/gate/rules";
+import { analyzeBot, runDueAnalyses } from "@/lib/bot-analysis";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -376,4 +377,58 @@ export async function revokeGateException(botId: string, category: string): Prom
   await auditAdmin(s.email, "portao.revogar_excecao", { agencyId, targetType: "bot", targetId: botId, after: { category } });
   revalidatePath("/admin", "layout");
   return ok("Exceção revogada: o portão volta a valer para essa categoria.");
+}
+
+/* ------------------------------------------------------------------ análise do bot */
+
+/** Roda agora as análises agendadas (na dev os crons não rodam; em produção a rotina diária roda). */
+export async function runAnalysesNow(): Promise<ActionResult> {
+  const s = await requireAdmin("/admin/conformidade (rodou as análises do bot agendadas)");
+  const r = await runDueAnalyses(createAdminClient(), { budgetMs: 50_000, limit: 10 });
+  await auditAdmin(s.email, "analise.rodar_agendadas", { after: r });
+  revalidatePath("/admin", "layout");
+  return ok(`Análises: ${r.feitas} feitas, ${r.puladas} sem mudança ou sem base${r.falhas ? `, ${r.falhas} com erro` : ""}. Ainda agendadas: ${r.restantes}.`);
+}
+
+/** Roda de novo a análise de um chatbot, mesmo sem mudança. */
+export async function rerunAnalysis(botId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/conformidade (rodou de novo a análise do bot ${botId})`);
+  try {
+    const r = await analyzeBot(createAdminClient(), botId, { force: true });
+    await auditAdmin(s.email, "analise.rodar_de_novo", { targetType: "bot", targetId: botId, after: { status: r.status } });
+    revalidatePath("/admin", "layout");
+    const msg: Record<string, string> = { feita: r.pending ? "Análise feita: ficou pendente para revisão." : "Análise feita: nada para revisar.", sem_base: "O chatbot não tem fonte pronta.", aguardando_classificacao: "A base ainda está sendo classificada; a análise ficou agendada.", ignorado: "Chatbot de demonstração: sem análise.", igual: "Sem mudança." };
+    return ok(msg[r.status] ?? "Feito.");
+  } catch (e) {
+    return fail(`A análise falhou: ${(e as Error).message}`);
+  }
+}
+
+/** Revisão de uma pendência da análise: segue normal (o negócio continua como está). */
+export async function resolveAnalysis(id: number, fd: FormData): Promise<ActionResult> {
+  const note = text(fd.get("note")).slice(0, 200) || "revisado: segue normal";
+  const s = await requireAdmin(`/admin/conformidade (resolveu a análise ${id})`);
+  const { data, error } = await createAdminClient().from("compliance_checks").update({ review_state: "resolved", resolved_by: s.email, resolved_at: new Date().toISOString(), resolution: note }).eq("id", id).eq("review_state", "pending").select("agency_id, bot_id").maybeSingle();
+  if (error) return fail("Não foi possível resolver. Tente de novo.");
+  if (!data) return fail("Pendência não encontrada ou já resolvida.");
+  await auditAdmin(s.email, "analise.resolver", { agencyId: data.agency_id as string, targetType: "bot", targetId: data.bot_id as string, after: { note } });
+  revalidatePath("/admin", "layout");
+  return ok("Pendência resolvida.");
+}
+
+/** Revisão de uma pendência da análise: bloqueia o negócio (WhatsApp e Instagram) e fecha a pendência. */
+export async function blockFromAnalysis(id: number, fd: FormData): Promise<ActionResult> {
+  const db = createAdminClient();
+  const { data: check } = await db.from("compliance_checks").select("client_id, agency_id, review_state").eq("id", id).maybeSingle();
+  if (!check || check.review_state !== "pending") return fail("Pendência não encontrada ou já resolvida.");
+  if (!check.client_id) return fail("Este chatbot não tem cliente: ligue-o a um cliente antes de bloquear.");
+  // cliente que nunca passou pela tela de aceite: o estado do negócio nasce aqui, para o bloqueio valer
+  const { data: business } = await db.from("business_compliance").select("client_id").eq("client_id", check.client_id).maybeSingle();
+  if (!business) await db.from("business_compliance").insert({ client_id: check.client_id, agency_id: check.agency_id, answers: {}, answered_by: "BoaVoz (análise do bot)", status: "em_revisao" });
+  const r = await blockBusiness(check.client_id as string, fd);
+  if (!r.ok) return r;
+  const s = await requireAdmin(`/admin/conformidade (bloqueou pela análise ${id})`);
+  await createAdminClient().from("compliance_checks").update({ review_state: "resolved", resolved_by: s.email, resolved_at: new Date().toISOString(), resolution: `bloqueado: ${text(fd.get("reason")).slice(0, 200)}` }).eq("id", id);
+  revalidatePath("/admin", "layout");
+  return ok("Negócio bloqueado e pendência fechada.");
 }

@@ -8,6 +8,7 @@ import { notifyPlatform } from "@/lib/notify";
 import { sweepInbound } from "@/lib/inbound-queue";
 import { inboundHandlers } from "@/lib/inbound-process";
 import { classifyPending } from "@/lib/gate/base";
+import { runDueAnalyses } from "@/lib/bot-analysis";
 import { deleteStalePending } from "@/lib/acceptance";
 import { linkLegacyConversations } from "@/lib/contacts";
 
@@ -33,6 +34,7 @@ export async function GET(req: Request) {
 
 async function daily() {
   const db = createAdminClient();
+  const started = Date.now();
   const hasTime = deadline(50_000);
   const run = async <T,>(name: string, fn: () => Promise<T>) => {
     try {
@@ -73,5 +75,8 @@ async function daily() {
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
   // portão: trechos novos que não couberam depois da leitura e os de regras antigas
   const base = await run("classificação da base", () => classifyPending(db, { budgetMs: 180_000 }));
-  return { inbound, trial, retention, acceptances, contacts, logs, instagram, aiUsage, disk, sources, base };
+  // análise do bot: as agendadas (gatilhos agrupados) e os clientes antigos
+  // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
+  const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
+  return { inbound, trial, retention, acceptances, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

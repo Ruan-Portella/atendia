@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { ACTIVITIES, dayLabel, getCompliance, type ComplianceStatus } from "@/lib/acceptance";
 import { relativeTime } from "@/lib/utils";
+import { CATEGORIES } from "@/lib/gate/rules";
+import type { ClientProfile } from "@/lib/bot-analysis";
 
 const STATUS: Record<ComplianceStatus, { label: string; tone: string; text: string }> = {
   ativo: { label: "Ativo", tone: "bg-brand-soft text-brand", text: "Pode usar o WhatsApp e o Instagram normalmente." },
@@ -14,10 +16,15 @@ const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Inst
 /** Aba Conformidade do cliente: estado do negócio, a resposta de atividades e os aceites registrados. */
 export async function ClientCompliance({ clientId, clientName }: { clientId: string; clientName: string }) {
   const supabase = await createClient();
-  const [compliance, { data: acceptances }] = await Promise.all([
+  const [compliance, { data: acceptances }, { data: client }, { data: bots }] = await Promise.all([
     getCompliance(supabase, clientId),
     supabase.from("business_acceptances").select("id, channel, version, via, status, accepted_by_name, accepted_by_email, meta_verified_name, created_at, confirmed_at").eq("client_id", clientId).order("id", { ascending: false }).limit(20),
+    supabase.from("clients").select("profile").eq("id", clientId).maybeSingle(),
+    supabase.from("bots").select("id, name").eq("client_id", clientId).eq("is_demo", false),
   ]);
+  // análise do bot: só os itens achados na base, para consulta (sem selo nem rótulo de perfil)
+  const profile = (client?.profile ?? null) as ClientProfile | null;
+  const analyzed = (bots ?? []).map((b) => ({ name: b.name as string, p: profile?.bots?.[b.id as string] })).filter((x) => x.p);
   const st = compliance ? STATUS[compliance.status] : null;
   return (
     <div className="flex max-w-[720px] flex-col gap-5">
@@ -48,6 +55,30 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
           </>
         ) : (
           <p className="text-sm text-muted">{clientName} ainda não respondeu. A pergunta aparece na primeira conexão do WhatsApp ou do Instagram, junto com o aceite dos termos (no painel ou pelo link de conexão).</p>
+        )}
+      </section>
+
+      <section className="card flex flex-col gap-2 p-5">
+        <h2 className="text-base font-bold">Análise do BoaVoz</h2>
+        <p className="text-xs text-muted">
+          O BoaVoz analisa a base de conhecimento de cada assistente que atende pelo WhatsApp e pelo Instagram. Abaixo, os itens com regras especiais que achamos, só para consulta: nada precisa ser feito. No WhatsApp e no Instagram, bebida e remédio só aparecem para quem confirma ter 18 anos ou mais e a compra não fecha no chat; os itens proibidos ficam de fora das respostas.
+        </p>
+        {analyzed.length ? (
+          <ul className="flex flex-col divide-y divide-line-2 text-sm">
+            {analyzed.map(({ name, p }) => (
+              <li key={name} className="flex flex-col gap-1 py-2">
+                <span className="font-semibold">{name}</span>
+                <span className="text-xs text-muted">Analisado {relativeTime(p!.analisado_em)} · {p!.fontes} fonte{p!.fontes === 1 ? "" : "s"}</span>
+                <span className="text-ink-2">
+                  {p!.regulados.length || p!.proibidos.length
+                    ? [...p!.regulados.map((x) => `${CATEGORIES[x.categoria]?.label ?? x.categoria} (18+)`), ...p!.proibidos.map((x) => `${CATEGORIES[x.categoria]?.label ?? x.categoria} (fora das respostas)`)].join(", ")
+                    : "Nenhum item com regras especiais."}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">Ainda não analisado. A análise roda sozinha depois que o assistente tem fontes prontas.</p>
         )}
       </section>
 
