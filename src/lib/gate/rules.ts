@@ -174,6 +174,8 @@ export const GATE_TEXTS = {
   prohibited: "Desculpe, não conseguimos atender esse pedido por aqui. Posso ajudar com outra coisa?",
   /** Pedido de item proibido junto com outro assunto: vai antes da resposta da IA, sem citar o item. */
   prohibitedMixed: "Um dos itens que você pediu não conseguimos atender por aqui.",
+  /** Item proibido que veio do pedido da própria pessoa (dados de uma ação): onde ver o pedido completo. */
+  prohibitedSeeElsewhere: (where: string) => `Não conseguimos falar desse item por aqui. Os detalhes completos ficam fora do chat: ${where}. Posso ajudar com outra coisa?`,
   /** Barreira de idade da Meta para mensagens (não é verificação legal de idade). */
   ageQuestion: "Antes de continuar: você tem 18 anos ou mais?",
   ageYes: "Sim",

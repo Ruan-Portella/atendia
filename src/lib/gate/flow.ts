@@ -12,6 +12,7 @@ import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
 import { botGateExemptions } from "./exceptions";
+import { idMapCategories, idMapLinks } from "../action-gate";
 import { GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
 
@@ -138,7 +139,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   };
 
   // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
-  const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_pending_reply_enc, age_asked_at, regulated_at").eq("id", convId).maybeSingle();
+  const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_pending_reply_enc, age_asked_at, regulated_at, gate_id_map_enc, gate_id_map_expires_at").eq("id", convId).maybeSingle();
   const pending: PendingAge | null = pendingRow
     ? { question: (pendingRow.age_pending_question as string | null) ?? null, askedAt: (pendingRow.age_asked_at as string | null) ?? null, reply: (pendingRow.age_pending_reply_enc as string | null) ?? null }
     : null;
@@ -205,13 +206,17 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     age,
     exempt,
     context: retrieval.context,
-    contextCategories: retrieval.hits.flatMap((h) => h.gate_categories ?? []),
+    // a base e o que saiu dos dados das ações nesta conversa (pedido com cerveja: "e a cerveja?" pede o 18+)
+    contextCategories: [...retrieval.hits.flatMap((h) => h.gate_categories ?? []), ...idMapCategories(pendingRow)],
     companyName: bot.client_name,
     onUsage: (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId: convId, kind: "classificacao", channel, ...u }),
   });
   if (entrance.kind === "proibido") {
     await storeOnce(db, convId, q.text, q.key);
-    await sendFixed(GATE_TEXTS.prohibited);
+    // o item veio do pedido da própria pessoa ("e o cigarro?"): o texto fixo diz onde ver o pedido completo
+    const fromOrder = entrance.categories.some((c) => idMapCategories(pendingRow).includes(c));
+    const where = fromOrder ? (idMapLinks(pendingRow)[0] ?? regulatedDestination(bot.regulated_channel, bot.human_handoff?.address)?.destino ?? null) : null;
+    await sendFixed(where ? GATE_TEXTS.prohibitedSeeElsewhere(where) : GATE_TEXTS.prohibited);
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "proibido", categories: entrance.categories });
     return;
   }

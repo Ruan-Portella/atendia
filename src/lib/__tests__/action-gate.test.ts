@@ -180,3 +180,33 @@ describe("pedido com bebida e cigarro", () => {
     expect(replyOutcome(rc({ regulated: ["bebida"] }), { age: "nao" })).toBe("descartar");
   });
 });
+
+describe("o que saiu das ações vale nas perguntas seguintes", () => {
+  it("categorias do mapa de ids enquanto ele vale (24 h)", async () => {
+    const { idMapCategories } = await import("../action-gate");
+    const now = Date.parse("2026-10-03T15:42:56Z");
+    const row = { gate_id_map_enc: JSON.stringify({ b7: { categoria: "bebida", rotulo: "Heineken" }, c9: { categoria: "tabaco", rotulo: "Cigarro" }, ped_123: { categoria: "bebida", rotulo: null } }), gate_id_map_expires_at: "2026-10-04T15:42:22Z" };
+    expect(idMapCategories(row, now).sort()).toEqual(["bebida", "tabaco"]);
+    expect(idMapCategories(row, Date.parse("2026-10-05T00:00:00Z"))).toEqual([]);
+    expect(idMapCategories(null, now)).toEqual([]);
+    expect(idMapCategories({ gate_id_map_enc: "lixo", gate_id_map_expires_at: "2026-10-04T15:42:22Z" }, now)).toEqual([]);
+  });
+
+  it("o aviso do portão vai no histórico junto com o data", () => {
+    const note = actionsNote([{ name: "acao_pedido", input: { pedido: "123" }, output: { ok: true, data: { status: "a caminho" }, aviso: "bebida oculta até o 18+" } }], new Set(), "2026-10-03T15:42:22Z");
+    expect(note).toContain('{"status":"a caminho"} [bebida oculta até o 18+]');
+  });
+});
+
+describe("onde ver o item proibido do próprio pedido", () => {
+  it("o link do pedido fica no mapa de ids e volta para o texto fixo", async () => {
+    const { idMapLinks } = await import("../action-gate");
+    const pedido = { pedido: { id: "ped_9", url: "https://loja.com/pedido/9", itens: [{ id: "p1", nome: "Pizza" }, { id: "c9", nome: "Maço de cigarro" }] } };
+    const r = gateActionData(pedido, { channel: "whatsapp", contactPhone: "5521999999999", age: "sim" });
+    expect(r.ids.ped_9).toMatchObject({ categoria: "tabaco", link: "https://loja.com/pedido/9" });
+    const row = { gate_id_map_enc: JSON.stringify(r.ids), gate_id_map_expires_at: "2099-01-01T00:00:00Z" };
+    expect(idMapLinks(row)).toEqual(["https://loja.com/pedido/9"]);
+    const { GATE_TEXTS } = await import("../gate/rules");
+    expect(GATE_TEXTS.prohibitedSeeElsewhere("https://loja.com/pedido/9")).toContain("fora do chat: https://loja.com/pedido/9");
+  });
+});

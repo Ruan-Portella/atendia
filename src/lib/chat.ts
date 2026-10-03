@@ -125,14 +125,15 @@ export function actionsNote(results: ToolResultRow[] | null | undefined, seen = 
   const when = at ? ` às ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }).format(new Date(at))}` : "";
   let withData = false;
   const parts = results.map((r) => {
-    const out = r.output as { ok?: boolean; data?: unknown; motivo?: string } | null;
+    const out = r.output as { ok?: boolean; data?: unknown; motivo?: string; aviso?: string } | null;
     const status = out?.ok === false ? `falhou${out.motivo ? ` (${out.motivo})` : ""}` : "ok";
     if (!r.name.startsWith("acao_")) return `${r.name} ${status}`;
     const call = `${r.name}(${JSON.stringify(r.input ?? {}).slice(0, 300)}) → ${status}`;
     if (seen.has(r.name) || out?.ok === false) return call;
     seen.add(r.name);
     withData = true;
-    return `${call}${when}: ${JSON.stringify(out?.data ?? null).slice(0, 4000)}`;
+    // o aviso do portão (itens que ficaram de fora) vale para as perguntas seguintes ("e a cerveja?")
+    return `${call}${when}: ${JSON.stringify(out?.data ?? null).slice(0, 4000)}${out?.aviso ? ` [${out.aviso}]` : ""}`;
   });
   const stale = withData ? " Esses dados são da hora da consulta e podem ter mudado: se a pessoa perguntar de novo, chame a ação de novo." : "";
   return `(ações desta resposta: ${parts.join(", ")}${stale})`;

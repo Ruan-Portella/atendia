@@ -15,6 +15,8 @@ import type { GateCategory, GateChannel } from "./gate/rules";
 export interface IdMapEntry {
   categoria: GateCategory;
   rotulo: string | null;
+  /** Link do objeto que perdeu itens (o pedido completo, fora do chat). */
+  link?: string | null;
 }
 export type IdMap = Record<string, IdMapEntry>;
 
@@ -66,8 +68,8 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
   const hidden = new Set<GateCategory>();
   const ids: IdMap = {};
   const links = new Set<string>();
-  const record = (obj: Record<string, unknown>, categoria: GateCategory) => {
-    for (const id of idsOf(obj)) ids[id] = { categoria, rotulo: labelOf(obj) };
+  const record = (obj: Record<string, unknown>, categoria: GateCategory, link: string | null = null) => {
+    for (const id of idsOf(obj)) ids[id] = { categoria, rotulo: labelOf(obj), ...(link ? { link } : {}) };
   };
 
   /** Devolve o valor filtrado; blocked: o próprio objeto foi barrado; removed: algo dentro dele saiu. */
@@ -112,14 +114,40 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
     // algo dentro saiu: o objeto que o contém (pedido, carrinho) também entra no mapa, e o link
     // dele (se houver) é onde a pessoa vê o que ficou de fora
     if (removed) {
-      record(obj, removed);
-      linksOf(obj).forEach((l) => links.add(l));
+      const own = linksOf(obj);
+      record(obj, removed, own[0] ?? null);
+      own.forEach((l) => links.add(l));
     }
     return { value: out, removed };
   };
 
   const r = visit(data);
   return { data: r.blocked ? null : r.value, hidden: [...hidden], ids, links: [...links] };
+}
+
+/**
+ * Categorias do mapa de ids que ainda vale: o que saiu dos dados das ações nesta conversa. A
+ * entrada do portão usa como "a empresa tem o item" ("e a cerveja?" depois de um pedido com
+ * cerveja vira a pergunta de 18+). Função pura.
+ */
+export function idMapCategories(row: IdMapRow, now = Date.now()): GateCategory[] {
+  return [...new Set(activeIdMap(row, now).map((e) => e.categoria))];
+}
+
+/** Links dos pedidos que perderam itens nesta conversa (onde ver o que não sai no chat). Função pura. */
+export function idMapLinks(row: IdMapRow, now = Date.now()): string[] {
+  return [...new Set(activeIdMap(row, now).flatMap((e) => (e.link ? [e.link] : [])))];
+}
+
+type IdMapRow = { gate_id_map_enc?: unknown; gate_id_map_expires_at?: unknown } | null | undefined;
+
+function activeIdMap(row: IdMapRow, now: number): IdMapEntry[] {
+  if (typeof row?.gate_id_map_enc !== "string" || typeof row.gate_id_map_expires_at !== "string" || Date.parse(row.gate_id_map_expires_at) <= now) return [];
+  try {
+    return Object.values(JSON.parse(row.gate_id_map_enc) as IdMap);
+  } catch {
+    return [];
+  }
 }
 
 /** Grava o mapa de ids da conversa por 24 horas (junta com o que ainda vale). */
