@@ -17,6 +17,7 @@ import { visibleText, type Segment } from "./gate/base";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
 import { deliver } from "./send";
 import { metaPhoneHash, typedPhoneHash } from "./contacts";
+import { actionToolsFor } from "./action-tools";
 
 export interface BotRow {
   id: string;
@@ -63,10 +64,23 @@ export function lastUserText(messages: UIMessage[]): string {
  * pedido de atendente). O pedido de atendente vira só o sinal data-handoff para o widget.
  */
 export function withoutToolParts() {
+  // como no WhatsApp e no Instagram, só o primeiro reply da vez vai (duas ações em paralelo)
+  let replied = false;
   return new TransformStream<UIMessageChunk, UIMessageChunk>({
     transform(chunk, ctrl) {
       if (!chunk.type.startsWith("tool-")) return ctrl.enqueue(chunk);
       if (chunk.type === "tool-input-available" && chunk.toolName === "chamar_atendente") ctrl.enqueue({ type: "data-handoff", data: true });
+      // ação com reply: o texto exato vai para o visitante (a IA não escreve nada naquela vez)
+      if (chunk.type === "tool-output-available") {
+        const reply = (chunk.output as { resposta_exata?: unknown } | null)?.resposta_exata;
+        if (typeof reply === "string" && reply && !replied) {
+          replied = true;
+          const id = `reply-${chunk.toolCallId}`;
+          ctrl.enqueue({ type: "text-start", id });
+          ctrl.enqueue({ type: "text-delta", id, delta: reply });
+          ctrl.enqueue({ type: "text-end", id });
+        }
+      }
     },
   });
 }
@@ -79,23 +93,43 @@ export function withoutToolParts() {
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000): Promise<UIMessage[]> {
   // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora
   const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit }, ["id", "role", "content", "tool_results"] as const);
-  return rows.reverse().map((r) => {
-    const text = String(r.content).slice(0, maxChars);
-    // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
-    const done = actionsNote(r.tool_results as ToolResultRow[] | null);
-    return { id: String(r.id), role: r.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: done ? `${text}\n\n${done}` : text }] };
-  });
+  // da mais nova para a mais antiga: a primeira vez que uma ação aparece é a última chamada dela
+  const seen = new Set<string>();
+  const notes = rows.map((r) => actionsNote(r.tool_results as ToolResultRow[] | null, seen));
+  return rows
+    .map((r, i) => {
+      const text = String(r.content).slice(0, maxChars);
+      // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
+      const done = notes[i];
+      return { id: String(r.id), role: r.role === "user" ? ("user" as const) : ("assistant" as const), parts: [{ type: "text" as const, text: done ? `${text}\n\n${done}` : text }] };
+    })
+    .reverse();
 }
 
 export interface ToolResultRow {
   name: string;
+  /** Parâmetros (guardados só nas ações do dev, acao_<nome>). */
+  input?: unknown;
   output: unknown;
 }
 
-/** "(ações desta resposta: registrar_lead ok)" para o histórico do modelo; null sem ações. */
-export function actionsNote(results: ToolResultRow[] | null | undefined): string | null {
+/**
+ * "(ações desta resposta: registrar_lead ok)" para o histórico do modelo; null sem ações. Ações do
+ * dev (acao_<nome>): a última chamada de cada uma leva o data inteiro (a IA lembra para "e o mês
+ * passado?"); as anteriores viram uma linha "ação(parâmetros) → ok". `seen` acumula da mais nova
+ * para a mais antiga.
+ */
+export function actionsNote(results: ToolResultRow[] | null | undefined, seen = new Set<string>()): string | null {
   if (!results?.length) return null;
-  const parts = results.map((r) => `${r.name} ${(r.output as { ok?: boolean } | null)?.ok === false ? "falhou" : "ok"}`);
+  const parts = results.map((r) => {
+    const out = r.output as { ok?: boolean; data?: unknown; motivo?: string } | null;
+    const status = out?.ok === false ? `falhou${out.motivo ? ` (${out.motivo})` : ""}` : "ok";
+    if (!r.name.startsWith("acao_")) return `${r.name} ${status}`;
+    const call = `${r.name}(${JSON.stringify(r.input ?? {}).slice(0, 300)}) → ${status}`;
+    if (seen.has(r.name) || out?.ok === false) return call;
+    seen.add(r.name);
+    return `${call}: ${JSON.stringify(out?.data ?? null).slice(0, 4000)}`;
+  });
   return `(ações desta resposta: ${parts.join(", ")})`;
 }
 
@@ -463,6 +497,21 @@ export async function runChat(opts: {
   let markSaved!: (id?: number | null) => void;
   const saved = new Promise<number | null>((resolve) => (markSaved = (id) => resolve(id ?? null)));
   let savedId: number | null = null;
+  // ações do bot (Integrações): ferramentas acao_<nome>; com reply, o texto exato encerra a vez
+  let actionReply: string | null = null;
+  const actionTools = await actionToolsFor(db, {
+    bot,
+    conversationId: convId,
+    channel,
+    waPhone,
+    age: opts.gate?.age ?? null,
+    exempt: opts.gate?.exempt,
+    messageKey: opts.questionKey ?? `${convId}|${question}`,
+    onReply: (r) => void (actionReply ??= r),
+  });
+  // até 5 passos com ações (o último sem ferramentas, para sempre sair texto); sem ações, 3 como antes
+  const hasActions = Object.keys(actionTools).length > 0;
+  const maxSteps = hasActions ? 5 : 3;
   const result = streamText({
     model: chatModel(),
     system: prompt.fixed,
@@ -476,10 +525,12 @@ export async function runChat(opts: {
       ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
     ],
     ...modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) }),
-    stopWhen: stepCountIs(3),
+    stopWhen: [stepCountIs(maxSteps), () => actionReply !== null],
+    prepareStep: hasActions ? ({ stepNumber }) => (stepNumber >= maxSteps - 1 ? { toolChoice: "none" as const } : undefined) : undefined,
     // limite de tokens por minuto da OpenAI (pico): o SDK tenta de novo com espera crescente
     maxRetries: 4,
-    tools: chatTools({
+    tools: {
+    ...chatTools({
       registrar_lead: async (input) => {
         if (!leadEnabled) return { ok: false };
         const { data: lead } = await db
@@ -518,6 +569,8 @@ export async function runChat(opts: {
         return { ok: true };
       },
     }),
+    ...actionTools,
+  },
     onError: () => markSaved(),
     onFinish: async ({ text, steps, totalUsage, response }) => {
       // custo da resposta inteira (todos os passos + embedding da pergunta), sem atrasar nada
@@ -541,10 +594,13 @@ export async function runChat(opts: {
         const refusalStands = refusalIds.length > 0 && !isGapAnswer(text);
         if (refusalIds.length && !refusalStands) await db.from("scope_refusals").delete().in("id", refusalIds);
         // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
-        if (!unansweredRecorded && !refusalStands && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
-        if (text) {
-          const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, output: t.output })));
-          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content: text, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null }).catch((e) => {
+        if (!actionReply && !unansweredRecorded && !refusalStands && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
+        // com reply de ação, o que fica gravado é o texto exato (no WhatsApp e no Instagram o canal
+        // ainda troca pelo que saiu de fato, depois do portão)
+        const content = actionReply ? [text.trim(), actionReply].filter(Boolean).join("\n\n") : text;
+        if (content) {
+          const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })));
+          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null }).catch((e) => {
             console.error("chat: resposta não gravada", (e as Error).message);
             return null;
           });
@@ -557,5 +613,6 @@ export async function runChat(opts: {
   });
 
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
-  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled };
+  // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
+  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply };
 }

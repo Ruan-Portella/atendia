@@ -7,7 +7,7 @@ import { storeOnce } from "../whatsapp-inbound";
 import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
 import { decideEntrance } from "./entrance";
-import { checkExit, exitDecision } from "./exit";
+import { checkActionReply, checkExit, exitDecision } from "./exit";
 import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
@@ -218,7 +218,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
-  const { result, saved, urgent, askAge: aiAskedAge } = await runChat({
+  const { result, saved, urgent, askAge: aiAskedAge, actionReply } = await runChat({
     db,
     bot,
     messages: history,
@@ -241,9 +241,28 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "pede_18", categories: entrance.regulated });
     return;
   }
-  // 4. portão na saída: item proibido, item 18+ sem o "Sim" e pagamento numa conversa com esses itens
   const regulatedConversation = entrance.regulated.length > 0 || (regulatedAt !== null && Date.now() - Date.parse(regulatedAt) < REGULATED_WINDOW_MS);
-  const exit = checkExit({ text: raw, channel, contactPhone, age, regulatedConversation, exempt, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) });
+  const destination = regulatedDestination(bot.regulated_channel, bot.human_handoff?.address);
+  // 4. ação com reply (Integrações): o texto exato vai no lugar do da IA, inteiro ou não vai. Barrado,
+  // vai um texto fixo (o que a IA escreveu junto é só um "vou verificar"); 18+ sem resposta de idade
+  // vira a pergunta. Com risco à vida, segue a resposta da IA com os telefones
+  let text = raw;
+  const reply = urgent() ? null : actionReply();
+  if (reply) {
+    const rc = checkActionReply({ text: reply, channel, contactPhone, age, regulatedConversation, exempt });
+    if (rc.ok) text = reply;
+    else {
+      await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "reply_descartado", categories: [...rc.prohibited, ...rc.regulated] });
+      if (!rc.prohibited.length && rc.regulated.length && age === null) {
+        if (answerId) await deleteMessage(db, answerId);
+        await askAge(question);
+        return;
+      }
+      text = rc.prohibited.length ? GATE_TEXTS.prohibited : rc.regulated.length ? GATE_TEXTS.under18 : [GATE_TEXTS.paymentNotHere, destination ? GATE_TEXTS.finishOrder(destination.destino) : ""].filter(Boolean).join(" ");
+    }
+  }
+  // 5. portão na saída: item proibido, item 18+ sem o "Sim" e pagamento numa conversa com esses itens
+  const exit = checkExit({ text, channel, contactPhone, age, regulatedConversation, exempt, destination });
   if (exit.prohibited.length || exit.regulated.length || exit.payment) {
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: exitDecision(exit), categories: [...exit.prohibited, ...exit.regulated] });
   }
@@ -261,7 +280,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     if (entrance.prefix) answer = `${entrance.prefix}\n\n${answer}`;
     const out = disclosure ? `${disclosure}\n\n${answer}` : answer;
     // camada única de envio: se alguém assumiu ou pausou durante a resposta, ela não sai (fica "Não enviada" no painel)
-    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== raw ? { content: out } : {}) } : null, transport: () => io.send(out, adultButton ? "adulto" : undefined) });
+    // com reply, o gravado (texto da IA + reply) sempre troca pelo que saiu de fato
+    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== raw || reply ? { content: out } : {}) } : null, transport: () => io.send(out, adultButton ? "adulto" : undefined) });
     if (r.status === "blocked") return;
   }
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).
