@@ -490,7 +490,7 @@ export async function saveAction(agencyId: string, botId: string, actionId: stri
   revalidatePath("/admin", "layout");
   return createsOrder
     ? ok(`Ação salva e DESATIVADA: ela parece criar pedido, reserva ou cobrança, e isso precisa da confirmação por botão, que chega na C pública.`)
-    : ok(`Ação ${input.name} salva${input.active ? " e ativa" : " (desativada)"}. Classificada como ${transactional ? "transação: bebida e remédio nunca aparecem no WhatsApp e no Instagram" : "catálogo: bebida e remédio aparecem depois do 18+"}.`);
+    : ok(`Ação ${input.name} salva${input.active ? " e ativa" : " (desativada)"}. Ela não cria pedido. Devolve ${transactional ? "pedido ou compra da pessoa: bebida e remédio nunca são listados no WhatsApp e no Instagram, com qualquer idade" : "catálogo (produtos, preços): bebida e remédio aparecem no WhatsApp e no Instagram depois do 18+"}.`);
 }
 
 export async function deleteAction(agencyId: string, actionId: string): Promise<ActionResult> {
