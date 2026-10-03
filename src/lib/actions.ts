@@ -210,6 +210,8 @@ export interface CallResult {
   /** Resposta lida (só com status ok ou not_found). */
   data?: unknown;
   reply?: string | null;
+  /** Só para a IA decidir o que dizer (nunca aparece: internal-guard.ts). */
+  internal?: Record<string, unknown> | null;
   attachments?: Array<{ url: string; filename?: string }>;
   outcome?: string | null;
   /** Mensagem de erro para o log, para o Testar e para a IA ("não encontrado: …"). */
@@ -249,7 +251,7 @@ export function callBody(a: Pick<ActionRow, "name" | "bot_id">, callId: string, 
 const RESERVED_HEADERS = /^(webhook-|host$|content-length$|content-type$|connection$|transfer-encoding$)/i;
 
 /** Lê a resposta do endpoint: 2xx = ok; 404 = não encontrado; o resto = falha. Função pura. */
-export function readResponse(httpStatus: number, text: string): Pick<CallResult, "status" | "data" | "reply" | "attachments" | "outcome" | "error"> {
+export function readResponse(httpStatus: number, text: string): Pick<CallResult, "status" | "data" | "reply" | "internal" | "attachments" | "outcome" | "error"> {
   let json: Record<string, unknown> | null = null;
   if (text.trim()) {
     try {
@@ -266,7 +268,8 @@ export function readResponse(httpStatus: number, text: string): Pick<CallResult,
     ? (json.attachments as Array<Record<string, unknown>>).filter((a) => typeof a?.url === "string").map((a) => ({ url: String(a.url), ...(typeof a.filename === "string" ? { filename: a.filename } : {}) }))
     : [];
   const outcome = typeof json.outcome === "string" && /^[a-z0-9_]{1,40}$/.test(json.outcome) ? json.outcome : null;
-  return { status: "ok", data: json.data ?? null, reply: typeof json.reply === "string" ? json.reply.slice(0, 4000) : null, attachments, outcome };
+  const internal = json.internal && typeof json.internal === "object" && !Array.isArray(json.internal) ? (json.internal as Record<string, unknown>) : null;
+  return { status: "ok", data: json.data ?? null, reply: typeof json.reply === "string" ? json.reply.slice(0, 4000) : null, internal, attachments, outcome };
 }
 
 /**

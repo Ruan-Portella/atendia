@@ -18,6 +18,7 @@ import { CATEGORIES, type GateCategory } from "./gate/rules";
 import { deliver } from "./send";
 import { metaPhoneHash, typedPhoneHash } from "./contacts";
 import { ACTIONS_PROMPT_NOTE, actionToolsFor } from "./action-tools";
+import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
 
 export interface BotRow {
   id: string;
@@ -66,9 +67,36 @@ export function lastUserText(messages: UIMessage[]): string {
 export function withoutToolParts() {
   // como no WhatsApp e no Instagram, só o primeiro reply da vez vai (duas ações em paralelo)
   let replied = false;
+  // valores internos das ações: daí em diante o texto é segurado até o fim e conferido
+  const terms: string[] = [];
+  const held = new Map<string, string>();
+  const live = new Set<string>();
+  const flush = (id: string, ctrl: TransformStreamDefaultController<UIMessageChunk>) => {
+    const text = guardInternal(held.get(id) ?? "", terms);
+    held.delete(id);
+    if (!text) return;
+    ctrl.enqueue({ type: "text-start", id });
+    ctrl.enqueue({ type: "text-delta", id, delta: text });
+    ctrl.enqueue({ type: "text-end", id });
+  };
   return new TransformStream<UIMessageChunk, UIMessageChunk>({
     transform(chunk, ctrl) {
+      if (chunk.type === "text-start" || chunk.type === "text-delta" || chunk.type === "text-end") {
+        if (!terms.length || live.has(chunk.id)) {
+          if (chunk.type === "text-start") live.add(chunk.id);
+          return ctrl.enqueue(chunk);
+        }
+        if (chunk.type === "text-start") held.set(chunk.id, "");
+        else if (chunk.type === "text-delta") held.set(chunk.id, (held.get(chunk.id) ?? "") + chunk.delta);
+        else flush(chunk.id, ctrl);
+        return;
+      }
+      if (chunk.type === "finish") for (const id of [...held.keys()]) flush(id, ctrl);
       if (!chunk.type.startsWith("tool-")) return ctrl.enqueue(chunk);
+      if (chunk.type === "tool-output-available") {
+        const interno = (chunk.output as { interno?: unknown } | null)?.interno;
+        if (interno) terms.push(...internalTerms(interno));
+      }
       if (chunk.type === "tool-input-available" && chunk.toolName === "chamar_atendente") ctrl.enqueue({ type: "data-handoff", data: true });
       // ação com reply: o texto exato vai para o visitante (a IA não escreve nada naquela vez)
       if (chunk.type === "tool-output-available") {
@@ -82,7 +110,17 @@ export function withoutToolParts() {
         }
       }
     },
+    // stream cortado antes do fim: o que estava segurado sai conferido
+    flush(ctrl) {
+      for (const id of [...held.keys()]) flush(id, ctrl);
+    },
   });
+}
+
+/** Resposta sem os valores internos das ações; vazia por causa deles vira o texto fixo. */
+export function guardInternal(text: string, terms: string[]): string {
+  const s = stripInternal(text, terms);
+  return s.leaked ? s.text || INTERNAL_FALLBACK : text;
 }
 
 /**
@@ -516,6 +554,8 @@ export async function runChat(opts: {
   let savedId: number | null = null;
   // ações do bot (Integrações): ferramentas acao_<nome>; com reply, o texto exato encerra a vez
   let actionReply: string | null = null;
+  // valores de `internal` das ações desta vez: a resposta é conferida contra eles
+  const internal: string[] = [];
   const actionTools = await actionToolsFor(db, {
     bot,
     destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address),
@@ -528,6 +568,7 @@ export async function runChat(opts: {
     // WhatsApp e Instagram: o id do evento (o reprocesso reaproveita a resposta); widget: uma por mensagem
     messageKey: opts.questionKey ?? `${convId}|${crypto.randomUUID()}`,
     onReply: (r) => void (actionReply ??= r),
+    onInternal: (terms) => void internal.push(...terms),
   });
   // até 5 passos com ações (o último sem ferramentas, para sempre sair texto); sem ações, 3 como antes
   const hasActions = Object.keys(actionTools).length > 0;
@@ -620,7 +661,9 @@ export async function runChat(opts: {
         if (!actionReply && !unansweredRecorded && !refusalStands && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
         // com reply de ação, o que fica gravado é o texto exato (no WhatsApp e no Instagram o canal
         // ainda troca pelo que saiu de fato, depois do portão)
-        const content = actionReply ? [text.trim(), actionReply].filter(Boolean).join("\n\n") : text;
+        // valor interno de uma ação escrito na resposta: a frase sai também do que fica gravado
+        const shown = internal.length ? guardInternal(text, internal) : text;
+        const content = actionReply ? [shown.trim(), actionReply].filter(Boolean).join("\n\n") : shown;
         if (content) {
           const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })));
           savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null }).catch((e) => {
@@ -637,5 +680,5 @@ export async function runChat(opts: {
 
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
-  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply };
+  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal };
 }

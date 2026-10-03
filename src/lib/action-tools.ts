@@ -9,6 +9,7 @@ import { CATEGORIES, type GateCategory } from "./gate/rules";
 import { checkActionReply } from "./gate/exit";
 import { REGULATED_WINDOW_MS } from "./gate/payment";
 import { logGate } from "./gate/log";
+import { INTERNAL_RULE, internalTerms } from "./internal-guard";
 
 /*
  * As ações do bot como ferramentas da IA (spec "Peça 1"): acao_<nome>, só as de consulta ativas
@@ -89,6 +90,8 @@ export interface ActionToolsInput {
   messageKey: string;
   /** A ação devolveu reply: o texto exato vai para o contato e a vez acaba. */
   onReply: (reply: string) => void;
+  /** A ação devolveu internal: os valores que a resposta não pode conter. */
+  onInternal?: (terms: string[]) => void;
 }
 
 /** Ferramentas acao_<nome> para esta resposta (vazio se o bot não tem ações). */
@@ -146,6 +149,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
           }
         }
         if (reply) i.onReply(reply);
+        if (r.internal) i.onInternal?.(internalTerms(r.internal));
         // o que saiu: proibido (com a saída para ver fora do chat) e 18+ (a pergunta de idade)
         const prohibitedHidden = gated.hidden.some((c) => CATEGORIES[c].level === "proibido");
         const notes = [prohibitedHidden ? prohibitedNote(gated.links, i.destination ?? null) : null, hiddenNote(gated.hidden, i.age)].filter(Boolean);
@@ -159,6 +163,8 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
           ok: true,
           data: gated.data,
           ...(aviso ? { aviso } : {}),
+          // só para decidir o que dizer: a resposta é conferida antes de sair (internal-guard.ts)
+          ...(r.internal ? { interno: r.internal, instrucao_interno: INTERNAL_RULE } : {}),
           ...(byAge.length ? { ocultos_por_idade: byAge } : {}),
           ...(prohibitedHidden ? { ocultos_proibidos: true } : {}),
           // com reply, a resposta exata já vai para o contato: não escreva mais nada

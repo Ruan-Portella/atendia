@@ -13,6 +13,7 @@ import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
 import { botGateExemptions } from "./exceptions";
 import { idMapCategories, idMapLinks } from "../action-gate";
+import { INTERNAL_FALLBACK, stripInternal } from "../internal-guard";
 import { CATEGORIES, GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
 
@@ -253,7 +254,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
-  const { result, saved, urgent, askAge: aiAskedAge, actionReply } = await runChat({
+  const { result, saved, urgent, askAge: aiAskedAge, actionReply, internalTerms } = await runChat({
     db,
     bot,
     messages: history,
@@ -295,6 +296,14 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
         return;
       }
       text = replyFallback(rc, destination);
+    }
+  }
+  // valor interno de uma ação escrito pela IA (o reply é texto do dev e sai como veio)
+  if (text === raw && internalTerms().length) {
+    const s = stripInternal(text, internalTerms());
+    if (s.leaked) {
+      await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "interno_removido", categories: [] });
+      text = s.text || INTERNAL_FALLBACK;
     }
   }
   // 5. portão na saída: item proibido, item 18+ sem o "Sim" e pagamento numa conversa com esses itens

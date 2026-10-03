@@ -77,6 +77,7 @@ describe("chamada", () => {
       status: "ok",
       data: { itens: [1] },
       reply: "Temos pizza!",
+      internal: null,
       attachments: [{ url: "https://x/a.pdf" }],
       outcome: "sem_debito",
     });
