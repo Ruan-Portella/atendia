@@ -71,3 +71,46 @@ export async function safeFetch(url: string, init: { headers?: Record<string, st
     current = checkUrl(new URL(location, current).toString());
   }
 }
+
+export interface SafePostResult {
+  status: number;
+  text: string;
+  /** O corpo passou do limite e foi cortado. */
+  truncated: boolean;
+  /** Endpoint respondeu com redirecionamento (POST não segue: a URL cadastrada precisa ser a final). */
+  redirect: string | null;
+}
+
+/**
+ * POST seguro para ações e webhooks: só HTTPS, nenhum redirecionamento, prazo total (DNS, conexão
+ * e corpo) e corpo da resposta cortado no limite. Prazo estourado lança o erro do AbortSignal.
+ */
+export async function safePost(url: string, o: { body: string; headers: Record<string, string>; timeoutMs: number; maxBytes: number }): Promise<SafePostResult> {
+  const target = checkUrl(url);
+  if (target.protocol !== "https:") throw new BlockedUrlError("só HTTPS");
+  const signal = AbortSignal.timeout(o.timeoutMs);
+  const res = await undiciFetch(target, { method: "POST", body: o.body, headers: o.headers, redirect: "manual", signal, dispatcher: agent });
+  if (res.status >= 300 && res.status < 400) {
+    await res.body?.cancel();
+    return { status: res.status, text: "", truncated: false, redirect: res.headers.get("location") };
+  }
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let truncated = false;
+  const reader = res.body?.getReader();
+  if (reader) {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (size + value.byteLength > o.maxBytes) {
+        chunks.push(value.subarray(0, o.maxBytes - size));
+        truncated = true;
+        await reader.cancel();
+        break;
+      }
+      chunks.push(value);
+      size += value.byteLength;
+    }
+  }
+  return { status: res.status, text: Buffer.concat(chunks).toString("utf8"), truncated, redirect: null };
+}

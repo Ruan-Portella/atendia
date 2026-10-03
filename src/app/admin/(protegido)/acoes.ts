@@ -14,6 +14,7 @@ import { audit, requestMeta } from "@/lib/audit";
 import { FEATURES, isFeature, type Feature } from "@/lib/features";
 import { CATEGORIES, type GateCategory } from "@/lib/gate/rules";
 import { analyzeBot, runDueAnalyses } from "@/lib/bot-analysis";
+import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -431,4 +432,90 @@ export async function blockFromAnalysis(id: number, fd: FormData): Promise<Actio
   await createAdminClient().from("compliance_checks").update({ review_state: "resolved", resolved_by: s.email, resolved_at: new Date().toISOString(), resolution: `bloqueado: ${text(fd.get("reason")).slice(0, 200)}` }).eq("id", id);
   revalidatePath("/admin", "layout");
   return ok("Negócio bloqueado e pendência fechada.");
+}
+
+/* ------------------------------------------------------------------ Integrações dos pilotos (P1), configuradas à mão */
+
+/** Bot da agência (não demo), para as ações de Integrações. */
+async function pilotBot(agencyId: string, botId: string) {
+  const { data } = await createAdminClient().from("bots").select("id, agency_id, name").eq("id", botId).eq("agency_id", agencyId).eq("is_demo", false).maybeSingle();
+  return data;
+}
+
+/** Gera ou troca o segredo de ações do bot. O segredo aparece uma vez só, na própria tela. */
+export async function generateActionSecret(agencyId: string, botId: string, fd: FormData): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (segredo de ações do bot ${botId})`);
+  if (!(await pilotBot(agencyId, botId))) return fail("Chatbot não encontrado nesta agência.");
+  const invalidate = fd.get("invalidate") === "on";
+  const secret = await rotateActionSecret(createAdminClient(), botId, { invalidatePrevious: invalidate });
+  await auditAdmin(s.email, "acoes.segredo", { agencyId, targetType: "bot", targetId: botId, after: { invalidou_anterior: invalidate } });
+  await notifyAgencyOwner(createAdminClient(), agencyId, "Segredo de ações gerado", [
+    "A equipe BoaVoz gerou um segredo de ações para um dos seus chatbots (Integrações, piloto).",
+    invalidate ? "O segredo anterior deixou de valer na hora." : "Se havia um segredo anterior, ele vale por mais 24 horas.",
+    "Se não foi combinado com você, fale com o suporte.",
+  ]).catch(() => false);
+  return ok(`${secret}\n\nCopie agora: ele não aparece de novo. ${invalidate ? "O anterior deixou de valer." : "O anterior (se havia) vale por mais 24 horas."}`);
+}
+
+/** Cria ou edita uma ação de consulta. Ação que parece criar pedido, reserva ou cobrança fica salva e desativada. */
+export async function saveAction(agencyId: string, botId: string, actionId: string | null, fd: FormData): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (${actionId ? "editou" : "criou"} ação)`);
+  if (!(await pilotBot(agencyId, botId))) return fail("Chatbot não encontrado nesta agência.");
+  let schema: unknown;
+  try {
+    schema = JSON.parse(text(fd.get("params_schema")) || '{"type":"object","properties":{}}');
+  } catch {
+    return fail("Os parâmetros não são um JSON válido.");
+  }
+  const input = {
+    name: text(fd.get("name")),
+    description: String(fd.get("description") ?? "").trim(),
+    url: text(fd.get("url")),
+    params_schema: schema,
+    min_level: (["anonimo", "canal", "usuario"].includes(text(fd.get("min_level"))) ? text(fd.get("min_level")) : "anonimo") as "anonimo" | "canal" | "usuario",
+    outcomes: text(fd.get("outcomes")).split(",").map((o) => o.trim()).filter(Boolean),
+    active: fd.get("active") === "on",
+  };
+  const problem = actionInputProblem(input);
+  if (problem) return fail(problem);
+  const db = createAdminClient();
+  // efeito classificado pela IA do BoaVoz: pedido, reserva ou cobrança só com confirmação por botão (C pública)
+  const createsOrder = await classifyCreatesOrder(db, agencyId, input);
+  const row = { bot_id: botId, ...input, type: "query", active: input.active && !createsOrder, creates_order: createsOrder, updated_at: new Date().toISOString() };
+  const { error } = actionId ? await db.from("actions").update(row).eq("id", actionId).eq("bot_id", botId) : await db.from("actions").insert(row);
+  if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : `Não foi possível salvar: ${error.message}`);
+  await auditAdmin(s.email, actionId ? "acoes.editar" : "acoes.criar", { agencyId, targetType: "bot", targetId: botId, after: { name: input.name, url: input.url, creates_order: createsOrder } });
+  revalidatePath("/admin", "layout");
+  return createsOrder
+    ? ok(`Ação salva e DESATIVADA: ela parece criar pedido, reserva ou cobrança, e isso precisa da confirmação por botão, que chega na C pública.`)
+    : ok(`Ação ${input.name} salva${input.active ? " e ativa" : " (desativada)"}.`);
+}
+
+export async function deleteAction(agencyId: string, actionId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (apagou a ação ${actionId})`);
+  const { data, error } = await createAdminClient().from("actions").delete().eq("id", actionId).select("bot_id, name, bots!inner(agency_id)").eq("bots.agency_id", agencyId);
+  if (error) return fail("Não foi possível apagar. Tente de novo.");
+  if (!data?.length) return fail("Ação não encontrada.");
+  await auditAdmin(s.email, "acoes.apagar", { agencyId, targetType: "bot", targetId: data[0].bot_id as string, after: { name: data[0].name } });
+  revalidatePath("/admin", "layout");
+  return ok("Ação apagada.");
+}
+
+/** Botão Testar: chama o endpoint de verdade com test: true e os parâmetros de exemplo. */
+export async function testAction(agencyId: string, actionId: string, fd: FormData): Promise<ActionResult> {
+  await requireAdmin(`/admin/clientes/${agencyId}/integracoes (testou a ação ${actionId})`);
+  const db = createAdminClient();
+  const { data: action } = await db.from("actions").select("*, bots!inner(agency_id)").eq("id", actionId).eq("bots.agency_id", agencyId).maybeSingle();
+  if (!action) return fail("Ação não encontrada.");
+  let params: Record<string, unknown>;
+  try {
+    params = JSON.parse(text(fd.get("params")) || "{}") as Record<string, unknown>;
+  } catch {
+    return fail("Os parâmetros de exemplo não são um JSON válido.");
+  }
+  const r = await callAction(db, action as unknown as ActionRow, { params, mode: "test" });
+  const head = `${r.status.toUpperCase()}${r.httpStatus ? ` · HTTP ${r.httpStatus}` : ""} · ${r.durationMs} ms · ${r.callId}`;
+  const lines = [head, ...r.warnings.map((w) => `aviso: ${w}`), ...(r.error ? [`erro: ${r.error}`] : [])];
+  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined }, null, 2).slice(0, 6000));
+  return r.status === "ok" || r.status === "not_found" ? ok(lines.join("\n")) : fail(lines.join("\n"));
 }

@@ -58,6 +58,11 @@ export async function applyRetention(db: SupabaseClient) {
   await db.from("deletion_requests").delete().lt("created_at", daysAgoIso(365));
   // consumo do WhatsApp: 13 meses bastam para comparar com o mesmo mês do ano anterior
   await db.from("whatsapp_usage").delete().lt("created_at", daysAgoIso(400));
+  // registro das chamadas de ações (Integrações): 30 dias
+  await db.from("action_calls").delete().lt("created_at", daysAgoIso(30));
+  // análise do bot: o resumo escrito pela IA sai em 30 dias (os rótulos ficam 1 ano)
+  await db.from("compliance_checks").update({ summary_enc: null }).lt("summary_expires_at", new Date().toISOString()).not("summary_enc", "is", null);
+  await db.from("compliance_checks").delete().lt("created_at", daysAgoIso(365)).neq("review_state", "pending");
   const { data: agencies } = await db.from("agencies").select("id, retention_months").not("retention_months", "is", null);
   let conversations = 0;
   let leads = 0;
