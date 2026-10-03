@@ -21,7 +21,7 @@ import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { WhatsAppError, waIdVariants, getPhoneNumber, hasPaymentMethod, subscribeApp, whatsappConfigured } from "@/lib/whatsapp";
-import { channelBlock } from "@/lib/features";
+import { channelBlock, trialContentProblem } from "@/lib/features";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
 import { createConnectLink } from "@/lib/whatsapp-connect-link";
 import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "@/lib/channel-disconnect";
@@ -35,7 +35,8 @@ import { channelMsgHash } from "@/lib/hash";
 import { deleteContacts, findContactIds, typedPhoneHash, whatsappContact } from "@/lib/contacts";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
-import { markAnalysisDue } from "@/lib/bot-analysis";
+import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
+import { firstExceeded } from "@/lib/rate-limit";
 import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
 
@@ -730,6 +731,31 @@ export async function requestGateReview(conversationId: string, category: string
   return ok("Pedido enviado. A equipe BoaVoz revisa e avisa por e-mail.");
 }
 
+/**
+ * Teste grátis: roda a análise do bot na hora (sem esperar a rotina), para o WhatsApp liberar.
+ * Pede o conteúdo mínimo antes (1 fonte pronta e as instruções) e tem limite de tentativas.
+ */
+export async function analyzeBotNow(botId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id, persona, is_demo").eq("id", botId).maybeSingle();
+  if (!bot || bot.is_demo) return fail("Chatbot não encontrado.");
+  const { count } = await supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("status", "ready");
+  const problem = trialContentProblem(count ?? 0, (bot.persona as { instructions?: string } | null)?.instructions);
+  if (problem) return fail(problem);
+  const admin = createAdminClient();
+  const exceeded = await firstExceeded(admin, [{ key: `analise:${botId}`, max: 3, windowSeconds: 3600, message: "Muitas análises seguidas. Tente de novo daqui a pouco." }]);
+  if (exceeded) return fail(exceeded.message);
+  try {
+    const r = await analyzeBot(admin, botId);
+    revalidatePath(`/painel/bots/${botId}`);
+    if (r.status === "aguardando_classificacao") return fail("A base ainda está sendo lida. Tente de novo em alguns minutos.");
+    if (r.status === "sem_base") return fail("Adicione pelo menos uma fonte pronta antes de analisar.");
+    return r.pending ? ok("Análise feita: ficou para revisão da equipe BoaVoz (até 2 dias úteis).") : ok("Análise feita. O WhatsApp está liberado para este assistente.");
+  } catch {
+    return fail("Não foi possível analisar agora. Tente de novo em alguns minutos.");
+  }
+}
+
 /** Coexistência: "já desliguei a saudação e a ausência do app" (registro, sem bloquear nada). */
 export async function markAutoRepliesOff(botId: string): Promise<ActionResult> {
   const supabase = await createClient();
@@ -793,7 +819,7 @@ export async function disconnectInstagram(botId: string): Promise<ActionResult> 
 /** Número do WhatsApp do chatbot, conferindo a liberação da agência e o dono do chatbot. */
 async function ownedTemplateChannel(botId: string): Promise<TemplateChannel | { error: string }> {
   const { agency } = await requireAgency();
-  const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp");
+  const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp", undefined, { botId });
   if (locked) return { error: locked };
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();

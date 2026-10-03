@@ -6,7 +6,7 @@ import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig } from "@/lib/whatsapp";
-import { TRIAL_WHATSAPP_LOCKED, channelAccessOf, trialContentProblem } from "@/lib/features";
+import { TRIAL_VERDICT_TEXT, TRIAL_WHATSAPP_LOCKED, channelAccessOf, trialAnalysisVerdict, trialContentProblem } from "@/lib/features";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { CoexistenceConnect } from "@/components/coexistence-connect";
 import { ConnectChecklist } from "@/components/connect-checklist";
@@ -30,7 +30,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { analyzeBotNow, answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
 import { UnansweredItem } from "@/components/unanswered-item";
@@ -63,8 +63,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   // canais da Meta: liberação da agência no backoffice, ou abertura geral; no teste grátis, a aba
   // do WhatsApp aparece com o aviso de liberação manual
   const access = await channelAccessOf(createAdminClient(), owner);
-  const waAllowed = access.whatsapp === "liberado";
-  const waWaiting = access.whatsapp === "aguardando";
+  // teste grátis depois da abertura: a análise do bot libera este chatbot
+  const trialVerdict = access.whatsapp === "aguardando" ? await trialAnalysisVerdict(createAdminClient(), id) : null;
+  const waAllowed = access.whatsapp === "liberado" || trialVerdict === "liberado";
+  const waWaiting = access.whatsapp === "aguardando" && trialVerdict !== "liberado";
   const igAllowed = access.instagram === "liberado";
   const tabs = TABS.filter(([t]) => (t === "whatsapp" ? waAllowed || waWaiting : t === "instagram" ? igAllowed : true));
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
@@ -425,7 +427,14 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               </div>
               {!waWaiting && !bot.is_demo && !whatsapp && trialProblem && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">{trialProblem}</p>}
               {waWaiting ? (
-                <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">{TRIAL_WHATSAPP_LOCKED}</p>
+                <div className="flex flex-col gap-2 rounded-lg bg-amber-soft px-3 py-2.5 text-sm text-amber-ink">
+                  <p>{trialVerdict ? TRIAL_VERDICT_TEXT[trialVerdict] : TRIAL_WHATSAPP_LOCKED}</p>
+                  {trialVerdict === "sem_analise" && !bot.is_demo && (
+                    <ActionForm action={analyzeBotNow.bind(null, id)}>
+                      <SubmitButton className="btn-dark self-start py-1 text-xs" pendingLabel="Analisando…">Analisar agora</SubmitButton>
+                    </ActionForm>
+                  )}
+                </div>
               ) : bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
               ) : whatsapp?.disconnected_at ? (

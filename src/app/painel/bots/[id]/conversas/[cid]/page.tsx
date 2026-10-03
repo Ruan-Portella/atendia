@@ -14,7 +14,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
-import { channelAccessOf } from "@/lib/features";
+import { channelBlock } from "@/lib/features";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
@@ -56,7 +56,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
 
   // modelos aprovados, para retomar a conversa (só com o WhatsApp liberado para a agência)
   let templates: SendableTemplate[] | null = null;
-  if (isWhatsApp && (await channelAccessOf(createAdminClient(), agency)).whatsapp === "liberado") {
+  if (isWhatsApp && !(await channelBlock(createAdminClient(), agency.id, "whatsapp", undefined, { botId: id }))) {
     const ch = await loadTemplateChannel(createAdminClient(), id);
     templates = ch ? await listSendable(ch).catch(() => []) : null;
   }

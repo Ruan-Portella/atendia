@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { TRIAL_WHATSAPP_LOCKED, channelAccess, channelBlock, trialContentProblem } from "../features";
+import { TRIAL_VERDICT_TEXT, TRIAL_WHATSAPP_LOCKED, channelAccess, channelBlock, trialContentProblem } from "../features";
 
 const closed = { whatsappOpenAt: null, instagramOpenAt: null };
 const open = { whatsappOpenAt: "2026-11-01T00:00:00Z", instagramOpenAt: "2026-11-01T00:00:00Z" };
@@ -30,17 +30,20 @@ describe("liberação por agência", () => {
 });
 
 /** Banco falso: agência, abertura dos canais, fontes prontas e as instruções do bot. */
-function fakeDb(o: { plan: string; features: string[]; opening?: typeof open; sources?: number; instructions?: string | null }) {
+function fakeDb(o: { plan: string; features: string[]; opening?: typeof open; sources?: number; instructions?: string | null; analysis?: { review_state: string; resolution?: string | null } | null }) {
   const rows: Record<string, unknown> = {
     agencies: { plan: o.plan, features: o.features },
     platform_flags: { whatsapp_open_at: o.opening?.whatsappOpenAt ?? null, instagram_open_at: o.opening?.instagramOpenAt ?? null },
     bots: { persona: { instructions: o.instructions ?? null } },
+    compliance_checks: o.analysis ?? null,
   };
   return {
     from(table: string) {
       const chain = {
         select: () => chain,
         eq: () => chain,
+        order: () => chain,
+        limit: () => chain,
         maybeSingle: async () => ({ data: rows[table] ?? null }),
         then: (resolve: (x: { count: number }) => unknown) => resolve({ count: o.sources ?? 0 }),
       };
@@ -62,5 +65,17 @@ describe("channelBlock", () => {
     expect(await channelBlock(fakeDb({ ...trial, sources: 1, instructions: "Atenda bem" }), "a1", "whatsapp", "b1")).toBeNull();
     // sem conectar (ex.: modelos), o conteúdo não importa
     expect(await channelBlock(fakeDb({ ...trial, sources: 0 }), "a1", "whatsapp")).toBeNull();
+  });
+
+  it("teste grátis depois da abertura: a análise do bot libera o chatbot (sem a liberação manual)", async () => {
+    const trial = { plan: "trial", features: [], opening: open, sources: 1, instructions: "Atenda bem" };
+    expect(await channelBlock(fakeDb({ ...trial, analysis: null }), "a1", "whatsapp", "b1")).toBe(TRIAL_VERDICT_TEXT.sem_analise);
+    expect(await channelBlock(fakeDb({ ...trial, analysis: { review_state: "pending" } }), "a1", "whatsapp", "b1")).toBe(TRIAL_VERDICT_TEXT.em_revisao);
+    expect(await channelBlock(fakeDb({ ...trial, analysis: { review_state: "resolved", resolution: "bloqueado: tabacaria" } }), "a1", "whatsapp", "b1")).toBe(TRIAL_VERDICT_TEXT.em_revisao);
+    expect(await channelBlock(fakeDb({ ...trial, analysis: { review_state: "none" } }), "a1", "whatsapp", "b1")).toBeNull();
+    // liberado pela análise, o conteúdo mínimo ainda vale para conectar
+    expect(await channelBlock(fakeDb({ ...trial, sources: 0, analysis: { review_state: "none" } }), "a1", "whatsapp", "b1")).toMatch(/fonte pronta/);
+    // modelos de um chatbot já liberado pela análise
+    expect(await channelBlock(fakeDb({ ...trial, analysis: { review_state: "resolved", resolution: "segue normal" } }), "a1", "whatsapp", undefined, { botId: "b1" })).toBeNull();
   });
 });

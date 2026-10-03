@@ -55,6 +55,25 @@ export async function channelAccessOf(db: SupabaseClient, agency: FeatureAgency)
 export const TRIAL_WHATSAPP_LOCKED = "No teste grátis, o WhatsApp é liberado pela equipe BoaVoz, conta por conta. Fale com o suporte para pedir a liberação.";
 
 /**
+ * Teste grátis depois da abertura do WhatsApp: a análise do bot libera o chatbot. "em_revisao":
+ * a análise ficou pendente (IA como produto ou modelo proibido, "sim" ou "incerto").
+ */
+export type TrialVerdict = "liberado" | "em_revisao" | "sem_analise";
+
+export const TRIAL_VERDICT_TEXT: Record<Exclude<TrialVerdict, "liberado">, string> = {
+  sem_analise: "No teste grátis, o WhatsApp libera depois que o BoaVoz analisa o assistente. Use “Analisar agora” na aba WhatsApp (leva alguns segundos).",
+  em_revisao: "A equipe BoaVoz está revisando este assistente antes de liberar o WhatsApp no teste grátis (costuma levar até 2 dias úteis). Depois disso, o botão de conectar aparece aqui.",
+};
+
+/** A última análise deste chatbot libera o WhatsApp no teste grátis? */
+export async function trialAnalysisVerdict(db: SupabaseClient, botId: string): Promise<TrialVerdict> {
+  const { data } = await db.from("compliance_checks").select("review_state, resolution").eq("bot_id", botId).eq("kind", "bot_analysis").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!data) return "sem_analise";
+  if (data.review_state === "pending" || String(data.resolution ?? "").startsWith("bloqueado")) return "em_revisao";
+  return "liberado";
+}
+
+/**
  * Teste grátis: o número real só conecta com conteúdo mínimo (pelo menos 1 fonte pronta e as
  * instruções do assistente escritas). Função pura; null = pode conectar.
  */
@@ -68,11 +87,17 @@ export function trialContentProblem(readySources: number, instructions: string |
  * Por que a agência não pode usar (ou conectar) este canal agora; null = pode. Com connectBotId,
  * confere também o conteúdo mínimo do teste grátis para conectar o WhatsApp neste chatbot.
  */
-export async function channelBlock(db: SupabaseClient, agencyId: string, channel: Feature, connectBotId?: string): Promise<string | null> {
+export async function channelBlock(db: SupabaseClient, agencyId: string, channel: Feature, connectBotId?: string, o: { botId?: string } = {}): Promise<string | null> {
   const [{ data: agency }, opening] = await Promise.all([db.from("agencies").select("plan, features").eq("id", agencyId).maybeSingle(), channelOpening(db)]);
   if (!agency) return "Conta não encontrada.";
   const access = channelAccess(agency as FeatureAgency, channel, opening);
-  if (access === "aguardando") return TRIAL_WHATSAPP_LOCKED;
+  if (access === "aguardando") {
+    // teste grátis depois da abertura: a análise do bot libera o chatbot (a liberação manual continua valendo)
+    const botId = connectBotId ?? o.botId;
+    if (!botId) return TRIAL_WHATSAPP_LOCKED;
+    const verdict = await trialAnalysisVerdict(db, botId);
+    if (verdict !== "liberado") return TRIAL_VERDICT_TEXT[verdict];
+  }
   if (access === "fechado") return `O ${FEATURES[channel].label} ainda não está disponível na sua conta.`;
   if (!connectBotId || channel !== "whatsapp" || agency.plan !== "trial") return null;
   const [{ count }, { data: bot }] = await Promise.all([
