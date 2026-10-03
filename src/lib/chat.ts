@@ -17,7 +17,7 @@ import { visibleText, type Segment } from "./gate/base";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
 import { deliver } from "./send";
 import { metaPhoneHash, typedPhoneHash } from "./contacts";
-import { actionToolsFor } from "./action-tools";
+import { ACTIONS_PROMPT_NOTE, actionToolsFor } from "./action-tools";
 
 export interface BotRow {
   id: string;
@@ -526,10 +526,10 @@ export async function runChat(opts: {
     // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
     allowSystemInMessages: true,
     messages: [
-      { role: "system" as const, content: prompt.variable },
+      { role: "system" as const, content: hasActions ? `${prompt.variable}\n\n${ACTIONS_PROMPT_NOTE}` : prompt.variable },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
-      ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
+      ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, hasActions ? [...gated.reminder, ACTIONS_PROMPT_NOTE] : gated.reminder) }] : []),
     ],
     ...modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) }),
     stopWhen: [stepCountIs(maxSteps), () => actionReply !== null],

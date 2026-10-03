@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Webhook } from "standardwebhooks";
-import { actionInputProblem, callBody, newActionSecret, paramsSchemaProblem, queryCallId, readResponse, signatureHeader } from "../actions";
+import { actionInputProblem, callBody, newActionSecret, paramsProblems, paramsSchemaProblem, queryCallId, readResponse, signatureHeader, type ParamsSchema } from "../actions";
 
 const valid = {
   name: "buscar_cardapio",
@@ -84,5 +84,27 @@ describe("chamada", () => {
     expect(readResponse(500, "{}")).toMatchObject({ status: "error", error: "HTTP 500" });
     expect(readResponse(200, "<html>")).toMatchObject({ status: "error" });
     expect(readResponse(200, "")).toMatchObject({ status: "error", error: "resposta vazia" });
+  });
+});
+
+describe("parâmetros antes de chamar", () => {
+  const schema: ParamsSchema = {
+    type: "object",
+    required: ["pedido"],
+    properties: { pedido: { type: "string", description: "número do pedido" }, qtd: { type: "integer" }, tipo: { type: "string", enum: ["entrega", "retirada"] }, tags: { type: "array", items: { type: "string" } } },
+  };
+
+  it("obrigatório ausente ou vazio: pede à pessoa, com a descrição", () => {
+    expect(paramsProblems(schema, {})).toEqual(["pedido (número do pedido)"]);
+    expect(paramsProblems(schema, { pedido: "" })).toEqual(["pedido (número do pedido)"]);
+    expect(paramsProblems(schema, { pedido: "  " })).toEqual(["pedido (número do pedido)"]);
+    expect(paramsProblems(schema, { pedido: "123" })).toEqual([]);
+  });
+
+  it("tipo e lista conferidos; opcional vazio passa", () => {
+    expect(paramsProblems(schema, { pedido: "123", qtd: 1.5 })).toEqual(["qtd"]);
+    expect(paramsProblems(schema, { pedido: "123", tipo: "drone" })).toEqual(["tipo"]);
+    expect(paramsProblems(schema, { pedido: "123", tags: ["a", 2] })).toEqual(["tags"]);
+    expect(paramsProblems(schema, { pedido: "123", tipo: "", qtd: 2, tags: ["a"] })).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 import { jsonSchema, tool, type Tool } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { callAction, type ActionLevel, type ActionRow, type CallContact } from "./actions";
+import { callAction, paramsProblems, type ActionLevel, type ActionRow, type CallContact } from "./actions";
 import { gateActionData, saveIdMap } from "./action-gate";
 import { firstExceeded } from "./rate-limit";
 import { hiddenNote } from "./gate/context";
@@ -17,7 +17,10 @@ import type { GateCategory } from "./gate/rules";
 const LEVELS: ActionLevel[] = ["anonimo", "canal", "usuario"];
 
 /** Regra do BoaVoz que vai depois da descrição do dev em toda ação. */
-export const ACTION_RULE = "Chame a cada pergunta que precise desses dados, mesmo que já tenha consultado antes nesta conversa: o resultado pode ter mudado. Se faltar um dado para consultar, peça à pessoa.";
+export const ACTION_RULE = "Chame a cada pergunta que precise desses dados, mesmo que já tenha consultado antes nesta conversa: o resultado pode ter mudado. Se a pessoa não deu um parâmetro obrigatório, não chame: peça a ela (nunca mande vazio nem inventado).";
+
+/** Linha do prompt para bots com ações: consultar antes de dizer que não tem a informação. */
+export const ACTIONS_PROMPT_NOTE = "As ferramentas acao_ consultam os sistemas da empresa (pedidos, cadastro, agenda, estoque). Antes de dizer que não tem uma informação ou que vai confirmar com a equipe, veja se uma delas consulta isso e chame, mesmo que antes nesta conversa você tenha respondido que não tinha.";
 export const reaches = (contact: ActionLevel, min: ActionLevel) => LEVELS.indexOf(contact) >= LEVELS.indexOf(min);
 
 /** Nível do contato na P1: canal quando a Meta garante quem é (telefone no WhatsApp, Instagram); senão anônimo. */
@@ -76,6 +79,9 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
       description: `${a.description}\n\n${ACTION_RULE}`,
       inputSchema: jsonSchema<Record<string, unknown>>(a.params_schema as Parameters<typeof jsonSchema>[0]),
       execute: async (params: Record<string, unknown>) => {
+        // obrigatório ausente ou vazio: o endpoint não é chamado; a IA pede o dado à pessoa
+        const missing = paramsProblems(a.params_schema, params);
+        if (missing.length) return { ok: false, motivo: "faltam_dados", faltando: missing, instrucao: `Peça à pessoa: ${missing.join(", ")}. Não diga que não tem a informação.` };
         const limited = await firstExceeded(db, [
           { key: `acao:${i.conversationId}:m`, max: 15, windowSeconds: 60, message: "rate_limited" },
           { key: `acao:bot:${i.bot.id}:m`, max: 600, windowSeconds: 60, message: "rate_limited" },

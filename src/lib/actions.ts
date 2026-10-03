@@ -101,6 +101,30 @@ export function paramsSchemaProblem(raw: unknown): string | null {
   return null;
 }
 
+/**
+ * Parâmetros que a IA mandou, conferidos contra o schema antes de chamar o endpoint: obrigatório
+ * ausente ou vazio, tipo errado ou fora da lista. Devolve o que pedir à pessoa ("pedido (número do
+ * pedido)"); vazio = pode chamar. Função pura.
+ */
+export function paramsProblems(schema: ParamsSchema, params: Record<string, unknown>): string[] {
+  const props = schema.properties ?? {};
+  const label = (n: string) => (props[n]?.description ? `${n} (${props[n].description})` : n);
+  const empty = (v: unknown) => v === undefined || v === null || (typeof v === "string" && !v.trim()) || (Array.isArray(v) && !v.length);
+  const fits = (t: string, v: unknown, e?: Array<string | number>) => {
+    const ok = t === "string" ? typeof v === "string" : t === "integer" ? Number.isInteger(v) : t === "number" ? typeof v === "number" && Number.isFinite(v) : t === "boolean" ? typeof v === "boolean" : false;
+    return ok && (!e?.length || e.includes(v as string | number));
+  };
+  const problems = new Set<string>();
+  for (const r of schema.required ?? []) if (empty(params[r])) problems.add(label(r));
+  for (const [n, v] of Object.entries(params)) {
+    const p = props[n];
+    if (!p || empty(v)) continue;
+    const ok = p.type === "array" ? Array.isArray(v) && !!p.items && v.every((x) => fits(p.items!.type, x, p.items!.enum)) : fits(p.type, v, p.enum);
+    if (!ok) problems.add(label(n));
+  }
+  return [...problems];
+}
+
 /** O que impede salvar a ação (null = pode). Função pura, sem a checagem de DNS. */
 export function actionInputProblem(i: ActionInput): string | null {
   if (!/^[a-z][a-z0-9_]{1,47}$/.test(i.name)) return "Nome em snake_case: letras minúsculas, números e _, começando por letra (até 48).";
