@@ -28,6 +28,8 @@ export interface GatedData {
   ids: IdMap;
   /** Links (http/https) dos objetos que perderam itens: onde ver o pedido ou a lista completa. */
   links: string[];
+  /** Categorias 18+ que ficaram nos dados (idade confirmada): a IA pode citá-las. */
+  shown: GateCategory[];
 }
 
 /** Campos de link de um objeto: url, link, *_url, *_link. */
@@ -63,11 +65,12 @@ function ownCategories(o: Record<string, unknown>, opts: { channel: Exclude<Gate
  * se a idade não foi confirmada.
  */
 export function gateActionData(data: unknown, o: { channel: GateChannel; contactPhone?: string | null; age: AgeStatus; exempt?: readonly GateCategory[] }): GatedData {
-  if (o.channel === "widget") return { data, hidden: [], ids: {}, links: [] };
+  if (o.channel === "widget") return { data, hidden: [], ids: {}, links: [], shown: [] };
   const channel = o.channel;
   const hidden = new Set<GateCategory>();
   const ids: IdMap = {};
   const links = new Set<string>();
+  const shown = new Set<GateCategory>();
   const record = (obj: Record<string, unknown>, categoria: GateCategory, link: string | null = null) => {
     for (const id of idsOf(obj)) ids[id] = { categoria, rotulo: labelOf(obj), ...(link ? { link } : {}) };
   };
@@ -99,6 +102,7 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
     // ver não é vender: com o "Sim", bebida e remédio aparecem também num pedido (o pagamento
     // nunca sai no chat, e a compra desses itens pelo chat é barrada)
     if (regulated && o.age !== "sim") return { value: null, blocked: regulated };
+    if (regulated) shown.add(regulated);
     const out: Record<string, unknown> = {};
     let removed: GateCategory | undefined;
     for (const [k, child] of Object.entries(obj)) {
@@ -122,7 +126,7 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
   };
 
   const r = visit(data);
-  return { data: r.blocked ? null : r.value, hidden: [...hidden], ids, links: [...links] };
+  return { data: r.blocked ? null : r.value, hidden: [...hidden], ids, links: [...links], shown: [...shown] };
 }
 
 /**

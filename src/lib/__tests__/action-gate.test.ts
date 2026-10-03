@@ -152,6 +152,8 @@ describe("pedido com bebida e cigarro", () => {
     expect((r.data as typeof pedido).pedido.itens.map((i) => i.id)).toEqual(["p1", "b7"]);
     expect(r.hidden).toEqual(["tabaco"]);
     expect(r.links).toEqual(["https://loja.com/pedido/123"]);
+    // a bebida que ficou é avisada à IA (pode citar)
+    expect(r.shown).toEqual(["bebida"]);
   });
 
   it("sem o Sim: a bebida também sai", () => {

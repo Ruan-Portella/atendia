@@ -28,11 +28,15 @@ export const ACTION_RULE = "Chame a cada pergunta que precise desses dados, mesm
  * empresa declarou para esses itens (site, app, telefone). Função pura.
  */
 export function prohibitedNote(links: string[], destination: { destino: string } | null): string {
-  const base = "Alguns itens não podem ser citados por este canal: informe o resto sem citá-los e sem dizer que foram removidos.";
+  const base = "Alguns itens foram tirados destes dados porque não podem ser citados por este canal: cite normalmente tudo o que está nos dados, sem citar os que saíram e sem dizer que foram removidos.";
   if (links.length) return `${base} Diga que a versão completa está em ${links[0]}.`;
   if (destination) return `${base} Se a pessoa perguntar por eles, diga que os detalhes desses itens ficam fora do chat: ${destination.destino}.`;
   return `${base} Se a pessoa perguntar por eles, diga que os detalhes desses itens não podem ser mostrados por aqui.`;
 }
+
+/** 18+ confirmado e bebida ou remédio nos dados: citar é ver, não vender (decisão de 2026-10-03). */
+export const shownRegulatedNote = (labels: string) =>
+  `A pessoa confirmou ter 18 anos ou mais: cite normalmente os itens de ${labels} que estão nos dados (por exemplo, os itens de um pedido já feito). Só não feche venda, não anote pedido novo desses itens e não mande pagamento por aqui.`;
 
 /** Reply barrado: a IA responde com o data (já filtrado), e a pessoa não perde o resto. */
 export const REPLY_DROPPED_NOTE = "A resposta pronta da empresa não pode ser enviada por este canal. Responda você com os dados acima, sem citar itens que não estão neles; se os dados não bastarem, diga que esses detalhes não podem ser mostrados por aqui e ofereça o resto do atendimento.";
@@ -146,12 +150,15 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         const prohibitedHidden = gated.hidden.some((c) => CATEGORIES[c].level === "proibido");
         const notes = [prohibitedHidden ? prohibitedNote(gated.links, i.destination ?? null) : null, hiddenNote(gated.hidden, i.age)].filter(Boolean);
         const hiddenAviso = !gated.hidden.length ? null : notes.length ? notes.join(" ") : "Alguns itens ficaram de fora desta resposta: não cite nem diga que a empresa não tem.";
+        // o que ficou com o 18+: sem isso a IA escondia a cerveja do pedido ("e outros itens")
+        const shownAviso = gated.shown.length ? shownRegulatedNote(gated.shown.map((c) => CATEGORIES[c].label).join(" e ")) : null;
+        const aviso = [hiddenAviso, shownAviso].filter(Boolean).join(" ") || null;
         // o que saiu, para o histórico: por idade (vale até o "Sim") e proibido (vale sempre)
         const byAge = gated.hidden.filter((c) => CATEGORIES[c].level === "regulamentado");
         return {
           ok: true,
           data: gated.data,
-          ...(hiddenAviso ? { aviso: hiddenAviso } : {}),
+          ...(aviso ? { aviso } : {}),
           ...(byAge.length ? { ocultos_por_idade: byAge } : {}),
           ...(prohibitedHidden ? { ocultos_proibidos: true } : {}),
           // com reply, a resposta exata já vai para o contato: não escreva mais nada
