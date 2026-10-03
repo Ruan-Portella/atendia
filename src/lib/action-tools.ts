@@ -146,10 +146,14 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         const prohibitedHidden = gated.hidden.some((c) => CATEGORIES[c].level === "proibido");
         const notes = [prohibitedHidden ? prohibitedNote(gated.links, i.destination ?? null) : null, hiddenNote(gated.hidden, i.age)].filter(Boolean);
         const hiddenAviso = !gated.hidden.length ? null : notes.length ? notes.join(" ") : "Alguns itens ficaram de fora desta resposta: não cite nem diga que a empresa não tem.";
+        // o que saiu, para o histórico: por idade (vale até o "Sim") e proibido (vale sempre)
+        const byAge = gated.hidden.filter((c) => CATEGORIES[c].level === "regulamentado");
         return {
           ok: true,
           data: gated.data,
           ...(hiddenAviso ? { aviso: hiddenAviso } : {}),
+          ...(byAge.length ? { ocultos_por_idade: byAge } : {}),
+          ...(prohibitedHidden ? { ocultos_proibidos: true } : {}),
           // com reply, a resposta exata já vai para o contato: não escreva mais nada
           ...(reply ? { resposta_exata: reply, instrucao: "A resposta exata desta ação já vai para a pessoa. Não escreva nada." } : r.reply ? { instrucao: REPLY_DROPPED_NOTE } : {}),
         };

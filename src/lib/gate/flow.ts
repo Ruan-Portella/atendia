@@ -13,7 +13,7 @@ import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
 import { botGateExemptions } from "./exceptions";
 import { idMapCategories, idMapLinks } from "../action-gate";
-import { GATE_TEXTS } from "./rules";
+import { CATEGORIES, GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
 
 /*
@@ -32,6 +32,9 @@ export interface PendingAge {
   /** Reply de ação que esperava o 18+ (sai como veio depois do "Sim"). */
   reply?: string | null;
 }
+
+/** Instrução logo depois do "Sim", quando uma ação tinha tirado bebida ou remédio dos dados. */
+export const AGE_REFETCH_NOTE = "A pessoa acabou de confirmar ter 18 anos ou mais. Chame de novo a ação que trouxe os dados (com os mesmos parâmetros) para mostrar os itens que tinham ficado de fora por causa da idade; não responda só com o histórico.";
 
 /** Reply guardado vale por 15 minutos: depois disso o dado pode ter mudado, e a IA consulta de novo. */
 export const PENDING_REPLY_MS = 15 * 60_000;
@@ -245,6 +248,9 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     history = withLastUserText(history, entrance.question);
   }
 
+  // acabou de confirmar 18+ e uma ação tinha tirado bebida ou remédio dos dados: a IA consulta de novo
+  const refetch = answered === "sim" && age === "sim" && idMapCategories(pendingRow).some((c) => CATEGORIES[c].level === "regulamentado") ? AGE_REFETCH_NOTE : null;
+
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
   const { result, saved, urgent, askAge: aiAskedAge, actionReply } = await runChat({
@@ -258,7 +264,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     questionKey: q.key,
     storeQuestion,
     retrieval,
-    gate: { age, instruction: entrance.instruction, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0, exempt },
+    gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt },
   });
   const raw = await result.text;
   const answerId = await saved;

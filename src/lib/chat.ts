@@ -113,6 +113,15 @@ export interface ToolResultRow {
   output: unknown;
 }
 
+/** O que saiu dos dados de uma ação, para o histórico: certo antes e depois do "Sim". Função pura. */
+export function hiddenHistoryNote(byAge: GateCategory[] | undefined, prohibited: boolean | undefined): string {
+  const parts = [
+    ...(byAge?.length ? [`${byAge.map((c) => CATEGORIES[c].label).join(" e ")} ficou de fora porque a idade não estava confirmada na hora da consulta: se a pessoa já confirmou 18+, chame a ação de novo para mostrar`] : []),
+    ...(prohibited ? ["itens que não podem ser citados por este canal ficaram de fora: não cite"] : []),
+  ];
+  return parts.length ? ` [${parts.join("; ")}]` : "";
+}
+
 /**
  * "(ações desta resposta: registrar_lead ok)" para o histórico do modelo; null sem ações. Ações do
  * dev (acao_<nome>): a última chamada de cada uma leva o data inteiro (a IA lembra para "e o mês
@@ -125,15 +134,17 @@ export function actionsNote(results: ToolResultRow[] | null | undefined, seen = 
   const when = at ? ` às ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }).format(new Date(at))}` : "";
   let withData = false;
   const parts = results.map((r) => {
-    const out = r.output as { ok?: boolean; data?: unknown; motivo?: string; aviso?: string } | null;
+    const out = r.output as { ok?: boolean; data?: unknown; motivo?: string; ocultos_por_idade?: GateCategory[]; ocultos_proibidos?: boolean } | null;
     const status = out?.ok === false ? `falhou${out.motivo ? ` (${out.motivo})` : ""}` : "ok";
     if (!r.name.startsWith("acao_")) return `${r.name} ${status}`;
     const call = `${r.name}(${JSON.stringify(r.input ?? {}).slice(0, 300)}) → ${status}`;
     if (seen.has(r.name) || out?.ok === false) return call;
     seen.add(r.name);
     withData = true;
-    // o aviso do portão (itens que ficaram de fora) vale para as perguntas seguintes ("e a cerveja?")
-    return `${call}${when}: ${JSON.stringify(out?.data ?? null).slice(0, 4000)}${out?.aviso ? ` [${out.aviso}]` : ""}`;
+    // o que ficou de fora vale para as perguntas seguintes ("e a cerveja?"), num aviso que não
+    // envelhece: o da hora da chamada ("chame pedir_confirmacao_18") fazia a IA perguntar de novo
+    // depois do "Sim"
+    return `${call}${when}: ${JSON.stringify(out?.data ?? null).slice(0, 4000)}${hiddenHistoryNote(out?.ocultos_por_idade, out?.ocultos_proibidos)}`;
   });
   const stale = withData ? " Esses dados são da hora da consulta e podem ter mudado: se a pessoa perguntar de novo, chame a ação de novo." : "";
   return `(ações desta resposta: ${parts.join(", ")}${stale})`;
@@ -573,7 +584,10 @@ export async function runChat(opts: {
         return { ok: true };
       },
       pedir_confirmacao_18: async () => {
-        // o canal troca a resposta pela pergunta fixa com botões (só se a idade não foi confirmada)
+        // idade já respondida: não pergunta de novo (a IA ainda pode seguir um aviso velho do histórico)
+        if (opts.gate?.age === "sim") return { ok: false, instrucao: "A pessoa já confirmou ter 18 anos ou mais: não pergunte de novo. Responda; se precisar dos itens de uma consulta, chame a ação de novo." };
+        if (opts.gate?.age === "nao") return { ok: false, instrucao: "A pessoa disse que não tem 18 anos: não pergunte de novo e não fale desses itens; ofereça o resto." };
+        // o canal troca a resposta pela pergunta fixa com botões
         askAgeCalled = true;
         return { ok: true };
       },

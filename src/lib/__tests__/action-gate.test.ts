@@ -192,9 +192,13 @@ describe("o que saiu das ações vale nas perguntas seguintes", () => {
     expect(idMapCategories({ gate_id_map_enc: "lixo", gate_id_map_expires_at: "2026-10-04T15:42:22Z" }, now)).toEqual([]);
   });
 
-  it("o aviso do portão vai no histórico junto com o data", () => {
-    const note = actionsNote([{ name: "acao_pedido", input: { pedido: "123" }, output: { ok: true, data: { status: "a caminho" }, aviso: "bebida oculta até o 18+" } }], new Set(), "2026-10-03T15:42:22Z");
-    expect(note).toContain('{"status":"a caminho"} [bebida oculta até o 18+]');
+  it("o histórico diz o que saiu, num aviso que vale antes e depois do Sim", () => {
+    const note = actionsNote([{ name: "acao_pedido", input: { pedido: "123" }, output: { ok: true, data: { status: "a caminho" }, aviso: "chame pedir_confirmacao_18", ocultos_por_idade: ["bebida"], ocultos_proibidos: true } }], new Set(), "2026-10-03T15:42:22Z");
+    expect(note).toContain('{"status":"a caminho"} [');
+    expect(note).toContain("se a pessoa já confirmou 18+, chame a ação de novo");
+    expect(note).toContain("não podem ser citados");
+    // o aviso da hora da chamada (que manda perguntar a idade) não vai para o histórico
+    expect(note).not.toContain("pedir_confirmacao_18");
   });
 });
 
