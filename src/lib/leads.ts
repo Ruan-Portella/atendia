@@ -103,11 +103,10 @@ export async function deleteLeads(db: SupabaseClient, ids: string[]): Promise<nu
   return count ?? 0;
 }
 
-/** Retenção: apaga os leads destes chatbots criados antes do corte; devolve quantos. */
-export async function deleteLeadsBefore(db: SupabaseClient, botIds: string[], cutoff: string): Promise<number> {
-  if (!botIds.length) return 0;
-  const { count } = await db.from("leads").delete({ count: "exact" }).in("bot_id", botIds).lt("created_at", cutoff);
-  return count ?? 0;
+/** Retenção: ids dos leads do chatbot criados antes do corte. */
+export async function leadIdsBefore(db: SupabaseClient, botId: string, cutoff: string, limit = 200): Promise<string[]> {
+  const { data } = await db.from("leads").select("id").eq("bot_id", botId).lt("created_at", cutoff).limit(limit);
+  return (data ?? []).map((l) => l.id as string);
 }
 
 const digitsOf = (v: string) => v.replace(/\D/g, "");

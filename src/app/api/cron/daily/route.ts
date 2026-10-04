@@ -52,7 +52,7 @@ async function daily() {
   const trial = await run("avisos de teste", () => trialReminders(db));
   // totais diários antes da retenção: o que ela apagar já está somado nos relatórios
   const reports = await run("totais diários", () => refreshReportDaily(db, () => hasTime()));
-  const retention = await run("limpeza LGPD", () => applyRetention(db));
+  const retention = await run("limpeza LGPD", () => applyRetention(db, () => hasTime()));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
   // cifra por campo (leva S): o histórico ainda sem cifra é cifrado em lotes, com o tempo que sobrar

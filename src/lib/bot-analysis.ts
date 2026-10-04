@@ -33,6 +33,8 @@ export interface AnalysisAnswer {
   modelo_proibido: Tri;
   categoria_principal: GateCategory | null;
   resumo: string;
+  /** Negócio de saúde (clínica, consultório, terapia, farmácia…): sugere o modo dados sensíveis. */
+  area_saude: Tri;
 }
 
 export interface FoundCategory {
@@ -81,10 +83,11 @@ ${found}
 Amostra da base:
 ${i.sample.slice(0, 4000)}
 
-Responda duas perguntas sobre o NEGÓCIO (não sobre o assistente):
+Responda três perguntas sobre o NEGÓCIO (não sobre o assistente):
 1. ia_como_produto: a conversa com a IA é o próprio produto vendido? "sim" quando o negócio vende acesso a um assistente de IA (tutor ou professor com IA, "ChatGPT no WhatsApp", textos, imagens ou trabalhos feitos pela IA sob encomenda, companhia ou consulta virtual paga). "nao" quando a IA só atende os clientes de um negócio que vende outros produtos ou serviços. "incerto" se não der para saber.
 2. modelo_proibido: a atividade PRINCIPAL do negócio é uma destas, proibidas no WhatsApp e no Instagram? ${PROHIBITED.map((c) => `${c} (${CATEGORIES[c].label})`).join(", ")}. "sim" só se for a atividade principal (ex.: tabacaria, casa de apostas, sex shop); "nao" se o negócio vende outras coisas e tem só alguns itens desses (negócio misto, que funciona com o filtro); "incerto" se não der para saber.
-Responda só com JSON: {"ia_como_produto": "nao", "motivo_ia": "frase curta", "modelo_proibido": "nao", "categoria_principal": null, "resumo": "uma frase do que o negócio faz"}`;
+3. area_saude: o negócio atende a saúde de pessoas, de modo que os clientes contam no chat sintomas, tratamentos, exames ou remédios? "sim" para clínica, consultório, hospital, laboratório, dentista, psicologia, fisioterapia, nutrição, terapias e farmácia; "nao" para os outros (estética sem procedimento de saúde, academia, veterinária, loja); "incerto" se não der para saber.
+Responda só com JSON: {"ia_como_produto": "nao", "motivo_ia": "frase curta", "modelo_proibido": "nao", "categoria_principal": null, "area_saude": "nao", "resumo": "uma frase do que o negócio faz"}`;
 }
 
 const tri = (v: unknown): Tri => (v === "sim" || v === "nao" ? v : "incerto");
@@ -104,6 +107,7 @@ export function parseAnalysis(raw: string): AnalysisAnswer {
     modelo_proibido: tri(j.modelo_proibido),
     categoria_principal: cat,
     resumo: typeof j.resumo === "string" ? j.resumo.slice(0, 300) : "",
+    area_saude: tri(j.area_saude),
   };
 }
 
@@ -195,7 +199,7 @@ export async function analyzeBot(db: SupabaseClient, botId: string, opts: { forc
       client_id: bot.client_id,
       bot_id: botId,
       kind: "bot_analysis",
-      labels: { categorias: found, fontes: sources.length, ia_como_produto: answer.ia_como_produto, modelo_proibido: answer.modelo_proibido, categoria_principal: answer.categoria_principal },
+      labels: { categorias: found, fontes: sources.length, ia_como_produto: answer.ia_como_produto, modelo_proibido: answer.modelo_proibido, categoria_principal: answer.categoria_principal, area_saude: answer.area_saude },
       // resumo do negócio escrito pela IA: cifrado com a chave do cliente
       summary_enc: await sealNullable("compliance_checks.summary_enc", [answer.resumo, answer.motivo_ia].filter(Boolean).join(" · ") || null, await scopeOfBot(botId)),
       summary_expires_at: new Date(Date.now() + 30 * 86_400_000).toISOString(),
@@ -209,6 +213,8 @@ export async function analyzeBot(db: SupabaseClient, botId: string, opts: { forc
   // a análise nova substitui a pendência anterior deste chatbot
   await db.from("compliance_checks").update({ review_state: "resolved", resolved_by: "sistema", resolved_at: now, resolution: "substituída pela análise nova" }).eq("bot_id", botId).eq("kind", "bot_analysis").eq("review_state", "pending").neq("id", check.id);
 
+  // negócio de saúde: sugere o modo dados sensíveis (uma vez; quem liga é o cliente)
+  if (answer.area_saude === "sim") await db.from("bots").update({ sensitive_mode_suggested_at: now }).eq("id", botId).eq("sensitive_mode", false).is("sensitive_mode_suggested_at", null);
   if (bot.client_id) await updateProfile(db, bot as { agency_id: string; client_id: string; name: string; client_name: string }, botId, { analisado_em: now, fontes: sources.length, regulados: pick(found, "regulamentado"), proibidos: pick(found, "proibido") });
   if (pending) {
     await notifyPlatform(`Análise do bot: revisar ${bot.client_name}`, [

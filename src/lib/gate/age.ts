@@ -84,6 +84,12 @@ export async function ageRecord(db: SupabaseClient, w: Who): Promise<{ status: "
 }
 
 /** Qualquer pessoa da equipe pode zerar pela conversa (o contato volta a ser perguntado). */
+/** Retenção: apaga a resposta de 18+ das identidades de um contato apagado (telefone, BSUID, id do Instagram). */
+export async function deleteAgesOf(db: SupabaseClient, botId: string, who: Array<{ channel: SuppressionChannel; contact: string }>): Promise<void> {
+  const hashes = [...new Set(who.map((w) => contactHash(w.channel, w.contact)))];
+  if (hashes.length) await db.from("contact_ages").delete().eq("bot_id", botId).in("contact_hash", hashes);
+}
+
 export async function resetAge(db: SupabaseClient, w: Who) {
   await db.from("contact_ages").delete().eq("bot_id", w.botId).eq("contact_hash", contactHash(w.channel, w.contact));
 }

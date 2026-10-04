@@ -25,7 +25,8 @@ describe("análise do bot", () => {
   });
 
   it("lê a resposta da IA; fora do formato conta como incerto (vai para revisão)", () => {
-    expect(parseAnalysis('{"ia_como_produto":"nao","motivo_ia":"vende comida","modelo_proibido":"nao","categoria_principal":null,"resumo":"Bar"}')).toEqual({ ia_como_produto: "nao", motivo_ia: "vende comida", modelo_proibido: "nao", categoria_principal: null, resumo: "Bar" });
+    expect(parseAnalysis('{"ia_como_produto":"nao","motivo_ia":"vende comida","modelo_proibido":"nao","categoria_principal":null,"resumo":"Bar"}')).toEqual({ ia_como_produto: "nao", motivo_ia: "vende comida", modelo_proibido: "nao", categoria_principal: null, resumo: "Bar", area_saude: "incerto" });
+    expect(parseAnalysis('{"ia_como_produto":"nao","modelo_proibido":"nao","area_saude":"sim"}').area_saude).toBe("sim");
     expect(parseAnalysis('```json\n{"ia_como_produto":"sim","modelo_proibido":"talvez","categoria_principal":"tabaco"}\n```')).toMatchObject({ ia_como_produto: "sim", modelo_proibido: "incerto", categoria_principal: "tabaco" });
     expect(parseAnalysis("não sei responder")).toMatchObject({ ia_como_produto: "incerto", modelo_proibido: "incerto" });
   });

@@ -329,6 +329,36 @@ export async function findContactIds(db: SupabaseClient, botIds: string[], by: {
   return (data ?? []).map((c) => c.id as string);
 }
 
+/**
+ * Retenção: fichas deste chatbot paradas desde antes do corte (criação, última mensagem recebida e
+ * última alteração), sem conversa e sem vínculo ativo, com o canal e os identificadores abertos
+ * (para apagar o 18+ junto). Página por id (after), para não voltar sempre às mesmas fichas.
+ */
+export async function retentionContacts(db: SupabaseClient, botId: string, cutoff: string, opts: { after?: string; limit?: number } = {}): Promise<{ rows: Array<{ id: string; channel: ContactChannel | "widget"; ids: string[] }>; last: string | null }> {
+  let q = db.from("contacts").select("id, channel, phone_enc, wa_user_enc, ig_enc").eq("bot_id", botId).lt("created_at", cutoff).lt("updated_at", cutoff).or(`last_inbound_at.is.null,last_inbound_at.lt."${cutoff}"`);
+  if (opts.after) q = q.gt("id", opts.after);
+  const { data, error } = await q.order("id").limit(opts.limit ?? 200);
+  if (error) throw new Error(`retenção dos contatos: ${error.message}`);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const ids = rows.map((r) => r.id as string);
+  if (!ids.length) return { rows: [], last: null };
+  const [{ data: convs }, { data: links }] = await Promise.all([
+    db.from("conversations").select("contact_id").in("contact_id", ids),
+    db.from("contact_links").select("contact_id").in("contact_id", ids).is("unlinked_at", null),
+  ]);
+  const busy = new Set([...(convs ?? []), ...(links ?? [])].map((r) => r.contact_id as string));
+  const free = await Promise.all(
+    rows
+      .filter((r) => !busy.has(r.id as string))
+      .map(async (r) => ({
+        id: r.id as string,
+        channel: r.channel as ContactChannel | "widget",
+        ids: (await Promise.all([openNullable("contacts.phone_enc", r.phone_enc), openNullable("contacts.wa_user_enc", r.wa_user_enc), openNullable("contacts.ig_enc", r.ig_enc)])).filter((v): v is string => Boolean(v)),
+      })),
+  );
+  return { rows: free, last: rows.length === (opts.limit ?? 200) ? ids[ids.length - 1] : null };
+}
+
 /** Todas as fichas de um canal de um chatbot (ex.: a conta do Instagram desconectada pela Meta). */
 export async function contactIdsOfChannel(db: SupabaseClient, botId: string, channel: ContactChannel): Promise<string[]> {
   const { data } = await db.from("contacts").select("id").eq("bot_id", botId).eq("channel", channel);

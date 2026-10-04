@@ -16,6 +16,7 @@ import { audit, requestMeta } from "@/lib/audit";
 import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "@/lib/channel-disconnect";
 import { notifyAgencyOwner } from "@/lib/notify";
 import { appUrl } from "@/lib/utils";
+import { SENSITIVE_DAYS, effectiveRetention, isRetentionMonths, retentionLabel, retentionReduced } from "@/lib/retention";
 import { headers } from "next/headers";
 
 const GENERIC = "Se esse e-mail tiver acesso, enviamos um link para entrar. Confira a caixa de entrada (e o spam).";
@@ -161,6 +162,78 @@ export async function confirmAccess(tokenHash: string, type: string, nextRaw: st
  * O negócio desconecta o WhatsApp ou o Instagram de um assistente dele (área do cliente). Nada é
  * apagado na Meta (o número e a conta continuam dele); a agência é avisada e fica na auditoria.
  */
+/* ------------------------------------------------------------------ privacidade (leva S) */
+
+/** Prazos que valem para o cliente: o dele e o da agência. */
+async function memberRetention(ctx: NonNullable<Awaited<ReturnType<typeof memberForAction>>>, clientId: string) {
+  const { data } = await ctx.admin.from("clients").select("retention_months, agencies(retention_months)").eq("id", clientId).maybeSingle();
+  const agency = (Array.isArray(data?.agencies) ? data.agencies[0] : data?.agencies) as { retention_months: number | null } | null | undefined;
+  return { clientMonths: (data?.retention_months as number | null) ?? null, agencyMonths: agency?.retention_months ?? null };
+}
+
+const monthsToDays = (m: number | null) => (m ? m * 30 : null);
+
+/** O cliente escolhe o prazo de guarda (vazio = o da agência). Diminuir pede confirmação e avisa a agência. */
+export async function memberSetRetention(clientId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  const raw = text(formData.get("retention_months"));
+  const months = raw ? Number(raw) : null;
+  if (months !== null && !isRetentionMonths(months)) return fail("Escolha 6, 12 ou 24 meses, ou o prazo da agência.");
+  const cur = await memberRetention(ctx, clientId);
+  const before = monthsToDays(cur.clientMonths ?? cur.agencyMonths);
+  const after = monthsToDays(months ?? cur.agencyMonths);
+  const reduced = retentionReduced(before, after);
+  if (reduced && formData.get("confirm") !== "on") return fail(`Para diminuir o prazo, marque a confirmação: o que tiver mais de ${retentionLabel(after)} é apagado na próxima limpeza diária.`);
+  const { error } = await ctx.admin.from("clients").update({ retention_months: months }).eq("id", clientId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "cliente.retencao", targetType: "client", targetId: clientId, before: { retention_months: cur.clientMonths }, after: { retention_months: months }, ...(await requestMeta()) });
+  if (reduced) {
+    await notifyAgencyOwner(ctx.admin, ctx.member.agencyId, `${ctx.member.clientName} diminuiu o prazo de guarda das conversas`, [
+      `${ctx.email}, do cliente ${ctx.member.clientName}, mudou o prazo de guarda das conversas e contatos para ${retentionLabel(after)} pela área do cliente.`,
+      "",
+      "Conversas paradas há mais tempo que isso, com as mensagens, leads e fichas de contato sem conversa, passam a ser apagados na limpeza diária. Os relatórios continuam com os números.",
+      "",
+      `Painel: ${appUrl(`/painel/clientes/${clientId}?tab=dados`)}`,
+    ]).catch(() => false);
+  }
+  revalidatePath(`/cliente/${clientId}/privacidade`);
+  return ok(months ? `Prazo salvo: ${months} meses.` : `Vale o prazo da agência (${retentionLabel(monthsToDays(cur.agencyMonths))}).`);
+}
+
+/** Modo dados sensíveis de um assistente: as conversas dele saem no prazo curto escolhido (7 a 90 dias). */
+export async function memberSetSensitive(clientId: string, botId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");
+  const on = formData.get("sensitive") === "on";
+  const chosen = Number(formData.get("days"));
+  const { data: bot } = await ctx.admin.from("bots").select("name, sensitive_mode, sensitive_retention_days").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Assistente não encontrado.");
+  const daysOut = on ? ((SENSITIVE_DAYS as readonly number[]).includes(chosen) ? chosen : null) : (bot.sensitive_retention_days as number);
+  if (daysOut === null) return fail("Escolha o prazo: 7, 15, 30, 60 ou 90 dias.");
+  const cur = await memberRetention(ctx, clientId);
+  const base = { isDemo: false, clientMonths: cur.clientMonths, agencyMonths: cur.agencyMonths };
+  const before = effectiveRetention({ ...base, sensitiveMode: Boolean(bot.sensitive_mode), sensitiveDays: bot.sensitive_retention_days as number }).days;
+  const after = effectiveRetention({ ...base, sensitiveMode: on, sensitiveDays: daysOut }).days;
+  const reduced = retentionReduced(before, after);
+  if (reduced && formData.get("confirm") !== "on") return fail(`Para encurtar o prazo, marque a confirmação: as conversas deste assistente com mais de ${retentionLabel(after)} são apagadas na próxima limpeza diária.`);
+  const { error } = await ctx.admin.from("bots").update({ sensitive_mode: on, sensitive_retention_days: daysOut }).eq("id", botId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "bot.modo_sensivel", targetType: "bot", targetId: botId, before: { sensitive_mode: bot.sensitive_mode, sensitive_retention_days: bot.sensitive_retention_days }, after: { sensitive_mode: on, sensitive_retention_days: daysOut }, ...(await requestMeta()) });
+  if (on !== Boolean(bot.sensitive_mode) || reduced) {
+    const what = on
+      ? `ligou o modo dados sensíveis do assistente ${bot.name}: as conversas dele passam a ser apagadas depois de ${daysOut} dias`
+      : `desligou o modo dados sensíveis do assistente ${bot.name}: as conversas voltam ao prazo do cliente (${retentionLabel(after)})`;
+    await notifyAgencyOwner(ctx.admin, ctx.member.agencyId, `${ctx.member.clientName} ${on ? "ligou" : "desligou"} o modo dados sensíveis`, [
+      `${ctx.email}, do cliente ${ctx.member.clientName}, ${what}.`,
+      "",
+      `Painel: ${appUrl(`/painel/clientes/${clientId}?tab=dados`)}`,
+    ]).catch(() => false);
+  }
+  revalidatePath(`/cliente/${clientId}/privacidade`);
+  return ok(on ? `Modo dados sensíveis ligado: as conversas de ${bot.name} ficam ${daysOut} dias.` : `Modo dados sensíveis desligado: vale o prazo de ${retentionLabel(after)}.`);
+}
+
 export async function memberDisconnectChannel(clientId: string, botId: string, channel: "whatsapp" | "instagram"): Promise<ActionResult> {
   const ctx = await memberForAction(clientId);
   if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");

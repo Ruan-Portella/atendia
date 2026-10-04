@@ -87,7 +87,12 @@ export async function markUnansweredResolved(db: SupabaseClient, id: string, aut
   return !error;
 }
 
-/** Retenção: apaga as perguntas destes chatbots criadas antes do corte. */
-export async function deleteUnansweredBefore(db: SupabaseClient, botIds: string[], cutoff: string): Promise<void> {
-  if (botIds.length) await db.from("unanswered").delete().in("bot_id", botIds).lt("created_at", cutoff);
+/** Retenção: ids das perguntas do chatbot criadas antes do corte. */
+export async function unansweredIdsBefore(db: SupabaseClient, botId: string, cutoff: string, limit = 200): Promise<string[]> {
+  const { data } = await db.from("unanswered").select("id").eq("bot_id", botId).lt("created_at", cutoff).limit(limit);
+  return (data ?? []).map((u) => u.id as string);
+}
+
+export async function deleteUnanswered(db: SupabaseClient, ids: string[]): Promise<void> {
+  if (ids.length) await db.from("unanswered").delete().in("id", ids);
 }

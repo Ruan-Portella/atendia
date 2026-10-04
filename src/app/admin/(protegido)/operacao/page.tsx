@@ -8,7 +8,8 @@ import { masterKeys } from "@/lib/keys";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { runReencryptNow, runReportDailyNow } from "../acoes";
+import { runReencryptNow, runReportDailyNow, runRetentionNow } from "../acoes";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { reportedThrough } from "@/lib/report-daily";
 
 export const metadata = { title: "Operação" };
@@ -72,6 +73,22 @@ export default async function AdminOperations() {
         <ResultForm action={runReportDailyNow}>
           <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Somando…">Recalcular agora</SubmitButton>
         </ResultForm>
+      </section>
+
+      <section className="card flex flex-col gap-2 p-5">
+        <h2 className="text-base font-bold">Limpeza por prazo (retenção)</h2>
+        <p className="text-xs text-muted">
+          Prazo de cada chatbot: o do modo dados sensíveis (7 a 90 dias), senão o do cliente, senão o da agência (6, 12 ou 24 meses); demonstração, 30 dias. A rotina diária promove os prazos vencidos, agenda 12 meses (com e-mail) para quem estava em “Não apagar” e apaga o que passou do prazo, sem passar do último dia somado.
+        </p>
+        <ConfirmAction
+          action={runRetentionNow}
+          title="Rodar a limpeza por prazo agora?"
+          description="Apaga de verdade o que passou do prazo de cada chatbot (conversas, leads, perguntas, contatos) e manda o e-mail do prazo padrão às agências em “Não apagar”. Não tem desfazer."
+          confirmLabel="Rodar a limpeza"
+          className="btn-ghost self-start py-1.5 text-xs"
+        >
+          Rodar limpeza agora
+        </ConfirmAction>
       </section>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">

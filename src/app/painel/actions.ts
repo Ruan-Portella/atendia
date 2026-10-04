@@ -10,7 +10,7 @@ import { requireAgency } from "@/lib/agency";
 import { postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
-import { initials, normalizeUrl, slugify } from "@/lib/utils";
+import { appUrl, initials, normalizeUrl, slugify } from "@/lib/utils";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
@@ -30,7 +30,8 @@ import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPa
 import { activeSuppressions, blocks, suppressionScope } from "@/lib/suppression";
 import { sendBlockedReason } from "@/lib/conversation-mode";
 import { confirmAcceptance, connectBlockFor, dayLabel, getCompliance, parseAnswers, recordAcceptance, type AcceptanceChannel } from "@/lib/acceptance";
-import { notifyPlatform } from "@/lib/notify";
+import { notifyAgencyOwner, notifyClientPeople, notifyPlatform } from "@/lib/notify";
+import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retentionReduced } from "@/lib/retention";
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
 import { deleteContacts, findContactIds, typedPhoneHash, whatsappContact } from "@/lib/contacts";
@@ -1127,12 +1128,76 @@ export async function updatePrivacy(formData: FormData): Promise<ActionResult> {
   if (url && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(url)) return fail("Use o endereço completo da política, começando com https://");
   if (url.length > 400) return fail("Endereço longo demais.");
   const months = Number(formData.get("retention_months"));
-  const retention = [6, 12, 24].includes(months) ? months : null;
+  if (!isRetentionMonths(months)) return fail("Escolha 6, 12 ou 24 meses.");
   const supabase = await createClient();
-  const { error } = await supabase.from("agencies").update({ privacy_url: url || null, retention_months: retention }).eq("id", agency.id);
+  const { error } = await supabase.from("agencies").update({ privacy_url: url || null }).eq("id", agency.id);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
+  // prazo: só pelo servidor (redução espera 30 dias, com aviso e desfazer; aumento vale na hora)
+  const before = { months: agency.retention_months, pendingMonths: agency.retention_pending_months, effectiveAt: agency.retention_effective_at };
+  const plan = planAgencyRetention(before, months);
+  if (plan.kind !== "sem_mudanca") {
+    const admin = createAdminClient();
+    const { error: e2 } = await admin.from("agencies").update(plan.patch).eq("id", agency.id);
+    if (e2) return fail("Não foi possível salvar o prazo. Tente de novo.");
+    await auditPanel(`retencao.${plan.kind}`, { type: "agency", id: agency.id }, { before, after: plan.patch });
+    if (plan.kind === "reducao") {
+      await notifyAgencyOwner(admin, agency.id, `O prazo de guarda vai mudar para ${months} meses em ${dateBR(plan.patch.retention_effective_at)}`, [
+        `Você mudou o prazo de guarda das conversas e contatos para ${months} meses.`,
+        "",
+        `A mudança vale a partir de ${dateBR(plan.patch.retention_effective_at)}: daí em diante, conversas paradas há mais de ${months} meses, com as mensagens, leads, perguntas sem resposta e fichas de contato sem conversa são apagados todo dia. Os relatórios continuam com os números.`,
+        "",
+        `Até lá dá para desfazer em Marca e domínio → Privacidade e LGPD: ${appUrl("/painel/marca")}`,
+        `Se precisar guardar algo, exporte os leads antes: ${appUrl("/api/leads/export")}`,
+      ]).catch(() => false);
+    }
+  }
   revalidatePath("/painel", "layout");
-  return ok(retention ? `Salvo. Conversas e contatos com mais de ${retention} meses serão apagados automaticamente.` : "Salvo.");
+  if (plan.kind === "reducao") return ok(`Salvo. A partir de ${dateBR(plan.patch.retention_effective_at)}, o que tiver mais de ${months} meses passa a ser apagado. Até lá, dá para desfazer.`);
+  if (plan.kind === "aumento") return ok(`Salvo. O prazo passou para ${months} meses agora.`);
+  if (plan.kind === "desfazer") return ok(`Mudança desfeita: o prazo continua ${months} meses.`);
+  return ok("Salvo.");
+}
+
+/** Prazo próprio do cliente (vazio = o da agência). Diminuir pede confirmação, vai para a auditoria e avisa o cliente. */
+export async function setClientRetention(clientId: string, formData: FormData): Promise<ActionResult> {
+  const { agency } = await requireAgency();
+  const raw = text(formData.get("retention_months"));
+  const months = raw ? Number(raw) : null;
+  if (months !== null && !isRetentionMonths(months)) return fail("Escolha 6, 12 ou 24 meses, ou o prazo da agência.");
+  const supabase = await createClient();
+  const { data: client } = await supabase.from("clients").select("id, retention_months").eq("id", clientId).maybeSingle();
+  if (!client) return fail("Cliente não encontrado.");
+  const days = (m: number | null) => (m ? m * 30 : null);
+  const before = days((client.retention_months as number | null) ?? agency.retention_months);
+  const after = days(months ?? agency.retention_months);
+  const reduced = retentionReduced(before, after);
+  if (reduced && formData.get("confirm") !== "on") return fail(`Para diminuir o prazo, marque a confirmação: o que tiver mais de ${retentionLabel(after)} é apagado na próxima limpeza diária.`);
+  const { error } = await supabase.from("clients").update({ retention_months: months }).eq("id", clientId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditPanel("cliente.retencao", { type: "client", id: clientId }, { before: { retention_months: client.retention_months }, after: { retention_months: months } });
+  if (reduced) {
+    await notifyClientPeople(createAdminClient(), clientId, `${agency.name} mudou o prazo de guarda das conversas`, [
+      `${agency.name} mudou o prazo de guarda das conversas e contatos dos seus assistentes para ${retentionLabel(after)}.`,
+      "",
+      "Conversas paradas há mais tempo que isso, com as mensagens, leads e fichas de contato sem conversa, passam a ser apagados na limpeza diária. Os relatórios continuam com os números.",
+      "",
+      `Se não combinou essa mudança, fale com ${agency.name}.`,
+    ]).catch(() => false);
+  }
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok(months ? `Prazo do cliente: ${months} meses.` : `O cliente segue o prazo da agência (${retentionLabel(days(agency.retention_months))}).`);
+}
+
+/** Desfaz a redução de prazo pendente (o "Não apagar" não volta: aí é escolher um prazo). */
+export async function undoAgencyRetention(): Promise<ActionResult> {
+  const { agency } = await requireAgency();
+  if (agency.retention_pending_months === null) return ok("Nada pendente.");
+  if (agency.retention_months === null) return fail("O “Não apagar” deixou de existir: escolha 6, 12 ou 24 meses.");
+  const { error } = await createAdminClient().from("agencies").update({ retention_pending_months: null, retention_effective_at: null }).eq("id", agency.id);
+  if (error) return fail("Não foi possível desfazer. Tente de novo.");
+  await auditPanel("retencao.desfazer", { type: "agency", id: agency.id }, { before: { retention_pending_months: agency.retention_pending_months, retention_effective_at: agency.retention_effective_at }, after: { retention_months: agency.retention_months } });
+  revalidatePath("/painel", "layout");
+  return ok(`Mudança desfeita: o prazo continua ${agency.retention_months} meses.`);
 }
 
 /** Esconde o card "Primeiros passos" neste navegador (um ano). */

@@ -685,6 +685,26 @@ export async function testPilotWebhook(agencyId: string, id: string): Promise<Ac
 }
 
 /** Recifra do histórico agora (até ~45 s); o resto segue na rotina diária. */
+/**
+ * Limpeza por prazo agora (na dev a rotina diária não roda sozinha): soma os totais diários, promove
+ * os prazos vencidos, agenda o padrão de quem estava em "Não apagar" (com e-mail) e apaga o que
+ * passou do prazo de cada chatbot.
+ */
+export async function runRetentionNow(): Promise<ActionResult> {
+  const s = await requireAdmin("/admin/operacao (rodou a limpeza por prazo)");
+  const { deadline } = await import("@/lib/cron");
+  const { refreshReportDaily } = await import("@/lib/report-daily");
+  const { applyRetentionTerms } = await import("@/lib/retention");
+  const db = createAdminClient();
+  const hasTime = deadline(50_000);
+  await refreshReportDaily(db, hasTime);
+  const r = await applyRetentionTerms(db, hasTime);
+  await auditAdmin(s.email, "retencao.rodar", { after: { ...r } });
+  revalidatePath("/admin/operacao");
+  if (r.skipped) return fail(`Limpeza parada: ${r.skipped}.`);
+  return ok(`Limpeza feita: ${r.conversations} conversa(s), ${r.leads} lead(s), ${r.unanswered} pergunta(s), ${r.refusals} pedido(s) fora do assunto e ${r.contacts} contato(s) apagados; ${r.promoted} prazo(s) promovido(s) e ${r.scheduled} agência(s) avisada(s) do prazo padrão.`);
+}
+
 /** Totais diários (report_daily): recalcula agora o que falta (na dev a rotina diária não roda sozinha). */
 export async function runReportDailyNow(): Promise<ActionResult> {
   const s = await requireAdmin("/admin/operacao (recalculou os totais diários)");

@@ -31,6 +31,12 @@ export async function deleteRefusals(db: SupabaseClient, ids: number[]): Promise
   if (ids.length) await db.from("scope_refusals").delete().in("id", ids);
 }
 
+/** Retenção: apaga os pedidos do chatbot feitos antes do corte; devolve quantos. */
+export async function deleteRefusalsBefore(db: SupabaseClient, botId: string, cutoff: string): Promise<number> {
+  const { count } = await db.from("scope_refusals").delete({ count: "exact" }).eq("bot_id", botId).lt("created_at", cutoff);
+  return count ?? 0;
+}
+
 /** Recusas desde a data (de um chatbot, ou de todos para o backoffice), mais novas primeiro. */
 export async function listRefusals(db: SupabaseClient, opts: { botId?: string; since: string; limit: number }): Promise<ScopeRefusal[]> {
   let q = db.from("scope_refusals").select("id, bot_id, conversation_id, level, request, created_at").gte("created_at", opts.since);

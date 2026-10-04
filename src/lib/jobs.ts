@@ -2,9 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ingestSource, type SourceRow } from "./ingest";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl, daysAgoIso } from "./utils";
-import { deleteLeadsBefore } from "./leads";
-import { deleteUnansweredBefore } from "./unanswered";
-import { reportedUntil } from "./report-daily";
+import { applyRetentionTerms } from "./retention";
 
 /**
  * Tarefas diárias (rodam juntas em /api/cron/daily: o plano Hobby da Vercel só permite 2 crons).
@@ -48,10 +46,10 @@ export async function trialReminders(db: SupabaseClient) {
 }
 
 /**
- * LGPD: agências com prazo de guarda (6, 12 ou 24 meses) têm conversas, contatos e perguntas
- * sem resposta mais antigos que isso apagados. Mensagens vão junto com a conversa.
+ * LGPD: registros técnicos com prazo fixo e, depois, o prazo de cada chatbot (retention.ts: modo
+ * dados sensíveis, cliente ou agência), que apaga conversas, leads, perguntas e contatos.
  */
-export async function applyRetention(db: SupabaseClient) {
+export async function applyRetention(db: SupabaseClient, hasTime: () => boolean = () => true) {
   // ids de mensagens do WhatsApp já tratadas: só servem contra reentrega, que vem em minutos
   await db.from("whatsapp_inbound").delete().lt("created_at", daysAgoIso(7));
   // fila de entrada: 8 dias seguram os reenvios do WhatsApp (até 7 dias)
@@ -71,23 +69,7 @@ export async function applyRetention(db: SupabaseClient) {
   // análise do bot: o resumo escrito pela IA sai em 30 dias (os rótulos ficam 1 ano)
   await db.from("compliance_checks").update({ summary_enc: null }).lt("summary_expires_at", new Date().toISOString()).not("summary_enc", "is", null);
   await db.from("compliance_checks").delete().lt("created_at", daysAgoIso(365)).neq("review_state", "pending");
-  // os totais diários vêm antes: nada depois do último dia agregado é apagado (sem totais, nada sai)
-  const until = await reportedUntil(db);
-  if (!until) return { conversations: 0, leads: 0, skipped: "totais diários ainda não agregados" };
-  const { data: agencies } = await db.from("agencies").select("id, retention_months").not("retention_months", "is", null);
-  let conversations = 0;
-  let leads = 0;
-  for (const a of agencies ?? []) {
-    const cutoff = [daysAgoIso(Number(a.retention_months) * 30), until.toISOString()].sort()[0];
-    const { data: bots } = await db.from("bots").select("id").eq("agency_id", a.id);
-    const ids = (bots ?? []).map((b) => b.id);
-    if (!ids.length) continue;
-    leads += await deleteLeadsBefore(db, ids, cutoff);
-    const d = await db.from("conversations").delete({ count: "exact" }).in("bot_id", ids).lt("last_message_at", cutoff);
-    conversations += d.count ?? 0;
-    await deleteUnansweredBefore(db, ids, cutoff);
-  }
-  return { conversations, leads };
+  return applyRetentionTerms(db, hasTime);
 }
 
 /**

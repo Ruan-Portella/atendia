@@ -19,6 +19,9 @@ export interface Agency {
   custom_domain_verified_at: string | null;
   privacy_url: string | null;
   retention_months: number | null;
+  /** Prazo novo esperando a data de efeito (redução em 30 dias; ver retention.ts). */
+  retention_pending_months: number | null;
+  retention_effective_at: string | null;
   plan: string;
   /** Cota combinada fora do plano (assinantes de antes da cota nova); nula = a do plano. */
   quota_override: number | null;
