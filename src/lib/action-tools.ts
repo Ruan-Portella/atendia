@@ -10,6 +10,7 @@ import { checkActionReply } from "./gate/exit";
 import { REGULATED_WINDOW_MS } from "./gate/payment";
 import { logGate } from "./gate/log";
 import { INTERNAL_RULE, internalTerms } from "./internal-guard";
+import type { ChatIdentity } from "./widget-identity";
 
 /*
  * As ações do bot como ferramentas da IA (spec "Peça 1"): acao_<nome>, só as de consulta ativas
@@ -85,6 +86,8 @@ export interface ActionToolsInput {
   age: AgeStatus;
   /** Quem fala no canal (wa_id ou BSUID no WhatsApp, IGSID no Instagram), para a origem da idade. */
   contactKey?: string | null;
+  /** Contato identificado (P2): nível usuario e o contexto assinado da conversa. */
+  identity?: ChatIdentity | null;
   exempt?: GateCategory[];
   /** Chave da mensagem: forma o call_id (o mesmo no reprocesso). */
   messageKey: string;
@@ -96,22 +99,28 @@ export interface ActionToolsInput {
 
 /** Ferramentas acao_<nome> para esta resposta (vazio se o bot não tem ações). */
 export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): Promise<Record<string, Tool>> {
-  const level = contactLevel(i.channel, i.waPhone);
-  const actions = (await loadBotActions(db, i.bot.id)).filter((a) => a.context_required === "none" && reaches(level, a.min_level));
+  // identificado pela empresa (token ou pareamento): nível usuario; ação que exige contexto só com ele
+  const level: ActionLevel = i.identity?.externalId ? "usuario" : contactLevel(i.channel, i.waPhone);
+  const hasContext = Boolean(i.identity?.context);
+  const actions = (await loadBotActions(db, i.bot.id)).filter((a) => (a.context_required === "none" || hasContext) && reaches(level, a.min_level));
   if (!actions.length) return {};
   const { data: conv } = await db.from("conversations").select("contact_id, regulated_at").eq("id", i.conversationId).maybeSingle();
   const regulatedAt = (conv?.regulated_at as string | null | undefined) ?? null;
   const gateChannel = i.channel === "whatsapp" || i.channel === "instagram" ? i.channel : "widget";
   const source = i.age !== null && gateChannel !== "widget" && i.contactKey ? await ageSource(db, { botId: i.bot.id, channel: gateChannel, contact: i.contactKey }) : null;
+  // no widget, a idade vem do token (a empresa verificou); nos canais da Meta, da barreira de 18+
+  const tokenAge = gateChannel === "widget" ? (i.identity?.ageVerified ?? null) : null;
   const contact: CallContact = {
     id: (conv?.contact_id as string | null) ?? null,
     level,
-    verified_by: gateChannel === "widget" ? null : "meta",
+    verified_by: i.identity?.externalId ? (i.identity.source === "pairing" ? "pairing" : "signed_token") : gateChannel === "widget" ? null : "meta",
+    ...(i.identity?.externalId ? { external_id: i.identity.externalId, display: i.identity.userDisplay } : {}),
     phone: i.waPhone,
     whatsapp_user_id: null,
-    age_confirmed: i.age === "sim" ? true : i.age === "nao" ? false : null,
-    age_confirmed_source: i.age ? (source ?? "chat") : null,
+    age_confirmed: tokenAge ?? (i.age === "sim" ? true : i.age === "nao" ? false : null),
+    age_confirmed_source: tokenAge !== null ? "company" : i.age ? (source ?? "chat") : null,
   };
+  const context = i.identity?.context ? { source: i.identity.source, data: i.identity.context } : null;
 
   const tools: Record<string, Tool> = {};
   for (const a of actions) {
@@ -131,7 +140,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         const { count: misses } = await db.from("action_calls").select("id", { count: "exact", head: true }).eq("action_id", a.id).eq("conversation_id", i.conversationId).eq("status", "not_found").gt("created_at", new Date(Date.now() - 3_600_000).toISOString());
         if ((misses ?? 0) >= 5) return { ok: false, motivo: "indisponivel", instrucao: "Esta consulta não está disponível agora. Não tente de novo; ofereça falar com a equipe." };
 
-        const r = await callAction(db, a, { params, messageKey: i.messageKey, conversation: { id: i.conversationId, channel: gateChannel }, contact });
+        const r = await callAction(db, a, { params, messageKey: i.messageKey, conversation: { id: i.conversationId, channel: gateChannel }, contact, context });
         if (r.status === "not_found") return { ok: false, motivo: "nao_encontrado", detalhe: r.error ?? null };
         if (r.status !== "ok") return { ok: false, motivo: "falha", instrucao: "Diga que não conseguiu consultar agora e siga a conversa (sem inventar o resultado)." };
 

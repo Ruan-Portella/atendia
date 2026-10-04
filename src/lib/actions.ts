@@ -1,3 +1,4 @@
+import { stableJson } from "./hash";
 import { createHash, randomBytes } from "node:crypto";
 import { generateText } from "ai";
 import { Webhook } from "standardwebhooks";
@@ -186,7 +187,11 @@ export function signatureHeader(secrets: string[], id: string, timestamp: Date, 
 export interface CallContact {
   id: string | null;
   level: ActionLevel;
-  verified_by: "meta" | null;
+  verified_by: "meta" | "signed_token" | "pairing" | null;
+  /** Id da pessoa no sistema da empresa (nível usuario). */
+  external_id?: string | null;
+  /** O que a empresa mandou para personalizar ({"name": "Ruan"}). */
+  display?: Record<string, unknown> | null;
   phone: string | null;
   whatsapp_user_id: string | null;
   age_confirmed: boolean | null;
@@ -200,6 +205,8 @@ export interface CallInput {
   messageKey?: string;
   conversation?: { id: string; channel: "widget" | "whatsapp" | "instagram" } | null;
   contact?: CallContact | null;
+  /** Contexto assinado da conversa (workspace, loja): só para as ações, nunca para a IA. */
+  context?: { source: "token" | "pairing" | "bot"; data: Record<string, unknown> } | null;
 }
 
 export interface CallResult {
@@ -222,11 +229,7 @@ export interface CallResult {
   reused?: boolean;
 }
 
-const stableJson = (v: unknown): string => {
-  if (Array.isArray(v)) return `[${v.map(stableJson).join(",")}]`;
-  if (v && typeof v === "object") return `{${Object.keys(v as object).sort().map((k) => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`).join(",")}}`;
-  return JSON.stringify(v ?? null);
-};
+
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /** call_id de uma consulta: hash da mensagem, da ação e dos parâmetros (o mesmo no reprocesso). */
@@ -244,7 +247,7 @@ export function callBody(a: Pick<ActionRow, "name" | "bot_id">, callId: string, 
     bot: { id: `bot_${a.bot_id}` },
     conversation: i.conversation ? { id: `conv_${i.conversation.id}`, channel: i.conversation.channel } : null,
     contact: i.contact ? { ...i.contact, id: i.contact.id ? `ctc_${i.contact.id}` : null } : null,
-    context: null,
+    context: i.context ?? null,
   };
 }
 

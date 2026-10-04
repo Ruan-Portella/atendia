@@ -7,6 +7,13 @@
  * Os atributos data-color / data-position / data-offset, quando presentes, têm prioridade.
  * A chave também pode vir por ?key=CHAVE no src ou por window.ChatWidgetConfig = { key }.
  * API: window.ChatWidget.open() / .close() / .toggle() / .isOpen()
+ *
+ * Pessoa identificada (o servidor do site assina um token com o segredo de identidade):
+ *   window.ChatWidgetConfig = { getToken: async () => (await fetch("/api/chat-token")).text() };
+ *   ChatWidget.identify(getToken)  // depois do login, numa página que já carregou o widget
+ *   ChatWidget.setContext(token)   // troca de workspace: abre uma conversa nova no novo contexto
+ *   ChatWidget.logout()            // só limpa a tela; a proteção da conversa não depende dele
+ * getToken é chamado ao abrir e 5 minutos antes de o token vencer.
  */
 (function () {
   if (window.__cwLoaded) return;
@@ -32,6 +39,7 @@
   var attrColor = s.getAttribute("data-color") || src.searchParams.get("color") || cfg.color;
   var attrPos = s.getAttribute("data-position") || src.searchParams.get("position") || cfg.position;
   var attrOffset = s.getAttribute("data-offset") || src.searchParams.get("offset") || cfg.offset;
+  var getToken = typeof cfg.getToken === "function" ? cfg.getToken : null;
 
   var color = attrColor || "#1f4e3d";
   var side = attrPos === "left" ? "left" : "right";
@@ -92,7 +100,27 @@
     bubble.appendChild(bubbleX);
 
     function load() {
-      if (!loaded) { frame.src = origin + "/w/" + key; loaded = true; }
+      if (!loaded) { frame.src = origin + "/w/" + key + (getToken ? "?id=1" : ""); loaded = true; }
+    }
+
+    // Identidade: o token vai só para o iframe (origem do chat); renovado 5 min antes de vencer
+    var tokenTimer = null;
+    function post(msg) { if (loaded && frame.contentWindow) frame.contentWindow.postMessage(msg, origin); }
+    function expOf(t) {
+      try { var p = JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); return typeof p.exp === "number" ? p.exp * 1000 : 0; } catch { return 0; }
+    }
+    function schedule(t) {
+      clearTimeout(tokenTimer);
+      var e = expOf(t);
+      if (e && getToken) tokenTimer = setTimeout(function () { sendToken("chat-widget:token"); }, Math.max(30000, e - Date.now() - 300000));
+    }
+    function sendToken(type) {
+      if (!getToken) { post({ type: type, token: null }); return; }
+      Promise.resolve().then(getToken).then(function (t) {
+        t = typeof t === "string" ? t.trim() : "";
+        post({ type: type, token: t || null });
+        if (t) schedule(t);
+      }).catch(function () { post({ type: type, token: null }); });
     }
     function showUnread() {
       badge.textContent = unread > 9 ? "9+" : String(unread);
@@ -128,6 +156,7 @@
       if (d === "chat-widget:close") { set(false); return; }
       if (!d || typeof d !== "object") return;
       if (d.type === "chat-widget:conversation") flag(Boolean(d.active));
+      if (d.type === "chat-widget:token-request") sendToken("chat-widget:token");
       if (d.type === "chat-widget:message" && !open) {
         unread++;
         showUnread();
@@ -152,7 +181,11 @@
       open: function () { set(true); },
       close: function () { set(false); },
       toggle: function () { set(!open); },
-      isOpen: function () { return open; }
+      isOpen: function () { return open; },
+      // a pessoa entrou depois de a página carregar o widget: conversa nova, já identificada
+      identify: function (fn) { getToken = typeof fn === "function" ? fn : null; sendToken("chat-widget:context"); },
+      setContext: function (token) { schedule(token); post({ type: "chat-widget:context", token: token || null }); },
+      logout: function () { clearTimeout(tokenTimer); getToken = null; post({ type: "chat-widget:logout" }); }
     };
 
   }

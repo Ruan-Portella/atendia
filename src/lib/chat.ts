@@ -18,6 +18,7 @@ import { CATEGORIES, type GateCategory } from "./gate/rules";
 import { deliver } from "./send";
 import { metaPhoneHash, typedPhoneHash } from "./contacts";
 import { ACTIONS_PROMPT_NOTE, actionToolsFor } from "./action-tools";
+import { identityPromptNote, type ChatIdentity } from "./widget-identity";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
 
 export interface BotRow {
@@ -47,7 +48,8 @@ export interface BotRow {
 export const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  // o token de identidade (P2) vai no Authorization
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 export function lastUserText(messages: UIMessage[]): string {
@@ -469,7 +471,7 @@ export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversati
 export async function openConversation(
   db: SupabaseClient,
   bot: Pick<BotRow, "id" | "agency_id">,
-  opts: { channel: string; visitorId?: string | null; waId?: string; igsid?: string; contactId?: string | null },
+  opts: { channel: string; visitorId?: string | null; waId?: string; igsid?: string; contactId?: string | null; identity?: Record<string, unknown> },
 ): Promise<string> {
   const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", bot.agency_id).single();
   const plan = getPlan(agency?.plan ?? "trial");
@@ -478,7 +480,7 @@ export async function openConversation(
   }
   const { data: conv, error } = await db
     .from("conversations")
-    .insert({ bot_id: bot.id, visitor_id: opts.visitorId ?? null, channel: opts.channel, ...(opts.waId ? { wa_id: opts.waId } : {}), ...(opts.igsid ? { ig_id: opts.igsid } : {}), ...(opts.contactId ? { contact_id: opts.contactId } : {}) })
+    .insert({ bot_id: bot.id, visitor_id: opts.visitorId ?? null, channel: opts.channel, ...(opts.waId ? { wa_id: opts.waId } : {}), ...(opts.igsid ? { ig_id: opts.igsid } : {}), ...(opts.contactId ? { contact_id: opts.contactId } : {}), ...(opts.identity ?? {}) })
     .select("id")
     .single();
   if (error || !conv) throw new Error("Não foi possível abrir a conversa.");
@@ -496,6 +498,10 @@ export async function runChat(opts: {
   conversationId: string | null;
   visitorId: string | null;
   channel: "widget" | "demo" | "painel" | "whatsapp" | "instagram";
+  /** Contato identificado (P2): o display vai para a IA; o contexto, só para as ações. */
+  identity?: ChatIdentity | null;
+  /** Colunas da conversa nova de nível usuário (widget-identity.ts identityColumns). */
+  identityColumns?: Record<string, unknown>;
   /** Contato do WhatsApp: o número já é conhecido, o assistente só pede o nome. */
   whatsapp?: { waId: string; profileName?: string | null };
   /** Contato do Instagram Direct (IGSID). O WhatsApp da pessoa não é conhecido. */
@@ -512,7 +518,7 @@ export async function runChat(opts: {
   const { db, bot, messages, channel } = opts;
 
   // 1. Conversa (cria na primeira mensagem; a cota é do atendimento, conferida por quem chama)
-  const conversationId = opts.conversationId ?? (await openConversation(db, bot, { channel, visitorId: opts.visitorId, waId: opts.whatsapp?.waId, igsid: opts.instagram?.igsid }));
+  const conversationId = opts.conversationId ?? (await openConversation(db, bot, { channel, visitorId: opts.visitorId, waId: opts.whatsapp?.waId, igsid: opts.instagram?.igsid, identity: opts.identityColumns }));
 
   // 2. Recuperação de contexto
   const question = lastUserText(messages);
@@ -564,6 +570,7 @@ export async function runChat(opts: {
     waPhone,
     age: opts.gate?.age ?? null,
     contactKey: opts.whatsapp?.waId ?? opts.instagram?.igsid ?? null,
+    identity: opts.identity ?? null,
     exempt: opts.gate?.exempt,
     // WhatsApp e Instagram: o id do evento (o reprocesso reaproveita a resposta); widget: uma por mensagem
     messageKey: opts.questionKey ?? `${convId}|${crypto.randomUUID()}`,
@@ -580,7 +587,7 @@ export async function runChat(opts: {
     // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
     allowSystemInMessages: true,
     messages: [
-      { role: "system" as const, content: hasActions ? `${prompt.variable}\n\n${ACTIONS_PROMPT_NOTE}` : prompt.variable },
+      { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null)].filter(Boolean).join("\n\n") },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
       ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, hasActions ? [...gated.reminder, ACTIONS_PROMPT_NOTE] : gated.reminder) }] : []),

@@ -112,6 +112,7 @@ export function ChatWindow({
   onClose,
   compact = false,
   embedded = false,
+  identity = false,
 }: {
   bot: ChatBotPublic;
   channel?: "widget" | "demo" | "painel";
@@ -120,6 +121,8 @@ export function ChatWindow({
   compact?: boolean;
   /** dentro do iframe do widget: conversa com o widget.js da página */
   embedded?: boolean;
+  /** o site identifica a pessoa (getToken, P2): espera o token antes de retomar a conversa */
+  identity?: boolean;
 }) {
   // nome genérico: roda no domínio da agência, nada da plataforma aparece
   const storageKey = `chat:${bot.key}`;
@@ -138,6 +141,16 @@ export function ChatWindow({
   const [{ mode, timeline, lastAgentId }, dispatch] = useReducer(handoffReducer, { mode: "bot", timeline: [], count: 0, lastAgentId: 0 });
   const [activity, setActivity] = useState(0); // sobe a cada resposta do servidor
 
+  // Identidade (P2): o site entrega o token pelo widget.js; ele vai no Authorization de toda
+  // requisição. Trocar de pessoa ou de contexto (setContext, logout, getToken que falhou) abre
+  // uma conversa nova: a de usuário nunca aparece para outra pessoa nem sem o token.
+  const [token, setToken] = useState<string | null>(null);
+  // só para comparar dentro do tratamento das mensagens do widget.js (troca de pessoa)
+  const tokenRef = useRef<string | null>(null);
+  const [identityState, setIdentityState] = useState<"waiting" | "ready">(identity && embedded ? "waiting" : "ready");
+  const [identityEpoch, setIdentityEpoch] = useState(0);
+  const auth = (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {});
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -145,7 +158,15 @@ export function ChatWindow({
         // só o texto novo: o servidor monta o histórico a partir do banco
         prepareSendMessagesRequest: ({ messages }) => ({ body: { key: bot.key, conversationId, visitorId, channel, text: textOf(messages[messages.length - 1]) } }),
         fetch: async (url, init) => {
-          const res = await fetch(url, init);
+          const headers = new Headers(init?.headers);
+          if (token) headers.set("Authorization", `Bearer ${token}`);
+          const res = await fetch(url, { ...init, headers });
+          // token vencido ou inválido: o widget.js pede outro ao site (uma vez)
+          if (res.status === 401) {
+            notifyParent({ type: "chat-widget:token-request" });
+            setErrorText("Sua sessão foi atualizada. Envie a mensagem de novo.");
+            return res;
+          }
           const cid = res.headers.get("X-Conversation-Id");
           if (cid) setConversationId(cid);
           const h = res.headers.get("X-Handoff");
@@ -162,7 +183,7 @@ export function ChatWindow({
           return res;
         },
       }),
-    [apiBase, bot.key, conversationId, visitorId, channel],
+    [apiBase, bot.key, conversationId, visitorId, channel, token],
   );
 
   const router = useRouter();
@@ -182,23 +203,72 @@ export function ChatWindow({
   // F5 / voltou ao site: retoma a conversa aberta deste visitante (não no teste do painel)
   const convKey = `${storageKey}:conversa`;
   const resumes = channel !== "painel" && Boolean(visitorId);
+
+  // mensagens do widget.js: token (ao abrir e 5 min antes de vencer), troca de contexto e logout
   useEffect(() => {
-    if (!resumes) return;
+    if (!embedded) return;
+    const reset = () => {
+      setMessages([]);
+      setConversationId(null);
+      dispatch({ type: "restore", mode: "bot", count: 0, agents: [] });
+      setErrorText(null);
+      setFallback(null);
+      try {
+        localStorage.removeItem(convKey);
+      } catch {}
+      setIdentityEpoch((n) => n + 1);
+    };
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== window.parent) return;
+      const d = e.data as { type?: string; token?: string | null } | null;
+      if (!d || typeof d !== "object" || typeof d.type !== "string") return;
+      const next = typeof d.token === "string" && d.token ? d.token : null;
+      if (d.type === "chat-widget:token") {
+        const had = tokenRef.current;
+        tokenRef.current = next;
+        setToken(next);
+        // getToken falhou com uma conversa de usuário na tela: ela some e abre uma anônima
+        if (had && !next) reset();
+        setIdentityState("ready");
+      } else if (d.type === "chat-widget:context" || d.type === "chat-widget:logout") {
+        const value = d.type === "chat-widget:logout" ? null : next;
+        tokenRef.current = value;
+        setToken(value);
+        reset();
+        setIdentityState("ready");
+      }
+    };
+    window.addEventListener("message", onMessage);
+    // o site sem resposta em 5 s: segue anônimo (o token que chegar depois vale a partir dali)
+    const timer = identity ? window.setTimeout(() => setIdentityState("ready"), 5000) : undefined;
+    if (identity) notifyParent({ type: "chat-widget:token-request" });
+    return () => {
+      window.removeEventListener("message", onMessage);
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [embedded, identity, convKey, setMessages]);
+
+  useEffect(() => {
+    if (!resumes || identityState === "waiting") return;
+    // com token, o servidor acha sozinho a conversa desta pessoa; sem token, a que o navegador guardou
     let saved: string | null = null;
-    try {
-      saved = localStorage.getItem(convKey);
-    } catch {
-      return;
+    if (!token) {
+      try {
+        saved = localStorage.getItem(convKey);
+      } catch {
+        return;
+      }
+      if (!saved) return;
     }
-    if (!saved) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase}/api/chat/history?key=${bot.key}&conversationId=${saved}&visitorId=${encodeURIComponent(visitorId ?? "")}`, { cache: "no-store" });
-        const j = (await res.json()) as { resumable?: boolean; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string }> };
+        const qs = `key=${bot.key}&visitorId=${encodeURIComponent(visitorId ?? "")}${saved ? `&conversationId=${saved}` : ""}`;
+        const res = await fetch(`${apiBase}/api/chat/history?${qs}`, { cache: "no-store", headers: auth() });
+        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string }> };
         if (cancelled) return;
-        if (!j.resumable) {
-          localStorage.removeItem(convKey);
+        if (!j.resumable || !j.conversationId) {
+          if (saved) localStorage.removeItem(convKey);
           if (embedded) notifyParent({ type: "chat-widget:conversation", active: false });
           return;
         }
@@ -209,7 +279,7 @@ export function ChatWindow({
           else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }] });
         }
         setMessages(ui);
-        setConversationId(saved);
+        setConversationId(j.conversationId);
         dispatch({ type: "restore", mode: j.mode ?? "bot", count: ui.length, agents });
       } catch {
         // sem rede: começa do zero, sem travar o chat
@@ -218,17 +288,20 @@ export function ChatWindow({
     return () => {
       cancelled = true;
     };
-  }, [resumes, convKey, apiBase, bot.key, visitorId, setMessages, embedded]);
+    // o token renovado (mesma pessoa) não recarrega a conversa; identityEpoch muda quando a pessoa ou o contexto trocam
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumes, identityState, identityEpoch, convKey, apiBase, bot.key, visitorId, setMessages, embedded]);
 
   useEffect(() => {
-    if (!resumes || !conversationId) return;
+    // o navegador só guarda o id de conversas anônimas (a de usuário volta pelo token)
+    if (!resumes || !conversationId || token) return;
     try {
       localStorage.setItem(convKey, conversationId);
       if (embedded) notifyParent({ type: "chat-widget:conversation", active: true });
     } catch {
       // navegador sem armazenamento: só não retoma depois do F5
     }
-  }, [resumes, convKey, conversationId, embedded]);
+  }, [resumes, convKey, conversationId, embedded, token]);
 
   // Consulta o servidor com a conversa aberta: rápido durante o atendimento humano, a cada
   // 30 s no resto (a agência pode assumir sem o visitante pedir). Cada consulta também avisa
@@ -239,7 +312,7 @@ export function ChatWindow({
     const timer = window.setInterval(async () => {
       if (document.hidden) return;
       try {
-        const res = await fetch(`${apiBase}/api/chat/updates?key=${bot.key}&conversationId=${conversationId}&after=${lastAgentId}`, { cache: "no-store" });
+        const res = await fetch(`${apiBase}/api/chat/updates?key=${bot.key}&conversationId=${conversationId}&after=${lastAgentId}&visitorId=${encodeURIComponent(visitorId ?? "")}`, { cache: "no-store", headers: auth() });
         if (!res.ok) return;
         const j = (await res.json()) as { mode: HandoffMode; messages: Array<{ id: number; content: string }> };
         if (j.messages.length) {
@@ -252,7 +325,8 @@ export function ChatWindow({
       }
     }, interval);
     return () => window.clearInterval(timer);
-  }, [apiBase, bot.key, bot.clientName, conversationId, mode, activity, lastAgentId, embedded]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiBase, bot.key, bot.clientName, conversationId, mode, activity, lastAgentId, embedded, visitorId, token]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -274,7 +348,7 @@ export function ChatWindow({
     if (askingHuman || busy) return;
     setAskingHuman(true);
     try {
-      const res = await fetch(`${apiBase}/api/chat/handoff`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: bot.key, conversationId, visitorId, channel }) });
+      const res = await fetch(`${apiBase}/api/chat/handoff`, { method: "POST", headers: { "Content-Type": "application/json", ...auth() }, body: JSON.stringify({ key: bot.key, conversationId, visitorId, channel }) });
       const j = (await res.json().catch(() => ({}))) as { conversationId?: string; userText?: string; notice?: string; fallback?: string; message?: string };
       if (!res.ok || !j.conversationId) {
         if (j.fallback === "contact") setFallback(j.message ?? "Deixe seu contato que a equipe retorna.");

@@ -16,6 +16,7 @@ import { CATEGORIES, type GateCategory } from "@/lib/gate/rules";
 import { analyzeBot, runDueAnalyses } from "@/lib/bot-analysis";
 import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
 import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiKeyScope } from "@/lib/api-keys";
+import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -474,6 +475,7 @@ export async function saveAction(agencyId: string, botId: string, actionId: stri
     url: text(fd.get("url")),
     params_schema: schema,
     min_level: (["anonimo", "canal", "usuario"].includes(text(fd.get("min_level"))) ? text(fd.get("min_level")) : "anonimo") as "anonimo" | "canal" | "usuario",
+    context_required: (fd.get("context_required") === "signed" ? "signed" : "none") as "none" | "signed",
     outcomes: text(fd.get("outcomes")).split(",").map((o) => o.trim()).filter(Boolean),
     active: fd.get("active") === "on",
   };
@@ -563,4 +565,46 @@ export async function revokePilotApiKey(agencyId: string, keyId: string): Promis
   await auditAdmin(s.email, "api.chave.revogar", { agencyId, targetType: "api_key", targetId: keyId, after: { name: key.name, prefix: key.prefix } });
   revalidatePath("/admin", "layout");
   return ok(`Chave ${key.prefix}… revogada: a próxima requisição com ela já recebe 401.`);
+}
+
+/**
+ * Segredo de identidade do piloto (P2): o servidor do SaaS assina o token do widget com ele.
+ * Escopo: um chatbot, um cliente ou todos. Aparece uma vez; o dono da agência recebe o aviso.
+ */
+export async function createPilotIdentitySecret(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (criou segredo de identidade)`);
+  const db = createAdminClient();
+  const name = text(fd.get("name"));
+  if (!name || name.length > 80) return fail("Dê um nome ao segredo (até 80 caracteres), ex.: \"Fintra produção\".");
+  const scopeType = text(fd.get("scope_type"));
+  let scope: IdentityScope;
+  if (scopeType === "all") scope = { type: "all" };
+  else if (scopeType === "client") {
+    const clientId = text(fd.get("client_id"));
+    const { data: client } = await db.from("clients").select("id").eq("id", clientId).eq("agency_id", agencyId).maybeSingle();
+    if (!client) return fail("Escolha um cliente desta agência.");
+    scope = { type: "client", clientId };
+  } else {
+    const botId = text(fd.get("bot_id"));
+    if (!(await pilotBot(agencyId, botId))) return fail("Escolha um chatbot desta agência.");
+    scope = { type: "bot", botId };
+  }
+  const created = await createIdentitySecret(db, { agencyId, name, scope, createdBy: s.email });
+  await auditAdmin(s.email, "identidade.segredo.criar", { agencyId, targetType: "identity_secret", targetId: created.id, after: { name, kid: created.kid, escopo: scope } });
+  await notifyAgencyOwner(db, agencyId, "Segredo de identidade criado", [
+    `A equipe BoaVoz criou o segredo de identidade "${name}" (${created.kid}) na sua conta, para o piloto de Integrações.`,
+    "Com ele, o seu sistema identifica quem conversa no chat do site.",
+    "Se não foi combinado com você, fale com o suporte para revogar.",
+  ]).catch(() => false);
+  revalidatePath("/admin", "layout");
+  return ok(`${created.secret}\n\nkid: ${created.kid}\n\nCopie o segredo agora: ele não aparece de novo. O token vai assinado em HS256, com o kid no cabeçalho.`);
+}
+
+export async function revokePilotIdentitySecret(agencyId: string, id: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (revogou o segredo de identidade ${id})`);
+  const r = await revokeIdentitySecret(createAdminClient(), agencyId, id, s.email);
+  if (!r) return fail("Segredo não encontrado ou já revogado.");
+  await auditAdmin(s.email, "identidade.segredo.revogar", { agencyId, targetType: "identity_secret", targetId: id, after: { name: r.name, kid: r.kid } });
+  revalidatePath("/admin", "layout");
+  return ok(`Segredo ${r.kid} revogado: tokens assinados com ele deixam de valer na hora.`);
 }

@@ -15,6 +15,13 @@ export function platformHashKey(): string {
 
 export const hmacHex = (text: string) => createHmac("sha256", platformHashKey()).update(text).digest("hex");
 
+/** JSON canônico (chaves em ordem): o mesmo objeto dá sempre o mesmo texto (hashes de parâmetros e de contexto). */
+export const stableJson = (v: unknown): string => {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.keys(v as object).sort().map((k) => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(v ?? null);
+};
+
 /** Id da mensagem no canal ("wa:" + wamid, "ig:" + mid), sempre em hash. */
 export const channelMsgHash = (channel: "whatsapp" | "instagram", id: string) => hmacHex(`${channel === "whatsapp" ? "wa" : "ig"}:${id}`);
 

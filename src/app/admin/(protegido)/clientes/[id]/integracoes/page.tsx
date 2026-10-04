@@ -7,7 +7,7 @@ import { relativeTime } from "@/lib/utils";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { createPilotApiKey, deleteAction, generateActionSecret, revokePilotApiKey, saveAction, testAction } from "../../../acoes";
+import { createPilotApiKey, createPilotIdentitySecret, deleteAction, generateActionSecret, revokePilotApiKey, revokePilotIdentitySecret, saveAction, testAction } from "../../../acoes";
 import type { ActionRow } from "@/lib/actions";
 import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from "@/lib/api-keys";
 
@@ -48,10 +48,12 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
     ? await db.from("action_calls").select("id, action_id, call_id, attempt, mode, status, http_status, duration_ms, created_at").in("action_id", actions.map((a) => a.id)).order("created_at", { ascending: false }).limit(20)
     : { data: [] };
   const actionName = new Map(actions.map((a) => [a.id, a.name]));
-  const [{ data: keyRows }, { data: clients }] = await Promise.all([
+  const [{ data: keyRows }, { data: clients }, { data: secretRows }] = await Promise.all([
     db.from("api_keys").select(`${API_KEY_COLS}, created_at, created_by`).eq("agency_id", id).order("created_at", { ascending: false }),
     db.from("clients").select("id, name").eq("agency_id", id).order("name"),
+    db.from("identity_secrets").select("id, kid, name, scope_type, scope_bot_id, scope_client_id, created_at, created_by, last_used_at, revoked_at").eq("agency_id", id).order("created_at", { ascending: false }),
   ]);
+  const secrets = secretRows ?? [];
   const keys = (keyRows ?? []) as unknown as Array<ApiKeyRow & { created_at: string; created_by: string | null }>;
   const botName = new Map((bots ?? []).map((b) => [b.id as string, b.name as string]));
   const clientName = new Map((clients ?? []).map((c) => [c.id as string, c.name as string]));
@@ -180,6 +182,55 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
         </details>
       </section>
 
+      <section className="card flex flex-col gap-4 p-5">
+        <div>
+          <h2 className="text-lg font-bold">Identidade (chat do site)</h2>
+          <p className="text-xs text-muted">
+            O servidor do SaaS assina um token (JWT HS256, com o kid no cabeçalho) e o widget manda em toda mensagem: a pessoa vira nível usuário, a conversa fica presa a ela e ao contexto (workspace), e as ações recebem external_id e contexto. No site: <span className="font-mono">window.ChatWidgetConfig = {"{ getToken }"}</span>.
+          </p>
+        </div>
+        {secrets.map((k) => (
+          <div key={k.id as string} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-line-2 p-3 text-sm">
+            <div>
+              <strong>{k.name as string}</strong> <span className="font-mono text-xs text-muted">{k.kid as string}</span>
+              {Boolean(k.revoked_at) && <span className="text-danger"> · revogado {relativeTime(k.revoked_at as string)}</span>}
+              <span className="block text-xs text-muted">
+                Escopo: {k.scope_type === "all" ? "todos os chatbots da agência" : k.scope_type === "client" ? `cliente ${clientName.get(k.scope_client_id as string) ?? "?"}` : `chatbot ${botName.get(k.scope_bot_id as string) ?? "?"}`}
+              </span>
+              <span className="block text-xs text-muted">
+                Criado {relativeTime(k.created_at as string)}{k.created_by ? ` por ${k.created_by as string}` : ""} · {k.last_used_at ? `último uso ${relativeTime(k.last_used_at as string)}` : "nunca usado"}
+              </span>
+            </div>
+            {!k.revoked_at && (
+              <ConfirmAction action={revokePilotIdentitySecret.bind(null, id, k.id as string)} title={`Revogar o segredo ${k.name as string}?`} description="Tokens assinados com ele deixam de valer na hora: as pessoas identificadas voltam a anônimas até o SaaS usar um segredo novo." confirmLabel="Revogar" className="text-xs font-semibold text-danger hover:underline">
+                Revogar
+              </ConfirmAction>
+            )}
+          </div>
+        ))}
+        <details className="rounded-lg border border-dashed border-line p-3">
+          <summary className="cursor-pointer text-sm font-semibold">+ Novo segredo de identidade</summary>
+          <ResultForm action={createPilotIdentitySecret.bind(null, id)} copy className="mt-3">
+            <div><label className="label" htmlFor="ids-name">Nome</label><input id="ids-name" name="name" required maxLength={80} className="input" placeholder="Fintra produção" /></div>
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="label">Escopo</legend>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="bot" defaultChecked /> Só este chatbot:</label>
+              <select name="bot_id" className="input ml-6 w-auto text-xs" defaultValue="">
+                <option value="">escolha…</option>
+                {(bots ?? []).map((b) => <option key={b.id as string} value={b.id as string}>{b.name as string} ({b.client_name as string})</option>)}
+              </select>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="client" /> Todos os chatbots do cliente:</label>
+              <select name="client_id" className="input ml-6 w-auto text-xs" defaultValue="">
+                <option value="">escolha…</option>
+                {(clients ?? []).map((c) => <option key={c.id as string} value={c.id as string}>{c.name as string}</option>)}
+              </select>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="all" /> Todos os chatbots da agência (Plataforma)</label>
+            </fieldset>
+            <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar segredo</SubmitButton>
+          </ResultForm>
+        </details>
+      </section>
+
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="text-base font-bold">Últimas chamadas</h2>
         {calls?.length ? (
@@ -221,7 +272,14 @@ function ActionFields({ action, a, label }: { action: (fd: FormData) => Promise<
           <select id={`level-${p}`} name="min_level" defaultValue={a?.min_level ?? "anonimo"} className="input">
             <option value="anonimo">anônimo (qualquer contato)</option>
             <option value="canal">canal (telefone conhecido no WhatsApp)</option>
-            <option value="usuario">usuário (identificado, P2)</option>
+            <option value="usuario">usuário (identificado pela empresa)</option>
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor={`ctx-${p}`}>Contexto (workspace, loja)</label>
+          <select id={`ctx-${p}`} name="context_required" defaultValue={a?.context_required ?? "none"} className="input">
+            <option value="none">não exige</option>
+            <option value="signed">exige contexto assinado (só aparece com ele)</option>
           </select>
         </div>
         <div><label className="label" htmlFor={`out-${p}`}>Resultados (opcional, separados por vírgula)</label><input id={`out-${p}`} name="outcomes" defaultValue={a?.outcomes?.join(", ") ?? ""} className="input font-mono" /></div>

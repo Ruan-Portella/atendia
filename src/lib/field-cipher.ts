@@ -9,7 +9,7 @@
  */
 
 /** Colunas com conteúdo do contato, cifradas na S. */
-export type CipherField = "messages.content" | "contacts.phone_enc" | "contacts.wa_user_enc" | "contacts.ig_enc";
+export type CipherField = "messages.content" | "contacts.phone_enc" | "contacts.wa_user_enc" | "contacts.ig_enc" | "contacts.external_id_enc" | "conversations.context_enc";
 
 /** Valor como vai para o banco. Hoje: sem cifra. */
 export function sealField(_field: CipherField, value: string): string {

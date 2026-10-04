@@ -19,6 +19,7 @@ import { openField, sealNullable, type CipherField } from "./field-cipher";
 const phoneEnc = (v: string | null | undefined) => sealNullable("contacts.phone_enc", v);
 const waUserEnc = (v: string | null | undefined) => sealNullable("contacts.wa_user_enc", v);
 const igEnc = (v: string | null | undefined) => sealNullable("contacts.ig_enc", v);
+const externalEnc = (v: string | null | undefined) => sealNullable("contacts.external_id_enc", v);
 
 export type ContactChannel = "whatsapp" | "instagram";
 
@@ -28,6 +29,8 @@ export const HASH_KEY_VERSION = 1;
 export const phoneHash = (canonical: string) => hmacHex(`phone:${canonical}`);
 export const waUserHash = (bsuid: string) => hmacHex(`wa_user:${bsuid}`);
 export const igHash = (igsid: string) => hmacHex(`ig:${igsid}`);
+/** external_id que a empresa usa para a pessoa (token do widget, pareamento). */
+export const externalIdHash = (externalId: string) => hmacHex(`external:${externalId}`);
 
 /** Hash do wa_id que veio da Meta (já com o DDI), ou null se não for telefone (BSUID). */
 export function metaPhoneHash(waId: string | null | undefined): string | null {
@@ -109,7 +112,27 @@ export async function instagramContact(db: SupabaseClient, bot: { id: string; ag
   return data ?? createContact(db, bot, "instagram", { ig_hash: h, ig_enc: igEnc(igsid) });
 }
 
-async function createContact(db: SupabaseClient, bot: { id: string; agency_id: string }, channel: ContactChannel, fields: Record<string, unknown>): Promise<ContactRow | null> {
+/**
+ * Contato identificado do widget (P2): achado pelo external_id do token, criado na primeira vez;
+ * o display ({"name": "Ruan"}) acompanha o que o token mais novo mandou. Service role.
+ */
+export async function widgetUserContact(db: SupabaseClient, bot: { id: string; agency_id: string }, externalId: string, display: Record<string, unknown> | null): Promise<ContactRow | null> {
+  const h = externalIdHash(externalId);
+  const { data } = await db.from("contacts").select(`${COLS}, display`).eq("bot_id", bot.id).eq("channel", "widget").eq("external_id_hash", h).maybeSingle<ContactRow & { display: unknown }>();
+  if (data) {
+    if (display && JSON.stringify(display) !== JSON.stringify(data.display)) await db.from("contacts").update({ display, updated_at: new Date().toISOString() }).eq("id", data.id);
+    return data;
+  }
+  return createContact(db, bot, "widget", { external_id_hash: h, external_id_enc: externalEnc(externalId), display });
+}
+
+/** external_id do contato (para as ações e os webhooks). */
+export async function contactExternalId(db: SupabaseClient, contactId: string): Promise<string | null> {
+  const { data } = await db.from("contacts").select("external_id_enc").eq("id", contactId).maybeSingle();
+  return typeof data?.external_id_enc === "string" ? openField("contacts.external_id_enc", data.external_id_enc) : null;
+}
+
+async function createContact(db: SupabaseClient, bot: { id: string; agency_id: string }, channel: ContactChannel | "widget", fields: Record<string, unknown>): Promise<ContactRow | null> {
   const { data, error } = await db
     .from("contacts")
     .insert({ agency_id: bot.agency_id, bot_id: bot.id, channel, hash_key_version: HASH_KEY_VERSION, ...fields })
@@ -118,7 +141,7 @@ async function createContact(db: SupabaseClient, bot: { id: string; agency_id: s
   if (!error) return data;
   // outra mensagem criou o mesmo contato ao mesmo tempo: usa o que ficou
   if (/duplicate|unique/i.test(error.message)) {
-    const key = (["wa_user_hash", "phone_hash", "ig_hash"] as const).find((k) => fields[k]);
+    const key = (["wa_user_hash", "phone_hash", "ig_hash", "external_id_hash"] as const).find((k) => fields[k]);
     if (key) return (await db.from("contacts").select(COLS).eq("bot_id", bot.id).eq("channel", channel).eq(key, fields[key] as string).maybeSingle<ContactRow>()).data;
   }
   console.error("contato não criado", error.message);

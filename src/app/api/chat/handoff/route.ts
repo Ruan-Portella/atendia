@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { CORS_HEADERS, SYSTEM_AUTHOR, openConversation, requestHandoff, type BotRow } from "@/lib/chat";
+import { conversationAccess, identityColumns, upgradeConversation, widgetWho } from "@/lib/widget-identity";
 import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
 import { saveMessage } from "@/lib/messages";
 import { logWidgetAccess } from "@/lib/access-log";
@@ -47,17 +48,23 @@ export async function POST(req: Request) {
   const exceeded = await firstExceeded(db, [{ key: `chat:${bot.id}:ip:${ip}:handoff`, max: 5, windowSeconds: 3600, message: "Você já pediu atendimento. A equipe responde por aqui assim que possível." }]);
   if (exceeded) return tooMany(exceeded, CORS_HEADERS);
 
-  // só continua uma conversa deste bot e do mesmo visitante; senão, abre outra (sem IA, não conta atendimento)
+  const who = await widgetWho(db, bot, req);
+  if (who.kind === "invalid") return Response.json({ error: "invalid_token", message: "Sua sessão expirou. Tente de novo." }, { status: 401, headers: CORS_HEADERS });
+  // só continua uma conversa deste bot e da mesma pessoa; senão, abre outra (sem IA, não conta atendimento)
   let convId: string | null = null;
   if (conversationId) {
-    const { data } = await db.from("conversations").select("id, visitor_id, last_message_at, takeover_at, handled_at").eq("id", conversationId).eq("bot_id", bot.id).maybeSingle();
-    if (data && data.visitor_id === (visitorId ?? null) && isResumable(data.last_message_at)) convId = data.id;
+    const { data } = await db.from("conversations").select("id, visitor_id, identity_hash, context_hash, last_message_at, takeover_at, handled_at").eq("id", conversationId).eq("bot_id", bot.id).maybeSingle();
+    const access = data ? conversationAccess(data, who, visitorId ?? null) : "denied";
+    if (data && access !== "denied" && isResumable(data.last_message_at)) {
+      if (access === "upgrade") await upgradeConversation(db, data.id, who);
+      convId = data.id;
+    }
   }
   const mode = await resolveMode(db, { bot, channel: "widget", conversation: null });
   if (mode.step === 2) return Response.json({ error: "channel_suspended", message: SUSPENDED_NOTICE }, { status: 403, headers: CORS_HEADERS });
 
   try {
-    convId ??= await openConversation(db, bot, { channel: bot.is_demo ? "demo" : channel, visitorId: visitorId ?? null });
+    convId ??= await openConversation(db, bot, { channel: bot.is_demo ? "demo" : channel, visitorId: visitorId ?? null, identity: identityColumns(who) });
   } catch {
     return Response.json({ error: "chat_failed", fallback: "contact", message: "No momento não consigo responder por aqui. Deixe seu contato que a equipe retorna em breve." }, { status: 402, headers: CORS_HEADERS });
   }
