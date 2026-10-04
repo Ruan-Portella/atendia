@@ -13,6 +13,7 @@ import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
 import { botGateExemptions } from "./exceptions";
 import { idMapCategories, idMapLinks } from "../action-gate";
+import { activeLinkOf, chatIdentityFromLink, contextSwitchTool } from "../pairing";
 import { INTERNAL_FALLBACK, stripInternal } from "../internal-guard";
 import { CATEGORIES, GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
@@ -143,11 +144,13 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   };
 
   // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
-  const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_pending_reply_enc, age_asked_at, regulated_at, gate_id_map_enc, gate_id_map_expires_at").eq("id", convId).maybeSingle();
+  const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_pending_reply_enc, age_asked_at, regulated_at, gate_id_map_enc, gate_id_map_expires_at, contact_id, context_since").eq("id", convId).maybeSingle();
   const pending: PendingAge | null = pendingRow
     ? { question: (pendingRow.age_pending_question as string | null) ?? null, askedAt: (pendingRow.age_asked_at as string | null) ?? null, reply: (pendingRow.age_pending_reply_enc as string | null) ?? null }
     : null;
   const regulatedAt = (pendingRow?.regulated_at as string | null | undefined) ?? null;
+  // contexto da conversa (pareamento, P2): a IA só lê o trecho depois da última troca
+  const since = (pendingRow?.context_since as string | null | undefined) ?? null;
   if (q.button === AGE_SHOW) {
     // "Ver opções 18+": pergunta a idade (e depois do "Sim" responde de novo à pergunta de antes)
     const current = await getAge(db, who);
@@ -188,14 +191,14 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
       await db.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", convId);
       return;
     }
-    history = await conversationHistory(db, convId, io.historySize);
+    history = await conversationHistory(db, convId, io.historySize, undefined, since);
     // "Sim": a IA responde agora à pergunta que ficou esperando (sem pergunta guardada, ao "Sim")
     if (pending?.question) {
       question = pending.question;
       history = historyUpTo(history, question);
     }
   } else {
-    history = await conversationHistory(db, convId, io.historySize);
+    history = await conversationHistory(db, convId, io.historySize, undefined, since);
     // no reprocesso a pergunta já está no banco, então já vem no histórico
     if (!q.stored) history.push({ id: q.msgId, role: "user", parts: [{ type: "text", text: q.text }] });
   }
@@ -252,6 +255,12 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   // acabou de confirmar 18+ e uma ação tinha tirado bebida ou remédio dos dados: a IA consulta de novo
   const refetch = answered === "sim" && age === "sim" && idMapCategories(pendingRow).some((c) => CATEGORIES[c].level === "regulamentado") ? AGE_REFETCH_NOTE : null;
 
+  // contato vinculado (pareamento): nível usuario e o contexto ativo; com 2 contas ou mais, a IA pode trocar
+  const contactId = (pendingRow?.contact_id as string | null | undefined) ?? null;
+  const links = contactId ? await activeLinkOf(db, contactId) : null;
+  const identity = links?.active ? chatIdentityFromLink(links.active, links.all) : null;
+  const extraTools = contactId && links ? contextSwitchTool(db, { contactId, conversationId: convId, links: links.all, activeId: links.active?.id ?? null }) : {};
+
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
   const { result, saved, urgent, askAge: aiAskedAge, actionReply, internalTerms } = await runChat({
@@ -265,6 +274,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     questionKey: q.key,
     storeQuestion,
     retrieval,
+    identity,
+    extraTools,
     gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt },
   });
   const raw = await result.text;

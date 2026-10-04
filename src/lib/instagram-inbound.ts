@@ -1,3 +1,4 @@
+import { handlePairing, linkColumnsForContact } from "./pairing";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
@@ -59,8 +60,12 @@ export interface IgMessagingEvent {
     /** Anexos: mídia, e post (ig_post) ou reel (ig_reel) compartilhado, com o id e a legenda. */
     attachments?: Array<{ type?: string; payload?: { url?: string; title?: string; id?: string; reel_video_id?: string } }>;
     quick_reply?: { payload?: string };
+    /** Primeira mensagem depois de abrir um link ig.me/<usuário>?ref=… */
+    referral?: { ref?: string };
   };
-  postback?: { mid?: string; title?: string; payload?: string };
+  postback?: { mid?: string; title?: string; payload?: string; referral?: { ref?: string } };
+  /** A pessoa abriu um link ig.me/<usuário>?ref=… numa conversa que já existe (messaging_referral). */
+  referral?: { ref?: string; source?: string; type?: string };
   /** A pessoa editou uma DM já enviada (webhook message_edit). */
   message_edit?: { mid?: string; text?: string; num_edit?: number | string };
 }
@@ -69,6 +74,12 @@ export interface IgChannelRow extends IgChannel {
   bot_id: string;
   disconnected_at?: string | null;
 }
+
+/** ref do link ig.me (pareamento, P2), venha na mensagem, no botão ou no evento de referral. */
+export const igRef = (ev: IgMessagingEvent): string | null => {
+  const r = ev.referral?.ref ?? ev.message?.referral?.ref ?? ev.postback?.referral?.ref;
+  return r && /^[A-Za-z0-9]{4,32}$/.test(r) ? r : null;
+};
 
 /** Texto da mensagem (texto ou botão tocado); null para mídia. */
 export function igText(ev: IgMessagingEvent): string | null {
@@ -146,7 +157,7 @@ export interface QueuedDm {
  */
 export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedDm[]) {
   // mensagem não suportada (enquete, efeito…) e apagada não recebem resposta
-  const burst = all.filter((q) => (q.ev.message?.mid ?? q.ev.postback?.mid) && q.ev.sender?.id && !q.ev.message?.is_deleted && !q.ev.message?.is_unsupported);
+  const burst = all.filter((q) => (q.ev.message?.mid ?? q.ev.postback?.mid ?? igRef(q.ev)) && q.ev.sender?.id && !q.ev.message?.is_deleted && !q.ev.message?.is_unsupported);
   if (!burst.length) return;
   const { data: bot } = await db.from("bots").select("*").eq("id", ch.bot_id).maybeSingle<BotRow>();
   if (!bot) return console.warn("instagram: chatbot não encontrado", ch.bot_id);
@@ -200,7 +211,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       texts.push(null);
       continue;
     }
-    const typed = [igText(q.ev), refs[i] ? sharedText(refs[i]!) : null].filter(Boolean).join("\n") || null;
+    // link ig.me com ?ref= aberto sem texto: fica na conversa como "Conectar REF"
+    const ref = igRef(q.ev);
+    const typed = [igText(q.ev), refs[i] ? sharedText(refs[i]!) : null].filter(Boolean).join("\n") || (ref ? `Conectar ${ref}` : null);
     texts.push((typed ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
   }
   const shown = (i: number) => (deleted.has(burst[i].key) ? DELETED_LABEL : (texts[i] ?? igMediaLabel(burst[i].ev)));
@@ -216,7 +229,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
   const plainConversation = async (): Promise<string | null> => {
     if (!conv) {
-      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, contact_id: contactId, visitor_id: null }).select("id, takeover_at, handled_at").single<RecentConversation>();
+      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, contact_id: contactId, visitor_id: null, ...(await linkColumnsForContact(db, contactId)) }).select("id, takeover_at, handled_at").single<RecentConversation>();
       conv = data;
     }
     return conv?.id ?? null;
@@ -277,6 +290,29 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     if (mode.step === 2) await sendNotice(convId, mode.notice);
     return;
   }
+
+  // pareamento (P2): o ref do link ig.me ou "Conectar ABC123" digitado, a confirmação e "desconectar"
+  const paired = await handlePairing(
+    {
+      db,
+      bot,
+      channel: "instagram",
+      contactId,
+      phone: null,
+      conversation: plainConversation,
+      store: async (i, convId) => {
+        await storeOnce(db, convId, shown(i), burst[i].key);
+      },
+      reply: (convId, text, buttons) => systemReply(convId, text, buttons?.map((b) => ({ title: b.title, payload: b.id }))),
+    },
+    burst.map((q, i) => {
+      if (handled.has(i)) return { text: null, buttonId: null };
+      const ref = igRef(q.ev);
+      return { text: ref ? `Conectar ${ref}` : texts[i], buttonId: q.ev.message?.quick_reply?.payload ?? q.ev.postback?.payload ?? null };
+    }),
+  );
+  for (const i of paired) handled.add(i);
+  if (handled.size === burst.length) return;
 
   // degrau 3, gente atendendo: só guarda para o painel; o risco à vida ainda é vigiado
   if (mode.step === 3) {

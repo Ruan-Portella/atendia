@@ -58,6 +58,9 @@ export async function applyRetention(db: SupabaseClient) {
   await db.from("deletion_requests").delete().lt("created_at", daysAgoIso(365));
   // consumo do WhatsApp: 13 meses bastam para comparar com o mesmo mês do ano anterior
   await db.from("whatsapp_usage").delete().lt("created_at", daysAgoIso(400));
+  // pareamento: código vencido ou usado sai depois de 1 dia; Idempotency-Key, depois de 24 h
+  await db.from("pairing_codes").delete().lt("created_at", daysAgoIso(1));
+  await db.from("idempotency_keys").delete().lt("created_at", daysAgoIso(1));
   // registro das chamadas de ações (Integrações): 30 dias
   await db.from("action_calls").delete().lt("created_at", daysAgoIso(30));
   // análise do bot: o resumo escrito pela IA sai em 30 dias (os rótulos ficam 1 ano)

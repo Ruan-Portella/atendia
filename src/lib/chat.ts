@@ -1,4 +1,4 @@
-import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage, type UIMessageChunk } from "ai";
+import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type UIMessage, type UIMessageChunk } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, scopeReminder, type Persona } from "./ai";
@@ -19,6 +19,7 @@ import { deliver } from "./send";
 import { metaPhoneHash, typedPhoneHash } from "./contacts";
 import { ACTIONS_PROMPT_NOTE, actionToolsFor } from "./action-tools";
 import { identityPromptNote, type ChatIdentity } from "./widget-identity";
+import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
 
 export interface BotRow {
@@ -130,9 +131,10 @@ export function guardInternal(text: string, terms: string[]): string {
  * conta como resposta). Nunca do navegador: quem manda o histórico poderia inventar falas do
  * assistente ou da equipe.
  */
-export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000): Promise<UIMessage[]> {
-  // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora
-  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit }, ["id", "role", "content", "tool_results", "created_at"] as const);
+export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000, since?: string | null): Promise<UIMessage[]> {
+  // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora;
+  // since: troca de contexto (P2) abre um trecho novo, a IA não lê o da conta anterior
+  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit, ...(since ? { createdAfter: since } : {}) }, ["id", "role", "content", "tool_results", "created_at"] as const);
   // da mais nova para a mais antiga: a primeira vez que uma ação aparece é a última chamada dela
   const seen = new Set<string>();
   const notes = rows.map((r) => actionsNote(r.tool_results as ToolResultRow[] | null, seen, r.created_at as string));
@@ -480,7 +482,8 @@ export async function openConversation(
   }
   const { data: conv, error } = await db
     .from("conversations")
-    .insert({ bot_id: bot.id, visitor_id: opts.visitorId ?? null, channel: opts.channel, ...(opts.waId ? { wa_id: opts.waId } : {}), ...(opts.igsid ? { ig_id: opts.igsid } : {}), ...(opts.contactId ? { contact_id: opts.contactId } : {}), ...(opts.identity ?? {}) })
+    // contato vinculado (pareamento): a conversa nova já nasce no contexto ativo dele
+    .insert({ bot_id: bot.id, visitor_id: opts.visitorId ?? null, channel: opts.channel, ...(opts.waId ? { wa_id: opts.waId } : {}), ...(opts.igsid ? { ig_id: opts.igsid } : {}), ...(opts.contactId ? { contact_id: opts.contactId } : {}), ...(opts.identity ?? (await linkColumnsForContact(db, opts.contactId ?? null))) })
     .select("id")
     .single();
   if (error || !conv) throw new Error("Não foi possível abrir a conversa.");
@@ -502,6 +505,8 @@ export async function runChat(opts: {
   identity?: ChatIdentity | null;
   /** Colunas da conversa nova de nível usuário (widget-identity.ts identityColumns). */
   identityColumns?: Record<string, unknown>;
+  /** Ferramentas a mais desta vez (ex.: trocar_contexto, com duas contas conectadas). */
+  extraTools?: Record<string, Tool>;
   /** Contato do WhatsApp: o número já é conhecido, o assistente só pede o nome. */
   whatsapp?: { waId: string; profileName?: string | null };
   /** Contato do Instagram Direct (IGSID). O WhatsApp da pessoa não é conhecido. */
@@ -641,6 +646,7 @@ export async function runChat(opts: {
       },
     }),
     ...actionTools,
+    ...(opts.extraTools ?? {}),
   },
     onError: () => markSaved(),
     onFinish: async ({ text, steps, totalUsage, response }) => {

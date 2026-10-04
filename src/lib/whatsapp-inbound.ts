@@ -1,3 +1,4 @@
+import { handlePairing, linkColumnsForContact } from "./pairing";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
@@ -238,7 +239,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
   const plainConversation = async (): Promise<string | null> => {
     if (!conv) {
-      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, contact_id: contactId, visitor_id: null }).select("id, takeover_at, handled_at").single<RecentConversation>();
+      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "whatsapp", wa_id: waId, contact_id: contactId, visitor_id: null, ...(await linkColumnsForContact(db, contactId)) }).select("id, takeover_at, handled_at").single<RecentConversation>();
       conv = data;
     }
     return conv?.id ?? null;
@@ -286,6 +287,34 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     if (mode.step === 2) await sendNotice(convId, mode.notice);
     return;
   }
+
+  // pareamento (P2): "Conectar ABC123", a confirmação por botão e "desconectar", em qualquer degrau
+  // que envia (a IA não responde a essas mensagens)
+  const paired = await handlePairing(
+    {
+      db,
+      bot,
+      channel: "whatsapp",
+      contactId,
+      phone: last.msg.from ?? null,
+      conversation: plainConversation,
+      store: (i, convId) => storeOnce(db, convId, shown(i), burst[i].key),
+      reply: async (convId, text, buttons) => {
+        if (!mode.canSend) return;
+        await deliver(db, {
+          botId: bot.id,
+          channel: "whatsapp",
+          conversationId: convId,
+          kind: "sistema",
+          record: convId ? { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR } } : null,
+          transport: async () => (buttons ? await sendButtons(channel, waId, toWhatsAppText(text), buttons) : await reply(text)).messages?.[0]?.id ?? null,
+        });
+      },
+    },
+    burst.map((q, i) => (optOut.handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.msg.interactive?.button_reply?.id ?? null })),
+  );
+  for (const i of paired) optOut.handled.add(i);
+  if (optOut.handled.size === burst.length) return;
 
   // degrau 3, gente atendendo: o assistente fica quieto, sem "digitando…", e as mensagens vão
   // para o painel; o risco à vida ainda é vigiado (alerta urgente e texto fixo)

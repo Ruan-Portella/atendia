@@ -126,6 +126,24 @@ export async function widgetUserContact(db: SupabaseClient, bot: { id: string; a
   return createContact(db, bot, "widget", { external_id_hash: h, external_id_enc: externalEnc(externalId), display });
 }
 
+/** Vínculo ativo do contato (pareamento): o último pareado ou usado. */
+export async function contactActiveLinkId(db: SupabaseClient, contactId: string): Promise<string | null> {
+  const { data } = await db.from("contacts").select("active_link_id").eq("id", contactId).maybeSingle();
+  return (data?.active_link_id as string | null) ?? null;
+}
+
+/** Marca o vínculo ativo (e o display que veio com ele, para o painel). */
+export async function setActiveLink(db: SupabaseClient, contactId: string, linkId: string | null, display: Record<string, unknown> | object | null): Promise<void> {
+  const { error } = await db.from("contacts").update({ active_link_id: linkId, ...(display ? { display } : {}), updated_at: new Date().toISOString() }).eq("id", contactId);
+  if (error) console.error("contato: vínculo ativo não gravado", error.message);
+}
+
+/** Telefone do contato do WhatsApp, quando conhecido (null com só o BSUID). */
+export async function contactPhone(db: SupabaseClient, contactId: string): Promise<string | null> {
+  const { data } = await db.from("contacts").select("phone_enc").eq("id", contactId).maybeSingle();
+  return typeof data?.phone_enc === "string" && data.phone_enc ? openField("contacts.phone_enc", data.phone_enc) : null;
+}
+
 /** Nome que a empresa mandou para o contato identificado (display.name), para o painel. */
 export async function contactDisplayName(db: SupabaseClient, contactId: string): Promise<string | null> {
   const { data } = await db.from("contacts").select("display").eq("id", contactId).maybeSingle();
@@ -258,13 +276,24 @@ const openNullable = (field: CipherField, v: unknown) => (typeof v === "string" 
 
 /**
  * Contatos destes chatbots (os do escopo da chave) por um {contact} da API. ext: (id externo)
- * chega com o vínculo na P2; até lá nenhum contato tem, então volta vazio (a rota dá 404).
+ * acha os contatos do widget com aquele external_id e os do WhatsApp e do Instagram com vínculo
+ * ativo a ele (pareamento).
  */
 export async function apiContacts(db: SupabaseClient, botIds: string[], addr: ContactAddress): Promise<ApiContact[]> {
-  if (!botIds.length || addr.kind === "ext") return [];
+  if (!botIds.length) return [];
   const base = db.from("contacts").select("id, bot_id, channel, phone_enc, wa_user_enc, ig_enc").in("bot_id", botIds);
+  let linked: string[] = [];
+  if (addr.kind === "ext") {
+    const h = externalIdHash(addr.externalId);
+    const { data: links } = await db.from("contact_links").select("contact_id").in("bot_id", botIds).eq("external_id_hash", h).is("unlinked_at", null);
+    linked = [...new Set((links ?? []).map((l) => l.contact_id as string))];
+  }
   const q =
-    addr.kind === "id"
+    addr.kind === "ext"
+      ? linked.length
+        ? base.or(`external_id_hash.eq.${externalIdHash(addr.externalId)},id.in.(${linked.join(",")})`)
+        : base.eq("external_id_hash", externalIdHash(addr.externalId))
+      : addr.kind === "id"
       ? base.eq("id", addr.id)
       : addr.kind === "phone"
         ? base.eq("channel", "whatsapp").eq("phone_hash", phoneHash(addr.phone))

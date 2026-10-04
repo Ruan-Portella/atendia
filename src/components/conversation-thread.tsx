@@ -1,3 +1,5 @@
+import { Fragment } from "react";
+
 export interface ThreadMessage {
   id: number;
   role: string;
@@ -14,6 +16,7 @@ export interface ThreadMessage {
   deleted_at?: string | null;
   /** Post ou reel do Instagram compartilhado pelo contato. */
   channel_ref?: { kind?: string; url?: string | null; permalink?: string | null } | null;
+  created_at?: string;
 }
 
 interface Props {
@@ -22,10 +25,14 @@ interface Props {
   /** Nome mostrado nas mensagens de atendente (ex.: "Você", "Agência", "joana@clinica.com"). */
   agentLabel: (author: string | null) => string;
   showSources?: boolean;
+  /** Troca de contexto (pareamento, P2): separador antes da primeira mensagem do trecho novo. */
+  contextChange?: { at: string; label: string } | null;
 }
 
 /** Conversa (visitante, assistente e atendentes) — painel, portal e área do cliente. */
-export function ConversationThread({ messages, leads, agentLabel, showSources = false }: Props) {
+export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null }: Props) {
+  const changeAt = contextChange ? Date.parse(contextChange.at) : NaN;
+  const firstAfter = Number.isNaN(changeAt) ? -1 : messages.findIndex((m) => m.created_at && Date.parse(m.created_at) >= changeAt);
   return (
     <>
       {leads && leads.length > 0 && (
@@ -35,9 +42,16 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
         </div>
       )}
       <div className="flex flex-col gap-2.5">
-        {messages.map((m) => (
+        {messages.map((m, i) => (
+          <Fragment key={m.id}>
+          {i === firstAfter && i > 0 && (
+            <div className="my-1 flex items-center gap-2 text-[11px] font-semibold text-muted">
+              <span className="h-px flex-1 bg-line" />
+              {contextChange!.label}
+              <span className="h-px flex-1 bg-line" />
+            </div>
+          )}
           <div
-            key={m.id}
             className={
               m.role === "user"
                 ? "max-w-[80%] self-end rounded-[14px_14px_4px_14px] bg-ink px-3.5 py-2.5 text-sm text-ground"
@@ -65,6 +79,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
               <div className="mt-1.5 text-[11px] text-muted">Fontes: {(m.sources as Array<{ title?: string; url?: string }>).map((s) => s.title ?? s.url).join(" · ")}</div>
             )}
           </div>
+          </Fragment>
         ))}
         {messages.length === 0 && <p className="text-sm text-muted">Sem mensagens.</p>}
       </div>

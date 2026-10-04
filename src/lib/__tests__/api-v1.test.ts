@@ -59,6 +59,8 @@ import { parseContactAddress, phoneHash } from "../contacts";
 import { getAge } from "../gate/age";
 import { contactHash } from "../suppression";
 import { PUT } from "../../app/api/v1/contacts/[contact]/age/route";
+import { POST as POST_PAIRING } from "../../app/api/v1/pairings/route";
+import { GET as GET_LINKS } from "../../app/api/v1/contacts/[contact]/links/route";
 
 const A = "aaaaaaaa-0000-4000-8000-000000000001";
 const B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -72,7 +74,7 @@ const CTC_B1 = "bbbbbbbb-0000-4000-8000-0000000000e2";
 const PHONE = "5521999999999";
 
 function world() {
-  const keys = { all: newApiKey(), bots: newApiKey(), client: newApiKey(), noPerm: newApiKey(), revoked: newApiKey(), b: newApiKey() };
+  const keys = { all: newApiKey(), bots: newApiKey(), client: newApiKey(), noPerm: newApiKey(), revoked: newApiKey(), b: newApiKey(), pair: newApiKey() };
   const key = (k: { prefix: string; hash: string }, id: string, agency: string, extra: Row) => ({ id, agency_id: agency, name: id, prefix: k.prefix, key_hash: k.hash, scope_type: "all", scope_bot_ids: [], scope_client_id: null, permissions: ["contacts"], last_used_at: null, revoked_at: null, ...extra });
   const tables: Record<string, Row[]> = {
     bots: [
@@ -88,6 +90,7 @@ function world() {
       key(keys.noPerm, "k-noperm", A, { permissions: ["messages"] }),
       key(keys.revoked, "k-revoked", A, { revoked_at: "2026-10-01T00:00:00Z" }),
       key(keys.b, "k-b", B, {}),
+      key(keys.pair, "k-pair", A, { permissions: ["pairing"] }),
     ],
     contacts: [
       { id: CTC_A1, bot_id: BOT_A1, channel: "whatsapp", phone_hash: null, phone_enc: PHONE, wa_user_hash: null, wa_user_enc: null, ig_hash: null, ig_enc: null },
@@ -278,5 +281,29 @@ describe("rotas de /api/v1 só pelo invólucro", () => {
       expect(code, f).not.toMatch(/supabase\/(admin|server)|createAdminClient|createClient|\.from\(/);
       for (const m of code.matchAll(/export (?:const|async function|function) (GET|POST|PUT|PATCH|DELETE)\b(.*)/g)) expect(m[2], `${f} ${m[1]}`).toMatch(/=\s*withApiKey/);
     }
+  });
+});
+
+describe("pareamento pela API (isolamento)", () => {
+  let w: ReturnType<typeof world>;
+  const post = (key: string, body: unknown) => POST_PAIRING(new Request("http://localhost/api/v1/pairings", { method: "POST", headers: { host: "localhost", authorization: `Bearer ${key}` }, body: JSON.stringify(body) }), { params: Promise.resolve({}) });
+  const links = (key: string, contact: string) => GET_LINKS(new Request(`http://localhost/api/v1/contacts/${contact}/links`, { headers: { host: "localhost", authorization: `Bearer ${key}` } }), { params: Promise.resolve({ contact }) });
+  const code = async (r: Response) => [r.status, ((await r.json()) as { error: { code: string } }).error.code];
+
+  beforeEach(() => {
+    vi.stubEnv("CONTACT_HASH_KEY", "chave-de-teste-com-mais-de-16");
+    w = world();
+    env.db = memoryDb(w.tables);
+  });
+
+  it("sem a permissão pairing, bot de outra agência ou canal não conectado: recusado", async () => {
+    expect(await code(await post(w.keys.all.key, { bot_id: `bot_${BOT_A1}`, channel: "whatsapp", external_id: "user_42" }))).toEqual([403, "forbidden_scope"]);
+    expect(await code(await post(w.keys.pair.key, { bot_id: `bot_${BOT_B1}`, channel: "whatsapp", external_id: "user_42" }))).toEqual([403, "forbidden_scope"]);
+    expect(await code(await post(w.keys.pair.key, { bot_id: `bot_${BOT_A1}`, channel: "whatsapp", external_id: "user_42" }))).toEqual([422, "channel_not_connected"]);
+    expect(w.tables.pairing_codes ?? []).toHaveLength(0);
+  });
+
+  it("vínculos de um contato de outra agência: 404 (não revela que existe)", async () => {
+    expect(await code(await links(w.keys.pair.key, `ctc_${CTC_B1}`))).toEqual([404, "not_found"]);
   });
 });

@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validSignature } from "@/lib/whatsapp";
-import type { IgChannelRow, IgMessagingEvent } from "@/lib/instagram-inbound";
+import { igRef, type IgChannelRow, type IgMessagingEvent } from "@/lib/instagram-inbound";
 import { acceptInbound, type Group } from "@/lib/inbound-queue";
 import { processAfterWebhook, type IgPayload } from "@/lib/inbound-process";
 import { deadline } from "@/lib/cron";
@@ -114,9 +114,11 @@ export async function POST(req: Request) {
           continue;
         }
         const echo = Boolean(ev.message?.is_echo);
-        const mid = ev.message?.mid ?? ev.postback?.mid;
+        // link ig.me/<usuário>?ref=CODIGO aberto numa conversa que já existe: chega sem mensagem (pareamento, P2)
+        const ref = !echo && !ev.message && !ev.postback ? igRef(ev) : null;
+        const mid = ev.message?.mid ?? ev.postback?.mid ?? (ref && ev.sender?.id ? `ref:${ev.sender.id}:${ev.timestamp ?? 0}:${ref}` : undefined);
         // DM apagada e evento sem id não têm o que tratar
-        if (!mid || ev.message?.is_deleted || (!echo && !ev.message && !ev.postback)) continue;
+        if (!mid || ev.message?.is_deleted || (!echo && !ev.message && !ev.postback && !ref)) continue;
         const contact = echo ? ev.recipient?.id : ev.sender?.id;
         if (!contact) continue;
         const payload: IgPayload = { type: echo ? "echo" : "msg", igUserId: ch.ig_user_id, ev };
