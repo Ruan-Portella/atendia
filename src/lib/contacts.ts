@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { canonicalPhone } from "./phone";
 import { hmacHex } from "./hash";
-import { openField, sealNullable, type CipherField } from "./field-cipher";
+import { openNullable, sealField, sealNullable, scopeOfBot, type CipherField } from "./field-cipher";
 
 /*
  * Contatos (L1): a identidade de quem conversa com cada chatbot, por canal, achada por hash com
@@ -12,14 +12,16 @@ import { openField, sealNullable, type CipherField } from "./field-cipher";
  *     reciclado): contato novo, sem o vínculo, o consentimento e o 18+ do anterior.
  *   - first_inbound_at / last_inbound_at: só mensagem do próprio contato recebida pelo canal
  *     (nunca eco, status, histórico ou envio). "Já conversou" e a janela de 24 h saem daqui.
- * Camada única: toda leitura e gravação da tabela contacts passa por este arquivo (as colunas
- * _enc são cifradas na leva S, em field-cipher.ts). Um teste confere que ninguém usa a tabela direto.
+ * Camada única: toda leitura e gravação da tabela contacts passa por este arquivo. As colunas
+ * _enc vão cifradas com a chave do cliente dono do chatbot (field-cipher.ts, leva S); a busca é
+ * pelos hashes. Um teste confere que ninguém usa a tabela direto.
  */
 
-const phoneEnc = (v: string | null | undefined) => sealNullable("contacts.phone_enc", v);
-const waUserEnc = (v: string | null | undefined) => sealNullable("contacts.wa_user_enc", v);
-const igEnc = (v: string | null | undefined) => sealNullable("contacts.ig_enc", v);
-const externalEnc = (v: string | null | undefined) => sealNullable("contacts.external_id_enc", v);
+const enc = async (field: CipherField, botId: string, v: string | null | undefined) => sealNullable(field, v, await scopeOfBot(botId));
+const phoneEnc = (botId: string, v: string | null | undefined) => enc("contacts.phone_enc", botId, v);
+const waUserEnc = (botId: string, v: string | null | undefined) => enc("contacts.wa_user_enc", botId, v);
+const igEnc = (botId: string, v: string | null | undefined) => enc("contacts.ig_enc", botId, v);
+const externalEnc = (botId: string, v: string | null | undefined) => enc("contacts.external_id_enc", botId, v);
 
 export type ContactChannel = "whatsapp" | "instagram";
 
@@ -84,7 +86,7 @@ export async function whatsappContact(db: SupabaseClient, bot: { id: string; age
     // achou pelo BSUID: completa o telefone (se outro contato tinha esse telefone sem BSUID, ele é o antigo registro da mesma pessoa)
     if (ph && byUser.phone_hash !== ph) {
       if (byPhone && byPhone.id !== byUser.id) await db.from("contacts").update({ phone_hash: null, updated_at: new Date().toISOString() }).eq("id", byPhone.id);
-      await db.from("contacts").update({ phone_hash: ph, phone_enc: phoneEnc(who.phone), updated_at: new Date().toISOString() }).eq("id", byUser.id);
+      await db.from("contacts").update({ phone_hash: ph, phone_enc: await phoneEnc(bot.id, who.phone), updated_at: new Date().toISOString() }).eq("id", byUser.id);
       byUser.phone_hash = ph;
     }
     return byUser;
@@ -93,15 +95,15 @@ export async function whatsappContact(db: SupabaseClient, bot: { id: string; age
     if (uh && byPhone.wa_user_hash && byPhone.wa_user_hash !== uh) {
       // mesmo telefone, outro BSUID, sem o aviso de troca: número reciclado, é outra pessoa
       await db.from("contacts").update({ phone_hash: null, updated_at: new Date().toISOString() }).eq("id", byPhone.id);
-      return createContact(db, bot, "whatsapp", { phone_hash: ph, phone_enc: phoneEnc(who.phone), wa_user_hash: uh, wa_user_enc: waUserEnc(who.bsuid), name: who.name ?? null });
+      return createContact(db, bot, "whatsapp", { phone_hash: ph, phone_enc: await phoneEnc(bot.id, who.phone), wa_user_hash: uh, wa_user_enc: await waUserEnc(bot.id, who.bsuid), name: who.name ?? null });
     }
     if (uh && !byPhone.wa_user_hash) {
-      await db.from("contacts").update({ wa_user_hash: uh, wa_user_enc: waUserEnc(who.bsuid), updated_at: new Date().toISOString() }).eq("id", byPhone.id);
+      await db.from("contacts").update({ wa_user_hash: uh, wa_user_enc: await waUserEnc(bot.id, who.bsuid), updated_at: new Date().toISOString() }).eq("id", byPhone.id);
       byPhone.wa_user_hash = uh;
     }
     return byPhone;
   }
-  return createContact(db, bot, "whatsapp", { phone_hash: ph, phone_enc: phoneEnc(who.phone), wa_user_hash: uh, wa_user_enc: waUserEnc(who.bsuid), name: who.name ?? null });
+  return createContact(db, bot, "whatsapp", { phone_hash: ph, phone_enc: await phoneEnc(bot.id, who.phone), wa_user_hash: uh, wa_user_enc: await waUserEnc(bot.id, who.bsuid), name: who.name ?? null });
 }
 
 /** Contato do Instagram deste chatbot (pelo IGSID); cria se não existir. Service role. */
@@ -109,7 +111,7 @@ export async function instagramContact(db: SupabaseClient, bot: { id: string; ag
   if (!igsid) return null;
   const h = igHash(igsid);
   const { data } = await db.from("contacts").select(COLS).eq("bot_id", bot.id).eq("channel", "instagram").eq("ig_hash", h).maybeSingle<ContactRow>();
-  return data ?? createContact(db, bot, "instagram", { ig_hash: h, ig_enc: igEnc(igsid) });
+  return data ?? createContact(db, bot, "instagram", { ig_hash: h, ig_enc: await igEnc(bot.id, igsid) });
 }
 
 /**
@@ -123,7 +125,7 @@ export async function widgetUserContact(db: SupabaseClient, bot: { id: string; a
     if (display && JSON.stringify(display) !== JSON.stringify(data.display)) await db.from("contacts").update({ display, updated_at: new Date().toISOString() }).eq("id", data.id);
     return data;
   }
-  return createContact(db, bot, "widget", { external_id_hash: h, external_id_enc: externalEnc(externalId), display });
+  return createContact(db, bot, "widget", { external_id_hash: h, external_id_enc: await externalEnc(bot.id, externalId), display });
 }
 
 /** Vínculo ativo do contato (pareamento): o último pareado ou usado. */
@@ -141,14 +143,14 @@ export async function setActiveLink(db: SupabaseClient, contactId: string, linkI
 /** Identificadores do contato no canal (abertos): telefone, BSUID e IGSID, para os webhooks. */
 export async function contactChannelIds(db: SupabaseClient, contactId: string): Promise<{ phone: string | null; bsuid: string | null; igsid: string | null }> {
   const { data } = await db.from("contacts").select("phone_enc, wa_user_enc, ig_enc").eq("id", contactId).maybeSingle();
-  const op = (f: CipherField, v: unknown) => (typeof v === "string" && v ? openField(f, v) : null);
-  return { phone: op("contacts.phone_enc", data?.phone_enc), bsuid: op("contacts.wa_user_enc", data?.wa_user_enc), igsid: op("contacts.ig_enc", data?.ig_enc) };
+  const [phone, bsuid, igsid] = await Promise.all([openNullable("contacts.phone_enc", data?.phone_enc), openNullable("contacts.wa_user_enc", data?.wa_user_enc), openNullable("contacts.ig_enc", data?.ig_enc)]);
+  return { phone, bsuid, igsid };
 }
 
 /** Telefone do contato do WhatsApp, quando conhecido (null com só o BSUID). */
 export async function contactPhone(db: SupabaseClient, contactId: string): Promise<string | null> {
   const { data } = await db.from("contacts").select("phone_enc").eq("id", contactId).maybeSingle();
-  return typeof data?.phone_enc === "string" && data.phone_enc ? openField("contacts.phone_enc", data.phone_enc) : null;
+  return openNullable("contacts.phone_enc", data?.phone_enc);
 }
 
 /** Nome que a empresa mandou para o contato identificado (display.name), para o painel. */
@@ -161,7 +163,7 @@ export async function contactDisplayName(db: SupabaseClient, contactId: string):
 /** external_id do contato (para as ações e os webhooks). */
 export async function contactExternalId(db: SupabaseClient, contactId: string): Promise<string | null> {
   const { data } = await db.from("contacts").select("external_id_enc").eq("id", contactId).maybeSingle();
-  return typeof data?.external_id_enc === "string" ? openField("contacts.external_id_enc", data.external_id_enc) : null;
+  return openNullable("contacts.external_id_enc", data?.external_id_enc);
 }
 
 async function createContact(db: SupabaseClient, bot: { id: string; agency_id: string }, channel: ContactChannel | "widget", fields: Record<string, unknown>): Promise<ContactRow | null> {
@@ -200,8 +202,8 @@ export async function changeWhatsAppIdentity(db: SupabaseClient, botId: string, 
   if (!found) return false;
   const newPhone = canonicalPhone(to.phone);
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (newPhone) Object.assign(patch, { phone_hash: phoneHash(newPhone), phone_enc: phoneEnc(to.phone) });
-  if (to.bsuid) Object.assign(patch, { wa_user_hash: waUserHash(to.bsuid), wa_user_enc: waUserEnc(to.bsuid) });
+  if (newPhone) Object.assign(patch, { phone_hash: phoneHash(newPhone), phone_enc: await phoneEnc(botId, to.phone) });
+  if (to.bsuid) Object.assign(patch, { wa_user_hash: waUserHash(to.bsuid), wa_user_enc: await waUserEnc(botId, to.bsuid) });
   // quem já tinha o telefone ou o BSUID novos (contato criado antes do aviso) cede para o contato antigo
   if (patch.phone_hash) await db.from("contacts").update({ phone_hash: null }).eq("bot_id", botId).eq("channel", "whatsapp").eq("phone_hash", patch.phone_hash as string).neq("id", found.id);
   if (patch.wa_user_hash) await db.from("contacts").update({ wa_user_hash: null }).eq("bot_id", botId).eq("channel", "whatsapp").eq("wa_user_hash", patch.wa_user_hash as string).neq("id", found.id);
@@ -279,7 +281,6 @@ export interface ApiContact {
   igsid: string | null;
 }
 
-const openNullable = (field: CipherField, v: unknown) => (typeof v === "string" && v ? openField(field, v) : null);
 
 /**
  * Contatos destes chatbots (os do escopo da chave) por um {contact} da API. ext: (id externo)
@@ -309,14 +310,16 @@ export async function apiContacts(db: SupabaseClient, botIds: string[], addr: Co
           : base.eq("channel", "instagram").eq("ig_hash", igHash(addr.igsid));
   const { data, error } = await q.limit(50);
   if (error) throw new Error(`contatos da API: ${error.message}`);
-  return (data ?? []).map((r) => ({
-    id: r.id as string,
-    bot_id: r.bot_id as string,
-    channel: r.channel as ApiContact["channel"],
-    phone: openNullable("contacts.phone_enc", r.phone_enc),
-    bsuid: openNullable("contacts.wa_user_enc", r.wa_user_enc),
-    igsid: openNullable("contacts.ig_enc", r.ig_enc),
-  }));
+  return Promise.all(
+    (data ?? []).map(async (r) => ({
+      id: r.id as string,
+      bot_id: r.bot_id as string,
+      channel: r.channel as ApiContact["channel"],
+      phone: await openNullable("contacts.phone_enc", r.phone_enc),
+      bsuid: await openNullable("contacts.wa_user_enc", r.wa_user_enc),
+      igsid: await openNullable("contacts.ig_enc", r.ig_enc),
+    })),
+  );
 }
 
 /** Fichas para o pedido de exclusão (LGPD), nestes chatbots: pelo e-mail ou pelo hash do telefone. */
@@ -364,4 +367,39 @@ export async function linkLegacyConversations(db: SupabaseClient, limit = 300): 
     linked++;
   }
   return { linked, left: (convs?.length ?? 0) === limit };
+}
+
+/* ------------------------------------------------------------------ recifra do histórico (leva S) */
+
+const PLAIN_CONTACT = "phone_enc.not.like.v2.*,wa_user_enc.not.like.v2.*,ig_enc.not.like.v2.*,external_id_enc.not.like.v2.*";
+const CONTACT_FIELDS = [
+  ["phone_enc", "contacts.phone_enc"],
+  ["wa_user_enc", "contacts.wa_user_enc"],
+  ["ig_enc", "contacts.ig_enc"],
+  ["external_id_enc", "contacts.external_id_enc"],
+] as const;
+
+/** Contatos com algum identificador ainda sem cifra. */
+export async function countPlainContacts(db: SupabaseClient): Promise<number> {
+  const { count } = await db.from("contacts").select("id", { count: "exact", head: true }).or(PLAIN_CONTACT);
+  return count ?? 0;
+}
+
+/** Cifra um lote de contatos antigos com a chave do cliente dono do chatbot. */
+export async function reencryptContacts(db: SupabaseClient, limit = 300): Promise<number> {
+  const { data, error } = await db.from("contacts").select("id, bot_id, phone_enc, wa_user_enc, ig_enc, external_id_enc").or(PLAIN_CONTACT).order("id").limit(limit);
+  if (error) throw new Error(`recifra dos contatos: ${error.message}`);
+  let done = 0;
+  for (const r of data ?? []) {
+    const scope = await scopeOfBot(String(r.bot_id));
+    const patch: Record<string, string> = {};
+    for (const [col, field] of CONTACT_FIELDS) {
+      const v = r[col] as string | null;
+      if (v && !v.startsWith("v2.")) patch[col] = await sealField(field, v, scope);
+    }
+    if (!Object.keys(patch).length) continue;
+    const { error: upErr } = await db.from("contacts").update(patch).eq("id", r.id);
+    if (!upErr) done++;
+  }
+  return done;
 }

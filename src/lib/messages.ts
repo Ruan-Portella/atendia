@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { openField, sealField } from "./field-cipher";
+import { openField, sealField, scopeOfConversation } from "./field-cipher";
 
 /*
  * Camada única de mensagens (L1; spec "Cifra por campo"): toda leitura e gravação da tabela
@@ -61,10 +61,12 @@ export interface MessagePatch {
   channel_msg_hash?: string | null;
 }
 
-const sealed = <T extends { content?: string }>(row: T): T => (row.content === undefined ? row : { ...row, content: sealField("messages.content", row.content) });
-const opened = <T extends object>(row: T): T => {
+/** O conteúdo vai cifrado com a chave do cliente dono da conversa (ou da plataforma, nas demos). */
+const sealed = async <T extends { content?: string }>(row: T, conversationId: string): Promise<T> =>
+  row.content === undefined ? row : { ...row, content: await sealField("messages.content", row.content, await scopeOfConversation(conversationId)) };
+const opened = async <T extends object>(row: T): Promise<T> => {
   const content = (row as { content?: unknown }).content;
-  return typeof content === "string" ? { ...row, content: openField("messages.content", content) } : row;
+  return typeof content === "string" ? { ...row, content: await openField("messages.content", content) } : row;
 };
 
 /* ------------------------------------------------------------------ gravação */
@@ -75,7 +77,7 @@ const opened = <T extends object>(row: T): T => {
  * contador); "visitante" também marca o contato como presente (widget).
  */
 export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { touch?: "visitante" | "equipe" } = {}): Promise<number | null> {
-  const row = sealed(m);
+  const row = await sealed(m, m.conversation_id);
   const query = m.inbound_key ? db.from("messages").upsert(row, { onConflict: "inbound_key", ignoreDuplicates: true }) : db.from("messages").insert(row);
   const { data, error } = await query.select("id");
   if (error) throw new Error(`mensagem não gravada: ${error.message}`);
@@ -92,7 +94,20 @@ export type MessageTarget = { id: number } | { ids: Array<number | string> } | {
  * desfeitas; withoutRef: só as que ainda não têm a referência do post. Devolve os ids mudados.
  */
 export async function updateMessages(db: SupabaseClient, target: MessageTarget, patch: MessagePatch, only: { notDeleted?: boolean; withoutRef?: boolean } = {}): Promise<number[]> {
-  let q = db.from("messages").update(sealed(patch));
+  let row: MessagePatch = patch;
+  if (patch.content !== undefined) {
+    // conteúdo novo: cifrado com a chave do cliente dono da conversa dessas mensagens
+    let sel = db.from("messages").select("conversation_id");
+    if ("id" in target) sel = sel.eq("id", target.id);
+    else if ("ids" in target) sel = sel.in("id", target.ids);
+    else sel = sel.eq("inbound_key", target.inboundKey);
+    const { data: convs } = await sel;
+    const ids = [...new Set((convs ?? []).map((r) => String(r.conversation_id)))];
+    if (!ids.length) return [];
+    if (ids.length > 1) throw new Error("mensagem não atualizada: conteúdo novo em conversas diferentes");
+    row = await sealed(patch, ids[0]);
+  }
+  let q = db.from("messages").update(row);
   if ("id" in target) q = q.eq("id", target.id);
   else if ("ids" in target) q = q.in("id", target.ids);
   else q = q.eq("inbound_key", target.inboundKey);
@@ -165,10 +180,35 @@ export async function loadMessages<K extends MessageColumn>(db: SupabaseClient, 
   if (q.limit) r = r.limit(q.limit);
   const { data, error } = await r;
   if (error) throw new Error(`mensagens não lidas: ${error.message}`);
-  return ((data ?? []) as unknown as Array<Pick<MessageRow, K>>).map(opened);
+  return Promise.all(((data ?? []) as unknown as Array<Pick<MessageRow, K>>).map(opened));
 }
 
 /** A primeira mensagem que atende à busca (na ordem pedida), ou null. */
 export async function findMessage<K extends MessageColumn>(db: SupabaseClient, q: MessageQuery, columns: readonly K[]): Promise<Pick<MessageRow, K> | null> {
   return (await loadMessages(db, { ...q, limit: 1 }, columns))[0] ?? null;
+}
+
+/* ------------------------------------------------------------------ recifra do histórico (leva S) */
+
+/** Mensagens gravadas antes da cifra (sem o cabeçalho "v2."). */
+export async function countPlainMessages(db: SupabaseClient): Promise<number> {
+  const { count } = await db.from("messages").select("id", { count: "exact", head: true }).not("content", "like", "v2.*");
+  return count ?? 0;
+}
+
+/**
+ * Cifra um lote de mensagens antigas com a chave do cliente dono da conversa. Só troca o valor se
+ * ele ainda está sem cifra (uma edição no meio-tempo já grava cifrado e ganha). Devolve quantas foram cifradas.
+ */
+export async function reencryptMessages(db: SupabaseClient, limit = 300): Promise<number> {
+  const { data, error } = await db.from("messages").select("id, conversation_id, content").not("content", "like", "v2.*").order("id").limit(limit);
+  if (error) throw new Error(`recifra das mensagens: ${error.message}`);
+  let done = 0;
+  for (const r of data ?? []) {
+    const content = String(r.content);
+    const sealedContent = await sealField("messages.content", content, await scopeOfConversation(String(r.conversation_id)));
+    const { data: upd } = await db.from("messages").update({ content: sealedContent }).eq("id", r.id).not("content", "like", "v2.*").select("id");
+    if (upd?.length) done++;
+  }
+  return done;
 }

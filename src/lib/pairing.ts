@@ -3,7 +3,7 @@ import { tool, type Tool } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hmacHex } from "./hash";
-import { openField, sealField, type CipherField } from "./field-cipher";
+import { openNullable, sealField, scopeOfBot, type CipherField } from "./field-cipher";
 import { canonicalPhone } from "./phone";
 import { contextHashOf } from "./identity";
 import { contactActiveLinkId, contactLastInbound, contactPhone, externalIdHash, phoneHash, setActiveLink } from "./contacts";
@@ -54,8 +54,9 @@ export interface LinkRow {
 
 const LINK_COLS = "id, bot_id, contact_id, channel, external_id_hash, external_id_enc, context_hash, context_enc, display, linked_at, identity_key_hash";
 
-const seal = (field: CipherField, v: string) => sealField(field, v);
-const open = (field: CipherField, v: string | null) => (v ? openField(field, v) : null);
+/** Cifra com a chave do cliente dono do chatbot (o código, o vínculo e o contexto vêm da empresa e do contato). */
+const seal = async (field: CipherField, botId: string, v: string) => sealField(field, v, await scopeOfBot(botId));
+const open = (field: CipherField, v: string | null) => openNullable(field, v);
 export const codeHash = (botId: string, code: string) => hmacHex(`pair:${botId}:${code}`);
 
 /** Código novo (6 caracteres, sem 0/O, 1/I/L), sempre com um dígito: digitado sozinho, ele é reconhecido. */
@@ -150,9 +151,9 @@ export async function createPairing(db: SupabaseClient, i: PairingInput, target:
       channel: i.channel,
       code_hash: codeHash(i.botId, code),
       external_id_hash: externalIdHash(i.externalId),
-      external_id_enc: seal("pairing_codes.external_id_enc", i.externalId),
+      external_id_enc: await seal("pairing_codes.external_id_enc", i.botId, i.externalId),
       context_hash: contextHashOf(i.context),
-      context_enc: i.context ? seal("pairing_codes.context_enc", JSON.stringify(i.context)) : null,
+      context_enc: i.context ? await seal("pairing_codes.context_enc", i.botId, JSON.stringify(i.context)) : null,
       display: i.display,
       expected_phone_hash: expected ? phoneHash(expected) : null,
       api_key_id: i.apiKeyId,
@@ -202,10 +203,10 @@ export async function activeLinkOf(db: SupabaseClient, contactId: string): Promi
 }
 
 /** Identidade para a IA e as ações a partir do vínculo (o contexto só vai para as ações). */
-export function chatIdentityFromLink(link: LinkRow, others: LinkRow[] = []): ChatIdentity {
-  const ctx = open("contact_links.context_enc", link.context_enc);
+export async function chatIdentityFromLink(link: LinkRow, others: LinkRow[] = []): Promise<ChatIdentity> {
+  const ctx = await open("contact_links.context_enc", link.context_enc);
   return {
-    externalId: open("contact_links.external_id_enc", link.external_id_enc),
+    externalId: await open("contact_links.external_id_enc", link.external_id_enc),
     userDisplay: link.display?.name ? { name: link.display.name } : null,
     contextDisplay: link.display?.workspace_name ?? null,
     context: ctx ? (JSON.parse(ctx) as Record<string, unknown>) : null,
@@ -216,12 +217,13 @@ export function chatIdentityFromLink(link: LinkRow, others: LinkRow[] = []): Cha
 }
 
 /** Colunas da conversa no contexto deste vínculo (trecho novo a partir de agora). */
-export function linkConversationColumns(link: LinkRow | null, now = new Date().toISOString()): Record<string, unknown> {
+export async function linkConversationColumns(link: LinkRow | null, now = new Date().toISOString()): Promise<Record<string, unknown>> {
   if (!link) return { identity_hash: null, context_hash: null, context_enc: null, context_source: null, context_display: null, context_since: now };
+  const ctx = await open("contact_links.context_enc", link.context_enc);
   return {
     identity_hash: link.external_id_hash,
     context_hash: link.context_hash,
-    context_enc: link.context_enc ? sealField("conversations.context_enc", openField("contact_links.context_enc", link.context_enc)) : null,
+    context_enc: ctx ? await seal("conversations.context_enc", link.bot_id, ctx) : null,
     context_source: "pairing",
     context_display: linkLabel(link.display),
     context_since: now,
@@ -233,14 +235,14 @@ export async function linkColumnsForContact(db: SupabaseClient, contactId: strin
   if (!contactId) return {};
   const { active } = await activeLinkOf(db, contactId);
   if (!active) return {};
-  const { context_since: _since, ...cols } = linkConversationColumns(active);
+  const { context_since: _since, ...cols } = await linkConversationColumns(active);
   void _since;
   return cols;
 }
 
 /** A conversa entra no contexto do vínculo (ou sai de qualquer contexto, com null). */
 export async function applyLinkToConversation(db: SupabaseClient, conversationId: string, link: LinkRow | null): Promise<void> {
-  const { error } = await db.from("conversations").update(linkConversationColumns(link)).eq("id", conversationId);
+  const { error } = await db.from("conversations").update(await linkConversationColumns(link)).eq("id", conversationId);
   if (error) console.error("pareamento: conversa não atualizada", error.message);
 }
 
@@ -254,9 +256,9 @@ async function linkFromPairing(db: SupabaseClient, p: PairingRow, contactId: str
     contact_id: contactId,
     channel: p.channel,
     external_id_hash: p.external_id_hash,
-    external_id_enc: seal("contact_links.external_id_enc", openField("pairing_codes.external_id_enc", p.external_id_enc)),
+    external_id_enc: await seal("contact_links.external_id_enc", p.bot_id, (await open("pairing_codes.external_id_enc", p.external_id_enc)) ?? ""),
     context_hash: p.context_hash,
-    context_enc: p.context_enc ? seal("contact_links.context_enc", openField("pairing_codes.context_enc", p.context_enc)) : null,
+    context_enc: p.context_enc ? await seal("contact_links.context_enc", p.bot_id, (await open("pairing_codes.context_enc", p.context_enc)) ?? "") : null,
     display: p.display,
     pairing_id: p.id,
     identity_key_hash: identityKeyHash,

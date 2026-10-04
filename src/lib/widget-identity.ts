@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { contextHashOf, verifyIdentityToken, type IdentityBot, type IdentityClaims, type TokenProblem } from "./identity";
 import { externalIdHash, widgetUserContact } from "./contacts";
-import { sealField } from "./field-cipher";
+import { sealField, scopeOfBot } from "./field-cipher";
 
 /*
  * Identidade nas rotas do widget (/api/chat, /history, /updates, /handoff): o token vem no
@@ -61,12 +61,13 @@ export function conversationAccess(conv: ConversationIdentity, who: WidgetWho, v
 }
 
 /** Colunas da conversa de nível usuário (conversa nova ou anônima que sobe). */
-export function identityColumns(who: WidgetWho): Record<string, unknown> {
+export async function identityColumns(who: WidgetWho, botId: string): Promise<Record<string, unknown>> {
   if (who.kind !== "token" || (!who.identityHash && !who.contextHash)) return {};
   return {
     identity_hash: who.identityHash,
     context_hash: who.contextHash,
-    context_enc: who.claims.context ? sealField("conversations.context_enc", JSON.stringify(who.claims.context)) : null,
+    // o contexto vem da empresa: cifrado com a chave do cliente dono do chatbot
+    context_enc: who.claims.context ? await sealField("conversations.context_enc", JSON.stringify(who.claims.context), await scopeOfBot(botId)) : null,
     context_source: who.claims.context ? "token" : null,
     context_display: who.claims.contextDisplay,
     ...(who.contactId ? { contact_id: who.contactId } : {}),
@@ -74,8 +75,8 @@ export function identityColumns(who: WidgetWho): Record<string, unknown> {
 }
 
 /** Conversa anônima deste navegador que passa a ser de usuário (só uma vez: depois ela fica presa). */
-export async function upgradeConversation(db: SupabaseClient, conversationId: string, who: WidgetWho): Promise<void> {
-  const cols = identityColumns(who);
+export async function upgradeConversation(db: SupabaseClient, conversationId: string, who: WidgetWho, botId: string): Promise<void> {
+  const cols = await identityColumns(who, botId);
   if (!Object.keys(cols).length) return;
   const { error } = await db.from("conversations").update(cols).eq("id", conversationId).is("identity_hash", null).is("context_hash", null);
   if (error) console.error("identidade: conversa não subiu para usuário", error.message);

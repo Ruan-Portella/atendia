@@ -12,7 +12,8 @@ import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
 import { botGateExemptions } from "./exceptions";
-import { idMapCategories, idMapLinks } from "../action-gate";
+import { idMapCategories, idMapLinks, openIdMap } from "../action-gate";
+import { openNullable, sealField, scopeOfConversation } from "../field-cipher";
 import { activeLinkOf, chatIdentityFromLink, contextSwitchTool } from "../pairing";
 import { INTERNAL_FALLBACK, stripInternal } from "../internal-guard";
 import { CATEGORIES, GATE_TEXTS } from "./rules";
@@ -140,13 +141,16 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   const askAge = async (question: string, reply: string | null = null) => {
     if (!(await sendFixed(GATE_TEXTS.ageQuestion, "idade"))) return;
     const now = new Date().toISOString();
-    await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_pending_reply_enc: reply, age_asked_at: now, regulated_at: now }).eq("id", convId);
+    await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_pending_reply_enc: reply ? await sealField("conversations.age_pending_reply_enc", reply, await scopeOfConversation(convId)) : null, age_asked_at: now, regulated_at: now }).eq("id", convId);
   };
 
   // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
   const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_pending_reply_enc, age_asked_at, regulated_at, gate_id_map_enc, gate_id_map_expires_at, contact_id, context_since").eq("id", convId).maybeSingle();
+  // a resposta guardada até o "Sim" e o mapa de ids vão cifrados com a chave do cliente
+  const pendingReply = await openNullable("conversations.age_pending_reply_enc", pendingRow?.age_pending_reply_enc);
+  const idMap = await openIdMap(pendingRow);
   const pending: PendingAge | null = pendingRow
-    ? { question: (pendingRow.age_pending_question as string | null) ?? null, askedAt: (pendingRow.age_asked_at as string | null) ?? null, reply: (pendingRow.age_pending_reply_enc as string | null) ?? null }
+    ? { question: (pendingRow.age_pending_question as string | null) ?? null, askedAt: (pendingRow.age_asked_at as string | null) ?? null, reply: pendingReply }
     : null;
   const regulatedAt = (pendingRow?.regulated_at as string | null | undefined) ?? null;
   // contexto da conversa (pareamento, P2): a IA só lê o trecho depois da última troca
@@ -214,15 +218,15 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     exempt,
     context: retrieval.context,
     // a base e o que saiu dos dados das ações nesta conversa (pedido com cerveja: "e a cerveja?" pede o 18+)
-    contextCategories: [...retrieval.hits.flatMap((h) => h.gate_categories ?? []), ...idMapCategories(pendingRow)],
+    contextCategories: [...retrieval.hits.flatMap((h) => h.gate_categories ?? []), ...idMapCategories(idMap)],
     companyName: bot.client_name,
     onUsage: (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId: convId, kind: "classificacao", channel, ...u }),
   });
   if (entrance.kind === "proibido") {
     await storeOnce(db, convId, q.text, q.key);
     // o item veio do pedido da própria pessoa ("e o cigarro?"): o texto fixo diz onde ver o pedido completo
-    const fromOrder = entrance.categories.some((c) => idMapCategories(pendingRow).includes(c));
-    const where = fromOrder ? (idMapLinks(pendingRow)[0] ?? regulatedDestination(bot.regulated_channel, bot.human_handoff?.address)?.destino ?? null) : null;
+    const fromOrder = entrance.categories.some((c) => idMapCategories(idMap).includes(c));
+    const where = fromOrder ? (idMapLinks(idMap)[0] ?? regulatedDestination(bot.regulated_channel, bot.human_handoff?.address)?.destino ?? null) : null;
     await sendFixed(where ? GATE_TEXTS.prohibitedSeeElsewhere(where) : GATE_TEXTS.prohibited);
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "proibido", categories: entrance.categories });
     return;
@@ -253,12 +257,12 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   }
 
   // acabou de confirmar 18+ e uma ação tinha tirado bebida ou remédio dos dados: a IA consulta de novo
-  const refetch = answered === "sim" && age === "sim" && idMapCategories(pendingRow).some((c) => CATEGORIES[c].level === "regulamentado") ? AGE_REFETCH_NOTE : null;
+  const refetch = answered === "sim" && age === "sim" && idMapCategories(idMap).some((c) => CATEGORIES[c].level === "regulamentado") ? AGE_REFETCH_NOTE : null;
 
   // contato vinculado (pareamento): nível usuario e o contexto ativo; com 2 contas ou mais, a IA pode trocar
   const contactId = (pendingRow?.contact_id as string | null | undefined) ?? null;
   const links = contactId ? await activeLinkOf(db, contactId) : null;
-  const identity = links?.active ? chatIdentityFromLink(links.active, links.all) : null;
+  const identity = links?.active ? await chatIdentityFromLink(links.active, links.all) : null;
   const extraTools = contactId && links ? contextSwitchTool(db, { contactId, conversationId: convId, links: links.all, activeId: links.active?.id ?? null }) : {};
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)

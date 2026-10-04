@@ -18,7 +18,8 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const OWNER: Record<string, string> = { messages: "lib/messages.ts", contacts: "lib/contacts.ts" };
+// chaves dos clientes (leva S): só o módulo único de chaves lê a tabela
+const OWNER: Record<string, string> = { messages: "lib/messages.ts", contacts: "lib/contacts.ts", client_keys: "lib/keys.ts" };
 
 describe("camada única de mensagens e contatos", () => {
   for (const [table, owner] of Object.entries(OWNER)) {

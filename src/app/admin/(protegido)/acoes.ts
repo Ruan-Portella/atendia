@@ -683,3 +683,15 @@ export async function testPilotWebhook(agencyId: string, id: string): Promise<Ac
   const okStatus = r.status !== null && r.status >= 200 && r.status < 300 && !r.error;
   return okStatus ? ok(`Entregue: HTTP ${r.status}.`) : fail(`Não entregue: ${r.error ?? `HTTP ${r.status}`}.`);
 }
+
+/** Recifra do histórico agora (até ~45 s); o resto segue na rotina diária. */
+export async function runReencryptNow(): Promise<ActionResult> {
+  const s = await requireAdmin("/admin/operacao (recifrou o histórico)");
+  const { deadline } = await import("@/lib/cron");
+  const { reencryptHistory } = await import("@/lib/reencrypt");
+  const done = await reencryptHistory(createAdminClient(), deadline(45_000), 200);
+  const total = Object.values(done).reduce((a, b) => a + b, 0);
+  await auditAdmin(s.email, "cifra.recifrar", { after: done });
+  revalidatePath("/admin/operacao");
+  return ok(total ? `Cifradas agora: ${Object.entries(done).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(" · ")}.` : "Nada a cifrar: o histórico já está todo cifrado.");
+}

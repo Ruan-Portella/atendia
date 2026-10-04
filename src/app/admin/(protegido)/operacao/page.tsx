@@ -3,6 +3,12 @@ import { requireAdmin } from "@/lib/platform-admin";
 import { IG_TOKEN_WARN_DAYS, getOperations, operationAlerts, type BotRef } from "@/lib/backoffice-ops";
 import { num } from "@/lib/plans";
 import { cn, relativeTime } from "@/lib/utils";
+import { plainCounts } from "@/lib/reencrypt";
+import { masterKeys } from "@/lib/keys";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ResultForm } from "@/components/admin/result-form";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { runReencryptNow } from "../acoes";
 
 export const metadata = { title: "Operação" };
 
@@ -16,6 +22,10 @@ export default async function AdminOperations() {
   await requireAdmin("/admin/operacao");
   const ops = await getOperations();
   const alerts = operationAlerts(ops);
+  // cifra por campo (leva S): quanto do histórico ainda está sem cifra e as versões da chave mestra
+  const plain = await plainCounts(createAdminClient()).catch(() => null);
+  const plainTotal = plain ? Object.values(plain).reduce((a, b) => a + b, 0) : null;
+  const versions = [...masterKeys().keys()].sort((a, b) => a - b);
   const h = ops.health;
   const ch = ops.channels;
 
@@ -34,6 +44,21 @@ export default async function AdminOperations() {
       ) : (
         <p className="rounded-xl border border-line bg-panel px-4 py-3 text-sm">✓ Tudo em dia.</p>
       )}
+
+      <section className="card flex flex-col gap-2 p-5">
+        <h2 className="text-base font-bold">Cifra por campo</h2>
+        <p className="text-xs text-muted">
+          O que vem do contato vai cifrado com a chave do cliente; tokens e segredos, com a chave mestra (versões: {versions.join(", ") || "nenhuma"}; a atual é a maior). O que foi gravado antes da cifra é cifrado em lotes pela rotina diária.
+        </p>
+        <p className="text-sm">
+          {plainTotal === null ? "Não foi possível contar agora." : plainTotal === 0 ? "✓ Todo o histórico está cifrado." : `Ainda sem cifra: ${num(plainTotal)} (${Object.entries(plain!).filter(([, n]) => n).map(([k, n]) => `${k} ${num(n)}`).join(" · ")})`}
+        </p>
+        {plainTotal !== 0 && (
+          <ResultForm action={runReencryptNow}>
+            <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Cifrando…">Recifrar agora</SubmitButton>
+          </ResultForm>
+        )}
+      </section>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Banco" value={h.dbWrite ? "ok" : "com erro"} sub={h.dbWriteMs !== null ? `escrita em ${h.dbWriteMs} ms` : (h.error ?? "sem resposta")} />

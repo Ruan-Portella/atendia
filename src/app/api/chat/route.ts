@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     if (!data || access === "denied" || !isResumable(data.last_message_at)) convId = null;
     else {
       // conversa anônima deste navegador com o primeiro token: passa a ser da pessoa (uma vez)
-      if (access === "upgrade") await upgradeConversation(db, data.id, who);
+      if (access === "upgrade") await upgradeConversation(db, data.id, who, bot.id);
       conv = data;
       if (!data.handled_at) handoff = data.takeover_at ? "agent" : data.handoff_requested_at ? "requested" : null;
     }
@@ -135,7 +135,7 @@ export async function POST(req: Request) {
       visitorId: visitorId ?? null,
       channel: bot.is_demo ? "demo" : channel,
       identity: chatIdentityOf(who),
-      identityColumns: identityColumns(who),
+      identityColumns: await identityColumns(who, bot.id),
     });
     // registro de acesso do visitante (Marco Civil): IP quando a conversa começa e quando muda;
     // o teste ao vivo do painel já fica no registro de acesso do painel

@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     const { data } = await db.from("conversations").select("id, visitor_id, identity_hash, context_hash, last_message_at, takeover_at, handled_at").eq("id", conversationId).eq("bot_id", bot.id).maybeSingle();
     const access = data ? conversationAccess(data, who, visitorId ?? null) : "denied";
     if (data && access !== "denied" && isResumable(data.last_message_at)) {
-      if (access === "upgrade") await upgradeConversation(db, data.id, who);
+      if (access === "upgrade") await upgradeConversation(db, data.id, who, bot.id);
       convId = data.id;
     }
   }
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
   if (mode.step === 2) return Response.json({ error: "channel_suspended", message: SUSPENDED_NOTICE }, { status: 403, headers: CORS_HEADERS });
 
   try {
-    convId ??= await openConversation(db, bot, { channel: bot.is_demo ? "demo" : channel, visitorId: visitorId ?? null, identity: identityColumns(who) });
+    convId ??= await openConversation(db, bot, { channel: bot.is_demo ? "demo" : channel, visitorId: visitorId ?? null, identity: await identityColumns(who, bot.id) });
   } catch {
     return Response.json({ error: "chat_failed", fallback: "contact", message: "No momento não consigo responder por aqui. Deixe seu contato que a equipe retorna em breve." }, { status: 402, headers: CORS_HEADERS });
   }

@@ -185,13 +185,13 @@ describe("pedido com bebida e cigarro", () => {
 
 describe("o que saiu das ações vale nas perguntas seguintes", () => {
   it("categorias do mapa de ids enquanto ele vale (24 h)", async () => {
-    const { idMapCategories } = await import("../action-gate");
+    const { idMapCategories, openIdMap } = await import("../action-gate");
     const now = Date.parse("2026-10-03T15:42:56Z");
     const row = { gate_id_map_enc: JSON.stringify({ b7: { categoria: "bebida", rotulo: "Heineken" }, c9: { categoria: "tabaco", rotulo: "Cigarro" }, ped_123: { categoria: "bebida", rotulo: null } }), gate_id_map_expires_at: "2026-10-04T15:42:22Z" };
-    expect(idMapCategories(row, now).sort()).toEqual(["bebida", "tabaco"]);
-    expect(idMapCategories(row, Date.parse("2026-10-05T00:00:00Z"))).toEqual([]);
-    expect(idMapCategories(null, now)).toEqual([]);
-    expect(idMapCategories({ gate_id_map_enc: "lixo", gate_id_map_expires_at: "2026-10-04T15:42:22Z" }, now)).toEqual([]);
+    expect(idMapCategories(await openIdMap(row, now)).sort()).toEqual(["bebida", "tabaco"]);
+    expect(idMapCategories(await openIdMap(row, Date.parse("2026-10-05T00:00:00Z")))).toEqual([]);
+    expect(idMapCategories(await openIdMap(null, now))).toEqual([]);
+    expect(idMapCategories(await openIdMap({ gate_id_map_enc: "lixo", gate_id_map_expires_at: "2026-10-04T15:42:22Z" }, now))).toEqual([]);
   });
 
   it("o histórico diz o que saiu, num aviso que vale antes e depois do Sim", () => {
@@ -206,12 +206,12 @@ describe("o que saiu das ações vale nas perguntas seguintes", () => {
 
 describe("onde ver o item proibido do próprio pedido", () => {
   it("o link do pedido fica no mapa de ids e volta para o texto fixo", async () => {
-    const { idMapLinks } = await import("../action-gate");
+    const { idMapLinks, openIdMap } = await import("../action-gate");
     const pedido = { pedido: { id: "ped_9", url: "https://loja.com/pedido/9", itens: [{ id: "p1", nome: "Pizza" }, { id: "c9", nome: "Maço de cigarro" }] } };
     const r = gateActionData(pedido, { channel: "whatsapp", contactPhone: "5521999999999", age: "sim" });
     expect(r.ids.ped_9).toMatchObject({ categoria: "tabaco", link: "https://loja.com/pedido/9" });
     const row = { gate_id_map_enc: JSON.stringify(r.ids), gate_id_map_expires_at: "2099-01-01T00:00:00Z" };
-    expect(idMapLinks(row)).toEqual(["https://loja.com/pedido/9"]);
+    expect(idMapLinks(await openIdMap(row))).toEqual(["https://loja.com/pedido/9"]);
     const { GATE_TEXTS } = await import("../gate/rules");
     expect(GATE_TEXTS.prohibitedSeeElsewhere("https://loja.com/pedido/9")).toContain("fora do chat: https://loja.com/pedido/9");
   });

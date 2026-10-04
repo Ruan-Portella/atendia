@@ -1,3 +1,4 @@
+import { sealNullable, scopeOfBot } from "./field-cipher";
 import { createHash } from "node:crypto";
 import { generateText } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -195,7 +196,8 @@ export async function analyzeBot(db: SupabaseClient, botId: string, opts: { forc
       bot_id: botId,
       kind: "bot_analysis",
       labels: { categorias: found, fontes: sources.length, ia_como_produto: answer.ia_como_produto, modelo_proibido: answer.modelo_proibido, categoria_principal: answer.categoria_principal },
-      summary_enc: [answer.resumo, answer.motivo_ia].filter(Boolean).join(" · ") || null,
+      // resumo do negócio escrito pela IA: cifrado com a chave do cliente
+      summary_enc: await sealNullable("compliance_checks.summary_enc", [answer.resumo, answer.motivo_ia].filter(Boolean).join(" · ") || null, await scopeOfBot(botId)),
       summary_expires_at: new Date(Date.now() + 30 * 86_400_000).toISOString(),
       rules_version: RULES_VERSION,
       input_hash: inputHash,

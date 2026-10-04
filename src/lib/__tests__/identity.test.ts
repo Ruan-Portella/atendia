@@ -119,10 +119,10 @@ describe("conversa presa à pessoa (teste de aceite da P2)", () => {
     expect(conversationAccess(conv, who(null, ws), "navegador-2")).toBe("denied");
   });
 
-  it("colunas da conversa de usuário: o contexto vai selado, nunca em texto para a IA", () => {
-    const cols = identityColumns(who("hA", ws));
+  it("colunas da conversa de usuário: o contexto vai selado, nunca em texto para a IA", async () => {
+    const cols = await identityColumns(who("hA", ws), "bot-1");
     expect(cols).toMatchObject({ identity_hash: "hA", context_hash: contextHashOf(ws), context_source: "token" });
-    expect(identityColumns({ kind: "anon" })).toEqual({});
+    expect(await identityColumns({ kind: "anon" }, "bot-1")).toEqual({});
   });
 });
 

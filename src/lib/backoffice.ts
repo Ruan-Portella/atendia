@@ -1,3 +1,4 @@
+import { openNullable } from "./field-cipher";
 import { cache } from "react";
 import type Stripe from "stripe";
 import { createAdminClient } from "./supabase/admin";
@@ -788,7 +789,7 @@ export async function getBotAnalyses(): Promise<{ pending: BotAnalysisRow[]; rec
     db.from("bots").select("id", { count: "exact", head: true }).eq("is_demo", false).lte("analysis_due_at", new Date().toISOString()),
   ]);
   const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
-  const map = (r: Record<string, unknown>): BotAnalysisRow => {
+  const map = async (r: Record<string, unknown>): Promise<BotAnalysisRow> => {
     const bot = one(r.bots as { name: string; client_name: string } | null);
     const l = (r.labels ?? {}) as { ia_como_produto?: string; modelo_proibido?: string; categoria_principal?: string | null; categorias?: BotAnalysisRow["categorias"]; fontes?: number };
     const expired = r.summary_expires_at && Date.parse(r.summary_expires_at as string) < Date.now();
@@ -805,12 +806,12 @@ export async function getBotAnalyses(): Promise<{ pending: BotAnalysisRow[]; rec
       categoriaPrincipal: l.categoria_principal ?? null,
       categorias: l.categorias ?? [],
       fontes: l.fontes ?? 0,
-      summary: expired ? null : ((r.summary_enc as string | null) ?? null),
+      summary: expired ? null : await openNullable("compliance_checks.summary_enc", r.summary_enc),
       reviewState: r.review_state as BotAnalysisRow["reviewState"],
       resolution: (r.resolution as string | null) ?? null,
       resolvedBy: (r.resolved_by as string | null) ?? null,
       createdAt: r.created_at as string,
     };
   };
-  return { pending: (pending ?? []).map(map), recent: (recent ?? []).map(map), due: due ?? 0 };
+  return { pending: await Promise.all((pending ?? []).map(map)), recent: await Promise.all((recent ?? []).map(map)), due: due ?? 0 };
 }

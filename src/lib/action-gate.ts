@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dictionaryHits } from "./gate/match";
+import { openField, sealField, scopeOfConversation } from "./field-cipher";
 import type { AgeStatus } from "./gate/age";
 import type { GateCategory, GateChannel } from "./gate/rules";
 
@@ -134,36 +135,40 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
  * entrada do portão usa como "a empresa tem o item" ("e a cerveja?" depois de um pedido com
  * cerveja vira a pergunta de 18+). Função pura.
  */
-export function idMapCategories(row: IdMapRow, now = Date.now()): GateCategory[] {
-  return [...new Set(activeIdMap(row, now).map((e) => e.categoria))];
+export function idMapCategories(entries: IdMapEntry[]): GateCategory[] {
+  return [...new Set(entries.map((e) => e.categoria))];
 }
 
 /** Links dos pedidos que perderam itens nesta conversa (onde ver o que não sai no chat). Função pura. */
-export function idMapLinks(row: IdMapRow, now = Date.now()): string[] {
-  return [...new Set(activeIdMap(row, now).flatMap((e) => (e.link ? [e.link] : [])))];
+export function idMapLinks(entries: IdMapEntry[]): string[] {
+  return [...new Set(entries.flatMap((e) => (e.link ? [e.link] : [])))];
 }
 
 type IdMapRow = { gate_id_map_enc?: unknown; gate_id_map_expires_at?: unknown } | null | undefined;
 
-function activeIdMap(row: IdMapRow, now: number): IdMapEntry[] {
-  if (typeof row?.gate_id_map_enc !== "string" || typeof row.gate_id_map_expires_at !== "string" || Date.parse(row.gate_id_map_expires_at) <= now) return [];
+/** O mapa de ids que ainda vale (aberto: vai cifrado com a chave do cliente). */
+export async function openIdMap(row: IdMapRow, now = Date.now()): Promise<IdMapEntry[]> {
+  return Object.values(await openIdMapObject(row, now));
+}
+
+async function openIdMapObject(row: IdMapRow, now: number): Promise<IdMap> {
+  if (typeof row?.gate_id_map_enc !== "string" || typeof row.gate_id_map_expires_at !== "string" || Date.parse(row.gate_id_map_expires_at) <= now) return {};
   try {
-    return Object.values(JSON.parse(row.gate_id_map_enc) as IdMap);
+    return JSON.parse(await openField("conversations.gate_id_map_enc", row.gate_id_map_enc)) as IdMap;
   } catch {
-    return [];
+    return {};
   }
 }
 
-/** Grava o mapa de ids da conversa por 24 horas (junta com o que ainda vale). */
+/** Grava o mapa de ids da conversa por 24 horas (junta com o que ainda vale), cifrado com a chave do cliente. */
 export async function saveIdMap(db: SupabaseClient, conversationId: string, ids: IdMap): Promise<void> {
   if (!Object.keys(ids).length) return;
   const { data } = await db.from("conversations").select("gate_id_map_enc, gate_id_map_expires_at").eq("id", conversationId).maybeSingle();
-  const current: IdMap = data?.gate_id_map_enc && data.gate_id_map_expires_at && Date.parse(data.gate_id_map_expires_at as string) > Date.now() ? (JSON.parse(data.gate_id_map_enc as string) as IdMap) : {};
-  const merged = { ...current, ...ids };
-  // sem cifra até a leva S (como as outras colunas _enc)
+  const merged = { ...(await openIdMapObject(data, Date.now())), ...ids };
+  const sealed = await sealField("conversations.gate_id_map_enc", JSON.stringify(merged), await scopeOfConversation(conversationId));
   const { error } = await db
     .from("conversations")
-    .update({ gate_id_map_enc: JSON.stringify(merged), gate_id_map_expires_at: new Date(Date.now() + 24 * 3_600_000).toISOString() })
+    .update({ gate_id_map_enc: sealed, gate_id_map_expires_at: new Date(Date.now() + 24 * 3_600_000).toISOString() })
     .eq("id", conversationId);
   if (error) console.error("mapa de ids: não gravado", error.message);
 }

@@ -1,3 +1,4 @@
+import { openField, sealField, sealNullable, scopeOfBot } from "./field-cipher";
 import { stableJson } from "./hash";
 import { createHash, randomBytes } from "node:crypto";
 import { generateText } from "ai";
@@ -284,7 +285,7 @@ export async function callAction(db: SupabaseClient, action: ActionRow, i: CallI
   const callId = mode === "test" ? `call_test_${randomBytes(12).toString("hex")}` : queryCallId(i.messageKey ?? randomBytes(8).toString("hex"), action.id, i.params);
   const { data: previous } = await db.from("action_calls").select("attempt, status, response_enc, http_status").eq("call_id", callId).order("attempt", { ascending: false });
   const done = (previous ?? []).find((p) => p.status === "ok" && p.response_enc);
-  if (done) return { ...readResponse((done.http_status as number) ?? 200, String(done.response_enc)), callId, httpStatus: (done.http_status as number) ?? 200, durationMs: 0, warnings: [], reused: true };
+  if (done) return { ...readResponse((done.http_status as number) ?? 200, await openField("action_calls.response_enc", String(done.response_enc))), callId, httpStatus: (done.http_status as number) ?? 200, durationMs: 0, warnings: [], reused: true };
   const attempt = ((previous?.[0]?.attempt as number | undefined) ?? 0) + 1;
 
   const body = JSON.stringify(callBody(action, callId, { ...i, mode }));
@@ -327,6 +328,7 @@ export async function callAction(db: SupabaseClient, action: ActionRow, i: CallI
 }
 
 async function logCall(db: SupabaseClient, c: { action: ActionRow; callId: string; attempt: number; mode: CallMode; params: Record<string, unknown>; status: CallStatus; httpStatus: number | null; durationMs: number; headerNames: string[]; body: string; response: string | null }) {
+  const scope = await scopeOfBot(c.action.bot_id);
   const { error } = await db.from("action_calls").insert({
     action_id: c.action.id,
     conversation_id: (JSON.parse(c.body) as { conversation?: { id?: string } | null }).conversation?.id?.replace(/^conv_/, "") ?? null,
@@ -337,9 +339,10 @@ async function logCall(db: SupabaseClient, c: { action: ActionRow; callId: strin
     status: c.status,
     http_status: c.httpStatus,
     duration_ms: c.durationMs,
-    // só os nomes dos cabeçalhos personalizados, nunca os valores
-    request_enc: JSON.stringify({ body: JSON.parse(c.body), headers: c.headerNames }),
-    response_enc: c.response,
+    // só os nomes dos cabeçalhos personalizados, nunca os valores; corpo e resposta têm dados do
+    // contato: cifrados com a chave do cliente dono do chatbot
+    request_enc: await sealField("action_calls.request_enc", JSON.stringify({ body: JSON.parse(c.body), headers: c.headerNames }), scope),
+    response_enc: await sealNullable("action_calls.response_enc", c.response, scope),
   });
   if (error) console.error("ação: chamada não registrada", error.message);
 }

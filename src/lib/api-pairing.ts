@@ -77,20 +77,22 @@ async function linksOf(req: Request, api: ApiContext, contactParam: string) {
     .is("unlinked_at", null)
     .order("linked_at");
   const phoneOf = new Map(contacts.map((c) => [c.id, c.phone]));
-  return (data ?? []).map((l) => ({
+  return Promise.all(
+    (data ?? []).map(async (l) => ({
     raw: l,
     out: {
       id: `lnk_${l.id}`,
       bot_id: `bot_${l.bot_id}`,
       contact_id: `ctc_${l.contact_id}`,
       channel: l.channel,
-      external_id: openField("contact_links.external_id_enc", String(l.external_id_enc)),
-      context: l.context_enc ? (JSON.parse(openField("contact_links.context_enc", String(l.context_enc))) as unknown) : null,
+      external_id: await openField("contact_links.external_id_enc", String(l.external_id_enc)),
+      context: l.context_enc ? (JSON.parse(await openField("contact_links.context_enc", String(l.context_enc))) as unknown) : null,
       display: l.display ?? null,
       phone_masked: l.channel === "whatsapp" ? maskPhone(phoneOf.get(l.contact_id as string) ?? null) : null,
       linked_at: l.linked_at,
     },
-  }));
+  })),
+  );
 }
 
 export async function getLinks(req: Request, api: ApiContext, contactParam: string): Promise<Response> {

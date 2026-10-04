@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { seal, unseal } from "./secret-box";
-import { openField, sealField } from "./field-cipher";
+import { openField, sealField, scopeOfBot } from "./field-cipher";
 import { newActionSecret, signatureHeader } from "./actions";
 import { safePost } from "./safe-fetch";
 import { contactChannelIds } from "./contacts";
@@ -116,7 +116,7 @@ interface DeliveryRow {
 
 /** Uma tentativa: entregue, nova tentativa agendada, ou falha final; 410 e 3 dias de falhas desativam. */
 async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = Date.now()): Promise<"delivered" | "pending" | "failed"> {
-  const body = openField("webhook_deliveries.payload_enc", d.payload_enc);
+  const body = await openField("webhook_deliveries.payload_enc", d.payload_enc);
   const r = await post(w, d.event_id, body);
   const attempts = d.attempts + 1;
   if (r.status !== null && r.status >= 200 && r.status < 300 && !r.error) {
@@ -151,7 +151,8 @@ export async function emitEvent(db: SupabaseClient, e: { type: WebhookEvent; key
     contact: e.contact,
     data: e.data,
   };
-  const payload_enc = sealField("webhook_deliveries.payload_enc", JSON.stringify(envelope));
+  // o corpo guardado vai cifrado com a chave do cliente (as novas tentativas leem dele)
+  const payload_enc = await sealField("webhook_deliveries.payload_enc", JSON.stringify(envelope), await scopeOfBot(e.bot.id));
   for (const w of targets) {
     // o mesmo fato para o mesmo webhook sai uma vez só (repetição do evento não duplica)
     const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc }).select("id, webhook_id, event_id, payload_enc, attempts").maybeSingle<DeliveryRow>();
@@ -202,7 +203,7 @@ export async function emitLinkEvent(db: SupabaseClient, linkId: string, action: 
   const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name").eq("id", link.bot_id).maybeSingle();
   if (!bot) return;
   const ids = await contactChannelIds(db, String(link.contact_id));
-  const externalId = openField("contact_links.external_id_enc", String(link.external_id_enc));
+  const externalId = await openField("contact_links.external_id_enc", String(link.external_id_enc));
   const phoneMasked = link.channel === "whatsapp" && ids.phone ? `${"*".repeat(Math.max(0, ids.phone.length - 4))}${ids.phone.slice(-4)}` : null;
   await emitEvent(db, {
     type: action === "linked" ? "contact.linked" : "contact.unlinked",

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
 import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
 import { unlinkInactive } from "@/lib/pairing";
+import { reencryptHistory } from "@/lib/reencrypt";
 import { refreshInstagramTokens } from "@/lib/instagram-channel";
 import { checkHealth } from "@/lib/health";
 import { notifyPlatform } from "@/lib/notify";
@@ -51,6 +52,8 @@ async function daily() {
   const retention = await run("limpeza LGPD", () => applyRetention(db));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
+  // cifra por campo (leva S): o histórico ainda sem cifra é cifrado em lotes, com o tempo que sobrar
+  const cipher = await run("recifra do histórico", () => reencryptHistory(db, () => hasTime(), 200));
   // vínculo do WhatsApp sem o sinal de identidade da Meta cai depois de 180 dias sem mensagem (P2)
   const links = await run("vínculos inativos", () => unlinkInactive(db));
   // conversas de antes dos contatos ganham a ficha do contato, em lotes
@@ -81,5 +84,5 @@ async function daily() {
   // análise do bot: as agendadas (gatilhos agrupados) e os clientes antigos
   // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, trial, retention, acceptances, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, trial, retention, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }
