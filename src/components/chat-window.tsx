@@ -149,7 +149,12 @@ export function ChatWindow({
   const tokenRef = useRef<string | null>(null);
   const [identityState, setIdentityState] = useState<"waiting" | "ready">(identity && embedded ? "waiting" : "ready");
   const [identityEpoch, setIdentityEpoch] = useState(0);
+  // token recusado: pede outro uma vez; recusado de novo, segue anônimo numa conversa nova
+  const [authRetried, setAuthRetried] = useState(false);
   const auth = (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {});
+  // sem identidade daqui em diante: o mesmo caminho do logout (o tratamento das mensagens do
+  // widget.js limpa a tela e abre uma conversa anônima)
+  const dropIdentity = () => window.dispatchEvent(new MessageEvent("message", { data: { type: "chat-widget:context", token: null }, source: window.parent }));
 
   const transport = useMemo(
     () =>
@@ -161,12 +166,21 @@ export function ChatWindow({
           const headers = new Headers(init?.headers);
           if (token) headers.set("Authorization", `Bearer ${token}`);
           const res = await fetch(url, { ...init, headers });
-          // token vencido ou inválido: o widget.js pede outro ao site (uma vez)
+          // token vencido ou inválido: o widget.js pede outro ao site (uma vez); recusado de novo,
+          // a conversa de usuário some e segue anônimo
           if (res.status === 401) {
-            notifyParent({ type: "chat-widget:token-request" });
-            setErrorText("Sua sessão foi atualizada. Envie a mensagem de novo.");
+            if (!authRetried) {
+              setAuthRetried(true);
+              notifyParent({ type: "chat-widget:token-request" });
+              setErrorText("Sua sessão foi atualizada. Envie a mensagem de novo.");
+            } else {
+              setAuthRetried(false);
+              dropIdentity();
+              setErrorText("Não consegui confirmar quem você é. Seguimos por aqui sem identificação: envie de novo.");
+            }
             return res;
           }
+          if (authRetried) setAuthRetried(false);
           const cid = res.headers.get("X-Conversation-Id");
           if (cid) setConversationId(cid);
           const h = res.headers.get("X-Handoff");
@@ -183,7 +197,7 @@ export function ChatWindow({
           return res;
         },
       }),
-    [apiBase, bot.key, conversationId, visitorId, channel, token],
+    [apiBase, bot.key, conversationId, visitorId, channel, token, authRetried],
   );
 
   const router = useRouter();
