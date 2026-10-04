@@ -4,6 +4,7 @@ import { notifyAgencyOwner } from "./notify";
 import { appUrl, daysAgoIso } from "./utils";
 import { deleteLeadsBefore } from "./leads";
 import { deleteUnansweredBefore } from "./unanswered";
+import { reportedUntil } from "./report-daily";
 
 /**
  * Tarefas diárias (rodam juntas em /api/cron/daily: o plano Hobby da Vercel só permite 2 crons).
@@ -70,11 +71,14 @@ export async function applyRetention(db: SupabaseClient) {
   // análise do bot: o resumo escrito pela IA sai em 30 dias (os rótulos ficam 1 ano)
   await db.from("compliance_checks").update({ summary_enc: null }).lt("summary_expires_at", new Date().toISOString()).not("summary_enc", "is", null);
   await db.from("compliance_checks").delete().lt("created_at", daysAgoIso(365)).neq("review_state", "pending");
+  // os totais diários vêm antes: nada depois do último dia agregado é apagado (sem totais, nada sai)
+  const until = await reportedUntil(db);
+  if (!until) return { conversations: 0, leads: 0, skipped: "totais diários ainda não agregados" };
   const { data: agencies } = await db.from("agencies").select("id, retention_months").not("retention_months", "is", null);
   let conversations = 0;
   let leads = 0;
   for (const a of agencies ?? []) {
-    const cutoff = daysAgoIso(Number(a.retention_months) * 30);
+    const cutoff = [daysAgoIso(Number(a.retention_months) * 30), until.toISOString()].sort()[0];
     const { data: bots } = await db.from("bots").select("id").eq("agency_id", a.id);
     const ids = (bots ?? []).map((b) => b.id);
     if (!ids.length) continue;

@@ -685,6 +685,19 @@ export async function testPilotWebhook(agencyId: string, id: string): Promise<Ac
 }
 
 /** Recifra do histórico agora (até ~45 s); o resto segue na rotina diária. */
+/** Totais diários (report_daily): recalcula agora o que falta (na dev a rotina diária não roda sozinha). */
+export async function runReportDailyNow(): Promise<ActionResult> {
+  const s = await requireAdmin("/admin/operacao (recalculou os totais diários)");
+  const { deadline } = await import("@/lib/cron");
+  const { refreshReportDaily } = await import("@/lib/report-daily");
+  const r = await refreshReportDaily(createAdminClient(), deadline(45_000));
+  await auditAdmin(s.email, "relatorio.totais_diarios", { after: r });
+  revalidatePath("/admin/operacao");
+  const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("pt-BR");
+  if ("nothing" in r) return ok(`Nada a recalcular: os totais já vão até ${r.through ? day(r.through) : "ontem"}.`);
+  return ok(`Totais recalculados de ${day(r.from)} a ${day(r.through ?? r.to)} (${r.rows} linha${r.rows === 1 ? "" : "s"}).${r.through && r.through < r.to ? " Faltou tempo para o resto: clique de novo." : ""}`);
+}
+
 export async function runReencryptNow(): Promise<ActionResult> {
   const s = await requireAdmin("/admin/operacao (recifrou o histórico)");
   const { deadline } = await import("@/lib/cron");

@@ -8,7 +8,8 @@ import { masterKeys } from "@/lib/keys";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { runReencryptNow } from "../acoes";
+import { runReencryptNow, runReportDailyNow } from "../acoes";
+import { reportedThrough } from "@/lib/report-daily";
 
 export const metadata = { title: "Operação" };
 
@@ -26,6 +27,8 @@ export default async function AdminOperations() {
   const plain = await plainCounts(createAdminClient()).catch(() => null);
   const plainTotal = plain ? Object.values(plain).reduce((a, b) => a + b, 0) : null;
   const versions = [...masterKeys().keys()].sort((a, b) => a - b);
+  // totais diários (relatórios): até que dia já estão somados
+  const through = await reportedThrough(createAdminClient()).catch(() => null);
   const h = ops.health;
   const ch = ops.channels;
 
@@ -58,6 +61,17 @@ export default async function AdminOperations() {
             <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Cifrando…">Recifrar agora</SubmitButton>
           </ResultForm>
         )}
+      </section>
+
+      <section className="card flex flex-col gap-2 p-5">
+        <h2 className="text-base font-bold">Totais diários dos relatórios</h2>
+        <p className="text-xs text-muted">
+          Relatórios, portal e painel somam os totais por dia (sem dado do contato) com a contagem ao vivo dos dias seguintes. A rotina diária recalcula os 2 últimos dias antes da limpeza, e a limpeza não apaga nada depois do último dia somado.
+        </p>
+        <p className="text-sm">{through ? `Somados até ${new Date(`${through}T12:00:00Z`).toLocaleDateString("pt-BR")}.` : "Ainda não somados: a limpeza por prazo fica parada até a primeira soma."}</p>
+        <ResultForm action={runReportDailyNow}>
+          <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Somando…">Recalcular agora</SubmitButton>
+        </ResultForm>
       </section>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">

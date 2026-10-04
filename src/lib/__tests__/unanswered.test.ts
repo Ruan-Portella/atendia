@@ -61,7 +61,7 @@ describe("recordUnanswered", () => {
   it("registra pergunta nova", async () => {
     const { db, inserts } = fakeDb([]);
     await recordUnanswered(db, "bot", "conv", "  Tem   estacionamento? ");
-    expect(inserts).toEqual([{ bot_id: "bot", question: "Tem estacionamento?" }]);
+    expect(inserts).toEqual([{ bot_id: "bot", conversation_id: "conv", question: "Tem estacionamento?" }]);
   });
 
   it("não duplica a mesma pergunta pendente (acento, maiúscula e ? não importam)", async () => {

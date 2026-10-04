@@ -53,7 +53,7 @@ export async function recordUnanswered(db: SupabaseClient, botId: string, conver
   const { data: pending } = await db.from("unanswered").select("id, question").eq("bot_id", botId).eq("resolved", false).order("created_at", { ascending: false }).limit(50);
   const same = (a: string) => strip(a).replace(/[?!.\s]+$/, "") === strip(q).replace(/[?!.\s]+$/, "");
   const opened = await Promise.all((pending ?? []).map((p) => openField("unanswered.question", String(p.question))));
-  if (!opened.some(same)) await db.from("unanswered").insert({ bot_id: botId, question: await sealField("unanswered.question", q, await scopeOfBot(botId)) });
+  if (!opened.some(same)) await db.from("unanswered").insert({ bot_id: botId, conversation_id: conversationId, question: await sealField("unanswered.question", q, await scopeOfBot(botId)) });
   await db.from("conversations").update({ needs_human: true }).eq("id", conversationId);
 }
 

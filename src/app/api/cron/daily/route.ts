@@ -4,6 +4,7 @@ import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
 import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
 import { unlinkInactive } from "@/lib/pairing";
 import { reencryptHistory } from "@/lib/reencrypt";
+import { refreshReportDaily } from "@/lib/report-daily";
 import { refreshInstagramTokens } from "@/lib/instagram-channel";
 import { checkHealth } from "@/lib/health";
 import { notifyPlatform } from "@/lib/notify";
@@ -49,6 +50,8 @@ async function daily() {
   // fila da Meta primeiro: evento esquecido é contato sem resposta
   const inbound = await run("fila da Meta", () => sweepInbound(db, inboundHandlers, hasTime));
   const trial = await run("avisos de teste", () => trialReminders(db));
+  // totais diários antes da retenção: o que ela apagar já está somado nos relatórios
+  const reports = await run("totais diários", () => refreshReportDaily(db, () => hasTime()));
   const retention = await run("limpeza LGPD", () => applyRetention(db));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
@@ -84,5 +87,5 @@ async function daily() {
   // análise do bot: as agendadas (gatilhos agrupados) e os clientes antigos
   // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, trial, retention, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, trial, reports, retention, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }
