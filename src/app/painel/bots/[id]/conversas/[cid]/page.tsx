@@ -1,3 +1,4 @@
+import { contactDisplayName } from "@/lib/contacts";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -33,7 +34,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, regulated_at, bots(name, client_id, client_name)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, regulated_at, identity_hash, context_display, bots(name, client_id, client_name)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -61,6 +62,8 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
     templates = ch ? await listSendable(ch).catch(() => []) : null;
   }
   const contactName = leads?.[0]?.name ?? "";
+  // pessoa identificada pela empresa (token do site ou pareamento, P2) e o contexto da conversa
+  const identifiedName = conv.identity_hash && conv.contact_id ? await contactDisplayName(supabase, conv.contact_id) : null;
   // resposta de 18+ do contato neste bot (tabela interna: lida com a service role)
   const age = isWhatsApp || isInstagram ? await ageRecord(createAdminClient(), { botId: id, channel: isWhatsApp ? "whatsapp" : "instagram", contact: (isWhatsApp ? conv.wa_id : conv.ig_id)! }) : null;
 
@@ -82,7 +85,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
         <div className="min-w-0 flex-1">
           <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-semibold text-muted">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>
           <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa {relativeTime(conv.started_at)} <ConversationStateBadge conv={conv} withTime /></h1>
-          <p className="text-xs text-muted">canal: {conv.channel}{conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
+          <p className="text-xs text-muted">canal: {conv.channel}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
           {gateCats.length > 0 && (
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>O portão acusou:</span>

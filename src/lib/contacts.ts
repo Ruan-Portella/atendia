@@ -126,6 +126,13 @@ export async function widgetUserContact(db: SupabaseClient, bot: { id: string; a
   return createContact(db, bot, "widget", { external_id_hash: h, external_id_enc: externalEnc(externalId), display });
 }
 
+/** Nome que a empresa mandou para o contato identificado (display.name), para o painel. */
+export async function contactDisplayName(db: SupabaseClient, contactId: string): Promise<string | null> {
+  const { data } = await db.from("contacts").select("display").eq("id", contactId).maybeSingle();
+  const name = (data?.display as { name?: unknown } | null)?.name;
+  return typeof name === "string" && name.trim() ? name.trim().slice(0, 80) : null;
+}
+
 /** external_id do contato (para as ações e os webhooks). */
 export async function contactExternalId(db: SupabaseClient, contactId: string): Promise<string | null> {
   const { data } = await db.from("contacts").select("external_id_enc").eq("id", contactId).maybeSingle();
