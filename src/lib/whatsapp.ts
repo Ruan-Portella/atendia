@@ -89,6 +89,14 @@ export async function sendText(ch: WaChannel, to: string, body: string) {
   });
 }
 
+/**
+ * Liga a checagem de identidade no número (enable_identity_key_check): daí em diante cada mensagem
+ * recebida traz o identity_key_hash do contato, e a troca de número ou de aparelho é percebida.
+ */
+export async function enableIdentityCheck(ch: WaChannel) {
+  return graph<{ success?: boolean }>(`${ch.phone_number_id}/settings`, channelToken(ch), { body: { user_identity_change: { enable_identity_key_check: true } } });
+}
+
 /** Texto com até 3 botões de resposta (título de até 20 caracteres; o id volta no clique). */
 export async function sendButtons(ch: WaChannel, to: string, body: string, buttons: Array<{ id: string; title: string }>) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {

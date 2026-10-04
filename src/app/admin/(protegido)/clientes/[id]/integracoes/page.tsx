@@ -7,7 +7,8 @@ import { relativeTime } from "@/lib/utils";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { createPilotApiKey, createPilotIdentitySecret, deleteAction, generateActionSecret, revokePilotApiKey, revokePilotIdentitySecret, saveAction, testAction } from "../../../acoes";
+import { createPilotApiKey, createPilotIdentitySecret, createPilotWebhook, deleteAction, deletePilotWebhook, generateActionSecret, revokePilotApiKey, revokePilotIdentitySecret, saveAction, setPilotWebhookActive, testAction, testPilotWebhook } from "../../../acoes";
+import { WEBHOOK_EVENTS } from "@/lib/webhooks";
 import type { ActionRow } from "@/lib/actions";
 import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from "@/lib/api-keys";
 
@@ -54,6 +55,12 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
     db.from("identity_secrets").select("id, kid, name, scope_type, scope_bot_id, scope_client_id, created_at, created_by, last_used_at, revoked_at").eq("agency_id", id).order("created_at", { ascending: false }),
   ]);
   const secrets = secretRows ?? [];
+  const { data: hookRows } = await db.from("webhooks").select("id, name, url, events, scope_type, scope_bot_ids, scope_client_id, active, disabled_at, disabled_reason, failing_since, created_at").eq("agency_id", id).order("created_at");
+  const hooks = hookRows ?? [];
+  const { data: deliveries } = hooks.length
+    ? await db.from("webhook_deliveries").select("id, webhook_id, event_type, status, attempts, last_status, last_error, created_at, delivered_at").in("webhook_id", hooks.map((h) => h.id as string)).order("created_at", { ascending: false }).limit(20)
+    : { data: [] };
+  const hookName = new Map(hooks.map((h) => [h.id as string, h.name as string]));
   const keys = (keyRows ?? []) as unknown as Array<ApiKeyRow & { created_at: string; created_by: string | null }>;
   const botName = new Map((bots ?? []).map((b) => [b.id as string, b.name as string]));
   const clientName = new Map((clients ?? []).map((c) => [c.id as string, c.name as string]));
@@ -229,6 +236,88 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
             <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar segredo</SubmitButton>
           </ResultForm>
         </details>
+      </section>
+
+      <section className="card flex flex-col gap-4 p-5">
+        <div>
+          <h2 className="text-lg font-bold">Webhook do piloto</h2>
+          <p className="text-xs text-muted">
+            Na P2 saem só contact.linked e contact.unlinked (o resto dos eventos chega na C pública). Envelope assinado no padrão Standard Webhooks; 2xx em até 10 s é entrega; novas tentativas em 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h e 24 h; 410 ou 3 dias só de falhas desativam.
+          </p>
+        </div>
+        {hooks.map((h) => (
+          <div key={h.id as string} className="flex flex-col gap-2 rounded-lg border border-line-2 p-3 text-sm">
+            <div>
+              <strong>{h.name as string}</strong> <span className={h.active ? "text-brand" : "text-danger"}>{h.active ? "ativo" : `desativado${h.disabled_reason ? ` (${h.disabled_reason as string})` : ""}`}</span>
+              <span className="block truncate text-xs text-muted">{h.url as string}</span>
+              <span className="block text-xs text-muted">
+                Eventos: {(h.events as string[]).join(", ")} · escopo: {h.scope_type === "all" ? "todos os chatbots" : h.scope_type === "client" ? `cliente ${clientName.get(h.scope_client_id as string) ?? "?"}` : (h.scope_bot_ids as string[]).map((b) => botName.get(b) ?? "?").join(", ")}
+                {h.failing_since ? ` · falhando desde ${relativeTime(h.failing_since as string)}` : ""}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <ResultForm action={testPilotWebhook.bind(null, id, h.id as string)}>
+                <SubmitButton className="btn-ghost self-start py-1 text-xs" pendingLabel="Enviando…">Enviar teste</SubmitButton>
+              </ResultForm>
+              <ConfirmAction action={setPilotWebhookActive.bind(null, id, h.id as string, !h.active)} title={h.active ? "Desativar o webhook?" : "Reativar o webhook?"} description={h.active ? "Novos eventos não são entregues nem acumulam." : "Os próximos eventos voltam a ser entregues (os de enquanto estava desativado não)."} confirmLabel={h.active ? "Desativar" : "Reativar"} danger={Boolean(h.active)} className="text-xs font-semibold hover:underline">
+                {h.active ? "Desativar" : "Reativar"}
+              </ConfirmAction>
+              <ConfirmAction action={deletePilotWebhook.bind(null, id, h.id as string)} title={`Apagar o webhook ${h.name as string}?`} description="As entregas dele são apagadas junto." confirmLabel="Apagar" className="text-xs font-semibold text-danger hover:underline">
+                Apagar
+              </ConfirmAction>
+            </div>
+          </div>
+        ))}
+        <details className="rounded-lg border border-dashed border-line p-3">
+          <summary className="cursor-pointer text-sm font-semibold">+ Novo webhook</summary>
+          <ResultForm action={createPilotWebhook.bind(null, id)} copy className="mt-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div><label className="label" htmlFor="wh-name">Nome</label><input id="wh-name" name="name" required maxLength={80} className="input" placeholder="Fintra produção" /></div>
+              <div><label className="label" htmlFor="wh-url">URL (HTTPS)</label><input id="wh-url" name="url" required className="input" placeholder="https://api.fintra.com.br/boavoz/webhook" /></div>
+            </div>
+            <fieldset className="flex flex-col gap-1">
+              <legend className="label">Eventos</legend>
+              {WEBHOOK_EVENTS.map((e) => (
+                <label key={e} className="flex items-center gap-2 text-xs"><input type="checkbox" name="event" value={e} defaultChecked /> <span className="font-mono">{e}</span></label>
+              ))}
+            </fieldset>
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="label">Escopo</legend>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="bots" defaultChecked /> Só este chatbot:</label>
+              <select name="bot_id" className="input ml-6 w-auto text-xs" defaultValue="">
+                <option value="">escolha…</option>
+                {(bots ?? []).map((b) => <option key={b.id as string} value={b.id as string}>{b.name as string} ({b.client_name as string})</option>)}
+              </select>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="client" /> Todos os chatbots do cliente:</label>
+              <select name="client_id" className="input ml-6 w-auto text-xs" defaultValue="">
+                <option value="">escolha…</option>
+                {(clients ?? []).map((c) => <option key={c.id as string} value={c.id as string}>{c.name as string}</option>)}
+              </select>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="all" /> Todos os chatbots da agência</label>
+            </fieldset>
+            <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar webhook</SubmitButton>
+          </ResultForm>
+        </details>
+        {deliveries && deliveries.length > 0 && (
+          <table className="w-full text-xs">
+            <thead className="text-left text-muted"><tr><th className="py-1 font-semibold">Quando</th><th className="py-1 font-semibold">Webhook</th><th className="py-1 font-semibold">Evento</th><th className="py-1 font-semibold">Situação</th></tr></thead>
+            <tbody>
+              {deliveries.map((d) => (
+                <tr key={d.id as string} className="border-t border-line-2">
+                  <td className="py-1.5">{relativeTime(d.created_at as string)}</td>
+                  <td className="py-1.5">{hookName.get(d.webhook_id as string)}</td>
+                  <td className="py-1.5 font-mono">{d.event_type as string}</td>
+                  <td className={`py-1.5 font-semibold ${d.status === "delivered" ? "text-brand" : d.status === "failed" ? "text-danger" : "text-amber-ink"}`}>
+                    {d.status === "delivered" ? "entregue" : d.status === "failed" ? "falhou" : "nova tentativa agendada"}
+                    {d.last_status ? ` · HTTP ${d.last_status as number}` : ""}
+                    {(d.attempts as number) > 1 ? ` · ${d.attempts as number} tentativas` : ""}
+                    {d.status !== "delivered" && d.last_error ? ` · ${d.last_error as string}` : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className="card flex flex-col gap-2 p-5">

@@ -6,9 +6,10 @@ import { hmacHex } from "./hash";
 import { openField, sealField, type CipherField } from "./field-cipher";
 import { canonicalPhone } from "./phone";
 import { contextHashOf } from "./identity";
-import { contactActiveLinkId, contactPhone, externalIdHash, phoneHash, setActiveLink } from "./contacts";
+import { contactActiveLinkId, contactLastInbound, contactPhone, externalIdHash, phoneHash, setActiveLink } from "./contacts";
 import { normalizeGateText } from "./gate/payment";
 import type { ChatIdentity } from "./widget-identity";
+import { emitLinkEvent } from "./webhooks";
 
 /*
  * Pareamento no WhatsApp e no Instagram (P2, spec "Peça 4"): o SaaS gera um código
@@ -47,9 +48,11 @@ export interface LinkRow {
   context_enc: string | null;
   display: PairingDisplay | null;
   linked_at: string;
+  /** Hash de identidade da Meta (WhatsApp) quando o vínculo foi feito ou visto pela primeira vez. */
+  identity_key_hash?: string | null;
 }
 
-const LINK_COLS = "id, bot_id, contact_id, channel, external_id_hash, external_id_enc, context_hash, context_enc, display, linked_at";
+const LINK_COLS = "id, bot_id, contact_id, channel, external_id_hash, external_id_enc, context_hash, context_enc, display, linked_at, identity_key_hash";
 
 const seal = (field: CipherField, v: string) => sealField(field, v);
 const open = (field: CipherField, v: string | null) => (v ? openField(field, v) : null);
@@ -241,7 +244,7 @@ export async function applyLinkToConversation(db: SupabaseClient, conversationId
   if (error) console.error("pareamento: conversa não atualizada", error.message);
 }
 
-async function linkFromPairing(db: SupabaseClient, p: PairingRow, contactId: string): Promise<LinkRow> {
+async function linkFromPairing(db: SupabaseClient, p: PairingRow, contactId: string, identityKeyHash: string | null = null): Promise<LinkRow> {
   const now = new Date().toISOString();
   // o código é de uso único: só um contato consome (outra mensagem ao mesmo tempo perde)
   const { data: used } = await db.from("pairing_codes").update({ used_at: now, used_by_contact_id: contactId }).eq("id", p.id).is("used_at", null).select("id");
@@ -256,11 +259,12 @@ async function linkFromPairing(db: SupabaseClient, p: PairingRow, contactId: str
     context_enc: p.context_enc ? seal("contact_links.context_enc", openField("pairing_codes.context_enc", p.context_enc)) : null,
     display: p.display,
     pairing_id: p.id,
+    identity_key_hash: identityKeyHash,
   };
   // mesma conta e mesmo contexto já vinculados: renova o display (não duplica)
   const existing = (await activeLinks(db, contactId)).find((l) => l.external_id_hash === p.external_id_hash && (l.context_hash ?? "") === (p.context_hash ?? ""));
   if (existing) {
-    const { data } = await db.from("contact_links").update({ display: p.display, pairing_id: p.id, last_used_at: now }).eq("id", existing.id).select(LINK_COLS).single<LinkRow>();
+    const { data } = await db.from("contact_links").update({ display: p.display, pairing_id: p.id, last_used_at: now, ...(identityKeyHash ? { identity_key_hash: identityKeyHash } : {}) }).eq("id", existing.id).select(LINK_COLS).single<LinkRow>();
     return data ?? existing;
   }
   const { data, error } = await db.from("contact_links").insert(row).select(LINK_COLS).single<LinkRow>();
@@ -268,10 +272,14 @@ async function linkFromPairing(db: SupabaseClient, p: PairingRow, contactId: str
   return data;
 }
 
-/** Desfaz um vínculo; se era o ativo, o contato passa para o mais recente que sobrou (ou nenhum). */
+/**
+ * Desfaz um vínculo; se era o ativo, o contato passa para o mais recente que sobrou (ou nenhum).
+ * Sai contact.unlinked com o motivo (api, chat, identity_changed, inactivity).
+ */
 export async function unlinkLink(db: SupabaseClient, link: Pick<LinkRow, "id" | "contact_id">, reason: string): Promise<boolean> {
   const { data } = await db.from("contact_links").update({ unlinked_at: new Date().toISOString(), unlink_reason: reason }).eq("id", link.id).is("unlinked_at", null).select("id");
   if (!data?.length) return false;
+  await emitLinkEvent(db, link.id, "unlinked", { reason }).catch((e) => console.error("webhook: contact.unlinked", (e as Error).message));
   if ((await contactActiveLinkId(db, link.contact_id)) === link.id) {
     const rest = await activeLinks(db, link.contact_id);
     const next = rest[rest.length - 1] ?? null;
@@ -298,6 +306,10 @@ export interface PairingIO {
   store: (i: number, conversationId: string) => Promise<void>;
   /** Resposta fixa (gravada como do sistema), com botões quando houver. */
   reply: (conversationId: string | null, text: string, buttons?: Array<{ id: string; title: string }>) => Promise<void>;
+  /** Hash de identidade da Meta que veio com a mensagem (WhatsApp, com a checagem ligada no número). */
+  identityKeyHash?: string | null;
+  /** Depois de vincular (ex.: ligar a checagem de identidade no número). */
+  onLinked?: () => Promise<void>;
 }
 
 export interface PairingMessage {
@@ -397,7 +409,7 @@ export async function handlePairing(io: PairingIO, items: PairingMessage[]): Pro
 async function finishPairing(io: PairingIO, p: PairingRow, contactId: string, convId: string | null): Promise<void> {
   let link: LinkRow;
   try {
-    link = await linkFromPairing(io.db, p, contactId);
+    link = await linkFromPairing(io.db, p, contactId, io.identityKeyHash ?? null);
   } catch (e) {
     console.error("pareamento: vínculo não criado", (e as Error).message);
     await io.reply(convId, PAIRING_TEXTS.invalid);
@@ -406,6 +418,45 @@ async function finishPairing(io: PairingIO, p: PairingRow, contactId: string, co
   await setActiveLink(io.db, contactId, link.id, link.display);
   if (convId) await applyLinkToConversation(io.db, convId, link);
   await io.reply(convId, PAIRING_TEXTS.linked(io.channel, linkLabel(link.display)));
+  // depois da resposta: o webhook do SaaS ("WhatsApp 9xxxx-1234 conectado. Foi você?") e a checagem de identidade
+  await emitLinkEvent(io.db, link.id, "linked", { conversationId: convId }).catch((e) => console.error("webhook: contact.linked", (e as Error).message));
+  await io.onLinked?.().catch((e) => console.error("pareamento: depois de vincular", (e as Error).message));
+}
+
+/** Texto ao contato quando a identidade do WhatsApp mudou (número reciclado ou aparelho novo). */
+export const IDENTITY_CHANGED_TEXT = "Por segurança, conecte este WhatsApp de novo à sua conta.";
+
+/**
+ * Checagem de identidade (WhatsApp, spec "Peça 4"): o identity_key_hash da Meta mudou desde o
+ * pareamento (número reciclado, aparelho ou WhatsApp reinstalado): os vínculos caem
+ * (contact.unlinked, identity_changed) e o contato recebe uma vez o pedido de conectar de novo.
+ * Vínculo sem hash guardado (checagem ligada depois) passa a guardar o primeiro que chegar.
+ */
+export async function checkIdentityKey(db: SupabaseClient, contactId: string, hash: string | null | undefined, notify: () => Promise<void>): Promise<boolean> {
+  if (!hash) return false;
+  const links = (await activeLinks(db, contactId)).filter((l) => l.channel === "whatsapp");
+  const unknown = links.filter((l) => !l.identity_key_hash).map((l) => l.id);
+  if (unknown.length) await db.from("contact_links").update({ identity_key_hash: hash }).in("id", unknown);
+  const changed = links.filter((l) => l.identity_key_hash && l.identity_key_hash !== hash);
+  for (const l of changed) await unlinkLink(db, l, "identity_changed");
+  if (changed.length) await notify();
+  return changed.length > 0;
+}
+
+/**
+ * Vínculo do WhatsApp sem o sinal de identidade da Meta (número sem a checagem ou que nunca
+ * mandou o hash): cai depois de 180 dias sem mensagem do contato (rotina diária).
+ */
+export async function unlinkInactive(db: SupabaseClient, now = Date.now(), limit = 200): Promise<number> {
+  const cutoff = new Date(now - 180 * 86_400_000).toISOString();
+  const { data } = await db.from("contact_links").select("id, contact_id, linked_at").eq("channel", "whatsapp").is("unlinked_at", null).is("identity_key_hash", null).lt("linked_at", cutoff).limit(limit);
+  let n = 0;
+  for (const l of data ?? []) {
+    const last = await contactLastInbound(db, l.contact_id as string);
+    if (last && last >= cutoff) continue;
+    if (await unlinkLink(db, { id: l.id as string, contact_id: l.contact_id as string }, "inactivity")) n++;
+  }
+  return n;
 }
 
 /* ------------------------------------------------------------------ troca de contexto (ferramenta da IA) */

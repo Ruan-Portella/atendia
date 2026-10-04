@@ -61,6 +61,8 @@ export async function applyRetention(db: SupabaseClient) {
   // pareamento: código vencido ou usado sai depois de 1 dia; Idempotency-Key, depois de 24 h
   await db.from("pairing_codes").delete().lt("created_at", daysAgoIso(1));
   await db.from("idempotency_keys").delete().lt("created_at", daysAgoIso(1));
+  // entregas de webhook: 30 dias
+  await db.from("webhook_deliveries").delete().lt("created_at", daysAgoIso(30));
   // registro das chamadas de ações (Integrações): 30 dias
   await db.from("action_calls").delete().lt("created_at", daysAgoIso(30));
   // análise do bot: o resumo escrito pela IA sai em 30 dias (os rótulos ficam 1 ano)

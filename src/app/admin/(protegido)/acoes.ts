@@ -17,6 +17,8 @@ import { analyzeBot, runDueAnalyses } from "@/lib/bot-analysis";
 import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
 import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiKeyScope } from "@/lib/api-keys";
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
+import { WEBHOOK_EVENTS, createWebhook, sendWebhookTest, type WebhookEvent } from "@/lib/webhooks";
+import { BlockedUrlError, checkUrl } from "@/lib/safe-fetch";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -607,4 +609,77 @@ export async function revokePilotIdentitySecret(agencyId: string, id: string): P
   await auditAdmin(s.email, "identidade.segredo.revogar", { agencyId, targetType: "identity_secret", targetId: id, after: { name: r.name, kid: r.kid } });
   revalidatePath("/admin", "layout");
   return ok(`Segredo ${r.kid} revogado: tokens assinados com ele deixam de valer na hora.`);
+}
+
+/**
+ * Webhook do piloto (P2): contact.linked e contact.unlinked para o sistema do SaaS. O segredo
+ * (whsec_) aparece uma vez; o dono da agência recebe o aviso (o webhook leva dados das pessoas).
+ */
+export async function createPilotWebhook(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (criou webhook)`);
+  const db = createAdminClient();
+  const name = text(fd.get("name"));
+  if (!name || name.length > 80) return fail("Dê um nome ao webhook (até 80 caracteres).");
+  const url = text(fd.get("url"));
+  try {
+    const u = checkUrl(url);
+    if (u.protocol !== "https:") return fail("O webhook precisa ser HTTPS.");
+  } catch (e) {
+    return fail(e instanceof BlockedUrlError ? "Endereço interno não é aceito." : "URL inválida.");
+  }
+  const events = fd.getAll("event").map(String).filter((e): e is WebhookEvent => (WEBHOOK_EVENTS as readonly string[]).includes(e));
+  if (!events.length) return fail("Marque ao menos um evento.");
+  const scopeType = text(fd.get("scope_type"));
+  let scope: { type: "bots"; botIds: string[] } | { type: "client"; clientId: string } | { type: "all" } = { type: "all" };
+  if (scopeType === "client") {
+    const clientId = text(fd.get("client_id"));
+    const { data: client } = await db.from("clients").select("id").eq("id", clientId).eq("agency_id", agencyId).maybeSingle();
+    if (!client) return fail("Escolha um cliente desta agência.");
+    scope = { type: "client", clientId };
+  } else if (scopeType === "bots") {
+    const botId = text(fd.get("bot_id"));
+    if (!(await pilotBot(agencyId, botId))) return fail("Escolha um chatbot desta agência.");
+    scope = { type: "bots", botIds: [botId] };
+  }
+  const created = await createWebhook(db, { agencyId, name, url, events, scope, createdBy: s.email });
+  await auditAdmin(s.email, "webhook.criar", { agencyId, targetType: "webhook", targetId: created.id, after: { name, url, events, escopo: scope } });
+  await notifyAgencyOwner(db, agencyId, "Webhook criado", [
+    `A equipe BoaVoz criou o webhook "${name}" na sua conta (${new URL(url).host}), para o piloto de Integrações.`,
+    `Eventos: ${events.join(", ")}.`,
+    "Se não foi combinado com você, fale com o suporte para desativar.",
+  ]).catch(() => false);
+  revalidatePath("/admin", "layout");
+  return ok(`${created.secret}\n\nCopie o segredo agora: ele não aparece de novo. As entregas vão assinadas no padrão Standard Webhooks.`);
+}
+
+export async function setPilotWebhookActive(agencyId: string, id: string, active: boolean): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (${active ? "reativou" : "desativou"} webhook ${id})`);
+  const { data, error } = await createAdminClient()
+    .from("webhooks")
+    .update(active ? { active: true, disabled_at: null, disabled_reason: null, failing_since: null } : { active: false, disabled_at: new Date().toISOString(), disabled_reason: `desativado por ${s.email}` })
+    .eq("id", id)
+    .eq("agency_id", agencyId)
+    .select("id");
+  if (error || !data?.length) return fail("Webhook não encontrado.");
+  await auditAdmin(s.email, active ? "webhook.reativar" : "webhook.desativar", { agencyId, targetType: "webhook", targetId: id });
+  revalidatePath("/admin", "layout");
+  return ok(active ? "Webhook reativado." : "Webhook desativado: novos eventos não são entregues nem acumulam.");
+}
+
+export async function deletePilotWebhook(agencyId: string, id: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (apagou webhook ${id})`);
+  const { data, error } = await createAdminClient().from("webhooks").delete().eq("id", id).eq("agency_id", agencyId).select("name");
+  if (error || !data?.length) return fail("Webhook não encontrado.");
+  await auditAdmin(s.email, "webhook.apagar", { agencyId, targetType: "webhook", targetId: id, after: { name: data[0].name } });
+  revalidatePath("/admin", "layout");
+  return ok("Webhook apagado (as entregas dele também).");
+}
+
+/** "Enviar teste": webhook.test com a mesma assinatura, fora das novas tentativas e da contagem para desativar. */
+export async function testPilotWebhook(agencyId: string, id: string): Promise<ActionResult> {
+  await requireAdmin(`/admin/clientes/${agencyId}/integracoes (testou webhook ${id})`);
+  const r = await sendWebhookTest(createAdminClient(), id, agencyId);
+  if (!r) return fail("Webhook não encontrado.");
+  const okStatus = r.status !== null && r.status >= 200 && r.status < 300 && !r.error;
+  return okStatus ? ok(`Entregue: HTTP ${r.status}.`) : fail(`Não entregue: ${r.error ?? `HTTP ${r.status}`}.`);
 }

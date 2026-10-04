@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
 import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
+import { unlinkInactive } from "@/lib/pairing";
 import { refreshInstagramTokens } from "@/lib/instagram-channel";
 import { checkHealth } from "@/lib/health";
 import { notifyPlatform } from "@/lib/notify";
@@ -50,6 +51,8 @@ async function daily() {
   const retention = await run("limpeza LGPD", () => applyRetention(db));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
+  // vínculo do WhatsApp sem o sinal de identidade da Meta cai depois de 180 dias sem mensagem (P2)
+  const links = await run("vínculos inativos", () => unlinkInactive(db));
   // conversas de antes dos contatos ganham a ficha do contato, em lotes
   const contacts = await run("contatos das conversas antigas", () => linkLegacyConversations(db));
   // auditoria (1 ano) e registros de acesso (6 meses): só a retenção apaga, em lotes
@@ -78,5 +81,5 @@ async function daily() {
   // análise do bot: as agendadas (gatilhos agrupados) e os clientes antigos
   // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, trial, retention, acceptances, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, trial, retention, acceptances, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

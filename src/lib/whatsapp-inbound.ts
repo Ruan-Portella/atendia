@@ -1,4 +1,4 @@
-import { handlePairing, linkColumnsForContact } from "./pairing";
+import { IDENTITY_CHANGED_TEXT, checkIdentityKey, handlePairing, linkColumnsForContact } from "./pairing";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
@@ -7,7 +7,7 @@ import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
-import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel } from "./whatsapp";
+import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { isAccessError, isPaymentError } from "./whatsapp-access";
 import { answerWithGate, gateButtons } from "./gate/flow";
@@ -142,6 +142,8 @@ export interface QueuedMessage {
   key: string;
   msg: InboundMessage;
   profileName: string | null;
+  /** Hash de identidade da Meta do contato (com a checagem ligada no número). */
+  identityKeyHash?: string | null;
   /** Quando o evento chegou: com mais de 24 h, a IA não responde (vira pedido de atendente). */
   receivedAt: string;
 }
@@ -288,6 +290,16 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     return;
   }
 
+  // identidade do WhatsApp mudou desde o pareamento (número reciclado, aparelho novo): os vínculos
+  // caem e o contato recebe uma vez o pedido de conectar de novo
+  if (contactId) {
+    await checkIdentityKey(db, contactId, last.identityKeyHash, async () => {
+      if (!mode.canSend) return;
+      const convId = await plainConversation();
+      await say("sistema", IDENTITY_CHANGED_TEXT, convId ? { insert: { role: "assistant", content: IDENTITY_CHANGED_TEXT, author: SYSTEM_AUTHOR } } : null, convId);
+    });
+  }
+
   // pareamento (P2): "Conectar ABC123", a confirmação por botão e "desconectar", em qualquer degrau
   // que envia (a IA não responde a essas mensagens)
   const paired = await handlePairing(
@@ -297,6 +309,13 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
       channel: "whatsapp",
       contactId,
       phone: last.msg.from ?? null,
+      identityKeyHash: last.identityKeyHash ?? null,
+      // a partir do primeiro vínculo, o número manda o hash de identidade em cada mensagem
+      onLinked: async () => {
+        if ((channel as { identity_check_at?: string | null }).identity_check_at) return;
+        await enableIdentityCheck(channel);
+        await db.from("whatsapp_channels").update({ identity_check_at: new Date().toISOString() }).eq("phone_number_id", channel.phone_number_id);
+      },
       conversation: plainConversation,
       store: (i, convId) => storeOnce(db, convId, shown(i), burst[i].key),
       reply: async (convId, text, buttons) => {

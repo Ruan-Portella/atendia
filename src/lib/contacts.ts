@@ -138,6 +138,13 @@ export async function setActiveLink(db: SupabaseClient, contactId: string, linkI
   if (error) console.error("contato: vínculo ativo não gravado", error.message);
 }
 
+/** Identificadores do contato no canal (abertos): telefone, BSUID e IGSID, para os webhooks. */
+export async function contactChannelIds(db: SupabaseClient, contactId: string): Promise<{ phone: string | null; bsuid: string | null; igsid: string | null }> {
+  const { data } = await db.from("contacts").select("phone_enc, wa_user_enc, ig_enc").eq("id", contactId).maybeSingle();
+  const op = (f: CipherField, v: unknown) => (typeof v === "string" && v ? openField(f, v) : null);
+  return { phone: op("contacts.phone_enc", data?.phone_enc), bsuid: op("contacts.wa_user_enc", data?.wa_user_enc), igsid: op("contacts.ig_enc", data?.ig_enc) };
+}
+
 /** Telefone do contato do WhatsApp, quando conhecido (null com só o BSUID). */
 export async function contactPhone(db: SupabaseClient, contactId: string): Promise<string | null> {
   const { data } = await db.from("contacts").select("phone_enc").eq("id", contactId).maybeSingle();

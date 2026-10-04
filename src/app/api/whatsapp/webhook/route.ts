@@ -17,7 +17,7 @@ interface WebhookBody {
       field?: string;
       value?: {
         metadata?: { phone_number_id?: string };
-        contacts?: Array<{ wa_id?: string; user_id?: string; profile?: { name?: string } }>;
+        contacts?: Array<{ wa_id?: string; user_id?: string; profile?: { name?: string }; identity_key_hash?: string }>;
         messages?: InboundMessage[];
         // coexistência: o que o negócio mandou pelo app do celular
         message_echoes?: EchoMessage[];
@@ -135,8 +135,10 @@ async function toEvents(db: ReturnType<typeof createAdminClient>, changes: Chang
         console.warn("whatsapp: mensagem sem remetente descartada", msg.type);
         continue;
       }
-      const profileName = v.contacts?.find((c) => (msg.from && c.wa_id === msg.from) || (msg.from_user_id && c.user_id === msg.from_user_id))?.profile?.name ?? null;
-      const payload: WaPayload = { type: "msg", phoneNumberId, msg, profileName };
+      const who = v.contacts?.find((c) => (msg.from && c.wa_id === msg.from) || (msg.from_user_id && c.user_id === msg.from_user_id));
+      const profileName = who?.profile?.name ?? null;
+      // com a checagem de identidade ligada no número, a Meta manda o hash do contato (pareamento, P2)
+      const payload: WaPayload = { type: "msg", phoneNumberId, msg, profileName, identityKeyHash: who?.identity_key_hash ?? null };
       out.push({ key: `wa:msg:${msg.id}`, source: "whatsapp", kind: "msg", botId, contact, payload });
     }
   }

@@ -26,7 +26,7 @@ export interface WaPreference {
 export const MARKETING_STOPPED_CODE = 131050;
 
 export type WaPayload =
-  | { type: "msg"; phoneNumberId: string; msg: InboundMessage; profileName: string | null }
+  | { type: "msg"; phoneNumberId: string; msg: InboundMessage; profileName: string | null; identityKeyHash?: string | null }
   | { type: "echo"; phoneNumberId: string; echo: EchoMessage }
   | { type: "status"; phoneNumberId: string; status: WaStatus; wabaId?: string }
   | { type: "prefs"; phoneNumberId?: string; wabaId?: string; prefs: WaPreference[] }
@@ -38,7 +38,7 @@ export type IgPayload = { type: "msg" | "echo" | "edit" | "delete"; igUserId: st
 
 /** Número ligado e com acesso, ou null (sem chatbot, ou desconectado: não dá nem para responder). */
 async function activeWaChannel(db: SupabaseClient, phoneNumberId: string) {
-  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, waba_id, access_token_enc, coexistence, disconnected_at, payment_issue_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
+  const { data: channel } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, waba_id, access_token_enc, coexistence, disconnected_at, payment_issue_at, identity_check_at").eq("phone_number_id", phoneNumberId).maybeSingle<ChannelRow & { disconnected_at: string | null }>();
   if (!channel) console.warn("whatsapp: número sem chatbot ligado", phoneNumberId);
   return channel && !channel.disconnected_at ? channel : null;
 }
@@ -88,7 +88,7 @@ const whatsappGroup: GroupHandler = async (db, events) => {
   if (!channel) return;
   try {
     for (const e of contact) if (e.payload.type === "echo") await handleEcho(db, channel, e.payload.echo, e.key_hash);
-    const burst: QueuedMessage[] = contact.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, msg: e.payload.msg, profileName: e.payload.profileName, receivedAt: e.created_at }] : []));
+    const burst: QueuedMessage[] = contact.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, msg: e.payload.msg, profileName: e.payload.profileName, identityKeyHash: e.payload.identityKeyHash ?? null, receivedAt: e.created_at }] : []));
     await handleInboundBurst(db, channel, burst);
   } catch (err) {
     // sem acesso ou sem pagamento: marca o número e conclui (tentar de novo não adianta)
