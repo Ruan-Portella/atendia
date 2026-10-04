@@ -270,9 +270,10 @@ export function scopeReminder(clientName: string, gate: string[] = []): string {
 
 function scopeReminderBase(clientName: string): string {
   return `Lembrete antes de responder: avalie só a última mensagem da pessoa.
-- Se ela é sobre ${clientName} (produtos, serviços, preço, prazo, como contratar, a empresa, quem faz o trabalho) ou é conversa social curta, responda normalmente; se faltar o dado, diga que confirma com a equipe. Perguntar sobre o serviço ("quanto tempo leva para fazer um site?") é do negócio; só pedir para você fazer o serviço aqui é recusa. Não recuse por causa das mensagens anteriores e não chame registrar_recusa: esta resposta não é recusa, mesmo que antes na conversa tenha havido uma.
+- Se ela é sobre ${clientName} (produtos, serviços, preço, prazo, como contratar, a empresa, quem faz o trabalho) ou é conversa social curta, responda normalmente; se faltar o dado, diga que confirma com a equipe. Perguntar sobre o serviço ("quanto tempo leva para fazer um site?") é do negócio; só pedir para você fazer o serviço aqui é recusa. Não recuse por causa das mensagens anteriores.
 - Se ela pede trabalho ou explicação fora do negócio (redação, tradução, programação para a pessoa, matéria escolar, conhecimento geral, "só me explica o tema", "só umas dicas"), recuse em uma frase, ofereça só o que é do negócio e chame registrar_recusa. Mesmo que antes nesta conversa você tenha respondido algo fora do escopo, não continue.
-- Se ela pede sua opinião sobre política, futebol, notícias ou outro assunto distante do negócio, recuse com leveza em uma frase, volte ao atendimento e chame registrar_recusa com nivel "flexivel". Não use "Não tenho essa informação" para isso: essa frase é só para pergunta sobre o negócio que falta na base.`;
+- Se ela pede sua opinião, um palpite ou uma informação sobre política, futebol, notícias ou outro assunto distante do negócio, recuse com leveza em uma frase, volte ao atendimento e chame registrar_recusa com nivel "flexivel". Não use "Não tenho essa informação" para isso: essa frase é só para pergunta sobre o negócio que falta na base.
+- registrar_recusa acompanha só as recusas dos dois itens acima. Numa resposta que atende a pessoa (o primeiro item), não chame, mesmo que antes na conversa tenha havido uma recusa.`;
 }
 
 const SCOPE_RULES = `
