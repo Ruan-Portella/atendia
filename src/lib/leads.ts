@@ -70,6 +70,15 @@ export async function listLeads(db: SupabaseClient, opts: { botIds: string[]; fr
   return openAll(data);
 }
 
+/** Exportação dos dados do negócio: uma página de leads destes chatbots, abertos (por id, depois de `after`). */
+export async function exportLeadsPage(db: SupabaseClient, botIds: string[], after: string | null, limit = 500): Promise<Lead[]> {
+  if (!botIds.length) return [];
+  let q = db.from("leads").select(COLS).in("bot_id", botIds);
+  if (after) q = q.gt("id", after);
+  const { data } = await q.order("id").limit(limit);
+  return openAll(data);
+}
+
 /** Leads capturados numa conversa. */
 export async function leadsOfConversation(db: SupabaseClient, conversationId: string): Promise<Lead[]> {
   const { data } = await db.from("leads").select(COLS).eq("conversation_id", conversationId).order("created_at");

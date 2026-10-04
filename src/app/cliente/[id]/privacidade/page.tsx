@@ -2,9 +2,13 @@ import { requireMember } from "@/lib/member";
 import { RETENTION_MONTHS, SENSITIVE_DAYS, effectiveRetention, retentionLabel } from "@/lib/retention";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { ExportLinks } from "@/components/export-links";
+import { dueDateBR } from "@/lib/data-subject";
 import { memberSetRetention, memberSetSensitive } from "../../actions";
 
 export const metadata = { title: { absolute: "Privacidade" }, robots: { index: false, follow: false } };
+
+const CHANNEL: Record<string, string> = { widget: "Chat do site", whatsapp: "WhatsApp", instagram: "Instagram", painel: "Pela agência", api: "Pelo sistema da empresa" };
 
 /**
  * Privacidade do negócio (leva S): por quanto tempo as conversas e os contatos ficam guardados
@@ -14,9 +18,11 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
   const { id } = await params;
   const { member, admin, botIds } = await requireMember(id);
   const ids = botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"];
-  const [{ data: client }, { data: bots }] = await Promise.all([
+  const [{ data: client }, { data: bots }, { data: requests }] = await Promise.all([
     admin.from("clients").select("retention_months, agencies(retention_months)").eq("id", id).maybeSingle(),
     admin.from("bots").select("id, name, sensitive_mode, sensitive_retention_days, sensitive_mode_suggested_at").in("id", ids).order("name"),
+    // pedidos de exclusão dos contatos deste negócio (a agência confirma; aqui só acompanha)
+    admin.from("data_subject_requests").select("id, channel, status, requested_at, due_at, executed_at").eq("client_id", id).order("requested_at", { ascending: false }).limit(20),
   ]);
   const agency = (Array.isArray(client?.agencies) ? client.agencies[0] : client?.agencies) as { retention_months: number | null } | null | undefined;
   const clientMonths = (client?.retention_months as number | null) ?? null;
@@ -52,6 +58,23 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
           <SubmitButton className="btn-primary self-start">Salvar prazo</SubmitButton>
         </ActionForm>
       </section>
+
+      {(requests ?? []).length > 0 && (
+        <section className="card flex flex-col gap-2 p-5">
+          <h2 className="text-base font-bold">Pedidos de exclusão dos seus contatos</h2>
+          <p className="text-sm text-muted">Quem pede pelo chat para apagar os dados aparece aqui; {member.agency.name} confirma e o BoaVoz apaga e avisa a pessoa.</p>
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {(requests ?? []).map((r) => (
+              <li key={r.id as string} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span>{CHANNEL[r.channel as string] ?? (r.channel as string)} · pedido em {dueDateBR(r.requested_at as string)}</span>
+                <span className="text-xs text-muted">{r.status === "executado" ? `atendido em ${dueDateBR(r.executed_at as string)}` : `aguardando · prazo até ${dueDateBR(r.due_at as string)}`}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <ExportLinks clientId={id} description="Baixe o que os seus assistentes guardaram: conversas, contatos e leads, em CSV (abre no Excel) ou JSON. A exportação fica registrada." />
 
       <section className="flex flex-col gap-3">
         <div>

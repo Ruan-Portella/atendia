@@ -389,6 +389,31 @@ export async function contactsForErasure(db: SupabaseClient, ids: string[]): Pro
   );
 }
 
+/** Exportação dos dados do negócio: uma página de fichas destes chatbots, abertas (por id, depois de `after`). */
+export async function exportContactsPage(db: SupabaseClient, botIds: string[], after: string | null, limit = 500): Promise<Array<Record<string, string | null>>> {
+  if (!botIds.length) return [];
+  let q = db.from("contacts").select("id, bot_id, channel, phone_enc, wa_user_enc, ig_enc, external_id_enc, name, email, first_inbound_at, last_inbound_at, created_at").in("bot_id", botIds);
+  if (after) q = q.gt("id", after);
+  const { data, error } = await q.order("id").limit(limit);
+  if (error) throw new Error(`exportação dos contatos: ${error.message}`);
+  return Promise.all(
+    ((data ?? []) as Array<Record<string, unknown>>).map(async (r) => ({
+      id: r.id as string,
+      bot_id: r.bot_id as string,
+      channel: r.channel as string,
+      phone: await openNullable("contacts.phone_enc", r.phone_enc),
+      whatsapp_user_id: await openNullable("contacts.wa_user_enc", r.wa_user_enc),
+      instagram_id: await openNullable("contacts.ig_enc", r.ig_enc),
+      external_id: await openNullable("contacts.external_id_enc", r.external_id_enc),
+      name: (r.name as string | null) ?? null,
+      email: (r.email as string | null) ?? null,
+      first_inbound_at: (r.first_inbound_at as string | null) ?? null,
+      last_inbound_at: (r.last_inbound_at as string | null) ?? null,
+      created_at: r.created_at as string,
+    })),
+  );
+}
+
 /** Todas as fichas de um canal de um chatbot (ex.: a conta do Instagram desconectada pela Meta). */
 export async function contactIdsOfChannel(db: SupabaseClient, botId: string, channel: ContactChannel): Promise<string[]> {
   const { data } = await db.from("contacts").select("id").eq("bot_id", botId).eq("channel", channel);

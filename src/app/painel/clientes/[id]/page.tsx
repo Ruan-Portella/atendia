@@ -23,6 +23,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { CopyButton } from "@/components/copy-button";
 import { ClientCompliance } from "@/components/client-compliance";
 import { ClientPrivacy } from "@/components/client-privacy";
+import { ExportLinks } from "@/components/export-links";
 import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
 import { addClientMember, deleteBot, eraseContactData, deleteClientRecord, disablePortal, enablePortal, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientPermissions, updateClientRecord } from "../../actions";
 
@@ -320,6 +321,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
           </ActionForm>
           <ClientPrivacy clientId={client.id} clientName={client.name} clientMonths={(client.retention_months as number | null) ?? null} agencyMonths={agency.retention_months} />
+          <ExportLinks clientId={client.id} description={`Os dados de ${client.name}: conversas, contatos e leads, em CSV (abre no Excel) ou JSON. Na saída do cliente, entregue a ele. A exportação fica registrada.`} />
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
             <span className="text-sm text-muted">{bots.length ? "Para excluir o cliente, exclua os chatbots dele antes." : "Excluir este cliente da sua lista."}</span>
             <ConfirmAction
