@@ -83,24 +83,34 @@ export function isUnlinkCommand(text: string | null): boolean {
   return /^(desconectar|desvincular)( (este|esse|meu|minha) (whatsapp|instagram|numero|perfil|conta))?$/.test(n);
 }
 
-/** Como o vínculo aparece para a pessoa: o workspace, senão "a conta de Nome". Função pura. */
+/** Como o vínculo aparece para a pessoa: o workspace, senão "conta de Nome" (ou "sua conta"). Função pura. */
 export function linkLabel(d: PairingDisplay | null | undefined, o: { byName?: boolean } = {}): string {
   const ws = typeof d?.workspace_name === "string" && d.workspace_name.trim() ? d.workspace_name.trim().slice(0, 80) : null;
   const name = typeof d?.name === "string" && d.name.trim() ? d.name.trim().slice(0, 60) : null;
-  if (o.byName && name) return `a conta de ${name}`;
-  return ws ?? (name ? `a conta de ${name}` : "sua conta");
+  if (o.byName && name) return `conta de ${name}`;
+  return ws ?? (name ? `conta de ${name}` : "sua conta");
 }
 
+const isAccount = (label: string) => /^(conta de |sua conta$)/.test(label);
+/** Com a preposição certa: "a Família Portella" / "à conta de Ruan". Função pura. */
+export const toLink = (label: string) => (isAccount(label) ? `à ${label}` : `a ${label}`);
+/** "de Família Portella" / "da conta de Ruan". Função pura. */
+export const fromLink = (label: string) => (isAccount(label) ? `da ${label}` : `de ${label}`);
+/** "em Família Portella" / "na conta de Ruan". Função pura. */
+export const inLink = (label: string) => (isAccount(label) ? `na ${label}` : `em ${label}`);
+
+const channelName = (channel: PairingChannel) => (channel === "whatsapp" ? "WhatsApp" : "Instagram");
+
 export const PAIRING_TEXTS = {
-  linked: (channel: PairingChannel, where: string) => `Pronto! Este ${channel === "whatsapp" ? "WhatsApp" : "Instagram"} está conectado a ${where}. Agora posso consultar seus dados por aqui.`,
+  linked: (channel: PairingChannel, where: string) => `Pronto! Este ${channelName(channel)} está conectado ${toLink(where)}. Agora posso consultar seus dados por aqui.`,
   invalid: "Esse código não é válido ou já venceu. Gere um novo e mande de novo.",
   otherPhone: "Esse código foi gerado para outro número de WhatsApp. Gere um novo código com o número certo.",
   noPhone: "Esse código pede o número deste WhatsApp, e ele não apareceu para nós. Gere um código sem número esperado ou fale com a empresa.",
-  confirm: (current: string, next: string) => `Este WhatsApp está conectado a ${current}. Conectar também a ${next}?`,
-  confirmInstagram: (current: string, next: string) => `Este Instagram está conectado a ${current}. Conectar também a ${next}?`,
+  confirm: (current: string, next: string) => `Este WhatsApp está conectado ${toLink(current)}. Conectar também ${toLink(next)}?`,
+  confirmInstagram: (current: string, next: string) => `Este Instagram está conectado ${toLink(current)}. Conectar também ${toLink(next)}?`,
   cancelled: "Tudo bem, não conectei.",
   unlinked: (channel: PairingChannel, where: string, remaining: string[]) =>
-    `Pronto, este ${channel === "whatsapp" ? "WhatsApp" : "Instagram"} foi desconectado de ${where}.${remaining.length ? ` Continua conectado a ${remaining.join(", ")}: para desconectar também, mande "desconectar" de novo.` : ""}`,
+    `Pronto, este ${channelName(channel)} foi desconectado ${fromLink(where)}.${remaining.length ? ` Continua conectado ${remaining.map(toLink).join(", ")}: para desconectar também, mande "desconectar" de novo.` : ""}`,
   notLinked: (channel: PairingChannel) => `Este ${channel === "whatsapp" ? "WhatsApp" : "Instagram"} não está conectado a nenhuma conta.`,
 } as const;
 
@@ -427,7 +437,7 @@ export function contextSwitchTool(db: SupabaseClient, i: { contactId: string; co
         if (m.link.id === i.activeId) return { ok: true, conta: linkLabel(m.link.display), instrucao: "Diga que a conversa já está nessa conta." };
         await setActiveLink(db, i.contactId, m.link.id, m.link.display);
         await applyLinkToConversation(db, i.conversationId, m.link);
-        return { ok: true, conta: linkLabel(m.link.display), instrucao: `Diga que agora a conversa está em ${linkLabel(m.link.display)}. As próximas consultas usam essa conta.` };
+        return { ok: true, conta: linkLabel(m.link.display), instrucao: `Diga que agora a conversa está ${inLink(linkLabel(m.link.display))}. As próximas consultas usam essa conta.` };
       },
     }),
   };

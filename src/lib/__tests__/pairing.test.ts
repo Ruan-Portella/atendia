@@ -115,8 +115,13 @@ describe("comandos do pareamento", () => {
 
   it("rótulo e escolha da conta na troca", () => {
     expect(linkLabel({ name: "Ruan", workspace_name: "Família Portella" })).toBe("Família Portella");
-    expect(linkLabel({ name: "Ruan" })).toBe("a conta de Ruan");
-    expect(linkLabel({ name: "Ruan", workspace_name: "Família" }, { byName: true })).toBe("a conta de Ruan");
+    expect(linkLabel({ name: "Ruan" })).toBe("conta de Ruan");
+    expect(linkLabel({ name: "Ruan", workspace_name: "Família" }, { byName: true })).toBe("conta de Ruan");
+    // a preposição certa nos textos ("à conta", não "a a conta")
+    expect(PAIRING_TEXTS.linked("instagram", "conta de Ruan")).toContain("está conectado à conta de Ruan.");
+    expect(PAIRING_TEXTS.linked("whatsapp", "Família Portella")).toContain("está conectado a Família Portella.");
+    expect(PAIRING_TEXTS.confirm("conta de Ruan", "conta de Maria")).toBe("Este WhatsApp está conectado à conta de Ruan. Conectar também à conta de Maria?");
+    expect(PAIRING_TEXTS.unlinked("whatsapp", "sua conta", ["Empresa X", "conta de Maria"])).toContain("desconectado da sua conta. Continua conectado a Empresa X, à conta de Maria");
     const l = (id: string, ws: string) => ({ id, display: { workspace_name: ws } }) as unknown as LinkRow;
     const links = [l("1", "Família Portella"), l("2", "Empresa Portella"), l("3", "Clínica")];
     expect(matchLink(links, "empresa")).toEqual({ link: links[1] });
@@ -185,7 +190,7 @@ describe("pareamento no WhatsApp", () => {
     const p = await s.pair({ externalId: "user_99", display: { name: "Maria", workspace_name: "Empresa da Maria" } });
     await handlePairing(s.io, [{ text: `Conectar ${p.code}`, buttonId: null }]);
     const ask = s.replies[1];
-    expect(ask.text).toBe(PAIRING_TEXTS.confirm("a conta de Ruan", "a conta de Maria"));
+    expect(ask.text).toBe("Este WhatsApp está conectado à conta de Ruan. Conectar também à conta de Maria?");
     expect(ask.buttons?.map((b) => b.title)).toEqual(["Conectar", "Cancelar"]);
     await handlePairing(s.io, [{ text: "Cancelar", buttonId: ask.buttons![1].id }]);
     expect(s.replies[2].text).toBe(PAIRING_TEXTS.cancelled);
