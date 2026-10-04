@@ -100,7 +100,7 @@ export default async function SecurityPage() {
                   <span>{(r.client_id && clientName.get(r.client_id)) || "Demonstração"} · {CHANNEL[r.channel] ?? r.channel}</span>
                   <span className="text-xs text-muted">
                     atendido {r.executed_at ? relativeTime(r.executed_at) : ""} · {r.summary?.conversas ?? 0} conversa(s), {r.summary?.leads ?? 0} lead(s), {r.summary?.contatos ?? 0} ficha(s)
-                    {r.origin === "chat" ? (r.contact_notified_at ? " · contato avisado" : " · janela fechada, contato não avisado") : ""}
+                    {r.origin !== "chat" ? "" : r.contact_notified_at ? " · contato avisado" : r.channel === "widget" ? " · pelo site (a pessoa viu o prazo no pedido)" : " · janela de 24 h fechada, contato não avisado"}
                   </span>
                 </li>
               ))}
