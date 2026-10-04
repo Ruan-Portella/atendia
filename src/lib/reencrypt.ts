@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { PLATFORM_SCOPE, sealField, scopeOfBot, type CipherField, type CipherScope } from "./field-cipher";
 import { countPlainMessages, reencryptMessages } from "./messages";
 import { countPlainContacts, reencryptContacts } from "./contacts";
+import { countPlainLeads, reencryptLeads } from "./leads";
 
 /*
  * Recifra do histórico (leva S): o que foi gravado antes da cifra por campo (sem o cabeçalho
@@ -24,6 +25,9 @@ export const TARGETS: Target[] = [
   { table: "conversations", column: "context_enc", field: "conversations.context_enc", select: "id, bot_id", botOf: (r) => r.bot_id as string },
   { table: "conversations", column: "gate_id_map_enc", field: "conversations.gate_id_map_enc", select: "id, bot_id", botOf: (r) => r.bot_id as string },
   { table: "conversations", column: "age_pending_reply_enc", field: "conversations.age_pending_reply_enc", select: "id, bot_id", botOf: (r) => r.bot_id as string },
+  { table: "conversations", column: "age_pending_question", field: "conversations.age_pending_question", select: "id, bot_id", botOf: (r) => r.bot_id as string },
+  { table: "unanswered", column: "question", field: "unanswered.question", select: "id, bot_id", botOf: (r) => r.bot_id as string },
+  { table: "scope_refusals", column: "request", field: "scope_refusals.request", select: "id, bot_id", botOf: (r) => r.bot_id as string },
   { table: "contact_links", column: "external_id_enc", field: "contact_links.external_id_enc", select: "id, bot_id", botOf: (r) => r.bot_id as string },
   { table: "contact_links", column: "context_enc", field: "contact_links.context_enc", select: "id, bot_id", botOf: (r) => r.bot_id as string },
   { table: "pairing_codes", column: "external_id_enc", field: "pairing_codes.external_id_enc", select: "id, bot_id", botOf: (r) => r.bot_id as string },
@@ -45,7 +49,7 @@ const label = (t: Target) => `${t.table}.${t.column}`;
 
 /** Quanto falta recifrar, por coluna. */
 export async function plainCounts(db: SupabaseClient): Promise<Record<string, number>> {
-  const out: Record<string, number> = { "messages.content": await countPlainMessages(db), "contacts (identificadores)": await countPlainContacts(db) };
+  const out: Record<string, number> = { "messages.content": await countPlainMessages(db), "contacts (identificadores)": await countPlainContacts(db), "leads (telefone e interesse)": await countPlainLeads(db) };
   for (const t of TARGETS) {
     const { count } = await db.from(t.table).select("id", { count: "exact", head: true }).not(t.column, "is", null).not(t.column, "like", "v2.*");
     out[label(t)] = count ?? 0;
@@ -74,6 +78,7 @@ export async function reencryptHistory(db: SupabaseClient, hasTime: () => boolea
   const steps: Array<[string, () => Promise<number>]> = [
     ["messages.content", () => reencryptMessages(db, batch)],
     ["contacts (identificadores)", () => reencryptContacts(db, batch)],
+    ["leads (telefone e interesse)", () => reencryptLeads(db, batch)],
     ...TARGETS.map((t) => [label(t), () => reencryptTarget(db, t, batch)] as [string, () => Promise<number>]),
   ];
   for (const [k, run] of steps) {

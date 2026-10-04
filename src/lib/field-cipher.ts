@@ -11,8 +11,8 @@ import { clientKeyById, clientKeyForSeal, gcmOpen, gcmSeal, masterKey } from "./
  * não começa com "v2." é valor antigo, ainda sem cifra (a recifra do histórico cuida, em lotes).
  * Chave apagada (cliente excluído): o valor vira UNREADABLE.
  *
- * Só as camadas únicas chamam estas funções (messages.ts, contacts.ts e os módulos donos de
- * cada coluna _enc).
+ * Só as camadas únicas chamam estas funções (messages.ts, contacts.ts, leads.ts, unanswered.ts,
+ * scope-refusals.ts e os módulos donos de cada coluna _enc).
  */
 
 export type CipherField =
@@ -24,6 +24,11 @@ export type CipherField =
   | "conversations.context_enc"
   | "conversations.gate_id_map_enc"
   | "conversations.age_pending_reply_enc"
+  | "conversations.age_pending_question"
+  | "leads.phone_enc"
+  | "leads.notes_enc"
+  | "unanswered.question"
+  | "scope_refusals.request"
   | "contact_links.external_id_enc"
   | "contact_links.context_enc"
   | "pairing_codes.external_id_enc"

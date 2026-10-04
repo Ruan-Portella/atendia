@@ -3,8 +3,9 @@ import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /*
- * Camada única (spec "Cifra por campo"): mensagens e contatos só são lidos e gravados por
- * src/lib/messages.ts e src/lib/contacts.ts, para a cifra da leva S entrar num lugar só.
+ * Camada única (spec "Cifra por campo"): mensagens, contatos, leads, perguntas sem resposta e
+ * pedidos fora do assunto só são lidos e gravados pelo módulo dono, para a cifra da leva S entrar
+ * num lugar só.
  * Este teste falha se outro arquivo usar as tabelas direto.
  */
 
@@ -18,8 +19,16 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-// chaves dos clientes (leva S): só o módulo único de chaves lê a tabela
-const OWNER: Record<string, string> = { messages: "lib/messages.ts", contacts: "lib/contacts.ts", client_keys: "lib/keys.ts" };
+// chaves dos clientes (leva S): só o módulo único de chaves lê a tabela; leads, perguntas sem
+// resposta e pedidos fora do assunto: só as camadas que cifram o que vem do contato
+const OWNER: Record<string, string> = {
+  messages: "lib/messages.ts",
+  contacts: "lib/contacts.ts",
+  client_keys: "lib/keys.ts",
+  leads: "lib/leads.ts",
+  unanswered: "lib/unanswered.ts",
+  scope_refusals: "lib/scope-refusals.ts",
+};
 
 describe("camada única de mensagens e contatos", () => {
   for (const [table, owner] of Object.entries(OWNER)) {
@@ -37,4 +46,15 @@ describe("camada única de mensagens e contatos", () => {
       expect(offenders).toEqual([]);
     });
   }
+
+  // a pergunta guardada do 18+ vai cifrada: só o fluxo do portão grava e lê (a cifra e a recifra
+  // só citam o nome da coluna)
+  it("só lib/gate/flow.ts usa a pergunta pendente do 18+", () => {
+    const allowed = new Set(["lib/gate/flow.ts", "lib/field-cipher.ts", "lib/reencrypt.ts"]);
+    const offenders = sourceFiles(SRC)
+      .map((f) => relative(SRC, f).split(sep).join("/"))
+      .filter((f) => !allowed.has(f))
+      .filter((f) => /age_pending_question\b/.test(readFileSync(join(SRC, f), "utf8")));
+    expect(offenders).toEqual([]);
+  });
 });

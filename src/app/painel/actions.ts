@@ -14,6 +14,7 @@ import { initials, normalizeUrl, slugify } from "@/lib/utils";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
+import { clearAgePending } from "@/lib/gate/flow";
 import { isGateCategory } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
@@ -33,6 +34,8 @@ import { notifyPlatform } from "@/lib/notify";
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
 import { deleteContacts, findContactIds, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { deleteLeads, findLeadsByContact, leadIdsOfConversations } from "@/lib/leads";
+import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
@@ -401,16 +404,15 @@ export async function deleteBot(botId: string, redirectTo?: string): Promise<Act
 
 export async function resolveUnanswered(id: string, botId: string): Promise<ActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase.from("unanswered").update({ resolved: true, resolved_by: "agência" }).eq("id", id);
-  if (error) return fail("Não foi possível marcar como resolvida.");
+  if (!(await markUnansweredResolved(supabase, id, "agência"))) return fail("Não foi possível marcar como resolvida.");
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Marcada como resolvida.");
 }
 
 export async function deleteLead(id: string): Promise<ActionResult> {
   const supabase = await createClient();
-  const { error, count } = await supabase.from("leads").delete({ count: "exact" }).eq("id", id);
-  if (error) return fail("Não foi possível excluir o lead.");
+  const count = await deleteLeads(supabase, [id]);
+  if (count === null) return fail("Não foi possível excluir o lead.");
   if (!count) return fail("Lead não encontrado.");
   revalidatePath("/painel", "layout");
   return ok("Lead excluído.");
@@ -526,7 +528,7 @@ export async function resetConversationAge(conversationId: string): Promise<Acti
   const contact = conv?.channel === "whatsapp" ? conv.wa_id : conv?.channel === "instagram" ? conv.ig_id : null;
   if (!conv || !contact) return fail("Só conversas do WhatsApp e do Instagram têm confirmação de 18+.");
   await resetAge(owned.admin, { botId: owned.conv.bot_id, channel: conv.channel, contact });
-  await owned.admin.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", conversationId);
+  await clearAgePending(owned.admin, conversationId);
   await auditPanel("idade.zerar", { type: "conversation", id: conversationId }, { after: { channel: conv.channel } });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return ok("Confirmação de 18+ zerada. Se o contato pedir bebida ou remédio, ele é perguntado de novo.");
@@ -1068,13 +1070,13 @@ export async function removeClientMember(clientId: string, memberId: string): Pr
 export async function deleteConversation(conversationId: string): Promise<ActionResult> {
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
-  const { data: leadRows } = await owned.admin.from("leads").select("id").eq("conversation_id", conversationId);
-  await logDeletion(owned.admin, "leads", (leadRows ?? []).map((l) => l.id as string));
+  const leadIds = await leadIdsOfConversations(owned.admin, [conversationId]);
+  await logDeletion(owned.admin, "leads", leadIds);
   await logDeletion(owned.admin, "conversations", [conversationId]);
-  await owned.admin.from("leads").delete().eq("conversation_id", conversationId);
+  await deleteLeads(owned.admin, leadIds);
   const { error } = await owned.admin.from("conversations").delete().eq("id", conversationId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
-  await auditPanel("conversa.excluir", { type: "conversation", id: conversationId }, { before: { leads: (leadRows ?? []).length } });
+  await auditPanel("conversa.excluir", { type: "conversation", id: conversationId }, { before: { leads: leadIds.length } });
   revalidatePath("/painel", "layout");
   redirect(`/painel/bots/${owned.conv.bot_id}?tab=conversas`);
 }
@@ -1095,26 +1097,22 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
   const ids = (bots ?? []).map((b) => b.id);
   if (!ids.length) return ok("Nenhum dado encontrado para esse contato.");
 
-  const { data: leads } = byEmail
-    ? await supabase.from("leads").select("id, conversation_id").in("bot_id", ids).ilike("email", contact)
-    : await supabase.from("leads").select("id, conversation_id, phone").in("bot_id", ids).not("phone", "is", null);
-  // telefone: compara só os números, pelo final (com ou sem +55 e DDD formatado)
-  const tail = digits.slice(-10);
-  const matches = (leads ?? []).filter((l) => byEmail || digitsOf(String((l as { phone?: string }).phone ?? "")).endsWith(tail));
+  // telefone: pelo hash do número canônico e comparando só os números pelo final (com ou sem +55 e DDD formatado)
+  const ph = byEmail ? null : typedPhoneHash(contact);
+  const matches = await findLeadsByContact(supabase, ids, byEmail ? { email: contact } : { phone: contact, phoneHash: ph });
 
   const admin = createAdminClient();
   // a ficha do contato (WhatsApp, pelo telefone canônico em hash, ou pelo e-mail) e todas as conversas dela
-  const ph = byEmail ? null : typedPhoneHash(contact);
   const contactIds = byEmail ? await findContactIds(admin, ids, { email: contact }) : ph ? await findContactIds(admin, ids, { phoneHash: ph }) : [];
   const { data: contactConvs } = contactIds.length ? await admin.from("conversations").select("id").in("contact_id", contactIds) : { data: [] as Array<{ id: string }> };
   if (!matches.length && !contactIds.length) return ok("Nenhum dado encontrado para esse contato.");
 
   const convIds = [...new Set([...matches.map((l) => l.conversation_id), ...(contactConvs ?? []).map((c) => c.id)].filter((c): c is string => Boolean(c)))];
   // LGPD: registrado antes de apagar, para uma restauração de backup não trazer de volta
-  await logDeletion(admin, "leads", matches.map((l) => l.id as string));
+  await logDeletion(admin, "leads", matches.map((l) => l.id));
   await logDeletion(admin, "conversations", convIds);
   await logDeletion(admin, "contacts", contactIds);
-  if (matches.length) await admin.from("leads").delete().in("id", matches.map((l) => l.id));
+  await deleteLeads(admin, matches.map((l) => l.id));
   if (convIds.length) await admin.from("conversations").delete().in("id", convIds).in("bot_id", ids);
   await deleteContacts(admin, contactIds, ids);
   await auditPanel("contato.apagar_dados", { type: "client", id: clientId }, { after: { contatos: matches.length, conversas: convIds.length, por: byEmail ? "email" : "telefone" } });

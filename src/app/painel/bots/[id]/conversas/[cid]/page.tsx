@@ -13,6 +13,7 @@ import { conversationState, whatsappWindowOpen } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
+import { leadsOfConversation } from "@/lib/leads";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { channelBlock } from "@/lib/features";
@@ -40,9 +41,9 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
     .maybeSingle();
   if (!conv) notFound();
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
-  const [messages, { data: leads }, { agency }] = await Promise.all([
+  const [messages, leads, { agency }] = await Promise.all([
     loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
-    supabase.from("leads").select("name, phone, email, notes").eq("conversation_id", cid),
+    leadsOfConversation(supabase, cid),
     requireAgency(),
   ]);
   const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { name: string; client_id: string | null; client_name: string } | null;
@@ -61,7 +62,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
     const ch = await loadTemplateChannel(createAdminClient(), id);
     templates = ch ? await listSendable(ch).catch(() => []) : null;
   }
-  const contactName = leads?.[0]?.name ?? "";
+  const contactName = leads[0]?.name ?? "";
   // pessoa identificada pela empresa (token do site ou pareamento, P2) e o contexto da conversa
   const identifiedName = conv.identity_hash && conv.contact_id ? await contactDisplayName(supabase, conv.contact_id) : null;
   // resposta de 18+ do contato neste bot (tabela interna: lida com a service role)

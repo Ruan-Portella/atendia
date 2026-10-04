@@ -141,16 +141,18 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   const askAge = async (question: string, reply: string | null = null) => {
     if (!(await sendFixed(GATE_TEXTS.ageQuestion, "idade"))) return;
     const now = new Date().toISOString();
-    await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_pending_reply_enc: reply ? await sealField("conversations.age_pending_reply_enc", reply, await scopeOfConversation(convId)) : null, age_asked_at: now, regulated_at: now }).eq("id", convId);
+    const scope = await scopeOfConversation(convId);
+    await db.from("conversations").update({ age_pending_question: await sealField("conversations.age_pending_question", question.slice(0, 2000), scope), age_pending_reply_enc: reply ? await sealField("conversations.age_pending_reply_enc", reply, scope) : null, age_asked_at: now, regulated_at: now }).eq("id", convId);
   };
 
   // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
   const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_pending_reply_enc, age_asked_at, regulated_at, gate_id_map_enc, gate_id_map_expires_at, contact_id, context_since").eq("id", convId).maybeSingle();
-  // a resposta guardada até o "Sim" e o mapa de ids vão cifrados com a chave do cliente
+  // a pergunta e a resposta guardadas até o "Sim" e o mapa de ids vão cifrados com a chave do cliente
+  const pendingQuestion = await openNullable("conversations.age_pending_question", pendingRow?.age_pending_question);
   const pendingReply = await openNullable("conversations.age_pending_reply_enc", pendingRow?.age_pending_reply_enc);
   const idMap = await openIdMap(pendingRow);
   const pending: PendingAge | null = pendingRow
-    ? { question: (pendingRow.age_pending_question as string | null) ?? null, askedAt: (pendingRow.age_asked_at as string | null) ?? null, reply: pendingReply }
+    ? { question: pendingQuestion, askedAt: (pendingRow.age_asked_at as string | null) ?? null, reply: pendingReply }
     : null;
   const regulatedAt = (pendingRow?.regulated_at as string | null | undefined) ?? null;
   // contexto da conversa (pareamento, P2): a IA só lê o trecho depois da última troca
@@ -175,7 +177,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     await storeOnce(db, convId, q.text, q.key);
     await setAge(db, who, answered, "chat");
     if (answered === "nao") {
-      await db.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", convId);
+      await clearAgePending(db, convId);
       await sendFixed(GATE_TEXTS.ageDenied);
       await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "nao_18", categories: [] });
       return;
@@ -192,7 +194,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
       const disclosure = await aiDisclosure(db, bot, convId);
       const out = disclosure ? `${disclosure}\n\n${text}` : text;
       await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null } }, transport: () => io.send(out) });
-      await db.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", convId);
+      await clearAgePending(db, convId);
       return;
     }
     history = await conversationHistory(db, convId, io.historySize, undefined, since);
@@ -347,8 +349,13 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).
   // Com o botão "Ver opções 18+", esta pergunta fica guardada para depois do "Sim" (a idade ainda
   // não foi perguntada, então "sim" digitado não conta)
-  if (adultButton) await db.from("conversations").update({ age_pending_question: question.slice(0, 2000), age_pending_reply_enc: null, age_asked_at: null, regulated_at: new Date().toISOString() }).eq("id", convId);
-  else if (pending?.question) await db.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", convId);
+  if (adultButton) await db.from("conversations").update({ age_pending_question: await sealField("conversations.age_pending_question", question.slice(0, 2000), await scopeOfConversation(convId)), age_pending_reply_enc: null, age_asked_at: null, regulated_at: new Date().toISOString() }).eq("id", convId);
+  else if (pending?.question) await clearAgePending(db, convId);
+}
+
+/** Fecha a pergunta de 18+ guardada (e a resposta que esperava o "Sim"). A pergunta só é gravada aqui, cifrada. */
+export async function clearAgePending(db: SupabaseClient, convId: string): Promise<void> {
+  await db.from("conversations").update({ age_pending_question: null, age_pending_reply_enc: null }).eq("id", convId);
 }
 
 /** Conversa com bebida ou remédio: vale enquanto a janela de 24 h da Meta estiver aberta. */

@@ -1,6 +1,8 @@
 import { createAdminClient } from "./supabase/admin";
 import { checkHealth, type HealthReport } from "./health";
 import { BASE_GATE_VERSION } from "./gate/base";
+import { listUnanswered } from "./unanswered";
+import { listRefusals } from "./scope-refusals";
 
 /*
  * Backoffice: qualidade da IA (perguntas sem resposta, recusas, portão, pedidos urgentes) e
@@ -45,22 +47,22 @@ export function groupQuality(rows: QualityCount[]): Record<string, Array<{ key: 
 
 export async function getQuality(since: Date) {
   const db = createAdminClient();
-  const [{ data: counts, error }, { data: unanswered }, { data: refusals }, { data: urgent }] = await Promise.all([
+  const [{ data: counts, error }, unanswered, refusals, { data: urgent }] = await Promise.all([
     db.rpc("admin_quality_counts", { p_since: since.toISOString() }),
-    db.from("unanswered").select("id, bot_id, question, created_at").eq("resolved", false).order("created_at", { ascending: false }).limit(25),
-    db.from("scope_refusals").select("id, bot_id, level, request, created_at").gte("created_at", since.toISOString()).order("created_at", { ascending: false }).limit(25),
+    listUnanswered(db, { limit: 25 }),
+    listRefusals(db, { since: since.toISOString(), limit: 25 }),
     db.from("conversations").select("id, bot_id, channel, handoff_urgent_at, handled_at").gte("handoff_urgent_at", since.toISOString()).order("handoff_urgent_at", { ascending: false }).limit(15),
   ]);
   if (error) throw new Error(`qualidade: ${error.message}`);
   const grouped = groupQuality((counts ?? []) as QualityCount[]);
   const ids = [
-    ...(unanswered ?? []).map((u) => u.bot_id as string),
-    ...(refusals ?? []).map((r) => r.bot_id as string),
+    ...unanswered.map((u) => u.bot_id),
+    ...refusals.map((r) => r.bot_id),
     ...(urgent ?? []).map((c) => c.bot_id as string),
     ...(grouped.sem_resposta_bot ?? []).map((x) => x.key),
     ...(grouped.recusa_bot ?? []).map((x) => x.key),
   ];
-  return { grouped, unanswered: unanswered ?? [], refusals: refusals ?? [], urgent: urgent ?? [], bots: await botRefs(ids) };
+  return { grouped, unanswered, refusals, urgent: urgent ?? [], bots: await botRefs(ids) };
 }
 
 /** Classificação da base (portão, parte 6): trechos, quantos faltam na versão atual e quantos têm item restrito. */

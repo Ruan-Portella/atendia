@@ -6,6 +6,7 @@ import { initials, relativeTime } from "@/lib/utils";
 import { num } from "@/lib/plans";
 import { DailyBars } from "@/components/daily-bars";
 import { PrintButton } from "@/components/print-button";
+import { listLeads, type Lead } from "@/lib/leads";
 
 export const brandColor = (c: string) => (/^#[0-9a-f]{6}$/i.test(c) ? c : "#1f4e3d");
 
@@ -45,12 +46,12 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
   const botIds = report.bots.map((b) => b.id);
   const botName = new Map(report.bots.map((b) => [b.id, b.name]));
   const { from, to } = periodRange(period);
-  const [{ data: leads }, { data: conversations }] = people && botIds.length
+  const [leads, { data: conversations }] = people && botIds.length
     ? await Promise.all([
-        db.from("leads").select("id, bot_id, conversation_id, name, phone, email, notes, created_at").in("bot_id", botIds).gte("created_at", from).lt("created_at", to).order("created_at", { ascending: false }).limit(300),
+        listLeads(db, { botIds, from, to, limit: 300 }),
         db.from("conversations").select("id, bot_id, started_at, message_count, handoff_requested_at").in("bot_id", botIds).gte("started_at", from).lt("started_at", to).order("started_at", { ascending: false }).limit(50),
       ])
-    : [{ data: [] }, { data: [] }];
+    : [[] as Lead[], { data: [] }];
 
   const color = brandColor(report.agency.brand_color);
   const month = periodLabel(period);
@@ -148,10 +149,10 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
       {people && (
         <>
           <section className="flex flex-col gap-3">
-            <h2 className="text-base font-bold">Contatos capturados <span className="font-normal text-muted">({(leads ?? []).length})</span></h2>
+            <h2 className="text-base font-bold">Contatos capturados <span className="font-normal text-muted">({leads.length})</span></h2>
             <div className="card overflow-hidden">
-              {(leads ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhum contato neste mês.</p>}
-              {(leads ?? []).map((l) => (
+              {leads.length === 0 && <p className="p-5 text-sm text-muted">Nenhum contato neste mês.</p>}
+              {leads.map((l) => (
                 <div key={l.id} className="flex flex-col gap-1 border-b border-line-2 px-4 py-3 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_1.4fr_2fr_auto] sm:items-center sm:gap-3">
                   <span className="font-semibold">{l.name ?? "Sem nome"}</span>
                   <span className="text-ink-2">{[l.phone, l.email].filter(Boolean).join(" · ") || "—"}</span>

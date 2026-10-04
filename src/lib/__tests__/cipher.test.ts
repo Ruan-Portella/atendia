@@ -5,6 +5,9 @@ import { PLATFORM_SCOPE, UNREADABLE, openField, sealField, setCipherIdentityForT
 import { masterKey, setClientKeyStore, type ClientKeyStore } from "../keys";
 import { seal, unseal } from "../secret-box";
 import { reencryptMessages } from "../messages";
+import { createLead, listLeads, reencryptLeads } from "../leads";
+import { listUnanswered, recordUnanswered } from "../unanswered";
+import { listRefusals, recordRefusal } from "../scope-refusals";
 
 /** Chaves dos clientes em memória (no lugar da tabela client_keys). */
 function memoryStore() {
@@ -142,5 +145,109 @@ describe("recifra do histórico", () => {
     expect(await openField("messages.content", String(rows[0].content))).toBe("texto antigo 1");
     expect(await openField("messages.content", String(rows[2].content))).toBe("já cifrada");
     expect(await reencryptMessages(db)).toBe(0);
+  });
+});
+
+/** Banco em memória com o pouco que leads.ts e unanswered.ts usam. */
+function memoryDb(tables: Record<string, Array<Record<string, unknown>>>) {
+  return {
+    from(table: string) {
+      const rows = (tables[table] ??= []);
+      let op: "select" | "insert" | "update" | "delete" = "select";
+      let payload: Record<string, unknown> | null = null;
+      const filters: Array<(r: Record<string, unknown>) => boolean> = [];
+      let lim = Infinity;
+      let single = false;
+      const b = {
+        select: () => b,
+        insert: (p: Record<string, unknown>) => ((op = "insert"), (payload = p), b),
+        update: (p: Record<string, unknown>) => ((op = "update"), (payload = p), b),
+        eq: (k: string, v: unknown) => (filters.push((r) => r[k] === v), b),
+        in: (k: string, vs: unknown[]) => (filters.push((r) => vs.includes(r[k])), b),
+        gte: (k: string, v: string) => (filters.push((r) => String(r[k]) >= v), b),
+        // só a forma "a.not.is.null,b.not.is.null"
+        or: (expr: string) => (filters.push((r) => expr.split(",").some((p) => r[p.split(".")[0]] != null)), b),
+        order: () => b,
+        limit: (n: number) => ((lim = n), b),
+        single: () => ((single = true), b),
+        then(ok: (v: unknown) => unknown) {
+          let data: unknown;
+          if (op === "insert") {
+            // padrões das colunas, como no banco
+            const row = { id: randomUUID(), created_at: new Date().toISOString(), ...(table === "unanswered" ? { resolved: false } : {}), ...payload };
+            rows.push(row);
+            data = single ? row : [row];
+          } else {
+            const hit = rows.filter((r) => filters.every((f) => f(r))).slice(0, lim);
+            if (op === "update") hit.forEach((r) => Object.assign(r, payload));
+            data = hit;
+          }
+          return Promise.resolve({ data, error: null, count: Array.isArray(data) ? data.length : 1 }).then(ok);
+        },
+      };
+      return b;
+    },
+  } as unknown as SupabaseClient;
+}
+
+describe("cifra dos leads, perguntas sem resposta e pedidos fora do assunto (parte 1b)", () => {
+  beforeEach(() => {
+    vi.stubEnv("WHATSAPP_TOKEN_KEY", "chave-de-teste-dos-segredos-123");
+    setCipherIdentityForTests(false);
+    setClientKeyStore(memoryStore().store);
+    setScopeResolver({ bot: async () => ({ clientId: CLIENT_A }), conversation: async () => ({ clientId: CLIENT_A }) });
+  });
+  afterAll(() => {
+    setCipherIdentityForTests(true);
+    setClientKeyStore(null);
+    setScopeResolver({ bot: async () => ({ clientId: null }), conversation: async () => ({ clientId: null }) });
+  });
+
+  it("lead: telefone e interesse vão cifrados; nome e e-mail não; a lista abre", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {};
+    const db = memoryDb(tables);
+    const id = await createLead(db, { botId: "bot", conversationId: "c1", name: "Ana", phone: "21 99999-1234", phoneHash: "h", email: "ana@x.com", notes: "quer orçamento de festa" });
+    expect(id).toBeTruthy();
+    const row = tables.leads[0];
+    expect(row.phone_enc).toMatch(/^v2\.c\./);
+    expect(String(row.phone_enc)).not.toContain("99999");
+    expect(row.notes_enc).toMatch(/^v2\.c\./);
+    expect(row.phone).toBeUndefined();
+    expect(row).toMatchObject({ name: "Ana", email: "ana@x.com" });
+    const [lead] = await listLeads(db, { botIds: ["bot"], limit: 10 });
+    expect(lead).toMatchObject({ name: "Ana", phone: "21 99999-1234", email: "ana@x.com", notes: "quer orçamento de festa" });
+  });
+
+  it("lead de antes da cifra: a recifra move para as colunas cifradas e zera as antigas", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      leads: [{ id: "l1", bot_id: "bot", conversation_id: null, name: "Bia", phone: "5521988887777", phone_enc: null, email: null, notes: "pizza", notes_enc: null, created_at: "2026-01-01" }],
+    };
+    const db = memoryDb(tables);
+    expect((await listLeads(db, { botIds: ["bot"], limit: 10 }))[0].phone).toBe("5521988887777");
+    expect(await reencryptLeads(db)).toBe(1);
+    expect(tables.leads[0]).toMatchObject({ phone: null, notes: null });
+    expect(tables.leads[0].phone_enc).toMatch(/^v2\.c\./);
+    expect((await listLeads(db, { botIds: ["bot"], limit: 10 }))[0]).toMatchObject({ phone: "5521988887777", notes: "pizza" });
+    expect(await reencryptLeads(db)).toBe(0);
+  });
+
+  it("pergunta sem resposta: cifrada, a repetida não duplica e a lista abre", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = { unanswered: [{ id: "u0", bot_id: "bot", question: "Aceita pix?", resolved: false, created_at: "2026-01-01" }] };
+    const db = memoryDb(tables);
+    await recordUnanswered(db, "bot", "c1", "Tem estacionamento?");
+    await recordUnanswered(db, "bot", "c1", "tem ESTACIONAMENTO");
+    // a antiga, sem cifra, também conta para não duplicar
+    await recordUnanswered(db, "bot", "c1", "aceita pix");
+    expect(tables.unanswered).toHaveLength(2);
+    expect(tables.unanswered[1].question).toMatch(/^v2\.c\./);
+    expect((await listUnanswered(db, { botIds: ["bot"], limit: 10 })).map((u) => u.question).sort()).toEqual(["Aceita pix?", "Tem estacionamento?"]);
+  });
+
+  it("pedido fora do assunto: cifrado e aberto na lista", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {};
+    const db = memoryDb(tables);
+    await recordRefusal(db, { botId: "bot", conversationId: "c1", level: "flexivel", request: "quem ganha o jogo hoje?" });
+    expect(tables.scope_refusals[0].request).toMatch(/^v2\.c\./);
+    expect((await listRefusals(db, { since: "2000-01-01", limit: 10 }))[0].request).toBe("quem ganha o jogo hoje?");
   });
 });

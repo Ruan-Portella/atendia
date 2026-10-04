@@ -6,6 +6,8 @@ import { getPlan } from "./plans";
 import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
 import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
+import { createLead } from "./leads";
+import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { backNotice, contactLines, handoffNotice, hoursLines, renderAiNotice, type HumanHandoff } from "./handoff-hours";
 import { RISK_TEXT, detectRisk } from "./risk";
@@ -606,12 +608,8 @@ export async function runChat(opts: {
     ...chatTools({
       registrar_lead: async (input) => {
         if (!leadEnabled) return { ok: false };
-        const { data: lead } = await db
-          .from("leads")
-          .insert({ bot_id: bot.id, conversation_id: convId, name: input.nome, phone: input.whatsapp ?? waPhone, phone_hash: input.whatsapp ? typedPhoneHash(input.whatsapp) : metaPhoneHash(waPhone), email: input.email ?? null, notes: input.interesse ?? null })
-          .select("id")
-          .single();
-        notifyLead({ db, bot, lead: { id: lead?.id, ...input } }).catch(() => {});
+        const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: input.nome, phone: input.whatsapp ?? waPhone, phoneHash: input.whatsapp ? typedPhoneHash(input.whatsapp) : metaPhoneHash(waPhone), email: input.email, notes: input.interesse });
+        notifyLead({ db, bot, lead: { id: leadId ?? undefined, ...input } }).catch(() => {});
         return { ok: true };
       },
       chamar_atendente: async ({ motivo, urgente }) => {
@@ -631,9 +629,8 @@ export async function runChat(opts: {
       },
       registrar_recusa: async ({ nivel, pedido }) => {
         // registro próprio, separado das perguntas sem resposta (que são lacuna na base)
-        const { data: row, error } = await db.from("scope_refusals").insert({ bot_id: bot.id, conversation_id: convId, level: nivel, request: pedido?.slice(0, 300) ?? null }).select("id").single();
-        if (error) console.error("recusa não registrada", error.message);
-        else refusalIds.push(row.id as number);
+        const refusalId = await recordRefusal(db, { botId: bot.id, conversationId: convId, level: nivel, request: pedido });
+        if (refusalId !== null) refusalIds.push(refusalId);
         return { ok: true };
       },
       pedir_confirmacao_18: async () => {
@@ -669,7 +666,7 @@ export async function runChat(opts: {
         // na base, não recusa: a IA às vezes chama registrar_recusa junto (ex.: depois de uma recusa
         // na conversa); desfaz a recusa
         const refusalStands = refusalIds.length > 0 && !isGapAnswer(text);
-        if (refusalIds.length && !refusalStands) await db.from("scope_refusals").delete().in("id", refusalIds);
+        if (refusalIds.length && !refusalStands) await deleteRefusals(db, refusalIds);
         // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
         if (!actionReply && !unansweredRecorded && !refusalStands && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
         // com reply de ação, o que fica gravado é o texto exato (no WhatsApp e no Instagram o canal

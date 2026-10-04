@@ -17,6 +17,9 @@ import { disconnectNextStep } from "@/lib/whatsapp-diagnostics";
 import { WhatsAppUsage } from "@/components/whatsapp-usage";
 import { TemplateSender } from "@/components/template-sender";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { listUnanswered } from "@/lib/unanswered";
+import { listRefusals } from "@/lib/scope-refusals";
+import { countLeads } from "@/lib/leads";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
@@ -75,15 +78,15 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
   // inteiros) não vem mais: só o de textos/FAQs, que o modal de edição precisa.
   const none = Promise.resolve({ data: null, count: null });
-  const [{ agency }, { data: bot }, { count: readySources }, { data: sourceMeta }, { data: sourceTexts }, { data: unanswered }, { data: conversations }, { count: leadCount }, { data: instagram }, { data: whatsapp }] = await Promise.all([
+  const [{ agency }, { data: bot }, { count: readySources }, { data: sourceMeta }, { data: sourceTexts }, unanswered, { data: conversations }, leadCount, { data: instagram }, { data: whatsapp }] = await Promise.all([
     requireAgency(),
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
     tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, refresh_error, created_by, updated_at").eq("bot_id", id).order("created_at") : none,
     tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).in("kind", ["text", "faq"]) : none,
-    tab === "fontes" ? supabase.from("unanswered").select("id, question, created_at").eq("bot_id", id).eq("resolved", false).order("created_at", { ascending: false }).limit(10) : none,
+    tab === "fontes" ? listUnanswered(supabase, { botIds: [id], limit: 10 }) : Promise.resolve(null),
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
-    tab === "leads" ? supabase.from("leads").select("id", { count: "exact", head: true }).eq("bot_id", id) : none,
+    tab === "leads" ? countLeads(supabase, id) : Promise.resolve(null),
     tab === "instagram" ? supabase.from("instagram_channels").select("ig_user_id, username, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
     tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
   ]);
@@ -99,7 +102,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   // pedidos fora do assunto (trava de escopo): separados das perguntas sem resposta; tabela interna,
   // lida com a service role depois de a sessão confirmar o dono do chatbot
   const refusals = tab === "fontes" && !bot.is_demo
-    ? ((await createAdminClient().from("scope_refusals").select("id, level, request, conversation_id, created_at").eq("bot_id", id).gte("created_at", daysAgoIso(30)).order("created_at", { ascending: false }).limit(10)).data ?? [])
+    ? await listRefusals(createAdminClient(), { botId: id, since: daysAgoIso(30), limit: 10 })
     : [];
   // exemplo do {volta} na prévia: a próxima abertura pelo horário salvo (ou um exemplo fixo)
   const nextOpen = nextOpening(handoff.hours);
@@ -232,11 +235,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   </p>
                   <ul className="mt-2 flex flex-col gap-1.5">
                     {refusals.map((r) => (
-                      <li key={r.id as number} className="flex flex-wrap items-baseline gap-x-2">
-                        <span>{(r.request as string | null) || "(pedido sem resumo)"}</span>
+                      <li key={r.id} className="flex flex-wrap items-baseline gap-x-2">
+                        <span>{r.request || "(pedido sem resumo)"}</span>
                         <span className="text-xs text-muted">
-                          {r.level === "fixo" ? "regra fixa (tarefa sem relação com o negócio)" : "fora do assunto"} · {relativeTime(r.created_at as string)}
-                          {r.conversation_id && <> · <Link href={`/painel/bots/${id}/conversas/${r.conversation_id as string}`} className="underline">ver conversa</Link></>}
+                          {r.level === "fixo" ? "regra fixa (tarefa sem relação com o negócio)" : "fora do assunto"} · {relativeTime(r.created_at)}
+                          {r.conversation_id && <> · <Link href={`/painel/bots/${id}/conversas/${r.conversation_id}`} className="underline">ver conversa</Link></>}
                         </span>
                       </li>
                     ))}

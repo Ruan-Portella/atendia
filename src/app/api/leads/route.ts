@@ -4,6 +4,7 @@ import { SUSPENDED_NOTICE, isChannelSuspended } from "@/lib/conversation-mode";
 import { typedPhoneHash } from "@/lib/contacts";
 import { CORS_HEADERS, type BotRow } from "@/lib/chat";
 import { notifyLead } from "@/lib/notify";
+import { createLead } from "@/lib/leads";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 
 /** Formulário de contato dentro do widget (quando o visitante prefere preencher em vez de conversar). */
@@ -42,11 +43,7 @@ export async function POST(req: Request) {
     const { data: conv } = await db.from("conversations").select("id").eq("id", conversationId).eq("bot_id", bot.id).maybeSingle();
     if (!conv) conversationId = null;
   }
-  const { data: lead } = await db
-    .from("leads")
-    .insert({ bot_id: bot.id, conversation_id: conversationId, name: d.name, phone: d.phone ?? null, phone_hash: typedPhoneHash(d.phone), email: d.email ?? null, notes: d.notes ?? null })
-    .select("id")
-    .single();
-  notifyLead({ db, bot, lead: { id: lead?.id, nome: d.name, whatsapp: d.phone, email: d.email, interesse: d.notes } }).catch(() => {});
+  const leadId = await createLead(db, { botId: bot.id, conversationId, name: d.name, phone: d.phone, phoneHash: typedPhoneHash(d.phone), email: d.email, notes: d.notes });
+  notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: d.name, whatsapp: d.phone, email: d.email, interesse: d.notes } }).catch(() => {});
   return Response.json({ ok: true }, { headers: CORS_HEADERS });
 }

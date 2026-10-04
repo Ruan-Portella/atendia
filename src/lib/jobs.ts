@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ingestSource, type SourceRow } from "./ingest";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl, daysAgoIso } from "./utils";
+import { deleteLeadsBefore } from "./leads";
+import { deleteUnansweredBefore } from "./unanswered";
 
 /**
  * Tarefas diárias (rodam juntas em /api/cron/daily: o plano Hobby da Vercel só permite 2 crons).
@@ -76,11 +78,10 @@ export async function applyRetention(db: SupabaseClient) {
     const { data: bots } = await db.from("bots").select("id").eq("agency_id", a.id);
     const ids = (bots ?? []).map((b) => b.id);
     if (!ids.length) continue;
-    const c = await db.from("leads").delete({ count: "exact" }).in("bot_id", ids).lt("created_at", cutoff);
-    leads += c.count ?? 0;
+    leads += await deleteLeadsBefore(db, ids, cutoff);
     const d = await db.from("conversations").delete({ count: "exact" }).in("bot_id", ids).lt("last_message_at", cutoff);
     conversations += d.count ?? 0;
-    await db.from("unanswered").delete().in("bot_id", ids).lt("created_at", cutoff);
+    await deleteUnansweredBefore(db, ids, cutoff);
   }
   return { conversations, leads };
 }

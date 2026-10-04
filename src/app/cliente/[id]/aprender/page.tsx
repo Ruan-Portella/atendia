@@ -1,5 +1,6 @@
 import { requireMember } from "@/lib/member";
 import { relativeTime } from "@/lib/utils";
+import { listUnanswered } from "@/lib/unanswered";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { TextSources, type TextSourceItem } from "@/components/text-sources";
 import { memberAnswer, memberDeleteText, memberDismiss, memberSaveText } from "../../actions";
@@ -11,9 +12,9 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
   const { id } = await params;
   const { email, admin, botIds } = await requireMember(id, "knowledge");
   const ids = botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"];
-  const [{ data: bots }, { data: questions }, { data: sources }] = await Promise.all([
+  const [{ data: bots }, questions, { data: sources }] = await Promise.all([
     admin.from("bots").select("id, name").in("id", ids).order("created_at"),
-    admin.from("unanswered").select("id, bot_id, question, created_at").in("bot_id", ids).eq("resolved", false).order("created_at", { ascending: false }).limit(60),
+    listUnanswered(admin, { botIds: ids, limit: 60 }),
     admin.from("sources").select("id, bot_id, kind, title, content, created_by, updated_at").in("bot_id", ids).in("kind", ["text", "faq"]).order("created_at"),
   ]);
   const who = (by: string | null) => (!by ? "" : by === email ? " por você" : by === "agência" ? " pela agência" : ` por ${by}`);
@@ -26,7 +27,7 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
       </div>
       {(bots ?? []).length === 0 && <p className="text-sm text-muted">Ainda não há assistente configurado.</p>}
       {(bots ?? []).map((bot) => {
-        const qs = (questions ?? []).filter((q) => q.bot_id === bot.id);
+        const qs = questions.filter((q) => q.bot_id === bot.id);
         const items: TextSourceItem[] = (sources ?? [])
           .filter((s) => s.bot_id === bot.id)
           .map((s) => ({

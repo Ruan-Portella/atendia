@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fail, ok, type ActionResult } from "./action-result";
 import { ingestSource, type SourceRow } from "./ingest";
 import { classifyLater } from "./gate/base";
+import { markUnansweredResolved } from "./unanswered";
 
 /**
  * Base de conhecimento editável por texto: responder perguntas sem resposta e criar/editar
@@ -37,13 +38,12 @@ export async function answerQuestion(admin: SupabaseClient, opts: { botId: strin
   } catch (e) {
     return fail(`A resposta foi salva, mas não deu para treinar o assistente agora: ${(e as Error).message}`);
   }
-  await admin.from("unanswered").update({ resolved: true, resolved_by: opts.author }).eq("id", opts.unansweredId).eq("bot_id", opts.botId);
+  await markUnansweredResolved(admin, opts.unansweredId, opts.author, opts.botId);
   return ok("Pronto: o assistente já responde isso.");
 }
 
 export async function dismissQuestion(admin: SupabaseClient, botId: string, unansweredId: string, author: string): Promise<ActionResult> {
-  const { error } = await admin.from("unanswered").update({ resolved: true, resolved_by: author }).eq("id", unansweredId).eq("bot_id", botId);
-  if (error) return fail("Não foi possível ignorar a pergunta.");
+  if (!(await markUnansweredResolved(admin, unansweredId, author, botId))) return fail("Não foi possível ignorar a pergunta.");
   return ok("Pergunta ignorada.");
 }
 

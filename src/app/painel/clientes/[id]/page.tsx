@@ -15,6 +15,7 @@ import { Status } from "@/components/status";
 import { Kpi } from "@/components/kpi";
 import { BotRowActions } from "@/components/bot-row-actions";
 import { LeadList, type LeadRow } from "@/components/lead-list";
+import { listLeads } from "@/lib/leads";
 import { ClientFields } from "@/components/client-fields";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -70,11 +71,9 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const base = agencyBaseUrl(agency);
 
   // Só busca o que a aba aberta mostra.
-  const [pending, { data: leads }, { data: conversations }, { data: members }] = await Promise.all([
+  const [pending, leads, { data: conversations }, { data: members }] = await Promise.all([
     getPendingHandoffs(supabase, botIds),
-    tab === "leads" && botIds.length
-      ? supabase.from("leads").select("id, bot_id, conversation_id, name, phone, email, notes, created_at").in("bot_id", botIds).order("created_at", { ascending: false }).limit(200)
-      : Promise.resolve({ data: [] as LeadRow[] }),
+    tab === "leads" ? listLeads(supabase, { botIds, limit: 200 }) : Promise.resolve([] as LeadRow[]),
     tab === "conversas" && botIds.length
       ? supabase.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
       : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; last_message_at: string; visitor_seen_at: string | null; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; takeover_at: string | null; handled_at: string | null; handoff_urgent_at: string | null; last_contact_at: string | null; last_reply_at: string | null }> }),
@@ -166,7 +165,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             <SubmitButton pendingLabel="Apagando…" className="btn-danger">Apagar dados</SubmitButton>
             <p className="w-full text-xs text-muted">Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os chatbots deste cliente. Não tem desfazer.</p>
           </ActionForm>
-          <LeadList leads={(leads ?? []) as LeadRow[]} originLabel="Chatbot" originOf={(bid) => botName.get(bid) ?? ""} empty="Nenhum lead deste cliente ainda. Eles aparecem aqui assim que um visitante deixar contato no chat." />
+          <LeadList leads={leads} originLabel="Chatbot" originOf={(bid) => botName.get(bid) ?? ""} empty="Nenhum lead deste cliente ainda. Eles aparecem aqui assim que um visitante deixar contato no chat." />
         </>
       )}
 

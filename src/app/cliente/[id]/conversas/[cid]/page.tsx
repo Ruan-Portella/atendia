@@ -8,6 +8,7 @@ import { ConversationLive } from "@/components/conversation-live";
 import { MessageScroller } from "@/components/message-scroller";
 import { conversationState } from "@/lib/presence";
 import { loadMessages } from "@/lib/messages";
+import { leadsOfConversation } from "@/lib/leads";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
@@ -26,9 +27,9 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
   if (!conv) notFound();
-  const [messages, { data: leads }] = await Promise.all([
+  const [messages, leads] = await Promise.all([
     loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
-    admin.from("leads").select("name, phone, email, notes").eq("conversation_id", cid),
+    leadsOfConversation(admin, cid),
   ]);
   const agencyName = member.agency.name;
   const takeOver = memberTakeOver.bind(null, id, cid);

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BotRow } from "./chat";
 import { appUrl } from "./utils";
 import { agencyBaseUrl } from "./domain";
+import { markLeadNotified } from "./leads";
 
 /**
  * Avisa a agência (e opcionalmente o cliente final) de um lead novo.
@@ -40,7 +41,7 @@ export async function notifyLead(opts: {
       .filter((l) => l !== null)
       .join("\n"),
   });
-  if (lead.id) await db.from("leads").update({ notified_at: new Date().toISOString() }).eq("id", lead.id);
+  if (lead.id) await markLeadNotified(db, lead.id);
 }
 
 /** E-mails da agência e do aviso configurado no bot (sem duplicar). */
