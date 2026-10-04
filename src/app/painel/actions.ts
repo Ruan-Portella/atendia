@@ -11,6 +11,7 @@ import { postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
 import { appUrl, initials, normalizeUrl, slugify } from "@/lib/utils";
+import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
@@ -34,7 +35,7 @@ import { notifyAgencyOwner, notifyClientPeople, notifyPlatform } from "@/lib/not
 import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retentionReduced } from "@/lib/retention";
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
-import { deleteContacts, findContactIds, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { findContactIds, typedPhoneHash, whatsappContact } from "@/lib/contacts";
 import { deleteLeads, findLeadsByContact, leadIdsOfConversations } from "@/lib/leads";
 import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
@@ -1103,22 +1104,36 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
   const matches = await findLeadsByContact(supabase, ids, byEmail ? { email: contact } : { phone: contact, phoneHash: ph });
 
   const admin = createAdminClient();
-  // a ficha do contato (WhatsApp, pelo telefone canônico em hash, ou pelo e-mail) e todas as conversas dela
+  // a ficha do contato (WhatsApp, pelo telefone canônico em hash, ou pelo e-mail): a rotina apaga todas as conversas dela
   const contactIds = byEmail ? await findContactIds(admin, ids, { email: contact }) : ph ? await findContactIds(admin, ids, { phoneHash: ph }) : [];
-  const { data: contactConvs } = contactIds.length ? await admin.from("conversations").select("id").in("contact_id", contactIds) : { data: [] as Array<{ id: string }> };
   if (!matches.length && !contactIds.length) return ok("Nenhum dado encontrado para esse contato.");
 
-  const convIds = [...new Set([...matches.map((l) => l.conversation_id), ...(contactConvs ?? []).map((c) => c.id)].filter((c): c is string => Boolean(c)))];
-  // LGPD: registrado antes de apagar, para uma restauração de backup não trazer de volta
-  await logDeletion(admin, "leads", matches.map((l) => l.id));
-  await logDeletion(admin, "conversations", convIds);
-  await logDeletion(admin, "contacts", contactIds);
-  await deleteLeads(admin, matches.map((l) => l.id));
-  if (convIds.length) await admin.from("conversations").delete().in("id", convIds).in("bot_id", ids);
-  await deleteContacts(admin, contactIds, ids);
-  await auditPanel("contato.apagar_dados", { type: "client", id: clientId }, { after: { contatos: matches.length, conversas: convIds.length, por: byEmail ? "email" : "telefone" } });
+  // rotina única do pedido do titular (a mesma do chat): entregas e logs, perguntas, leads, conversas,
+  // 18+, supressão e ficha, tudo no registro de exclusões; depois o contact.deleted e o pedido como prova
+  const { agency } = await requireAgency();
+  const leadConvs = matches.map((l) => l.conversation_id).filter((c): c is string => Boolean(c));
+  const { erased, ...summary } = await eraseTargets(admin, { contactIds, conversationIds: leadConvs, leadIds: matches.map((l) => l.id) }, { code: `painel:${clientId}`, source: "painel" });
+  const requestId = await recordPanelRequest(admin, { agencyId: agency.id, clientId, by: agency.owner_id, summary });
+  await emitErasedContacts(admin, erased, requestId ?? `painel:${clientId}`);
+  await auditPanel("contato.apagar_dados", { type: "client", id: clientId }, { after: { ...summary, por: byEmail ? "email" : "telefone" } });
   revalidatePath(`/painel/clientes/${clientId}`);
-  return ok(`Apagados ${matches.length} contato${matches.length === 1 ? "" : "s"} e ${convIds.length} conversa${convIds.length === 1 ? "" : "s"}.`);
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  return ok(`Apagados: ${n(summary.conversas, "conversa", "conversas")}, ${n(summary.leads, "lead", "leads")} e ${n(summary.contatos, "ficha de contato", "fichas de contato")}.${erased.some((c) => c.channel !== "widget") ? " O número entrou na lista de quem não recebe mensagens da empresa." : ""}`);
+}
+
+/** Segurança: confirma um pedido do titular feito pelo chat e roda a rotina de exclusão. */
+export async function confirmDataSubjectRequest(requestId: string): Promise<ActionResult> {
+  const { agency } = await requireAgency();
+  const supabase = await createClient();
+  // a RLS limita aos pedidos desta agência
+  const { data: req } = await supabase.from("data_subject_requests").select("id, status").eq("id", requestId).maybeSingle();
+  if (!req) return fail("Pedido não encontrado.");
+  if (req.status !== "aguardando") return ok("Este pedido já foi atendido.");
+  const summary = await executeRequest(createAdminClient(), requestId, agency.owner_id);
+  if (!summary) return ok("Este pedido já foi atendido.");
+  await auditPanel("titular.confirmar", { type: "data_subject_request", id: requestId }, { after: { ...summary } });
+  revalidatePath("/painel/seguranca");
+  return ok(`Pedido atendido: ${summary.conversas} conversa(s), ${summary.leads} lead(s) e ${summary.contatos} ficha(s) de contato apagadas.`);
 }
 
 /** Política de privacidade (link no chat) e prazo de guarda dos dados dos visitantes. */

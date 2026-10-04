@@ -327,6 +327,14 @@ export async function callAction(db: SupabaseClient, action: ActionRow, i: CallI
   return result;
 }
 
+/** Pedido do titular: apaga o registro das chamadas feitas nestas conversas (corpo e resposta têm dado do contato). */
+export async function deleteActionCallsOfConversations(db: SupabaseClient, conversationIds: string[]): Promise<number> {
+  if (!conversationIds.length) return 0;
+  const { count, error } = await db.from("action_calls").delete({ count: "exact" }).in("conversation_id", conversationIds);
+  if (error) throw new Error(`chamadas de ações do contato: ${error.message}`);
+  return count ?? 0;
+}
+
 async function logCall(db: SupabaseClient, c: { action: ActionRow; callId: string; attempt: number; mode: CallMode; params: Record<string, unknown>; status: CallStatus; httpStatus: number | null; durationMs: number; headerNames: string[]; body: string; response: string | null }) {
   const scope = await scopeOfBot(c.action.bot_id);
   const { error } = await db.from("action_calls").insert({

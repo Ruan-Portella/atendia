@@ -3,7 +3,8 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { CORS_HEADERS, conversationHistory, lastUserText, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { CORS_HEADERS, SYSTEM_AUTHOR, conversationHistory, lastUserText, openConversation, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { handleErasureRequest } from "@/lib/data-subject";
 import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
 import { logWidgetAccess } from "@/lib/access-log";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
@@ -100,6 +101,50 @@ export async function POST(req: Request) {
   // regra única de estado (conversation-mode): suspensão, equipe na conversa, pausa e modo só humano
   const mode = await resolveMode(db, { bot, channel: "widget", conversation: conv });
   if (mode.step === 2) return Response.json({ error: "channel_suspended", message: SUSPENDED_NOTICE }, { status: 403, headers: CORS_HEADERS });
+
+  // pedido do titular (LGPD): "apaga meus dados" e o SIM/NÃO da confirmação, com texto fixo e sem a
+  // IA, em qualquer estado da conversa (o teste ao vivo do painel não entra)
+  if (channel === "widget") {
+    let erasureConv = convId;
+    const replies: string[] = [];
+    const erasure = await handleErasureRequest(
+      {
+        db,
+        bot,
+        channel: "widget",
+        contactId: who.kind === "token" ? (who.contactId ?? null) : null,
+        currentConversation: convId,
+        conversation: async () => (erasureConv ??= await openConversation(db, bot, { channel: "widget", visitorId: visitorId ?? null, identity: await identityColumns(who, bot.id) }).catch(() => null)),
+        store: async (_i, id) => {
+          await saveMessage(db, { conversation_id: id, role: "user", content: text }, { touch: "visitante" });
+        },
+        reply: async (id, t) => {
+          replies.push(t);
+          if (id) await saveMessage(db, { conversation_id: id, role: "assistant", content: t, author: SYSTEM_AUTHOR });
+        },
+      },
+      [{ text, buttonId: null }],
+    );
+    if (erasure.size) {
+      const reply = replies.join("\n\n");
+      if (erasureConv) {
+        const id = erasureConv;
+        after(() => logWidgetAccess(db, { botId: bot.id, conversationId: id, ip: clientIp(req), isNew: !convId }));
+      }
+      return createUIMessageStreamResponse({
+        stream: createUIMessageStream({
+          execute: ({ writer }) => {
+            writer.write({ type: "start" });
+            writer.write({ type: "text-start", id: "titular" });
+            writer.write({ type: "text-delta", id: "titular", delta: reply });
+            writer.write({ type: "text-end", id: "titular" });
+            writer.write({ type: "finish" });
+          },
+        }),
+        headers: { ...CORS_HEADERS, ...(erasureConv ? { "X-Conversation-Id": erasureConv } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
+      });
+    }
+  }
 
   // Uma pessoa da agência assumiu: o assistente fica quieto; a mensagem vai para o painel
   // e a resposta chega ao widget por /api/chat/updates.

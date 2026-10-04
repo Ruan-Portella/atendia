@@ -1,4 +1,5 @@
 import { IDENTITY_CHANGED_TEXT, checkIdentityKey, handlePairing, linkColumnsForContact } from "./pairing";
+import { handleErasureRequest } from "./data-subject";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
@@ -333,6 +334,34 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     burst.map((q, i) => (optOut.handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.msg.interactive?.button_reply?.id ?? null })),
   );
   for (const i of paired) optOut.handled.add(i);
+  if (optOut.handled.size === burst.length) return;
+
+  // pedido do titular (LGPD): "apaga meus dados", a pergunta de confirmação e a resposta (botões
+  // ou "sim" digitado), em qualquer degrau que envia; a IA não responde a essas mensagens
+  const erasure = await handleErasureRequest(
+    {
+      db,
+      bot,
+      channel: "whatsapp",
+      contactId,
+      currentConversation: conv?.id ?? null,
+      conversation: plainConversation,
+      store: (i, convId) => storeOnce(db, convId, shown(i), burst[i].key),
+      reply: async (convId, text, buttons) => {
+        if (!mode.canSend) return;
+        await deliver(db, {
+          botId: bot.id,
+          channel: "whatsapp",
+          conversationId: convId,
+          kind: "sistema",
+          record: convId ? { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR } } : null,
+          transport: async () => (buttons ? await sendButtons(channel, waId, toWhatsAppText(text), buttons) : await reply(text)).messages?.[0]?.id ?? null,
+        });
+      },
+    },
+    burst.map((q, i) => (optOut.handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.msg.interactive?.button_reply?.id ?? null })),
+  );
+  for (const i of erasure) optOut.handled.add(i);
   if (optOut.handled.size === burst.length) return;
 
   // degrau 3, gente atendendo: o assistente fica quieto, sem "digitando…", e as mensagens vão

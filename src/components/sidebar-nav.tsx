@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Sparkles, Palette, Share2, CreditCard } from "lucide-react";
+import { Users, Sparkles, Palette, Share2, CreditCard, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS: Array<{ href: string; label: string; icon: typeof Users; also?: string }> = [
   { href: "/painel/clientes", label: "Clientes", icon: Users, also: "/painel/bots" },
   { href: "/painel/demos", label: "Demos", icon: Sparkles },
   { href: "/painel/marca", label: "Marca e domínio", icon: Palette },
+  { href: "/painel/seguranca", label: "Segurança", icon: ShieldCheck },
   { href: "/painel/afiliados", label: "Afiliados", icon: Share2 },
   { href: "/painel/cobranca", label: "Cobrança", icon: CreditCard },
 ];

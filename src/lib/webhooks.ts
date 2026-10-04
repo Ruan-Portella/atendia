@@ -17,7 +17,7 @@ import { contactChannelIds } from "./contacts";
  *   e 24 h (9 no total); 410 Gone ou 3 dias seguidos só de falhas desativam o webhook.
  */
 
-export const WEBHOOK_EVENTS = ["contact.linked", "contact.unlinked"] as const;
+export const WEBHOOK_EVENTS = ["contact.linked", "contact.unlinked", "contact.deleted"] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 /** Espera antes de cada nova tentativa (a primeira é na hora). */
@@ -136,7 +136,7 @@ async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = 
 }
 
 /** Envelope do evento para cada webhook ativo que cobre o chatbot; a primeira tentativa é na hora. */
-export async function emitEvent(db: SupabaseClient, e: { type: WebhookEvent; key: string; bot: { id: string; agency_id: string; client_id: string | null; name: string }; createdAt: string; conversation: { id: string; channel: string } | null; contact: Record<string, unknown> | null; data: Record<string, unknown> }): Promise<void> {
+export async function emitEvent(db: SupabaseClient, e: { type: WebhookEvent; key: string; bot: { id: string; agency_id: string; client_id: string | null; name: string }; createdAt: string; conversation: { id: string; channel: string } | null; contact: Record<string, unknown> | null; data: Record<string, unknown>; contactId?: string | null }): Promise<void> {
   const { data: hooks } = await db.from("webhooks").select(WEBHOOK_COLS).eq("agency_id", e.bot.agency_id).eq("active", true);
   const targets = ((hooks ?? []) as WebhookRow[]).filter((w) => w.events.includes(e.type) && webhookCovers(w, e.bot));
   if (!targets.length) return;
@@ -155,12 +155,37 @@ export async function emitEvent(db: SupabaseClient, e: { type: WebhookEvent; key
   const payload_enc = await sealField("webhook_deliveries.payload_enc", JSON.stringify(envelope), await scopeOfBot(e.bot.id));
   for (const w of targets) {
     // o mesmo fato para o mesmo webhook sai uma vez só (repetição do evento não duplica)
-    const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc }).select("id, webhook_id, event_id, payload_enc, attempts").maybeSingle<DeliveryRow>();
+    // contact_id: o pedido do titular apaga as entregas do contato (o corpo cifrado não dá para buscar)
+    const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, contact_id: e.contactId ?? null }).select("id, webhook_id, event_id, payload_enc, attempts").maybeSingle<DeliveryRow>();
     if (error && !/duplicate|unique/i.test(error.message)) console.error("webhook: entrega não registrada", error.message);
     if (d) await attempt(db, d, w).catch((err) => console.error("webhook: tentativa", (err as Error).message));
   }
   // de carona: novas tentativas que já venceram (sem cron por minuto no Hobby)
   await retryDueDeliveries(db, { limit: 5 }).catch(() => undefined);
+}
+
+/** Pedido do titular: apaga as entregas (entregues ou pendentes) ligadas a estes contatos. */
+export async function deleteContactDeliveries(db: SupabaseClient, contactIds: string[]): Promise<number> {
+  if (!contactIds.length) return 0;
+  const { count, error } = await db.from("webhook_deliveries").delete({ count: "exact" }).in("contact_id", contactIds);
+  if (error) throw new Error(`entregas do contato: ${error.message}`);
+  return count ?? 0;
+}
+
+/**
+ * contact.deleted: pedido do titular concluído (chat, painel ou API). Só {id, external_id} e o
+ * motivo, sem telefone; sai depois de apagadas as entregas e os logs do contato.
+ */
+export async function emitContactDeleted(db: SupabaseClient, c: { contactId: string; externalId: string | null; bot: { id: string; agency_id: string; client_id: string | null; name: string }; requestId: string }): Promise<void> {
+  await emitEvent(db, {
+    type: "contact.deleted",
+    key: `${c.contactId}:deleted:${c.requestId}`,
+    bot: c.bot,
+    createdAt: new Date().toISOString(),
+    conversation: null,
+    contact: { id: `ctc_${c.contactId}`, external_id: c.externalId },
+    data: { reason: "data_subject_request", request_id: `dsr_${c.requestId}` },
+  });
 }
 
 /** Novas tentativas que já venceram (cron e de carona em cada evento novo). */
@@ -211,6 +236,7 @@ export async function emitLinkEvent(db: SupabaseClient, linkId: string, action: 
     bot: { id: String(bot.id), agency_id: String(bot.agency_id), client_id: (bot.client_id as string | null) ?? null, name: String(bot.name) },
     createdAt: String((action === "linked" ? link.linked_at : link.unlinked_at) ?? new Date().toISOString()),
     conversation: o.conversationId ? { id: o.conversationId, channel: String(link.channel) } : null,
+    contactId: String(link.contact_id),
     contact: {
       id: `ctc_${link.contact_id}`,
       level: action === "linked" ? "usuario" : "canal",

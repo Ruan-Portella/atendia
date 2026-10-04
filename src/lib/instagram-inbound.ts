@@ -1,4 +1,5 @@
 import { handlePairing, linkColumnsForContact } from "./pairing";
+import { handleErasureRequest } from "./data-subject";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
@@ -312,6 +313,26 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     }),
   );
   for (const i of paired) handled.add(i);
+  if (handled.size === burst.length) return;
+
+  // pedido do titular (LGPD): "apaga meus dados", a pergunta e a resposta (respostas rápidas ou
+  // "sim" digitado); a IA não responde a essas mensagens
+  const erasure = await handleErasureRequest(
+    {
+      db,
+      bot,
+      channel: "instagram",
+      contactId,
+      currentConversation: conv?.id ?? null,
+      conversation: plainConversation,
+      store: async (i, convId) => {
+        await storeOnce(db, convId, shown(i), burst[i].key);
+      },
+      reply: (convId, text, buttons) => systemReply(convId, text, buttons?.map((b) => ({ title: b.title, payload: b.id }))),
+    },
+    burst.map((q, i) => (handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.ev.message?.quick_reply?.payload ?? q.ev.postback?.payload ?? null })),
+  );
+  for (const i of erasure) handled.add(i);
   if (handled.size === burst.length) return;
 
   // degrau 3, gente atendendo: só guarda para o painel; o risco à vida ainda é vigiado

@@ -93,6 +93,13 @@ export async function unansweredIdsBefore(db: SupabaseClient, botId: string, cut
   return (data ?? []).map((u) => u.id as string);
 }
 
+/** Pedido do titular: ids das perguntas feitas nestas conversas. */
+export async function unansweredIdsOfConversations(db: SupabaseClient, conversationIds: string[]): Promise<string[]> {
+  if (!conversationIds.length) return [];
+  const { data } = await db.from("unanswered").select("id").in("conversation_id", conversationIds);
+  return (data ?? []).map((u) => u.id as string);
+}
+
 export async function deleteUnanswered(db: SupabaseClient, ids: string[]): Promise<void> {
   if (ids.length) await db.from("unanswered").delete().in("id", ids);
 }

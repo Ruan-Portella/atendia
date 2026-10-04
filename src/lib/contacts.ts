@@ -359,6 +359,36 @@ export async function retentionContacts(db: SupabaseClient, botId: string, cutof
   return { rows: free, last: rows.length === (opts.limit ?? 200) ? ids[ids.length - 1] : null };
 }
 
+export interface ErasureContact {
+  id: string;
+  botId: string;
+  channel: ContactChannel | "widget";
+  phone: string | null;
+  bsuid: string | null;
+  igsid: string | null;
+  externalId: string | null;
+  lastInboundAt: string | null;
+}
+
+/** Pedido do titular: as fichas com os identificadores abertos (supressão, 18+, aviso e contact.deleted). */
+export async function contactsForErasure(db: SupabaseClient, ids: string[]): Promise<ErasureContact[]> {
+  if (!ids.length) return [];
+  const { data, error } = await db.from("contacts").select("id, bot_id, channel, phone_enc, wa_user_enc, ig_enc, external_id_enc, last_inbound_at").in("id", ids);
+  if (error) throw new Error(`contatos do pedido: ${error.message}`);
+  return Promise.all(
+    ((data ?? []) as Array<Record<string, unknown>>).map(async (r) => ({
+      id: r.id as string,
+      botId: r.bot_id as string,
+      channel: r.channel as ContactChannel | "widget",
+      phone: await openNullable("contacts.phone_enc", r.phone_enc),
+      bsuid: await openNullable("contacts.wa_user_enc", r.wa_user_enc),
+      igsid: await openNullable("contacts.ig_enc", r.ig_enc),
+      externalId: await openNullable("contacts.external_id_enc", r.external_id_enc),
+      lastInboundAt: (r.last_inbound_at as string | null) ?? null,
+    })),
+  );
+}
+
 /** Todas as fichas de um canal de um chatbot (ex.: a conta do Instagram desconectada pela Meta). */
 export async function contactIdsOfChannel(db: SupabaseClient, botId: string, channel: ContactChannel): Promise<string[]> {
   const { data } = await db.from("contacts").select("id").eq("bot_id", botId).eq("channel", channel);
