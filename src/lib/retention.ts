@@ -9,6 +9,7 @@ import { deleteRefusalsBefore } from "./scope-refusals";
 import { deleteContacts, retentionContacts } from "./contacts";
 import { deleteAgesOf } from "./gate/age";
 import { appUrl } from "./utils";
+import { SENSITIVE_FILE_DAYS, purgeAttachments } from "./attachments";
 
 /*
  * Retenção (leva S; spec "Ciclo de vida dos dados"). Prazo efetivo de um chatbot: o do modo dados
@@ -143,6 +144,8 @@ export async function scheduleDefaultRetention(db: SupabaseClient, now = new Dat
 
 export interface RetentionTotals {
   conversations: number;
+  /** Arquivos recebidos vencidos no modo dados sensíveis (os das conversas apagadas saem com elas). */
+  files: number;
   leads: number;
   unanswered: number;
   refusals: number;
@@ -153,13 +156,15 @@ const BATCH = 200;
 
 /** Apaga, em lotes, o que deste chatbot é mais antigo que o corte. */
 export async function deleteBotDataBefore(db: SupabaseClient, botId: string, cutoff: string, hasTime: () => boolean = () => true): Promise<RetentionTotals> {
-  const t: RetentionTotals = { conversations: 0, leads: 0, unanswered: 0, refusals: 0, contacts: 0 };
+  const t: RetentionTotals = { conversations: 0, files: 0, leads: 0, unanswered: 0, refusals: 0, contacts: 0 };
   // conversas paradas desde antes do corte (mensagens, recusas e detecções vão junto)
   while (hasTime()) {
     const { data } = await db.from("conversations").select("id").eq("bot_id", botId).lt("last_message_at", cutoff).limit(BATCH);
     const ids = (data ?? []).map((c) => c.id as string);
     if (!ids.length) break;
     await logDeletion(db, "conversations", ids, RETENTION_CODE);
+    // arquivos recebidos: o objeto sai do Storage antes da conversa
+    await purgeAttachments(db, { conversationIds: ids });
     const { error } = await db.from("conversations").delete().in("id", ids).eq("bot_id", botId);
     if (error) throw new Error(`retenção das conversas: ${error.message}`);
     t.conversations += ids.length;
@@ -214,7 +219,7 @@ const one = <T,>(x: T | T[] | null) => (Array.isArray(x) ? x[0] : x) ?? null;
 export async function applyRetentionTerms(db: SupabaseClient, hasTime: () => boolean = () => true, now = new Date()): Promise<RetentionTotals & { promoted: number; scheduled: number; skipped?: string }> {
   const promoted = await promoteAgencyRetention(db, now);
   const scheduled = await scheduleDefaultRetention(db, now);
-  const totals: RetentionTotals = { conversations: 0, leads: 0, unanswered: 0, refusals: 0, contacts: 0 };
+  const totals: RetentionTotals = { conversations: 0, files: 0, leads: 0, unanswered: 0, refusals: 0, contacts: 0 };
   // os totais diários vêm antes: nada depois do último dia somado é apagado (sem totais, nada sai)
   const until = await reportedUntil(db);
   if (!until) return { ...totals, promoted, scheduled, skipped: "totais diários ainda não somados" };
@@ -227,6 +232,11 @@ export async function applyRetentionTerms(db: SupabaseClient, hasTime: () => boo
     const cutoff = new Date(Math.min(now.getTime() - r.days * DAY, until.getTime())).toISOString();
     const t = await deleteBotDataBefore(db, b.id, cutoff, hasTime);
     for (const k of Object.keys(totals) as Array<keyof RetentionTotals>) totals[k] += t[k];
+    // modo dados sensíveis: arquivos recebidos ficam no máximo 30 dias (as conversas, até 90)
+    if (r.source === "sensivel" && hasTime()) {
+      const filesCutoff = new Date(Math.min(now.getTime() - Math.min(r.days, SENSITIVE_FILE_DAYS) * DAY, until.getTime())).toISOString();
+      totals.files += await purgeAttachments(db, { botId: b.id, createdBefore: filesCutoff });
+    }
   }
   return { ...totals, promoted, scheduled };
 }

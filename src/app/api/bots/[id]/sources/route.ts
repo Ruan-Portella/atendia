@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { SOURCES_BUCKET, removeSourceFiles, sourcePdfPath } from "@/lib/source-files";
 import { ingestSource, type SourceRow } from "@/lib/ingest";
 import { classifyLater } from "@/lib/gate/base";
 import { normalizeUrl } from "@/lib/utils";
@@ -42,9 +43,10 @@ export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sourc
     if (!(file instanceof File)) return Response.json({ error: "no_file", message: "Envie um PDF." }, { status: 400 });
     if (file.size > 15 * 1024 * 1024) return Response.json({ error: "too_large", message: "PDF acima de 15 MB." }, { status: 400 });
     pdfBuffer = await file.arrayBuffer();
-    row = { ...row, title: title || file.name };
+    const path = sourcePdfPath(botId, file.name);
+    row = { ...row, title: title || file.name, file_path: path };
     const admin = createAdminClient();
-    await admin.storage.from("sources").upload(`${botId}/${Date.now()}-${file.name}`, pdfBuffer, { contentType: "application/pdf", upsert: false });
+    await admin.storage.from(SOURCES_BUCKET).upload(path, pdfBuffer, { contentType: "application/pdf", upsert: false });
   } else {
     if (content.trim().length < 20) return Response.json({ error: "empty", message: "Escreva pelo menos algumas linhas." }, { status: 400 });
     row = { ...row, content, title: title || (kind === "faq" ? "Perguntas frequentes" : "Texto") };
@@ -69,9 +71,12 @@ export async function DELETE(req: Request, ctx: RouteContext<"/api/bots/[id]/sou
   const sourceId = new URL(req.url).searchParams.get("sourceId");
   if (!sourceId) return Response.json({ error: "missing_source", message: "Fonte não informada." }, { status: 400 });
   const supabase = await createClient();
+  const { data: before } = await supabase.from("sources").select("file_path").eq("id", sourceId).eq("bot_id", botId).maybeSingle();
   const { error, count } = await supabase.from("sources").delete({ count: "exact" }).eq("id", sourceId).eq("bot_id", botId);
   if (error) return Response.json({ error: error.message, message: "Não foi possível remover a fonte." }, { status: 500 });
   if (!count) return Response.json({ error: "not_found", message: "Fonte não encontrada." }, { status: 404 });
+  // fonte apagada leva o PDF
+  await removeSourceFiles(createAdminClient(), [before?.file_path as string | null | undefined]);
   return Response.json({ ok: true });
 }
 
@@ -85,7 +90,7 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
   const { id: botId } = await ctx.params;
   const sourceId = new URL(req.url).searchParams.get("sourceId");
   const supabase = await createClient();
-  const { data: source } = await supabase.from("sources").select("id, bot_id, kind, title, url, content").eq("id", sourceId ?? "").eq("bot_id", botId).maybeSingle();
+  const { data: source } = await supabase.from("sources").select("id, bot_id, kind, title, url, content, file_path").eq("id", sourceId ?? "").eq("bot_id", botId).maybeSingle();
   if (!source) return Response.json({ error: "not_found", message: "Fonte não encontrada." }, { status: 404 });
 
   const patch: Partial<SourceRow> = {};
@@ -112,7 +117,8 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
       if (file.size > 15 * 1024 * 1024) return Response.json({ error: "too_large", message: "PDF acima de 15 MB." }, { status: 400 });
       pdfBuffer = await file.arrayBuffer();
       if (!title) patch.title = file.name;
-      await createAdminClient().storage.from("sources").upload(`${botId}/${Date.now()}-${file.name}`, pdfBuffer, { contentType: "application/pdf", upsert: false });
+      patch.file_path = sourcePdfPath(botId, file.name);
+      await createAdminClient().storage.from(SOURCES_BUCKET).upload(patch.file_path, pdfBuffer, { contentType: "application/pdf", upsert: false });
     }
   }
 
@@ -121,6 +127,8 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
   if (changedKeys.length) {
     const { error } = await admin.from("sources").update(patch).eq("id", source.id);
     if (error) return Response.json({ error: "update_failed", message: error.message }, { status: 500 });
+    // PDF trocado: o arquivo anterior sai
+    if (patch.file_path && source.file_path && source.file_path !== patch.file_path) await removeSourceFiles(admin, [source.file_path as string]);
   }
 
   // Só renomeou: não precisa reler nada.

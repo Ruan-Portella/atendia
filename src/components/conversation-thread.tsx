@@ -17,6 +17,31 @@ export interface ThreadMessage {
   /** Post ou reel do Instagram compartilhado pelo contato. */
   channel_ref?: { kind?: string; url?: string | null; permalink?: string | null } | null;
   created_at?: string;
+  /** Arquivos que o contato mandou (guardados cifrados; abertos pela rota /api/files). */
+  attachments?: Array<{ id: string; mime: string; size: number; doc_type: string; filename: string | null }>;
+}
+
+const kb = (n: number) => (n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/** Foto, áudio e vídeo na própria conversa; documento como link para baixar. */
+function AttachmentView({ a }: { a: NonNullable<ThreadMessage["attachments"]>[number] }) {
+  const src = `/api/files/${a.id}`;
+  if (a.doc_type === "image" || a.doc_type === "sticker") {
+    return (
+      <a href={src} target="_blank" rel="noopener" className="mt-1.5 block">
+        {/* arquivo do contato, pela rota autenticada (sem otimização de imagem) */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={a.filename ?? "Imagem enviada pelo contato"} loading="lazy" className={a.doc_type === "sticker" ? "h-24 w-24 object-contain" : "max-h-72 max-w-full rounded-lg"} />
+      </a>
+    );
+  }
+  if (a.doc_type === "audio") return <audio controls preload="none" src={src} className="mt-1.5 w-full max-w-[320px]" />;
+  if (a.doc_type === "video") return <video controls preload="none" src={src} className="mt-1.5 max-h-72 max-w-full rounded-lg" />;
+  return (
+    <a href={src} className="mt-1.5 block text-[12px] underline opacity-90">
+      Baixar {a.filename ?? "arquivo"} ({kb(a.size)})
+    </a>
+  );
 }
 
 interface Props {
@@ -63,6 +88,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
             {m.role === "agent" && <div className="mb-0.5 text-[11px] font-semibold text-brand">{agentLabel(m.author ?? null)}</div>}
             <div className={m.deleted_at ? "whitespace-pre-wrap italic opacity-70" : "whitespace-pre-wrap"}>{m.content}</div>
             {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
+            {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} />)}
             {!m.deleted_at && m.channel_ref?.permalink && /^https:\/\//i.test(m.channel_ref.permalink) ? (
               <a href={m.channel_ref.permalink} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[11px] underline opacity-80">
                 Abrir {m.channel_ref.kind === "reel" ? "o reel" : "o post"} no Instagram

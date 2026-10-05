@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sha256 } from "./inbound-queue";
 import { logDeletion } from "./deletions";
 import { loadMessages, updateMessages } from "./messages";
+import { purgeAttachments } from "./attachments";
 import type { IgMessagingEvent } from "./instagram-inbound";
 
 /*
@@ -81,6 +82,8 @@ export async function handleInstagramDelete(db: SupabaseClient, ev: IgMessagingE
   }
   await logDeletion(db, "message_content", ids);
   await updateMessages(db, { ids }, { content: DELETED_LABEL, channel_ref: null, deleted_at: new Date().toISOString() });
+  // lápide: os arquivos da mensagem saem também (objeto e linha)
+  await purgeAttachments(db, { messageIds: ids.map(Number) });
   return "apagada";
 }
 

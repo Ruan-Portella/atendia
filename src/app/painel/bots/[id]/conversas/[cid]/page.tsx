@@ -15,6 +15,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
 import { leadsOfConversation } from "@/lib/leads";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
+import { attachmentsOfMessages } from "@/lib/attachments";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { channelBlock } from "@/lib/features";
@@ -72,7 +73,9 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   // resposta de 18+ do contato neste bot (tabela interna: lida com a service role)
   const age = isWhatsApp || isInstagram ? await ageRecord(createAdminClient(), { botId: id, channel: isWhatsApp ? "whatsapp" : "instagram", contact: (isWhatsApp ? conv.wa_id : conv.ig_id)! }) : null;
 
-  const allMessages = (messages ?? []) as ThreadMessage[];
+  // arquivos que o contato mandou (abertos pela rota /api/files)
+  const files = await attachmentsOfMessages(createAdminClient(), (messages ?? []).map((m) => m.id));
+  const allMessages = (messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[];
   // conversa com bebida ou remédio (portão): faixa de aviso e pergunta antes de instrução de pagamento
   const regulated = (isWhatsApp || isInstagram) && regulatedConversation(conv.regulated_at as string | null);
   // itens que o portão acusou nesta conversa: a agência pode pedir "isto não é {categoria}"

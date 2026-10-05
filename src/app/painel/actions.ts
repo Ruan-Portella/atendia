@@ -14,6 +14,8 @@ import { appUrl, initials, normalizeUrl, slugify } from "@/lib/utils";
 import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
 import { grantSupport, revokeSupport } from "@/lib/support-access";
 import { hasMfa } from "@/lib/agency-mfa";
+import { purgeAttachments } from "@/lib/attachments";
+import { removeBotSourceFiles } from "@/lib/source-files";
 import { logAccess } from "@/lib/access-log";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
@@ -398,6 +400,9 @@ export async function deleteBot(botId: string, redirectTo?: string): Promise<Act
   if (!own) return fail("Chatbot não encontrado.");
   // o bot leva junto conversas, mensagens e conexões (cascata); reaplicar apaga o bot de novo
   await logDeletion(createAdminClient(), "bots", [botId]);
+  // arquivos no Storage (o Supabase não apaga objeto por SQL): os recebidos e os PDFs das fontes
+  await purgeAttachments(createAdminClient(), { botId });
+  await removeBotSourceFiles(createAdminClient(), botId);
   const { error, count } = await supabase.from("bots").delete({ count: "exact" }).eq("id", botId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
   if (!count) return fail("Chatbot não encontrado.");
@@ -1079,6 +1084,8 @@ export async function deleteConversation(conversationId: string): Promise<Action
   await logDeletion(owned.admin, "leads", leadIds);
   await logDeletion(owned.admin, "conversations", [conversationId]);
   await deleteLeads(owned.admin, leadIds);
+  // arquivos recebidos: o objeto sai do Storage antes da conversa
+  await purgeAttachments(owned.admin, { conversationIds: [conversationId] });
   const { error } = await owned.admin.from("conversations").delete().eq("id", conversationId);
   if (error) return fail("Não foi possível excluir. Tente de novo.");
   await auditPanel("conversa.excluir", { type: "conversation", id: conversationId }, { before: { leads: leadIds.length } });

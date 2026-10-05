@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
+import { attachmentsOfMessages } from "@/lib/attachments";
 import { activeGrant, logSupportRead } from "@/lib/support-access";
 import { requestMeta } from "@/lib/audit";
 import { ConversationThread, type ThreadMessage } from "@/components/conversation-thread";
@@ -31,7 +32,10 @@ export default async function SupportConversation({ params }: { params: Promise<
     );
   }
   await logSupportRead(db, { agencyId: id, adminEmail: s.email, conversationId: cid, grantId: grant.id, meta: await requestMeta() });
-  const messages = (await loadMessages(db, { conversationId: cid }, ["id", "role", "content", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const)) as ThreadMessage[];
+  const raw = await loadMessages(db, { conversationId: cid }, ["id", "role", "content", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const);
+  // arquivos: abrir cada um também vai para a auditoria da agência (rota /api/files)
+  const files = await attachmentsOfMessages(db, raw.map((m) => m.id));
+  const messages = raw.map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[];
 
   return (
     <div className="flex max-w-[760px] flex-col gap-4">

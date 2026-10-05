@@ -228,6 +228,8 @@ export interface SourceRow {
   title: string;
   url: string | null;
   content: string | null;
+  /** PDF: onde o arquivo está no Storage (bucket sources). */
+  file_path?: string | null;
 }
 
 export interface IngestOptions {

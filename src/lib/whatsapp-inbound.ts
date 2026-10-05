@@ -61,9 +61,10 @@ export interface InboundMessage {
   interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
   /** Foto, vídeo e documento podem vir com legenda (é uma mensagem só, no WhatsApp). */
-  image?: { caption?: string };
-  video?: { caption?: string };
-  document?: { caption?: string; filename?: string };
+  image?: { id?: string; mime_type?: string; caption?: string };
+  video?: { id?: string; mime_type?: string; caption?: string };
+  document?: { id?: string; mime_type?: string; caption?: string; filename?: string };
+  sticker?: { id?: string; mime_type?: string };
   /** Aviso do sistema (ex.: a pessoa trocou de número: user_changed_user_id / user_changed_number). */
   system?: { body?: string; type?: string; wa_id?: string; user_id?: string };
 }

@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { contactIdsOfChannel, deleteContacts } from "./contacts";
 import { deleteLeads, leadIdsOfConversations } from "./leads";
+import { purgeAttachments } from "./attachments";
 
 /*
  * Registro de exclusões (migração 0033): o que é apagado por pedido fica registrado (só id e
@@ -78,6 +79,7 @@ export async function deleteInstagramAccountData(db: SupabaseClient, igUserId: s
       await logDeletion(db, "leads", leadIds, code);
       await logDeletion(db, "conversations", ids, code);
       await deleteLeads(db, leadIds);
+      await purgeAttachments(db, { conversationIds: ids });
       const { error } = await db.from("conversations").delete().in("id", ids);
       if (error) throw new Error(`exclusão de conversas: ${error.message}`);
       conversations += ids.length;

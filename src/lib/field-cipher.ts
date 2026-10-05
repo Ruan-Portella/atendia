@@ -1,4 +1,5 @@
 import { createAdminClient } from "./supabase/admin";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { clientKeyById, clientKeyForSeal, gcmOpen, gcmSeal, masterKey } from "./keys";
 
 /*
@@ -36,7 +37,9 @@ export type CipherField =
   | "webhook_deliveries.payload_enc"
   | "action_calls.request_enc"
   | "action_calls.response_enc"
-  | "compliance_checks.summary_enc";
+  | "compliance_checks.summary_enc"
+  | "attachments.object"
+  | "attachments.filename_enc";
 
 /** Escopo da cifra: o cliente dono do dado, ou null (plataforma: chatbot sem cliente, demos). */
 export interface CipherScope {
@@ -90,6 +93,60 @@ export const sealNullable = async (field: CipherField, value: string | null | un
 
 /** openField que aceita vazio. */
 export const openNullable = async (field: CipherField, value: unknown): Promise<string | null> => (typeof value === "string" && value ? openField(field, value) : null);
+
+/* ------------------------------------------------------------------ arquivos (binário) */
+
+/**
+ * Arquivo cifrado: "v2.c.<id da chave>" ou "v2.p<versão>" e uma quebra de linha, depois iv (12
+ * bytes), tag (16) e o dado; mesmo esquema e mesmas chaves dos campos, com o dado adicional
+ * autenticado igual ao campo.
+ */
+export async function sealBytes(field: CipherField, data: Uint8Array, scope: CipherScope): Promise<Uint8Array> {
+  if (identityForTests) return data;
+  let head: string;
+  let key: Buffer;
+  if (scope.clientId) {
+    const k = await clientKeyForSeal(scope.clientId);
+    head = `v2.c.${k.id}`;
+    key = k.key;
+  } else {
+    const m = masterKey();
+    head = `v2.p${m.version}`;
+    key = m.key;
+  }
+  const iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", key, iv);
+  c.setAAD(Buffer.from(field));
+  const body = Buffer.concat([c.update(data), c.final()]);
+  return Buffer.concat([Buffer.from(`${head}\n`), iv, c.getAuthTag(), body]);
+}
+
+/** O arquivo aberto, ou null (chave apagada, formato desconhecido ou dado adulterado). */
+export async function openBytes(field: CipherField, buf: Uint8Array): Promise<Uint8Array | null> {
+  if (identityForTests) return buf;
+  const b = Buffer.from(buf);
+  const nl = b.indexOf(0x0a);
+  if (nl < 4 || nl > 80) return null;
+  const parts = b.subarray(0, nl).toString("utf8").split(".");
+  if (parts[0] !== "v2") return null;
+  let key: Buffer | null;
+  try {
+    if (parts[1] === "c") key = await clientKeyById(parts.slice(2).join("."));
+    else {
+      const version = /^p(\d+)$/.exec(parts[1] ?? "")?.[1];
+      if (!version) return null;
+      key = masterKey(Number(version)).key;
+    }
+    if (!key) return null;
+    const d = createDecipheriv("aes-256-gcm", key, b.subarray(nl + 1, nl + 13));
+    d.setAAD(Buffer.from(field));
+    d.setAuthTag(b.subarray(nl + 13, nl + 29));
+    return Buffer.concat([d.update(b.subarray(nl + 29)), d.final()]);
+  } catch (e) {
+    console.error("cifra: arquivo não abriu", field, (e as Error).message);
+    return null;
+  }
+}
 
 /* ------------------------------------------------------------------ escopo pelo chatbot ou pela conversa */
 

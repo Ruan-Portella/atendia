@@ -28,6 +28,8 @@ const OWNER: Record<string, string> = {
   leads: "lib/leads.ts",
   unanswered: "lib/unanswered.ts",
   scope_refusals: "lib/scope-refusals.ts",
+  // arquivos recebidos: o objeto no Storage sai antes da linha, num lugar só
+  attachments: "lib/attachments.ts",
 };
 
 describe("camada única de mensagens e contatos", () => {

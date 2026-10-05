@@ -12,6 +12,7 @@ import { deleteAgesOf } from "./gate/age";
 import { suppress, suppressionScope } from "./suppression";
 import { deliver } from "./send";
 import { sendText } from "./whatsapp";
+import { purgeAttachments } from "./attachments";
 
 /*
  * Pedido do titular (LGPD, art. 18; leva S). Pelo chat: o contato escreve "apaga meus dados", o
@@ -203,6 +204,7 @@ export async function createRequest(db: SupabaseClient, r: { bot: BotRef; contac
 
 export interface ErasureSummary {
   conversas: number;
+  arquivos: number;
   leads: number;
   perguntas: number;
   contatos: number;
@@ -257,8 +259,11 @@ export async function eraseTargets(
     leads += (await deleteLeads(db, ids)) ?? 0;
   }
   // conversas: mensagens, recusas e detecções vão junto
+  let arquivos = 0;
   for (const ids of chunked(conversations)) {
     await logDeletion(db, "conversations", ids, o.code);
+    // arquivos recebidos: o objeto sai do Storage antes da conversa
+    arquivos += await purgeAttachments(db, { conversationIds: ids });
     const { error } = await db.from("conversations").delete().in("id", ids);
     if (error) throw new Error(`exclusão das conversas: ${error.message}`);
   }
@@ -277,7 +282,7 @@ export async function eraseTargets(
   }
   await logDeletion(db, "contacts", contactIds, o.code);
   if (contactIds.length) await deleteContacts(db, contactIds);
-  return { conversas: conversations.length, leads, perguntas, contatos: contactIds.length, entregas, chamadas, erased: contacts };
+  return { conversas: conversations.length, arquivos, leads, perguntas, contatos: contactIds.length, entregas, chamadas, erased: contacts };
 }
 
 /** Confirmação ao contato pelo canal, se a janela de 24 horas ainda estiver aberta. */

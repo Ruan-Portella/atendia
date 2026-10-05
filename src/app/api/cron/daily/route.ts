@@ -5,6 +5,7 @@ import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
 import { unlinkInactive } from "@/lib/pairing";
 import { reencryptHistory } from "@/lib/reencrypt";
 import { refreshReportDaily } from "@/lib/report-daily";
+import { sweepAttachments } from "@/lib/attachments";
 import { refreshInstagramTokens } from "@/lib/instagram-channel";
 import { checkHealth } from "@/lib/health";
 import { notifyPlatform } from "@/lib/notify";
@@ -53,6 +54,8 @@ async function daily() {
   // totais diários antes da retenção: o que ela apagar já está somado nos relatórios
   const reports = await run("totais diários", () => refreshReportDaily(db, () => hasTime()));
   const retention = await run("limpeza LGPD", () => applyRetention(db, () => hasTime()));
+  // arquivos recebidos que ficaram sem conversa (chatbot ou cliente excluído) ou venceram
+  const files = await run("arquivos sem conversa", () => sweepAttachments(db, () => hasTime()));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
   // cifra por campo (leva S): o histórico ainda sem cifra é cifrado em lotes, com o tempo que sobrar
@@ -87,5 +90,5 @@ async function daily() {
   // análise do bot: as agendadas (gatilhos agrupados) e os clientes antigos
   // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, trial, reports, retention, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, trial, reports, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

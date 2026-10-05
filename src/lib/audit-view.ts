@@ -72,6 +72,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "seguranca.mfa_cadastrar": "Segundo fator cadastrado",
   "suporte.encerrar": "Acesso do suporte encerrado",
   "suporte.ler_conversa": "Conversa lida pelo suporte BoaVoz",
+  "suporte.ler_arquivo": "Arquivo aberto pelo suporte BoaVoz",
   "titular.confirmar": "Pedido de exclusão confirmado",
   "titular.pedido": "Pedido de exclusão recebido pelo chat",
   "webhook.apagar": "Webhook apagado",

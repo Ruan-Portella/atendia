@@ -7,6 +7,7 @@ import { handleInstagramBurst, handleInstagramEcho, type IgChannelRow, type IgMe
 import { isInstagramAccessError } from "./instagram";
 import { handleInstagramDelete, handleInstagramEdit } from "./instagram-edits";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
+import { captureInstagramMedia, captureWhatsAppMedia } from "./media-capture";
 import { processGroup, sweepInbound, type Group, type GroupHandler, type InboundEvent } from "./inbound-queue";
 import { revoke, suppress, suppressionScope } from "./suppression";
 import { recordMetaEnforcement, type MetaAccountDetail } from "./meta-enforcement";
@@ -90,6 +91,8 @@ const whatsappGroup: GroupHandler = async (db, events) => {
     for (const e of contact) if (e.payload.type === "echo") await handleEcho(db, channel, e.payload.echo, e.key_hash);
     const burst: QueuedMessage[] = contact.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, msg: e.payload.msg, profileName: e.payload.profileName, identityKeyHash: e.payload.identityKeyHash ?? null, receivedAt: e.created_at }] : []));
     await handleInboundBurst(db, channel, burst);
+    // mídia recebida: guardada cifrada depois da resposta (falha aqui não refaz a conversa)
+    await captureWhatsAppMedia(db, channel, burst).catch((e) => console.error("whatsapp: mídia", (e as Error).message));
   } catch (err) {
     // sem acesso ou sem pagamento: marca o número e conclui (tentar de novo não adianta)
     if (isAccessError(err)) return void (await markDisconnected(db, { column: "phone_number_id", value: phoneNumberId }, TOKEN_REJECTED));
@@ -108,7 +111,10 @@ const instagramGroup: GroupHandler = async (db, events) => {
   if (!ch || ch.disconnected_at) return console.log("instagram: conta sem chatbot ou desconectada, evento ignorado", igUserId);
   try {
     for (const e of all) if (e.payload.type === "echo") await handleInstagramEcho(db, ch, e.payload.ev, e.key_hash);
-    await handleInstagramBurst(db, ch, all.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, ev: e.payload.ev, receivedAt: e.created_at }] : [])));
+    const igBurst = all.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, ev: e.payload.ev, receivedAt: e.created_at }] : []));
+    await handleInstagramBurst(db, ch, igBurst);
+    // mídia recebida: guardada cifrada depois da resposta (o link do CDN da Meta vence)
+    await captureInstagramMedia(db, ch.bot_id, igBurst).catch((e) => console.error("instagram: mídia", (e as Error).message));
     // edição e mensagem desfeita depois das mensagens (a original já está gravada)
     for (const e of all) {
       if (e.payload.type === "edit") await handleInstagramEdit(db, e.payload.ev);

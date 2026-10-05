@@ -699,10 +699,13 @@ export async function runRetentionNow(): Promise<ActionResult> {
   const hasTime = deadline(50_000);
   await refreshReportDaily(db, hasTime);
   const r = await applyRetentionTerms(db, hasTime);
-  await auditAdmin(s.email, "retencao.rodar", { after: { ...r } });
+  // arquivos sem conversa (chatbot ou cliente excluído) e vencidos
+  const { sweepAttachments } = await import("@/lib/attachments");
+  const orphans = await sweepAttachments(db, hasTime);
+  await auditAdmin(s.email, "retencao.rodar", { after: { ...r, arquivos_sem_conversa: orphans } });
   revalidatePath("/admin/operacao");
-  if (r.skipped) return fail(`Limpeza parada: ${r.skipped}.`);
-  return ok(`Limpeza feita: ${r.conversations} conversa(s), ${r.leads} lead(s), ${r.unanswered} pergunta(s), ${r.refusals} pedido(s) fora do assunto e ${r.contacts} contato(s) apagados; ${r.promoted} prazo(s) promovido(s) e ${r.scheduled} agência(s) avisada(s) do prazo padrão.`);
+  if (r.skipped) return fail(`Limpeza parada: ${r.skipped}. Arquivos sem conversa removidos: ${orphans}.`);
+  return ok(`Limpeza feita: ${r.conversations} conversa(s), ${r.files + orphans} arquivo(s) (modo sensível e sem conversa), ${r.leads} lead(s), ${r.unanswered} pergunta(s), ${r.refusals} pedido(s) fora do assunto e ${r.contacts} contato(s) apagados; ${r.promoted} prazo(s) promovido(s) e ${r.scheduled} agência(s) avisada(s) do prazo padrão.`);
 }
 
 /** Totais diários (report_daily): recalcula agora o que falta (na dev a rotina diária não roda sozinha). */

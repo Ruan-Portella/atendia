@@ -9,6 +9,7 @@ import { MessageScroller } from "@/components/message-scroller";
 import { conversationState } from "@/lib/presence";
 import { loadMessages } from "@/lib/messages";
 import { leadsOfConversation } from "@/lib/leads";
+import { attachmentsOfMessages } from "@/lib/attachments";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
@@ -33,7 +34,9 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   ]);
   const agencyName = member.agency.name;
   const takeOver = memberTakeOver.bind(null, id, cid);
-  const allMessages = (messages ?? []) as ThreadMessage[];
+  // arquivos que o contato mandou (abertos pela rota /api/files)
+  const files = await attachmentsOfMessages(admin, (messages ?? []).map((m) => m.id));
+  const allMessages = (messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[];
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   const handoffOpen = member.allowHandoff && !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com ele
