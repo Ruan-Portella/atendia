@@ -17,6 +17,14 @@ export function validIp(ip: string | null | undefined): string | null {
   return /^[0-9a-f:]+$/i.test(v) && v.includes(":") ? v : null;
 }
 
+/** "Chrome no Windows": o navegador e o sistema, sem o texto inteiro do user agent. Pura. */
+export function deviceOf(ua: string | null): string {
+  if (!ua) return "";
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "navegador";
+  const os = /iPhone|iPad/.test(ua) ? "iPhone/iPad" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "";
+  return os ? `${browser} no ${os}` : browser;
+}
+
 /** Dia em Brasília (a sessão é registrada uma vez por pessoa, IP e dia). */
 export const accessDay = (now = new Date()) => now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 

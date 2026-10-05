@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hashId } from "./rate-limit";
+import { SECURITY_ALERTS, isSecurityAlert } from "./security-alerts";
+import { notifyAgencyOwner } from "./notify";
+import { appUrl } from "./utils";
 
 /*
  * Auditoria mínima (L1): quem fez o quê, só inserção, guardada 1 ano (ver a migração 0044).
@@ -64,9 +67,25 @@ export async function audit(db: SupabaseClient, e: AuditEvent): Promise<void> {
       user_agent: e.userAgent?.slice(0, 300) ?? null,
     });
     if (error) console.error("auditoria não gravada", e.action, error.message);
+    // evento grave (chave nova, URL trocada, acesso do suporte…): e-mail ao dono na hora
+    else if (e.agencyId && isSecurityAlert(e.action)) await alertOwner(db, e);
   } catch (err) {
     console.error("auditoria não gravada", e.action, err);
   }
+}
+
+const ACTOR_LABEL: Record<AuditActor, string> = { user: "você (dono da conta)", member: "uma pessoa do cliente", api_key: "uma chave de API", support: "a equipe BoaVoz", system: "o sistema", link: "um link de conexão" };
+
+/** Alerta de segurança por e-mail, sem segredo nem dado de contato. */
+async function alertOwner(db: SupabaseClient, e: AuditEvent): Promise<void> {
+  const label = SECURITY_ALERTS[e.action] ?? e.action;
+  const when = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+  await notifyAgencyOwner(db, e.agencyId!, `Alerta de segurança: ${label}`, [
+    `${label} na sua conta BoaVoz, em ${when}, por ${ACTOR_LABEL[e.actorType] ?? e.actorType}.`,
+    "",
+    "Se foi você ou alguém da sua equipe, não precisa fazer nada. Se não reconhece, confira os detalhes em Segurança e fale com o suporte.",
+    appUrl("/painel/seguranca?aba=auditoria"),
+  ]).catch(() => false);
 }
 
 /** IP e navegador da requisição atual (server actions e rotas). */

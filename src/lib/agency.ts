@@ -22,6 +22,8 @@ export interface Agency {
   /** Prazo novo esperando a data de efeito (redução em 30 dias; ver retention.ts). */
   retention_pending_months: number | null;
   retention_effective_at: string | null;
+  /** Até quando os alertas de segurança já foram vistos (faixa do topo do painel). */
+  security_alerts_seen_at: string | null;
   plan: string;
   /** Cota combinada fora do plano (assinantes de antes da cota nova); nula = a do plano. */
   quota_override: number | null;

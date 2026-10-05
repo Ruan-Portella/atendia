@@ -7,6 +7,8 @@ import { HandoffWatcher } from "@/components/handoff-watcher";
 import { NoticeStrip } from "@/components/notice-strip";
 import { panelNotices } from "@/lib/ai-pause";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { pendingAlerts } from "@/lib/security-alerts";
+import { SecurityAlertStrip } from "@/components/security-alert-strip";
 
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
@@ -15,6 +17,8 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
   const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
   // pausa, desligamento e suspensão pelo backoffice, ordem da Meta: a agência precisa saber por que parou
   const notices = await panelNotices(createAdminClient(), agency.id);
+  // eventos graves da auditoria ainda não vistos (chave nova, URL trocada, acesso do suporte…)
+  const alerts = await pendingAlerts(createAdminClient(), agency.id, agency.security_alerts_seen_at ?? null).catch(() => []);
   const channelNames = notices.suspended.map((c) => SUSPENDED_LABEL[c] ?? c).join(", ");
   const banners = [
     notices.aiPaused && "A IA da sua conta está pausada pela equipe BoaVoz. As mensagens continuam chegando em Conversas para a sua equipe responder; no site, os visitantes veem o formulário de contato. Dúvidas: fale com o suporte.",
@@ -33,6 +37,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       usageLabel={`${num(usage)} / ${num(quota)}`}
       notices={
         <>
+          {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
           <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={quota} />
         </>

@@ -1121,6 +1121,24 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
   return ok(`Apagados: ${n(summary.conversas, "conversa", "conversas")}, ${n(summary.leads, "lead", "leads")} e ${n(summary.contatos, "ficha de contato", "fichas de contato")}.${erased.some((c) => c.channel !== "widget") ? " O número entrou na lista de quem não recebe mensagens da empresa." : ""}`);
 }
 
+/** Segurança: sai do painel em todos os outros aparelhos (esta sessão continua). */
+export async function endOtherSessions(): Promise<ActionResult> {
+  await requireAgency();
+  const { error } = await (await createClient()).auth.signOut({ scope: "others" });
+  if (error) return fail("Não foi possível encerrar as outras sessões. Tente de novo.");
+  const { agency } = await requireAgency();
+  await auditPanel("seguranca.encerrar_sessoes", { type: "agency", id: agency.id });
+  return ok("Pronto: as outras sessões foram encerradas.");
+}
+
+/** Faixa de alertas de segurança: marca os de agora como vistos. */
+export async function markSecurityAlertsSeen(): Promise<ActionResult> {
+  const { agency } = await requireAgency();
+  await createAdminClient().from("agencies").update({ security_alerts_seen_at: new Date().toISOString() }).eq("id", agency.id);
+  revalidatePath("/painel", "layout");
+  return ok("Alertas marcados como vistos.");
+}
+
 /** Segurança: confirma um pedido do titular feito pelo chat e roda a rotina de exclusão. */
 export async function confirmDataSubjectRequest(requestId: string): Promise<ActionResult> {
   const { agency } = await requireAgency();
