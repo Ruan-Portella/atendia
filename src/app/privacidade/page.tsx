@@ -159,7 +159,7 @@ export default function PrivacyPage() {
 
       <Section title="12. Dados sensíveis">
         <p>
-          Quando a empresa liga o modo dados sensíveis num assistente (a {brand} sugere isso para negócios de saúde), as conversas dele ficam guardadas por menos tempo, no prazo que a empresa escolher entre 7 e 90 dias; os arquivos recebidos, por até 30 dias; e abrir essas conversas no painel exige verificação em duas etapas. Em todos os assistentes, enviamos aos provedores de IA e aos registros técnicos só o necessário.
+          Quando o modo dados sensíveis é ligado num assistente, pela empresa ou pela agência que cuida dele (a {brand} sugere isso para negócios de saúde), as conversas dele ficam guardadas por menos tempo, num prazo escolhido entre 7 e 90 dias; os arquivos recebidos, por até 30 dias; e abrir essas conversas no painel ou na área do cliente exige verificação em duas etapas. Quando a agência muda o modo, a empresa recebe um aviso. Em todos os assistentes, enviamos aos provedores de IA e aos registros técnicos só o necessário.
         </p>
       </Section>
 

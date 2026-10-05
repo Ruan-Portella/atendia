@@ -1,12 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { RETENTION_MONTHS, effectiveRetention, retentionLabel } from "@/lib/retention";
-import { setClientRetention } from "@/app/painel/actions";
+import { setBotSensitiveMode, setClientRetention } from "@/app/painel/actions";
+import { SensitiveModeForm } from "@/components/sensitive-mode-form";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 /**
  * Privacidade do cliente no painel (aba Dados do cliente): prazo de guarda próprio (vazio = o da
- * agência) e o modo dados sensíveis de cada chatbot, que o cliente liga na área dele.
+ * agência) e o modo dados sensíveis de cada chatbot, que a agência ou o cliente (na área dele) ligam.
  */
 export async function ClientPrivacy({ clientId, clientName, clientMonths, agencyMonths }: { clientId: string; clientName: string; clientMonths: number | null; agencyMonths: number | null }) {
   const supabase = await createClient();
@@ -33,23 +34,20 @@ export async function ClientPrivacy({ clientId, clientName, clientMonths, agency
         <SubmitButton className="btn-primary self-start">Salvar prazo</SubmitButton>
       </ActionForm>
       {(bots ?? []).length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-line pt-4">
-          <h3 className="text-sm font-semibold">Modo dados sensíveis</h3>
-          <p className="text-xs text-muted">Para negócios de saúde: as conversas do chatbot saem num prazo curto (7 a 90 dias), antes do prazo do cliente. Quem liga é o cliente, em Privacidade, na área do cliente.</p>
-          <ul className="flex flex-col gap-1.5 text-sm">
-            {(bots ?? []).map((b) => {
-              const r = effectiveRetention({ isDemo: false, sensitiveMode: Boolean(b.sensitive_mode), sensitiveDays: b.sensitive_retention_days as number, clientMonths, agencyMonths });
-              return (
-                <li key={b.id as string} className="flex flex-wrap items-baseline justify-between gap-x-3">
-                  <span>{b.name as string}</span>
-                  <span className="text-xs text-muted">
-                    {b.sensitive_mode ? `ligado · conversas guardadas ${b.sensitive_retention_days} dias` : `desligado · guarda ${retentionLabel(r.days)}`}
-                    {!b.sensitive_mode && b.sensitive_mode_suggested_at ? " · sugerido pela análise (negócio de saúde)" : ""}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+        <div className="flex flex-col gap-3 border-t border-line pt-4">
+          <div>
+            <h3 className="text-sm font-semibold">Modo dados sensíveis</h3>
+            <p className="text-xs text-muted">Para negócios de saúde (clínicas, consultórios, terapias, farmácias): as conversas do chatbot saem num prazo curto, de 7 a 90 dias, antes do prazo acima, e abri-las pede o segundo fator. A agência liga aqui ou o cliente liga em Privacidade, na área do cliente; quando você muda, os gestores do cliente recebem um e-mail. Os contatos não recebem aviso.</p>
+          </div>
+          {(bots ?? []).map((b) => {
+            const r = effectiveRetention({ isDemo: false, sensitiveMode: Boolean(b.sensitive_mode), sensitiveDays: b.sensitive_retention_days as number, clientMonths, agencyMonths });
+            return (
+              <div key={b.id as string} className="flex flex-col gap-1">
+                <SensitiveModeForm bot={b as Parameters<typeof SensitiveModeForm>[0]["bot"]} action={setBotSensitiveMode.bind(null, clientId, b.id as string)} />
+                {!b.sensitive_mode && <p className="px-1 text-xs text-muted">Hoje as conversas de {b.name as string} ficam {retentionLabel(r.days)}.</p>}
+              </div>
+            );
+          })}
         </div>
       )}
     </section>

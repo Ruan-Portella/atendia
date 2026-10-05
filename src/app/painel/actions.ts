@@ -18,6 +18,7 @@ import { grantSupport, revokeSupport } from "@/lib/support-access";
 import { hasMfa } from "@/lib/agency-mfa";
 import { purgeAttachments } from "@/lib/attachments";
 import { removeBotSourceFiles } from "@/lib/source-files";
+import { applySensitiveMode, sensitiveChangeText, sensitiveSavedText } from "@/lib/sensitive-mode";
 import { logAccess } from "@/lib/access-log";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, aiNoticeProblem, awayMessageProblem, backNoticeProblem, entryNoticeProblem, parseHoursForm, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
@@ -1375,6 +1376,36 @@ export async function setClientRetention(clientId: string, formData: FormData): 
   }
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok(months ? `Prazo do cliente: ${months} meses.` : `O cliente segue o prazo da agência (${retentionLabel(days(agency.retention_months))}).`);
+}
+
+/**
+ * Modo dados sensíveis de um chatbot, pela agência (dono e administrador): a mesma regra da área
+ * do cliente. O negócio é o controlador: os gestores e o e-mail do relatório recebem o aviso.
+ */
+export async function setBotSensitiveMode(clientId: string, botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("security"))) return fail(DENIED);
+  const { agency } = await requireAgency();
+  const supabase = await createClient();
+  // a RLS confere que o cliente e o chatbot são desta agência (e do escopo de quem está logado)
+  const [{ data: client }, { data: bot }] = await Promise.all([
+    supabase.from("clients").select("id, name, retention_months").eq("id", clientId).maybeSingle(),
+    supabase.from("bots").select("id").eq("id", botId).eq("client_id", clientId).eq("is_demo", false).maybeSingle(),
+  ]);
+  if (!client || !bot) return fail("Chatbot não encontrado.");
+  const r = await applySensitiveMode(createAdminClient(), { botId, on: formData.get("sensitive") === "on", days: Number(formData.get("days")), confirmed: formData.get("confirm") === "on", clientMonths: (client.retention_months as number | null) ?? null, agencyMonths: agency.retention_months });
+  if (!r.ok) return fail(r.message);
+  const c = r.change;
+  await auditPanel("bot.modo_sensivel", { type: "bot", id: botId }, { before: c.before, after: { sensitive_mode: c.on, sensitive_retention_days: c.days } });
+  if (c.toggled || c.reduced) {
+    await notifyClientPeople(createAdminClient(), clientId, `${agency.name} ${c.on ? "ligou" : "desligou"} o modo dados sensíveis`, [
+      `${agency.name} ${sensitiveChangeText(c)}.`,
+      "",
+      `Se não combinou essa mudança, fale com ${agency.name}. Você também pode mudar em Privacidade, na área do cliente.`,
+    ]).catch(() => false);
+  }
+  revalidatePath(`/painel/clientes/${clientId}`);
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(sensitiveSavedText(c));
 }
 
 /** Desfaz a redução de prazo pendente (o "Não apagar" não volta: aí é escolher um prazo). */

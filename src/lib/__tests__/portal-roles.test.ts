@@ -57,3 +57,21 @@ describe("ações do portal conferem o papel", () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe("modo dados sensíveis", () => {
+  it("o texto do aviso e da tela", async () => {
+    const { sensitiveChangeText, sensitiveSavedText } = await import("../sensitive-mode");
+    const on = { name: "Bia", on: true, days: 30, afterLabel: "30 dias", before: { sensitive_mode: false, sensitive_retention_days: null }, toggled: true, reduced: true };
+    expect(sensitiveChangeText(on)).toBe("ligou o modo dados sensíveis do assistente Bia: as conversas dele passam a ser apagadas depois de 30 dias");
+    expect(sensitiveSavedText({ ...on, on: false, afterLabel: "12 meses" })).toBe("Modo dados sensíveis desligado: vale o prazo de 12 meses.");
+  });
+
+  it("a agência liga pelo painel com a mesma regra do portal (dono e administrador)", () => {
+    const src = readFileSync(join(__dirname, "../../app/painel/actions.ts"), "utf8");
+    const fn = src.slice(src.indexOf("export async function setBotSensitiveMode("));
+    expect(fn.slice(0, 200)).toContain('allowed("security")');
+    expect(fn.slice(0, 2000)).toContain("applySensitiveMode(");
+    const portal = readFileSync(join(__dirname, "../../app/cliente/actions.ts"), "utf8");
+    expect(portal).toContain("applySensitiveMode(");
+  });
+});

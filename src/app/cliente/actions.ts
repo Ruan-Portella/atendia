@@ -8,6 +8,7 @@ import { currentOrigin, EMAIL_LINK_TYPES, memberAttendant, memberForAction, memb
 import { profileProblem } from "@/lib/attendants";
 import { awayMessageProblem, parseHoursForm, type HumanHandoff } from "@/lib/handoff-hours";
 import { executeRequest } from "@/lib/data-subject";
+import { applySensitiveMode, sensitiveChangeText, sensitiveSavedText } from "@/lib/sensitive-mode";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
@@ -19,7 +20,7 @@ import { audit, requestMeta } from "@/lib/audit";
 import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "@/lib/channel-disconnect";
 import { notifyAgencyOwner } from "@/lib/notify";
 import { appUrl } from "@/lib/utils";
-import { SENSITIVE_DAYS, effectiveRetention, isRetentionMonths, retentionLabel, retentionReduced } from "@/lib/retention";
+import { isRetentionMonths, retentionLabel, retentionReduced } from "@/lib/retention";
 import { headers } from "next/headers";
 
 const GENERIC = "Se esse e-mail tiver acesso, enviamos um link para entrar. Confira a caixa de entrada (e o spam).";
@@ -219,33 +220,21 @@ export async function memberSetRetention(clientId: string, formData: FormData): 
 export async function memberSetSensitive(clientId: string, botId: string, formData: FormData): Promise<ActionResult> {
   const ctx = await memberForAction(clientId, "manager");
   if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");
-  const on = formData.get("sensitive") === "on";
-  const chosen = Number(formData.get("days"));
-  const { data: bot } = await ctx.admin.from("bots").select("name, sensitive_mode, sensitive_retention_days").eq("id", botId).maybeSingle();
-  if (!bot) return fail("Assistente não encontrado.");
-  const daysOut = on ? ((SENSITIVE_DAYS as readonly number[]).includes(chosen) ? chosen : null) : (bot.sensitive_retention_days as number);
-  if (daysOut === null) return fail("Escolha o prazo: 7, 15, 30, 60 ou 90 dias.");
   const cur = await memberRetention(ctx, clientId);
-  const base = { isDemo: false, clientMonths: cur.clientMonths, agencyMonths: cur.agencyMonths };
-  const before = effectiveRetention({ ...base, sensitiveMode: Boolean(bot.sensitive_mode), sensitiveDays: bot.sensitive_retention_days as number }).days;
-  const after = effectiveRetention({ ...base, sensitiveMode: on, sensitiveDays: daysOut }).days;
-  const reduced = retentionReduced(before, after);
-  if (reduced && formData.get("confirm") !== "on") return fail(`Para encurtar o prazo, marque a confirmação: as conversas deste assistente com mais de ${retentionLabel(after)} são apagadas na próxima limpeza diária.`);
-  const { error } = await ctx.admin.from("bots").update({ sensitive_mode: on, sensitive_retention_days: daysOut }).eq("id", botId);
-  if (error) return fail("Não foi possível salvar. Tente de novo.");
-  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "bot.modo_sensivel", targetType: "bot", targetId: botId, before: { sensitive_mode: bot.sensitive_mode, sensitive_retention_days: bot.sensitive_retention_days }, after: { sensitive_mode: on, sensitive_retention_days: daysOut }, ...(await requestMeta()) });
-  if (on !== Boolean(bot.sensitive_mode) || reduced) {
-    const what = on
-      ? `ligou o modo dados sensíveis do assistente ${bot.name}: as conversas dele passam a ser apagadas depois de ${daysOut} dias`
-      : `desligou o modo dados sensíveis do assistente ${bot.name}: as conversas voltam ao prazo do cliente (${retentionLabel(after)})`;
-    await notifyAgencyOwner(ctx.admin, ctx.member.agencyId, `${ctx.member.clientName} ${on ? "ligou" : "desligou"} o modo dados sensíveis`, [
-      `${ctx.email}, do cliente ${ctx.member.clientName}, ${what}.`,
+  const r = await applySensitiveMode(ctx.admin, { botId, on: formData.get("sensitive") === "on", days: Number(formData.get("days")), confirmed: formData.get("confirm") === "on", clientMonths: cur.clientMonths, agencyMonths: cur.agencyMonths });
+  if (!r.ok) return fail(r.message);
+  const c = r.change;
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "bot.modo_sensivel", targetType: "bot", targetId: botId, before: c.before, after: { sensitive_mode: c.on, sensitive_retention_days: c.days }, ...(await requestMeta()) });
+  // a agência fica sabendo quando o cliente liga, desliga ou encurta
+  if (c.toggled || c.reduced) {
+    await notifyAgencyOwner(ctx.admin, ctx.member.agencyId, `${ctx.member.clientName} ${c.on ? "ligou" : "desligou"} o modo dados sensíveis`, [
+      `${ctx.email}, do cliente ${ctx.member.clientName}, ${sensitiveChangeText(c)}.`,
       "",
       `Painel: ${appUrl(`/painel/clientes/${clientId}?tab=dados`)}`,
     ]).catch(() => false);
   }
   revalidatePath(`/cliente/${clientId}/privacidade`);
-  return ok(on ? `Modo dados sensíveis ligado: as conversas de ${bot.name} ficam ${daysOut} dias.` : `Modo dados sensíveis desligado: vale o prazo de ${retentionLabel(after)}.`);
+  return ok(sensitiveSavedText(c));
 }
 
 export async function memberDisconnectChannel(clientId: string, botId: string, channel: "whatsapp" | "instagram"): Promise<ActionResult> {
