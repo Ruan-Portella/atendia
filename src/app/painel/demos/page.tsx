@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAgency } from "@/lib/agency";
+import { requirePermission } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { DemoGenerator } from "@/components/demo-generator";
 import { CopyButton } from "@/components/copy-button";
@@ -11,7 +11,7 @@ import { deleteBot } from "../actions";
 export const metadata = { title: "Demos" };
 
 export default async function DemosPage() {
-  const { agency } = await requireAgency();
+  const { agency } = await requirePermission("config");
   const supabase = await createClient();
   const { data: demos } = await supabase.from("bots").select("id, client_name, client_site, demo_slug, demo_views, status, created_at").eq("agency_id", agency.id).eq("is_demo", true).order("created_at", { ascending: false });
 

@@ -1,5 +1,5 @@
 import { Gift, Link2, Percent, Receipt } from "lucide-react";
-import { requireAgency } from "@/lib/agency";
+import { requirePermission } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { CopyButton } from "@/components/copy-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
@@ -14,7 +14,7 @@ export const metadata = { title: "Afiliados" };
 const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 
 export default async function AfiliadosPage() {
-  const { agency, plan } = await requireAgency();
+  const { agency, plan } = await requirePermission("billing");
   const supabase = await createClient();
   const [{ data: refs }, credit, { data: redemptions }] = await Promise.all([
     supabase.from("referrals").select("id, status, commission_cents, created_at").eq("referrer_id", agency.id).order("created_at", { ascending: false }),

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { activeMembership, can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { ingestSource } from "@/lib/ingest";
 import { normalizeUrl, slugify } from "@/lib/utils";
@@ -35,8 +36,10 @@ export async function POST(req: Request) {
 
   let agencyId: string | null = null;
   if (userId) {
-    const { data: agency } = await db.from("agencies").select("id").eq("owner_id", userId).maybeSingle();
-    agencyId = agency?.id ?? null;
+    // equipe: demo é configuração (dono, administrador ou editor)
+    const member = await activeMembership(db, userId);
+    if (member && !can(member.role, "config")) return Response.json({ error: "forbidden", message: "O seu papel na equipe não cria demos." }, { status: 403 });
+    agencyId = member?.agency_id ?? null;
   }
 
   const ip = hashId(clientIp(req));

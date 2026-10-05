@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CheckCircle2, Clock, Info } from "lucide-react";
-import { requireAgency } from "@/lib/agency";
+import { requirePermission } from "@/lib/agency";
 import { saveCustomDomain, undoAgencyRetention, updateAgency, updatePrivacy, verifyCustomDomain } from "../actions";
 import { DEFAULT_RETENTION_MONTHS, RETENTION_MONTHS, dateBR } from "@/lib/retention";
 import { LogoUpload } from "@/components/logo-upload";
@@ -13,7 +13,7 @@ import { CopyButton } from "@/components/copy-button";
 export const metadata = { title: "Marca e domínio" };
 
 export default async function MarcaPage() {
-  const { agency, plan } = await requireAgency();
+  const { agency, plan } = await requirePermission("brand");
   const domain = agency.custom_domain;
   const verified = Boolean(domain && agency.custom_domain_verified_at);
   const apex = domain ? isApexDomain(domain) : false;

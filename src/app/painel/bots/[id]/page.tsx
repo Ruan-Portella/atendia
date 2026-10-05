@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
@@ -62,7 +63,9 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
-  const [{ id }, sp, { agency: owner }] = await Promise.all([params, searchParams, requireAgency()]);
+  const [{ id }, sp, { agency: owner, role }] = await Promise.all([params, searchParams, requireAgency()]);
+  // equipe (leva B1'): o atendente vê só as conversas do chatbot
+  const canConfig = can(role, "config");
   // canais da Meta: liberação da agência no backoffice, ou abertura geral; no teste grátis, a aba
   // do WhatsApp aparece com o aviso de liberação manual
   const access = await channelAccessOf(createAdminClient(), owner);
@@ -71,8 +74,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const waAllowed = access.whatsapp === "liberado" || trialVerdict === "liberado";
   const waWaiting = access.whatsapp === "aguardando" && trialVerdict !== "liberado";
   const igAllowed = access.instagram === "liberado";
-  const tabs = TABS.filter(([t]) => (t === "whatsapp" ? waAllowed || waWaiting : t === "instagram" ? igAllowed : true));
-  const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "fontes") as Tab;
+  const tabs = TABS.filter(([t]) => (canConfig || t === "conversas") && (t === "whatsapp" ? waAllowed || waWaiting : t === "instagram" ? igAllowed : true));
+  const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : canConfig ? "fontes" : "conversas") as Tab;
   const supabase = await createClient();
 
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
@@ -135,7 +138,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: color }}>{appearance.avatar_text ?? initials(bot.client_name)}</span>
         <span className="display min-w-0 truncate text-base font-bold sm:text-lg">{bot.name} · {bot.client_name}</span>
         <Status status={bot.is_demo ? "demo" : bot.status} />
-        <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
+        {canConfig && <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
           {demoUrl && <CopyButton text={demoUrl} label="Copiar link da demo" className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && <CopyButton text={embedSnippet} label="Copiar código" className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && bot.status === "live" && !bot.paused_at && <BotPauseButton action={pauseBot.bind(null, id)} className="btn-ghost flex-1 sm:flex-none" />}
@@ -146,7 +149,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               </SubmitButton>
             </ActionForm>
           )}
-        </div>
+        </div>}
       </div>
 
       {bot.paused_at && (
@@ -155,14 +158,14 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             <strong>A IA deste chatbot está pausada</strong> desde {relativeTime(bot.paused_at)}{bot.pause_reason ? ` · ${bot.pause_reason}` : ""}.
             <span className="block text-ink-2">
               No WhatsApp e no Instagram, as mensagens ficam em Conversas como pedido de atendente{bot.pause_notify ? " e o contato recebe o aviso uma vez" : ", sem aviso ao contato"}; no site, aparece o formulário de contato.
-              {(waAllowed || igAllowed) && <> Para cortar o canal de vez, desconecte na aba {waAllowed && <Link href={`/painel/bots/${id}?tab=whatsapp`} className="underline">WhatsApp</Link>}{waAllowed && igAllowed && " ou "}{igAllowed && <Link href={`/painel/bots/${id}?tab=instagram`} className="underline">Instagram</Link>}.</>}
+              {canConfig && (waAllowed || igAllowed) && <> Para cortar o canal de vez, desconecte na aba {waAllowed && <Link href={`/painel/bots/${id}?tab=whatsapp`} className="underline">WhatsApp</Link>}{waAllowed && igAllowed && " ou "}{igAllowed && <Link href={`/painel/bots/${id}?tab=instagram`} className="underline">Instagram</Link>}.</>}
             </span>
           </div>
-          <div className="w-full sm:ml-auto sm:w-auto">
+          {canConfig && <div className="w-full sm:ml-auto sm:w-auto">
             <ActionForm action={resumeBot.bind(null, id)}>
               <SubmitButton pendingLabel="Retomando…" className="btn-primary w-full sm:w-auto">Retomar a IA</SubmitButton>
             </ActionForm>
-          </div>
+          </div>}
         </div>
       )}
 
@@ -184,7 +187,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               {label}
             </Link>
           ))}
-          <div className="ml-auto shrink-0 lg:ml-0 lg:mt-3 lg:border-t lg:border-line-2 lg:pt-3">
+          {canConfig && <div className="ml-auto shrink-0 lg:ml-0 lg:mt-3 lg:border-t lg:border-line-2 lg:pt-3">
             <ConfirmAction
               action={deleteBot.bind(null, id, bot.client_id ? `/painel/clientes/${bot.client_id}` : bot.is_demo ? "/painel/demos" : "/painel/clientes")}
               title={`Excluir ${bot.is_demo ? "esta demo" : "este chatbot"}?`}
@@ -198,7 +201,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             >
               Excluir {bot.is_demo ? "demo" : "chatbot"}
             </ConfirmAction>
-          </div>
+          </div>}
         </nav>
 
         <section className="flex min-w-0 flex-col gap-5 px-4 py-5 pb-24 sm:px-5 md:px-7 md:py-6 lg:border-l lg:border-line lg:pb-6">

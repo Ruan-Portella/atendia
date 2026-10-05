@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { ACTION_GROUPS, ACTORS, PERIODS, actionLabel, actorText, clientTargetIds, listAudit, targetNamer, type AuditFilters } from "@/lib/audit-view";
+import { ACTION_GROUPS, ACTORS, PERIODS, actionLabel, actorText, clientTargetIds, listAudit, targetNamer, type AuditFilters, type AuditPeople } from "@/lib/audit-view";
 import { isSecurityAlert } from "@/lib/security-alerts";
 
 const PAGE = 50;
 const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 
 /** Auditoria: filtros, lista com antes e depois, exportar CSV. */
-export async function AuditSection({ agencyId, ownerId, filters, page }: { agencyId: string; ownerId: string; filters: AuditFilters; page: number }) {
+export async function AuditSection({ agencyId, people, filters, page }: { agencyId: string; people: AuditPeople; filters: AuditFilters; page: number }) {
   const supabase = await createClient();
   const [{ data: clients }, { data: bots }, targetIds] = await Promise.all([
     supabase.from("clients").select("id, name").order("name"),
@@ -72,7 +72,7 @@ export async function AuditSection({ agencyId, ownerId, filters, page }: { agenc
               <details>
                 <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                   <span className={isSecurityAlert(r.action) ? "font-semibold text-danger" : "font-medium"}>{actionLabel(r.action)}</span>
-                  <span className="text-xs text-muted">{when(r.created_at)} · {actorText(r, ownerId)}{nameOf(r) ? ` · ${nameOf(r)}` : ""}</span>
+                  <span className="text-xs text-muted">{when(r.created_at)} · {actorText(r, people)}{nameOf(r) ? ` · ${nameOf(r)}` : ""}</span>
                 </summary>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <div>

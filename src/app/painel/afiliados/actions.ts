@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { billingEnabled, ensureStripeCustomer, stripe } from "@/lib/stripe";
 import { creditSummary, MIN_REDEEM_CENTS } from "@/lib/referral-credit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
@@ -17,7 +18,8 @@ import { brl } from "@/lib/plans";
 export async function redeemCredit(): Promise<ActionResult> {
   if (!billingEnabled || !stripe) return fail("O pagamento ainda não está configurado. O crédito fica guardado e você poderá usar quando a cobrança estiver ativa.");
 
-  const { agency, email } = await requireAgency();
+  const { agency, email, role } = await requireAgency();
+  if (!can(role, "billing")) return fail("Só o dono da agência usa o crédito de indicação.");
   const supabase = await createClient();
   const admin = createAdminClient();
 

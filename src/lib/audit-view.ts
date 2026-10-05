@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SECURITY_ALERTS } from "./security-alerts";
+import { memberName } from "./team";
 
 /*
  * Auditoria na tela de Segurança (leva S): rótulos em português, filtros (período, quem, tipo,
@@ -34,6 +35,11 @@ export const ACTION_LABELS: Record<string, string> = {
   "conversa.devolver": "Conversa devolvida ao assistente",
   "conversa.excluir": "Conversa excluída",
   "dados.exportar": "Dados exportados",
+  "equipe.convidar": "Pessoa convidada para a equipe",
+  "equipe.convite_aceitar": "Convite da equipe aceito",
+  "equipe.convite_recusar": "Convite da equipe recusado",
+  "equipe.papel": "Papel ou escopo de alguém da equipe alterado",
+  "equipe.remover": "Pessoa removida da equipe",
   "idade.informar": "18+ informado pela empresa",
   "incidente.registrar": "Incidente de segurança registrado (BoaVoz)",
   "incidente.atualizar": "Incidente de segurança atualizado (BoaVoz)",
@@ -101,12 +107,13 @@ export const ACTION_GROUPS: Record<string, string> = {
   pareamento: "Pareamento",
   suporte: "Suporte BoaVoz",
   seguranca: "Segurança",
+  equipe: "Equipe",
   plataforma: "Avisos da BoaVoz",
 };
 
 export const actionLabel = (action: string) => ACTION_LABELS[action] ?? action;
 
-export const ACTORS: Record<string, string> = { user: "Você", member: "Área do cliente", support: "Equipe BoaVoz", system: "Sistema", api_key: "Chave de API", link: "Link de conexão" };
+export const ACTORS: Record<string, string> = { user: "Equipe da agência", member: "Área do cliente", support: "Equipe BoaVoz", system: "Sistema", api_key: "Chave de API", link: "Link de conexão" };
 
 export interface AuditFilters {
   days: number;
@@ -153,9 +160,24 @@ export async function listAudit(db: SupabaseClient, agencyId: string, f: AuditFi
   return (data ?? []) as AuditRow[];
 }
 
-/** Quem fez, para a tela: o dono vira "Você"; membro e link mostram o e-mail. Pura. */
-export function actorText(r: Pick<AuditRow, "actor_type" | "actor_id">, ownerId: string): string {
-  if (r.actor_type === "user") return r.actor_id === ownerId ? "Você" : "Pessoa da agência";
+/** Quem é quem na equipe, para nomear "quem fez": `me` é quem está vendo a tela. */
+export interface AuditPeople {
+  me: string;
+  names: Map<string, string>;
+}
+
+/** Pessoas da equipe pelo id de usuário, inclusive quem já saiu (a auditoria guarda 1 ano). */
+export async function auditPeople(db: SupabaseClient, agencyId: string, me: string): Promise<AuditPeople> {
+  const { data } = await db.from("agency_members").select("user_id, email, display_name, removed_at").eq("agency_id", agencyId).not("user_id", "is", null);
+  const rows = (data ?? []) as Array<{ user_id: string; email: string; display_name: string | null; removed_at: string | null }>;
+  // quem saiu e voltou fica com o vínculo atual
+  rows.sort((a, b) => Number(!a.removed_at) - Number(!b.removed_at));
+  return { me, names: new Map(rows.map((m) => [m.user_id, `${memberName(m)}${m.removed_at ? " (saiu da equipe)" : ""}`])) };
+}
+
+/** Quem fez, para a tela: quem vê vira "Você"; a equipe pelo nome; membro e link mostram o e-mail. Pura. */
+export function actorText(r: Pick<AuditRow, "actor_type" | "actor_id">, people: AuditPeople): string {
+  if (r.actor_type === "user") return r.actor_id === people.me ? "Você" : (r.actor_id && people.names.get(r.actor_id)) || "Pessoa da agência";
   if ((r.actor_type === "member" || r.actor_type === "link") && r.actor_id) return `${ACTORS[r.actor_type]} (${r.actor_id})`;
   return ACTORS[r.actor_type] ?? r.actor_type;
 }
@@ -185,9 +207,9 @@ const csvCell = (v: unknown) => {
 };
 
 /** CSV da auditoria (BOM e ponto e vírgula, para o Excel). Pura. */
-export function auditCsv(rows: AuditRow[], ownerId: string, targetName: (r: AuditRow) => string): string {
+export function auditCsv(rows: AuditRow[], people: AuditPeople, targetName: (r: AuditRow) => string): string {
   const lines = [["Data", "Quem", "Evento", "Código", "Alvo", "Antes", "Depois"].join(";")];
   for (const r of rows)
-    lines.push([new Date(r.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }), actorText(r, ownerId), actionLabel(r.action), r.action, targetName(r), r.before, r.after].map(csvCell).join(";"));
+    lines.push([new Date(r.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }), actorText(r, people), actionLabel(r.action), r.action, targetName(r), r.before, r.after].map(csvCell).join(";"));
   return `﻿${lines.join("\r\n")}\r\n`;
 }

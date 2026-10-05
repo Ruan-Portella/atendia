@@ -51,6 +51,13 @@ export function appUrl(path = ""): string {
   return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "") + path;
 }
 
+/** Caminho deste site para voltar depois (?next=): "/x" sim; "//outro.site", "/\outro.site" e URL completa não. */
+export function safeLocalPath(raw: string | null | undefined, fallback: string): string {
+  const v = (raw ?? "").trim();
+  if (!v.startsWith("/") || v.startsWith("//") || v.includes("\\") || /[\r\n]/.test(v)) return fallback;
+  return v;
+}
+
 /** Dias restantes até uma data ISO (nunca negativo). */
 export function daysUntil(iso: string): number {
   return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000));

@@ -6,7 +6,8 @@ import { cookies, headers } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAgency } from "@/lib/agency";
+import { requireAgency, type AgencyContext } from "@/lib/agency";
+import { can, type Permission } from "@/lib/team";
 import { postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
@@ -63,10 +64,24 @@ const list = (v: FormDataEntryValue | null) =>
  * Resolve o cliente de um formulário com o seletor de cliente: `client_id` de um cliente
  * existente, ou `client_id=new` + campos `new_client_*`, que criam o cliente na hora.
  */
-/** Auditoria das ações do painel: quem fez é o dono logado da agência. */
+/** Auditoria das ações do painel: quem fez é a pessoa logada da equipe. */
 async function auditPanel(action: string, target: { type: string; id: string }, change: { before?: Record<string, unknown>; after?: Record<string, unknown> } = {}) {
-  const { agency } = await requireAgency();
-  await audit(createAdminClient(), { agencyId: agency.id, actorType: "user", actorId: agency.owner_id, action, targetType: target.type, targetId: target.id, ...change, ...(await requestMeta()) });
+  const { agency, userId } = await requireAgency();
+  await audit(createAdminClient(), { agencyId: agency.id, actorType: "user", actorId: userId, action, targetType: target.type, targetId: target.id, ...change, ...(await requestMeta()) });
+}
+
+/** Cliente novo fica fora do escopo de quem vê só alguns clientes: só cria quem vê todos. */
+const NEW_CLIENT_SCOPE = "Criar cliente é para quem vê todos os clientes da agência. Peça para um administrador.";
+
+const DENIED = "O seu papel na equipe não permite esta ação. Fale com o dono ou com um administrador da agência.";
+
+/**
+ * Papel de quem está logado (equipe, leva B1'). O escopo de clientes e chatbots vem da RLS nas
+ * leituras pela sessão; aqui fica o que cada papel pode gravar, inclusive com a service role.
+ */
+async function allowed(perm: Permission): Promise<AgencyContext | null> {
+  const ctx = await requireAgency();
+  return can(ctx.role, perm) ? ctx : null;
 }
 
 async function resolveClient(supabase: Db, agencyId: string, fd: FormData): Promise<{ id: string; name: string; site: string | null } | { error: string }> {
@@ -76,6 +91,7 @@ async function resolveClient(supabase: Db, agencyId: string, fd: FormData): Prom
     if (!data) return { error: "Cliente não encontrado. Recarregue a página e tente de novo." };
     return data;
   }
+  if ((await requireAgency()).member.scope !== "all") return { error: NEW_CLIENT_SCOPE };
   const f = clientFields(fd, "new_client_");
   if ("error" in f) return f;
   const { data, error } = await supabase.from("clients").insert({ agency_id: agencyId, ...f }).select("id, name, site").single();
@@ -91,7 +107,9 @@ async function botLimitReached(supabase: Db, agencyId: string, limit: number) {
 /* ------------------------------------------------------------------ clientes */
 
 export async function createClientRecord(formData: FormData): Promise<ActionResult> {
-  const { agency } = await requireAgency();
+  if (!(await allowed("config"))) return fail(DENIED);
+  const { agency, member } = await requireAgency();
+  if (member.scope !== "all") return fail(NEW_CLIENT_SCOPE);
   const supabase = await createClient();
   const f = clientFields(formData);
   if ("error" in f) return fail(f.error);
@@ -102,6 +120,7 @@ export async function createClientRecord(formData: FormData): Promise<ActionResu
 }
 
 export async function updateClientRecord(clientId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const f = clientFields(formData);
   if ("error" in f) return fail(f.error);
@@ -117,6 +136,7 @@ export async function updateClientRecord(clientId: string, formData: FormData): 
  * Passando dele, só os chatbots deste cliente entram no modo só humano.
  */
 export async function setClientQuotaCap(clientId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("billing"))) return fail(DENIED);
   const raw = text(formData.get("cap")).replace(/\D/g, "");
   const cap = raw ? Number(raw) : null;
   if (cap !== null && (!Number.isSafeInteger(cap) || cap > 10_000_000)) return fail("Limite inválido. Use um número inteiro de atendimentos por mês.");
@@ -132,6 +152,7 @@ export async function setClientQuotaCap(clientId: string, formData: FormData): P
 
 /** Só apaga cliente sem chatbots, para ninguém perder base de conhecimento sem querer. */
 export async function deleteClientRecord(clientId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { count: bots } = await supabase.from("bots").select("id", { count: "exact", head: true }).eq("client_id", clientId);
   if (bots) return fail(`Este cliente tem ${bots} chatbot${bots > 1 ? "s" : ""}. Exclua ${bots > 1 ? "os chatbots" : "o chatbot"} antes.`);
@@ -151,6 +172,7 @@ export async function deleteClientRecord(clientId: string): Promise<ActionResult
 
 /** Cria um chatbot (não demo) para um cliente e vai para o editor. */
 export async function createBot(formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const { agency, plan } = await requireAgency();
   const supabase = await createClient();
   if (await botLimitReached(supabase, agency.id, plan.bots)) redirect("/painel/cobranca?limite=bots");
@@ -271,6 +293,7 @@ function parseRegulatedChannel(f: Record<string, string>): { value: RegulatedCha
 }
 
 export async function updateBot(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const { agency } = await requireAgency();
   const supabase = await createClient();
   const f = Object.fromEntries(formData) as Record<string, string>;
@@ -330,6 +353,7 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
 }
 
 export async function setBotStatus(botId: string, status: "live" | "draft"): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   if (status === "live") {
     const { count } = await supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("status", "ready");
@@ -348,6 +372,7 @@ export async function setBotStatus(botId: string, status: "live" | "draft"): Pro
  * aparece o formulário de contato. Com "avisar", o contato recebe o texto fixo uma vez por conversa.
  */
 export async function pauseBot(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const { email } = await requireAgency();
   const supabase = await createClient();
   const reason = text(formData.get("reason")).slice(0, 200) || null;
@@ -365,6 +390,7 @@ export async function pauseBot(botId: string, formData: FormData): Promise<Actio
 }
 
 export async function resumeBot(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { error } = await supabase.from("bots").update({ paused_at: null, paused_by: null, pause_reason: null, pause_notify: false }).eq("id", botId);
   if (error) return fail("Não foi possível retomar. Tente de novo.");
@@ -375,6 +401,7 @@ export async function resumeBot(botId: string): Promise<ActionResult> {
 
 /** Converte uma demo em chatbot de verdade (mantém a base de conhecimento), ligado a um cliente. */
 export async function convertDemo(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const { agency, plan } = await requireAgency();
   const supabase = await createClient();
   if (await botLimitReached(supabase, agency.id, plan.bots)) redirect("/painel/cobranca?limite=bots");
@@ -395,6 +422,7 @@ export async function convertDemo(botId: string, formData: FormData): Promise<Ac
  * `redirectTo` quando chamado de dentro do editor; da lista, só revalida.
  */
 export async function deleteBot(botId: string, redirectTo?: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { data: own } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!own) return fail("Chatbot não encontrado.");
@@ -413,6 +441,7 @@ export async function deleteBot(botId: string, redirectTo?: string): Promise<Act
 }
 
 export async function resolveUnanswered(id: string, botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   if (!(await markUnansweredResolved(supabase, id, "agência"))) return fail("Não foi possível marcar como resolvida.");
   revalidatePath(`/painel/bots/${botId}`);
@@ -420,6 +449,7 @@ export async function resolveUnanswered(id: string, botId: string): Promise<Acti
 }
 
 export async function deleteLead(id: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const count = await deleteLeads(supabase, [id]);
   if (count === null) return fail("Não foi possível excluir o lead.");
@@ -430,6 +460,7 @@ export async function deleteLead(id: string): Promise<ActionResult> {
 
 /** Marca da agência (white-label). */
 export async function updateAgency(formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("brand"))) return fail(DENIED);
   const { agency } = await requireAgency();
   const supabase = await createClient();
   const parsed = z
@@ -450,6 +481,7 @@ export async function updateAgency(formData: FormData): Promise<ActionResult> {
 
 /** Liga o portal do cliente (ou troca o link, invalidando o antigo). */
 export async function enablePortal(clientId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { error, count } = await supabase.from("clients").update({ portal_token: newPortalToken() }, { count: "exact" }).eq("id", clientId);
   if (error || !count) return fail("Não foi possível gerar o link. Tente de novo.");
@@ -459,6 +491,7 @@ export async function enablePortal(clientId: string): Promise<ActionResult> {
 }
 
 export async function disablePortal(clientId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { error } = await supabase.from("clients").update({ portal_token: null }).eq("id", clientId);
   if (error) return fail("Não foi possível desligar o link. Tente de novo.");
@@ -468,6 +501,7 @@ export async function disablePortal(clientId: string): Promise<ActionResult> {
 }
 
 export async function saveReportEmail(clientId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const email = text(formData.get("report_email")).toLowerCase();
   if (email && !isEmail(email)) return fail("E-mail inválido.");
   const supabase = await createClient();
@@ -479,6 +513,7 @@ export async function saveReportEmail(clientId: string, formData: FormData): Pro
 
 /** Manda agora o relatório de um mês (padrão: mês passado) para o e-mail do cliente. */
 export async function sendReportNow(clientId: string, period?: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { data: client } = await supabase.from("clients").select("id, report_email, portal_token").eq("id", clientId).maybeSingle();
   if (!client) return fail("Cliente não encontrado.");
@@ -514,6 +549,7 @@ async function ownedConversation(conversationId: string) {
 }
 
 export async function takeOverConversation(conversationId: string): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const r = await takeOver(owned.admin, conversationId);
@@ -523,6 +559,7 @@ export async function takeOverConversation(conversationId: string): Promise<Acti
 }
 
 export async function sendAgentMessage(conversationId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const r = await postAgentMessage(owned.admin, conversationId, text(formData.get("content")), AGENCY_AUTHOR);
@@ -532,6 +569,7 @@ export async function sendAgentMessage(conversationId: string, formData: FormDat
 
 /** Zera a resposta de 18+ do contato neste bot: na próxima vez que pedir o item, ele é perguntado de novo. */
 export async function resetConversationAge(conversationId: string): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const { data: conv } = await owned.admin.from("conversations").select("channel, wa_id, ig_id").eq("id", conversationId).maybeSingle();
@@ -546,6 +584,7 @@ export async function resetConversationAge(conversationId: string): Promise<Acti
 
 /** Devolve a conversa ao assistente (ele volta a responder, sabendo o que você escreveu). */
 export async function releaseConversation(conversationId: string): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const r = await release(owned.admin, conversationId);
@@ -562,6 +601,7 @@ export async function releaseConversation(conversationId: string): Promise<Actio
  * ("Respostas do painel"), é indexada na hora e a pergunta sai da lista.
  */
 export async function answerUnanswered(unansweredId: string, botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -571,6 +611,7 @@ export async function answerUnanswered(unansweredId: string, botId: string, form
 }
 
 export async function setAutoRefresh(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const enabled = formData.get("auto_refresh") === "on";
   const supabase = await createClient();
   const { error } = await supabase.from("bots").update({ auto_refresh: enabled }).eq("id", botId);
@@ -587,6 +628,7 @@ export async function setAutoRefresh(botId: string, formData: FormData): Promise
  * o cadastro incorporado vai preencher isso sozinho.
  */
 export async function connectWhatsApp(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const { agency } = await requireAgency();
   // liberação da agência (backoffice) e, no teste grátis, o conteúdo mínimo do chatbot
   const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp", botId);
@@ -630,6 +672,7 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
  * Facebook dele). O trabalho de verdade está em lib/whatsapp-signup.ts, junto com o link de conexão.
  */
 export async function completeWhatsAppSignup(botId: string, input: SignupResult): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const { agency } = await requireAgency();
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_name, client_id").eq("id", botId).maybeSingle();
@@ -653,7 +696,8 @@ export async function completeWhatsAppSignup(botId: string, input: SignupResult)
  * Aceitável em nome do negócio (declarando ter poderes) e, na primeira vez, responde as atividades.
  */
 export async function acceptChannelTerms(botId: string, channel: AcceptanceChannel, fd: FormData): Promise<ActionResult> {
-  const { email, agency } = await requireAgency();
+  if (!(await allowed("config"))) return fail(DENIED);
+  const { email, agency, userId } = await requireAgency();
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id, client_name").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -673,7 +717,7 @@ export async function acceptChannelTerms(botId: string, channel: AcceptanceChann
       botId,
       channel,
       via: "painel",
-      userId: agency.owner_id,
+      userId,
       email,
       declaresAuthority: true,
       ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
@@ -701,6 +745,7 @@ async function notifyReview(clientName: string, agencyName: string, status: stri
 
 /** Link para o cliente conectar o próprio WhatsApp ou Instagram (vale 7 dias, uma conexão). */
 export async function createWhatsAppConnectLink(botId: string, channel: "whatsapp" | "instagram" = "whatsapp"): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
+  if (!(await allowed("config"))) return { ok: false, message: DENIED };
   const { agency } = await requireAgency();
   // WhatsApp no teste grátis: o conteúdo mínimo já vale para gerar o link
   const locked = await channelBlock(createAdminClient(), agency.id, channel, channel === "whatsapp" ? botId : undefined);
@@ -723,6 +768,7 @@ export async function createWhatsAppConnectLink(botId: string, channel: "whatsap
  * neste chatbot. Só o BoaVoz aprova (backoffice, Conformidade); a exceção vale só para o chatbot.
  */
 export async function requestGateReview(conversationId: string, category: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
   if (!isGateCategory(category)) return fail("Categoria inválida.");
   const { agency, email } = await requireAgency();
   const supabase = await createClient();
@@ -748,6 +794,7 @@ export async function requestGateReview(conversationId: string, category: string
  * Pede o conteúdo mínimo antes (1 fonte pronta e as instruções) e tem limite de tentativas.
  */
 export async function analyzeBotNow(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, persona, is_demo").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) return fail("Chatbot não encontrado.");
@@ -770,6 +817,7 @@ export async function analyzeBotNow(botId: string): Promise<ActionResult> {
 
 /** Coexistência: "já desliguei a saudação e a ausência do app" (registro, sem bloquear nada). */
 export async function markAutoRepliesOff(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -782,6 +830,7 @@ export async function markAutoRepliesOff(botId: string): Promise<ActionResult> {
 
 /** "Já cadastrei o cartão": confere na Meta agora; com cartão, o alerta de pagamento sai. */
 export async function recheckWhatsAppPayment(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -801,6 +850,7 @@ export async function recheckWhatsAppPayment(botId: string): Promise<ActionResul
 }
 
 export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -816,6 +866,7 @@ export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {
 
 /** Desliga a conta do Instagram do chatbot: o app sai das mensagens dela e o token é apagado. */
 export async function disconnectInstagram(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
@@ -905,6 +956,7 @@ async function metaError(botId: string, e: unknown): Promise<string> {
 }
 
 export async function createWhatsAppTemplate(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const ch = await ownedTemplateChannel(botId);
   if ("error" in ch) return fail(ch.error);
   const name = templateName(text(formData.get("name")));
@@ -925,6 +977,7 @@ export async function createWhatsAppTemplate(botId: string, formData: FormData):
 }
 
 export async function deleteWhatsAppTemplate(botId: string, name: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const ch = await ownedTemplateChannel(botId);
   if ("error" in ch) return fail(ch.error);
   try {
@@ -938,6 +991,7 @@ export async function deleteWhatsAppTemplate(botId: string, name: string): Promi
 
 /** Modelo dentro de uma conversa do WhatsApp (o jeito de retomar depois das 24 h). */
 export async function sendConversationTemplate(conversationId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const ch = await ownedTemplateChannel(owned.conv.bot_id);
@@ -956,6 +1010,7 @@ export async function sendConversationTemplate(conversationId: string, formData:
  * Se já existe conversa recente com ele, o modelo entra nela em vez de abrir outra.
  */
 export async function startWhatsAppConversation(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
   const ch = await ownedTemplateChannel(botId);
   if ("error" in ch) return fail(ch.error);
   const to = whatsappNumber(text(formData.get("to")));
@@ -984,6 +1039,7 @@ export async function startWhatsAppConversation(botId: string, formData: FormDat
 
 /** Salva (ou remove) o domínio próprio. Trocar de domínio exige verificar de novo. */
 export async function saveCustomDomain(formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("brand"))) return fail(DENIED);
   const { agency, plan } = await requireAgency();
   if (!plan.customDomain) return fail("Domínio próprio está disponível a partir do plano Agência.");
   const parsed = parseDomain(text(formData.get("custom_domain")));
@@ -1008,6 +1064,7 @@ export async function saveCustomDomain(formData: FormData): Promise<ActionResult
 
 /** Confere se o domínio já responde por nós; se sim, os links passam a usá-lo. */
 export async function verifyCustomDomain(): Promise<ActionResult> {
+  if (!(await allowed("brand"))) return fail(DENIED);
   const { agency } = await requireAgency();
   if (!agency.custom_domain) return fail("Cadastre um domínio primeiro.");
   const status = await checkDomain(agency.custom_domain);
@@ -1022,6 +1079,7 @@ export async function verifyCustomDomain(): Promise<ActionResult> {
 
 /** Liga/desliga o que as pessoas do cliente podem fazer na área do cliente. */
 export async function setClientPermissions(clientId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const patch = { allow_handoff: formData.get("allow_handoff") === "on", allow_knowledge: formData.get("allow_knowledge") === "on", handoff_notify: formData.get("handoff_notify") === "client" ? "client" : "all" };
   const { error, count } = await supabase.from("clients").update(patch, { count: "exact" }).eq("id", clientId);
@@ -1040,6 +1098,7 @@ async function inviteContext(clientId: string) {
 
 /** Adiciona uma pessoa do cliente e manda o link de acesso por e-mail. */
 export async function addClientMember(clientId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const ctx = await inviteContext(clientId);
   if (!ctx) return fail("Cliente não encontrado.");
   const email = text(formData.get("email")).toLowerCase();
@@ -1056,6 +1115,7 @@ export async function addClientMember(clientId: string, formData: FormData): Pro
 }
 
 export async function resendClientInvite(clientId: string, memberId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const ctx = await inviteContext(clientId);
   if (!ctx) return fail("Cliente não encontrado.");
   const { data: member } = await ctx.supabase.from("client_members").select("email").eq("id", memberId).eq("client_id", clientId).maybeSingle();
@@ -1066,6 +1126,7 @@ export async function resendClientInvite(clientId: string, memberId: string): Pr
 
 /** Tira o acesso na hora (a sessão aberta perde acesso na próxima página que abrir). */
 export async function removeClientMember(clientId: string, memberId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   const { error, count } = await supabase.from("client_members").delete({ count: "exact" }).eq("id", memberId).eq("client_id", clientId);
   if (error || !count) return fail("Não foi possível remover.");
@@ -1078,6 +1139,7 @@ export async function removeClientMember(clientId: string, memberId: string): Pr
 
 /** Apaga uma conversa inteira (mensagens e contatos capturados nela). */
 export async function deleteConversation(conversationId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const leadIds = await leadIdsOfConversations(owned.admin, [conversationId]);
@@ -1100,6 +1162,7 @@ const digitsOf = (v: string) => v.replace(/\D/g, "");
  * do cliente, e as conversas em que foram capturados.
  */
 export async function eraseContactData(clientId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("security"))) return fail(DENIED);
   const contact = text(formData.get("contact")).toLowerCase();
   const digits = digitsOf(contact);
   const byEmail = isEmail(contact);
@@ -1120,10 +1183,10 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
 
   // rotina única do pedido do titular (a mesma do chat): entregas e logs, perguntas, leads, conversas,
   // 18+, supressão e ficha, tudo no registro de exclusões; depois o contact.deleted e o pedido como prova
-  const { agency } = await requireAgency();
+  const { agency, userId } = await requireAgency();
   const leadConvs = matches.map((l) => l.conversation_id).filter((c): c is string => Boolean(c));
   const { erased, ...summary } = await eraseTargets(admin, { contactIds, conversationIds: leadConvs, leadIds: matches.map((l) => l.id) }, { code: `painel:${clientId}`, source: "painel" });
-  const requestId = await recordPanelRequest(admin, { agencyId: agency.id, clientId, by: agency.owner_id, summary });
+  const requestId = await recordPanelRequest(admin, { agencyId: agency.id, clientId, by: userId, summary });
   await emitErasedContacts(admin, erased, requestId ?? `painel:${clientId}`);
   await auditPanel("contato.apagar_dados", { type: "client", id: clientId }, { after: { ...summary, por: byEmail ? "email" : "telefone" } });
   revalidatePath(`/painel/clientes/${clientId}`);
@@ -1136,9 +1199,9 @@ const MFA_NEEDED = "Faça a verificação em duas etapas (código do app autenti
 
 /** Segundo fator da agência: entrada ou falha no registro de acesso e, no primeiro código, o cadastro na auditoria. */
 export async function recordAgencyMfa(ok: boolean, enrolled: boolean): Promise<void> {
-  const { agency } = await requireAgency();
+  const { agency, userId } = await requireAgency();
   const meta = await requestMeta();
-  await logAccess(createAdminClient(), { actorType: "user", actorId: agency.owner_id, event: ok ? "login" : "login_failed", ip: meta.ip, userAgent: meta.userAgent, agencyId: agency.id });
+  await logAccess(createAdminClient(), { actorType: "user", actorId: userId, event: ok ? "login" : "login_failed", ip: meta.ip, userAgent: meta.userAgent, agencyId: agency.id });
   if (ok && enrolled) await auditPanel("seguranca.mfa_cadastrar", { type: "agency", id: agency.id });
 }
 
@@ -1161,27 +1224,30 @@ export async function endOtherSessions(): Promise<ActionResult> {
 
 /** Segurança: libera o suporte do BoaVoz por 24 horas, com motivo (evento grave: e-mail e faixa). */
 export async function grantSupportAccess(formData: FormData): Promise<ActionResult> {
-  const { agency } = await requireAgency();
+  if (!(await allowed("security"))) return fail(DENIED);
+  const { agency, userId } = await requireAgency();
   if (!(await hasMfa())) return fail(MFA_NEEDED);
   const reason = text(formData.get("reason")).replace(/\s+/g, " ").trim();
   if (reason.length < 10) return fail("Escreva o motivo (o que o suporte vai ver), com pelo menos 10 letras.");
   if (reason.length > 300) return fail("Motivo longo demais.");
-  const g = await grantSupport(createAdminClient(), { agencyId: agency.id, by: agency.owner_id, reason, meta: await requestMeta() });
+  const g = await grantSupport(createAdminClient(), { agencyId: agency.id, by: userId, reason, meta: await requestMeta() });
   revalidatePath("/painel", "layout");
   return ok(`Suporte liberado até ${new Date(g.expires_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}.`);
 }
 
 /** Segurança: encerra agora o acesso do suporte. */
 export async function revokeSupportAccess(): Promise<ActionResult> {
-  const { agency } = await requireAgency();
+  if (!(await allowed("security"))) return fail(DENIED);
+  const { agency, userId } = await requireAgency();
   if (!(await hasMfa())) return fail(MFA_NEEDED);
-  const done = await revokeSupport(createAdminClient(), { agencyId: agency.id, by: agency.owner_id, meta: await requestMeta() });
+  const done = await revokeSupport(createAdminClient(), { agencyId: agency.id, by: userId, meta: await requestMeta() });
   revalidatePath("/painel/seguranca");
   return ok(done ? "Acesso do suporte encerrado." : "O suporte já não tinha acesso.");
 }
 
 /** Faixa de alertas de segurança: marca os de agora como vistos. */
 export async function markSecurityAlertsSeen(): Promise<ActionResult> {
+  if (!(await allowed("security"))) return fail(DENIED);
   const { agency } = await requireAgency();
   await createAdminClient().from("agencies").update({ security_alerts_seen_at: new Date().toISOString() }).eq("id", agency.id);
   revalidatePath("/painel", "layout");
@@ -1190,14 +1256,15 @@ export async function markSecurityAlertsSeen(): Promise<ActionResult> {
 
 /** Segurança: confirma um pedido do titular feito pelo chat e roda a rotina de exclusão. */
 export async function confirmDataSubjectRequest(requestId: string): Promise<ActionResult> {
-  const { agency } = await requireAgency();
+  if (!(await allowed("security"))) return fail(DENIED);
+  const { userId } = await requireAgency();
   if (!(await hasMfa())) return fail(MFA_NEEDED);
   const supabase = await createClient();
   // a RLS limita aos pedidos desta agência
   const { data: req } = await supabase.from("data_subject_requests").select("id, status").eq("id", requestId).maybeSingle();
   if (!req) return fail("Pedido não encontrado.");
   if (req.status !== "aguardando") return ok("Este pedido já foi atendido.");
-  const summary = await executeRequest(createAdminClient(), requestId, agency.owner_id);
+  const summary = await executeRequest(createAdminClient(), requestId, userId);
   if (!summary) return ok("Este pedido já foi atendido.");
   await auditPanel("titular.confirmar", { type: "data_subject_request", id: requestId }, { after: { ...summary } });
   revalidatePath("/painel/seguranca");
@@ -1206,6 +1273,7 @@ export async function confirmDataSubjectRequest(requestId: string): Promise<Acti
 
 /** Política de privacidade (link no chat) e prazo de guarda dos dados dos visitantes. */
 export async function updatePrivacy(formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("security"))) return fail(DENIED);
   const { agency } = await requireAgency();
   const url = text(formData.get("privacy_url"));
   if (url && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(url)) return fail("Use o endereço completo da política, começando com https://");
@@ -1243,6 +1311,7 @@ export async function updatePrivacy(formData: FormData): Promise<ActionResult> {
 
 /** Prazo próprio do cliente (vazio = o da agência). Diminuir pede confirmação, vai para a auditoria e avisa o cliente. */
 export async function setClientRetention(clientId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("security"))) return fail(DENIED);
   const { agency } = await requireAgency();
   const raw = text(formData.get("retention_months"));
   const months = raw ? Number(raw) : null;
@@ -1273,6 +1342,7 @@ export async function setClientRetention(clientId: string, formData: FormData): 
 
 /** Desfaz a redução de prazo pendente (o "Não apagar" não volta: aí é escolher um prazo). */
 export async function undoAgencyRetention(): Promise<ActionResult> {
+  if (!(await allowed("security"))) return fail(DENIED);
   const { agency } = await requireAgency();
   if (agency.retention_pending_months === null) return ok("Nada pendente.");
   if (agency.retention_months === null) return fail("O “Não apagar” deixou de existir: escolha 6, 12 ou 24 meses.");

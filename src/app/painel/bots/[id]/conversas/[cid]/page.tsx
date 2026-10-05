@@ -11,6 +11,7 @@ import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { conversationState, whatsappWindowOpen } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
 import { leadsOfConversation } from "@/lib/leads";
@@ -46,7 +47,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const sensitive = Boolean((Array.isArray(conv.bots) ? conv.bots[0] : conv.bots)?.sensitive_mode);
   if (sensitive) await requireAgencyMfa(`/painel/bots/${id}/conversas/${cid}`);
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
-  const [messages, leads, { agency }] = await Promise.all([
+  const [messages, leads, { agency, role }] = await Promise.all([
     loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     leadsOfConversation(supabase, cid),
     requireAgency(),
@@ -120,7 +121,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
               18+: {age.status === "sim" ? "sim" : "não"} · zerar
             </ConfirmAction>
           )}
-          <ConfirmAction
+          {can(role, "config") && <ConfirmAction
             action={deleteConversation.bind(null, cid)}
             title="Excluir esta conversa?"
             description="As mensagens e os contatos capturados nela são apagados de vez (ex.: a pessoa pediu para apagar os dados dela). Não tem desfazer."
@@ -129,7 +130,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
           >
             <Trash2 size={15} />
             Excluir
-          </ConfirmAction>
+          </ConfirmAction>}
         </div>
       </header>
 

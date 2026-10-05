@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeUrl, instagramConfigured, signState } from "@/lib/instagram";
@@ -29,7 +30,8 @@ export async function GET(req: Request) {
   }
 
   const botId = p.get("bot") ?? "";
-  const { agency } = await requireAgency();
+  const { agency, role } = await requireAgency();
+  if (!can(role, "config")) redirect(`/painel/bots/${botId}`);
   if (await channelBlock(createAdminClient(), agency.id, "instagram")) redirect(`/painel/bots/${botId}`);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();

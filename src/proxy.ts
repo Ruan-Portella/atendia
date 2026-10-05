@@ -67,7 +67,9 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
   if (user && (path === "/login" || path === "/cadastro")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/painel/clientes";
+    // já logado e vindo do link do convite: volta para ele (a página confere o e-mail)
+    const next = request.nextUrl.searchParams.get("next") ?? "";
+    url.pathname = /^\/convite\/[\w-]{10,100}$/.test(next) ? next : "/painel/clientes";
     url.search = "";
     return NextResponse.redirect(url);
   }

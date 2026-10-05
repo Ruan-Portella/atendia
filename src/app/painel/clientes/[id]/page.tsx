@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Download, ExternalLink, Plus } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
 import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
@@ -51,8 +52,11 @@ interface BotRow {
 }
 
 export default async function ClientPanelPage({ params, searchParams }: PageProps<"/painel/clientes/[id]">) {
-  const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const tab = (TABS.some(([t]) => t === sp.tab) ? sp.tab : "chatbots") as Tab;
+  const [{ id }, sp, { role }] = await Promise.all([params, searchParams, requireAgency()]);
+  // equipe (leva B1'): o atendente vê os chatbots (para chegar às conversas) e as conversas
+  const canConfig = can(role, "config");
+  const tabs = TABS.filter(([t]) => canConfig || t === "chatbots" || t === "conversas");
+  const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "chatbots") as Tab;
   const supabase = await createClient();
   // a RLS limita os dados à agência logada
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
@@ -97,7 +101,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               {client.site ? <a href={/^https?:\/\//.test(client.site) ? client.site : `https://${client.site}`} target="_blank" rel="noopener" className="hover:underline">{client.site.replace(/^https?:\/\//, "")}</a> : "sem site"} · cliente desde {new Date(client.created_at).toLocaleDateString("pt-BR")}
             </p>
           </div>
-          <Link href={`/painel/bots/novo?cliente=${client.id}`} className="btn-primary w-full sm:w-auto"><Plus size={15} />Novo chatbot</Link>
+          {canConfig && <Link href={`/painel/bots/novo?cliente=${client.id}`} className="btn-primary w-full sm:w-auto"><Plus size={15} />Novo chatbot</Link>}
         </div>
       </div>
 
@@ -105,13 +109,13 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
         <Kpi label="Conversas (30 dias)" value={num(total.conversations)} sub={`em ${bots.length} chatbot${bots.length === 1 ? "" : "s"}`} />
         <Kpi label="Leads (30 dias)" value={num(total.leads)} sub="nome + contato entregues" />
         <Kpi label="Resolvidas sem humano" value={`${pct}%`} sub={`${100 - pct}% pediram atendente`} />
-        <Kpi label="Você cobra" value={client.price_cents ? brl(client.price_cents / 100) : "—"} sub={client.price_cents ? "por mês" : "defina em Dados do cliente"} />
+        {canConfig && <Kpi label="Você cobra" value={client.price_cents ? brl(client.price_cents / 100) : "—"} sub={client.price_cents ? "por mês" : "defina em Dados do cliente"} />}
       </div>
 
       <PendingHandoffs items={pending} showClient={false} />
 
       <nav className="-mb-1 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]">
-        {TABS.map(([key, label]) => (
+        {tabs.map(([key, label]) => (
           <Link key={key} href={`/painel/clientes/${id}?tab=${key}`} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm ${tab === key ? "border-brand font-semibold text-brand" : "border-transparent font-medium text-ink-2 hover:text-ink"}`}>
             {label}{key === "conversas" && waitingCount > 0 ? <span className="ml-1.5 rounded-full bg-amber-soft px-1.5 py-0.5 text-[11px] font-semibold text-amber-ink">{waitingCount}</span> : null}
           </Link>
@@ -122,8 +126,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
         <div className="card overflow-hidden">
           {bots.length === 0 && (
             <div className="flex flex-col items-start gap-3 p-6">
-              <p className="text-sm text-muted">Este cliente ainda não tem chatbots.</p>
-              <Link href={`/painel/bots/novo?cliente=${client.id}`} className="btn-primary"><Plus size={15} />Criar o primeiro chatbot</Link>
+              <p className="text-sm text-muted">{canConfig ? "Este cliente ainda não tem chatbots." : "Nenhum chatbot deste cliente no seu escopo."}</p>
+              {canConfig && <Link href={`/painel/bots/novo?cliente=${client.id}`} className="btn-primary"><Plus size={15} />Criar o primeiro chatbot</Link>}
             </div>
           )}
           {bots.map((b) => {
@@ -154,19 +158,19 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
 
       {tab === "leads" && (
         <>
-          {(leads ?? []).length > 0 && (
+          {(leads ?? []).length > 0 && can(role, "export") && (
             <div className="flex justify-end">
               <a href={`/api/leads/export?cliente=${client.id}`} className="btn-ghost"><Download size={15} />Exportar CSV</a>
             </div>
           )}
-          <ActionForm action={eraseContactData.bind(null, client.id)} className="card flex flex-wrap items-end gap-2 p-4">
+          {can(role, "security") && <ActionForm action={eraseContactData.bind(null, client.id)} className="card flex flex-wrap items-end gap-2 p-4">
             <div className="min-w-[240px] flex-1">
               <label htmlFor="erase-contact" className="label">Apagar os dados de uma pessoa (pedido LGPD)</label>
               <input id="erase-contact" name="contact" required maxLength={120} className="input" placeholder="E-mail ou WhatsApp que ela deixou no chat" />
             </div>
             <SubmitButton pendingLabel="Apagando…" className="btn-danger">Apagar dados</SubmitButton>
             <p className="w-full text-xs text-muted">Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os chatbots deste cliente. Não tem desfazer.</p>
-          </ActionForm>
+          </ActionForm>}
           <LeadList leads={leads} originLabel="Chatbot" originOf={(bid) => botName.get(bid) ?? ""} empty="Nenhum lead deste cliente ainda. Eles aparecem aqui assim que um visitante deixar contato no chat." />
         </>
       )}
@@ -320,8 +324,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             <p className="text-xs text-muted">Mudar o nome aqui atualiza o nome que aparece no chat de todos os chatbots deste cliente.</p>
             <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
           </ActionForm>
-          <ClientPrivacy clientId={client.id} clientName={client.name} clientMonths={(client.retention_months as number | null) ?? null} agencyMonths={agency.retention_months} />
-          <ExportLinks clientId={client.id} description={`Os dados de ${client.name}: conversas, contatos e leads, em CSV (abre no Excel) ou JSON. Na saída do cliente, entregue a ele. A exportação fica registrada.`} />
+          {can(role, "security") && <ClientPrivacy clientId={client.id} clientName={client.name} clientMonths={(client.retention_months as number | null) ?? null} agencyMonths={agency.retention_months} />}
+          {can(role, "export") && <ExportLinks clientId={client.id} description={`Os dados de ${client.name}: conversas, contatos e leads, em CSV (abre no Excel) ou JSON. Na saída do cliente, entregue a ele. A exportação fica registrada.`} />}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
             <span className="text-sm text-muted">{bots.length ? "Para excluir o cliente, exclua os chatbots dele antes." : "Excluir este cliente da sua lista."}</span>
             <ConfirmAction

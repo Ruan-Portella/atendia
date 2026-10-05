@@ -1,11 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { mfaRedirect } from "@/lib/agency-mfa";
 import { listLeads } from "@/lib/leads";
 
 /** Exporta os leads da agência em CSV (abre direto no Excel/Sheets). ?cliente= filtra por cliente e ?bot= por chatbot. */
 export async function GET(req: Request) {
-  const { agency } = await requireAgency();
+  const { agency, role } = await requireAgency();
+  if (!can(role, "export")) return new Response("só o dono ou um administrador da agência exporta os dados", { status: 403 });
   // exportação: segundo fator nesta sessão (cadastro na hora, na primeira vez)
   const verify = await mfaRedirect(req);
   if (verify) return verify;

@@ -31,11 +31,11 @@ export const accessDay = (now = new Date()) => now.toLocaleDateString("en-CA", {
 /** IP do cliente, como a Vercel repassa. */
 export const requestIp = (headers: Headers) => headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip") || null;
 
-/** Agência de quem acessou: dono da agência, ou a do cliente de que o membro do portal faz parte. */
+/** Agência de quem acessou: a da equipe (dono, administrador, editor, atendente), ou a do cliente de que o membro do portal faz parte. */
 async function agencyOf(db: SupabaseClient, actorType: AccessActor, actorId: string, email?: string | null): Promise<string | null> {
   if (actorType === "user") {
-    const { data } = await db.from("agencies").select("id").eq("owner_id", actorId).maybeSingle();
-    return (data?.id as string | undefined) ?? null;
+    const { data } = await db.from("agency_members").select("agency_id").eq("user_id", actorId).is("removed_at", null).not("accepted_at", "is", null).maybeSingle();
+    return (data?.agency_id as string | undefined) ?? null;
   }
   if (actorType === "member" && email) {
     const { data } = await db.from("client_members").select("clients(agency_id)").eq("email", email.toLowerCase()).limit(1).maybeSingle();

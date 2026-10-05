@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { ChevronRight, Plus, UserPlus } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
 import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
@@ -23,9 +24,12 @@ interface ClientRow {
 }
 
 export default async function ClientesPage() {
-  const { agency, plan } = await requireAgency();
+  const { agency, plan, role, member } = await requireAgency();
+  // equipe (leva B1'): quem configura cria clientes e chatbots; o faturamento é do dono
+  const canConfig = can(role, "config");
+  const seesBilling = can(role, "billing");
   const supabase = await createClient();
-  const hideOnboarding = (await cookies()).get(ONBOARDING_COOKIE)?.value === "hidden";
+  const hideOnboarding = !canConfig || (await cookies()).get(ONBOARDING_COOKIE)?.value === "hidden";
   const [{ data }, stats, pending, onboarding] = await Promise.all([
     supabase.from("clients").select("id, name, site, price_cents, bots(id, status, is_demo)").eq("agency_id", agency.id).eq("bots.is_demo", false).order("name"),
     getBotStats(supabase, daysAgoIso(30)),
@@ -49,10 +53,12 @@ export default async function ClientesPage() {
           <h1 className="text-2xl font-bold sm:text-[28px]">Clientes</h1>
           <p className="text-sm text-muted">{clients.length} cliente{clients.length === 1 ? "" : "s"} · {botCount} de {plan.bots} chatbots do plano. Abra um cliente para ver os chatbots, leads e conversas dele.</p>
         </div>
-        <div className="flex w-full gap-2.5 sm:w-auto">
-          <Link href="/painel/clientes/novo" className="btn-ghost flex-1 sm:flex-none"><UserPlus size={15} />Novo cliente</Link>
-          <Link href="/painel/bots/novo" className="btn-primary flex-1 sm:flex-none"><Plus size={15} />Novo chatbot</Link>
-        </div>
+        {canConfig && (
+          <div className="flex w-full gap-2.5 sm:w-auto">
+            {member.scope === "all" && <Link href="/painel/clientes/novo" className="btn-ghost flex-1 sm:flex-none"><UserPlus size={15} />Novo cliente</Link>}
+            <Link href="/painel/bots/novo" className="btn-primary flex-1 sm:flex-none"><Plus size={15} />Novo chatbot</Link>
+          </div>
+        )}
       </div>
 
       <PendingHandoffs items={pending} />
@@ -63,15 +69,17 @@ export default async function ClientesPage() {
         <Kpi label="Conversas (30 dias)" value={num(all.conversations)} sub="em todos os clientes" />
         <Kpi label="Leads capturados" value={num(all.leads)} sub="nome + contato entregues" />
         <Kpi label="Resolvidas sem humano" value={`${pct}%`} sub={`${100 - pct}% pediram atendente`} />
-        <div className="flex flex-col gap-1.5 rounded-xl bg-brand px-4 py-3.5 text-ground sm:px-[18px] sm:py-4">
-          <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#c7d9d1]">Você fatura dos clientes</span>
-          <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{brl(total)}</span>
-          <span className="text-[13px] text-[#c7d9d1]">por mês · plano {brl(plan.priceBrl)}</span>
-        </div>
+        {seesBilling && (
+          <div className="flex flex-col gap-1.5 rounded-xl bg-brand px-4 py-3.5 text-ground sm:px-[18px] sm:py-4">
+            <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#c7d9d1]">Você fatura dos clientes</span>
+            <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{brl(total)}</span>
+            <span className="text-[13px] text-[#c7d9d1]">por mês · plano {brl(plan.priceBrl)}</span>
+          </div>
+        )}
       </div>
       <div className="card overflow-hidden">
         <div className="hidden grid-cols-[2.2fr_1fr_1fr_1fr_1fr_20px] gap-3 border-b border-line bg-ground px-[18px] py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted lg:grid">
-          <span>Cliente</span><span>Chatbots</span><span>Conversas (30d)</span><span>Leads (30d)</span><span>Você cobra</span><span />
+          <span>Cliente</span><span>Chatbots</span><span>Conversas (30d)</span><span>Leads (30d)</span><span>{canConfig ? "Você cobra" : ""}</span><span />
         </div>
         {clients.map((c) => {
           const live = c.bots.filter((b) => b.status === "live").length;
@@ -88,7 +96,7 @@ export default async function ClientesPage() {
                 <span className="tabular lg:text-sm lg:text-ink">{c.bots.length} chatbot{c.bots.length === 1 ? "" : "s"}{c.bots.length ? <span className="text-muted"> · {live} no ar</span> : null}</span>
                 <span className="tabular lg:text-sm lg:text-ink">{num(sum(c, "conversations"))}<span className="lg:hidden"> conversas</span></span>
                 <span className="tabular lg:text-sm lg:text-ink">{num(sum(c, "leads"))}<span className="lg:hidden"> leads</span></span>
-                <span className="tabular lg:text-sm lg:text-ink">{c.price_cents ? `${brl(c.price_cents / 100)}/mês` : "—"}</span>
+                <span className="tabular lg:text-sm lg:text-ink">{!canConfig ? "" : c.price_cents ? `${brl(c.price_cents / 100)}/mês` : "—"}</span>
                 <ChevronRight size={16} className="hidden text-muted lg:block" />
               </span>
             </Link>
@@ -96,8 +104,14 @@ export default async function ClientesPage() {
         })}
         {clients.length === 0 && (
           <div className="flex flex-col items-start gap-3 p-6">
-            <p className="text-sm text-muted">Nenhum cliente ainda. Crie um cliente e adicione quantos chatbots ele precisar, ou converta uma demo.</p>
-            <Link href="/painel/clientes/novo" className="btn-primary"><Plus size={15} />Criar o primeiro cliente</Link>
+            {member.scope === "all" && canConfig ? (
+              <>
+                <p className="text-sm text-muted">Nenhum cliente ainda. Crie um cliente e adicione quantos chatbots ele precisar, ou converta uma demo.</p>
+                <Link href="/painel/clientes/novo" className="btn-primary"><Plus size={15} />Criar o primeiro cliente</Link>
+              </>
+            ) : (
+              <p className="text-sm text-muted">Nenhum cliente no seu escopo ainda. Peça para um administrador da agência liberar os clientes que você atende.</p>
+            )}
           </div>
         )}
       </div>

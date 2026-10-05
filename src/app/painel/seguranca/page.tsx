@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { requireAgency } from "@/lib/agency";
-import { auditFilters } from "@/lib/audit-view";
+import { requirePermission } from "@/lib/agency";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { auditFilters, auditPeople } from "@/lib/audit-view";
 import { RequestsSection } from "./requests-section";
 import { AuditSection } from "./audit-section";
 import { AccessSection } from "./access-section";
@@ -23,7 +24,8 @@ type Tab = (typeof TABS)[number][0];
 export default async function SecurityPage({ searchParams }: PageProps<"/painel/seguranca">) {
   const sp = await searchParams;
   const tab = (TABS.some(([t]) => t === sp.aba) ? sp.aba : "pedidos") as Tab;
-  const { agency } = await requireAgency();
+  // só dono e administrador (equipe, leva B1')
+  const { agency, userId } = await requirePermission("security");
   // a Segurança pede o segundo fator (cadastro na hora, na primeira vez)
   await requireAgencyMfa(`/painel/seguranca?aba=${tab}`);
   const page = Math.max(0, Math.min(200, Number(sp.pagina) || 0));
@@ -42,8 +44,8 @@ export default async function SecurityPage({ searchParams }: PageProps<"/painel/
         ))}
       </nav>
       {tab === "pedidos" && <RequestsSection />}
-      {tab === "auditoria" && <AuditSection agencyId={agency.id} ownerId={agency.owner_id} filters={auditFilters(sp)} page={page} />}
-      {tab === "acessos" && <AccessSection agencyId={agency.id} ownerId={agency.owner_id} />}
+      {tab === "auditoria" && <AuditSection agencyId={agency.id} people={await auditPeople(createAdminClient(), agency.id, userId)} filters={auditFilters(sp)} page={page} />}
+      {tab === "acessos" && <AccessSection agencyId={agency.id} people={await auditPeople(createAdminClient(), agency.id, userId)} />}
       {tab === "suporte" && <SupportSection agencyId={agency.id} />}
       {tab === "fator" && <MfaSection />}
     </div>

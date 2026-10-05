@@ -24,11 +24,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const claims = data?.claims;
   let viewer: "agency" | "member" | "support" | null = null;
   if (claims?.sub) {
-    // agência dona (modo dados sensíveis: segundo fator nesta sessão)
-    const { data: agency } = await db.from("agencies").select("id").eq("owner_id", claims.sub).maybeSingle();
-    if (agency?.id === row.agency_id) {
-      const { data: bot } = await db.from("bots").select("sensitive_mode").eq("id", row.bot_id).maybeSingle();
-      if (bot?.sensitive_mode && claims.aal !== "aal2") return new Response("faça a verificação em duas etapas no painel para ver este arquivo", { status: 403 });
+    // equipe da agência: a RLS da sessão diz se o chatbot está no escopo da pessoa
+    // (modo dados sensíveis: segundo fator nesta sessão)
+    const { data: bot } = await (await createClient()).from("bots").select("id, agency_id, sensitive_mode").eq("id", row.bot_id).maybeSingle();
+    if (bot && bot.agency_id === row.agency_id) {
+      if (bot.sensitive_mode && claims.aal !== "aal2") return new Response("faça a verificação em duas etapas no painel para ver este arquivo", { status: 403 });
       viewer = "agency";
     }
   }

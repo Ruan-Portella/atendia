@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createBot } from "../../actions";
-import { requireAgency } from "@/lib/agency";
+import { requirePermission } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { getClientOptions } from "@/lib/panel";
 import { ActionForm } from "@/components/ui/action-form";
@@ -12,7 +12,7 @@ export const metadata = { title: "Novo chatbot" };
 export default async function NewBotPage({ searchParams }: PageProps<"/painel/bots/novo">) {
   const sp = await searchParams;
   const clienteId = typeof sp.cliente === "string" ? sp.cliente : null;
-  const { agency } = await requireAgency();
+  const { agency } = await requirePermission("config");
   const clients = await getClientOptions(await createClient(), agency.id);
   const back = clienteId ? { href: `/painel/clientes/${clienteId}`, label: "← Cliente" } : { href: "/painel/clientes", label: "← Clientes" };
 

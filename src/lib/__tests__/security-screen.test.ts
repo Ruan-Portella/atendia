@@ -42,14 +42,17 @@ describe("tela de Segurança", () => {
   });
 
   it("quem fez, alvo e CSV", () => {
-    expect(actorText({ actor_type: "user", actor_id: "dono" }, "dono")).toBe("Você");
-    expect(actorText({ actor_type: "member", actor_id: "ana@loja.com" }, "dono")).toBe("Área do cliente (ana@loja.com)");
-    expect(actorText({ actor_type: "support", actor_id: "x@boavoz.com" }, "dono")).toBe("Equipe BoaVoz");
+    const people = { me: "dono", names: new Map([["dono", "Ruan"], ["u2", "Viviane"]]) };
+    expect(actorText({ actor_type: "user", actor_id: "dono" }, people)).toBe("Você");
+    expect(actorText({ actor_type: "user", actor_id: "u2" }, people)).toBe("Viviane");
+    expect(actorText({ actor_type: "user", actor_id: "u3" }, people)).toBe("Pessoa da agência");
+    expect(actorText({ actor_type: "member", actor_id: "ana@loja.com" }, people)).toBe("Área do cliente (ana@loja.com)");
+    expect(actorText({ actor_type: "support", actor_id: "x@boavoz.com" }, people)).toBe("Equipe BoaVoz");
     const nameOf = targetNamer(new Map([["c1", "Pizzaria"]]), new Map([["b1", "Atendente"]]));
     expect(nameOf({ target_type: "bot", target_id: "b1" })).toBe("Chatbot Atendente");
     expect(nameOf({ target_type: "webhook", target_id: "w" })).toBe("Webhook");
     const row: AuditRow = { id: 1, actor_type: "support", actor_id: "x", action: "webhook.criar", target_type: "webhook", target_id: "w", before: null, after: { url: "https://a.com/h", name: "x;y" }, created_at: "2026-10-05T15:00:00Z" };
-    const csv = auditCsv([row], "dono", nameOf);
+    const csv = auditCsv([row], { me: "dono", names: new Map() }, nameOf);
     expect(csv.startsWith("﻿Data;Quem;Evento;Código;Alvo;Antes;Depois\r\n")).toBe(true);
     expect(csv).toContain(";Equipe BoaVoz;Webhook criado (URL nova);webhook.criar;Webhook;;");
     expect(csv).toContain('"{""url"":""https://a.com/h"",""name"":""x;y""}"');

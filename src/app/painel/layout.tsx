@@ -1,4 +1,5 @@
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { num } from "@/lib/plans";
 import { daysUntil, initials } from "@/lib/utils";
 import { PanelShell } from "@/components/panel-shell";
@@ -13,12 +14,13 @@ import { SecurityAlertStrip } from "@/components/security-alert-strip";
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {
-  const { agency, plan, usage, quota } = await requireAgency();
+  const { agency, plan, usage, quota, role } = await requireAgency();
   const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
   // pausa, desligamento e suspensão pelo backoffice, ordem da Meta: a agência precisa saber por que parou
   const notices = await panelNotices(createAdminClient(), agency.id);
-  // eventos graves da auditoria ainda não vistos (chave nova, URL trocada, acesso do suporte…)
-  const alerts = await pendingAlerts(createAdminClient(), agency.id, agency.security_alerts_seen_at ?? null).catch(() => []);
+  // eventos graves da auditoria ainda não vistos (chave nova, URL trocada, acesso do suporte…),
+  // para quem cuida da Segurança (dono e administrador)
+  const alerts = can(role, "security") ? await pendingAlerts(createAdminClient(), agency.id, agency.security_alerts_seen_at ?? null).catch(() => []) : [];
   const channelNames = notices.suspended.map((c) => SUSPENDED_LABEL[c] ?? c).join(", ");
   const banners = [
     notices.aiPaused && "A IA da sua conta está pausada pela equipe BoaVoz. As mensagens continuam chegando em Conversas para a sua equipe responder; no site, os visitantes veem o formulário de contato. Dúvidas: fale com o suporte.",
@@ -30,6 +32,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
   return (
     <PanelShell
       agency={{ name: agency.name, logo_url: agency.logo_url, brand_color: agency.brand_color, initials: initials(agency.name) }}
+      role={role}
       planName={plan.name}
       trialDays={trialDays}
       usage={usage}
@@ -39,7 +42,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
-          <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={quota} />
+          {can(role, "config") && <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={quota} />}
         </>
       }
     >

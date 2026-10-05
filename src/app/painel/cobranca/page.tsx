@@ -1,4 +1,4 @@
-import { requireAgency } from "@/lib/agency";
+import { requirePermission } from "@/lib/agency";
 import { PLANS, brl, num } from "@/lib/plans";
 import { billingEnabled } from "@/lib/stripe";
 import { PlanButtons } from "@/components/plan-buttons";
@@ -9,7 +9,7 @@ export const metadata = { title: "Cobrança" };
 
 export default async function CobrancaPage({ searchParams }: PageProps<"/painel/cobranca">) {
   const sp = await searchParams;
-  const { agency, plan, usage, quota } = await requireAgency();
+  const { agency, plan, usage, quota } = await requirePermission("billing");
   const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
   return (
     <div className="max-w-[900px]">

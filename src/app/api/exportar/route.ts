@@ -1,5 +1,6 @@
 import { memberForAction } from "@/lib/member";
 import { requireAgency } from "@/lib/agency";
+import { can } from "@/lib/team";
 import { mfaRedirect } from "@/lib/agency-mfa";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -28,13 +29,14 @@ export async function GET(req: Request) {
     actor = { agencyId: member.member.agencyId, type: "member", id: member.email };
     clientName = member.member.clientName;
   } else {
-    const { agency } = await requireAgency();
+    const { agency, role, userId } = await requireAgency();
+    if (!can(role, "export")) return new Response("só o dono ou um administrador da agência exporta os dados", { status: 403 });
     // exportação pela agência: segundo fator nesta sessão (cadastro na hora, na primeira vez)
     const verify = await mfaRedirect(req);
     if (verify) return verify;
     const { data: client } = await (await createClient()).from("clients").select("id, name").eq("id", clientId).maybeSingle();
     if (!client) return new Response("cliente não encontrado", { status: 404 });
-    actor = { agencyId: agency.id, type: "user", id: agency.owner_id };
+    actor = { agencyId: agency.id, type: "user", id: userId };
     clientName = client.name as string;
   }
   const db = createAdminClient();

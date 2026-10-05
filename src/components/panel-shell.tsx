@@ -5,9 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { Menu as MenuIcon, X, LogOut } from "lucide-react";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { cn } from "@/lib/utils";
+import { can, type AgencyRole } from "@/lib/roles";
 
 interface Props {
   agency: { name: string; logo_url: string | null; brand_color: string; initials: string };
+  /** papel de quem está logado: o menu e o bloco de uso seguem o que ele pode ver */
+  role: AgencyRole;
   planName: string;
   trialDays: number | null;
   usage: number;
@@ -23,7 +26,7 @@ interface Props {
  *  - celular e tablet (< lg): barra no topo com botão hambúrguer + menu lateral deslizante;
  *  - desktop (lg+): sidebar completa.
  */
-export function PanelShell({ agency, planName, trialDays, usage, limit, usageLabel, children, notices }: Props) {
+export function PanelShell({ agency, role, planName, trialDays, usage, limit, usageLabel, children, notices }: Props) {
   const [open, setOpen] = useState(false);
   const pct = Math.min(100, Math.round((usage / Math.max(1, limit)) * 100));
 
@@ -42,13 +45,14 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
     </Link>
   );
 
-  const usageBlock = (
+  // cota do mês: quem configura acompanha; uso e custo (cobrança) é do dono
+  const usageBlock = can(role, "config") ? (
     <div className="flex flex-col gap-2 rounded-[10px] bg-[#262c29] px-3 py-3.5 text-xs text-[#c8cfcb]">
       <div className="flex justify-between"><span>Atendimentos do mês</span><span className="font-semibold text-ground tabular">{usageLabel}</span></div>
       <div className="h-1.5 overflow-hidden rounded-full bg-[#3a423e]"><div className="h-full bg-brand-tint" style={{ width: `${pct}%` }} /></div>
-      <Link href="/painel/cobranca/uso" onClick={() => setOpen(false)} className="font-semibold text-brand-tint">Uso e custo</Link>
+      {can(role, "billing") && <Link href="/painel/cobranca/uso" onClick={() => setOpen(false)} className="font-semibold text-brand-tint">Uso e custo</Link>}
     </div>
-  );
+  ) : null;
 
   const signOut = (
     <form action="/auth/signout" method="post" className="px-2 pt-2">
@@ -64,7 +68,11 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
           <MenuIcon size={20} />
         </button>
         <div className="min-w-0 flex-1">{brandBlock}</div>
-        <Link href="/painel/cobranca/uso" className="rounded-full bg-[#262c29] px-2.5 py-1 text-[11px] font-semibold text-[#c8cfcb] tabular">{pct}%</Link>
+        {can(role, "billing") ? (
+          <Link href="/painel/cobranca/uso" className="rounded-full bg-[#262c29] px-2.5 py-1 text-[11px] font-semibold text-[#c8cfcb] tabular">{pct}%</Link>
+        ) : can(role, "config") ? (
+          <span className="rounded-full bg-[#262c29] px-2.5 py-1 text-[11px] font-semibold text-[#c8cfcb] tabular">{pct}%</span>
+        ) : null}
       </header>
 
       {/* menu deslizante (celular) */}
@@ -76,7 +84,7 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
               {brandBlock}
               <button type="button" onClick={() => setOpen(false)} aria-label="Fechar" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[#262c29]"><X size={18} /></button>
             </div>
-            <SidebarNav onNavigate={() => setOpen(false)} />
+            <SidebarNav role={role} onNavigate={() => setOpen(false)} />
             <div className="mt-auto flex flex-col gap-2">{usageBlock}{signOut}</div>
           </aside>
         </div>
@@ -86,7 +94,7 @@ export function PanelShell({ agency, planName, trialDays, usage, limit, usageLab
       {/* altura da tela e presa no topo: em página longa ela não estica junto com o conteúdo */}
       <aside className={cn("hidden w-60 shrink-0 flex-col gap-1.5 bg-ink p-4 text-ground lg:sticky lg:top-0 lg:flex lg:h-dvh lg:overflow-y-auto")}>
         <div className="pb-4 pt-1">{brandBlock}</div>
-        <SidebarNav />
+        <SidebarNav role={role} />
         <div className="mt-auto">{usageBlock}</div>
         {signOut}
       </aside>

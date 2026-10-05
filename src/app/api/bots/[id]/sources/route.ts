@@ -5,9 +5,23 @@ import { SOURCES_BUCKET, removeSourceFiles, sourcePdfPath } from "@/lib/source-f
 import { ingestSource, type SourceRow } from "@/lib/ingest";
 import { classifyLater } from "@/lib/gate/base";
 import { normalizeUrl } from "@/lib/utils";
+import { activeMembership, can } from "@/lib/team";
 
 // a leitura da fonte responde na hora; a classificação do portão (parte 6) roda depois, no mesmo tempo
 export const maxDuration = 300;
+
+type Db = Awaited<ReturnType<typeof createClient>>;
+
+/** Fontes são configuração: dono, administrador ou editor da equipe (o escopo vem da RLS). */
+async function canEdit(supabase: Db): Promise<boolean> {
+  const { data } = await supabase.auth.getClaims();
+  const sub = data?.claims?.sub;
+  if (!sub) return false;
+  const member = await activeMembership(createAdminClient(), sub);
+  return Boolean(member && !member.paused_by_plan_at && can(member.role, "config"));
+}
+
+const FORBIDDEN = { error: "forbidden", message: "O seu papel na equipe não altera a base de conhecimento." };
 
 /**
  * Adiciona uma fonte ao bot e processa na hora.
@@ -20,6 +34,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sourc
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await canEdit(supabase))) return Response.json(FORBIDDEN, { status: 403 });
 
   // RLS garante que o bot é da agência do usuário
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
@@ -71,6 +86,7 @@ export async function DELETE(req: Request, ctx: RouteContext<"/api/bots/[id]/sou
   const sourceId = new URL(req.url).searchParams.get("sourceId");
   if (!sourceId) return Response.json({ error: "missing_source", message: "Fonte não informada." }, { status: 400 });
   const supabase = await createClient();
+  if (!(await canEdit(supabase))) return Response.json(FORBIDDEN, { status: 403 });
   const { data: before } = await supabase.from("sources").select("file_path").eq("id", sourceId).eq("bot_id", botId).maybeSingle();
   const { error, count } = await supabase.from("sources").delete({ count: "exact" }).eq("id", sourceId).eq("bot_id", botId);
   if (error) return Response.json({ error: error.message, message: "Não foi possível remover a fonte." }, { status: 500 });
@@ -90,6 +106,7 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
   const { id: botId } = await ctx.params;
   const sourceId = new URL(req.url).searchParams.get("sourceId");
   const supabase = await createClient();
+  if (!(await canEdit(supabase))) return Response.json(FORBIDDEN, { status: 403 });
   const { data: source } = await supabase.from("sources").select("id, bot_id, kind, title, url, content, file_path").eq("id", sourceId ?? "").eq("bot_id", botId).maybeSingle();
   if (!source) return Response.json({ error: "not_found", message: "Fonte não encontrada." }, { status: 404 });
 

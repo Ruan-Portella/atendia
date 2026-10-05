@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { endOtherSessions } from "../actions";
 import { deviceOf } from "@/lib/access-log";
+import { actorText, type AuditPeople } from "@/lib/audit-view";
 
 const EVENT: Record<string, string> = { session: "Acesso", login: "Entrada", login_failed: "Falha na entrada", magic_link: "Entrada por link", logout: "Saída" };
 
@@ -10,9 +11,9 @@ const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: 
 /**
  * Acessos ao painel e à área do cliente (Marco Civil: IP completo por 6 meses). Uma linha por pessoa,
  * IP e dia, mais entradas, falhas e saídas. "Encerrar as outras sessões" sai de todos os outros
- * aparelhos do dono.
+ * aparelhos de quem está logado.
  */
-export async function AccessSection({ agencyId, ownerId }: { agencyId: string; ownerId: string }) {
+export async function AccessSection({ agencyId, people }: { agencyId: string; people: AuditPeople }) {
   const db = createAdminClient();
   const { data } = await db.from("access_log").select("id, actor_type, actor_id, event, ip, user_agent, created_at").eq("agency_id", agencyId).order("created_at", { ascending: false }).limit(100);
   const rows = (data ?? []) as Array<{ id: number; actor_type: string; actor_id: string; event: string; ip: string | null; user_agent: string | null; created_at: string }>;
@@ -23,7 +24,7 @@ export async function AccessSection({ agencyId, ownerId }: { agencyId: string; o
     const { data: u } = await db.auth.admin.getUserById(id);
     if (u?.user?.email) emails.set(id, u.user.email);
   }
-  const who = (r: (typeof rows)[number]) => (r.actor_type === "user" ? (r.actor_id === ownerId ? "Você" : "Pessoa da agência") : `Área do cliente (${emails.get(r.actor_id) ?? "pessoa removida"})`);
+  const who = (r: (typeof rows)[number]) => (r.actor_type === "user" ? actorText(r, people) : `Área do cliente (${emails.get(r.actor_id) ?? "pessoa removida"})`);
 
   return (
     <section className="card flex flex-col gap-4 p-6">

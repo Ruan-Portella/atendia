@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAgency } from "@/lib/agency";
+import { requirePermission } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agencyMonthUsage, clientMonthAtendimentos, type BotMonthUsage } from "@/lib/atendimentos";
@@ -29,7 +29,7 @@ interface ClientRow {
  * editável. O custo de IA não aparece para a agência.
  */
 export default async function UsoPage() {
-  const { agency, usage, quota } = await requireAgency();
+  const { agency, usage, quota } = await requirePermission("billing");
   const period = currentPeriodBR();
   const supabase = await createClient();
   const db = createAdminClient();

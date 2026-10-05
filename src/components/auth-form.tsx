@@ -4,12 +4,15 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { safeLocalPath } from "@/lib/utils";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") ?? "/painel/clientes";
-  const [email, setEmail] = useState("");
+  // só caminhos deste site; quem chega pelo link do convite volta para ele (sem criar agência)
+  const next = safeLocalPath(params.get("next"), "/painel/clientes");
+  const invited = next.startsWith("/convite/");
+  const [email, setEmail] = useState(invited ? (params.get("email") ?? "") : "");
   const [password, setPassword] = useState("");
   const [agency, setAgency] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,7 +48,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { agency_name: agency }, emailRedirectTo: `${location.origin}/auth/callback?next=/painel` },
+        options: { data: invited ? {} : { agency_name: agency }, emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(invited ? next : "/painel")}` },
       });
       if (error) {
         setMsg({ kind: "err", text: error.message });
@@ -53,7 +56,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         return;
       }
       if (data.session) {
-        router.push("/painel/clientes");
+        router.push(invited ? next : "/painel/clientes");
         router.refresh();
       } else {
         setMsg({ kind: "ok", text: "Conta criada. Confira seu e-mail para confirmar e entrar." });
@@ -65,7 +68,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   return (
     <div className="card w-full max-w-[420px] p-7">
       <h1 className="text-2xl font-bold">{mode === "login" ? "Entrar" : "Criar conta grátis"}</h1>
-      <p className="mt-1 text-sm text-muted">{mode === "login" ? "Bem-vindo de volta." : "14 dias de teste, sem cartão."}</p>
+      <p className="mt-1 text-sm text-muted">{invited ? "Use o e-mail que recebeu o convite." : mode === "login" ? "Bem-vindo de volta." : "14 dias de teste, sem cartão."}</p>
 
       <button type="button" onClick={google} disabled={busy} className="btn-ghost mt-6 w-full">
         <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.8-5.5 3.8-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 3.3 14.6 2.4 12 2.4 6.7 2.4 2.4 6.7 2.4 12s4.3 9.6 9.6 9.6c5.5 0 9.2-3.9 9.2-9.4 0-.6-.1-1.1-.2-1.6H12z" /></svg>
@@ -74,7 +77,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       <div className="my-5 flex items-center gap-3 text-xs text-muted"><span className="h-px flex-1 bg-line" />ou<span className="h-px flex-1 bg-line" /></div>
 
       <form onSubmit={submit} className="flex flex-col gap-4">
-        {mode === "signup" && (
+        {mode === "signup" && !invited && (
           <div>
             <label htmlFor="agency" className="label">Nome da agência (ou o seu)</label>
             <input id="agency" required value={agency} onChange={(e) => setAgency(e.target.value)} className="input" placeholder="Norte Marketing" />
@@ -93,9 +96,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       </form>
       <p className="mt-5 text-center text-sm text-muted">
         {mode === "login" ? (
-          <>Ainda não tem conta? <Link href="/cadastro" className="font-semibold text-brand">Criar grátis</Link></>
+          <>Ainda não tem conta? <Link href={invited ? `/cadastro?next=${encodeURIComponent(next)}` : "/cadastro"} className="font-semibold text-brand">{invited ? "Criar conta" : "Criar grátis"}</Link></>
         ) : (
-          <>Já tem conta? <Link href="/login" className="font-semibold text-brand">Entrar</Link></>
+          <>Já tem conta? <Link href={invited ? `/login?next=${encodeURIComponent(next)}` : "/login"} className="font-semibold text-brand">Entrar</Link></>
         )}
       </p>
     </div>

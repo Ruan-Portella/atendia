@@ -2,24 +2,28 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Sparkles, Palette, Share2, CreditCard, ShieldCheck } from "lucide-react";
+import { Users, Sparkles, Palette, Share2, CreditCard, ShieldCheck, UsersRound, CircleUser } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { can, type AgencyRole, type Permission } from "@/lib/roles";
 
-const ITEMS: Array<{ href: string; label: string; icon: typeof Users; also?: string }> = [
-  { href: "/painel/clientes", label: "Clientes", icon: Users, also: "/painel/bots" },
-  { href: "/painel/demos", label: "Demos", icon: Sparkles },
-  { href: "/painel/marca", label: "Marca e domínio", icon: Palette },
-  { href: "/painel/seguranca", label: "Segurança", icon: ShieldCheck },
-  { href: "/painel/afiliados", label: "Afiliados", icon: Share2 },
-  { href: "/painel/cobranca", label: "Cobrança", icon: CreditCard },
+/** Itens do menu e quem vê cada um (equipe, leva B1'). */
+const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Permission; also?: string }> = [
+  { href: "/painel/clientes", label: "Clientes", icon: Users, perm: "attend", also: "/painel/bots" },
+  { href: "/painel/demos", label: "Demos", icon: Sparkles, perm: "config" },
+  { href: "/painel/marca", label: "Marca e domínio", icon: Palette, perm: "brand" },
+  { href: "/painel/equipe", label: "Equipe", icon: UsersRound, perm: "team" },
+  { href: "/painel/seguranca", label: "Segurança", icon: ShieldCheck, perm: "security" },
+  { href: "/painel/afiliados", label: "Afiliados", icon: Share2, perm: "billing" },
+  { href: "/painel/cobranca", label: "Cobrança", icon: CreditCard, perm: "billing" },
+  { href: "/painel/perfil", label: "Meu perfil", icon: CircleUser, perm: "attend" },
 ];
 
 /** Navegação do painel (menu deslizante no celular/tablet, sidebar no desktop). */
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarNav({ role, onNavigate }: { role: AgencyRole; onNavigate?: () => void }) {
   const path = usePathname();
   return (
     <nav className="flex flex-col gap-1">
-      {ITEMS.map(({ href, label, icon: Icon, also }) => {
+      {ITEMS.filter((i) => can(role, i.perm)).map(({ href, label, icon: Icon, also }) => {
         // chatbots moram dentro do cliente, então o editor de bot acende "Clientes"
         const active = path.startsWith(href) || (also ? path.startsWith(also) : false);
         return (

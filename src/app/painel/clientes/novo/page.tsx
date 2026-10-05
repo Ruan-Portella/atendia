@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { requirePermission } from "@/lib/agency";
 import { createClientRecord } from "../../actions";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -6,7 +8,10 @@ import { ClientFields } from "@/components/client-fields";
 
 export const metadata = { title: "Novo cliente" };
 
-export default function NewClientPage() {
+export default async function NewClientPage() {
+  // cliente novo fica fora do escopo de quem vê só alguns clientes
+  const { member } = await requirePermission("config");
+  if (member.scope !== "all") notFound();
   return (
     <div className="max-w-[560px]">
       <Link href="/painel/clientes" className="text-sm font-semibold text-muted">← Clientes</Link>
