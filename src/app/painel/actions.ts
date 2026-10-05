@@ -12,6 +12,7 @@ import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
 import { appUrl, initials, normalizeUrl, slugify } from "@/lib/utils";
 import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
+import { grantSupport, revokeSupport } from "@/lib/support-access";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
@@ -1129,6 +1130,25 @@ export async function endOtherSessions(): Promise<ActionResult> {
   const { agency } = await requireAgency();
   await auditPanel("seguranca.encerrar_sessoes", { type: "agency", id: agency.id });
   return ok("Pronto: as outras sessões foram encerradas.");
+}
+
+/** Segurança: libera o suporte do BoaVoz por 24 horas, com motivo (evento grave: e-mail e faixa). */
+export async function grantSupportAccess(formData: FormData): Promise<ActionResult> {
+  const { agency } = await requireAgency();
+  const reason = text(formData.get("reason")).replace(/\s+/g, " ").trim();
+  if (reason.length < 10) return fail("Escreva o motivo (o que o suporte vai ver), com pelo menos 10 letras.");
+  if (reason.length > 300) return fail("Motivo longo demais.");
+  const g = await grantSupport(createAdminClient(), { agencyId: agency.id, by: agency.owner_id, reason, meta: await requestMeta() });
+  revalidatePath("/painel", "layout");
+  return ok(`Suporte liberado até ${new Date(g.expires_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}.`);
+}
+
+/** Segurança: encerra agora o acesso do suporte. */
+export async function revokeSupportAccess(): Promise<ActionResult> {
+  const { agency } = await requireAgency();
+  const done = await revokeSupport(createAdminClient(), { agencyId: agency.id, by: agency.owner_id, meta: await requestMeta() });
+  revalidatePath("/painel/seguranca");
+  return ok(done ? "Acesso do suporte encerrado." : "O suporte já não tinha acesso.");
 }
 
 /** Faixa de alertas de segurança: marca os de agora como vistos. */

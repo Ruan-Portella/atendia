@@ -131,7 +131,7 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
           <ul className="flex flex-col divide-y divide-line-2 text-sm">
             {q.unanswered.map((u) => (
               <li key={u.id as string} className="flex flex-col gap-0.5 py-2">
-                <span>{u.question as string}</span>
+                <span>{u.hidden ? <span className="text-muted">(texto oculto: a agência não liberou o suporte)</span> : u.question}</span>
                 <span className="text-xs text-muted">{botLabel(q.bots, u.bot_id as string)} · {relativeTime(u.created_at as string)}</span>
               </li>
             ))}
@@ -143,7 +143,7 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
           <ul className="flex flex-col divide-y divide-line-2 text-sm">
             {q.refusals.map((r) => (
               <li key={r.id as number} className="flex flex-col gap-0.5 py-2">
-                <span>{(r.request as string | null) ?? <span className="text-muted">(sem resumo)</span>}</span>
+                <span>{r.hidden ? <span className="text-muted">(texto oculto: a agência não liberou o suporte)</span> : (r.request ?? <span className="text-muted">(sem resumo)</span>)}</span>
                 <span className="text-xs text-muted">{r.level as string} · {botLabel(q.bots, r.bot_id as string)} · {relativeTime(r.created_at as string)}</span>
               </li>
             ))}

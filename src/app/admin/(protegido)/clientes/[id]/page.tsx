@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Kpi } from "@/components/kpi";
 import { AgencyActions, ChannelSuspension } from "@/components/admin/pause-controls";
 import { AgencyFeatures } from "@/components/admin/release-controls";
+import { SupportConversations } from "@/components/admin/support-conversations";
 import { requireAdmin } from "@/lib/platform-admin";
 import { agencyStatus, botChunkCounts, daysAgoIso, getAgencies, getMeasures, kindLabel, usd, usdBrl } from "@/lib/backoffice";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -146,6 +147,8 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
           {agency.lastActivity && <p className="mt-auto text-xs text-muted">Última conversa {relativeTime(agency.lastActivity)}.</p>}
         </section>
       </div>
+
+      <SupportConversations agencyId={id} bots={(bots ?? []).map((b) => ({ id: b.id as string, name: b.name as string, client_name: b.client_name as string }))} />
     </>
   );
 }

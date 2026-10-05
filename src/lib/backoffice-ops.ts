@@ -3,6 +3,7 @@ import { checkHealth, type HealthReport } from "./health";
 import { BASE_GATE_VERSION } from "./gate/base";
 import { listUnanswered } from "./unanswered";
 import { listRefusals } from "./scope-refusals";
+import { grantedAgencies } from "./support-access";
 
 /*
  * Backoffice: qualidade da IA (perguntas sem resposta, recusas, portão, pedidos urgentes) e
@@ -62,7 +63,17 @@ export async function getQuality(since: Date) {
     ...(grouped.sem_resposta_bot ?? []).map((x) => x.key),
     ...(grouped.recusa_bot ?? []).map((x) => x.key),
   ];
-  return { grouped, unanswered, refusals, urgent: urgent ?? [], bots: await botRefs(ids) };
+  const bots = await botRefs(ids);
+  // texto que veio do contato: só das agências que liberaram o suporte (Segurança → Acesso do suporte)
+  const granted = await grantedAgencies(db, [...unanswered, ...refusals].map((r) => bots.get(r.bot_id)?.agencyId ?? ""));
+  const hidden = (botId: string) => !granted.has(bots.get(botId)?.agencyId ?? "");
+  return {
+    grouped,
+    unanswered: unanswered.map((u) => ({ ...u, hidden: hidden(u.bot_id), question: hidden(u.bot_id) ? "" : u.question })),
+    refusals: refusals.map((r) => ({ ...r, hidden: hidden(r.bot_id), request: hidden(r.bot_id) ? null : r.request })),
+    urgent: urgent ?? [],
+    bots,
+  };
 }
 
 /** Classificação da base (portão, parte 6): trechos, quantos faltam na versão atual e quantos têm item restrito. */

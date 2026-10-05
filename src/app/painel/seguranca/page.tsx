@@ -4,6 +4,7 @@ import { auditFilters } from "@/lib/audit-view";
 import { RequestsSection } from "./requests-section";
 import { AuditSection } from "./audit-section";
 import { AccessSection } from "./access-section";
+import { SupportSection } from "./support-section";
 
 export const metadata = { title: "Segurança" };
 
@@ -11,6 +12,7 @@ const TABS = [
   ["pedidos", "Pedidos do titular"],
   ["auditoria", "Auditoria"],
   ["acessos", "Acessos"],
+  ["suporte", "Acesso do suporte"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -25,7 +27,7 @@ export default async function SecurityPage({ searchParams }: PageProps<"/painel/
     <div className="flex max-w-[960px] flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold sm:text-[28px]">Segurança</h1>
-        <p className="text-sm text-muted">Pedidos de exclusão dos contatos (LGPD), o que foi feito na sua conta e quem acessou o painel.</p>
+        <p className="text-sm text-muted">Pedidos de exclusão dos contatos (LGPD), o que foi feito na sua conta, quem acessou o painel e o acesso do suporte BoaVoz.</p>
       </div>
       <nav aria-label="Seções" className="flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]">
         {TABS.map(([key, label]) => (
@@ -37,6 +39,7 @@ export default async function SecurityPage({ searchParams }: PageProps<"/painel/
       {tab === "pedidos" && <RequestsSection />}
       {tab === "auditoria" && <AuditSection agencyId={agency.id} ownerId={agency.owner_id} filters={auditFilters(sp)} page={page} />}
       {tab === "acessos" && <AccessSection agencyId={agency.id} ownerId={agency.owner_id} />}
+      {tab === "suporte" && <SupportSection agencyId={agency.id} />}
     </div>
   );
 }
