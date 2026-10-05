@@ -13,7 +13,10 @@ import { unseal } from "./secret-box";
  *                             (o número de teste do app, ligado pelo ID)
  *   WHATSAPP_GRAPH_VERSION  → versão da Graph API (padrão abaixo)
  */
-export const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION ?? "v23.0";
+// v26.0 (29/07/2026; leva S): da v23 à v26, nada do que usamos mudou (mensagens, mídia, número,
+// modelos, cadastro incorporado). O webhook de status deixou de trazer "conversation" na v24, e o
+// consumo já lê só "pricing". A versão do corpo dos webhooks é a configurada no app da Meta.
+export const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION ?? "v26.0";
 /** Limite da Meta para o corpo de uma mensagem de texto. */
 const MAX_BODY = 4096;
 

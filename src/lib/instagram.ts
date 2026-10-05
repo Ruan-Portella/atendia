@@ -13,7 +13,8 @@ import { appUrl } from "./utils";
  * Regras que importam: resposta em até 24 h da última mensagem do contato; mensagem de até
  * 1.000 bytes; o token do cliente vale 60 dias e só pode ser renovado depois de 24 h de vida.
  */
-const VERSION = process.env.INSTAGRAM_GRAPH_VERSION ?? "v23.0";
+// v26.0 (29/07/2026; leva S): da v23 à v26, sem mudança no envio, nos webhooks nem nos tokens
+const VERSION = process.env.INSTAGRAM_GRAPH_VERSION ?? "v26.0";
 const GRAPH = `https://graph.instagram.com/${VERSION}`;
 export const IG_SCOPES = ["instagram_business_basic", "instagram_business_manage_messages"];
 /** Limite da Meta para o texto de uma DM. */
