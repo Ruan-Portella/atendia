@@ -6,6 +6,7 @@ import { createAdminClient } from "./supabase/admin";
 import { belongsToHost, hostAgency } from "./domain-server";
 import { appUrl } from "./utils";
 import { isEmail } from "./validation";
+import { firstName, type Attendant } from "./authors";
 
 /**
  * Área do cliente final (/cliente): pessoas do cliente da agência entram por link mágico.
@@ -20,6 +21,10 @@ import { isEmail } from "./validation";
  */
 
 export interface Membership {
+  /** a linha em client_members (é o id do atendente nas conversas) */
+  memberId: string;
+  displayName: string | null;
+  avatarUrl: string | null;
   clientId: string;
   clientName: string;
   agencyId: string;
@@ -78,14 +83,22 @@ export const getMemberSession = cache(async (): Promise<MemberSession | null> =>
   if (isMemberSessionExpired(claims?.amr)) return { email, expired: true, memberships: [] };
   const { data: rows } = await createAdminClient()
     .from("client_members")
-    .select("client_id, clients!inner(id, name, agency_id, allow_handoff, allow_knowledge, agencies!inner(name, logo_url, brand_color, support_whatsapp, custom_domain, custom_domain_verified_at))")
+    .select("id, display_name, avatar_url, client_id, clients!inner(id, name, agency_id, allow_handoff, allow_knowledge, agencies!inner(name, logo_url, brand_color, support_whatsapp, custom_domain, custom_domain_verified_at))")
     .eq("email", email);
   const memberships = (rows ?? []).map((r) => {
     const c = (Array.isArray(r.clients) ? r.clients[0] : r.clients) as Record<string, unknown>;
     const a = (Array.isArray(c.agencies) ? c.agencies[0] : c.agencies) as Membership["agency"];
-    return { clientId: String(c.id), clientName: String(c.name), agencyId: String(c.agency_id), allowHandoff: Boolean(c.allow_handoff), allowKnowledge: Boolean(c.allow_knowledge), agency: a };
+    return { memberId: String(r.id), displayName: (r.display_name as string | null) ?? null, avatarUrl: (r.avatar_url as string | null) ?? null, clientId: String(c.id), clientName: String(c.name), agencyId: String(c.agency_id), allowHandoff: Boolean(c.allow_handoff), allowKnowledge: Boolean(c.allow_knowledge), agency: a };
   });
   return { email, expired: false, memberships };
+});
+
+/** A pessoa do cliente como atendente: o nome de exibição (ou o primeiro nome do e-mail). */
+export const memberAttendant = (m: Pick<Membership, "memberId" | "displayName">, email: string): Attendant => ({
+  type: "client_member",
+  id: m.memberId,
+  name: m.displayName?.trim() || firstName(null, email),
+  legacy: email,
 });
 
 /** Leva para a rota que encerra a sessão vencida e mostra a tela de pedir link. */

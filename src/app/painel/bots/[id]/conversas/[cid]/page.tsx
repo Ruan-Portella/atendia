@@ -20,12 +20,12 @@ import { attachmentsOfMessages } from "@/lib/attachments";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { channelBlock } from "@/lib/features";
-import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
-import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
+import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
+import { authorLabel } from "@/lib/authors";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { deleteConversation, releaseConversation, requestGateReview, resetConversationAge, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
+import { deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
 import { botGateExemptions, conversationGateCategories } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { GateReviewButton } from "@/components/gate-review-button";
@@ -38,7 +38,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, regulated_at, identity_hash, context_display, context_since, bots(name, client_id, client_name, sensitive_mode)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, regulated_at, identity_hash, context_display, context_since, bots(name, client_id, client_name, sensitive_mode)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -47,8 +47,8 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const sensitive = Boolean((Array.isArray(conv.bots) ? conv.bots[0] : conv.bots)?.sensitive_mode);
   if (sensitive) await requireAgencyMfa(`/painel/bots/${id}/conversas/${cid}`);
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
-  const [messages, leads, { agency, role }] = await Promise.all([
-    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
+  const [messages, leads, { agency, role, member }] = await Promise.all([
+    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "author_type", "author_id", "author_display_name", "announce_chars", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     leadsOfConversation(supabase, cid),
     requireAgency(),
   ]);
@@ -143,7 +143,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
             leads={leads}
             showSources
             contextChange={conv.context_since ? { at: conv.context_since as string, label: conv.context_display ? `contexto: ${conv.context_display as string}` : "sem conta conectada" } : null}
-            agentLabel={(author) => (!author || author === "agência" ? "Você (agência)" : author === PHONE_AUTHOR ? "Pelo celular (WhatsApp Business)" : author === IG_APP_AUTHOR ? "Pelo app do Instagram" : `Cliente · ${author}`)}
+            agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}
           />
         </div>
       </MessageScroller>
@@ -162,8 +162,8 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
             </p>
           )}
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
-          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
-          <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked paymentCheck={regulated} />
+          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} meId={member.id} />
+          <HandoffReply conv={handoffConv} meId={member.id} onTakeOver={takeOver} onForceTakeOver={forceTakeOverConversation.bind(null, cid)} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked paymentCheck={regulated} />
         </div>
       </footer>
     </div>

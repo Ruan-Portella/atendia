@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AuthorType } from "./authors";
 import { decideMode, resolveMode, type Mode, type ModeFacts, type ModeInput } from "./conversation-mode";
 import { channelMsgHash } from "./hash";
 import { saveMessage, updateMessages, type MessagePatch } from "./messages";
@@ -49,8 +50,8 @@ export async function sendCheck(db: SupabaseClient, o: { botId: string; channel:
 
 /** O que gravar na conversa: uma linha nova depois do envio, ou a linha já gravada antes (resposta da IA). */
 export type SendRecord =
-  | { insert: { role: "assistant" | "agent"; content: string; author: string | null; template_category?: string | null } }
-  | { update: number; content?: string }
+  | { insert: { role: "assistant" | "agent"; content: string; author: string | null; template_category?: string | null; author_type?: AuthorType | null; author_id?: string | null; author_display_name?: string | null; announce_chars?: number | null } }
+  | { update: number; content?: string; announce_chars?: number | null }
   | null;
 
 export type SendOutcome = { status: "sent"; id: string | null } | { status: "blocked"; reason: string };
@@ -75,7 +76,7 @@ export async function deliver(
   const write = async (fields: MessagePatch) => {
     if (!o.record) return;
     try {
-      if ("update" in o.record) await updateMessages(db, { id: o.record.update }, { ...fields, ...(o.record.content !== undefined ? { content: o.record.content } : {}) });
+      if ("update" in o.record) await updateMessages(db, { id: o.record.update }, { ...fields, ...(o.record.content !== undefined ? { content: o.record.content } : {}), ...(o.record.announce_chars !== undefined ? { announce_chars: o.record.announce_chars } : {}) });
       else if (o.conversationId) await saveMessage(db, { conversation_id: o.conversationId, ...o.record.insert, ...fields });
     } catch (e) {
       console.error("envio: registro não gravado", (e as Error).message);

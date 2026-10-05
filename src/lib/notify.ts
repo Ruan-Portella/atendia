@@ -44,14 +44,25 @@ export async function notifyLead(opts: {
   if (lead.id) await markLeadNotified(db, lead.id);
 }
 
-/** E-mails da agência e do aviso configurado no bot (sem duplicar). */
+/**
+ * E-mails da equipe da agência que atende este chatbot (leva B1': todo papel atende, dentro do
+ * escopo) e do aviso configurado no bot, sem duplicar.
+ */
 async function recipients(db: SupabaseClient, bot: BotRow): Promise<string[]> {
-  const { data: agency } = await db.from("agencies").select("owner_id").eq("id", bot.agency_id).single();
-  const { data: owner } = agency ? await db.auth.admin.getUserById(agency.owner_id) : { data: null };
-  return [...new Set([bot.lead_capture?.notify_email, owner?.user?.email].filter((x): x is string => Boolean(x)))];
+  const { data: members } = await db.from("agency_members").select("id, email, scope").eq("agency_id", bot.agency_id).is("removed_at", null).not("accepted_at", "is", null).is("paused_by_plan_at", null);
+  const rows = (members ?? []) as Array<{ id: string; email: string; scope: string }>;
+  const selected = rows.filter((m) => m.scope === "selected").map((m) => m.id);
+  const inScope = new Set<string>();
+  if (selected.length) {
+    const { data: scopes } = await db.from("agency_member_scopes").select("member_id, client_id, bot_id").in("member_id", selected);
+    for (const sc of (scopes ?? []) as Array<{ member_id: string; client_id: string | null; bot_id: string | null }>) {
+      if (sc.bot_id === bot.id || (bot.client_id && sc.client_id === bot.client_id)) inScope.add(sc.member_id);
+    }
+  }
+  const team = rows.filter((m) => m.scope === "all" || inScope.has(m.id)).map((m) => m.email);
+  return [...new Set([bot.lead_capture?.notify_email, ...team].filter((x): x is string => Boolean(x)).map((e) => e.toLowerCase()))];
 }
 
-/** Avisa na hora que um visitante pediu para falar com alguém, com o link para responder. */
 /**
  * Avisa na hora que um visitante pediu para falar com alguém:
  *  - a agência (e o e-mail de aviso do bot), com link para o painel;

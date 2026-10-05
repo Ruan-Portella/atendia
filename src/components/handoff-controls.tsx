@@ -6,6 +6,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { AgentReplyForm } from "@/components/agent-reply-form";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 
 export interface HandoffConversation {
   last_message_at: string;
@@ -15,6 +16,15 @@ export interface HandoffConversation {
   visitor_seen_at?: string | null;
   channel?: string | null;
   last_user_at?: string | null;
+  /** quem está com a conversa (leva B1': um atendente por conversa) */
+  assigned_to_id?: string | null;
+  assigned_to_name?: string | null;
+}
+
+/** Com quem está a conversa, do ponto de vista de quem vê a tela. Pura. */
+export function holderView(conv: HandoffConversation, meId: string): "mine" | "other" | "free" {
+  if (conv.handled_at || !conv.takeover_at || !conv.assigned_to_id) return "free";
+  return conv.assigned_to_id === meId ? "mine" : "other";
 }
 
 /** "Visitante online agora" / "saiu do site há X" — para saber se ainda vale responder. */
@@ -36,7 +46,7 @@ function VisitorPresence({ conv }: { conv: HandoffConversation }) {
  * Status do atendimento (pediu atendente / você está atendendo) + atualização ao vivo. Vai no
  * rodapé fixo, acima da resposta: com muitas mensagens, o aviso e o botão de assumir continuam à vista.
  */
-export function HandoffStatus({ conv, onTakeOver }: { conv: HandoffConversation; onTakeOver: () => Promise<ActionResult> }) {
+export function HandoffStatus({ conv, onTakeOver, meId }: { conv: HandoffConversation; onTakeOver: () => Promise<ActionResult>; meId: string }) {
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
   const waiting = open && !conv.takeover_at && Boolean(conv.handoff_requested_at);
@@ -52,7 +62,10 @@ export function HandoffStatus({ conv, onTakeOver }: { conv: HandoffConversation;
           <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir conversa</SubmitButton></ActionForm>
         </div>
       ) : (
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-brand"><Headset size={14} className="shrink-0" />Atendimento humano em andamento: o assistente pausou nesta conversa.</p>
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-brand">
+          <Headset size={14} className="shrink-0" />
+          {holderView(conv, meId) === "mine" ? "Atendimento humano com você" : conv.assigned_to_name ? `Atendimento humano com ${conv.assigned_to_name}` : "Atendimento humano em andamento"}: o assistente pausou nesta conversa.
+        </p>
       )}
       <p className="text-xs"><VisitorPresence conv={conv} /></p>
     </>
@@ -60,9 +73,13 @@ export function HandoffStatus({ conv, onTakeOver }: { conv: HandoffConversation;
 }
 
 /** Caixa de resposta e botões de assumir/encerrar. Vai embaixo da conversa. */
-export function HandoffReply({ conv, onTakeOver, onSend, onRelease, docked = false, paymentCheck = false }: {
+export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, onRelease, docked = false, paymentCheck = false }: {
   conv: HandoffConversation;
+  /** id de quem vê a tela como atendente (agency_members ou client_members) */
+  meId: string;
   onTakeOver: () => Promise<ActionResult>;
+  /** "Assumir no lugar" de quem está atendendo */
+  onForceTakeOver: () => Promise<ActionResult>;
   onSend: (fd: FormData) => Promise<ActionResult>;
   onRelease: () => Promise<ActionResult>;
   /** já está num rodapé fixo (tela de chat do painel): sem borda nem sticky próprios */
@@ -73,6 +90,26 @@ export function HandoffReply({ conv, onTakeOver, onSend, onRelease, docked = fal
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
   const waiting = open && !conv.takeover_at && Boolean(conv.handoff_requested_at);
+  // só quem está com a conversa vê a caixa de resposta; os outros, o histórico e "Assumir no lugar"
+  if (active && holderView(conv, meId) === "other") {
+    const name = conv.assigned_to_name ?? "outra pessoa";
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted">{name} está atendendo. Só quem atende responde por aqui.</span>
+        <ConfirmAction
+          action={onForceTakeOver}
+          title={`Assumir no lugar de ${name}?`}
+          description={`${name} deixa de responder esta conversa. A sua primeira mensagem sai com o anúncio de entrada com o seu nome. Fica registrado na auditoria.`}
+          confirmLabel="Assumir no lugar"
+          danger={false}
+          className="btn-ghost"
+        >
+          <Headset size={15} />
+          Assumir no lugar
+        </ConfirmAction>
+      </div>
+    );
+  }
   return (
     <>
       {active ? (

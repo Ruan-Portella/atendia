@@ -20,6 +20,10 @@ export interface HumanHandoff {
   away_message?: string | null;
   /** Botão "Falar com uma pessoa" no chat do site (bots novos: ligado; antigos: desligado). */
   widget_button?: boolean | null;
+  /** Anúncio de entrada do atendente editado (null = o padrão). Leva B1'. */
+  entry_notice?: string | null;
+  /** Anúncio de volta para a IA editado (null = o padrão). Leva B1'. */
+  back_notice?: string | null;
 }
 
 export const WEEKDAYS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"] as const;
@@ -81,8 +85,20 @@ export function whenLabel(o: { inDays: number; day: number; time: string; until:
 export const DEFAULT_AI_NOTICE = "Sou {nome}, assistente virtual de {empresa}.";
 /** Pedido de atendente fora do horário. {volta} vira "segunda, das 9h às 18h". */
 export const DEFAULT_AWAY_MESSAGE = "Nossa equipe volta {volta}. Deixei seu pedido registrado e respondemos assim que possível.";
-/** A conversa voltou de um atendente: texto fixo (conformidade, sem edição). */
-export const backNotice = (name: string) => `Voltei! Sou ${name}, assistente virtual. Se precisar, é só pedir um atendente.`;
+/** A conversa voltou de um atendente (prefixo da próxima resposta da IA). {nome} e {empresa}. */
+export const DEFAULT_BACK_NOTICE = "Voltei! Sou {nome}, assistente virtual. Se precisar, é só pedir um atendente.";
+/** Alguém da equipe assumiu (prefixo da primeira mensagem dele). {atendente} e {empresa}. */
+export const DEFAULT_ENTRY_NOTICE = "Oi! Aqui é {atendente}, da equipe de {empresa}. Vou continuar o seu atendimento.";
+
+/** Anúncio de volta para a IA pronto para o contato. */
+export function renderBackNotice(template: string | null | undefined, bot: { name: string; client_name: string }): string {
+  return (template?.trim() || DEFAULT_BACK_NOTICE).replaceAll("{nome}", bot.name).replaceAll("{empresa}", bot.client_name);
+}
+
+/** Anúncio de entrada pronto para o contato, com o nome de exibição de quem assumiu. */
+export function renderEntryNotice(template: string | null | undefined, o: { attendant: string; company: string }): string {
+  return (template?.trim() || DEFAULT_ENTRY_NOTICE).replaceAll("{atendente}", o.attendant).replaceAll("{empresa}", o.company);
+}
 /** No horário, ou sem horário configurado: texto fixo, sem data. */
 export const NO_DATE_NOTICE = "Deixei seu pedido registrado e nossa equipe responde assim que possível.";
 
@@ -100,6 +116,28 @@ export function aiNoticeProblem(text: string): string | null {
   const bad = unknownVars(t, ["nome", "empresa"]);
   if (bad.length) return `O aviso de IA só aceita {nome} e {empresa} (veio {${bad[0]}}).`;
   if (!SAYS_VIRTUAL.test(t)) return "O aviso de IA precisa dizer que é um assistente virtual (por exemplo: “assistente virtual” ou “IA”).";
+  return null;
+}
+
+/** O que falta no anúncio de entrada (null = pode salvar): precisa do nome de quem assumiu. Pura. */
+export function entryNoticeProblem(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null; // vazio = volta ao padrão
+  if (t.length > 300) return "O anúncio de entrada pode ter no máximo 300 caracteres.";
+  const bad = unknownVars(t, ["atendente", "empresa"]);
+  if (bad.length) return `O anúncio de entrada só aceita {atendente} e {empresa} (veio {${bad[0]}}).`;
+  if (!t.includes("{atendente}")) return "O anúncio de entrada precisa do nome de quem assumiu: inclua {atendente}.";
+  return null;
+}
+
+/** O que falta no anúncio de volta para a IA (null = pode salvar): precisa dizer que é assistente virtual. Pura. */
+export function backNoticeProblem(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  if (t.length > 300) return "O anúncio de volta para a IA pode ter no máximo 300 caracteres.";
+  const bad = unknownVars(t, ["nome", "empresa"]);
+  if (bad.length) return `O anúncio de volta só aceita {nome} e {empresa} (veio {${bad[0]}}).`;
+  if (!/assistente virtual/i.test(t)) return "O anúncio de volta precisa dizer “assistente virtual”, para o contato saber que não é mais uma pessoa.";
   return null;
 }
 

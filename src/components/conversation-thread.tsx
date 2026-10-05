@@ -5,6 +5,12 @@ export interface ThreadMessage {
   role: string;
   content: string;
   author?: string | null;
+  /** quem escreveu (leva B1'): tipo, id e o nome mostrado no momento do envio */
+  author_type?: string | null;
+  author_id?: string | null;
+  author_display_name?: string | null;
+  /** caracteres do começo que são anúncio (entrada do atendente, aviso de IA, "Voltei!") */
+  announce_chars?: number | null;
   sources?: unknown;
   /** Barrada pela regra de estado na hora do envio (ex.: alguém assumiu enquanto a IA respondia). */
   blocked_reason?: string | null;
@@ -44,11 +50,29 @@ function AttachmentView({ a }: { a: NonNullable<ThreadMessage["attachments"]>[nu
   );
 }
 
+/**
+ * O texto, com o anúncio do começo (entrada do atendente, aviso de IA ou "Voltei!") marcado:
+ * o contato recebeu tudo junto, numa mensagem só.
+ */
+function MessageText({ m }: { m: ThreadMessage }) {
+  const n = m.announce_chars ?? 0;
+  if (m.deleted_at || n <= 0 || n >= m.content.length) return <div className={m.deleted_at ? "whitespace-pre-wrap italic opacity-70" : "whitespace-pre-wrap"}>{m.content}</div>;
+  return (
+    <>
+      <div className="mb-1.5 rounded-md border border-dashed border-line px-2 py-1 text-[12px] text-muted">
+        <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.06em]">anúncio</span>
+        <span className="whitespace-pre-wrap">{m.content.slice(0, n).trim()}</span>
+      </div>
+      <div className="whitespace-pre-wrap">{m.content.slice(n)}</div>
+    </>
+  );
+}
+
 interface Props {
   messages: ThreadMessage[];
   leads?: Array<{ name: string | null; phone: string | null; email: string | null; notes: string | null }> | null;
-  /** Nome mostrado nas mensagens de atendente (ex.: "Você", "Agência", "joana@clinica.com"). */
-  agentLabel: (author: string | null) => string;
+  /** Nome mostrado nas mensagens de atendente (ex.: "Viviane (você)", "Pelo celular", "Cliente · Joana"). */
+  agentLabel: (m: ThreadMessage) => string;
   showSources?: boolean;
   /** Troca de contexto (pareamento, P2): separador antes da primeira mensagem do trecho novo. */
   contextChange?: { at: string; label: string } | null;
@@ -85,8 +109,8 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
                   : "max-w-[86%] self-start rounded-[14px_14px_14px_4px] border border-line bg-panel px-3.5 py-2.5 text-sm"
             }
           >
-            {m.role === "agent" && <div className="mb-0.5 text-[11px] font-semibold text-brand">{agentLabel(m.author ?? null)}</div>}
-            <div className={m.deleted_at ? "whitespace-pre-wrap italic opacity-70" : "whitespace-pre-wrap"}>{m.content}</div>
+            {m.role === "agent" && <div className="mb-0.5 text-[11px] font-semibold text-brand">{agentLabel(m)}</div>}
+            <MessageText m={m} />
             {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
             {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} />)}
             {!m.deleted_at && m.channel_ref?.permalink && /^https:\/\//i.test(m.channel_ref.permalink) ? (

@@ -6,6 +6,7 @@ import { loadMessages } from "@/lib/messages";
 import { attachmentsOfMessages } from "@/lib/attachments";
 import { activeGrant, logSupportRead } from "@/lib/support-access";
 import { requestMeta } from "@/lib/audit";
+import { authorLabel } from "@/lib/authors";
 import { ConversationThread, type ThreadMessage } from "@/components/conversation-thread";
 
 export const metadata = { title: "Conversa (suporte)" };
@@ -32,7 +33,7 @@ export default async function SupportConversation({ params }: { params: Promise<
     );
   }
   await logSupportRead(db, { agencyId: id, adminEmail: s.email, conversationId: cid, grantId: grant.id, meta: await requestMeta() });
-  const raw = await loadMessages(db, { conversationId: cid }, ["id", "role", "content", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const);
+  const raw = await loadMessages(db, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const);
   // arquivos: abrir cada um também vai para a auditoria da agência (rota /api/files)
   const files = await attachmentsOfMessages(db, raw.map((m) => m.id));
   const messages = raw.map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[];
@@ -46,7 +47,7 @@ export default async function SupportConversation({ params }: { params: Promise<
         <p className="mt-2 rounded-lg bg-amber-soft px-3 py-2 text-xs text-amber-ink">Leitura registrada na auditoria da agência. Liberação até {new Date(grant.expires_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}: {grant.reason}</p>
       </div>
       <div className="card flex flex-col gap-4 p-5">
-        <ConversationThread messages={messages} agentLabel={(a) => a ?? "Equipe"} />
+        <ConversationThread messages={messages} agentLabel={(m) => authorLabel(m, { view: "agency" })} />
       </div>
     </div>
   );

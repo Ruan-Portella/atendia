@@ -32,6 +32,23 @@ interface TimelineItem {
   kind: "agent" | "joined" | "ended";
   content: string;
   after: number;
+  /** quem escreveu ou entrou: nome de exibição e foto (sem nome, "Equipe {empresa}") */
+  name?: string | null;
+  avatar?: string | null;
+}
+
+/** Mensagem de atendente vinda do servidor. */
+interface AgentMessage {
+  id: number;
+  content: string;
+  name?: string | null;
+  avatar?: string | null;
+}
+
+/** Quem está atendendo agora (para "Viviane entrou na conversa"). */
+interface AgentFace {
+  name: string;
+  avatar: string | null;
 }
 
 interface HandoffState {
@@ -43,11 +60,11 @@ interface HandoffState {
 }
 
 type HandoffAction =
-  | { type: "server"; mode: HandoffMode } // o que o servidor informou (cabeçalho ou consulta)
+  | { type: "server"; mode: HandoffMode; agent?: AgentFace | null } // o que o servidor informou (cabeçalho ou consulta)
   | { type: "asked" } // o assistente acabou de chamar a equipe nesta resposta
-  | { type: "agent"; messages: Array<{ id: number; content: string }> }
+  | { type: "agent"; messages: AgentMessage[] }
   | { type: "count"; n: number }
-  | { type: "restore"; mode: HandoffMode; count: number; agents: Array<{ id: number; content: string; after: number }> }; // conversa retomada depois do F5
+  | { type: "restore"; mode: HandoffMode; count: number; agents: Array<AgentMessage & { after: number }> }; // conversa retomada depois do F5
 
 /**
  * Estado do atendimento humano no widget. Quem manda é o servidor; aqui só registramos as
@@ -60,7 +77,7 @@ export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState 
         mode: a.mode,
         count: a.count,
         lastAgentId: a.agents.reduce((m, x) => Math.max(m, x.id), 0),
-        timeline: a.agents.map((x) => ({ key: `a${x.id}`, kind: "agent" as const, content: x.content, after: x.after })),
+        timeline: a.agents.map((x) => ({ key: `a${x.id}`, kind: "agent" as const, content: x.content, after: x.after, name: x.name, avatar: x.avatar })),
       };
     case "count":
       return a.n === s.count ? s : { ...s, count: a.n };
@@ -69,12 +86,12 @@ export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState 
     case "agent": {
       const fresh = a.messages.filter((m) => !s.timeline.some((x) => x.key === `a${m.id}`));
       if (!fresh.length) return s;
-      return { ...s, lastAgentId: Math.max(s.lastAgentId, ...fresh.map((m) => m.id)), timeline: [...s.timeline, ...fresh.map((m) => ({ key: `a${m.id}`, kind: "agent" as const, content: m.content, after: s.count }))] };
+      return { ...s, lastAgentId: Math.max(s.lastAgentId, ...fresh.map((m) => m.id)), timeline: [...s.timeline, ...fresh.map((m) => ({ key: `a${m.id}`, kind: "agent" as const, content: m.content, after: s.count, name: m.name, avatar: m.avatar }))] };
     }
     case "server": {
       if (a.mode === s.mode) return s;
       const kind = a.mode === "agent" ? "joined" : a.mode === "bot" && s.mode === "agent" ? "ended" : null;
-      const timeline = kind ? [...s.timeline, { key: `${kind}${s.timeline.length}`, kind, content: "", after: s.count } as TimelineItem] : s.timeline;
+      const timeline = kind ? [...s.timeline, { key: `${kind}${s.timeline.length}`, kind, content: "", after: s.count, name: kind === "joined" ? (a.agent?.name ?? null) : null, avatar: kind === "joined" ? (a.agent?.avatar ?? null) : null } as TimelineItem] : s.timeline;
       return { ...s, mode: a.mode, timeline };
     }
   }
@@ -279,7 +296,7 @@ export function ChatWindow({
       try {
         const qs = `key=${bot.key}&visitorId=${encodeURIComponent(visitorId ?? "")}${saved ? `&conversationId=${saved}` : ""}`;
         const res = await fetch(`${apiBase}/api/chat/history?${qs}`, { cache: "no-store", headers: auth() });
-        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string }> };
+        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string; name?: string | null; avatar?: string | null }> };
         if (cancelled) return;
         if (!j.resumable || !j.conversationId) {
           if (saved) localStorage.removeItem(convKey);
@@ -287,9 +304,9 @@ export function ChatWindow({
           return;
         }
         const ui: UIMessage[] = [];
-        const agents: Array<{ id: number; content: string; after: number }> = [];
+        const agents: Array<AgentMessage & { after: number }> = [];
         for (const m of j.messages ?? []) {
-          if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length });
+          if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length, name: m.name, avatar: m.avatar });
           else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }] });
         }
         setMessages(ui);
@@ -328,12 +345,12 @@ export function ChatWindow({
       try {
         const res = await fetch(`${apiBase}/api/chat/updates?key=${bot.key}&conversationId=${conversationId}&after=${lastAgentId}&visitorId=${encodeURIComponent(visitorId ?? "")}`, { cache: "no-store", headers: auth() });
         if (!res.ok) return;
-        const j = (await res.json()) as { mode: HandoffMode; messages: Array<{ id: number; content: string }> };
+        const j = (await res.json()) as { mode: HandoffMode; agent?: AgentFace | null; messages: AgentMessage[] };
         if (j.messages.length) {
           dispatch({ type: "agent", messages: j.messages });
-          if (embedded) notifyParent({ type: "chat-widget:message", from: `Equipe ${bot.clientName}`, preview: preview(j.messages.at(-1)!.content) });
+          if (embedded) notifyParent({ type: "chat-widget:message", from: j.messages.at(-1)!.name ?? `Equipe ${bot.clientName}`, preview: preview(j.messages.at(-1)!.content) });
         }
-        dispatch({ type: "server", mode: j.mode });
+        dispatch({ type: "server", mode: j.mode, agent: j.agent ?? null });
       } catch {
         // sem rede: tenta de novo no próximo ciclo
       }
@@ -551,19 +568,29 @@ function ContactFallback({ bot, apiBase, conversationId, message }: { bot: ChatB
 }
 
 function Extra({ item, label, botName }: { item: TimelineItem; label: string; botName: string }) {
-  if (item.kind === "agent") return <AgentBubble label={label}>{item.content}</AgentBubble>;
+  if (item.kind === "agent") return <AgentBubble label={item.name ?? label} avatar={item.avatar ?? null}>{item.content}</AgentBubble>;
   return (
     <div className="self-center rounded-full bg-[#e9ecef] px-3 py-1 text-center text-[12px] text-[#4c5551]">
-      {item.kind === "joined" ? "Uma pessoa da equipe entrou na conversa." : `Atendimento encerrado. ${botName} voltou a responder.`}
+      {item.kind === "joined" ? (item.name ? `${item.name} entrou na conversa.` : "Uma pessoa da equipe entrou na conversa.") : `Atendimento encerrado. ${botName} voltou a responder.`}
     </div>
   );
 }
 
-function AgentBubble({ label, children }: { label: string; children: React.ReactNode }) {
+/** Mensagem de alguém da equipe: foto (ou a inicial) e o nome de exibição. */
+function AgentBubble({ label, avatar, children }: { label: string; avatar: string | null; children: React.ReactNode }) {
   return (
-    <div className="max-w-[88%] self-start rounded-[14px_14px_14px_4px] border border-[#cfe3d8] bg-[#eef6f1] px-3.5 py-2.5 text-sm leading-[1.45]">
-      <div className="mb-0.5 text-[11px] font-semibold text-[#1f4e3d]">{label}</div>
-      <div className="whitespace-pre-wrap">{children}</div>
+    <div className="flex max-w-[92%] items-end gap-2 self-start">
+      {avatar ? (
+        // foto do atendente, do Storage público da plataforma
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatar} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+      ) : (
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#cfe3d8] text-[11px] font-bold text-[#1f4e3d]">{label.trim().charAt(0).toUpperCase()}</span>
+      )}
+      <div className="min-w-0 rounded-[14px_14px_14px_4px] border border-[#cfe3d8] bg-[#eef6f1] px-3.5 py-2.5 text-sm leading-[1.45]">
+        <div className="mb-0.5 text-[11px] font-semibold text-[#1f4e3d]">{label}</div>
+        <div className="whitespace-pre-wrap">{children}</div>
+      </div>
     </div>
   );
 }

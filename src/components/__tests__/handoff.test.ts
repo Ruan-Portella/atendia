@@ -37,4 +37,13 @@ describe("estado do atendimento humano no widget", () => {
     s = handoffReducer(s, { type: "server", mode: "bot" });
     expect(s.timeline).toEqual([]);
   });
+
+  it("nome e foto de quem atende: no aviso de entrada e em cada mensagem", () => {
+    let s = handoffReducer(start, { type: "count", n: 1 });
+    s = handoffReducer(s, { type: "server", mode: "agent", agent: { name: "Viviane", avatar: "https://x/a.png" } });
+    s = handoffReducer(s, { type: "agent", messages: [{ id: 3, content: "Oi!", name: "Viviane", avatar: "https://x/a.png" }, { id: 4, content: "antiga", name: null }] });
+    expect(s.timeline[0]).toMatchObject({ kind: "joined", name: "Viviane" });
+    expect(s.timeline[1]).toMatchObject({ kind: "agent", name: "Viviane", avatar: "https://x/a.png" });
+    expect(s.timeline[2]).toMatchObject({ kind: "agent", name: null });
+  });
 });

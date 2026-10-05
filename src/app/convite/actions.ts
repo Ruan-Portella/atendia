@@ -7,6 +7,7 @@ import { createAgencyFor } from "@/lib/agency";
 import { audit, requestMeta } from "@/lib/audit";
 import { fail, type ActionResult } from "@/lib/action-result";
 import { acceptInvite, activeMembership, declineInvites } from "@/lib/team";
+import { firstName, personName } from "@/lib/authors";
 
 /*
  * Convite para a equipe de uma agência (leva B1'). Aceitar exige o link (que prova a posse do
@@ -27,6 +28,8 @@ export async function acceptTeamInvite(token: string): Promise<ActionResult> {
   const db = createAdminClient();
   const r = await acceptInvite(db, { token, userId: me.userId, email: me.email });
   if (!r.ok) return fail(r.message);
+  // nome de exibição: começa com o primeiro nome do cadastro (editável em Meu perfil)
+  if (!r.member.display_name) await db.from("agency_members").update({ display_name: firstName(personName(me.meta), me.email) }).eq("id", r.member.id);
   const meta = await requestMeta();
   const base = { agencyId: r.member.agency_id, actorType: "user" as const, actorId: me.userId, targetType: "agency_member", targetId: r.member.id, ...meta };
   await audit(db, { ...base, action: "equipe.convite_aceitar", after: { email: r.member.email, papel: r.member.role } });

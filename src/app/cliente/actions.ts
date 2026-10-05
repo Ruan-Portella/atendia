@@ -4,12 +4,12 @@ import { revalidatePath } from "next/cache";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hostAgency } from "@/lib/domain-server";
-import { currentOrigin, EMAIL_LINK_TYPES, memberForAction, sendMemberLink, type Membership } from "@/lib/member";
+import { currentOrigin, EMAIL_LINK_TYPES, memberAttendant, memberForAction, sendMemberLink, type Membership } from "@/lib/member";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
 import { isEmail, text } from "@/lib/validation";
-import { postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { answerQuestion, deleteTextSource, dismissQuestion, saveTextSource } from "@/lib/knowledge";
 import { logAccess } from "@/lib/access-log";
 import { audit, requestMeta } from "@/lib/audit";
@@ -71,8 +71,19 @@ const convPath = (clientId: string, conversationId: string) => `/cliente/${clien
 export async function memberTakeOver(clientId: string, conversationId: string): Promise<ActionResult> {
   const ctx = await ownConversation(clientId, conversationId);
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
-  const r = await takeOver(ctx.admin, conversationId);
-  if (r.ok) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "conversa.assumir", targetType: "conversation", targetId: conversationId, ...(await requestMeta()) });
+  const r = await takeOver(ctx.admin, conversationId, memberAttendant(ctx.member, ctx.email));
+  // só quem vence grava na auditoria (quem perde vê quem já está atendendo)
+  if (r.ok && r.message !== ALREADY_YOURS) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "conversa.assumir", targetType: "conversation", targetId: conversationId, ...(await requestMeta()) });
+  revalidatePath(convPath(clientId, conversationId));
+  return r;
+}
+
+/** "Assumir no lugar": troca quem estava atendendo (com confirmação na tela e auditoria). */
+export async function memberForceTakeOver(clientId: string, conversationId: string): Promise<ActionResult> {
+  const ctx = await ownConversation(clientId, conversationId);
+  if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
+  const r = await takeOver(ctx.admin, conversationId, memberAttendant(ctx.member, ctx.email), { force: true });
+  if (r.ok && r.message !== ALREADY_YOURS) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "conversa.assumir_no_lugar", targetType: "conversation", targetId: conversationId, before: { atendente: r.previous ?? null }, ...(await requestMeta()) });
   revalidatePath(convPath(clientId, conversationId));
   return r;
 }
@@ -80,7 +91,7 @@ export async function memberTakeOver(clientId: string, conversationId: string): 
 export async function memberSend(clientId: string, conversationId: string, formData: FormData): Promise<ActionResult> {
   const ctx = await ownConversation(clientId, conversationId);
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
-  const r = await postAgentMessage(ctx.admin, conversationId, text(formData.get("content")), ctx.email);
+  const r = await postAgentMessage(ctx.admin, conversationId, text(formData.get("content")), memberAttendant(ctx.member, ctx.email));
   revalidatePath(convPath(clientId, conversationId));
   return r;
 }
@@ -88,7 +99,7 @@ export async function memberSend(clientId: string, conversationId: string, formD
 export async function memberRelease(clientId: string, conversationId: string): Promise<ActionResult> {
   const ctx = await ownConversation(clientId, conversationId);
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
-  const r = await release(ctx.admin, conversationId);
+  const r = await release(ctx.admin, conversationId, memberAttendant(ctx.member, ctx.email));
   if (r.ok) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "conversa.devolver", targetType: "conversation", targetId: conversationId, ...(await requestMeta()) });
   revalidatePath(convPath(clientId, conversationId));
   return r;

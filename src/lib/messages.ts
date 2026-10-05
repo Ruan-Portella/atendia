@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { openField, sealField, scopeOfConversation } from "./field-cipher";
+import { authorTypeOf, type AuthorType } from "./authors";
 
 /*
  * Camada única de mensagens (L1; spec "Cifra por campo"): toda leitura e gravação da tabela
@@ -15,6 +16,12 @@ export interface MessageRow {
   role: MessageRole;
   content: string;
   author: string | null;
+  /** quem escreveu (leva B1'): tipo, id da pessoa e o nome mostrado no momento do envio */
+  author_type: AuthorType | null;
+  author_id: string | null;
+  author_display_name: string | null;
+  /** caracteres do começo que são anúncio (entrada do atendente, aviso de IA, "Voltei!") */
+  announce_chars: number | null;
   sources: unknown;
   tool_results: unknown;
   template_category: string | null;
@@ -36,6 +43,11 @@ export interface NewMessage {
   role: MessageRole;
   content: string;
   author?: string | null;
+  /** sem o tipo, ele vem do texto de `author` (authorTypeOf) */
+  author_type?: AuthorType | null;
+  author_id?: string | null;
+  author_display_name?: string | null;
+  announce_chars?: number | null;
   sources?: unknown;
   tool_results?: unknown;
   template_category?: string | null;
@@ -51,6 +63,7 @@ export interface NewMessage {
 /** O que muda numa mensagem já gravada (envio, edição, lápide, referência do post). */
 export interface MessagePatch {
   content?: string;
+  announce_chars?: number | null;
   edited_at?: string | null;
   deleted_at?: string | null;
   channel_ref?: unknown;
@@ -77,7 +90,7 @@ const opened = async <T extends object>(row: T): Promise<T> => {
  * contador); "visitante" também marca o contato como presente (widget).
  */
 export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { touch?: "visitante" | "equipe" } = {}): Promise<number | null> {
-  const row = await sealed(m, m.conversation_id);
+  const row = await sealed({ ...m, author_type: m.author_type !== undefined ? m.author_type : authorTypeOf(m.role, m.author) }, m.conversation_id);
   const query = m.inbound_key ? db.from("messages").upsert(row, { onConflict: "inbound_key", ignoreDuplicates: true }) : db.from("messages").insert(row);
   const { data, error } = await query.select("id");
   if (error) throw new Error(`mensagem não gravada: ${error.message}`);

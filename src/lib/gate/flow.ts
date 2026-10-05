@@ -193,7 +193,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
       const text = rc.ok ? held : replyFallback(rc, regulatedDestination(bot.regulated_channel, bot.human_handoff?.address));
       const disclosure = await aiDisclosure(db, bot, convId);
       const out = disclosure ? `${disclosure}\n\n${text}` : text;
-      await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null } }, transport: () => io.send(out) });
+      await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null, announce_chars: disclosure ? disclosure.length + 2 : null } }, transport: () => io.send(out) });
       await clearAgePending(db, convId);
       return;
     }
@@ -343,7 +343,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     const out = disclosure ? `${disclosure}\n\n${answer}` : answer;
     // camada única de envio: se alguém assumiu ou pausou durante a resposta, ela não sai (fica "Não enviada" no painel)
     // com reply, o gravado (texto da IA + reply) sempre troca pelo que saiu de fato
-    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== raw || reply ? { content: out } : {}) } : null, transport: () => io.send(out, adultButton ? "adulto" : undefined) });
+    // o aviso de IA (ou o "Voltei!") no começo fica marcado como anúncio no painel
+    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== raw || reply ? { content: out } : {}), ...(disclosure ? { announce_chars: disclosure.length + 2 } : {}) } : null, transport: () => io.send(out, adultButton ? "adulto" : undefined) });
     if (r.status === "blocked") return;
   }
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).

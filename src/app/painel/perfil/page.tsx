@@ -1,17 +1,24 @@
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { ROLE_HINTS, ROLE_LABELS, scopesOf } from "@/lib/team";
+import { ROLE_HINTS, ROLE_LABELS, attendantOf, scopesOf } from "@/lib/team";
+import { DEFAULT_ENTRY_NOTICE } from "@/lib/handoff-hours";
+import { isOurAvatarUrl } from "@/lib/attendants";
+import { ProfileForm } from "@/components/profile-form";
 import { MfaSection } from "../seguranca/mfa-section";
+import { updateMyProfile } from "./actions";
 
 export const metadata = { title: "Meu perfil" };
 
 /**
- * Meu perfil (leva B1'): quem é você na equipe (papel e escopo) e o seu segundo fator, que todo
- * papel usa ao abrir conversa de chatbot em modo dados sensíveis.
+ * Meu perfil (leva B1'): nome de exibição e foto (o que o contato vê quando você atende), quem é
+ * você na equipe (papel e escopo) e o seu segundo fator, que todo papel usa ao abrir conversa de
+ * chatbot em modo dados sensíveis.
  */
 export default async function ProfilePage() {
   const { agency, member, role, email } = await requireAgency();
+  // um cliente que a pessoa atende, só para a prévia do anúncio
+  const { data: sample } = await (await createClient()).from("clients").select("name").order("name").limit(1).maybeSingle();
   let scope = "Todos os clientes da agência";
   if (member.scope === "selected") {
     const s = (await scopesOf(createAdminClient(), [member.id])).get(member.id) ?? { clientIds: [], botIds: [] };
@@ -28,8 +35,16 @@ export default async function ProfilePage() {
     <div className="flex max-w-[720px] flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold sm:text-[28px]">Meu perfil</h1>
-        <p className="text-sm text-muted">Como você entra no painel de {agency.name}.</p>
+        <p className="text-sm text-muted">Como você aparece para os contatos e como entra no painel de {agency.name}.</p>
       </div>
+      <ProfileForm
+        action={updateMyProfile}
+        folder={member.id}
+        name={attendantOf(member).name}
+        avatar={isOurAvatarUrl(member.avatar_url) ? member.avatar_url : null}
+        entryExample={DEFAULT_ENTRY_NOTICE}
+        company={(sample?.name as string | undefined) ?? "sua empresa cliente"}
+      />
       <section className="card flex flex-col gap-3 p-6 text-sm">
         <div className="grid gap-1 sm:grid-cols-[140px_1fr]"><span className="text-muted">E-mail</span><span className="font-semibold">{email}</span></div>
         <div className="grid gap-1 sm:grid-cols-[140px_1fr]">

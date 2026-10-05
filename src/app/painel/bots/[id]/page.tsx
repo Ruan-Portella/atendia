@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
-import { can } from "@/lib/team";
+import { attendantOf, can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
@@ -41,7 +41,7 @@ import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { HandoffBadge } from "@/components/handoff-badge";
 import { handoffStatus } from "@/lib/handoff-status";
-import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, NO_DATE_NOTICE, WEEKDAYS, backNotice, nextOpening, whenLabel, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, NO_DATE_NOTICE, WEEKDAYS, nextOpening, whenLabel, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { HUMAN_ONLY_NOTICE } from "@/lib/chat";
 import { GATE_TEXTS } from "@/lib/gate/rules";
 import { TemplateField } from "@/components/template-field";
@@ -63,7 +63,7 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
-  const [{ id }, sp, { agency: owner, role }] = await Promise.all([params, searchParams, requireAgency()]);
+  const [{ id }, sp, { agency: owner, role, member }] = await Promise.all([params, searchParams, requireAgency()]);
   // equipe (leva B1'): o atendente vê só as conversas do chatbot
   const canConfig = can(role, "config");
   // canais da Meta: liberação da agência no backoffice, ou abertura geral; no teste grátis, a aba
@@ -360,10 +360,31 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   vars={{ volta: awayExample }}
                   maxLength={400}
                 />
+                <div className="flex flex-col gap-1 border-t border-line-2 pt-3">
+                  <h4 className="text-sm font-semibold">Anúncios do atendimento humano</h4>
+                  <p className="text-xs text-muted">Nunca saem como mensagem própria: viram o começo de uma mensagem. Assumir a conversa não manda nada ao contato; as mensagens seguintes de quem assumiu saem sem anúncio.</p>
+                </div>
+                <TemplateField
+                  id="entry_notice"
+                  label="Entrada: começo da primeira mensagem de quem assumir"
+                  hint="Variáveis: {atendente} (o nome de exibição de quem assumiu, obrigatório) e {empresa}. A prévia usa o seu nome."
+                  defaultValue={handoff.entry_notice ?? DEFAULT_ENTRY_NOTICE}
+                  fallback={DEFAULT_ENTRY_NOTICE}
+                  vars={{ atendente: attendantOf(member).name, empresa: bot.client_name }}
+                  maxLength={300}
+                />
+                <TemplateField
+                  id="back_notice"
+                  label="Volta para a IA: começo da próxima resposta do assistente"
+                  hint="Variáveis: {nome} (o assistente) e {empresa}. Precisa dizer “assistente virtual”."
+                  defaultValue={handoff.back_notice ?? DEFAULT_BACK_NOTICE}
+                  fallback={DEFAULT_BACK_NOTICE}
+                  vars={{ nome: bot.name, empresa: bot.client_name }}
+                  maxLength={300}
+                />
                 <details className="rounded-lg border border-line-2 px-3 py-2 text-sm">
                   <summary className="cursor-pointer text-xs font-semibold text-muted">Textos fixos (conformidade, só para consulta)</summary>
                   <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-ink-2">
-                    <li>Volta da equipe para o assistente: &ldquo;{backNotice(bot.name)}&rdquo;</li>
                     <li>Pedido de atendente no horário ou sem horário: &ldquo;{NO_DATE_NOTICE}&rdquo;</li>
                     <li>Assistente pausado ou modo só humano: &ldquo;{HUMAN_ONLY_NOTICE}&rdquo;</li>
                     <li>Bebida e remédio no WhatsApp e no Instagram: &ldquo;{GATE_TEXTS.ageQuestion}&rdquo;</li>

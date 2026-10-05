@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlanId } from "./plans";
 import { isEmail } from "./validation";
+import { firstName, type Attendant } from "./authors";
 import type { AgencyRole, InvitableRole, MemberScope } from "./roles";
 
 export * from "./roles";
@@ -267,3 +268,11 @@ export async function lastAccessOf(db: SupabaseClient, userIds: string[]): Promi
 
 /** Nome para mostrar: o de exibição, ou o começo do e-mail. Pura. */
 export const memberName = (m: Pick<AgencyMember, "display_name" | "email">): string => m.display_name?.trim() || m.email.split("@")[0];
+
+/** A pessoa da equipe como atendente: o contato vê o nome de exibição (ou o primeiro nome). Pura. */
+export const attendantOf = (m: Pick<AgencyMember, "id" | "display_name" | "email">): Attendant => ({
+  type: "agency_member",
+  id: m.id,
+  name: m.display_name?.trim() || firstName(null, m.email),
+  legacy: "agência",
+});

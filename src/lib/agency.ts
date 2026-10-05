@@ -7,6 +7,7 @@ import { getPlan, type Plan } from "./plans";
 import { slugify } from "./utils";
 import { monthAtendimentos, quotaOf } from "./atendimentos";
 import { activeMembership, can, hadMembership, openInvitesFor, type AgencyMember, type AgencyRole, type Permission } from "./team";
+import { firstName, personName } from "./authors";
 
 export interface Agency {
   id: string;
@@ -128,6 +129,12 @@ export async function createAgencyFor(userId: string, email: string, meta: Recor
     member = await activeMembership(admin, userId);
   }
   if (!member) throw new Error("equipe: vínculo do dono não encontrado");
+  // nome de exibição: começa com o primeiro nome do cadastro (editável em Meu perfil)
+  if (!member.display_name) {
+    const display = firstName(personName(meta), email);
+    await admin.from("agency_members").update({ display_name: display }).eq("id", member.id);
+    member = { ...member, display_name: display };
+  }
   return member;
 }
 

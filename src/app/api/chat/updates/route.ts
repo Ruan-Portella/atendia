@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
+import { facesOfMessages, holderFace } from "@/lib/attendants";
 import { WIDGET_ALLOW_HEADERS, conversationAccess, widgetWho } from "@/lib/widget-identity";
 
 const HEADERS = {
@@ -17,7 +18,8 @@ export async function OPTIONS() {
  * O widget consulta aqui enquanto o chat está aberto: traz as respostas da equipe e serve de
  * sinal de "visitante online" (visitor_seen_at).
  * GET ?key=CHAVE&conversationId=ID&after=ULTIMO_ID&visitorId=VISITANTE (conversa de usuário: com o token, P2)
- * → { mode: "bot" | "requested" | "agent", messages: [{ id, content }] } (só mensagens de atendente)
+ * → { mode: "bot" | "requested" | "agent", agent: { name, avatar } | null, messages: [{ id, content, name, avatar }] }
+ *   (só mensagens de atendente; nome de exibição e foto de quem escreveu, nunca o e-mail)
  */
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
@@ -32,7 +34,7 @@ export async function GET(req: Request) {
   const db = createAdminClient();
   const { data: conv } = await db
     .from("conversations")
-    .select("id, visitor_id, identity_hash, context_hash, handoff_requested_at, takeover_at, handled_at, bots!inner(id, agency_id, client_id, public_key)")
+    .select("id, visitor_id, identity_hash, context_hash, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, bots!inner(id, agency_id, client_id, public_key)")
     .eq("id", conversationId)
     .eq("bots.public_key", key)
     .maybeSingle();
@@ -52,7 +54,9 @@ export async function GET(req: Request) {
     .eq("id", conversationId)
     .or(`visitor_seen_at.is.null,visitor_seen_at.lt.${new Date(now - 20_000).toISOString()}`);
 
-  const messages = await loadMessages(db, { conversationId, roles: ["agent"], afterId: after, limit: 50 }, ["id", "content"] as const);
+  const rows = await loadMessages(db, { conversationId, roles: ["agent"], afterId: after, limit: 50 }, ["id", "content", "author_type", "author_id", "author_display_name"] as const);
+  const faces = await facesOfMessages(db, rows);
+  const messages = rows.map((m) => ({ id: m.id, content: m.content, name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null }));
   const mode = conv.handled_at ? "bot" : conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : "bot";
-  return Response.json({ mode, messages }, { headers: HEADERS });
+  return Response.json({ mode, agent: await holderFace(db, conv), messages }, { headers: HEADERS });
 }

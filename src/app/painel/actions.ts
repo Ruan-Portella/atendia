@@ -7,8 +7,9 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgency, type AgencyContext } from "@/lib/agency";
-import { can, type Permission } from "@/lib/team";
-import { postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { attendantOf, can, type Permission } from "@/lib/team";
+import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { attendantAuthor, type Attendant } from "@/lib/authors";
 import { answerQuestion } from "@/lib/knowledge";
 import { sendMemberLink } from "@/lib/member";
 import { appUrl, initials, normalizeUrl, slugify } from "@/lib/utils";
@@ -18,7 +19,7 @@ import { hasMfa } from "@/lib/agency-mfa";
 import { purgeAttachments } from "@/lib/attachments";
 import { removeBotSourceFiles } from "@/lib/source-files";
 import { logAccess } from "@/lib/access-log";
-import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, backNoticeProblem, entryNoticeProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
 import { clearAgePending } from "@/lib/gate/flow";
@@ -251,6 +252,13 @@ async function parseHumanHandoff(supabase: Awaited<ReturnType<typeof createClien
   const away = f.away_message?.trim() ?? "";
   const awayProblem = awayMessageProblem(away, Object.keys(hours).length > 0);
   if (awayProblem) return { error: awayProblem };
+  // anúncios do atendimento (B1'): o de entrada tem o nome de quem assumiu; o de volta diz "assistente virtual"
+  const entry = f.entry_notice?.trim() ?? "";
+  const entryProblem = entryNoticeProblem(entry);
+  if (entryProblem) return { error: entryProblem };
+  const back = f.back_notice?.trim() ?? "";
+  const backProblem = backNoticeProblem(back);
+  if (backProblem) return { error: backProblem };
   return {
     value: {
       email,
@@ -261,6 +269,8 @@ async function parseHumanHandoff(supabase: Awaited<ReturnType<typeof createClien
       hours: Object.keys(hours).length ? hours : null,
       ai_notice: aiNotice && aiNotice !== DEFAULT_AI_NOTICE ? aiNotice : null,
       away_message: away && away !== DEFAULT_AWAY_MESSAGE ? away : null,
+      entry_notice: entry && entry !== DEFAULT_ENTRY_NOTICE ? entry : null,
+      back_notice: back && back !== DEFAULT_BACK_NOTICE ? back : null,
       widget_button: f.widget_button === "on",
     },
   };
@@ -535,8 +545,13 @@ export async function sendReportNow(clientId: string, period?: string): Promise<
 
 /* ------------------------------------------------------------------ atendimento humano */
 
-/** Como as mensagens da agência ficam assinadas (o cliente final assina com o e-mail dele). */
+/** Como as mensagens da agência ficam assinadas no texto antigo (author): o nome vem de quem logou. */
 const AGENCY_AUTHOR = "agência";
+
+/** Quem está logado, como atendente (nome de exibição de Meu perfil, ou o primeiro nome). */
+async function me(): Promise<Attendant> {
+  return attendantOf((await requireAgency()).member);
+}
 
 /**
  * Confere pela RLS que a conversa é da agência logada e devolve a service role para
@@ -552,8 +567,20 @@ export async function takeOverConversation(conversationId: string): Promise<Acti
   if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
-  const r = await takeOver(owned.admin, conversationId);
-  if (r.ok) await auditPanel("conversa.assumir", { type: "conversation", id: conversationId });
+  const r = await takeOver(owned.admin, conversationId, await me());
+  // só quem vence grava na auditoria (quem perde vê quem já está atendendo)
+  if (r.ok && r.message !== ALREADY_YOURS) await auditPanel("conversa.assumir", { type: "conversation", id: conversationId });
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  return r;
+}
+
+/** "Assumir no lugar": troca quem estava atendendo (com confirmação na tela e auditoria). */
+export async function forceTakeOverConversation(conversationId: string): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const r = await takeOver(owned.admin, conversationId, await me(), { force: true });
+  if (r.ok && r.message !== ALREADY_YOURS) await auditPanel("conversa.assumir_no_lugar", { type: "conversation", id: conversationId }, { before: { atendente: r.previous ?? null } });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return r;
 }
@@ -562,7 +589,7 @@ export async function sendAgentMessage(conversationId: string, formData: FormDat
   if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
-  const r = await postAgentMessage(owned.admin, conversationId, text(formData.get("content")), AGENCY_AUTHOR);
+  const r = await postAgentMessage(owned.admin, conversationId, text(formData.get("content")), await me());
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return r;
 }
@@ -587,7 +614,7 @@ export async function releaseConversation(conversationId: string): Promise<Actio
   if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
-  const r = await release(owned.admin, conversationId);
+  const r = await release(owned.admin, conversationId, await me());
   if (r.ok) await auditPanel("conversa.devolver", { type: "conversation", id: conversationId });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   revalidatePath("/painel", "layout");
@@ -931,7 +958,7 @@ async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: stri
 async function recordTemplateMessage(admin: ReturnType<typeof createAdminClient>, conversationId: string, content: string, category: string, msgHash: string | null) {
   // a categoria decide o alcance de um SAIR respondido depois (descadastro da categoria do último modelo)
   try {
-    await saveMessage(admin, { conversation_id: conversationId, role: "agent", content, author: AGENCY_AUTHOR, template_category: category, channel_msg_id: "enviada", channel_msg_hash: msgHash }, { touch: "equipe" });
+    await saveMessage(admin, { conversation_id: conversationId, role: "agent", content, ...attendantAuthor(await me()), template_category: category, channel_msg_id: "enviada", channel_msg_hash: msgHash }, { touch: "equipe" });
   } catch (e) {
     console.error("modelo enviado, mas não gravado na conversa", (e as Error).message);
   }

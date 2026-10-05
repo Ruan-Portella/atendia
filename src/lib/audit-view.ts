@@ -32,6 +32,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "cliente.sublimite": "Limite de atendimentos do cliente alterado",
   "contato.apagar_dados": "Dados de um contato apagados (painel)",
   "conversa.assumir": "Conversa assumida",
+  "conversa.assumir_no_lugar": "Conversa assumida no lugar de outra pessoa",
   "conversa.devolver": "Conversa devolvida ao assistente",
   "conversa.excluir": "Conversa excluída",
   "dados.exportar": "Dados exportados",

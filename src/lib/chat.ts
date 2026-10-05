@@ -9,7 +9,7 @@ import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } fro
 import { createLead } from "./leads";
 import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
-import { backNotice, contactLines, handoffNotice, hoursLines, renderAiNotice, type HumanHandoff } from "./handoff-hours";
+import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
 import { RISK_TEXT, detectRisk } from "./risk";
 import { isAiPaused } from "./ai-pause";
 import { ageNote, type AgeStatus } from "./gate/age";
@@ -257,7 +257,8 @@ export const SYSTEM_AUTHOR = "sistema";
  * mensagem própria (cada mensagem a mais é cobrada do negócio pela Meta):
  * - primeira resposta da IA na conversa (conversa nova também depois de 24 h sem mensagem):
  *   o aviso editável da aba Atendimento (padrão "Sou {nome}, assistente virtual de {empresa}.")
- * - a conversa voltou de um atendente (ou de alguém no celular): "Voltei! Sou {nome}, …"
+ * - a conversa voltou de um atendente (ou de alguém no celular): o anúncio de volta editável
+ *   (padrão "Voltei! Sou {nome}, assistente virtual…")
  * null = a IA já falou por último, sem aviso.
  */
 export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" | "client_name" | "human_handoff">, conversationId: string): Promise<string | null> {
@@ -267,7 +268,7 @@ export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" 
   ]);
   // a IA nunca falou nesta conversa (mesmo que a equipe tenha aberto com um modelo): apresenta
   if (!ai) return renderAiNotice(bot.human_handoff?.ai_notice, bot);
-  if (last?.role === "agent") return backNotice(bot.name);
+  if (last?.role === "agent") return renderBackNotice(bot.human_handoff?.back_notice, bot);
   return null;
 }
 

@@ -12,9 +12,9 @@ import { leadsOfConversation } from "@/lib/leads";
 import { attachmentsOfMessages } from "@/lib/attachments";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
-import { PHONE_AUTHOR, lastContactMessageAt } from "@/lib/whatsapp-inbound";
-import { IG_APP_AUTHOR } from "@/lib/instagram-inbound";
-import { memberRelease, memberSend, memberTakeOver } from "../../../actions";
+import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
+import { authorLabel } from "@/lib/authors";
+import { memberForceTakeOver, memberRelease, memberSend, memberTakeOver } from "../../../actions";
 
 export const metadata = { title: { absolute: "Conversa" }, robots: { index: false, follow: false } };
 
@@ -23,13 +23,13 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at, regulated_at")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, regulated_at")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
   if (!conv) notFound();
   const [messages, leads] = await Promise.all([
-    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
+    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     leadsOfConversation(admin, cid),
   ]);
   const agencyName = member.agency.name;
@@ -63,7 +63,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
           <ConversationThread
             messages={allMessages}
             leads={leads}
-            agentLabel={(author) => (author === email ? "Você" : !author || author === "agência" ? agencyName : author === PHONE_AUTHOR ? "Pelo celular" : author === IG_APP_AUTHOR ? "Pelo Instagram" : author)}
+            agentLabel={(m) => authorLabel(m, { view: "client", meId: member.memberId, meLegacy: email, agencyName })}
           />
         </div>
       </MessageScroller>
@@ -71,8 +71,8 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
       {member.allowHandoff && (
         <footer className="flex flex-col gap-2 border-t border-line py-3">
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
-          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} />
-          <HandoffReply conv={handoffConv} onTakeOver={takeOver} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked paymentCheck={regulated} />
+          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} meId={member.memberId} />
+          <HandoffReply conv={handoffConv} meId={member.memberId} onTakeOver={takeOver} onForceTakeOver={memberForceTakeOver.bind(null, id, cid)} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked paymentCheck={regulated} />
         </footer>
       )}
     </div>

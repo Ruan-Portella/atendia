@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isResumable } from "@/lib/presence";
 import { loadMessages } from "@/lib/messages";
+import { facesOfMessages, holderFace } from "@/lib/attendants";
 import { WIDGET_ALLOW_HEADERS, conversationAccess, widgetWho } from "@/lib/widget-identity";
 
 const HEADERS = {
@@ -36,8 +37,8 @@ export async function GET(req: Request) {
   const who = await widgetWho(db, bot, req);
   if (who.kind === "invalid") return Response.json({ error: "invalid_token" }, { status: 401, headers: HEADERS });
 
-  const cols = "id, visitor_id, identity_hash, context_hash, last_message_at, handoff_requested_at, takeover_at, handled_at";
-  let conv: { id: string; visitor_id: string | null; identity_hash: string | null; context_hash: string | null; last_message_at: string; handoff_requested_at: string | null; takeover_at: string | null; handled_at: string | null } | null = null;
+  const cols = "id, visitor_id, identity_hash, context_hash, last_message_at, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name";
+  let conv: { id: string; visitor_id: string | null; identity_hash: string | null; context_hash: string | null; last_message_at: string; handoff_requested_at: string | null; takeover_at: string | null; handled_at: string | null; assigned_to_type: string | null; assigned_to_id: string | null; assigned_to_name: string | null } | null = null;
   if (who.kind === "token" && (who.identityHash || who.contextHash)) {
     // a última conversa desta pessoa (ou deste navegador, se o token só traz contexto) neste contexto
     let q = db.from("conversations").select(cols).eq("bot_id", bot.id);
@@ -53,8 +54,11 @@ export async function GET(req: Request) {
   if (!conv || conversationAccess(conv, who, visitorId || null) !== "ok" || !isResumable(conv.last_message_at)) {
     return Response.json({ resumable: false }, { headers: HEADERS });
   }
-  const messages = await loadMessages(db, { conversationId: conv.id, limit: 200 }, ["id", "role", "content"] as const);
+  const rows = await loadMessages(db, { conversationId: conv.id, limit: 200 }, ["id", "role", "content", "author_type", "author_id", "author_display_name"] as const);
+  // atendente: nome de exibição e foto (nunca o e-mail)
+  const faces = await facesOfMessages(db, rows.filter((m) => m.role === "agent"));
+  const messages = rows.map((m) => ({ id: m.id, role: m.role, content: m.content, ...(m.role === "agent" ? { name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null } : {}) }));
   const mode = conv.handled_at ? "bot" : conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : "bot";
   await db.from("conversations").update({ visitor_seen_at: new Date().toISOString() }).eq("id", conv.id);
-  return Response.json({ resumable: true, conversationId: conv.id, mode, messages }, { headers: HEADERS });
+  return Response.json({ resumable: true, conversationId: conv.id, mode, agent: await holderFace(db, conv), messages }, { headers: HEADERS });
 }
