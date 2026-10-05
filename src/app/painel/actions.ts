@@ -13,6 +13,8 @@ import { sendMemberLink } from "@/lib/member";
 import { appUrl, initials, normalizeUrl, slugify } from "@/lib/utils";
 import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
 import { grantSupport, revokeSupport } from "@/lib/support-access";
+import { hasMfa } from "@/lib/agency-mfa";
+import { logAccess } from "@/lib/access-log";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
@@ -1122,9 +1124,27 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
   return ok(`Apagados: ${n(summary.conversas, "conversa", "conversas")}, ${n(summary.leads, "lead", "leads")} e ${n(summary.contatos, "ficha de contato", "fichas de contato")}.${erased.some((c) => c.channel !== "widget") ? " O número entrou na lista de quem não recebe mensagens da empresa." : ""}`);
 }
 
+/** Ações da Segurança: exigem o segundo fator nesta sessão. */
+const MFA_NEEDED = "Faça a verificação em duas etapas (código do app autenticador) e tente de novo.";
+
+/** Segundo fator da agência: entrada ou falha no registro de acesso e, no primeiro código, o cadastro na auditoria. */
+export async function recordAgencyMfa(ok: boolean, enrolled: boolean): Promise<void> {
+  const { agency } = await requireAgency();
+  const meta = await requestMeta();
+  await logAccess(createAdminClient(), { actorType: "user", actorId: agency.owner_id, event: ok ? "login" : "login_failed", ip: meta.ip, userAgent: meta.userAgent, agencyId: agency.id });
+  if (ok && enrolled) await auditPanel("seguranca.mfa_cadastrar", { type: "agency", id: agency.id });
+}
+
+/** O app autenticador foi removido (trocar de aparelho): evento grave, com e-mail e faixa. */
+export async function recordMfaRemoved(): Promise<void> {
+  const { agency } = await requireAgency();
+  await auditPanel("seguranca.mfa_remover", { type: "agency", id: agency.id });
+}
+
 /** Segurança: sai do painel em todos os outros aparelhos (esta sessão continua). */
 export async function endOtherSessions(): Promise<ActionResult> {
   await requireAgency();
+  if (!(await hasMfa())) return fail(MFA_NEEDED);
   const { error } = await (await createClient()).auth.signOut({ scope: "others" });
   if (error) return fail("Não foi possível encerrar as outras sessões. Tente de novo.");
   const { agency } = await requireAgency();
@@ -1135,6 +1155,7 @@ export async function endOtherSessions(): Promise<ActionResult> {
 /** Segurança: libera o suporte do BoaVoz por 24 horas, com motivo (evento grave: e-mail e faixa). */
 export async function grantSupportAccess(formData: FormData): Promise<ActionResult> {
   const { agency } = await requireAgency();
+  if (!(await hasMfa())) return fail(MFA_NEEDED);
   const reason = text(formData.get("reason")).replace(/\s+/g, " ").trim();
   if (reason.length < 10) return fail("Escreva o motivo (o que o suporte vai ver), com pelo menos 10 letras.");
   if (reason.length > 300) return fail("Motivo longo demais.");
@@ -1146,6 +1167,7 @@ export async function grantSupportAccess(formData: FormData): Promise<ActionResu
 /** Segurança: encerra agora o acesso do suporte. */
 export async function revokeSupportAccess(): Promise<ActionResult> {
   const { agency } = await requireAgency();
+  if (!(await hasMfa())) return fail(MFA_NEEDED);
   const done = await revokeSupport(createAdminClient(), { agencyId: agency.id, by: agency.owner_id, meta: await requestMeta() });
   revalidatePath("/painel/seguranca");
   return ok(done ? "Acesso do suporte encerrado." : "O suporte já não tinha acesso.");
@@ -1162,6 +1184,7 @@ export async function markSecurityAlertsSeen(): Promise<ActionResult> {
 /** Segurança: confirma um pedido do titular feito pelo chat e roda a rotina de exclusão. */
 export async function confirmDataSubjectRequest(requestId: string): Promise<ActionResult> {
   const { agency } = await requireAgency();
+  if (!(await hasMfa())) return fail(MFA_NEEDED);
   const supabase = await createClient();
   // a RLS limita aos pedidos desta agência
   const { data: req } = await supabase.from("data_subject_requests").select("id, status").eq("id", requestId).maybeSingle();

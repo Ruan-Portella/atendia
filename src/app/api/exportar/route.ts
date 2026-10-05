@@ -1,5 +1,6 @@
 import { memberForAction } from "@/lib/member";
 import { requireAgency } from "@/lib/agency";
+import { mfaRedirect } from "@/lib/agency-mfa";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit, requestMeta } from "@/lib/audit";
@@ -28,6 +29,9 @@ export async function GET(req: Request) {
     clientName = member.member.clientName;
   } else {
     const { agency } = await requireAgency();
+    // exportação pela agência: segundo fator nesta sessão (cadastro na hora, na primeira vez)
+    const verify = await mfaRedirect(req);
+    if (verify) return verify;
     const { data: client } = await (await createClient()).from("clients").select("id, name").eq("id", clientId).maybeSingle();
     if (!client) return new Response("cliente não encontrado", { status: 404 });
     actor = { agencyId: agency.id, type: "user", id: agency.owner_id };

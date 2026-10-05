@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { adminSession } from "@/lib/platform-admin";
-import { MfaForm } from "@/components/admin/mfa-form";
+import { MfaForm } from "@/components/mfa-form";
+import { recordMfaResult } from "./actions";
 
 export const metadata = { title: "Verificação · Backoffice" };
 
@@ -16,7 +17,7 @@ export default async function AdminMfaPage() {
           <p className="eyebrow">Backoffice BoaVoz</p>
           <h1 className="text-xl font-bold">Verificação em duas etapas</h1>
         </div>
-        <MfaForm />
+        <MfaForm friendlyName="Backoffice BoaVoz" next="/admin" submitLabel="Entrar no backoffice" onResult={recordMfaResult} />
       </div>
     </main>
   );

@@ -1,10 +1,13 @@
 import { requireAgency } from "@/lib/agency";
+import { mfaRedirect } from "@/lib/agency-mfa";
 import { createClient } from "@/lib/supabase/server";
 import { auditCsv, auditFilters, clientTargetIds, listAudit, targetNamer } from "@/lib/audit-view";
 
 /** Auditoria da agência em CSV, com os mesmos filtros da tela (até 5.000 eventos). */
 export async function GET(req: Request) {
   const { agency } = await requireAgency();
+  const verify = await mfaRedirect(req);
+  if (verify) return verify;
   const supabase = await createClient();
   const f = auditFilters(Object.fromEntries(new URL(req.url).searchParams));
   const [{ data: clients }, { data: bots }, targetIds] = await Promise.all([

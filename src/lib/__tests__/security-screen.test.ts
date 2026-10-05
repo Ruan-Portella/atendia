@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ACTION_GROUPS, ACTION_LABELS, actorText, auditCsv, auditFilters, targetNamer, type AuditRow } from "../audit-view";
 import { SECURITY_ALERTS, isSecurityAlert } from "../security-alerts";
 import { deviceOf } from "../access-log";
+import { safeMfaNext, verifyUrl } from "../agency-mfa";
 
 const SRC = join(__dirname, "..", "..");
 const files = (dir: string): string[] =>
@@ -52,6 +53,15 @@ describe("tela de Segurança", () => {
     expect(csv.startsWith("﻿Data;Quem;Evento;Código;Alvo;Antes;Depois\r\n")).toBe(true);
     expect(csv).toContain(";Equipe BoaVoz;Webhook criado (URL nova);webhook.criar;Webhook;;");
     expect(csv).toContain('"{""url"":""https://a.com/h"",""name"":""x;y""}"');
+  });
+
+  it("segundo fator: só volta para o painel e para as exportações", () => {
+    expect(safeMfaNext("/painel/seguranca?aba=suporte")).toBe("/painel/seguranca?aba=suporte");
+    expect(safeMfaNext("/painel/bots/b1/conversas/c1")).toBe("/painel/bots/b1/conversas/c1");
+    expect(safeMfaNext("/api/exportar?cliente=x&dados=leads&formato=csv")).toBe("/api/exportar?cliente=x&dados=leads&formato=csv");
+    expect(safeMfaNext("/api/leads/export")).toBe("/api/leads/export");
+    for (const bad of ["https://evil.com", "//evil.com", "/\\evil.com", "/painel\\..\\admin", "/admin", "/api/v1/contacts", "/painelx", null, ""]) expect(safeMfaNext(bad), String(bad)).toBe("/painel/seguranca");
+    expect(verifyUrl("/painel/seguranca?aba=fator")).toBe("/painel/verificar?next=%2Fpainel%2Fseguranca%3Faba%3Dfator");
   });
 
   it("aparelho a partir do navegador", () => {

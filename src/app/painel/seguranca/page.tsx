@@ -5,6 +5,8 @@ import { RequestsSection } from "./requests-section";
 import { AuditSection } from "./audit-section";
 import { AccessSection } from "./access-section";
 import { SupportSection } from "./support-section";
+import { MfaSection } from "./mfa-section";
+import { requireAgencyMfa } from "@/lib/agency-mfa";
 
 export const metadata = { title: "Segurança" };
 
@@ -13,6 +15,7 @@ const TABS = [
   ["auditoria", "Auditoria"],
   ["acessos", "Acessos"],
   ["suporte", "Acesso do suporte"],
+  ["fator", "Segundo fator"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -21,6 +24,8 @@ export default async function SecurityPage({ searchParams }: PageProps<"/painel/
   const sp = await searchParams;
   const tab = (TABS.some(([t]) => t === sp.aba) ? sp.aba : "pedidos") as Tab;
   const { agency } = await requireAgency();
+  // a Segurança pede o segundo fator (cadastro na hora, na primeira vez)
+  await requireAgencyMfa(`/painel/seguranca?aba=${tab}`);
   const page = Math.max(0, Math.min(200, Number(sp.pagina) || 0));
 
   return (
@@ -40,6 +45,7 @@ export default async function SecurityPage({ searchParams }: PageProps<"/painel/
       {tab === "auditoria" && <AuditSection agencyId={agency.id} ownerId={agency.owner_id} filters={auditFilters(sp)} page={page} />}
       {tab === "acessos" && <AccessSection agencyId={agency.id} ownerId={agency.owner_id} />}
       {tab === "suporte" && <SupportSection agencyId={agency.id} />}
+      {tab === "fator" && <MfaSection />}
     </div>
   );
 }
