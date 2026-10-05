@@ -26,7 +26,7 @@ import { ClientCompliance } from "@/components/client-compliance";
 import { ClientPrivacy } from "@/components/client-privacy";
 import { ExportLinks } from "@/components/export-links";
 import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
-import { addClientMember, deleteBot, eraseContactData, deleteClientRecord, disablePortal, enablePortal, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientPermissions, updateClientRecord } from "../../actions";
+import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePortal, eraseContactData, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientMemberRole, setClientPermissions, updateClientRecord } from "../../actions";
 
 export const metadata = { title: "Cliente" };
 
@@ -61,7 +61,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   // a RLS limita os dados à agência logada
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
-    supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, handoff_notify, retention_months").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
@@ -84,8 +84,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       ? supabase.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
       : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; last_message_at: string; visitor_seen_at: string | null; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; takeover_at: string | null; handled_at: string | null; handoff_urgent_at: string | null; last_contact_at: string | null; last_reply_at: string | null }> }),
     tab === "acesso" || (tab === "relatorio" && client.report_email)
-      ? supabase.from("client_members").select("id, email, last_login_at, created_at").eq("client_id", id).order("created_at")
-      : Promise.resolve({ data: [] as Array<{ id: string; email: string; last_login_at: string | null; created_at: string }> }),
+      ? supabase.from("client_members").select("id, email, role, display_name, last_login_at, created_at").eq("client_id", id).order("created_at")
+      : Promise.resolve({ data: [] as Array<{ id: string; email: string; role: string; display_name: string | null; last_login_at: string | null; created_at: string }> }),
   ]);
   const waitingCount = pending.filter((h) => handoffStatus(h)?.waiting).length;
 
@@ -261,9 +261,9 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           <section className="card flex flex-col gap-3 p-5">
             <div>
               <h2 className="text-base font-bold">O que {client.name} pode fazer</h2>
-              <p className="text-sm text-muted">As pessoas abaixo entram na área do cliente (<code>{base.replace(/^https?:\/\//, "")}/cliente</code>) com um link no e-mail, sem senha. Sempre podem ver o relatório, os contatos e as conversas.</p>
+              <p className="text-sm text-muted">As pessoas abaixo entram na área do cliente (<code>{base.replace(/^https?:\/\//, "")}/cliente</code>) com um link no e-mail, sem senha. O <strong>gestor</strong> vê o relatório, as conversas, os canais, a privacidade e a equipe (convida atendentes); o <strong>atendente</strong> vê só as conversas. Aqui você decide o que o portal pode fazer, para os dois papéis.</p>
             </div>
-            <ActionForm key={`${client.allow_handoff}${client.allow_knowledge}${client.handoff_notify}`} action={setClientPermissions.bind(null, client.id)} className="flex flex-col gap-3">
+            <ActionForm key={`${client.allow_handoff}${client.allow_knowledge}${client.allow_hours}${client.handoff_notify}`} action={setClientPermissions.bind(null, client.id)} className="flex flex-col gap-3">
               <label className="flex items-start gap-2.5 text-sm">
                 <input type="checkbox" name="allow_handoff" defaultChecked={client.allow_handoff} className="mt-1" />
                 <span><strong>Atender conversas</strong><span className="block text-muted">Assumir quando o visitante pede alguém, responder e devolver ao assistente. Eles também recebem o aviso por e-mail.</span></span>
@@ -282,7 +282,11 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               </fieldset>
               <label className="flex items-start gap-2.5 text-sm">
                 <input type="checkbox" name="allow_knowledge" defaultChecked={client.allow_knowledge} className="mt-1" />
-                <span><strong>Ensinar o assistente</strong><span className="block text-muted">Responder as perguntas sem resposta e criar/editar textos e FAQs. Site e PDFs continuam só com você.</span></span>
+                <span><strong>Ensinar o assistente</strong><span className="block text-muted">Só o gestor: responder as perguntas sem resposta e criar/editar textos e FAQs. Site e PDFs continuam só com você.</span></span>
+              </label>
+              <label className="flex items-start gap-2.5 text-sm">
+                <input type="checkbox" name="allow_hours" defaultChecked={client.allow_hours} className="mt-1" />
+                <span><strong>Editar o horário de atendimento</strong><span className="block text-muted">Só o gestor: os dias e horas em que a equipe atende, em cada assistente. Fora do horário, o assistente diz quando a equipe volta.</span></span>
               </label>
               <SubmitButton className="btn-primary self-start">Salvar permissões</SubmitButton>
             </ActionForm>
@@ -291,12 +295,19 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           <section className="card flex flex-col gap-3 p-5">
             <div>
               <h2 className="text-base font-bold">Pessoas com acesso</h2>
-              <p className="text-sm text-muted">Adicione o e-mail de cada pessoa (dono, recepção…). Ela recebe um convite com o link de entrada.</p>
+              <p className="text-sm text-muted">Adicione o e-mail de cada pessoa (dono, recepção…). Ela recebe um convite com o link de entrada. O gestor também convida atendentes pelo portal.</p>
             </div>
             <ActionForm action={addClientMember.bind(null, client.id)} className="flex flex-wrap items-end gap-2">
               <div className="min-w-[220px] flex-1">
                 <label htmlFor="member-email" className="label">E-mail</label>
                 <input id="member-email" name="email" type="email" required maxLength={200} className="input" placeholder="recepcao@clinicasorriso.com.br" />
+              </div>
+              <div>
+                <label htmlFor="member-role" className="label">Papel</label>
+                <select id="member-role" name="role" defaultValue="manager" className="input">
+                  <option value="manager">Gestor</option>
+                  <option value="agent">Atendente</option>
+                </select>
               </div>
               <SubmitButton pendingLabel="Enviando convite…" className="btn-primary">Adicionar e convidar</SubmitButton>
             </ActionForm>
@@ -304,7 +315,14 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               {(members ?? []).length === 0 && <p className="p-4 text-sm text-muted">Ninguém ainda.</p>}
               {(members ?? []).map((m) => (
                 <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-2 px-4 py-3 text-sm last:border-0">
-                  <span className="min-w-0 flex-1 truncate font-medium">{m.email}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{m.display_name ? `${m.display_name} · ` : ""}{m.email}</span>
+                  <ActionForm action={setClientMemberRole.bind(null, client.id, m.id)} className="flex items-center gap-1.5">
+                    <select name="role" defaultValue={m.role} aria-label={`Papel de ${m.email}`} className="input w-auto py-1 text-xs">
+                      <option value="manager">Gestor</option>
+                      <option value="agent">Atendente</option>
+                    </select>
+                    <SubmitButton pendingLabel="…" className="text-xs font-semibold text-brand hover:underline">Salvar</SubmitButton>
+                  </ActionForm>
                   <span className="text-xs text-muted">{m.last_login_at ? `entrou ${relativeTime(m.last_login_at)}` : "ainda não entrou"}</span>
                   <ConfirmAction action={resendClientInvite.bind(null, client.id, m.id)} title="Reenviar o link?" description={<>Um link novo de acesso vai para <strong className="text-ink">{m.email}</strong>.</>} confirmLabel="Reenviar" danger={false} className="text-xs font-semibold text-brand hover:underline">Reenviar link</ConfirmAction>
                   <ConfirmAction action={removeClientMember.bind(null, client.id, m.id)} title="Tirar o acesso?" description={<><strong className="text-ink">{m.email}</strong> não consegue mais entrar na área do cliente.</>} confirmLabel="Tirar acesso" className="text-xs font-semibold text-danger hover:underline">Remover</ConfirmAction>

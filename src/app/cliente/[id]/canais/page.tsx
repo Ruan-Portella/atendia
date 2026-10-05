@@ -16,7 +16,7 @@ interface Row {
  */
 export default async function MemberChannelsPage({ params }: PageProps<"/cliente/[id]/canais">) {
   const { id } = await params;
-  const { member, admin, botIds } = await requireMember(id);
+  const { member, admin, botIds } = await requireMember(id, "manager");
   const ids = botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"];
   const [{ data: bots }, { data: wa }, { data: ig }] = await Promise.all([
     admin.from("bots").select("id, name").in("id", ids).order("name"),

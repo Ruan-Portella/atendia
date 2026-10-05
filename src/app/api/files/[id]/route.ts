@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { attachmentRow, readAttachment } from "@/lib/attachments";
-import { memberForAction } from "@/lib/member";
+import { memberForAction, memberHasMfa } from "@/lib/member";
 import { adminSession } from "@/lib/platform-admin";
 import { activeGrant } from "@/lib/support-access";
 import { audit, requestMeta } from "@/lib/audit";
@@ -34,7 +34,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
   if (!viewer && row.client_id) {
     const member = await memberForAction(row.client_id);
-    if (member?.botIds.includes(row.bot_id)) viewer = "member";
+    if (member?.botIds.includes(row.bot_id)) {
+      // portal: modo dados sensíveis pede o segundo fator nesta sessão, como no painel
+      const { data: bot } = await db.from("bots").select("sensitive_mode").eq("id", row.bot_id).maybeSingle();
+      if (bot?.sensitive_mode && !(await memberHasMfa())) return new Response("faça a verificação em duas etapas na área do cliente para ver este arquivo", { status: 403 });
+      viewer = "member";
+    }
   }
   if (!viewer) {
     const admin = await adminSession();

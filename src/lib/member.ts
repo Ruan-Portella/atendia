@@ -20,9 +20,31 @@ import { firstName, type Attendant } from "./authors";
  * Os dados são lidos com a service role, sempre filtrando pelo cliente autorizado.
  */
 
+/** Papel no portal (leva B1'): gestor vê tudo o que a agência liberou; atendente, só as conversas. */
+export type PortalRole = "manager" | "agent";
+export const PORTAL_ROLE_LABELS: Record<PortalRole, string> = { manager: "Gestor", agent: "Atendente" };
+export const isPortalRole = (v: unknown): v is PortalRole => v === "manager" || v === "agent";
+
+/**
+ * O que a pessoa pode no portal: a agência libera o teto (atender, ensinar, horário) e o papel
+ * decide dentro dele. handoff: atender conversas; knowledge: ensinar o assistente; hours: horário
+ * de atendimento; manager: o resto do gestor (relatório, equipe, canais, privacidade, exportar).
+ */
+export type PortalPermission = "handoff" | "knowledge" | "hours" | "manager";
+
+export function memberCan(m: Pick<Membership, "role" | "allowHandoff" | "allowKnowledge" | "allowHours">, perm: PortalPermission): boolean {
+  if (perm === "handoff") return m.allowHandoff;
+  if (m.role !== "manager") return false;
+  if (perm === "knowledge") return m.allowKnowledge;
+  if (perm === "hours") return m.allowHours;
+  return true;
+}
+
 export interface Membership {
   /** a linha em client_members (é o id do atendente nas conversas) */
   memberId: string;
+  role: PortalRole;
+  allowHours: boolean;
   displayName: string | null;
   avatarUrl: string | null;
   clientId: string;
@@ -83,15 +105,49 @@ export const getMemberSession = cache(async (): Promise<MemberSession | null> =>
   if (isMemberSessionExpired(claims?.amr)) return { email, expired: true, memberships: [] };
   const { data: rows } = await createAdminClient()
     .from("client_members")
-    .select("id, display_name, avatar_url, client_id, clients!inner(id, name, agency_id, allow_handoff, allow_knowledge, agencies!inner(name, logo_url, brand_color, support_whatsapp, custom_domain, custom_domain_verified_at))")
+    .select("id, role, display_name, avatar_url, client_id, clients!inner(id, name, agency_id, allow_handoff, allow_knowledge, allow_hours, agencies!inner(name, logo_url, brand_color, support_whatsapp, custom_domain, custom_domain_verified_at))")
     .eq("email", email);
   const memberships = (rows ?? []).map((r) => {
     const c = (Array.isArray(r.clients) ? r.clients[0] : r.clients) as Record<string, unknown>;
     const a = (Array.isArray(c.agencies) ? c.agencies[0] : c.agencies) as Membership["agency"];
-    return { memberId: String(r.id), displayName: (r.display_name as string | null) ?? null, avatarUrl: (r.avatar_url as string | null) ?? null, clientId: String(c.id), clientName: String(c.name), agencyId: String(c.agency_id), allowHandoff: Boolean(c.allow_handoff), allowKnowledge: Boolean(c.allow_knowledge), agency: a };
+    return {
+      memberId: String(r.id),
+      role: (isPortalRole(r.role) ? r.role : "agent") as PortalRole,
+      displayName: (r.display_name as string | null) ?? null,
+      avatarUrl: (r.avatar_url as string | null) ?? null,
+      clientId: String(c.id),
+      clientName: String(c.name),
+      agencyId: String(c.agency_id),
+      allowHandoff: Boolean(c.allow_handoff),
+      allowKnowledge: Boolean(c.allow_knowledge),
+      allowHours: Boolean(c.allow_hours),
+      agency: a,
+    };
   });
   return { email, expired: false, memberships };
 });
+
+/** Para onde voltar depois do segundo fator no portal: só páginas deste cliente. Pura. */
+export function safeMemberNext(clientId: string, raw: string | null | undefined): string {
+  const base = `/cliente/${clientId}`;
+  const v = (raw ?? "").trim();
+  if (!v.startsWith(base) || v.includes("\\") || v.includes("//") || /[\r\n]/.test(v)) return base;
+  return /^\/cliente\/[0-9a-f-]{36}(\/[\w-]+)*(\?[\w=&%.-]*)?$/i.test(v) ? v : base;
+}
+
+/**
+ * Segundo fator no portal (leva B1'): conversa de chatbot em modo dados sensíveis e confirmar
+ * pedido do titular pedem o código do app autenticador nesta sessão (cadastro na primeira vez).
+ */
+export async function requireMemberMfa(clientId: string, next: string): Promise<void> {
+  const { data } = await (await createClient()).auth.getClaims();
+  if (data?.claims?.aal !== "aal2") redirect(`/cliente/${clientId}/verificar?next=${encodeURIComponent(safeMemberNext(clientId, next))}`);
+}
+
+export async function memberHasMfa(): Promise<boolean> {
+  const { data } = await (await createClient()).auth.getClaims();
+  return data?.claims?.aal === "aal2";
+}
 
 /** A pessoa do cliente como atendente: o nome de exibição (ou o primeiro nome do e-mail). */
 export const memberAttendant = (m: Pick<Membership, "memberId" | "displayName">, email: string): Attendant => ({
@@ -109,14 +165,13 @@ export const expiredRedirect = (next: string) => `/cliente/expirou?next=${encode
  * desloga e pede link novo; sem acesso a este cliente (ou domínio de outra agência) → 404.
  * Devolve a service role já "presa" ao cliente.
  */
-export async function requireMember(clientId: string, permission?: "handoff" | "knowledge"): Promise<{ email: string; member: Membership; admin: SupabaseClient; botIds: string[] }> {
+export async function requireMember(clientId: string, permission?: PortalPermission): Promise<{ email: string; member: Membership; admin: SupabaseClient; botIds: string[] }> {
   const session = await getMemberSession();
   if (!session) redirect(`/cliente/entrar?next=${encodeURIComponent(`/cliente/${clientId}`)}`);
   if (session.expired) redirect(expiredRedirect(`/cliente/${clientId}`));
   const member = session.memberships.find((m) => m.clientId === clientId);
   if (!member || !(await belongsToHost(member.agencyId))) notFound();
-  if (permission === "handoff" && !member.allowHandoff) notFound();
-  if (permission === "knowledge" && !member.allowKnowledge) notFound();
+  if (permission && !memberCan(member, permission)) notFound();
   const admin = createAdminClient();
   const { data: bots } = await admin.from("bots").select("id").eq("client_id", clientId).eq("is_demo", false);
   return { email: session.email, member, admin, botIds: (bots ?? []).map((b) => b.id) };
@@ -173,13 +228,12 @@ export async function sendMemberLink(opts: { email: string; origin: string; next
 }
 
 /** Mesma regra de requireMember, para server actions: devolve null em vez de redirecionar. */
-export async function memberForAction(clientId: string, permission?: "handoff" | "knowledge") {
+export async function memberForAction(clientId: string, permission?: PortalPermission) {
   const session = await getMemberSession();
   const member = session?.memberships.find((m) => m.clientId === clientId);
   if (!session || !member || !(await belongsToHost(member.agencyId))) return null;
   if (session?.expired) return null;
-  if (permission === "handoff" && !member.allowHandoff) return null;
-  if (permission === "knowledge" && !member.allowKnowledge) return null;
+  if (permission && !memberCan(member, permission)) return null;
   const admin = createAdminClient();
   const { data: bots } = await admin.from("bots").select("id").eq("client_id", clientId).eq("is_demo", false);
   return { email: session.email, member, admin, botIds: (bots ?? []).map((b) => b.id) };

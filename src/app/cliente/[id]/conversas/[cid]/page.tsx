@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireMember } from "@/lib/member";
+import { requireMember, requireMemberMfa } from "@/lib/member";
 import { ConversationThread, type ThreadMessage } from "@/components/conversation-thread";
 import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
 import { ConversationStateBadge } from "@/components/conversation-state";
@@ -23,11 +23,14 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, regulated_at")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, regulated_at, bots(sensitive_mode)")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
   if (!conv) notFound();
+  // chatbot em modo dados sensíveis: a conversa pede o segundo fator, como no painel (leva B1')
+  const sensitive = Boolean((Array.isArray(conv.bots) ? conv.bots[0] : conv.bots)?.sensitive_mode);
+  if (sensitive) await requireMemberMfa(id, `/cliente/${id}/conversas/${cid}`);
   const [messages, leads] = await Promise.all([
     loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     leadsOfConversation(admin, cid),

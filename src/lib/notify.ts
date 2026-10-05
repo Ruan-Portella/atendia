@@ -136,13 +136,13 @@ export async function notifyAgencyOwner(db: SupabaseClient, agencyId: string, su
   return !error;
 }
 
-/** E-mail às pessoas do cliente (área do cliente e e-mail do relatório), com o nome da agência. */
+/** E-mail aos gestores do portal do cliente e ao e-mail do relatório, com o nome da agência (atendente não recebe). */
 export async function notifyClientPeople(db: SupabaseClient, clientId: string, subject: string, lines: string[]): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return false;
   const [{ data: client }, { data: members }] = await Promise.all([
     db.from("clients").select("report_email, agencies(name)").eq("id", clientId).maybeSingle(),
-    db.from("client_members").select("email").eq("client_id", clientId),
+    db.from("client_members").select("email").eq("client_id", clientId).eq("role", "manager"),
   ]);
   const to = [...new Set([...(members ?? []).map((m) => String(m.email).toLowerCase()), ...(client?.report_email ? [String(client.report_email).toLowerCase()] : [])])];
   if (!to.length) return false;

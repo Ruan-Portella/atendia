@@ -47,7 +47,7 @@ export default async function SecurityPage({ searchParams }: PageProps<"/painel/
       {tab === "auditoria" && <AuditSection agencyId={agency.id} people={await auditPeople(createAdminClient(), agency.id, userId)} filters={auditFilters(sp)} page={page} />}
       {tab === "acessos" && <AccessSection agencyId={agency.id} people={await auditPeople(createAdminClient(), agency.id, userId)} />}
       {tab === "suporte" && <SupportSection agencyId={agency.id} />}
-      {tab === "fator" && <MfaSection />}
+      {tab === "fator" && <MfaSection verifyHref={`/painel/verificar?next=${encodeURIComponent("/painel/seguranca?aba=fator")}`} />}
     </div>
   );
 }

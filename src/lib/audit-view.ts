@@ -62,6 +62,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "portal.link_desligar": "Link do portal desligado",
   "portal.link_ligar": "Link do portal ligado",
   "portal.permissoes": "Permissões da área do cliente alteradas",
+  "portal.papel": "Papel de uma pessoa da área do cliente alterado",
+  "portal.horario": "Horário de atendimento alterado pela área do cliente",
   "portal.pessoa_adicionar": "Pessoa adicionada à área do cliente",
   "portal.pessoa_remover": "Pessoa removida da área do cliente",
   "portao.aprovar_excecao": "Exceção de item restrito aprovada",

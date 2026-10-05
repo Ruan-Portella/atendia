@@ -1,10 +1,11 @@
-import { requireMember } from "@/lib/member";
+import { memberHasMfa, requireMember } from "@/lib/member";
 import { RETENTION_MONTHS, SENSITIVE_DAYS, effectiveRetention, retentionLabel } from "@/lib/retention";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ExportLinks } from "@/components/export-links";
 import { dueDateBR } from "@/lib/data-subject";
-import { memberSetRetention, memberSetSensitive } from "../../actions";
+import { memberConfirmRequest, memberSetRetention, memberSetSensitive } from "../../actions";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 
 export const metadata = { title: { absolute: "Privacidade" }, robots: { index: false, follow: false } };
 
@@ -16,7 +17,7 @@ const CHANNEL: Record<string, string> = { widget: "Chat do site", whatsapp: "Wha
  */
 export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/[id]/privacidade">) {
   const { id } = await params;
-  const { member, admin, botIds } = await requireMember(id);
+  const { member, admin, botIds } = await requireMember(id, "manager");
   const ids = botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"];
   const [{ data: client }, { data: bots }, { data: requests }] = await Promise.all([
     admin.from("clients").select("retention_months, agencies(retention_months)").eq("id", id).maybeSingle(),
@@ -27,6 +28,7 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
   const agency = (Array.isArray(client?.agencies) ? client.agencies[0] : client?.agencies) as { retention_months: number | null } | null | undefined;
   const clientMonths = (client?.retention_months as number | null) ?? null;
   const agencyMonths = agency?.retention_months ?? null;
+  const mfa = await memberHasMfa();
   const current = effectiveRetention({ isDemo: false, sensitiveMode: false, sensitiveDays: null, clientMonths, agencyMonths });
 
   return (
@@ -62,12 +64,29 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
       {(requests ?? []).length > 0 && (
         <section className="card flex flex-col gap-2 p-5">
           <h2 className="text-base font-bold">Pedidos de exclusão dos seus contatos</h2>
-          <p className="text-sm text-muted">Quem pede pelo chat para apagar os dados aparece aqui; {member.agency.name} confirma e o BoaVoz apaga e avisa a pessoa.</p>
+          <p className="text-sm text-muted">Quem pede pelo chat para apagar os dados aparece aqui. Você (ou {member.agency.name}) confirma, e o BoaVoz apaga e avisa a pessoa. Confirmar pede o código do app autenticador.</p>
           <ul className="flex flex-col gap-1.5 text-sm">
             {(requests ?? []).map((r) => (
-              <li key={r.id as string} className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <li key={r.id as string} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <span>{CHANNEL[r.channel as string] ?? (r.channel as string)} · pedido em {dueDateBR(r.requested_at as string)}</span>
-                <span className="text-xs text-muted">{r.status === "executado" ? `atendido em ${dueDateBR(r.executed_at as string)}` : `aguardando · prazo até ${dueDateBR(r.due_at as string)}`}</span>
+                <span className="flex items-center gap-2 text-xs text-muted">
+                  {r.status === "executado" ? `atendido em ${dueDateBR(r.executed_at as string)}` : `aguardando · prazo até ${dueDateBR(r.due_at as string)}`}
+                  {r.status === "aguardando" && (
+                    mfa ? (
+                      <ConfirmAction
+                        action={memberConfirmRequest.bind(null, id, r.id as string)}
+                        title="Confirmar o pedido de exclusão?"
+                        description="Apaga as conversas, a ficha, os contatos deixados e as perguntas dessa pessoa nos seus assistentes, e avisa ela pelo canal quando ainda der. Não tem desfazer."
+                        confirmLabel="Confirmar e apagar"
+                        className="btn-danger px-2.5 py-1 text-xs"
+                      >
+                        Confirmar
+                      </ConfirmAction>
+                    ) : (
+                      <a href={`/cliente/${id}/verificar?next=${encodeURIComponent(`/cliente/${id}/privacidade`)}`} className="font-semibold text-brand hover:underline">Verificar para confirmar</a>
+                    )
+                  )}
+                </span>
               </li>
             ))}
           </ul>

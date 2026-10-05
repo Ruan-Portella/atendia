@@ -11,7 +11,7 @@ import { attendantOf, can, type Permission } from "@/lib/team";
 import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { attendantAuthor, type Attendant } from "@/lib/authors";
 import { answerQuestion } from "@/lib/knowledge";
-import { sendMemberLink } from "@/lib/member";
+import { PORTAL_ROLE_LABELS, isPortalRole, sendMemberLink, type PortalRole } from "@/lib/member";
 import { appUrl, initials, normalizeUrl, slugify } from "@/lib/utils";
 import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
 import { grantSupport, revokeSupport } from "@/lib/support-access";
@@ -19,7 +19,7 @@ import { hasMfa } from "@/lib/agency-mfa";
 import { purgeAttachments } from "@/lib/attachments";
 import { removeBotSourceFiles } from "@/lib/source-files";
 import { logAccess } from "@/lib/access-log";
-import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, WEEKDAYS, aiNoticeProblem, awayMessageProblem, backNoticeProblem, entryNoticeProblem, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, aiNoticeProblem, awayMessageProblem, backNoticeProblem, entryNoticeProblem, parseHoursForm, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
 import { resetAge } from "@/lib/gate/age";
 import { clearAgePending } from "@/lib/gate/flow";
@@ -234,16 +234,9 @@ async function parseHumanHandoff(supabase: Awaited<ReturnType<typeof createClien
       return { error: "Esse é o número do WhatsApp do próprio assistente. Informe outro telefone da equipe (ou deixe em branco)." };
     }
   }
-  const hours: BusinessHours = {};
-  for (let d = 0; d < 7; d++) {
-    const open = f[`hours_open_${d}`]?.trim();
-    const close = f[`hours_close_${d}`]?.trim();
-    if (!open && !close) continue;
-    if (!/^\d{2}:\d{2}$/.test(open ?? "") || !/^\d{2}:\d{2}$/.test(close ?? "") || open! >= close!) {
-      return { error: `Horário de ${WEEKDAYS[d]} inválido: a abertura precisa vir antes do fechamento.` };
-    }
-    hours[String(d) as keyof BusinessHours] = [open!, close!];
-  }
+  const parsedHours = parseHoursForm(f);
+  if ("error" in parsedHours) return parsedHours;
+  const hours: BusinessHours = parsedHours.hours ?? {};
   const address = f.handoff_address?.trim().slice(0, 200) || null;
   // textos editáveis: vazio ou igual ao padrão fica nulo (o padrão pode melhorar depois)
   const aiNotice = f.ai_notice?.trim() ?? "";
@@ -1108,7 +1101,7 @@ export async function verifyCustomDomain(): Promise<ActionResult> {
 export async function setClientPermissions(clientId: string, formData: FormData): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
-  const patch = { allow_handoff: formData.get("allow_handoff") === "on", allow_knowledge: formData.get("allow_knowledge") === "on", handoff_notify: formData.get("handoff_notify") === "client" ? "client" : "all" };
+  const patch = { allow_handoff: formData.get("allow_handoff") === "on", allow_knowledge: formData.get("allow_knowledge") === "on", allow_hours: formData.get("allow_hours") === "on", handoff_notify: formData.get("handoff_notify") === "client" ? "client" : "all" };
   const { error, count } = await supabase.from("clients").update(patch, { count: "exact" }).eq("id", clientId);
   if (error || !count) return fail("Não foi possível salvar as permissões.");
   await auditPanel("portal.permissoes", { type: "client", id: clientId }, { after: patch });
@@ -1132,9 +1125,10 @@ export async function addClientMember(clientId: string, formData: FormData): Pro
   if (!isEmail(email)) return fail("E-mail inválido.");
   const { count } = await ctx.supabase.from("client_members").select("id", { count: "exact", head: true }).eq("client_id", clientId);
   if ((count ?? 0) >= 20) return fail("Limite de 20 pessoas por cliente.");
-  const { error } = await ctx.supabase.from("client_members").insert({ client_id: clientId, email });
+  const role = isPortalRole(formData.get("role")) ? (formData.get("role") as PortalRole) : "manager";
+  const { error } = await ctx.supabase.from("client_members").insert({ client_id: clientId, email, role });
   if (error) return fail(error.code === "23505" ? "Esse e-mail já tem acesso." : "Não foi possível adicionar. Tente de novo.");
-  await auditPanel("portal.pessoa_adicionar", { type: "client", id: clientId }, { after: { email } });
+  await auditPanel("portal.pessoa_adicionar", { type: "client", id: clientId }, { after: { email, papel: PORTAL_ROLE_LABELS[role].toLowerCase() } });
   revalidatePath(`/painel/clientes/${clientId}`);
   const sent = await sendMemberLink({ email, origin: agencyBaseUrl(ctx.agency), next: `/cliente/${clientId}`, clientName: ctx.client.name, agency: ctx.agency });
   if (!sent.ok) return fail(`Acesso criado, mas o convite não foi enviado: ${sent.message} A pessoa pode entrar pela área do cliente pedindo um link.`);
@@ -1149,6 +1143,22 @@ export async function resendClientInvite(clientId: string, memberId: string): Pr
   if (!member) return fail("Pessoa não encontrada.");
   const sent = await sendMemberLink({ email: member.email, origin: agencyBaseUrl(ctx.agency), next: `/cliente/${clientId}`, clientName: ctx.client.name, agency: ctx.agency });
   return sent.ok ? ok(`Link enviado de novo para ${member.email}.`) : fail(sent.message);
+}
+
+/** Papel de uma pessoa do portal: gestor (tudo o que a agência liberou) ou atendente (só conversas). */
+export async function setClientMemberRole(clientId: string, memberId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const role = formData.get("role");
+  if (!isPortalRole(role)) return fail("Escolha o papel.");
+  const supabase = await createClient();
+  const { data: before } = await supabase.from("client_members").select("email, role").eq("id", memberId).eq("client_id", clientId).maybeSingle();
+  if (!before) return fail("Pessoa não encontrada.");
+  if (before.role === role) return ok("Nada mudou.");
+  const { error } = await supabase.from("client_members").update({ role }).eq("id", memberId).eq("client_id", clientId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditPanel("portal.papel", { type: "client", id: clientId }, { before: { email: before.email, papel: before.role }, after: { papel: role } });
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok(`${before.email} agora é ${PORTAL_ROLE_LABELS[role].toLowerCase()}. Vale na próxima página que a pessoa abrir.`);
 }
 
 /** Tira o acesso na hora (a sessão aberta perde acesso na próxima página que abrir). */

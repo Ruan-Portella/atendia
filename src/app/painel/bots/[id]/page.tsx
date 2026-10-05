@@ -41,10 +41,11 @@ import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { HandoffBadge } from "@/components/handoff-badge";
 import { handoffStatus } from "@/lib/handoff-status";
-import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, NO_DATE_NOTICE, WEEKDAYS, nextOpening, whenLabel, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
+import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, NO_DATE_NOTICE, nextOpening, whenLabel, type HumanHandoff } from "@/lib/handoff-hours";
 import { HUMAN_ONLY_NOTICE } from "@/lib/chat";
 import { GATE_TEXTS } from "@/lib/gate/rules";
 import { TemplateField } from "@/components/template-field";
+import { HoursFields } from "@/components/hours-fields";
 import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 
 export const metadata = { title: "Editor do chatbot" };
@@ -323,18 +324,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <section className="flex flex-col gap-3 border-t border-line pt-4">
                 <h3 className="text-sm font-semibold">Horário de atendimento da equipe</h3>
                 <p className="-mt-2 text-xs text-muted">Horário de Brasília. Fora dele, o pedido de atendente fica registrado e o assistente diz quando a equipe volta (ex.: &quot;Nossa equipe volta segunda às 9h&quot;). Deixe o dia em branco para fechado; sem nenhum horário, o assistente só diz que a equipe responde assim que possível.</p>
-                <div className="overflow-hidden rounded-xl border border-line">
-                  {WEEKDAYS.map((day, d) => {
-                    const h = (handoff.hours ?? {})[String(d) as keyof BusinessHours];
-                    return (
-                      <div key={day} className="flex flex-wrap items-center gap-3 border-b border-line-2 px-4 py-2.5 text-sm last:border-0">
-                        <span className="w-20 font-medium capitalize">{day}</span>
-                        <label className="flex items-center gap-1.5 text-muted">das <input type="time" name={`hours_open_${d}`} defaultValue={h?.[0] ?? ""} className="input w-auto py-1.5" aria-label={`${day}: abre`} /></label>
-                        <label className="flex items-center gap-1.5 text-muted">às <input type="time" name={`hours_close_${d}`} defaultValue={h?.[1] ?? ""} className="input w-auto py-1.5" aria-label={`${day}: fecha`} /></label>
-                      </div>
-                    );
-                  })}
-                </div>
+                <HoursFields hours={handoff.hours} />
               </section>
 
               <section className="flex flex-col gap-4 border-t border-line pt-4">

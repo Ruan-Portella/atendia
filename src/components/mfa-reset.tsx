@@ -3,13 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { recordMfaRemoved } from "@/app/painel/actions";
 
 /**
  * Trocar de app autenticador: remove o fator atual (evento grave: e-mail e faixa no painel) e leva
- * ao cadastro de um novo, que a Segurança exige.
+ * ao cadastro de um novo. Painel e portal: cada um passa onde registrar e para onde ir.
  */
-export function MfaReset({ factorIds }: { factorIds: string[] }) {
+export function MfaReset({ factorIds, onRemoved, verifyHref }: { factorIds: string[]; onRemoved: () => Promise<void>; verifyHref: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,10 +25,10 @@ export function MfaReset({ factorIds }: { factorIds: string[] }) {
         return setError("Não foi possível remover. Faça a verificação de novo e tente outra vez.");
       }
     }
-    await recordMfaRemoved().catch(() => undefined);
+    await onRemoved().catch(() => undefined);
     // a sessão perde o nível de duas etapas: o cadastro do novo vem em seguida
     await supabase.auth.refreshSession().catch(() => undefined);
-    router.push(`/painel/verificar?next=${encodeURIComponent("/painel/seguranca?aba=fator")}`);
+    router.push(verifyHref);
     router.refresh();
   }
 

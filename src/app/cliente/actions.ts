@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hostAgency } from "@/lib/domain-server";
-import { currentOrigin, EMAIL_LINK_TYPES, memberAttendant, memberForAction, sendMemberLink, type Membership } from "@/lib/member";
+import { currentOrigin, EMAIL_LINK_TYPES, memberAttendant, memberForAction, memberHasMfa, sendMemberLink, type Membership } from "@/lib/member";
+import { profileProblem } from "@/lib/attendants";
+import { awayMessageProblem, parseHoursForm, type HumanHandoff } from "@/lib/handoff-hours";
+import { executeRequest } from "@/lib/data-subject";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
@@ -186,7 +189,7 @@ const monthsToDays = (m: number | null) => (m ? m * 30 : null);
 
 /** O cliente escolhe o prazo de guarda (vazio = o da agência). Diminuir pede confirmação e avisa a agência. */
 export async function memberSetRetention(clientId: string, formData: FormData): Promise<ActionResult> {
-  const ctx = await memberForAction(clientId);
+  const ctx = await memberForAction(clientId, "manager");
   if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
   const raw = text(formData.get("retention_months"));
   const months = raw ? Number(raw) : null;
@@ -214,7 +217,7 @@ export async function memberSetRetention(clientId: string, formData: FormData): 
 
 /** Modo dados sensíveis de um assistente: as conversas dele saem no prazo curto escolhido (7 a 90 dias). */
 export async function memberSetSensitive(clientId: string, botId: string, formData: FormData): Promise<ActionResult> {
-  const ctx = await memberForAction(clientId);
+  const ctx = await memberForAction(clientId, "manager");
   if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");
   const on = formData.get("sensitive") === "on";
   const chosen = Number(formData.get("days"));
@@ -246,7 +249,7 @@ export async function memberSetSensitive(clientId: string, botId: string, formDa
 }
 
 export async function memberDisconnectChannel(clientId: string, botId: string, channel: "whatsapp" | "instagram"): Promise<ActionResult> {
-  const ctx = await memberForAction(clientId);
+  const ctx = await memberForAction(clientId, "manager");
   if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");
   const r = channel === "whatsapp" ? await disconnectWhatsAppChannel(ctx.admin, botId) : await disconnectInstagramChannel(ctx.admin, botId);
   if (!r.ok) return fail("Não foi possível desconectar. Tente de novo.");
@@ -262,4 +265,116 @@ export async function memberDisconnectChannel(clientId: string, botId: string, c
   ]).catch(() => false);
   revalidatePath(`/cliente/${clientId}/canais`);
   return ok(`${name} desconectado. O assistente parou de responder por ele.`);
+}
+
+/* ------------------------------------------------------------------ papéis do portal (leva B1') */
+
+/** Meu perfil no portal: nome de exibição e foto (o contato vê quando a pessoa atende). */
+export async function memberUpdateProfile(clientId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  const name = text(formData.get("display_name")).replace(/\s+/g, " ").trim();
+  const avatar = text(formData.get("avatar_url")) || null;
+  const problem = profileProblem(name, avatar, ctx.member.memberId);
+  if (problem) return fail(problem);
+  // o mesmo e-mail pode estar em mais de um cliente: o perfil vale para todos eles
+  const { error } = await ctx.admin.from("client_members").update({ display_name: name, avatar_url: avatar }).eq("email", ctx.email);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/cliente/${clientId}`, "layout");
+  return ok("Perfil salvo. As próximas mensagens já saem com este nome.");
+}
+
+const ONLY_MANAGER = "Só o gestor mexe na equipe do portal.";
+
+/** Gestor convida um atendente (o gestor novo vem da agência). */
+export async function memberInvite(clientId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId, "manager");
+  if (!ctx) return fail(ONLY_MANAGER);
+  const email = text(formData.get("email")).toLowerCase();
+  if (!isEmail(email)) return fail("E-mail inválido.");
+  const { count } = await ctx.admin.from("client_members").select("id", { count: "exact", head: true }).eq("client_id", clientId);
+  if ((count ?? 0) >= 20) return fail("Limite de 20 pessoas por cliente.");
+  const { error } = await ctx.admin.from("client_members").insert({ client_id: clientId, email, role: "agent" });
+  if (error) return fail(error.code === "23505" ? "Esse e-mail já tem acesso." : "Não foi possível adicionar. Tente de novo.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "portal.pessoa_adicionar", targetType: "client", targetId: clientId, after: { email, papel: "atendente" }, ...(await requestMeta()) });
+  revalidatePath(`/cliente/${clientId}/equipe`);
+  const sent = await sendMemberLink({ email, origin: await currentOrigin(), next: `/cliente/${clientId}`, clientName: ctx.member.clientName, agency: ctx.member.agency });
+  if (!sent.ok) return fail(`Acesso criado, mas o convite não foi enviado: ${sent.message} A pessoa pode entrar pela área do cliente pedindo um link.`);
+  return ok(`Convite enviado para ${email}.`);
+}
+
+/** Atendente desta loja (o gestor só mexe em atendentes; gestores são da agência). */
+async function agentOf(ctx: NonNullable<Awaited<ReturnType<typeof memberForAction>>>, clientId: string, memberId: string) {
+  const { data } = await ctx.admin.from("client_members").select("id, email, role").eq("id", memberId).eq("client_id", clientId).maybeSingle();
+  return data && data.role === "agent" && data.id !== ctx.member.memberId ? (data as { id: string; email: string; role: string }) : null;
+}
+
+export async function memberResendLink(clientId: string, memberId: string): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId, "manager");
+  if (!ctx) return fail(ONLY_MANAGER);
+  const agent = await agentOf(ctx, clientId, memberId);
+  if (!agent) return fail("Pessoa não encontrada.");
+  const sent = await sendMemberLink({ email: agent.email, origin: await currentOrigin(), next: `/cliente/${clientId}`, clientName: ctx.member.clientName, agency: ctx.member.agency });
+  return sent.ok ? ok(`Link enviado de novo para ${agent.email}.`) : fail(sent.message);
+}
+
+export async function memberRemove(clientId: string, memberId: string): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId, "manager");
+  if (!ctx) return fail(ONLY_MANAGER);
+  const agent = await agentOf(ctx, clientId, memberId);
+  if (!agent) return fail("Só dá para remover atendentes. Para tirar um gestor, fale com a agência.");
+  const { error } = await ctx.admin.from("client_members").delete().eq("id", agent.id);
+  if (error) return fail("Não foi possível remover. Tente de novo.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "portal.pessoa_remover", targetType: "client", targetId: clientId, before: { email: agent.email, papel: "atendente" }, ...(await requestMeta()) });
+  revalidatePath(`/cliente/${clientId}/equipe`);
+  return ok("Acesso removido. A pessoa perde o acesso na próxima página que abrir.");
+}
+
+/** Horário de atendimento de um assistente (gestor, quando a agência libera). */
+export async function memberSetHours(clientId: string, botId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId, "hours");
+  if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");
+  const parsed = parseHoursForm(Object.fromEntries(formData) as Record<string, string>);
+  if ("error" in parsed) return fail(parsed.error);
+  const { data: bot } = await ctx.admin.from("bots").select("human_handoff").eq("id", botId).maybeSingle();
+  const handoff = ((bot?.human_handoff ?? {}) as HumanHandoff) ?? {};
+  // com horário, a mensagem de fora do horário precisa dizer quando a equipe volta
+  if (parsed.hours && awayMessageProblem(handoff.away_message ?? "", true)) return fail(`A mensagem de fora do horário deste assistente não diz quando a equipe volta. Peça para ${ctx.member.agency.name} ajustar antes de pôr horário.`);
+  const { error } = await ctx.admin.from("bots").update({ human_handoff: { ...handoff, hours: parsed.hours } }).eq("id", botId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "portal.horario", targetType: "bot", targetId: botId, before: { hours: handoff.hours ?? null }, after: { hours: parsed.hours }, ...(await requestMeta()) });
+  revalidatePath(`/cliente/${clientId}/horario`);
+  return ok(parsed.hours ? "Horário salvo. Fora dele, o assistente diz quando a equipe volta." : "Sem horário: o assistente diz que a equipe responde assim que possível.");
+}
+
+/** Gestor confirma um pedido do titular feito pelo chat (o negócio é o controlador). */
+export async function memberConfirmRequest(clientId: string, requestId: string): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId, "manager");
+  if (!ctx) return fail("Só o gestor confirma pedidos de exclusão.");
+  if (!(await memberHasMfa())) return fail("Faça a verificação em duas etapas (código do app autenticador) e tente de novo.");
+  const { data: req } = await ctx.admin.from("data_subject_requests").select("id, status").eq("id", requestId).eq("client_id", clientId).maybeSingle();
+  if (!req) return fail("Pedido não encontrado.");
+  if (req.status !== "aguardando") return ok("Este pedido já foi atendido.");
+  const summary = await executeRequest(ctx.admin, requestId, ctx.email);
+  if (!summary) return ok("Este pedido já foi atendido.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "titular.confirmar", targetType: "data_subject_request", targetId: requestId, after: { ...summary }, ...(await requestMeta()) });
+  revalidatePath(`/cliente/${clientId}/privacidade`);
+  return ok("Pedido atendido: os dados da pessoa foram apagados.");
+}
+
+/** Segundo fator no portal: entrada ou falha no registro de acesso e, no primeiro código, o cadastro na auditoria. */
+export async function recordMemberMfa(clientId: string, success: boolean, enrolled: boolean): Promise<void> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return;
+  const { data } = await (await createClient()).auth.getClaims();
+  const meta = await requestMeta();
+  if (data?.claims?.sub) await logAccess(ctx.admin, { actorType: "member", actorId: String(data.claims.sub), email: ctx.email, event: success ? "login" : "login_failed", ip: meta.ip, userAgent: meta.userAgent, agencyId: ctx.member.agencyId });
+  if (success && enrolled) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "seguranca.mfa_cadastrar", targetType: "client", targetId: clientId, ...meta });
+}
+
+/** O app autenticador da pessoa do portal foi removido (evento grave para a agência). */
+export async function recordMemberMfaRemoved(clientId: string): Promise<void> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return;
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "seguranca.mfa_remover", targetType: "client", targetId: clientId, ...(await requestMeta()) });
 }

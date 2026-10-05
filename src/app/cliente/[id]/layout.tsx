@@ -1,4 +1,4 @@
-import { requireMember } from "@/lib/member";
+import { memberCan, requireMember } from "@/lib/member";
 import { getPendingHandoffs } from "@/lib/panel";
 import { handoffStatus } from "@/lib/handoff-status";
 import { AgencyHeader } from "@/components/report-view";
@@ -6,7 +6,8 @@ import { MemberNav } from "@/components/member-nav";
 import { HandoffWatcher } from "@/components/handoff-watcher";
 
 /**
- * Casca da área do cliente: marca da agência, abas conforme as permissões e "Sair".
+ * Casca da área do cliente: marca da agência, abas conforme as permissões e o papel (gestor ou
+ * atendente) e "Sair".
  * Formato de app: cabeçalho e abas ficam fixos e só o conteúdo rola; assim a tela de conversa
  * ocupa exatamente o espaço que sobra (com rolagem só nas mensagens).
  */
@@ -20,7 +21,7 @@ export default async function MemberLayout({ children, params }: LayoutProps<"/c
         <form action="/cliente/sair" method="post"><button type="submit" className="btn-ghost" title={email}>Sair</button></form>
       </AgencyHeader>
       <div className="border-b border-line bg-panel">
-        <MemberNav clientId={id} handoff={member.allowHandoff} knowledge={member.allowKnowledge} waiting={pending.filter((p) => handoffStatus(p)?.waiting).length} />
+        <MemberNav clientId={id} manager={memberCan(member, "manager")} handoff={member.allowHandoff} knowledge={member.allowKnowledge} hours={member.allowHours} waiting={pending.filter((p) => handoffStatus(p)?.waiting).length} />
       </div>
       {member.allowHandoff && <HandoffWatcher endpoint={`/api/cliente/pending?clientId=${id}`} />}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">

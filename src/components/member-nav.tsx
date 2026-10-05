@@ -4,16 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-/** Abas da área do cliente; só aparecem as que a agência liberou. */
-export function MemberNav({ clientId, handoff, knowledge, waiting }: { clientId: string; handoff: boolean; knowledge: boolean; waiting: number }) {
+/**
+ * Abas da área do cliente: só as que a agência liberou e o papel permite (leva B1'). O gestor vê
+ * tudo; o atendente, só as conversas e o próprio perfil.
+ */
+export function MemberNav({ clientId, manager, handoff, knowledge, hours, waiting }: { clientId: string; manager: boolean; handoff: boolean; knowledge: boolean; hours: boolean; waiting: number }) {
   const path = usePathname();
   const base = `/cliente/${clientId}`;
+  const tab = (href: string, label: string, badge = 0) => ({ href, label, active: href === base ? path === base : path.startsWith(href), badge });
   const tabs = [
-    { href: base, label: "Relatório", active: path === base, badge: 0 },
-    { href: `${base}/conversas`, label: handoff ? "Atendimento" : "Conversas", active: path.startsWith(`${base}/conversas`), badge: handoff ? waiting : 0 },
-    ...(knowledge ? [{ href: `${base}/aprender`, label: "Ensinar o assistente", active: path.startsWith(`${base}/aprender`), badge: 0 }] : []),
-    { href: `${base}/canais`, label: "Canais", active: path.startsWith(`${base}/canais`), badge: 0 },
-    { href: `${base}/privacidade`, label: "Privacidade", active: path.startsWith(`${base}/privacidade`), badge: 0 },
+    ...(manager ? [tab(base, "Relatório")] : []),
+    tab(`${base}/conversas`, handoff ? "Atendimento" : "Conversas", handoff ? waiting : 0),
+    ...(manager && knowledge ? [tab(`${base}/aprender`, "Ensinar o assistente")] : []),
+    ...(manager && hours ? [tab(`${base}/horario`, "Horário")] : []),
+    ...(manager ? [tab(`${base}/equipe`, "Equipe"), tab(`${base}/canais`, "Canais"), tab(`${base}/privacidade`, "Privacidade")] : []),
+    tab(`${base}/perfil`, "Meu perfil"),
   ];
   return (
     <nav className="mx-auto flex max-w-[980px] gap-1 overflow-x-auto px-4 [scrollbar-width:none] sm:px-6 print:hidden">

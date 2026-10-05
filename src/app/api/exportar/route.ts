@@ -1,4 +1,4 @@
-import { memberForAction } from "@/lib/member";
+import { memberCan, memberForAction } from "@/lib/member";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { mfaRedirect } from "@/lib/agency-mfa";
@@ -23,6 +23,8 @@ export async function GET(req: Request) {
 
   // pessoa do cliente (área do cliente) ou, senão, a agência logada dona do cliente
   const member = await memberForAction(clientId);
+  // no portal, exportar é do gestor (o atendente vê só as conversas)
+  if (member && !memberCan(member.member, "manager")) return new Response("só o gestor exporta os dados", { status: 403 });
   let actor: { agencyId: string; type: "member" | "user"; id: string };
   let clientName: string;
   if (member) {

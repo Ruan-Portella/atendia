@@ -41,6 +41,24 @@ function brasilia(now: Date): { day: number; minute: number } {
   return { day: local.getUTCDay(), minute: local.getUTCHours() * 60 + local.getUTCMinutes() };
 }
 
+/**
+ * Lê o horário do formulário (hours_open_0 … hours_close_6, "HH:MM"). Dia vazio = fechado; nenhum
+ * dia = sem horário (null). Pura.
+ */
+export function parseHoursForm(f: Record<string, string | undefined>): { hours: BusinessHours | null } | { error: string } {
+  const hours: BusinessHours = {};
+  for (let d = 0; d < 7; d++) {
+    const open = f[`hours_open_${d}`]?.trim();
+    const close = f[`hours_close_${d}`]?.trim();
+    if (!open && !close) continue;
+    if (!/^\d{2}:\d{2}$/.test(open ?? "") || !/^\d{2}:\d{2}$/.test(close ?? "") || open! >= close!) {
+      return { error: `Horário de ${WEEKDAYS[d]} inválido: a abertura precisa vir antes do fechamento.` };
+    }
+    hours[String(d) as keyof BusinessHours] = [open!, close!];
+  }
+  return { hours: Object.keys(hours).length ? hours : null };
+}
+
 export function hasHours(hours: BusinessHours | null | undefined): hours is BusinessHours {
   return Boolean(hours && Object.values(hours).some((h) => h && h[0] && h[1]));
 }
