@@ -8,7 +8,7 @@ export default function TermsPage() {
   const { brand, email } = company;
   const operator = companyIdentity();
   return (
-    <LegalPage title="Termos de Uso" updatedAt="2 de outubro de 2026" intro={`Estes termos regem o uso da plataforma ${brand}. Ao criar uma conta, você concorda com eles.`}>
+    <LegalPage title="Termos de Uso" updatedAt="5 de outubro de 2026" intro={`Estes termos regem o uso da plataforma ${brand}. Ao criar uma conta, você concorda com eles.`}>
       <Section title="1. O serviço">
         <p>
           A {brand}{operator && `, operada por ${operator},`} é uma plataforma para criar, personalizar e publicar assistentes virtuais de atendimento, treinados no conteúdo de cada empresa, em sites e canais de mensagem como o WhatsApp. O assistente atende os clientes da própria empresa: responde dúvidas, registra contatos e passa a conversa para um atendente humano quando preciso.
@@ -40,10 +40,19 @@ export default function TermsPage() {
         </ul>
       </Section>
 
-      <Section title="4. Seu conteúdo">
+      <Section title="4. Seu conteúdo e os dados dos seus clientes">
         <p>
-          O conteúdo que você envia (sites, documentos, textos, logos) continua sendo seu. Você nos dá permissão para processá-lo apenas para operar os seus assistentes. Você garante que tem direito de usar esse conteúdo e de tratar os dados pessoais envolvidos. Nos dados dos seus clientes e dos visitantes deles, você (ou a empresa cliente) é o controlador, e a {brand} é operadora, conforme a <Link href="/privacidade">Política de Privacidade</Link>.
+          O conteúdo que você envia (sites, documentos, textos, logos) continua sendo seu. Você nos dá permissão para processá-lo apenas para operar os seus assistentes. Você garante que tem direito de usar esse conteúdo e de tratar os dados pessoais envolvidos.
         </p>
+        <ul>
+          <li>
+            Nos dados de quem conversa com os assistentes, o negócio atendido é o <strong>controlador</strong>, a agência é <strong>operadora</strong> e a {brand} é <strong>suboperadora</strong> (ou operadora, quando o negócio usa a {brand} diretamente), conforme a <Link href="/privacidade">Política de Privacidade</Link>. A agência repassa estas regras aos seus clientes.
+          </li>
+          <li>Os dados de cada cliente só servem ao atendimento dele: sem marketing próprio da agência nem cruzamento entre clientes.</li>
+          <li>Cada cliente define por quanto tempo os dados ficam guardados (6, 12 ou 24 meses, ou menos no modo dados sensíveis) e pode exportar as conversas, os contatos e os leads a qualquer momento; na saída de um cliente, entregue ou apague os dados dele.</li>
+          <li>Os pedidos de exclusão feitos pelos contatos no chat chegam em Segurança e devem ser atendidos no prazo da lei.</li>
+          <li>Nossa equipe de suporte só lê conversas com a sua autorização, dada em Segurança por 24 horas e com motivo; cada leitura fica registrada.</li>
+        </ul>
       </Section>
 
       <Section title="5. Uso do WhatsApp">

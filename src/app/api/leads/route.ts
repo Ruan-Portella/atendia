@@ -44,6 +44,6 @@ export async function POST(req: Request) {
     if (!conv) conversationId = null;
   }
   const leadId = await createLead(db, { botId: bot.id, conversationId, name: d.name, phone: d.phone, phoneHash: typedPhoneHash(d.phone), email: d.email, notes: d.notes });
-  notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: d.name, whatsapp: d.phone, email: d.email, interesse: d.notes } }).catch(() => {});
+  notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: d.name }, channel: "widget", conversationId }).catch(() => {});
   return Response.json({ ok: true }, { headers: CORS_HEADERS });
 }

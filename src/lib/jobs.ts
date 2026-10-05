@@ -57,6 +57,10 @@ export async function applyRetention(db: SupabaseClient, hasTime: () => boolean 
   // registro de exclusões: 60 dias (passa do prazo dos backups); pedidos da Meta: 1 ano
   await db.from("deletion_log").delete().lt("created_at", daysAgoIso(60));
   await db.from("deletion_requests").delete().lt("created_at", daysAgoIso(365));
+  // classificação do portão (sem conteúdo): 1 ano, como diz a Política de Privacidade
+  await db.from("gate_detections").delete().lt("created_at", daysAgoIso(365));
+  // lista de supressão: 5 anos, só com o hash do número, como prova (LGPD, art. 16, I)
+  await db.from("suppressions").delete().lt("created_at", daysAgoIso(5 * 365 + 1));
   // consumo do WhatsApp: 13 meses bastam para comparar com o mesmo mês do ano anterior
   await db.from("whatsapp_usage").delete().lt("created_at", daysAgoIso(400));
   // pareamento: código vencido ou usado sai depois de 1 dia; Idempotency-Key, depois de 24 h

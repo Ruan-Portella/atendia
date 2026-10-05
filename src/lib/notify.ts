@@ -4,14 +4,18 @@ import { appUrl } from "./utils";
 import { agencyBaseUrl } from "./domain";
 import { markLeadNotified } from "./leads";
 
+const CHANNEL_NAME: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site", demo: "chat de demonstração", painel: "teste no painel" };
+
 /**
- * Avisa a agência (e opcionalmente o cliente final) de um lead novo.
- * V1: e-mail via Resend quando configurado. WhatsApp entra na V2 (API oficial da Meta).
+ * Avisa a agência (e opcionalmente o cliente final) de um lead novo. Leva só o nome, o canal e o
+ * link (leva S): telefone, e-mail e o que a pessoa pediu ficam no painel, não no e-mail.
  */
 export async function notifyLead(opts: {
   db: SupabaseClient;
   bot: BotRow;
-  lead: { id?: string; nome: string; whatsapp?: string; email?: string; interesse?: string };
+  lead: { id?: string; nome: string };
+  channel: string;
+  conversationId: string | null;
 }) {
   const { db, bot, lead } = opts;
   const apiKey = process.env.RESEND_API_KEY;
@@ -29,17 +33,13 @@ export async function notifyLead(opts: {
     to,
     subject: `Novo lead no chatbot de ${bot.client_name}: ${lead.nome}`,
     text: [
-      `O assistente ${bot.name} (${bot.client_name}) capturou um contato.`,
+      `O assistente ${bot.name} (${bot.client_name}) capturou um contato pelo ${CHANNEL_NAME[opts.channel] ?? "chat"}.`,
       ``,
       `Nome: ${lead.nome}`,
-      lead.whatsapp ? `WhatsApp: ${lead.whatsapp}` : null,
-      lead.email ? `E-mail: ${lead.email}` : null,
-      lead.interesse ? `Interesse: ${lead.interesse}` : null,
       ``,
-      `Veja a conversa no painel.`,
-    ]
-      .filter((l) => l !== null)
-      .join("\n"),
+      `Telefone, e-mail e o que a pessoa pediu estão no painel (por segurança, não vão por e-mail):`,
+      opts.conversationId ? appUrl(`/painel/bots/${bot.id}/conversas/${opts.conversationId}`) : appUrl(bot.client_id ? `/painel/clientes/${bot.client_id}?tab=leads` : `/painel/bots/${bot.id}?tab=leads`),
+    ].join("\n"),
   });
   if (lead.id) await markLeadNotified(db, lead.id);
 }
@@ -59,14 +59,14 @@ async function recipients(db: SupabaseClient, bot: BotRow): Promise<string[]> {
  *    da agência. Ninguém recebe o aviso duas vezes.
  */
 export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string; urgent?: boolean }) {
-  const { db, bot, conversationId, reason, urgent } = opts;
+  // o motivo (o que o contato disse) não vai por e-mail (leva S): a conversa fica no painel
+  const { db, bot, conversationId, urgent } = opts;
   // risco à vida: assunto destacado e a agência sempre avisada (mesmo com o atendimento delegado)
   const urgentTag = urgent ? "URGENTE (possível risco à vida) · " : "";
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return;
   const { Resend } = await import("resend");
   const resend = new Resend(apiKey);
-  const said = reason ? `\nO que ele disse: "${reason.slice(0, 300)}"` : "";
 
   // pessoas do cliente com permissão de atender
   let memberEmails: string[] = [];
@@ -85,7 +85,6 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
           subject: `${urgentTag}Um visitante quer falar com alguém · ${bot.client_name}`,
           text: [
             `Um visitante do site de ${bot.client_name} pediu para falar com uma pessoa.`,
-            said,
             `\nResponda por aqui (o assistente pausa enquanto você atende):\n${agencyBaseUrl(agency)}/cliente/${bot.client_id}/conversas/${conversationId}`,
             `\n${agency.name}`,
           ].join("\n"),
@@ -106,7 +105,6 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
     subject: `${urgentTag}Um visitante quer falar com alguém · ${bot.client_name}`,
     text: [
       `Um visitante do chatbot ${bot.name} (${bot.client_name}) pediu para falar com uma pessoa.`,
-      said,
       `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`,
       memberEmails.length ? `\nAs pessoas do cliente também foram avisadas e podem responder pela área do cliente.` : "",
     ].join("\n"),

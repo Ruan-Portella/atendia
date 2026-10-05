@@ -609,7 +609,7 @@ export async function runChat(opts: {
       registrar_lead: async (input) => {
         if (!leadEnabled) return { ok: false };
         const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: input.nome, phone: input.whatsapp ?? waPhone, phoneHash: input.whatsapp ? typedPhoneHash(input.whatsapp) : metaPhoneHash(waPhone), email: input.email, notes: input.interesse });
-        notifyLead({ db, bot, lead: { id: leadId ?? undefined, ...input } }).catch(() => {});
+        notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: input.nome }, channel, conversationId: convId }).catch(() => {});
         return { ok: true };
       },
       chamar_atendente: async ({ motivo, urgente }) => {
