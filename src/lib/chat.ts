@@ -10,6 +10,7 @@ import { createLead } from "./leads";
 import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
+import { checkLeadInput } from "./lead-input";
 import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, optionsFromText, parseComponents, type MessageComponent } from "./components";
 import { RISK_TEXT, detectRisk } from "./risk";
 import { isAiPaused } from "./ai-pause";
@@ -419,7 +420,7 @@ export function chatTools(exec: {
 }) {
   return {
     registrar_lead: tool({
-      description: "Registra o contato de um visitante interessado (nome e WhatsApp ou e-mail) para a equipe retornar.",
+      description: "Registra o contato de um visitante interessado (nome e WhatsApp ou e-mail) para a equipe retornar. Só chame depois que a pessoa informar o nome e o WhatsApp ou o e-mail (no WhatsApp o número já é conhecido, basta o nome); nunca com \"não informado\" ou dados inventados.",
       inputSchema: z.object({
         nome: z.string().min(2),
         whatsapp: z.string().optional(),
@@ -675,8 +676,11 @@ export async function runChat(opts: {
     ...chatTools({
       registrar_lead: async (input) => {
         if (!leadEnabled) return { ok: false };
-        const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: input.nome, phone: input.whatsapp ?? waPhone, phoneHash: input.whatsapp ? typedPhoneHash(input.whatsapp) : metaPhoneHash(waPhone), email: input.email, notes: input.interesse });
-        notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: input.nome }, channel, conversationId: convId }).catch(() => {});
+        // só com nome de verdade e um contato (a IA às vezes chama antes da resposta, com "não informado")
+        const lead = checkLeadInput(input, waPhone);
+        if (!lead.ok) return lead;
+        const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, notes: input.interesse });
+        notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: lead.nome }, channel, conversationId: convId }).catch(() => {});
         return { ok: true };
       },
       chamar_atendente: async ({ motivo, urgente }) => {

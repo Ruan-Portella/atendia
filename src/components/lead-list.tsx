@@ -3,6 +3,7 @@ import { MessageCircle, Trash2 } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { deleteLead } from "@/app/painel/actions";
+import { validPhone } from "@/lib/lead-input";
 
 export interface LeadRow {
   id: string;
@@ -41,7 +42,7 @@ export function LeadList({ leads, originLabel, originOf, empty }: Props) {
             {l.notes && <span className="block truncate text-xs text-muted">{l.notes}</span>}
           </span>
           <span className="order-4 flex items-center gap-3 pt-1 text-[13px] font-semibold lg:order-none lg:w-[150px] lg:justify-end lg:pt-0">
-            {l.phone && <a href={`https://wa.me/${l.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-brand hover:underline"><MessageCircle size={14} />WhatsApp</a>}
+            {validPhone(l.phone) && <a href={`https://wa.me/${l.phone!.replace(/\D/g, "")}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-brand hover:underline"><MessageCircle size={14} />WhatsApp</a>}
             {l.conversation_id && <Link href={`/painel/bots/${l.bot_id}/conversas/${l.conversation_id}`} className="text-muted hover:underline">Conversa</Link>}
             <ConfirmAction
               action={deleteLead.bind(null, l.id)}
