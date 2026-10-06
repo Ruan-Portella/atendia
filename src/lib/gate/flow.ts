@@ -272,7 +272,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
-  const { result, saved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, shownText } = await runChat({
+  const { result, saved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, shownText, listText } = await runChat({
     db,
     bot,
     messages: history,
@@ -288,8 +288,10 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt },
   });
   // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
-  const raw = joinShownText(await result.text, shownText());
+  const savedRaw = joinShownText(await result.text, shownText());
   const answerId = await saved;
+  // a IA escreveu as alternativas em lista: elas vão como botões e o texto vai sem a lista
+  const raw = listText() ?? savedRaw;
   // a IA pediu a confirmação de 18+: a pergunta fixa com botões vai no lugar da resposta
   // (risco à vida vem antes: aí a resposta com os telefones sai de qualquer jeito)
   if (aiAskedAge() && age === null && !urgent()) {
@@ -355,7 +357,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     // camada única de envio: se alguém assumiu ou pausou durante a resposta, ela não sai (fica "Não enviada" no painel)
     // com reply, o gravado (texto da IA + reply) sempre troca pelo que saiu de fato
     // o aviso de IA (ou o "Voltei!") no começo fica marcado como anúncio no painel
-    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== raw || reply ? { content: out } : {}), ...(disclosure ? { announce_chars: disclosure.length + 2 } : {}), ...(shownComponent() || component ? { components: component } : {}) } : null, transport: () => io.send(out, adultButton && !component ? "adulto" : undefined, component) });
+    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== savedRaw || reply ? { content: out } : {}), ...(disclosure ? { announce_chars: disclosure.length + 2 } : {}), ...(shownComponent() || component ? { components: component } : {}) } : null, transport: () => io.send(out, adultButton && !component ? "adulto" : undefined, component) });
     if (r.status === "blocked") return;
   }
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).

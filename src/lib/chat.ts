@@ -10,7 +10,7 @@ import { createLead } from "./leads";
 import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
-import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, parseComponents, type MessageComponent } from "./components";
+import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, optionsFromText, parseComponents, type MessageComponent } from "./components";
 import { RISK_TEXT, detectRisk } from "./risk";
 import { isAiPaused } from "./ai-pause";
 import { ageNote, type AgeStatus } from "./gate/age";
@@ -102,6 +102,13 @@ export function withoutToolParts() {
         return;
       }
       if (chunk.type === "finish") for (const id of [...held.keys()]) flush(id, ctrl);
+      if (chunk.type === "finish" && !shownSent && !replied) {
+        const fromList = optionsFromText(streamed);
+        if (fromList) {
+          shownSent = true;
+          ctrl.enqueue({ type: "data-components", data: fromList.component });
+        }
+      }
       if (!chunk.type.startsWith("tool-")) return ctrl.enqueue(chunk);
       if (chunk.type === "tool-output-available") {
         const interno = (chunk.output as { interno?: unknown } | null)?.interno;
@@ -449,7 +456,7 @@ export function chatTools(exec: {
     // mensagens ricas (leva B1'): o canal monta a mensagem a partir da chamada, sem outro passo
     mostrar_opcoes: tool({
       description:
-        "Mostra opções para a pessoa tocar (botões ou lista), em vez de digitar. Use quando ela precisa escolher entre 2 e 10 alternativas claras que estão no CONTEXTO (ex.: unidade, serviço, dia, horário, sim ou não). Escreva em texto a mensagem inteira que acompanha as opções e não escreva nada fora da ferramenta. Opções curtas (até 20 caracteres quando forem até 3), sem numerar. Não use em saudação nem para listar informação que não é uma escolha.",
+        "Mostra opções para a pessoa tocar (botões ou lista), em vez de digitar. Use SEMPRE que a resposta pedir para a pessoa escolher entre 2 e 10 alternativas que estão no CONTEXTO (ex.: sabores, produtos, serviços, unidade, dia, horário, sim ou não), no lugar de escrever as alternativas em lista. Escreva em texto a mensagem inteira que acompanha as opções e não escreva nada fora da ferramenta. Opções curtas (até 20 caracteres quando forem até 3), sem numerar e sem preço. Não use em saudação nem para listar informação que não é uma escolha.",
       inputSchema: z.object({
         texto: z.string().min(1).describe("a mensagem inteira que vai junto com as opções (a pergunta e o que mais precisar dizer)"),
         opcoes: z.array(z.string().min(1)).min(2).max(10).describe("as opções, curtas e sem numerar"),
@@ -624,6 +631,8 @@ export async function runChat(opts: {
   // botões, lista ou link (mostrar_opcoes / mostrar_link): encerram a vez; o canal monta a mensagem
   let shown: MessageComponent | null = null;
   let shownText: string | null = null;
+  // a IA escreveu as alternativas em lista no texto: viram opções (o texto sem a lista fica aqui)
+  let listText: string | null = null;
   const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [];
@@ -748,6 +757,15 @@ export async function runChat(opts: {
         const written = actionReply ? text : joinShownText(text, shownText);
         const guarded = internal.length ? guardInternal(written, internal) : written;
         const content = actionReply ? [guarded.trim(), actionReply].filter(Boolean).join("\n\n") : guarded;
+        // rede de segurança: lista curta com pergunta de escolha no texto vira opções (no site a
+        // lista já saiu no texto; no WhatsApp e no Instagram o canal manda o texto sem ela)
+        if (!shown && !actionReply) {
+          const fromList = optionsFromText(content);
+          if (fromList) {
+            shown = fromList.component;
+            listText = fromList.text;
+          }
+        }
         if (content) {
           const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })));
           savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: actionReply ? null : shown }).catch((e) => {
@@ -765,5 +783,5 @@ export async function runChat(opts: {
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
   // components(): botões, lista ou link desta vez (o canal converte); shownText(): o texto que veio na ferramenta
-  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText };
+  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText, listText: () => listText };
 }

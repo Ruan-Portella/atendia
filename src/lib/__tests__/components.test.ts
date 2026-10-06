@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asButtons, componentsNote, hostsIn, instagramLinkText, instagramPlan, joinShownText, normalizeLink, normalizeOptions, parseComponents, shortTitle, whatsappPlan } from "../components";
+import { asButtons, componentsNote, hostsIn, instagramLinkText, instagramPlan, joinShownText, normalizeLink, normalizeOptions, optionsFromText, parseComponents, shortTitle, whatsappPlan } from "../components";
 import { gateComponent } from "../gate/components";
 import { withoutToolParts } from "../chat";
 import type { UIMessageChunk } from "ai";
@@ -23,6 +23,7 @@ describe("opções da IA", () => {
 
   it("título cortado no fim de uma palavra", () => {
     expect(shortTitle("Consulta de avaliação odontológica", 24)).toBe("Consulta de avaliação");
+    expect(shortTitle("Frango com catupiry (R$ 48)", 24)).toBe("Frango com catupiry");
     expect(shortTitle("Curto", 20)).toBe("Curto");
   });
 });
@@ -109,3 +110,37 @@ describe("widget: o texto da ferramenta e o componente entram no stream", () => 
     expect(out.some((c) => c.type.startsWith("tool-"))).toBe(false);
   });
 });
+
+describe("rede de segurança: lista no texto vira opções", () => {
+  it("lista curta com pergunta de escolha vira opções e sai do texto", () => {
+    const r = optionsFromText("Temos estes sabores de pizza:\n- **Calabresa** (R$ 45)\n- Marguerita (R$ 42)\n- Frango com catupiry (R$ 48)\n\nQual você prefere?");
+    expect(r?.component.options.map((o) => o.title)).toEqual(["Calabresa (R$ 45)", "Marguerita (R$ 42)", "Frango com catupiry (R$ 48)"]);
+    expect(r?.text).toBe("Temos estes sabores de pizza:\n\nQual você prefere?");
+    expect(optionsFromText("Qual unidade fica melhor para você?\n1. Centro\n2. Barra")?.component.options.length).toBe(2);
+  });
+
+  it("lista só informativa, item longo ou um item só: nada muda", () => {
+    expect(optionsFromText("Nossos horários:\n- Segunda a sexta, 9h às 18h\n- Sábado, 9h às 12h\n\nPosso ajudar em algo mais?")).toBeNull();
+    expect(optionsFromText("Quer fazer o pedido?\n- Calabresa\n- Marguerita")).toBeNull();
+    expect(optionsFromText("Qual prefere?\n- Uma opção com uma descrição bem comprida que não é botão\n- Outra")).toBeNull();
+    expect(optionsFromText("Qual prefere?\n- Só uma")).toBeNull();
+    expect(optionsFromText("Qual prefere? Calabresa ou marguerita?")).toBeNull();
+  });
+
+  it("no site, a lista com pergunta de escolha ganha os botões no fim do stream", async () => {
+    const chunks: UIMessageChunk[] = [
+      { type: "start" },
+      { type: "text-start", id: "a" },
+      { type: "text-delta", id: "a", delta: "Temos:\n- Calabresa\n- Marguerita\n\nQual você prefere?" },
+      { type: "text-end", id: "a" },
+      { type: "finish" },
+    ];
+    const out: UIMessageChunk[] = [];
+    const stream = new ReadableStream<UIMessageChunk>({ start: (c) => (chunks.forEach((x) => c.enqueue(x)), c.close()) }).pipeThrough(withoutToolParts());
+    for await (const c of stream as unknown as AsyncIterable<UIMessageChunk>) out.push(c);
+    const data = out.find((c) => c.type === "data-components") as { data: { options: Array<{ title: string }> } } | undefined;
+    expect(data?.data.options.map((o) => o.title)).toEqual(["Calabresa", "Marguerita"]);
+    expect(out.findIndex((c) => c.type === "data-components")).toBeLessThan(out.findIndex((c) => c.type === "finish"));
+  });
+});
+

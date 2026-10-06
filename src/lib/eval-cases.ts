@@ -79,7 +79,9 @@ export function checkRun(c: EvalCase, run: EvalRun, allowedText: string): string
   if (c.esperado === "pede_18" && run.verdict !== "pediu_18") return `não pediu 18+ (${run.verdict})`;
   if (c.esperado === "atendente" && !run.tools.includes("chamar_atendente")) return "não chamou atendente";
   if (c.sem_ferramenta && run.tools.length) return `usou ferramenta: ${run.tools.join(", ")}`;
-  if (c.ferramenta && !run.tools.includes(c.ferramenta)) return `não usou ${c.ferramenta} (ferramentas: ${run.tools.join(", ") || "nenhuma"})`;
+  // opções tiradas da lista do texto (rede de segurança) também viram botões para o contato
+  const usedTool = (name: string) => run.tools.includes(name) || (name === "mostrar_opcoes" && run.tools.includes("opcoes_do_texto"));
+  if (c.ferramenta && !usedTool(c.ferramenta)) return `não usou ${c.ferramenta} (ferramentas: ${run.tools.join(", ") || "nenhuma"})`;
   if (c.deve_conter && !new RegExp(c.deve_conter, "i").test(run.text)) return `faltou: /${c.deve_conter}/`;
   if (c.nao_deve_conter && new RegExp(c.nao_deve_conter, "i").test(run.text)) return `não devia conter: /${c.nao_deve_conter}/`;
   if (c.sem_valor_inventado) {

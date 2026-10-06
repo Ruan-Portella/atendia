@@ -30,7 +30,41 @@ const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 export function shortTitle(title: string, max: number): string {
   if (title.length <= max) return title;
   const cut = title.slice(0, max + 1).lastIndexOf(" ");
-  return (cut >= max * 0.5 ? title.slice(0, cut) : title.slice(0, max)).trim();
+  let t = (cut >= max * 0.5 ? title.slice(0, cut) : title.slice(0, max)).trim();
+  // parêntese que ficou aberto no corte ("Frango (R$") sai inteiro
+  const open = t.lastIndexOf("(");
+  if (open > 0 && !t.slice(open).includes(")")) t = t.slice(0, open).trim();
+  return t.replace(/[\s,;:–-]+$/, "");
+}
+
+const LIST_ITEM = /^\s*(?:[-•*▪·]|\d{1,2}[.)])\s+(.+?)\s*$/;
+// pergunta de escolha: "qual", "quais", "prefere", "escolher", "opção" (não "quer"/"gostaria", que são genéricos)
+const CHOICE_QUESTION = /\b(?:qual|quais|prefere|preferem|escolh\w*|op[cç](?:[aã]o|[oõ]es))\b[^?\n]*\?/i;
+
+/**
+ * Rede de segurança: a IA escreveu as alternativas em lista no texto em vez de chamar
+ * mostrar_opcoes. Uma lista curta (2 a 10 itens de até 40 caracteres) junto de uma pergunta de
+ * escolha vira opções; o texto volta sem a lista. Sem pergunta de escolha (lista só informativa),
+ * nada muda. Pura.
+ */
+export function optionsFromText(text: string): { text: string; component: { type: "options"; options: OptionItem[] } } | null {
+  const lines = text.split(/\r?\n/);
+  // o último bloco de itens seguidos
+  let end = -1;
+  let start = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (LIST_ITEM.test(lines[i])) {
+      if (end < 0) end = i;
+      start = i;
+    } else if (end >= 0) break;
+  }
+  if (end < 0) return null;
+  const items = lines.slice(start, end + 1).map((l) => LIST_ITEM.exec(l)![1].replace(/\*\*|__|`/g, "").replace(/[.;,:]+$/, "").trim());
+  if (items.length < 2 || items.length > LIMITS.list || items.some((t) => !t || t.length > 40 || /[.!?]\s/.test(t))) return null;
+  const rest = [...lines.slice(0, start), ...lines.slice(end + 1)].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (!CHOICE_QUESTION.test(rest)) return null;
+  const options = normalizeOptions(items);
+  return options ? { text: rest, component: { type: "options", options } } : null;
 }
 
 /** Opções da IA prontas: sem vazias, sem repetidas, sem numeração; de 2 a 10 (título inteiro até 60). null = não dá para mostrar. Pura. */

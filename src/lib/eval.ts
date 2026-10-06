@@ -2,7 +2,7 @@ import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, modelCallOptions, scopeReminder, type ReasoningEffort } from "./ai";
 import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, retrieveContext, withRiskText, type BotRow } from "./chat";
-import { joinShownText, normalizeLink, normalizeOptions, type MessageComponent } from "./components";
+import { joinShownText, normalizeLink, normalizeOptions, optionsFromText, type MessageComponent } from "./components";
 import { gateComponent } from "./gate/components";
 import { handoffNotice } from "./handoff-hours";
 import { RISK_TEXT } from "./risk";
@@ -171,10 +171,22 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           },
         }),
       });
-      // o texto que o contato recebe: o da IA e o que veio na ferramenta, sem repetir
-      const written = joinShownText(r.text, shownText);
+      // o texto que o contato recebe: o da IA e o que veio na ferramenta, sem repetir; a lista com
+      // pergunta de escolha escrita no texto vira opções, como no canal
+      let written = joinShownText(r.text, shownText);
+      let listedOptions = false;
+      if (!shown) {
+        const fromList = optionsFromText(written);
+        if (fromList) {
+          shown = fromList.component;
+          listedOptions = true;
+          if (scopeLock) written = fromList.text;
+        }
+      }
       opts.onUsage?.(usageFrom(r.response?.modelId ?? opts.model ?? chatModelId(), r.totalUsage));
       const tools = r.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
+      // opções tiradas da lista do texto (rede de segurança): aparece no relatório
+      if (listedOptions) tools.push("opcoes_do_texto");
       const inputTokens = r.totalUsage?.inputTokens ?? 0;
       const cachedInputTokens = r.totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0;
       const outputTokens = r.totalUsage?.outputTokens ?? 0;
