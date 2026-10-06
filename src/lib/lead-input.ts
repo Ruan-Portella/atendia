@@ -57,3 +57,9 @@ export function checkLeadInput(input: LeadInput, known: KnownContact = {}): { ok
   }
   return { ok: true, nome, whatsapp, email, instagram };
 }
+
+/** Depois de registrar: confirmar que a equipe retorna, sem pedir mais dados (no WhatsApp e no Instagram, pela conversa). Pura. */
+export function leadSavedNote(channel: string): string {
+  const here = channel === "whatsapp" ? " por aqui, pelo WhatsApp" : channel === "instagram" ? " por aqui, pelo Instagram" : "";
+  return `Contato registrado. Agradeça e confirme que a equipe vai entrar em contato${here}. Não peça mais nenhum dado (nem WhatsApp, nem e-mail).`;
+}

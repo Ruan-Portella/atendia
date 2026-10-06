@@ -2,7 +2,7 @@ import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, modelCallOptions, scopeReminder, type ReasoningEffort } from "./ai";
 import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, retrieveContext, withRiskText, type BotRow } from "./chat";
-import { checkLeadInput } from "./lead-input";
+import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { joinShownText, normalizeLink, normalizeOptions, optionsFromText, type MessageComponent } from "./components";
 import { gateComponent } from "./gate/components";
 import { handoffNotice } from "./handoff-hours";
@@ -149,7 +149,10 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)
         tools: chatTools({
           // mesma conferência do chat: sem nome e contato, a IA recebe a instrução de pedir os dados
-          registrar_lead: async (input) => checkLeadInput(input, { phone: opts.channel === "whatsapp" ? phone : null, instagram: opts.channel === "instagram" }),
+          registrar_lead: async (input) => {
+            const r = checkLeadInput(input, { phone: opts.channel === "whatsapp" ? phone : null, instagram: opts.channel === "instagram" });
+            return r.ok ? { ok: true, instrucao: leadSavedNote(opts.channel ?? "widget") } : r;
+          },
           chamar_atendente: async ({ urgente }) => {
             if (urgente) urgent = true;
             return { ok: true, aviso: urgente ? RISK_TEXT : handoffNotice(bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message) };

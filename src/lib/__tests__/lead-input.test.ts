@@ -35,3 +35,13 @@ describe("dados do lead que a IA manda", () => {
     expect(validInstagram("não tenho")).toBeNull();
   });
 });
+
+describe("depois de registrar o lead", () => {
+  it("a IA confirma o retorno pelo próprio canal e não pede mais dados", async () => {
+    const { leadSavedNote } = await import("../lead-input");
+    expect(leadSavedNote("instagram")).toContain("por aqui, pelo Instagram");
+    expect(leadSavedNote("whatsapp")).toContain("por aqui, pelo WhatsApp");
+    expect(leadSavedNote("widget")).not.toContain("por aqui");
+    expect(leadSavedNote("instagram")).toMatch(/Não peça mais nenhum dado/);
+  });
+});

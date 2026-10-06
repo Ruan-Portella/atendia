@@ -10,7 +10,7 @@ import { createLead } from "./leads";
 import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
-import { checkLeadInput } from "./lead-input";
+import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { instagramUsername } from "./instagram";
 import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, optionsFromText, parseComponents, type MessageComponent } from "./components";
 import { RISK_TEXT, detectRisk } from "./risk";
@@ -459,7 +459,7 @@ export function chatTools(exec: {
     // mensagens ricas (leva B1'): o canal monta a mensagem a partir da chamada, sem outro passo
     mostrar_opcoes: tool({
       description:
-        "Mostra opções para a pessoa tocar (botões ou lista), em vez de digitar. Use SEMPRE que a resposta pedir para a pessoa escolher entre 2 e 10 alternativas que estão no CONTEXTO (ex.: sabores, produtos, serviços, unidade, dia, horário, sim ou não), no lugar de escrever as alternativas em lista. Escreva em texto a mensagem inteira que acompanha as opções e não escreva nada fora da ferramenta. Opções curtas (até 20 caracteres quando forem até 3), sem numerar e sem preço. Não use em saudação nem para listar informação que não é uma escolha.",
+        "Mostra opções para a pessoa tocar (botões ou lista), em vez de digitar. Use SEMPRE que a resposta pedir para a pessoa escolher entre 2 e 10 alternativas que estão no CONTEXTO (ex.: sabores, produtos, serviços, unidade, dia, horário), no lugar de escrever as alternativas em lista. Escreva em texto a mensagem inteira que acompanha as opções e não escreva nada fora da ferramenta. Opções curtas (até 20 caracteres quando forem até 3), sem numerar e sem preço. Não use em saudação nem para listar informação que não é uma escolha.",
       inputSchema: z.object({
         texto: z.string().min(1).describe("a mensagem inteira que vai junto com as opções (a pergunta e o que mais precisar dizer)"),
         opcoes: z.array(z.string().min(1)).min(2).max(10).describe("as opções, curtas e sem numerar"),
@@ -691,7 +691,8 @@ export async function runChat(opts: {
         const instagram = lead.instagram ?? (opts.instagram ? await directUsername(db, bot.id, opts.instagram.igsid) : null);
         const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, instagram, channel, notes: input.interesse });
         notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: lead.nome }, channel, conversationId: convId }).catch(() => {});
-        return { ok: true };
+        // o que dizer depois: a equipe retorna (pela própria conversa, no WhatsApp e no Instagram), sem pedir mais dados
+        return { ok: true, instrucao: leadSavedNote(channel) };
       },
       chamar_atendente: async ({ motivo, urgente }) => {
         if (urgente) {
