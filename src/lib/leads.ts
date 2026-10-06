@@ -16,11 +16,15 @@ export interface Lead {
   name: string | null;
   phone: string | null;
   email: string | null;
+  /** @ do Instagram (digitado ou o da conta que escreveu pelo Direct) */
+  instagram: string | null;
+  /** onde foi capturado: widget, whatsapp, instagram… (antigos: null) */
+  channel: string | null;
   notes: string | null;
   created_at: string;
 }
 
-const COLS = "id, bot_id, conversation_id, name, phone, phone_enc, email, notes, notes_enc, created_at";
+const COLS = "id, bot_id, conversation_id, name, phone, phone_enc, email, instagram_enc, channel, notes, notes_enc, created_at";
 
 async function opened(r: Record<string, unknown>): Promise<Lead> {
   return {
@@ -30,6 +34,8 @@ async function opened(r: Record<string, unknown>): Promise<Lead> {
     name: (r.name as string | null) ?? null,
     phone: (await openNullable("leads.phone_enc", r.phone_enc)) ?? ((r.phone as string | null) || null),
     email: (r.email as string | null) ?? null,
+    instagram: await openNullable("leads.instagram_enc", r.instagram_enc),
+    channel: (r.channel as string | null) ?? null,
     notes: (await openNullable("leads.notes_enc", r.notes_enc)) ?? ((r.notes as string | null) || null),
     created_at: r.created_at as string,
   };
@@ -40,7 +46,7 @@ const openAll = (rows: unknown[] | null) => Promise.all(((rows ?? []) as Array<R
 /** Grava um lead novo; devolve o id (ou null, se não gravou). */
 export async function createLead(
   db: SupabaseClient,
-  lead: { botId: string; conversationId: string | null; name: string; phone?: string | null; phoneHash: string | null; email?: string | null; notes?: string | null },
+  lead: { botId: string; conversationId: string | null; name: string; phone?: string | null; phoneHash: string | null; email?: string | null; instagram?: string | null; channel?: string | null; notes?: string | null },
 ): Promise<string | null> {
   const scope = await scopeOfBot(lead.botId);
   const { data, error } = await db
@@ -52,6 +58,8 @@ export async function createLead(
       phone_enc: await sealNullable("leads.phone_enc", lead.phone, scope),
       phone_hash: lead.phoneHash,
       email: lead.email || null,
+      instagram_enc: await sealNullable("leads.instagram_enc", lead.instagram, scope),
+      channel: lead.channel ?? null,
       notes_enc: await sealNullable("leads.notes_enc", lead.notes, scope),
     })
     .select("id")

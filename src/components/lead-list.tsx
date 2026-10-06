@@ -3,7 +3,7 @@ import { MessageCircle, Trash2 } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { deleteLead } from "@/app/painel/actions";
-import { validPhone } from "@/lib/lead-input";
+import { validInstagram, validPhone } from "@/lib/lead-input";
 
 export interface LeadRow {
   id: string;
@@ -12,8 +12,17 @@ export interface LeadRow {
   name: string | null;
   phone: string | null;
   email: string | null;
+  instagram?: string | null;
+  channel?: string | null;
   notes: string | null;
   created_at: string;
+}
+
+/** Contato do lead em texto: telefone, e-mail, @ do Instagram ou "pelo Instagram" (a própria conversa). */
+function contactText(l: LeadRow): string {
+  const parts = [l.phone, l.email, l.instagram].filter(Boolean);
+  if (parts.length) return parts.join(" · ");
+  return l.channel === "instagram" ? "pelo Instagram (conversa)" : l.channel === "whatsapp" ? "pelo WhatsApp (conversa)" : "";
 }
 
 interface Props {
@@ -38,11 +47,12 @@ export function LeadList({ leads, originLabel, originOf, empty }: Props) {
           <span className="hidden truncate lg:inline">{originOf(l.bot_id)}</span>
           <span className="order-1 truncate font-semibold lg:order-none">{l.name ?? <span className="font-normal text-muted">sem nome</span>}</span>
           <span className="order-3 min-w-0 leading-tight lg:order-none">
-            <span className="block truncate">{[l.phone, l.email].filter(Boolean).join(" · ") || <span className="text-muted">sem contato</span>}</span>
+            <span className="block truncate">{contactText(l) || <span className="text-muted">sem contato</span>}</span>
             {l.notes && <span className="block truncate text-xs text-muted">{l.notes}</span>}
           </span>
           <span className="order-4 flex items-center gap-3 pt-1 text-[13px] font-semibold lg:order-none lg:w-[150px] lg:justify-end lg:pt-0">
             {validPhone(l.phone) && <a href={`https://wa.me/${l.phone!.replace(/\D/g, "")}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-brand hover:underline"><MessageCircle size={14} />WhatsApp</a>}
+            {validInstagram(l.instagram) && <a href={`https://instagram.com/${validInstagram(l.instagram)!.slice(1)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-brand hover:underline">Instagram</a>}
             {l.conversation_id && <Link href={`/painel/bots/${l.bot_id}/conversas/${l.conversation_id}`} className="text-muted hover:underline">Conversa</Link>}
             <ConfirmAction
               action={deleteLead.bind(null, l.id)}

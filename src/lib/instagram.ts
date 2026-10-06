@@ -221,6 +221,20 @@ export async function sendInstagramText(ch: IgChannel, recipientId: string, text
   return r.message_id ?? null;
 }
 
+/**
+ * O @ de quem escreveu pelo Direct (API de perfil do usuário; só para quem mandou mensagem à conta).
+ * Usado quando vira lead. Falha (permissão, perfil restrito) devolve null: o lead fica "pelo Instagram".
+ */
+export async function instagramUsername(ch: IgChannel, igsid: string): Promise<string | null> {
+  if (!/^\d+$/.test(igsid)) return null;
+  try {
+    const r = await api<{ username?: string }>(`${igsid}?fields=username`, tokenOf(ch));
+    return r.username && /^[a-z0-9._]{1,30}$/i.test(r.username) ? `@${r.username.toLowerCase()}` : null;
+  } catch {
+    return null;
+  }
+}
+
 /** "Visto" e "digitando…" enquanto o assistente pensa. Falha não importa. */
 export async function instagramTyping(ch: IgChannel, recipientId: string) {
   const token = tokenOf(ch);

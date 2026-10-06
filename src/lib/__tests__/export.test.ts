@@ -12,8 +12,8 @@ describe("exportação dos dados do negócio", () => {
     const bytes = new Uint8Array(await res.clone().arrayBuffer());
     expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     const [header, line] = (await res.text()).split("\r\n");
-    expect(header).toBe("Data;Assistente;Conversa;Nome;Telefone;E-mail;Interesse");
-    expect(line).toBe('2026-10-01;;;"Ana; da Silva";;;"quer ""pizza""\ngrande"');
+    expect(header).toBe("Data;Assistente;Conversa;Nome;Telefone;E-mail;Instagram;Canal;Interesse");
+    expect(line).toBe('2026-10-01;;;"Ana; da Silva";;;;;"quer ""pizza""\ngrande"');
   });
 
   it("JSON: lista de objetos com as colunas do conjunto, e conta as linhas", async () => {

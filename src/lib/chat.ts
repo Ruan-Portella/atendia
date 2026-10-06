@@ -11,6 +11,7 @@ import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
 import { checkLeadInput } from "./lead-input";
+import { instagramUsername } from "./instagram";
 import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, optionsFromText, parseComponents, type MessageComponent } from "./components";
 import { RISK_TEXT, detectRisk } from "./risk";
 import { isAiPaused } from "./ai-pause";
@@ -275,7 +276,7 @@ export function channelNoteFor(opts: { whatsapp?: { waId: string; profileName?: 
     : wa
     ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil do WhatsApp dela é "${wa.profileName}", mas pode não ser o nome real: não chame a pessoa por ele; quando for registrar o contato, pergunte se pode usar esse nome (ex.: "Posso anotar seu nome como ${wa.profileName}?").` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
     : opts.instagram
-      ? "A conversa é pelo Direct do Instagram. Você não sabe o WhatsApp da pessoa: para registrar o contato, peça nome e WhatsApp. O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio."
+      ? "A conversa é pelo Direct do Instagram: a conta da pessoa já é conhecida, então para registrar o contato basta o nome (peça o WhatsApp só se ela quiser deixar). O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio."
       : undefined;
 }
 
@@ -410,7 +411,7 @@ export type RefusalLevel = "fixo" | "flexivel";
  * avaliação); quem chama decide o que cada uma faz.
  */
 export function chatTools(exec: {
-  registrar_lead: ToolExec<{ nome: string; whatsapp?: string; email?: string; interesse?: string }>;
+  registrar_lead: ToolExec<{ nome: string; whatsapp?: string; email?: string; instagram?: string; interesse?: string }>;
   chamar_atendente: ToolExec<{ motivo?: string; urgente?: boolean }>;
   registrar_pergunta_sem_resposta: ToolExec<{ pergunta: string }>;
   registrar_recusa: ToolExec<{ nivel: RefusalLevel; pedido?: string }>;
@@ -420,11 +421,12 @@ export function chatTools(exec: {
 }) {
   return {
     registrar_lead: tool({
-      description: "Registra o contato de um visitante interessado (nome e WhatsApp ou e-mail) para a equipe retornar. Só chame depois que a pessoa informar o nome e o WhatsApp ou o e-mail (no WhatsApp o número já é conhecido, basta o nome); nunca com \"não informado\" ou dados inventados.",
+      description: "Registra o contato de um visitante interessado (nome e WhatsApp, e-mail ou @ do Instagram) para a equipe retornar. Só chame depois que a pessoa informar o nome e um contato (no WhatsApp o número já é conhecido e no Instagram a conta também: basta o nome); nunca com \"não informado\" ou dados inventados.",
       inputSchema: z.object({
         nome: z.string().min(2),
         whatsapp: z.string().optional(),
         email: z.string().optional(),
+        instagram: z.string().optional().describe("@ do Instagram, se a pessoa preferir esse contato"),
         interesse: z.string().optional().describe("o que a pessoa quer: agendar, orçamento, etc."),
       }),
       execute: exec.registrar_lead,
@@ -475,6 +477,12 @@ export function chatTools(exec: {
       execute: exec.mostrar_link,
     }),
   };
+}
+
+/** O @ de quem escreveu pelo Direct, pela conta do Instagram ligada ao chatbot (null se não der). */
+async function directUsername(db: SupabaseClient, botId: string, igsid: string): Promise<string | null> {
+  const { data: ch } = await db.from("instagram_channels").select("ig_user_id, access_token_enc").eq("bot_id", botId).is("disconnected_at", null).maybeSingle();
+  return ch ? instagramUsername(ch as { ig_user_id: string; access_token_enc: string | null }, igsid) : null;
 }
 
 /**
@@ -677,9 +685,11 @@ export async function runChat(opts: {
       registrar_lead: async (input) => {
         if (!leadEnabled) return { ok: false };
         // só com nome de verdade e um contato (a IA às vezes chama antes da resposta, com "não informado")
-        const lead = checkLeadInput(input, waPhone);
+        const lead = checkLeadInput(input, { phone: waPhone, instagram: Boolean(opts.instagram) });
         if (!lead.ok) return lead;
-        const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, notes: input.interesse });
+        // pelo Direct: o @ da própria conta que escreveu (busca única, só quando vira lead)
+        const instagram = lead.instagram ?? (opts.instagram ? await directUsername(db, bot.id, opts.instagram.igsid) : null);
+        const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, instagram, channel, notes: input.interesse });
         notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: lead.nome }, channel, conversationId: convId }).catch(() => {});
         return { ok: true };
       },

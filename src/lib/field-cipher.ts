@@ -29,6 +29,7 @@ export type CipherField =
   | "conversations.age_pending_question"
   | "leads.phone_enc"
   | "leads.notes_enc"
+  | "leads.instagram_enc"
   | "unanswered.question"
   | "scope_refusals.request"
   | "contact_links.external_id_enc"

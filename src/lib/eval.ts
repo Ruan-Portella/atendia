@@ -149,7 +149,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)
         tools: chatTools({
           // mesma conferência do chat: sem nome e contato, a IA recebe a instrução de pedir os dados
-          registrar_lead: async (input) => checkLeadInput(input, opts.channel === "whatsapp" ? phone : null),
+          registrar_lead: async (input) => checkLeadInput(input, { phone: opts.channel === "whatsapp" ? phone : null, instagram: opts.channel === "instagram" }),
           chamar_atendente: async ({ urgente }) => {
             if (urgente) urgent = true;
             return { ok: true, aviso: urgente ? RISK_TEXT : handoffNotice(bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message) };
