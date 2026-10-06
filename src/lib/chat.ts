@@ -10,6 +10,7 @@ import { createLead } from "./leads";
 import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
+import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, parseComponents, type MessageComponent } from "./components";
 import { RISK_TEXT, detectRisk } from "./risk";
 import { isAiPaused } from "./ai-pause";
 import { ageNote, type AgeStatus } from "./gate/age";
@@ -72,6 +73,9 @@ export function lastUserText(messages: UIMessage[]): string {
 export function withoutToolParts() {
   // como no WhatsApp e no Instagram, só o primeiro reply da vez vai (duas ações em paralelo)
   let replied = false;
+  // botões, lista ou link (mostrar_opcoes / mostrar_link): o texto da ferramenta e o componente
+  let shownSent = false;
+  let streamed = "";
   // valores internos das ações: daí em diante o texto é segurado até o fim e conferido
   const terms: string[] = [];
   const held = new Map<string, string>();
@@ -87,6 +91,7 @@ export function withoutToolParts() {
   return new TransformStream<UIMessageChunk, UIMessageChunk>({
     transform(chunk, ctrl) {
       if (chunk.type === "text-start" || chunk.type === "text-delta" || chunk.type === "text-end") {
+        if (chunk.type === "text-delta") streamed += chunk.delta;
         if (!terms.length || live.has(chunk.id)) {
           if (chunk.type === "text-start") live.add(chunk.id);
           return ctrl.enqueue(chunk);
@@ -103,6 +108,22 @@ export function withoutToolParts() {
         if (interno) terms.push(...internalTerms(interno));
       }
       if (chunk.type === "tool-input-available" && chunk.toolName === "chamar_atendente") ctrl.enqueue({ type: "data-handoff", data: true });
+      // botões, lista ou link: o texto que veio na ferramenta (sem repetir o que já saiu) e o componente
+      if (chunk.type === "tool-output-available" && !shownSent) {
+        const out = chunk.output as { componente?: MessageComponent; texto?: unknown } | null;
+        if (out?.componente) {
+          shownSent = true;
+          const texto = typeof out.texto === "string" ? out.texto : "";
+          const joined = joinShownText(streamed, texto);
+          if (joined !== streamed.trim()) {
+            const id = `opcoes-${chunk.toolCallId}`;
+            ctrl.enqueue({ type: "text-start", id });
+            ctrl.enqueue({ type: "text-delta", id, delta: streamed.trim() ? `\n\n${texto.trim()}` : texto.trim() });
+            ctrl.enqueue({ type: "text-end", id });
+          }
+          ctrl.enqueue({ type: "data-components", data: out.componente });
+        }
+      }
       // ação com reply: o texto exato vai para o visitante (a IA não escreve nada naquela vez)
       if (chunk.type === "tool-output-available") {
         const reply = (chunk.output as { resposta_exata?: unknown } | null)?.resposta_exata;
@@ -136,13 +157,14 @@ export function guardInternal(text: string, terms: string[]): string {
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000, since?: string | null): Promise<UIMessage[]> {
   // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora;
   // since: troca de contexto (P2) abre um trecho novo, a IA não lê o da conta anterior
-  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit, ...(since ? { createdAfter: since } : {}) }, ["id", "role", "content", "tool_results", "created_at"] as const);
+  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit, ...(since ? { createdAfter: since } : {}) }, ["id", "role", "content", "tool_results", "components_enc", "created_at"] as const);
   // da mais nova para a mais antiga: a primeira vez que uma ação aparece é a última chamada dela
   const seen = new Set<string>();
   const notes = rows.map((r) => actionsNote(r.tool_results as ToolResultRow[] | null, seen, r.created_at as string));
   return rows
     .map((r, i) => {
-      const text = String(r.content).slice(0, maxChars);
+      // botões, lista ou link mostrados: a IA vê as opções (para entender "2" ou "o segundo")
+      const text = String(r.content).slice(0, maxChars) + (r.role === "user" ? "" : componentsNote(parseComponents(r.components_enc)));
       // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
       const done = notes[i];
       return { id: String(r.id), role: r.role === "user" ? ("user" as const) : ("assistant" as const), parts: [{ type: "text" as const, text: done ? `${text}\n\n${done}` : text }] };
@@ -385,6 +407,8 @@ export function chatTools(exec: {
   registrar_pergunta_sem_resposta: ToolExec<{ pergunta: string }>;
   registrar_recusa: ToolExec<{ nivel: RefusalLevel; pedido?: string }>;
   pedir_confirmacao_18: ToolExec<Record<string, never>>;
+  mostrar_opcoes: ToolExec<{ texto: string; opcoes: string[] }>;
+  mostrar_link: ToolExec<{ texto: string; url: string; rotulo: string }>;
 }) {
   return {
     registrar_lead: tool({
@@ -422,7 +446,36 @@ export function chatTools(exec: {
       inputSchema: z.object({}),
       execute: exec.pedir_confirmacao_18,
     }),
+    // mensagens ricas (leva B1'): o canal monta a mensagem a partir da chamada, sem outro passo
+    mostrar_opcoes: tool({
+      description:
+        "Mostra opções para a pessoa tocar (botões ou lista), em vez de digitar. Use quando ela precisa escolher entre 2 e 10 alternativas claras que estão no CONTEXTO (ex.: unidade, serviço, dia, horário, sim ou não). Escreva em texto a mensagem inteira que acompanha as opções e não escreva nada fora da ferramenta. Opções curtas (até 20 caracteres quando forem até 3), sem numerar. Não use em saudação nem para listar informação que não é uma escolha.",
+      inputSchema: z.object({
+        texto: z.string().min(1).describe("a mensagem inteira que vai junto com as opções (a pergunta e o que mais precisar dizer)"),
+        opcoes: z.array(z.string().min(1)).min(2).max(10).describe("as opções, curtas e sem numerar"),
+      }),
+      execute: exec.mostrar_opcoes,
+    }),
+    mostrar_link: tool({
+      description:
+        "Mostra um botão com link para a pessoa abrir uma página (agendar online, cardápio, formulário, página do produto). Use só com um endereço que aparece no CONTEXTO ou em SOBRE ESTE ATENDIMENTO; nunca invente endereço nem use link de WhatsApp ou de mensagem direta. Escreva em texto a mensagem inteira e não escreva nada fora da ferramenta.",
+      inputSchema: z.object({
+        texto: z.string().min(1).describe("a mensagem inteira que vai junto com o botão"),
+        url: z.string().min(8).describe("o endereço completo, começando com https://"),
+        rotulo: z.string().min(1).describe("o texto do botão, até 20 caracteres, ex.: Agendar online"),
+      }),
+      execute: exec.mostrar_link,
+    }),
   };
+}
+
+/**
+ * Sites que a IA pode mandar abrir num botão: os que aparecem na base desta resposta e os da
+ * configuração do chatbot (site do cliente, atendimento, onde finalizar pedido).
+ */
+export function linkHostsFor(bot: Pick<BotRow, "client_site" | "human_handoff" | "regulated_channel">, context: string): Set<string> {
+  const config = [bot.client_site, bot.human_handoff?.site, bot.human_handoff?.form_url, bot.regulated_channel?.site, bot.regulated_channel?.app].filter(Boolean).join(" ");
+  return new Set([...hostsIn(context), ...hostsIn(config)]);
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
@@ -568,6 +621,10 @@ export async function runChat(opts: {
   let savedId: number | null = null;
   // ações do bot (Integrações): ferramentas acao_<nome>; com reply, o texto exato encerra a vez
   let actionReply: string | null = null;
+  // botões, lista ou link (mostrar_opcoes / mostrar_link): encerram a vez; o canal monta a mensagem
+  let shown: MessageComponent | null = null;
+  let shownText: string | null = null;
+  const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [];
   const actionTools = await actionToolsFor(db, {
@@ -601,7 +658,7 @@ export async function runChat(opts: {
       ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, hasActions ? [...gated.reminder, ACTIONS_PROMPT_NOTE] : gated.reminder) }] : []),
     ],
     ...modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) }),
-    stopWhen: [stepCountIs(maxSteps), () => actionReply !== null],
+    stopWhen: [stepCountIs(maxSteps), () => actionReply !== null, () => shown !== null],
     prepareStep: hasActions ? ({ stepNumber }) => (stepNumber >= maxSteps - 1 ? { toolChoice: "none" as const } : undefined) : undefined,
     // limite de tokens por minuto da OpenAI (pico): o SDK tenta de novo com espera crescente
     maxRetries: 4,
@@ -642,6 +699,20 @@ export async function runChat(opts: {
         askAgeCalled = true;
         return { ok: true };
       },
+      mostrar_opcoes: async ({ texto, opcoes }) => {
+        const options = normalizeOptions(opcoes);
+        if (!options) return { ok: false, instrucao: "Opções insuficientes: responda em texto." };
+        shown ??= { type: "options", options };
+        shownText ??= texto;
+        return { ok: true, componente: shown, texto };
+      },
+      mostrar_link: async ({ texto, url, rotulo }) => {
+        const link = normalizeLink(url, rotulo, linkHosts);
+        if (!link) return { ok: false, instrucao: "Esse endereço não está na base: responda em texto, sem o link." };
+        shown ??= link;
+        shownText ??= texto;
+        return { ok: true, componente: shown, texto };
+      },
     }),
     ...actionTools,
     ...(opts.extraTools ?? {}),
@@ -673,11 +744,13 @@ export async function runChat(opts: {
         // com reply de ação, o que fica gravado é o texto exato (no WhatsApp e no Instagram o canal
         // ainda troca pelo que saiu de fato, depois do portão)
         // valor interno de uma ação escrito na resposta: a frase sai também do que fica gravado
-        const shown = internal.length ? guardInternal(text, internal) : text;
-        const content = actionReply ? [shown.trim(), actionReply].filter(Boolean).join("\n\n") : shown;
+        // botões, lista ou link: o texto da ferramenta entra na mensagem (sem repetir o que a IA escreveu)
+        const written = actionReply ? text : joinShownText(text, shownText);
+        const guarded = internal.length ? guardInternal(written, internal) : written;
+        const content = actionReply ? [guarded.trim(), actionReply].filter(Boolean).join("\n\n") : guarded;
         if (content) {
           const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })));
-          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null }).catch((e) => {
+          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: actionReply ? null : shown }).catch((e) => {
             console.error("chat: resposta não gravada", (e as Error).message);
             return null;
           });
@@ -691,5 +764,6 @@ export async function runChat(opts: {
 
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
-  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal };
+  // components(): botões, lista ou link desta vez (o canal converte); shownText(): o texto que veio na ferramenta
+  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText };
 }

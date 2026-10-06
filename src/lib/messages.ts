@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { openField, sealField, scopeOfConversation } from "./field-cipher";
 import { authorTypeOf, type AuthorType } from "./authors";
+import type { MessageComponent } from "./components";
 
 /*
  * Camada única de mensagens (L1; spec "Cifra por campo"): toda leitura e gravação da tabela
@@ -22,6 +23,8 @@ export interface MessageRow {
   author_display_name: string | null;
   /** caracteres do começo que são anúncio (entrada do atendente, aviso de IA, "Voltei!") */
   announce_chars: number | null;
+  /** botões, lista ou link mostrados junto (JSON; cifrado no banco, aberto aqui) */
+  components_enc: string | null;
   sources: unknown;
   tool_results: unknown;
   template_category: string | null;
@@ -48,6 +51,8 @@ export interface NewMessage {
   author_id?: string | null;
   author_display_name?: string | null;
   announce_chars?: number | null;
+  /** botões, lista ou link (vai cifrado em components_enc) */
+  components?: MessageComponent | null;
   sources?: unknown;
   tool_results?: unknown;
   template_category?: string | null;
@@ -64,6 +69,8 @@ export interface NewMessage {
 export interface MessagePatch {
   content?: string;
   announce_chars?: number | null;
+  /** troca o componente (o portão tirou opções); null tira */
+  components?: MessageComponent | null;
   edited_at?: string | null;
   deleted_at?: string | null;
   channel_ref?: unknown;
@@ -74,12 +81,22 @@ export interface MessagePatch {
   channel_msg_hash?: string | null;
 }
 
-/** O conteúdo vai cifrado com a chave do cliente dono da conversa (ou da plataforma, nas demos). */
-const sealed = async <T extends { content?: string }>(row: T, conversationId: string): Promise<T> =>
-  row.content === undefined ? row : { ...row, content: await sealField("messages.content", row.content, await scopeOfConversation(conversationId)) };
+/** O conteúdo (e o componente) vai cifrado com a chave do cliente dono da conversa (ou da plataforma, nas demos). */
+const sealed = async <T extends { content?: string; components?: MessageComponent | null }>(row: T, conversationId: string): Promise<Omit<T, "components"> & { components_enc?: string | null }> => {
+  const { components, ...rest } = row;
+  const needs = rest.content !== undefined || components;
+  const scope = needs ? await scopeOfConversation(conversationId) : null;
+  const out: Omit<T, "components"> & { components_enc?: string | null } = rest;
+  if (rest.content !== undefined) (out as { content?: string }).content = await sealField("messages.content", rest.content, scope!);
+  if (components !== undefined) out.components_enc = components ? await sealField("messages.components_enc", JSON.stringify(components), scope!) : null;
+  return out;
+};
 const opened = async <T extends object>(row: T): Promise<T> => {
-  const content = (row as { content?: unknown }).content;
-  return typeof content === "string" ? { ...row, content: await openField("messages.content", content) } : row;
+  const r = row as { content?: unknown; components_enc?: unknown };
+  let out = row;
+  if (typeof r.content === "string") out = { ...out, content: await openField("messages.content", r.content) };
+  if (typeof r.components_enc === "string") out = { ...out, components_enc: await openField("messages.components_enc", r.components_enc) };
+  return out;
 };
 
 /* ------------------------------------------------------------------ gravação */
@@ -107,8 +124,8 @@ export type MessageTarget = { id: number } | { ids: Array<number | string> } | {
  * desfeitas; withoutRef: só as que ainda não têm a referência do post. Devolve os ids mudados.
  */
 export async function updateMessages(db: SupabaseClient, target: MessageTarget, patch: MessagePatch, only: { notDeleted?: boolean; withoutRef?: boolean } = {}): Promise<number[]> {
-  let row: MessagePatch = patch;
-  if (patch.content !== undefined) {
+  let row: Record<string, unknown> = { ...patch };
+  if (patch.content !== undefined || patch.components !== undefined) {
     // conteúdo novo: cifrado com a chave do cliente dono da conversa dessas mensagens
     let sel = db.from("messages").select("conversation_id");
     if ("id" in target) sel = sel.eq("id", target.id);

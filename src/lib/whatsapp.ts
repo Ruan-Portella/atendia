@@ -113,6 +113,39 @@ export async function sendButtons(ch: WaChannel, to: string, body: string, butto
   });
 }
 
+/** Lista interativa (até 10 itens; título de até 24 caracteres e descrição de até 72; o id volta no clique). */
+export async function sendList(ch: WaChannel, to: string, body: string, button: string, rows: Array<{ id: string; title: string; description?: string }>) {
+  return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      ...recipientOf(to),
+      type: "interactive",
+      interactive: {
+        type: "list",
+        body: { text: body.slice(0, 1024) },
+        action: {
+          button: button.slice(0, 20),
+          sections: [{ title: "Opções", rows: rows.slice(0, 10).map((r) => ({ id: r.id, title: r.title.slice(0, 24), ...(r.description ? { description: r.description.slice(0, 72) } : {}) })) }],
+        },
+      },
+    },
+  });
+}
+
+/** Texto com um botão que abre um link (CTA URL; rótulo de até 20 caracteres). */
+export async function sendCtaUrl(ch: WaChannel, to: string, body: string, label: string, url: string) {
+  return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      ...recipientOf(to),
+      type: "interactive",
+      interactive: { type: "cta_url", body: { text: body.slice(0, 1024) }, action: { name: "cta_url", parameters: { display_text: label.slice(0, 20), url } } },
+    },
+  });
+}
+
 /**
  * Destino do envio: telefone vai em `to`; sem telefone (desde abr/2026 a Meta pode mandar só o
  * BSUID, o id do usuário), o BSUID vai em `recipient`.

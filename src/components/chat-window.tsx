@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { adoptLegacyStorage, getOrCreateVisitorId } from "@/lib/utils";
+import { parseComponents, type MessageComponent } from "@/lib/components";
 
 export interface ChatBotPublic {
   key: string;
@@ -108,6 +109,35 @@ function notifyParent(message: unknown) {
 }
 
 const preview = (t: string) => (t.length > 120 ? `${t.slice(0, 117)}…` : t);
+
+/** Botões, lista ou link que a IA mostrou nesta mensagem (data-components). */
+function componentOf(m: UIMessage): MessageComponent | null {
+  const part = m.parts.find((p) => p.type === "data-components") as { data?: unknown } | undefined;
+  return part ? parseComponents(JSON.stringify(part.data ?? null)) : null;
+}
+
+/**
+ * Opções viram botões (o toque manda o título como mensagem do visitante); link vira botão que
+ * abre a página. Só a última mensagem aceita toque; as antigas ficam como lembrete.
+ */
+function ComponentView({ component, color, active, onPick }: { component: MessageComponent; color: string; active: boolean; onPick: (text: string) => void }) {
+  if (component.type === "link") {
+    return (
+      <a href={component.url} target="_blank" rel="noopener noreferrer" className="self-start rounded-full border bg-white px-3.5 py-1.5 text-[13px] font-semibold" style={{ borderColor: color, color }}>
+        {component.label} ↗
+      </a>
+    );
+  }
+  return (
+    <div className="flex max-w-[88%] flex-wrap gap-1.5 self-start">
+      {component.options.map((o) => (
+        <button key={o.id} type="button" disabled={!active} onClick={() => onPick(o.title)} className="rounded-full border bg-white px-3 py-1.5 text-left text-[13px] font-medium disabled:opacity-50" style={{ borderColor: color, color }}>
+          {o.title}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function textOf(m: UIMessage): string {
   return m.parts
@@ -296,7 +326,7 @@ export function ChatWindow({
       try {
         const qs = `key=${bot.key}&visitorId=${encodeURIComponent(visitorId ?? "")}${saved ? `&conversationId=${saved}` : ""}`;
         const res = await fetch(`${apiBase}/api/chat/history?${qs}`, { cache: "no-store", headers: auth() });
-        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string; name?: string | null; avatar?: string | null }> };
+        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string; name?: string | null; avatar?: string | null; components?: MessageComponent | null }> };
         if (cancelled) return;
         if (!j.resumable || !j.conversationId) {
           if (saved) localStorage.removeItem(convKey);
@@ -307,7 +337,7 @@ export function ChatWindow({
         const agents: Array<AgentMessage & { after: number }> = [];
         for (const m of j.messages ?? []) {
           if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length, name: m.name, avatar: m.avatar });
-          else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }] });
+          else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }, ...(m.components ? [{ type: "data-components" as const, data: m.components }] : [])] });
         }
         setMessages(ui);
         setConversationId(j.conversationId);
@@ -443,6 +473,7 @@ export function ChatWindow({
                   {t}
                 </Bubble>
               )}
+              {m.role === "assistant" && componentOf(m) && <ComponentView component={componentOf(m)!} color={bot.color} active={i === messages.length - 1 && !busy && mode !== "agent"} onPick={send} />}
               {extras.map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} />)}
             </Fragment>
           );

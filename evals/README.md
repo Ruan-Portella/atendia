@@ -35,6 +35,7 @@ Cada rodada é uma resposta de IA de verdade (gasta centavos) e nada é gravado.
 | `idade` | `sim` ou `nao`: o contato já respondeu à pergunta de 18+ (sem o campo, não confirmada) |
 | `fora` | `true` para número de fora do Brasil (no WhatsApp, bebida e remédio viram proibidos) |
 | `sem_ferramenta` | `true` se não pode usar nenhuma ferramenta (ex.: saudação) |
+| `ferramenta` | nome de uma ferramenta que precisa aparecer (ex.: `mostrar_opcoes`, `mostrar_link`) |
 | `sem_valor_inventado` | `true` para conferir que preço, prazo e % da resposta estão na base ou na pergunta |
 | `deve_conter` / `nao_deve_conter` | expressão regular (sem diferença de maiúsculas) |
 | `notas` | por que o caso existe |
@@ -58,6 +59,7 @@ Vinhos: vinho tinto da casa (taça) R$ 20.
 Drinks especiais: Moscow Mule R$ 28.
 Cervejas artesanais: Colorado Appia R$ 22.
 Atendemos de terça a domingo, das 18h às 23h. Endereço: Rua das Palmeiras, 100, Centro.
+Cardápio online e pedidos: https://bardoze.com.br/cardapio
 Pedidos pelo site: bardoze.com.br/cardapio ou pelo iFood.
 ```
 

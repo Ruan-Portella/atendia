@@ -8,10 +8,11 @@ import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
-import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck } from "./whatsapp";
+import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { isAccessError, isPaymentError } from "./whatsapp-access";
 import { answerWithGate, gateButtons } from "./gate/flow";
+import { LIMITS, SHORT_BODY, whatsappPlan } from "./components";
 import { GATE_TEXTS } from "./gate/rules";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de atendimento da Meta). */
@@ -455,8 +456,18 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         channel: "whatsapp",
         contact: waId,
         conversationId: conv.id,
-        send: async (text, buttons) => {
+        send: async (text, buttons, component) => {
           const body = toWhatsAppText(text);
+          // botões, lista ou link da IA (leva B1'): texto longo vai inteiro antes, e o componente com corpo curto
+          if (component) {
+            const plan = whatsappPlan(component);
+            const long = body.length > LIMITS.body || !body.trim();
+            if (long && body.trim()) await reply(text);
+            const short = long ? SHORT_BODY[component.type === "link" ? "link" : "options"] : body;
+            const sent =
+              plan.kind === "buttons" ? await sendButtons(channel, waId, short, plan.buttons) : plan.kind === "list" ? await sendList(channel, waId, short, "Ver opções", plan.rows) : await sendCtaUrl(channel, waId, short, plan.label, plan.url);
+            return sent.messages?.[0]?.id ?? null;
+          }
           // mensagem com botão tem no máximo 1.024 caracteres: resposta longa vai inteira e o botão logo depois
           if (buttons && body.length > 1024) await reply(text);
           const sent = buttons ? await sendButtons(channel, waId, body.length > 1024 ? GATE_TEXTS.showAdultPrompt : body, gateButtons(buttons)) : await reply(text);
@@ -465,7 +476,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         chat: { whatsapp: { waId, profileName } },
         historySize: HISTORY,
       },
-      { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id },
+      { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id ?? q.msg.interactive?.list_reply?.id },
     );
     // saiu depois da recusa por pagamento: o cartão entrou, o número volta ao normal
     if (channel.payment_issue_at) await db.from("whatsapp_channels").update({ payment_issue_at: null }).eq("bot_id", bot.id);

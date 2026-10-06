@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { asButtons, parseComponents } from "@/lib/components";
 
 export interface ThreadMessage {
   id: number;
@@ -11,6 +12,8 @@ export interface ThreadMessage {
   author_display_name?: string | null;
   /** caracteres do começo que são anúncio (entrada do atendente, aviso de IA, "Voltei!") */
   announce_chars?: number | null;
+  /** botões, lista ou link mostrados junto (JSON) */
+  components_enc?: string | null;
   sources?: unknown;
   /** Barrada pela regra de estado na hora do envio (ex.: alguém assumiu enquanto a IA respondia). */
   blocked_reason?: string | null;
@@ -68,6 +71,25 @@ function MessageText({ m }: { m: ThreadMessage }) {
   );
 }
 
+/** O que o contato viu junto da mensagem: as opções (botões ou lista) ou o botão de link. */
+function ShownComponent({ json }: { json?: string | null }) {
+  const c = parseComponents(json);
+  if (!c) return null;
+  if (c.type === "link") {
+    return (
+      <a href={c.url} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-block rounded-full border border-line bg-white px-2.5 py-0.5 text-[12px] font-semibold text-brand">
+        {c.label} ↗
+      </a>
+    );
+  }
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">{asButtons(c.options) ? "botões" : "lista"}</span>
+      {c.options.map((o) => <span key={o.id} className="rounded-full border border-line bg-white px-2 py-0.5 text-[12px]">{o.title}</span>)}
+    </div>
+  );
+}
+
 interface Props {
   messages: ThreadMessage[];
   leads?: Array<{ name: string | null; phone: string | null; email: string | null; notes: string | null }> | null;
@@ -111,6 +133,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
           >
             {m.role === "agent" && <div className="mb-0.5 text-[11px] font-semibold text-brand">{agentLabel(m)}</div>}
             <MessageText m={m} />
+            <ShownComponent json={m.components_enc} />
             {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
             {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} />)}
             {!m.deleted_at && m.channel_ref?.permalink && /^https:\/\//i.test(m.channel_ref.permalink) ? (

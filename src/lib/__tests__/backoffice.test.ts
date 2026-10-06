@@ -135,6 +135,6 @@ describe("arquivos de casos para a tela de avaliação", () => {
     const files = listCaseFiles();
     expect(files[0]).toMatchObject({ value: "1", label: "casos.jsonl (geral)" });
     expect(files[0].categories).toContain("escopo_fixo");
-    expect(files.find((f) => f.value === "bar")?.categories).toEqual(["portao_bar"]);
+    expect(files.find((f) => f.value === "bar")?.categories).toEqual(["portao_bar", "componentes_bar"]);
   });
 });

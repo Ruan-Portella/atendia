@@ -6,6 +6,8 @@ import { deleteMessage } from "../messages";
 import { storeOnce } from "../whatsapp-inbound";
 import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
+import { LIMITS, joinShownText, type MessageComponent } from "../components";
+import { gateComponent } from "./components";
 import { decideEntrance } from "./entrance";
 import { checkActionReply, checkExit, exitDecision, replyFallback } from "./exit";
 import { regulatedDestination } from "./sales-channel";
@@ -103,9 +105,10 @@ export interface GateIO {
   /**
    * Transporte do canal: envia ao contato e devolve o id da mensagem na Meta. Quem chama é a
    * camada única de envio (regra de estado e registro). Botões: "idade" (Sim e Não, da pergunta
-   * de 18+) ou "adulto" ("Ver opções 18+", na resposta refeita sem os itens 18+).
+   * de 18+) ou "adulto" ("Ver opções 18+", na resposta refeita sem os itens 18+). Componente:
+   * botões, lista ou link da IA (mostrar_opcoes / mostrar_link), já conferidos pelo portão.
    */
-  send: (text: string, buttons?: GateButtons) => Promise<string | null>;
+  send: (text: string, buttons?: GateButtons, component?: MessageComponent | null) => Promise<string | null>;
   /** Dados do contato para o runChat (nome do perfil no WhatsApp). */
   chat: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: { igsid: string } };
   historySize: number;
@@ -269,7 +272,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
-  const { result, saved, urgent, askAge: aiAskedAge, actionReply, internalTerms } = await runChat({
+  const { result, saved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, shownText } = await runChat({
     db,
     bot,
     messages: history,
@@ -284,7 +287,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     extraTools,
     gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt },
   });
-  const raw = await result.text;
+  // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
+  const raw = joinShownText(await result.text, shownText());
   const answerId = await saved;
   // a IA pediu a confirmação de 18+: a pergunta fixa com botões vai no lugar da resposta
   // (risco à vida vem antes: aí a resposta com os telefones sai de qualquer jeito)
@@ -335,7 +339,14 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     return;
   }
   const safe = exit.emptied ? (exit.prohibited.length ? GATE_TEXTS.prohibited : GATE_TEXTS.under18) : exit.text;
-  const adultButton = exit.offerAdult && !exit.emptied;
+  // portão nos botões, lista e link (como no texto); com reply de ação, não há componente
+  const gated = gateComponent(reply ? null : shownComponent(), { channel, contactPhone, age, regulatedConversation, exempt });
+  if (gated.prohibited.length || gated.regulated.length) await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "componente", categories: [...gated.prohibited, ...gated.regulated] });
+  let component = gated.component;
+  // 18+ sem o "Sim": "Ver opções 18+" vira mais uma opção; sem opções, vai como botão do portão
+  const adultOffer = (exit.offerAdult && !exit.emptied) || gated.offerAdult;
+  if (adultOffer && component?.type === "options" && component.options.length < LIMITS.list) component = { type: "options", options: [...component.options, { id: AGE_SHOW, title: GATE_TEXTS.showAdultOptions }] };
+  const adultButton = adultOffer && component?.type !== "options";
   let answer = withRiskText(safe, urgent()).trim();
   if (answer) {
     // item proibido junto com outro assunto: o aviso fixo vai antes, na mesma mensagem
@@ -344,7 +355,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
     // camada única de envio: se alguém assumiu ou pausou durante a resposta, ela não sai (fica "Não enviada" no painel)
     // com reply, o gravado (texto da IA + reply) sempre troca pelo que saiu de fato
     // o aviso de IA (ou o "Voltei!") no começo fica marcado como anúncio no painel
-    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== raw || reply ? { content: out } : {}), ...(disclosure ? { announce_chars: disclosure.length + 2 } : {}) } : null, transport: () => io.send(out, adultButton ? "adulto" : undefined) });
+    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== raw || reply ? { content: out } : {}), ...(disclosure ? { announce_chars: disclosure.length + 2 } : {}), ...(shownComponent() || component ? { components: component } : {}) } : null, transport: () => io.send(out, adultButton && !component ? "adulto" : undefined, component) });
     if (r.status === "blocked") return;
   }
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).

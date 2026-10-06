@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isResumable } from "@/lib/presence";
 import { loadMessages } from "@/lib/messages";
 import { facesOfMessages, holderFace } from "@/lib/attendants";
+import { parseComponents } from "@/lib/components";
 import { WIDGET_ALLOW_HEADERS, conversationAccess, widgetWho } from "@/lib/widget-identity";
 
 const HEADERS = {
@@ -54,10 +55,11 @@ export async function GET(req: Request) {
   if (!conv || conversationAccess(conv, who, visitorId || null) !== "ok" || !isResumable(conv.last_message_at)) {
     return Response.json({ resumable: false }, { headers: HEADERS });
   }
-  const rows = await loadMessages(db, { conversationId: conv.id, limit: 200 }, ["id", "role", "content", "author_type", "author_id", "author_display_name"] as const);
+  const rows = await loadMessages(db, { conversationId: conv.id, limit: 200 }, ["id", "role", "content", "author_type", "author_id", "author_display_name", "components_enc"] as const);
   // atendente: nome de exibição e foto (nunca o e-mail)
   const faces = await facesOfMessages(db, rows.filter((m) => m.role === "agent"));
-  const messages = rows.map((m) => ({ id: m.id, role: m.role, content: m.content, ...(m.role === "agent" ? { name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null } : {}) }));
+  // botões, lista ou link da IA (leva B1'): o widget mostra de novo depois do F5
+  const messages = rows.map((m) => ({ id: m.id, role: m.role, content: m.content, ...(m.role === "agent" ? { name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null } : {}), ...(m.role === "assistant" && m.components_enc ? { components: parseComponents(m.components_enc) } : {}) }));
   const mode = conv.handled_at ? "bot" : conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : "bot";
   await db.from("conversations").update({ visitor_seen_at: new Date().toISOString() }).eq("id", conv.id);
   return Response.json({ resumable: true, conversationId: conv.id, mode, agent: await holderFace(db, conv), messages }, { headers: HEADERS });

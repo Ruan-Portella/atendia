@@ -48,7 +48,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   if (sensitive) await requireAgencyMfa(`/painel/bots/${id}/conversas/${cid}`);
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
   const [messages, leads, { agency, role, member }] = await Promise.all([
-    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "author_type", "author_id", "author_display_name", "announce_chars", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
+    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     leadsOfConversation(supabase, cid),
     requireAgency(),
   ]);

@@ -1,7 +1,9 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, modelCallOptions, scopeReminder, type ReasoningEffort } from "./ai";
-import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, retrieveContext, withRiskText, type BotRow } from "./chat";
+import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, retrieveContext, withRiskText, type BotRow } from "./chat";
+import { joinShownText, normalizeLink, normalizeOptions, type MessageComponent } from "./components";
+import { gateComponent } from "./gate/components";
 import { handoffNotice } from "./handoff-hours";
 import { RISK_TEXT } from "./risk";
 import { isGapAnswer, isNoInfoAnswer } from "./unanswered";
@@ -98,6 +100,9 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
 
   const one = async (): Promise<EvalRun> => {
     let urgent = false;
+    // botões, lista ou link: como no chat, a vez acaba na chamada e o canal monta a mensagem
+    let shown: MessageComponent | null = null;
+    let shownText: string | null = null;
     try {
       // portão na entrada, como no canal: proibido e pergunta de 18+ nem chegam à IA principal
       const entrance = scopeLock ? await decideEntrance({ text: question, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, context, contextCategories: retrieval.hits.flatMap((h) => h.gate_categories ?? []), exempt, companyName: bot.client_name, classifierModel: opts.classifierModel, onUsage: opts.onUsage }) : null;
@@ -138,7 +143,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         ],
         // mesmas opções do chat (esforço de raciocínio, chave de cache)
         ...modelCallOptions(opts.model ?? chatModelId(), { temperature: opts.temperature ?? CHAT_TEMPERATURE, cacheKey: chatCacheKey(opts.channel ?? "site"), effort: opts.effort }),
-        stopWhen: stepCountIs(3),
+        stopWhen: [stepCountIs(3), () => shown !== null],
         maxRetries: 6,
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)
         tools: chatTools({
@@ -150,8 +155,24 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           registrar_pergunta_sem_resposta: noop,
           registrar_recusa: noop,
           pedir_confirmacao_18: noop,
+          mostrar_opcoes: async ({ texto, opcoes }) => {
+            const options = normalizeOptions(opcoes);
+            if (!options) return { ok: false, instrucao: "Opções insuficientes: responda em texto." };
+            shown ??= { type: "options", options };
+            shownText ??= texto;
+            return { ok: true };
+          },
+          mostrar_link: async ({ texto, url, rotulo }) => {
+            const link = normalizeLink(url, rotulo, linkHostsFor(bot, context));
+            if (!link) return { ok: false, instrucao: "Esse endereço não está na base: responda em texto, sem o link." };
+            shown ??= link;
+            shownText ??= texto;
+            return { ok: true };
+          },
         }),
       });
+      // o texto que o contato recebe: o da IA e o que veio na ferramenta, sem repetir
+      const written = joinShownText(r.text, shownText);
       opts.onUsage?.(usageFrom(r.response?.modelId ?? opts.model ?? chatModelId(), r.totalUsage));
       const tools = r.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
       const inputTokens = r.totalUsage?.inputTokens ?? 0;
@@ -165,12 +186,20 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       if (scopeLock && age === null && tools.includes("pedir_confirmacao_18")) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, ...usage };
       // portão na saída, como no canal (a conversa conta como "com bebida ou remédio" se a entrada acusou)
       const exit = scopeLock
-        ? checkExit({ text: r.text, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, exempt, regulatedConversation: entrance?.kind === "ia" && entrance.regulated.length > 0, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) })
+        ? checkExit({ text: written, channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, exempt, regulatedConversation: entrance?.kind === "ia" && entrance.regulated.length > 0, destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address) })
         : null;
       if (exit && (exit.prohibited.length || exit.regulated.length || exit.payment)) tools.push(`saida:${exitDecision(exit)}`);
       if (exit?.emptied && exit.regulated.length && age === null && !urgent) return { verdict: "pediu_18", text: GATE_TEXTS.ageQuestion, tools, ...usage };
-      const safe = !exit ? r.text : exit.emptied ? (exit.prohibited.length ? GATE_TEXTS.prohibited : GATE_TEXTS.under18) : exit.text;
-      let text = scopeLock ? withRiskText(safe, urgent) : r.text;
+      const safe = !exit ? written : exit.emptied ? (exit.prohibited.length ? GATE_TEXTS.prohibited : GATE_TEXTS.under18) : exit.text;
+      let text = scopeLock ? withRiskText(safe, urgent) : written;
+      // portão nos componentes (WhatsApp e Instagram), como no canal
+      let component: MessageComponent | null = shown;
+      if (scopeLock && component) {
+        const g = gateComponent(component, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, exempt, regulatedConversation: entrance?.kind === "ia" && entrance.regulated.length > 0 });
+        if (g.component !== component) tools.push("saida:componente");
+        component = g.component;
+      }
+      if (component) text += component.type === "options" ? ` [opções: ${component.options.map((o) => o.title).join(" | ")}]` : ` [link: ${component.label} → ${component.url}]`;
       if (exit?.offerAdult && !exit.emptied) text += ` [botão: ${GATE_TEXTS.showAdultOptions}]`;
       if (entrance?.kind === "ia" && entrance.prefix) text = `${entrance.prefix}\n\n${text}`;
       return { verdict: verdictOf(text, tools.filter((t) => t !== "pedir_confirmacao_18")), text, tools, ...usage };

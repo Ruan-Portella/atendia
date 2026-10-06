@@ -18,6 +18,7 @@ import { clientKeyById, clientKeyForSeal, gcmOpen, gcmSeal, masterKey } from "./
 
 export type CipherField =
   | "messages.content"
+  | "messages.components_enc"
   | "contacts.phone_enc"
   | "contacts.wa_user_enc"
   | "contacts.ig_enc"

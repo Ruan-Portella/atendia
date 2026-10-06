@@ -32,7 +32,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const sensitive = Boolean((Array.isArray(conv.bots) ? conv.bots[0] : conv.bots)?.sensitive_mode);
   if (sensitive) await requireMemberMfa(id, `/cliente/${id}/conversas/${cid}`);
   const [messages, leads] = await Promise.all([
-    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
+    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
     leadsOfConversation(admin, cid),
   ]);
   const agencyName = member.agency.name;
