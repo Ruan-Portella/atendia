@@ -468,7 +468,7 @@ export function chatTools(exec: {
     }),
     mostrar_link: tool({
       description:
-        "Mostra um botão com link para a pessoa abrir uma página (agendar online, cardápio, formulário, página do produto). Use só com um endereço que aparece no CONTEXTO ou em SOBRE ESTE ATENDIMENTO; nunca invente endereço nem use link de WhatsApp ou de mensagem direta. Escreva em texto a mensagem inteira e não escreva nada fora da ferramenta.",
+        "Mostra um botão com link para a pessoa abrir uma página (agendar online, cardápio, formulário, página do produto). Use só quando ela pede o link ou a página, ou quando a resposta é justamente abrir essa página; não acrescente link que ela não pediu. Só com um endereço que aparece no CONTEXTO ou em SOBRE ESTE ATENDIMENTO; nunca invente endereço nem use link de WhatsApp ou de mensagem direta. Escreva em texto a mensagem inteira e não escreva nada fora da ferramenta.",
       inputSchema: z.object({
         texto: z.string().min(1).describe("a mensagem inteira que vai junto com o botão"),
         url: z.string().min(8).describe("o endereço completo, começando com https://"),
