@@ -155,7 +155,9 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         tools: chatTools({
           // mesma conferência do chat: sem nome e contato, a IA recebe a instrução de pedir os dados
           registrar_lead: async (input) => {
-            const r = checkLeadInput(input, { phone: opts.channel === "whatsapp" ? phone : null, instagram: opts.channel === "instagram" });
+            // o que o contato escreveu: o histórico alterna contato e assistente, começando pelo contato
+            const said = [...(opts.history ?? []).filter((_, i) => i % 2 === 0), question];
+            const r = checkLeadInput(input, { phone: opts.channel === "whatsapp" ? phone : null, instagram: opts.channel === "instagram", said });
             return r.ok ? { ok: true, instrucao: leadSavedNote(opts.channel ?? "widget") } : r;
           },
           chamar_atendente: async ({ urgente }) => {

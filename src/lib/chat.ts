@@ -59,6 +59,14 @@ export const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
+/** O que a pessoa escreveu na conversa e os nomes já conhecidos (o nome do lead precisa sair daqui). */
+export function contactSaid(messages: UIMessage[], knownNames: unknown[] = []): string[] {
+  const texts = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.parts.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join(" "));
+  return [...texts, ...knownNames.filter((n): n is string => typeof n === "string" && n.trim() !== "")];
+}
+
 export function lastUserText(messages: UIMessage[]): string {
   const last = [...messages].reverse().find((m) => m.role === "user");
   if (!last) return "";
@@ -690,7 +698,7 @@ export async function runChat(opts: {
       registrar_lead: async (input) => {
         if (!leadEnabled) return { ok: false };
         // só com nome de verdade e um contato (a IA às vezes chama antes da resposta, com "não informado")
-        const lead = checkLeadInput(input, { phone: waPhone, instagram: Boolean(opts.instagram) });
+        const lead = checkLeadInput(input, { phone: waPhone, instagram: Boolean(opts.instagram), said: contactSaid(messages, [opts.whatsapp?.profileName, opts.identity?.userDisplay?.name]) });
         if (!lead.ok) return lead;
         // pelo Direct: o @ da própria conta que escreveu (busca única, só quando vira lead)
         const instagram = lead.instagram ?? (opts.instagram ? await directUsername(db, bot.id, opts.instagram.igsid) : null);

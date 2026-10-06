@@ -39,6 +39,16 @@ export interface LeadInput {
 export interface KnownContact {
   phone?: string | null;
   instagram?: boolean;
+  /** O que a pessoa escreveu e os nomes que a conversa já conhece (perfil do WhatsApp, identidade do site): o nome do lead sai daqui. */
+  said?: string[];
+}
+
+const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** Alguma palavra do nome aparece no que a pessoa escreveu (ou num nome já conhecido)? A IA às vezes inventa um nome. Pura. */
+export function nameWasGiven(nome: string, said: string[]): boolean {
+  const words = new Set(fold(said.join(" ")).split(/[^\p{L}]+/u).filter(Boolean));
+  return fold(nome).split(/[^\p{L}]+/u).some((w) => w.length >= 2 && words.has(w));
 }
 
 /**
@@ -49,7 +59,7 @@ export function checkLeadInput(input: LeadInput, known: KnownContact = {}): { ok
   const whatsapp = validPhone(input.whatsapp);
   const email = input.email && !isPlaceholder(input.email) && isEmail(input.email.trim()) ? input.email.trim().toLowerCase() : null;
   const instagram = validInstagram(input.instagram);
-  const badName = nome.length < 2 || isPlaceholder(nome) || !/\p{L}{2}/u.test(nome);
+  const badName = nome.length < 2 || isPlaceholder(nome) || !/\p{L}{2}/u.test(nome) || (known.said !== undefined && !nameWasGiven(nome, known.said));
   const noContact = !whatsapp && !email && !instagram && !known.phone && !known.instagram;
   if (badName || noContact) {
     const falta = [badName && "o nome", noContact && "um contato (WhatsApp com DDD, e-mail ou @ do Instagram)"].filter(Boolean).join(" e ");

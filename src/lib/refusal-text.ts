@@ -14,7 +14,9 @@ const STRONG = [
   /\b(?:aqui|por aqui),? (?:eu )?(?:atendo|respondo) (?:so |apenas |somente )?(?:sobre|a respeito)\b/,
   /\bnao (?:esta|estao|e) relacionad/,
   /\bfora do (?:nosso )?(?:negocio|assunto|escopo)\b/,
-  /\bnao sou (?:o |a )?chat ?gpt\b/,
+  /\bnao (?:sou )?(?:o |a )?chat ?gpt\b/,
+  /\b(?:so|apenas|somente) (?:atendo|respondo|ajudo|falo|converso) (?:sobre|a respeito|assunt|o que|quest|duvidas)/,
+  /\b(?:atendo|respondo|ajudo|falo|converso) (?:so|apenas|somente) (?:sobre|a respeito|assunt|o que|quest|duvidas)/,
 ];
 
 // "não posso ajudar com isso" só conta junto da oferta do que é da empresa
@@ -22,6 +24,7 @@ const DECLINE = [
   /\bnao (?:posso|consigo) (?:te )?(?:ajudar|fazer|responder|atender)(?: com| a)? (?:isso|esse|essa|esses|essas|lic|resum|redac|traduc|tarefa|exercic|textos?|esse tipo|esse pedido|essa pergunta|perguntas? (?:de|sobre))/,
   /\bnao (?:posso|consigo|vou) (?:opinar|comentar|palpitar|dar (?:minha )?opiniao|falar|explicar|ensinar) (?:sobre|a respeito|isso|esse|essa)/,
   /\bnao (?:faco|posso fazer|consigo fazer) (?:resum|redac|traduc|lic|tarefa|trabalho|isso)/,
+  /\bnao faz parte d(?:os|as|o|a) (?:servic|assunt|que (?:eu )?(?:ofereco|atendo|faco|posso))/,
 ];
 const OFFER_COMPANY = /\b(?:posso|podemos) (?:te )?(?:ajudar|oferecer|responder|apresentar|tirar duvidas|dar|falar|explicar|contar)\b[^.!?]*\b(?:informac|sobre (?:o|a|os|as|nosso|nossa|nossos|nossas)\b|cardapio|servico|produto|pedido|agend|horario)|\bestou aqui para (?:responder|ajudar|falar)[^.!?]*\b(?:sobre|informac)|\bse precisar de (?:informac|algo|ajuda)[^.!?]*\b(?:sobre|relacionad|com (?:o|a|os|as|nosso|nossa))/;
 

@@ -15,6 +15,10 @@ describe("isScopeRefusalText", () => {
       "Desculpe, mas não consigo explicar sobre fotossíntese. Posso ajudar com informações sobre os serviços e produtos.",
       "Não posso opinar sobre política. Posso falar sobre os nossos serviços!",
       "Não faço resumos, mas posso te ajudar com informações sobre o cardápio.",
+      // textos reais da avaliação (gpt-4.1-mini) que passavam como resposta
+      "Sou o Fintra, assistente virtual do Ruan Portella, não o ChatGPT. Posso ajudar com informações sobre os serviços, planos e funcionamento do Fintra.",
+      "Essa é uma dúvida de matemática, e eu atendo só sobre os serviços do Ruan Portella. Posso ajudar com informações sobre os serviços, preços e agendamentos dele, se quiser.",
+      "Esse tipo de resumo não faz parte dos serviços que ofereço. Posso ajudar com informações sobre os produtos e serviços do Ruan Portella, tirar dúvidas ou agendar algo para você.",
     ]) expect(isScopeRefusalText(t), t).toBe(true);
   });
 
@@ -28,6 +32,8 @@ describe("isScopeRefusalText", () => {
       "Não consigo cancelar por aqui, mas posso chamar a equipe para você.",
       "Não posso confirmar esse desconto. A equipe pode te ajudar com isso.",
       "Sim, temos estacionamento! Se precisar de mais informações, estou à disposição.",
+      "Atendo só com hora marcada. Quer que eu veja um horário para você?",
+      "Entrega não faz parte do nosso atendimento por enquanto, só retirada no balcão.",
     ]) expect(isScopeRefusalText(t), t).toBe(false);
   });
 });

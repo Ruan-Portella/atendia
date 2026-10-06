@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkLeadInput, validInstagram, validPhone } from "../lead-input";
+import { checkLeadInput, nameWasGiven, validInstagram, validPhone } from "../lead-input";
 
 describe("dados do lead que a IA manda", () => {
   it("sem nome de verdade ou sem contato, não grava e pede os dados", () => {
@@ -43,5 +43,24 @@ describe("depois de registrar o lead", () => {
     expect(leadSavedNote("whatsapp")).toContain("por aqui, pelo WhatsApp");
     expect(leadSavedNote("widget")).not.toContain("por aqui");
     expect(leadSavedNote("instagram")).toMatch(/Não peça mais nenhum dado/);
+  });
+});
+
+describe("nome dito pela pessoa", () => {
+  it("o nome precisa aparecer no que a pessoa escreveu ou num nome já conhecido", () => {
+    expect(nameWasGiven("Ruan", ["quero uma pizza", "Ruan"])).toBe(true);
+    expect(nameWasGiven("Ruan Portella", ["meu nome é ruan"])).toBe(true);
+    expect(nameWasGiven("José", ["sou o Jose"])).toBe(true);
+    expect(nameWasGiven("Maria", ["quero uma pizza", "Não, só a calabresa"])).toBe(false);
+    expect(nameWasGiven("Ana Souza", ["oi"])).toBe(false);
+  });
+
+  it("lead com nome inventado é recusado; com o nome do perfil do WhatsApp, aceito", () => {
+    const said = ["quero pedir uma pizza", "Calabresa", "Não, só a calabresa"];
+    expect(checkLeadInput({ nome: "Maria" }, { instagram: true, said }).ok).toBe(false);
+    expect(checkLeadInput({ nome: "Ruan" }, { instagram: true, said: [...said, "Ruan"] }).ok).toBe(true);
+    expect(checkLeadInput({ nome: "Carla" }, { phone: "5511999990000", said: ["pode sim", "Carla"] }).ok).toBe(true);
+    // sem a lista (chamadas antigas), não confere
+    expect(checkLeadInput({ nome: "Maria" }, { instagram: true }).ok).toBe(true);
   });
 });
