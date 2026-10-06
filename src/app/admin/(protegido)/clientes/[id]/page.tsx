@@ -25,7 +25,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
   const db = createAdminClient();
   const since30 = daysAgoIso(30);
   const [{ data: bots }, measures] = await Promise.all([
-    db.from("bots").select("id, name, client_name, status, is_demo, paused_at, created_at").eq("agency_id", id).order("created_at"),
+    db.from("bots").select("id, name, client_name, status, is_demo, paused_at, paused_by_plan_at, created_at").eq("agency_id", id).order("created_at"),
     getMeasures({ agencyId: id, active: true }),
   ]);
   const botIds = (bots ?? []).map((b) => b.id as string);
@@ -95,7 +95,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
               return (
                 <tr key={b.id as string} className="border-b border-line-2 last:border-0">
                   <td className="px-5 py-2.5"><span className="font-semibold">{b.name as string}</span><div className="text-xs text-muted">{b.client_name as string}{b.is_demo ? " · demo" : ""}</div></td>
-                  <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}</td>
+                  <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}{b.paused_by_plan_at && <span className="text-amber-ink"> · pausado pelo plano</span>}</td>
                   <td className="px-3 py-2.5 text-xs">{w ? (w.disconnected_at ? <span className="text-danger">desconectado</span> : ((w.display_phone as string | null) ?? "conectado")) : <span className="text-muted">—</span>}</td>
                   <td className="px-3 py-2.5 text-xs">{i ? (i.disconnected_at ? <span className="text-danger">desconectado</span> : `@${(i.username as string | null) ?? "conectado"}`) : <span className="text-muted">—</span>}</td>
                   <td className="px-3 py-2.5 text-right tabular">{num(chunkCounts.get(b.id as string) ?? 0)}</td>

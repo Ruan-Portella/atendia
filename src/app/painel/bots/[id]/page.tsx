@@ -170,6 +170,22 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         </div>
       )}
 
+      {bot.paused_by_plan_at && (
+        <div className="border-b border-line bg-amber-soft px-4 py-3 text-sm sm:px-5 md:px-7">
+          <strong className="text-amber-ink">Este chatbot está pausado pelo plano</strong>: a conta passou do limite de chatbots do plano atual.
+          <span className="block text-ink-2">
+            A IA não responde: as mensagens ficam em Conversas para a sua equipe e, no site, aparece o formulário de contato.{" "}
+            {role === "owner" ? (
+              <>
+                Escolha o que fica ativo em <Link href="/painel/cobranca/limites" className="underline">Cobrança &gt; Limites do plano</Link>.
+              </>
+            ) : (
+              "O dono da conta escolhe o que fica ativo em Cobrança."
+            )}
+          </span>
+        </div>
+      )}
+
       {bot.is_demo && (
         <div className="flex flex-wrap items-center gap-3 border-b border-line bg-amber-soft px-4 py-3 text-sm sm:px-5 md:px-7">
           <span className="font-semibold text-amber-ink">Esta é uma demo.</span>

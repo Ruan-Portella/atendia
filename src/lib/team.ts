@@ -72,7 +72,8 @@ export async function hadMembership(db: SupabaseClient, userId: string): Promise
 
 /** Lugares ocupados no plano: membros aceitos e convites em aberto, com o dono. */
 export async function seatsUsed(db: SupabaseClient, agencyId: string): Promise<number> {
-  const { data } = await db.from("agency_members").select("accepted_at, removed_at, invite_expires_at").eq("agency_id", agencyId).is("removed_at", null);
+  // pausado pelo plano não ocupa vaga
+  const { data } = await db.from("agency_members").select("accepted_at, removed_at, invite_expires_at").eq("agency_id", agencyId).is("removed_at", null).is("paused_by_plan_at", null);
   return ((data ?? []) as Array<Pick<AgencyMember, "accepted_at" | "removed_at" | "invite_expires_at">>).filter((m) => m.accepted_at || inviteOpen(m)).length;
 }
 

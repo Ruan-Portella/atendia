@@ -508,7 +508,7 @@ export function linkHostsFor(bot: Pick<BotRow, "client_site" | "human_handoff" |
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
-export type AiBlockReason = "trial_expired" | "quota_exceeded" | "client_quota_exceeded" | "cancelled" | "paused" | "bot_paused";
+export type AiBlockReason = "trial_expired" | "quota_exceeded" | "client_quota_exceeded" | "cancelled" | "paused" | "bot_paused" | "plan_paused";
 
 /**
  * Conferido em TODA mensagem (não só na conversa nova): IA pausada pelo backoffice, plano
@@ -532,6 +532,7 @@ export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
   cancelled: "Assistente parado: a assinatura foi cancelada.",
   paused: "Assistente pausado pela equipe BoaVoz: as mensagens ficam aqui para a sua equipe responder.",
   bot_paused: "Assistente pausado por vocês (botão de emergência): as mensagens ficam aqui para a sua equipe responder.",
+  plan_paused: "Assistente pausado pelo plano: este chatbot passou do limite do plano atual (Cobrança > Limites do plano). As mensagens ficam aqui para a sua equipe responder.",
 };
 
 /** Texto fixo do modo só humano (Textos legais, seção 6): uma vez por conversa, sem prometer prazo. */

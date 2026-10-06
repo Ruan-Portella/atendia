@@ -162,7 +162,7 @@ export async function POST(req: Request) {
   // formulário de contato (o lead não se perde)
   if (mode.handoff) {
     const reason = mode.blockReason ?? "paused";
-    return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" ? 503 : 402);
+    return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" || reason === "plan_paused" ? 503 : 402);
   }
 
   // cota do mês: o atendimento deste visitante (24 horas) abre antes de chamar a IA; o teste ao

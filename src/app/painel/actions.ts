@@ -49,6 +49,7 @@ import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
+import { setPlanPause, type PlanItemKind } from "@/lib/plan-limits";
 import { firstExceeded } from "@/lib/rate-limit";
 import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -102,7 +103,7 @@ async function resolveClient(supabase: Db, agencyId: string, fd: FormData): Prom
 }
 
 async function botLimitReached(supabase: Db, agencyId: string, limit: number) {
-  const { count } = await supabase.from("bots").select("id", { count: "exact", head: true }).eq("agency_id", agencyId).eq("is_demo", false);
+  const { count } = await supabase.from("bots").select("id", { count: "exact", head: true }).eq("agency_id", agencyId).eq("is_demo", false).is("paused_by_plan_at", null);
   return (count ?? 0) >= limit;
 }
 
@@ -1428,4 +1429,19 @@ export async function hideOnboarding(): Promise<ActionResult> {
   (await cookies()).set(ONBOARDING_COOKIE, "hidden", { path: "/painel", maxAge: 60 * 60 * 24 * 365, sameSite: "lax", httpOnly: true });
   revalidatePath("/painel/clientes");
   return ok("Primeiros passos ocultados.");
+}
+
+/* ------------------------------------------------------------------ limites do plano (leva B1', parte 4b) */
+
+const PLAN_ITEM_KINDS: readonly PlanItemKind[] = ["bot", "member", "webhook"];
+
+/** Cobrança > Limites do plano: pausar libera uma vaga; ativar só com vaga no plano. */
+export async function setPlanItemPaused(kind: PlanItemKind, id: string, pause: boolean): Promise<ActionResult> {
+  if (!(await allowed("billing"))) return fail(DENIED);
+  if (!PLAN_ITEM_KINDS.includes(kind)) return fail("Item inválido.");
+  const { agency, userId } = await requireAgency();
+  const r = await setPlanPause(createAdminClient(), agency.id, kind, id, pause, { type: "user", id: userId });
+  if ("error" in r) return fail(r.error);
+  revalidatePath("/painel/cobranca/limites");
+  return ok(pause ? "Pausado. A vaga ficou livre para outro item." : "Ativado.");
 }

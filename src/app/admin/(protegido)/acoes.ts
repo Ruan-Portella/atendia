@@ -19,6 +19,8 @@ import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiKey
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
 import { WEBHOOK_EVENTS, createWebhook, sendWebhookTest, type WebhookEvent } from "@/lib/webhooks";
 import { BlockedUrlError, checkUrl } from "@/lib/safe-fetch";
+import { applyPlanLimits } from "@/lib/plan-limits";
+import { billingEnabled } from "@/lib/stripe";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -95,6 +97,32 @@ export async function extendTrial(agencyId: string, fd: FormData): Promise<Actio
   await auditAdmin(s.email, "agencia.estender_teste", { agencyId, targetType: "agency", targetId: agencyId, after: { days, until } });
   revalidatePath("/admin", "layout");
   return ok(`Teste estendido até ${new Date(until).toLocaleDateString("pt-BR")}.`);
+}
+
+/** Planos que dá para escolher sem o Stripe (staging e testes). */
+const MANUAL_PLANS = new Set(["trial", "freelancer", "agencia", "escala"]);
+
+/**
+ * Troca de plano sem o Stripe (só quando a cobrança está desligada, como no staging): grava o plano
+ * e aplica os limites, como faria o webhook do Stripe. Com cobrança ligada, o plano vem só da
+ * assinatura (senão o próximo evento do Stripe desfaria a troca).
+ */
+export async function setAgencyPlanManually(agencyId: string, fd: FormData): Promise<ActionResult> {
+  if (billingEnabled) return fail("Com a cobrança ligada, o plano vem da assinatura no Stripe.");
+  const plan = text(fd.get("plan"));
+  if (!MANUAL_PLANS.has(plan)) return fail("Escolha o plano.");
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (trocou o plano para ${plan}, sem Stripe)`);
+  const db = createAdminClient();
+  const { data: before } = await db.from("agencies").select("plan").eq("id", agencyId).maybeSingle();
+  if (!before) return fail("Agência não encontrada.");
+  const { error } = await db.from("agencies").update({ plan }).eq("id", agencyId);
+  if (error) return fail("Não foi possível trocar o plano. Tente de novo.");
+  await auditAdmin(s.email, "agencia.plano_manual", { agencyId, targetType: "agency", targetId: agencyId, after: { de: before.plan, para: plan } });
+  const changes = await applyPlanLimits(db, agencyId, { type: "support", id: s.email });
+  revalidatePath("/admin", "layout");
+  const paused = changes ? changes.bots.pause.length + changes.members.pause.length + changes.webhooks.pause.length : 0;
+  const resumed = changes ? changes.bots.resume.length + changes.members.resume.length + changes.webhooks.resume.length : 0;
+  return ok(`Plano trocado.${paused ? ` ${paused} pausado(s) pelo plano.` : ""}${resumed ? ` ${resumed} reativado(s).` : ""}${changes?.actions === "pause" ? " Ações pausadas." : changes?.actions === "resume" ? " Ações reativadas." : ""}`);
 }
 
 /* ------------------------------------------------------------------ envio (regra de estado, degraus 1 e 2) */

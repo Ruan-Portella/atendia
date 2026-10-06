@@ -13,7 +13,8 @@ import { findMessage } from "./messages";
  *   2. Suspensão pela BoaVoz (enforcement_actions): nada sai, nem resposta da equipe pelo painel
  *   3. Humano na conversa: "Assumir" ou resposta pelo celular/app há menos de 1 hora
  *   4. Bot pausado pelo dono (botão de emergência): aviso só se ele pediu
- *   5. Modo só humano: teste vencido, assinatura cancelada, IA pausada pela BoaVoz; a cota (do
+ *   5. Modo só humano: teste vencido, assinatura cancelada, IA pausada pela BoaVoz, chatbot pausado
+ *      pelo plano (excedente do downgrade); a cota (do
  *      atendimento) entra aqui quando openAtendimento não abre, antes de chamar a IA
  *   6. Normal
  * O opt-out (SAIR, PARAR, STOP) roda antes de todos; a confirmação só sai se dá para enviar.
@@ -96,7 +97,7 @@ export function decideMode(f: ModeFacts): Mode {
 export const PAYMENT_RETRY_MS = 60 * 60_000;
 
 export interface ModeInput {
-  bot: { id: string; agency_id: string; paused_at?: string | null; pause_notify?: boolean | null };
+  bot: { id: string; agency_id: string; paused_at?: string | null; pause_notify?: boolean | null; paused_by_plan_at?: string | null };
   channel: ModeChannel;
   conversation: { id: string; takeover_at?: string | null; handled_at?: string | null } | null;
   /** Número do WhatsApp ligado ao bot (as colunas que importam aqui). */
@@ -158,7 +159,7 @@ export async function resolveMode(db: SupabaseClient, input: ModeInput, now = Da
     humanInConversation: Boolean(conversation?.takeover_at && !conversation.handled_at) || phonePauseActive(lastHumanReply?.created_at, now),
     botPaused: Boolean(bot.paused_at),
     botPauseNotify: Boolean(bot.pause_notify),
-    humanOnly,
+    humanOnly: humanOnly ?? (bot.paused_by_plan_at ? "plan_paused" : null),
     coexistence: channel === "whatsapp" && Boolean(input.wa?.coexistence),
   };
   return { ...decideMode(facts), facts };
@@ -202,7 +203,7 @@ const CHANNEL_NAME: Record<ModeChannel, string> = { whatsapp: "WhatsApp", instag
  * bloqueia aqui: o envio pela equipe é a nova tentativa (se o cartão entrou, sai).
  */
 export async function sendBlockedReason(db: SupabaseClient, botId: string, channel: ModeChannel): Promise<string | null> {
-  const { data: bot } = await db.from("bots").select("id, agency_id, paused_at, pause_notify").eq("id", botId).maybeSingle();
+  const { data: bot } = await db.from("bots").select("id, agency_id, paused_at, pause_notify, paused_by_plan_at").eq("id", botId).maybeSingle();
   if (!bot) return "Chatbot não encontrado.";
   const [{ data: wa }, { data: ig }] = await Promise.all([
     channel === "whatsapp" ? db.from("whatsapp_channels").select("disconnected_at, payment_issue_at, waba_id, coexistence").eq("bot_id", botId).maybeSingle() : Promise.resolve({ data: null }),

@@ -12,6 +12,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "aceite.registrar": "Aceite do negócio registrado",
   "acoes.apagar": "Ação de integração apagada",
   "agencia.estender_teste": "Teste estendido pela BoaVoz",
+  "agencia.plano_manual": "Plano trocado pela BoaVoz (sem Stripe)",
   "agencia.liberacao": "Recurso liberado pela BoaVoz",
   "agencia.pausar_ia": "IA da conta pausada pela BoaVoz",
   "agencia.religar_ia": "IA da conta religada pela BoaVoz",
@@ -22,6 +23,9 @@ export const ACTION_LABELS: Record<string, string> = {
   "bot.modo_sensivel": "Modo dados sensíveis alterado",
   "bot.pausar": "Chatbot pausado",
   "bot.retomar": "Chatbot retomado",
+  "plano.excedente": "Troca de plano: excedente pausado ou devolvido",
+  "plano.pausar": "Item pausado pelo plano",
+  "plano.ativar": "Item ativado dentro do plano",
   "canal.conectar": "Canal conectado",
   "canal.desconectar": "Canal desconectado",
   "canal.link_gerar": "Link de conexão gerado",
@@ -111,6 +115,7 @@ export const ACTION_GROUPS: Record<string, string> = {
   suporte: "Suporte BoaVoz",
   seguranca: "Segurança",
   equipe: "Equipe",
+  plano: "Plano",
   plataforma: "Avisos da BoaVoz",
 };
 

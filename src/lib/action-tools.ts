@@ -68,7 +68,7 @@ export function contactLevel(channel: string, waPhone: string | null): ActionLev
 
 /** Ações que a IA deste bot pode receber agora (consulta, ativas, sem efeito de pedido). */
 export async function loadBotActions(db: SupabaseClient, botId: string): Promise<ActionRow[]> {
-  const { data, error } = await db.from("actions").select("*").eq("bot_id", botId).eq("active", true).eq("type", "query").order("name");
+  const { data, error } = await db.from("actions").select("*").eq("bot_id", botId).eq("active", true).is("paused_by_plan_at", null).eq("type", "query").order("name");
   if (error) {
     console.error("ações: não carregaram", error.message);
     return [];

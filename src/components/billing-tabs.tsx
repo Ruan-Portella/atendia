@@ -4,9 +4,10 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/painel/cobranca", label: "Plano" },
   { href: "/painel/cobranca/uso", label: "Uso e custo" },
+  { href: "/painel/cobranca/limites", label: "Limites do plano" },
 ] as const;
 
-/** Abas de Cobrança: plano e assinatura, uso e custo do mês. */
+/** Abas de Cobrança: plano e assinatura, uso e custo do mês, o que fica ativo dentro do plano. */
 export function BillingTabs({ active }: { active: (typeof TABS)[number]["href"] }) {
   return (
     <nav className="mt-4 flex gap-1 border-b border-line">

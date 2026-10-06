@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { billingEnabled, planBaseCents, planFromPrice, stripe } from "@/lib/stripe";
 import { notifyPlatform } from "@/lib/notify";
 import { REFERRAL_RATE } from "@/lib/referral-credit";
+import { applyPlanLimits } from "@/lib/plan-limits";
 
 /** Webhook do Stripe: mantém o plano da agência e a comissão de afiliado em dia. */
 export async function POST(req: Request) {
@@ -46,6 +47,8 @@ async function handle(db: SupabaseClient, event: Stripe.Event) {
       const subId = typeof s.subscription === "string" ? s.subscription : s.subscription?.id;
       must(await db.from("agencies").update({ plan, stripe_subscription_id: subId ?? null }).eq("id", agencyId));
       must(await db.from("referrals").update({ status: "paying" }).eq("referred_id", agencyId));
+      // troca de plano: o excedente pausa (downgrade) e o que estava pausado volta (upgrade)
+      await applyPlanLimits(db, agencyId);
       break;
     }
     case "customer.subscription.updated": {
@@ -64,7 +67,8 @@ async function handle(db: SupabaseClient, event: Stripe.Event) {
         ]);
         break;
       }
-      must(await db.from("agencies").update({ plan: active && plan ? plan : "cancelado", stripe_subscription_id: sub.id }).eq("stripe_customer_id", customer));
+      const { data: changed } = must(await db.from("agencies").update({ plan: active && plan ? plan : "cancelado", stripe_subscription_id: sub.id }).eq("stripe_customer_id", customer).select("id"));
+      for (const ag of changed ?? []) await applyPlanLimits(db, ag.id as string);
       break;
     }
     case "customer.subscription.deleted": {

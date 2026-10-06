@@ -64,8 +64,10 @@ export interface WebhookRow {
   scope_client_id: string | null;
   active: boolean;
   failing_since: string | null;
+  /** Excedente do plano (downgrade): não gera entregas nem acumula. */
+  paused_by_plan_at?: string | null;
 }
-const WEBHOOK_COLS = "id, agency_id, url, secret_enc, events, scope_type, scope_bot_ids, scope_client_id, active, failing_since";
+const WEBHOOK_COLS = "id, agency_id, url, secret_enc, events, scope_type, scope_bot_ids, scope_client_id, active, failing_since, paused_by_plan_at";
 
 /** O webhook recebe eventos deste chatbot? Função pura. */
 export const webhookCovers = (w: Pick<WebhookRow, "scope_type" | "scope_bot_ids" | "scope_client_id">, bot: { id: string; client_id: string | null }) =>
@@ -137,7 +139,7 @@ async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = 
 
 /** Envelope do evento para cada webhook ativo que cobre o chatbot; a primeira tentativa é na hora. */
 export async function emitEvent(db: SupabaseClient, e: { type: WebhookEvent; key: string; bot: { id: string; agency_id: string; client_id: string | null; name: string }; createdAt: string; conversation: { id: string; channel: string } | null; contact: Record<string, unknown> | null; data: Record<string, unknown>; contactId?: string | null }): Promise<void> {
-  const { data: hooks } = await db.from("webhooks").select(WEBHOOK_COLS).eq("agency_id", e.bot.agency_id).eq("active", true);
+  const { data: hooks } = await db.from("webhooks").select(WEBHOOK_COLS).eq("agency_id", e.bot.agency_id).eq("active", true).is("paused_by_plan_at", null);
   const targets = ((hooks ?? []) as WebhookRow[]).filter((w) => w.events.includes(e.type) && webhookCovers(w, e.bot));
   if (!targets.length) return;
   const id = eventId(e.type, e.key);
@@ -196,8 +198,8 @@ export async function retryDueDeliveries(db: SupabaseClient, o: { limit?: number
     if (o.hasTime && !o.hasTime()) break;
     const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", d.webhook_id).maybeSingle<WebhookRow>();
     // webhook desativado ou pausado não entrega nem acumula
-    if (!w?.active) {
-      await db.from("webhook_deliveries").update({ status: "failed", last_error: "webhook desativado" }).eq("id", d.id);
+    if (!w?.active || w.paused_by_plan_at) {
+      await db.from("webhook_deliveries").update({ status: "failed", last_error: w?.paused_by_plan_at ? "webhook pausado pelo plano" : "webhook desativado" }).eq("id", d.id);
       continue;
     }
     await attempt(db, d, w);

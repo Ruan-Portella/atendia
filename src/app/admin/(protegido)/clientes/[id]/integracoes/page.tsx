@@ -55,7 +55,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
     db.from("identity_secrets").select("id, kid, name, scope_type, scope_bot_id, scope_client_id, created_at, created_by, last_used_at, revoked_at").eq("agency_id", id).order("created_at", { ascending: false }),
   ]);
   const secrets = secretRows ?? [];
-  const { data: hookRows } = await db.from("webhooks").select("id, name, url, events, scope_type, scope_bot_ids, scope_client_id, active, disabled_at, disabled_reason, failing_since, created_at").eq("agency_id", id).order("created_at");
+  const { data: hookRows } = await db.from("webhooks").select("id, name, url, events, scope_type, scope_bot_ids, scope_client_id, active, disabled_at, disabled_reason, failing_since, created_at, paused_by_plan_at").eq("agency_id", id).order("created_at");
   const hooks = hookRows ?? [];
   const { data: deliveries } = hooks.length
     ? await db.from("webhook_deliveries").select("id, webhook_id, event_type, status, attempts, last_status, last_error, created_at, delivered_at").in("webhook_id", hooks.map((h) => h.id as string)).order("created_at", { ascending: false }).limit(20)
@@ -106,7 +106,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
               <details key={a.id} className="rounded-lg border border-line-2 p-3">
                 <summary className="cursor-pointer text-sm">
                   <strong className="font-mono">{a.name}</strong>{" "}
-                  <span className={a.active ? "text-brand" : "text-muted"}>{a.active ? "ativa" : "desativada"}</span>
+                  <span className={a.active ? "text-brand" : "text-muted"}>{a.active ? "ativa" : "desativada"}</span>{a.paused_by_plan_at && <span className="text-amber-ink"> · pausada pelo plano</span>}
                   {a.creates_order && <span className="text-danger"> · parece criar pedido (fica desativada até a C pública)</span>}
                   <span className="block truncate text-xs text-muted">{a.url}</span>
                 </summary>
@@ -248,7 +248,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
         {hooks.map((h) => (
           <div key={h.id as string} className="flex flex-col gap-2 rounded-lg border border-line-2 p-3 text-sm">
             <div>
-              <strong>{h.name as string}</strong> <span className={h.active ? "text-brand" : "text-danger"}>{h.active ? "ativo" : `desativado${h.disabled_reason ? ` (${h.disabled_reason as string})` : ""}`}</span>
+              <strong>{h.name as string}</strong> <span className={h.active ? "text-brand" : "text-danger"}>{h.active ? "ativo" : `desativado${h.disabled_reason ? ` (${h.disabled_reason as string})` : ""}`}</span>{Boolean(h.paused_by_plan_at) && <span className="text-amber-ink"> · pausado pelo plano</span>}
               <span className="block truncate text-xs text-muted">{h.url as string}</span>
               <span className="block text-xs text-muted">
                 Eventos: {(h.events as string[]).join(", ")} · escopo: {h.scope_type === "all" ? "todos os chatbots" : h.scope_type === "client" ? `cliente ${clientName.get(h.scope_client_id as string) ?? "?"}` : (h.scope_bot_ids as string[]).map((b) => botName.get(b) ?? "?").join(", ")}

@@ -41,6 +41,8 @@ export interface ActionRow {
   headers_enc: string | null;
   active: boolean;
   creates_order: boolean | null;
+  /** Excedente do plano (downgrade sem Integrações): não é oferecida à IA. */
+  paused_by_plan_at?: string | null;
 }
 
 export interface ParamsSchema {

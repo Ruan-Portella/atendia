@@ -6,6 +6,7 @@ import { EditMemberButton, InviteMemberButton, ReinviteButton, type ScopeClient 
 import { MEMBER_COLS, ROLE_LABELS, inviteOpen, lastAccessOf, memberLimit, memberName, scopesOf, type AgencyMember, type InvitableRole } from "@/lib/team";
 import { initials, relativeTime } from "@/lib/utils";
 import { inviteTeamMember, reinviteTeamMember, removeTeamMember, updateTeamMember } from "./actions";
+import { PlanPausedBadge } from "@/components/plan-paused-badge";
 
 export const metadata = { title: "Equipe" };
 
@@ -83,7 +84,9 @@ export default async function TeamPage() {
               </span>
               <span className="pl-[40px] text-xs text-ink-2 lg:pl-0 lg:text-sm">{scopeText(m)}</span>
               <span className="pl-[40px] text-xs text-muted lg:pl-0">
-                {pending
+                {m.paused_by_plan_at
+                  ? <PlanPausedBadge link={isOwner} />
+                  : pending
                   ? open
                     ? `Convite pendente · vale até ${dateBR(m.invite_expires_at!)}`
                     : "Convite vencido"

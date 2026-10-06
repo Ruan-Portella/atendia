@@ -39,7 +39,7 @@ export function sendDecision(mode: Pick<Mode, "step" | "canSend" | "aiResponds" 
 /** A regra de estado na hora do envio, com tudo lido de novo do banco. */
 export async function sendCheck(db: SupabaseClient, o: { botId: string; channel: SendChannel; conversationId: string | null; kind: SendKind }): Promise<string | null> {
   const [{ data: bot }, { data: conversation }, { data: wa }, { data: ig }] = await Promise.all([
-    db.from("bots").select("id, agency_id, paused_at, pause_notify").eq("id", o.botId).maybeSingle(),
+    db.from("bots").select("id, agency_id, paused_at, pause_notify, paused_by_plan_at").eq("id", o.botId).maybeSingle(),
     o.conversationId ? db.from("conversations").select("id, takeover_at, handled_at").eq("id", o.conversationId).maybeSingle() : Promise.resolve({ data: null }),
     o.channel === "whatsapp" ? db.from("whatsapp_channels").select("disconnected_at, payment_issue_at, waba_id, coexistence").eq("bot_id", o.botId).maybeSingle() : Promise.resolve({ data: null }),
     o.channel === "instagram" ? db.from("instagram_channels").select("disconnected_at").eq("bot_id", o.botId).maybeSingle() : Promise.resolve({ data: null }),
