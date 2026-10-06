@@ -2,7 +2,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { disableWhatsAppAll, enableWhatsAppAll, extendTrial, liftMeasure, pauseAgencyAi, pauseAllAi, resumeAgencyAi, resumeAllAi, setAgencyPlanManually, suspendChannel } from "@/app/admin/(protegido)/acoes";
-import { billingEnabled } from "@/lib/stripe";
+import { manualPlanSwitch } from "@/lib/plan-limits";
 import { PLANS } from "@/lib/plans";
 import type { AgencyRow, MeasureRow, PlatformFlags } from "@/lib/backoffice";
 import { relativeTime } from "@/lib/utils";
@@ -71,10 +71,10 @@ export function AgencyActions({ agency }: { agency: AgencyRow }) {
           </div>
         </ActionForm>
       )}
-      {!billingEnabled && (
+      {manualPlanSwitch && (
         <ActionForm action={setAgencyPlanManually.bind(null, agency.id)} className="flex flex-col gap-2 border-t border-line-2 pt-4">
           <span className="text-sm font-semibold">Trocar o plano (sem Stripe)</span>
-          <p className="text-xs text-muted">Só aparece com a cobrança desligada (staging). Aplica os limites do plano novo como o Stripe faria: o excedente fica pausado e a agência escolhe o que fica ativo em Cobrança &gt; Limites do plano.</p>
+          <p className="text-xs text-muted">Só aparece fora da produção (staging). Aplica os limites do plano novo como o Stripe faria: o excedente fica pausado e a agência escolhe o que fica ativo em Cobrança &gt; Limites do plano.</p>
           <div className="flex gap-2">
             <select name="plan" defaultValue={agency.plan} className="input w-auto">
               {Object.values(PLANS).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}

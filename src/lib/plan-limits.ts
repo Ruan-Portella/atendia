@@ -14,6 +14,13 @@ import { appUrl } from "./utils";
  * por aqui: o encerramento tem a carência própria (modo só humano).
  */
 
+/**
+ * Troca de plano pelo backoffice, sem o Stripe: só fora da produção (staging e local). Em produção o
+ * plano vem só da assinatura (senão o próximo evento do Stripe desfaria a troca). Não depende das
+ * chaves do Stripe: o Preview pode ter a chave e mesmo assim não ter assinatura.
+ */
+export const manualPlanSwitch = process.env.VERCEL_ENV !== "production";
+
 export type PlanItemKind = "bot" | "member" | "webhook";
 
 export interface PlanLimits {

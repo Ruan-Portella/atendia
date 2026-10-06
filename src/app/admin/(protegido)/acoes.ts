@@ -19,8 +19,7 @@ import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiKey
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
 import { WEBHOOK_EVENTS, createWebhook, sendWebhookTest, type WebhookEvent } from "@/lib/webhooks";
 import { BlockedUrlError, checkUrl } from "@/lib/safe-fetch";
-import { applyPlanLimits } from "@/lib/plan-limits";
-import { billingEnabled } from "@/lib/stripe";
+import { applyPlanLimits, manualPlanSwitch } from "@/lib/plan-limits";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -102,13 +101,9 @@ export async function extendTrial(agencyId: string, fd: FormData): Promise<Actio
 /** Planos que dá para escolher sem o Stripe (staging e testes). */
 const MANUAL_PLANS = new Set(["trial", "freelancer", "agencia", "escala"]);
 
-/**
- * Troca de plano sem o Stripe (só quando a cobrança está desligada, como no staging): grava o plano
- * e aplica os limites, como faria o webhook do Stripe. Com cobrança ligada, o plano vem só da
- * assinatura (senão o próximo evento do Stripe desfaria a troca).
- */
+/** Troca de plano sem o Stripe (só fora da produção): grava o plano e aplica os limites, como faria o webhook do Stripe. */
 export async function setAgencyPlanManually(agencyId: string, fd: FormData): Promise<ActionResult> {
-  if (billingEnabled) return fail("Com a cobrança ligada, o plano vem da assinatura no Stripe.");
+  if (!manualPlanSwitch) return fail("Em produção, o plano vem da assinatura no Stripe.");
   const plan = text(fd.get("plan"));
   if (!MANUAL_PLANS.has(plan)) return fail("Escolha o plano.");
   const s = await requireAdmin(`/admin/clientes/${agencyId} (trocou o plano para ${plan}, sem Stripe)`);
