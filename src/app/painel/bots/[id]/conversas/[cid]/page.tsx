@@ -9,7 +9,7 @@ import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
-import { conversationState, whatsappWindowOpen } from "@/lib/presence";
+import { conversationState, whatsappWindowOpen, humanAgentEnabled, humanAgentUntil, timeLeft } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -22,7 +22,8 @@ import { RegulatedNotice } from "@/components/regulated-notice";
 import { channelBlock } from "@/lib/features";
 import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { authorLabel } from "@/lib/authors";
-import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
+import { firstExceeded } from "@/lib/rate-limit";
+import { loadTemplateChannel, type SendableTemplate, conversationTemplates, ensureResumeTemplate, type ResumeStatus } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
 import { deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
@@ -61,12 +62,22 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const lastUserAt = isWhatsApp ? await lastContactMessageAt(supabase, id, { waId: conv.wa_id! }, conv.contact_id) : isInstagram ? await lastContactMessageAt(supabase, id, { igsid: conv.ig_id! }, conv.contact_id) : undefined;
   const handoffConv = isWhatsApp || isInstagram ? { ...conv, last_user_at: lastUserAt } : conv;
   const windowOpen = isWhatsApp && whatsappWindowOpen(handoffConv);
+  // Instagram depois das 24 h: quanto falta para a equipe ainda responder (tag human_agent, até 7 dias)
+  const humanAgentDate = isInstagram ? humanAgentUntil(handoffConv) : null;
+  const humanAgentLeft = humanAgentDate ? timeLeft(humanAgentDate) : null;
+  const humanAgentAt = humanAgentDate ? humanAgentDate.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }) : null;
 
   // modelos aprovados, para retomar a conversa (só com o WhatsApp liberado para a agência)
   let templates: SendableTemplate[] | null = null;
+  let resume: ResumeStatus | null = null;
   if (isWhatsApp && !(await channelBlock(createAdminClient(), agency.id, "whatsapp", undefined, { botId: id }))) {
     const ch = await loadTemplateChannel(createAdminClient(), id);
-    templates = ch ? await listSendable(ch).catch(() => []) : null;
+    // o modelo de retomada vem primeiro; conta antiga sem ele: o BoaVoz cria agora (análise da Meta)
+    const loaded = ch ? await conversationTemplates(ch).catch(() => ({ templates: [] as SendableTemplate[], resume: null })) : null;
+    templates = loaded?.templates ?? null;
+    resume = loaded?.resume ?? null;
+    // (uma tentativa por dia por chatbot: se a Meta recusar a criação, não insiste a cada página)
+    if (ch && resume === "ausente" && bot && !(await firstExceeded(createAdminClient(), [{ key: `modelo-retomada:${id}`, max: 1, windowSeconds: 86_400, message: "" }]))) resume = await ensureResumeTemplate(ch, bot.client_name);
   }
   const contactName = leads[0]?.name ?? "";
   // pessoa identificada pela empresa (token do site ou pareamento, P2) e o contexto da conversa
@@ -150,15 +161,21 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
 
       <footer className="border-t border-line bg-ground">
         <div className="mx-auto flex max-w-[860px] flex-col gap-2 px-4 py-3 sm:px-5 md:px-7">
-          {isInstagram && !whatsappWindowOpen(handoffConv) && (
+          {isInstagram && !whatsappWindowOpen(handoffConv) && (humanAgentLeft ? (
             <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
-              <strong>{lastUserAt === null ? "O contato ainda não mandou mensagem." : "Passaram 24 h desde a última mensagem do contato."}</strong> O Instagram só deixa responder dentro desse prazo. Quando ele escrever de novo, a conversa continua aqui.
+              <strong>Passaram 24 h desde a última mensagem do contato.</strong> O assistente não responde mais, mas a equipe ainda pode responder por {humanAgentLeft} (até {humanAgentAt}; atendimento humano no Instagram vale até 7 dias).
             </p>
-          )}
+          ) : (
+            <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+              <strong>{lastUserAt === null ? "O contato ainda não mandou mensagem." : humanAgentEnabled() ? "Passaram 7 dias desde a última mensagem do contato." : "Passaram 24 h desde a última mensagem do contato."}</strong> O Instagram só deixa responder dentro desse prazo. Quando ele escrever de novo, a conversa continua aqui.
+            </p>
+          ))}
           {templates && !windowOpen && (
             <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
               {lastUserAt === null ? <strong>Aguardando a resposta do contato.</strong> : <strong>Passaram 24 h desde a última mensagem do contato.</strong>}{" "}
-              {lastUserAt === null ? "Até ele responder, o WhatsApp só deixa enviar modelos aprovados" : "O WhatsApp só deixa retomar com um modelo aprovado"}: use “Enviar modelo” no topo. Quando ele responder, a conversa continua aqui.
+              {lastUserAt === null ? "Até ele responder, o WhatsApp só deixa enviar modelos aprovados" : "O WhatsApp só deixa retomar com um modelo aprovado"}: use “Enviar modelo” no topo{resume === "aprovado" ? " (o primeiro é o de retomada)" : ""}. Quando ele responder, a conversa continua aqui.
+              {resume === "em_analise" && <span className="mt-1 block text-xs">O modelo padrão de retomada ainda está em análise na Meta; costuma sair em minutos.</span>}
+              {(resume === "recusado" || resume === "reclassificado") && <span className="mt-1 block text-xs">A Meta {resume === "recusado" ? "recusou" : "mudou a categoria d"}o modelo padrão de retomada. Use outro modelo de utilidade aprovado (aba WhatsApp do chatbot).</span>}
             </p>
           )}
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}

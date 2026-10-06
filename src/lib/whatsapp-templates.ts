@@ -53,3 +53,52 @@ export async function sendTemplate(ch: WaChannel, to: string, t: { name: string;
     body: { messaging_product: "whatsapp", ...recipientOf(to), type: "template", template: { name: t.name, language: { code: t.language }, components } },
   });
 }
+
+/*
+ * Modelo padrão de retomada (leva B1'): criado pelo BoaVoz ao conectar o WhatsApp, de utilidade e
+ * só em pt_BR, para a equipe retomar uma conversa depois das 24 h. Se a Meta recusar ou mudar a
+ * categoria, o painel avisa e mostra os outros modelos de utilidade aprovados.
+ */
+export const RESUME_TEMPLATE_NAME = "retomada_atendimento";
+
+/** Texto do modelo de retomada, com o nome do negócio fixo e o nome do contato em {{1}}. Pura. */
+export function resumeTemplateBody(company: string): string {
+  const name = company.replace(/[{}*_~`\n]/g, "").trim().slice(0, 60) || "nossa equipe";
+  return `Olá, {{1}}! Aqui é a equipe de ${name}. Sua conversa com a gente ficou parada e queremos continuar o seu atendimento. Responda esta mensagem para seguirmos por aqui.`;
+}
+
+export type ResumeStatus = "aprovado" | "em_analise" | "recusado" | "reclassificado" | "ausente";
+
+/** Estado do modelo de retomada na conta (pela lista de modelos da Meta). Pura. */
+export function resumeStatus(templates: Template[]): ResumeStatus {
+  const t = templates.find((x) => x.name === RESUME_TEMPLATE_NAME);
+  if (!t) return "ausente";
+  if (t.category !== "UTILITY") return "reclassificado";
+  if (t.status === "APPROVED") return "aprovado";
+  if (t.status === "REJECTED" || t.status === "DISABLED" || t.status === "PAUSED") return "recusado";
+  return "em_analise";
+}
+
+/**
+ * Cria o modelo de retomada se a conta ainda não tem. Nunca derruba a conexão: falha só vai para o
+ * log (o painel mostra "ausente" e os outros modelos continuam valendo).
+ */
+export async function ensureResumeTemplate(ch: TemplateChannel, company: string): Promise<ResumeStatus> {
+  try {
+    const current = resumeStatus(await listTemplates(ch));
+    if (current !== "ausente") return current;
+    await createTemplate(ch, { name: RESUME_TEMPLATE_NAME, category: "UTILITY", body: resumeTemplateBody(company), examples: ["Ana"] });
+    return "em_analise";
+  } catch (e) {
+    console.error("whatsapp: modelo de retomada não criado", (e as Error).message);
+    return "ausente";
+  }
+}
+
+/** Os modelos que dá para mandar numa conversa, com o de retomada primeiro, e o estado dele. */
+export async function conversationTemplates(ch: TemplateChannel): Promise<{ templates: SendableTemplate[]; resume: ResumeStatus }> {
+  const all = await listTemplates(ch);
+  const sendable = all.filter((t) => t.status === "APPROVED" && t.category === "UTILITY" && !unsupportedReason(t)).map(toSendable);
+  sendable.sort((a, b) => Number(b.name === RESUME_TEMPLATE_NAME) - Number(a.name === RESUME_TEMPLATE_NAME));
+  return { templates: sendable, resume: resumeStatus(all) };
+}

@@ -9,6 +9,7 @@ import { sendBlockedReason } from "./conversation-mode";
 import { deliver, type SendRecord } from "./send";
 import { saveMessage, touchConversation } from "./messages";
 import { attendantAuthor, type Attendant } from "./authors";
+import { humanAgentEnabled } from "./presence";
 import { renderEntryNotice, type HumanHandoff } from "./handoff-hours";
 
 /**
@@ -166,7 +167,15 @@ async function deliverToInstagram(admin: SupabaseClient, botId: string, conversa
       kind: "equipe",
       recordFailures: false,
       record,
-      transport: () => sendInstagram(admin, ch, igsid, content),
+      // passadas as 24 h: a resposta da equipe vai com a tag human_agent (até 7 dias), quando liberada
+      transport: async () => {
+        try {
+          return await sendInstagram(admin, ch, igsid, content);
+        } catch (e) {
+          if (isOutsideWindow(e) && humanAgentEnabled()) return sendInstagram(admin, ch, igsid, content, undefined, { humanAgent: true });
+          throw e;
+        }
+      },
     });
     if (r.status === "blocked") return fail(`${(await sendBlockedReason(admin, botId, "instagram")) ?? `Envio barrado: ${r.reason}.`} A mensagem não foi enviada.`);
     return "gravada";
@@ -175,7 +184,7 @@ async function deliverToInstagram(admin: SupabaseClient, botId: string, conversa
       await markInstagramDisconnected(admin, { column: "bot_id", value: botId }, IG_TOKEN_REJECTED);
       return fail("O cliente removeu o acesso ao Instagram. A mensagem não foi enviada: conecte de novo na aba Instagram.");
     }
-    if (isOutsideWindow(e)) return fail("Passaram mais de 24 horas desde a última mensagem do cliente. O Instagram só deixa responder dentro desse prazo.");
+    if (isOutsideWindow(e)) return fail(humanAgentEnabled() ? "Passaram mais de 7 dias desde a última mensagem do cliente. O Instagram só deixa a equipe responder até 7 dias depois." : "Passaram mais de 24 horas desde a última mensagem do cliente. O Instagram só deixa responder dentro desse prazo.");
     console.error("instagram: resposta do atendente falhou", e);
     return fail("O Instagram não aceitou a mensagem. Tente de novo em instantes.");
   }

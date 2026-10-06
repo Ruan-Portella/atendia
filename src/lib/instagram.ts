@@ -213,11 +213,13 @@ export function splitDm(text: string, maxParts = 3): string[] {
 }
 
 /** Manda uma DM. Devolve o id da mensagem (o webhook ecoa as nossas; com ele sabemos ignorar). */
-export async function sendInstagramText(ch: IgChannel, recipientId: string, text: string, quickReplies?: Array<{ title: string; payload: string }>): Promise<string | null> {
+export async function sendInstagramText(ch: IgChannel, recipientId: string, text: string, quickReplies?: Array<{ title: string; payload: string }>, opts: { humanAgent?: boolean } = {}): Promise<string | null> {
   const message: Record<string, unknown> = { text: fitDm(text) };
   // respostas rápidas: botões embaixo da mensagem (o toque volta com quick_reply.payload)
   if (quickReplies?.length) message.quick_replies = quickReplies.slice(0, 13).map((q) => ({ content_type: "text", title: q.title.slice(0, 20), payload: q.payload }));
-  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message } });
+  // depois das 24 h, só a resposta da equipe, com a tag human_agent (até 7 dias; revisão própria da Meta)
+  const tag = opts.humanAgent ? { messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" } : {};
+  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message, ...tag } });
   return r.message_id ?? null;
 }
 

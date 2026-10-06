@@ -49,10 +49,37 @@ export const WHATSAPP_WINDOW_HOURS = 24;
  * resposta: no site, online agora ou falou há menos de IDLE_MINUTES; no WhatsApp, dentro das 24 h.
  */
 export function canTakeOver(c: PresenceInput, now = Date.now()): boolean {
-  // WhatsApp e Instagram: a resposta livre vale até 24 h depois da última mensagem do contato
-  if (c.channel === "whatsapp" || c.channel === "instagram") return whatsappWindowOpen(c, now);
+  // WhatsApp e Instagram: a resposta livre vale até 24 h depois da última mensagem do contato;
+  // no Instagram, com a tag human_agent liberada, o atendente ainda responde até 7 dias
+  if (c.channel === "instagram") return whatsappWindowOpen(c, now) || humanAgentUntil(c, now) !== null;
+  if (c.channel === "whatsapp") return whatsappWindowOpen(c, now);
   const idle = (now - new Date(c.last_message_at).getTime()) / 60_000;
   return conversationState(c, now) === "online" || idle < IDLE_MINUTES;
+}
+
+/** "3 dias", "5 horas", "20 minutos": quanto falta até a data. Pura. */
+export function timeLeft(until: Date, now = Date.now()): string {
+  const min = Math.max(1, Math.round((until.getTime() - now) / 60_000));
+  if (min >= 2 * 1440) return `${Math.floor(min / 1440)} dias`;
+  if (min >= 120) return `${Math.floor(min / 60)} horas`;
+  return min >= 60 ? "1 hora" : `${min} minuto${min === 1 ? "" : "s"}`;
+}
+
+/** Dias que o atendente humano ainda responde no Instagram depois da última mensagem do contato (tag human_agent). */
+export const HUMAN_AGENT_DAYS = 7;
+
+/** A tag human_agent do Instagram está liberada (revisão própria da Meta aprovada)? Só o atendente humano usa. */
+export const humanAgentEnabled = () => process.env.INSTAGRAM_HUMAN_AGENT === "1";
+
+/**
+ * Instagram: até quando o atendente humano ainda responde (passadas as 24 h, com a tag human_agent
+ * liberada). null = fora do prazo, sem a tag, ou o contato nunca escreveu.
+ */
+export function humanAgentUntil(c: PresenceInput, now = Date.now(), enabled = humanAgentEnabled()): Date | null {
+  if (!enabled || c.last_user_at === null) return null;
+  const from = new Date(c.last_user_at ?? c.last_message_at).getTime();
+  const until = from + HUMAN_AGENT_DAYS * 86_400_000;
+  return until > now ? new Date(until) : null;
 }
 
 /** Ainda dá para mandar texto livre no WhatsApp? (senão, só modelo aprovado) */

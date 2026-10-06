@@ -50,7 +50,7 @@ import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
 import { firstExceeded } from "@/lib/rate-limit";
-import { createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
+import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -682,6 +682,8 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   const { error } = await admin.from("whatsapp_channels").insert({ bot_id: botId, phone_number_id: phoneNumberId, waba_id: wabaId, display_phone: phone.display_phone_number ?? null, verified_name: phone.verified_name ?? null });
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   await confirmAcceptance(admin, { clientId: bot.client_id as string, channel: "whatsapp", metaAccount: wabaId ?? phoneNumberId, metaVerifiedName: phone.verified_name ?? null });
+  // modelo padrão de retomada (utilidade, pt_BR), quando a conta do WhatsApp veio junto
+  if (wabaId) await ensureResumeTemplate({ phone_number_id: phoneNumberId, waba_id: wabaId, access_token_enc: null }, String((await admin.from("bots").select("client_name").eq("id", botId).maybeSingle()).data?.client_name ?? ""));
   await auditPanel("canal.conectar", { type: "bot", id: botId }, { after: { channel: "whatsapp", via: "id", phone: phone.display_phone_number ?? null, waba_id: wabaId } });
   revalidatePath(`/painel/bots/${botId}`);
   await markAnalysisDue(createAdminClient(), botId);
