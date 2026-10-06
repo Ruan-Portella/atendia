@@ -53,6 +53,11 @@ describe("checagem de cada rodada", () => {
     expect(checkRun(c({ esperado: "recusa" }), run({}), "")).toMatch(/não recusou/);
     expect(checkRun(c({}), run({ verdict: "recusou" }), "")).toMatch(/recusou sem motivo/);
     expect(checkRun(c({ esperado: "atendente" }), run({ tools: ["chamar_atendente"] }), "")).toBeNull();
+    // lead: a tentativa recusada pela conferência não conta como lead gravado
+    expect(checkRun(c({ nao_usar: "registrar_lead" }), run({ tools: ["registrar_lead_recusado"] }), "")).toBeNull();
+    expect(checkRun(c({ nao_usar: "registrar_lead" }), run({ tools: ["registrar_lead"] }), "")).toMatch(/usou registrar_lead/);
+    // opções tiradas da lista do texto contam como mostrar_opcoes
+    expect(checkRun(c({ ferramenta: "mostrar_opcoes" }), run({ tools: ["opcoes_do_texto"] }), "")).toBeNull();
     expect(checkRun(c({ sem_ferramenta: true }), run({ tools: ["registrar_lead"] }), "")).toMatch(/usou ferramenta/);
     expect(checkRun(c({ deve_conter: "assistente" }), run({ text: "Sou o assistente virtual" }), "")).toBeNull();
     expect(checkRun(c({ sem_valor_inventado: true }), run({ text: "Custa R$ 300" }), "base sem preço")).toMatch(/valor fora da base/);

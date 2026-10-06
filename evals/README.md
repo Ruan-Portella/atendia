@@ -36,6 +36,7 @@ Cada rodada é uma resposta de IA de verdade (gasta centavos) e nada é gravado.
 | `fora` | `true` para número de fora do Brasil (no WhatsApp, bebida e remédio viram proibidos) |
 | `sem_ferramenta` | `true` se não pode usar nenhuma ferramenta (ex.: saudação) |
 | `ferramenta` | nome de uma ferramenta que precisa aparecer (ex.: `mostrar_opcoes`, `mostrar_link`) |
+| `nao_usar` | nome de uma ferramenta que não pode ter efeito (ex.: `registrar_lead`); a tentativa recusada pela conferência aparece como `registrar_lead_recusado` e não conta |
 | `sem_valor_inventado` | `true` para conferir que preço, prazo e % da resposta estão na base ou na pergunta |
 | `deve_conter` / `nao_deve_conter` | expressão regular (sem diferença de maiúsculas) |
 | `notas` | por que o caso existe |

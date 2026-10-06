@@ -189,7 +189,13 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         }
       }
       opts.onUsage?.(usageFrom(r.response?.modelId ?? opts.model ?? chatModelId(), r.totalUsage));
-      const tools = r.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
+      // lead recusado pela conferência (sem nome ou contato): nada foi gravado; aparece à parte no relatório
+      const tools = r.steps.flatMap((s) =>
+        s.toolCalls.map((c) => {
+          const out = s.toolResults.find((t) => t.toolCallId === c.toolCallId)?.output as { ok?: unknown } | undefined;
+          return c.toolName === "registrar_lead" && out?.ok === false ? "registrar_lead_recusado" : c.toolName;
+        }),
+      );
       // opções tiradas da lista do texto (rede de segurança): aparece no relatório
       if (listedOptions) tools.push("opcoes_do_texto");
       const inputTokens = r.totalUsage?.inputTokens ?? 0;
