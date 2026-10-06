@@ -435,7 +435,7 @@ export function chatTools(exec: {
         nome: z.string().min(2),
         whatsapp: z.string().optional(),
         email: z.string().optional(),
-        instagram: z.string().optional().describe("@ do Instagram, se a pessoa preferir esse contato"),
+        instagram: z.string().optional().describe("@ do Instagram que a pessoa escreveu, se ela preferir esse contato; nunca monte um @ a partir do nome, e no Direct deixe vazio (a conta já é conhecida)"),
         interesse: z.string().optional().describe("o que a pessoa quer: agendar, orçamento, etc."),
       }),
       execute: exec.registrar_lead,
@@ -700,8 +700,9 @@ export async function runChat(opts: {
         // só com nome de verdade e um contato (a IA às vezes chama antes da resposta, com "não informado")
         const lead = checkLeadInput(input, { phone: waPhone, instagram: Boolean(opts.instagram), said: contactSaid(messages, [opts.whatsapp?.profileName, opts.identity?.userDisplay?.name]) });
         if (!lead.ok) return lead;
-        // pelo Direct: o @ da própria conta que escreveu (busca única, só quando vira lead)
-        const instagram = lead.instagram ?? (opts.instagram ? await directUsername(db, bot.id, opts.instagram.igsid) : null);
+        // pelo Direct: o @ da própria conta que escreveu (busca única, só quando vira lead); o que a
+        // pessoa digitou só se a busca falhar
+        const instagram = (opts.instagram ? await directUsername(db, bot.id, opts.instagram.igsid) : null) ?? lead.instagram;
         const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, instagram, channel, notes: input.interesse });
         notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: lead.nome }, channel, conversationId: convId }).catch(() => {});
         // o que dizer depois: a equipe retorna (pela própria conversa, no WhatsApp e no Instagram), sem pedir mais dados

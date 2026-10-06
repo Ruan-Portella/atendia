@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkLeadInput, nameWasGiven, validInstagram, validPhone } from "../lead-input";
+import { checkLeadInput, contactWasTyped, nameWasGiven, validInstagram, validPhone } from "../lead-input";
 
 describe("dados do lead que a IA manda", () => {
   it("sem nome de verdade ou sem contato, não grava e pede os dados", () => {
@@ -62,5 +62,35 @@ describe("nome dito pela pessoa", () => {
     expect(checkLeadInput({ nome: "Carla" }, { phone: "5511999990000", said: ["pode sim", "Carla"] }).ok).toBe(true);
     // sem a lista (chamadas antigas), não confere
     expect(checkLeadInput({ nome: "Maria" }, { instagram: true }).ok).toBe(true);
+  });
+});
+
+describe("contato que a pessoa escreveu", () => {
+  it("@ montado a partir do nome não conta; o @ digitado, sim", () => {
+    expect(contactWasTyped("instagram", "@ruan", ["quero uma pizza", "Ruan"])).toBe(false);
+    expect(contactWasTyped("instagram", "@mrtnsruan", ["meu insta é @mrtnsruan"])).toBe(true);
+    expect(contactWasTyped("instagram", "@mrtnsruan", ["instagram.com/mrtnsruan"])).toBe(true);
+    expect(contactWasTyped("instagram", "@ruan", ["meu insta é @mrtnsruan"])).toBe(false);
+    expect(contactWasTyped("instagram", "@ana.souza", ["meu insta é ana.souza"])).toBe(true);
+    expect(contactWasTyped("instagram", "@ana.souza", ["meu insta é anaxsouza"])).toBe(false);
+    expect(contactWasTyped("instagram", "@ruan", ["Ruan", "pode me chamar no insta"])).toBe(false);
+  });
+
+  it("WhatsApp pelos últimos 8 dígitos, com ou sem 55 e formatação; e-mail exato", () => {
+    expect(contactWasTyped("whatsapp", "5511999990000", ["meu whats é (11) 99999-0000"])).toBe(true);
+    expect(contactWasTyped("whatsapp", "11 98888-7777", ["meu whats é (11) 99999-0000"])).toBe(false);
+    expect(contactWasTyped("email", "ana@x.com", ["pode ser Ana@X.com"])).toBe(true);
+    expect(contactWasTyped("email", "ana@x.com", ["Ana"])).toBe(false);
+  });
+
+  it("no Instagram, @ inventado fica de fora e o lead vale pela conta do Direct", () => {
+    const r = checkLeadInput({ nome: "Ruan", instagram: "@ruan" }, { instagram: true, said: ["quero uma pizza", "Ruan"] });
+    expect(r).toMatchObject({ ok: true, nome: "Ruan", instagram: null });
+  });
+
+  it("no site, contato inventado fica de fora e falta contato", () => {
+    const r = checkLeadInput({ nome: "Ruan", whatsapp: "11999990000" }, { said: ["quero orçamento", "Ruan"] });
+    expect(r.ok).toBe(false);
+    expect(checkLeadInput({ nome: "Ruan", whatsapp: "11999990000" }, { said: ["Ruan, 11 99999-0000"] })).toMatchObject({ ok: true, whatsapp: "11999990000" });
   });
 });

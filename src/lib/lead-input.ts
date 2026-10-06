@@ -39,7 +39,7 @@ export interface LeadInput {
 export interface KnownContact {
   phone?: string | null;
   instagram?: boolean;
-  /** O que a pessoa escreveu e os nomes que a conversa já conhece (perfil do WhatsApp, identidade do site): o nome do lead sai daqui. */
+  /** O que a pessoa escreveu e os nomes que a conversa já conhece (perfil do WhatsApp, identidade do site): o nome e os contatos do lead saem daqui. */
   said?: string[];
 }
 
@@ -52,13 +52,37 @@ export function nameWasGiven(nome: string, said: string[]): boolean {
 }
 
 /**
- * Confere o que a IA mandou. Devolve os dados limpos ou a instrução para a IA. Pura.
+ * O contato que a IA mandou foi escrito pela pessoa? A IA às vezes monta um @ a partir do nome
+ * ("Ruan" vira "@ruan", que é a conta de outra pessoa) ou repete o número do próprio canal. Pura.
+ */
+export function contactWasTyped(kind: "whatsapp" | "email" | "instagram", value: string, said: string[]): boolean {
+  if (kind === "whatsapp") {
+    // pelo menos os 8 últimos dígitos numa mensagem (a IA pode pôr o 55 ou tirar a formatação)
+    const tail = value.replace(/\D/g, "").slice(-8);
+    return tail.length === 8 && said.some((t) => t.replace(/\D/g, "").includes(tail));
+  }
+  if (kind === "email") return said.join("\n").toLowerCase().includes(value.toLowerCase());
+  // @: escrito com @, como link do perfil ou numa mensagem que fala do Instagram ("meu insta é fulano");
+  // a palavra solta não basta, porque o nome da pessoa ("Ruan") também viraria um @
+  const handle = value.replace(/^@/, "").toLowerCase().replace(/[.]/g, "\\.");
+  const marked = new RegExp(`(?:@|instagram\\.com/)${handle}(?![a-z0-9._])`);
+  const loose = new RegExp(`(?:^|[^a-z0-9._])${handle}(?![a-z0-9._])`);
+  return said.some((t) => {
+    const low = t.toLowerCase();
+    return marked.test(low) || (/\b(?:insta|instagram|ig|perfil)\b/.test(low) && loose.test(low));
+  });
+}
+
+/**
+ * Confere o que a IA mandou. Devolve os dados limpos ou a instrução para a IA. Com `said`, contato
+ * que a pessoa não escreveu fica de fora (e, sem outro, falta contato). Pura.
  */
 export function checkLeadInput(input: LeadInput, known: KnownContact = {}): { ok: true; nome: string; whatsapp: string | null; email: string | null; instagram: string | null } | { ok: false; instrucao: string } {
   const nome = input.nome.replace(/\s+/g, " ").trim();
-  const whatsapp = validPhone(input.whatsapp);
-  const email = input.email && !isPlaceholder(input.email) && isEmail(input.email.trim()) ? input.email.trim().toLowerCase() : null;
-  const instagram = validInstagram(input.instagram);
+  const typed = <T extends string | null>(kind: "whatsapp" | "email" | "instagram", v: T): T | null => (v && known.said !== undefined && !contactWasTyped(kind, v, known.said) ? null : v);
+  const whatsapp = typed("whatsapp", validPhone(input.whatsapp));
+  const email = typed("email", input.email && !isPlaceholder(input.email) && isEmail(input.email.trim()) ? input.email.trim().toLowerCase() : null);
+  const instagram = typed("instagram", validInstagram(input.instagram));
   const badName = nome.length < 2 || isPlaceholder(nome) || !/\p{L}{2}/u.test(nome) || (known.said !== undefined && !nameWasGiven(nome, known.said));
   const noContact = !whatsapp && !email && !instagram && !known.phone && !known.instagram;
   if (badName || noContact) {
