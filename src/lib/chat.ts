@@ -459,7 +459,7 @@ export function chatTools(exec: {
     // mensagens ricas (leva B1'): o canal monta a mensagem a partir da chamada, sem outro passo
     mostrar_opcoes: tool({
       description:
-        "Mostra opções para a pessoa tocar (botões ou lista), em vez de digitar. Use SEMPRE que a resposta pedir para a pessoa escolher entre 2 e 10 alternativas que estão no CONTEXTO (ex.: sabores, produtos, serviços, unidade, dia, horário), no lugar de escrever as alternativas em lista. Escreva em texto a mensagem inteira que acompanha as opções e não escreva nada fora da ferramenta. Opções curtas (até 20 caracteres quando forem até 3), sem numerar e sem preço. Não use em saudação nem para listar informação que não é uma escolha.",
+        "Mostra opções para a pessoa tocar (botões ou lista), em vez de digitar. Use SEMPRE que a resposta pedir para a pessoa escolher entre 2 e 10 alternativas que estão no CONTEXTO (ex.: sabores, produtos, serviços, unidade, dia, horário), no lugar de escrever as alternativas em lista. Escreva em texto a mensagem inteira que acompanha as opções e não escreva nada fora da ferramenta. Opções curtas (até 20 caracteres quando forem até 3), sem numerar e sem preço. Não use quando a pessoa já disse o que quer (ex.: “quero uma calabresa”: siga com a escolha dela), em saudação nem para listar informação que não é uma escolha.",
       inputSchema: z.object({
         texto: z.string().min(1).describe("a mensagem inteira que vai junto com as opções (a pergunta e o que mais precisar dizer)"),
         opcoes: z.array(z.string().min(1)).min(2).max(10).describe("as opções, curtas e sem numerar"),
