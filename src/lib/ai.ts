@@ -282,6 +282,15 @@ function scopeReminderBase(clientName: string): string {
 }
 
 /**
+ * Lembrete do site, do teste ao vivo e da demonstração, depois da última mensagem (pesa mais que as
+ * regras do começo): assunto de fora é recusa leve com registrar_recusa, nunca "Não tenho essa
+ * informação" (que vira pergunta sem resposta para a equipe).
+ */
+export function offTopicReminder(clientName: string): string {
+  return `Lembrete antes de responder: se a última mensagem não é sobre ${clientName} (opinião, notícia, futebol, política, pessoa pública, conhecimento geral, ou pedir um trabalho como redação, resumo, tradução ou lição), diga em uma frase que por aqui você atende sobre ${clientName}, ofereça o que pode fazer e chame registrar_recusa (nivel "fixo" para trabalho ou assistente de uso geral, "flexivel" para o resto). Nesse caso não use "Não tenho essa informação": essa frase é só para pergunta sobre ${clientName} que falta na base. Saudação, agradecimento e pergunta sobre ${clientName}: responda normalmente.`;
+}
+
+/**
  * Site, teste ao vivo e demonstração (sem a trava de escopo da Meta): o que é fora do negócio vira
  * recusa leve e "pedido fora do assunto", e não pergunta sem resposta, que a equipe acharia que
  * precisa responder na base.

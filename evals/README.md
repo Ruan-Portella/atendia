@@ -31,7 +31,7 @@ Cada rodada é uma resposta de IA de verdade (gasta centavos) e nada é gravado.
 | `canal` | `whatsapp` (padrão), `instagram` ou `widget` (no widget não há trava de escopo) |
 | `historico` | conversa anterior, alternando contato e assistente, começando pelo contato |
 | `pergunta` | a última mensagem do contato |
-| `esperado` | `recusa` (trava de escopo), `nao_recusa` (atende, sem recusa e sem portão), `atendente` (chama alguém), `barra` (texto fixo de proibido), `pede_18` (pergunta de 18+) ou `qualquer` |
+| `esperado` | `recusa` (trava de escopo; a recusa escrita sem `registrar_recusa`, que o chat registra sozinho, aparece como `recusa_do_texto`), `nao_recusa` (atende, sem recusa e sem portão), `atendente` (chama alguém), `barra` (texto fixo de proibido), `pede_18` (pergunta de 18+) ou `qualquer` |
 | `idade` | `sim` ou `nao`: o contato já respondeu à pergunta de 18+ (sem o campo, não confirmada) |
 | `fora` | `true` para número de fora do Brasil (no WhatsApp, bebida e remédio viram proibidos) |
 | `sem_ferramenta` | `true` se não pode usar nenhuma ferramenta (ex.: saudação) |

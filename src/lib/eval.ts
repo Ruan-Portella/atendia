@@ -1,8 +1,9 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildPrompt, chatModel, chatModelId, modelCallOptions, scopeReminder, type ReasoningEffort } from "./ai";
-import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, retrieveContext, withRiskText, type BotRow } from "./chat";
+import { buildPrompt, chatModel, chatModelId, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
+import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
+import { isScopeRefusalText, isTextRefusal } from "./refusal-text";
 import { joinShownText, normalizeLink, normalizeOptions, optionsFromText, type MessageComponent } from "./components";
 import { gateComponent } from "./gate/components";
 import { handoffNotice } from "./handoff-hours";
@@ -56,9 +57,13 @@ export interface EvalRun {
 
 const ONLY_REGISTERED = /^(registrei|anotei|deixei registrad)/i;
 
-export function verdictOf(text: string, tools: string[]): EvalRun["verdict"] {
+export function verdictOf(text: string, tools: string[], asked?: { question: string; clientName: string }): EvalRun["verdict"] {
   const t = text.trim();
   if (tools.includes("pedir_confirmacao_18")) return "pediu_18";
+  // recusa clara de assunto de fora (com a ferramenta ou registrada pela rede de segurança), mesmo
+  // que o modelo tenha começado com "Não tenho essa informação"; pergunta do negócio não conta, como no chat
+  const refusalText = asked ? isTextRefusal(t, asked.question, asked.clientName) : isScopeRefusalText(t);
+  if ((tools.includes("registrar_recusa") || tools.includes("recusa_do_texto")) && refusalText) return "recusou";
   // como no chat: "Não tenho essa informação" e "vou confirmar com a equipe" são lacuna da base,
   // mesmo com registrar_recusa junto (o chat desfaz essa recusa e registra a pergunta para a equipe)
   if (isNoInfoAnswer(t)) return "nao_tenho";
@@ -140,7 +145,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           ...(scopeLock ? gatedHistory(historyParts, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, age, exempt }) : historyParts).map((m) => ({ role: m.role, content: m.parts[0].text })),
           // item barrado junto com outro assunto: a IA responde à mensagem sem o item, como no canal
           { role: "user" as const, content: entrance?.kind === "ia" && entrance.question ? entrance.question : question },
-          ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : []),
+          ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : [{ role: "system" as const, content: offTopicReminder(bot.client_name) }]),
         ],
         // mesmas opções do chat (esforço de raciocínio, chave de cache)
         ...modelCallOptions(opts.model ?? chatModelId(), { temperature: opts.temperature ?? CHAT_TEMPERATURE, cacheKey: chatCacheKey(opts.channel ?? "site"), effort: opts.effort }),
@@ -158,7 +163,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
             return { ok: true, aviso: urgente ? RISK_TEXT : handoffNotice(bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message) };
           },
           registrar_pergunta_sem_resposta: noop,
-          registrar_recusa: noop,
+          registrar_recusa: async () => ({ ok: true, instrucao: refusalAck(bot.client_name) }),
           pedir_confirmacao_18: noop,
           mostrar_opcoes: async ({ texto, opcoes }) => {
             const options = normalizeOptions(opcoes);
@@ -198,6 +203,8 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       );
       // opções tiradas da lista do texto (rede de segurança): aparece no relatório
       if (listedOptions) tools.push("opcoes_do_texto");
+      // recusa escrita sem registrar_recusa: o chat registra sozinho; aparece no relatório
+      if (!tools.includes("registrar_recusa") && isTextRefusal(written, question, bot.client_name)) tools.push("recusa_do_texto");
       const inputTokens = r.totalUsage?.inputTokens ?? 0;
       const cachedInputTokens = r.totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0;
       const outputTokens = r.totalUsage?.outputTokens ?? 0;
@@ -225,7 +232,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       if (component) text += component.type === "options" ? ` [opções: ${component.options.map((o) => o.title).join(" | ")}]` : ` [link: ${component.label} → ${component.url}]`;
       if (exit?.offerAdult && !exit.emptied) text += ` [botão: ${GATE_TEXTS.showAdultOptions}]`;
       if (entrance?.kind === "ia" && entrance.prefix) text = `${entrance.prefix}\n\n${text}`;
-      return { verdict: verdictOf(text, tools.filter((t) => t !== "pedir_confirmacao_18")), text, tools, ...usage };
+      return { verdict: verdictOf(text, tools.filter((t) => t !== "pedir_confirmacao_18"), { question, clientName: bot.client_name }), text, tools, ...usage };
     } catch (e) {
       return { verdict: "erro", text: (e as Error).message, tools: [], inputTokens: 0, outputTokens: 0, costUsd: 0 };
     }

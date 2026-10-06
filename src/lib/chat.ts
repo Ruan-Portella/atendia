@@ -1,7 +1,7 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type UIMessage, type UIMessageChunk } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, scopeReminder, type Persona } from "./ai";
+import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, offTopicReminder, scopeReminder, type Persona } from "./ai";
 import { getPlan } from "./plans";
 import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
@@ -11,6 +11,7 @@ import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
+import { isTextRefusal, refusalLevelFor } from "./refusal-text";
 import { instagramUsername } from "./instagram";
 import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, optionsFromText, parseComponents, type MessageComponent } from "./components";
 import { RISK_TEXT, detectRisk } from "./risk";
@@ -485,6 +486,10 @@ async function directUsername(db: SupabaseClient, botId: string, igsid: string):
   return ch ? instagramUsername(ch as { ig_user_id: string; access_token_enc: string | null }, igsid) : null;
 }
 
+/** Depois de registrar_recusa: o que a resposta precisa dizer (a IA às vezes escrevia só "se precisar, é só avisar" ou "registrei"). */
+export const refusalAck = (clientName: string) =>
+  `Recusa anotada (não diga isso à pessoa). A resposta precisa dizer, em uma frase, que por aqui você atende sobre ${clientName} e oferecer o que pode fazer; não responda ao pedido e não diga que registrou nada.`;
+
 /**
  * Sites que a IA pode mandar abrir num botão: os que aparecem na base desta resposta e os da
  * configuração do chatbot (site do cliente, atendimento, onde finalizar pedido).
@@ -673,7 +678,7 @@ export async function runChat(opts: {
       { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null)].filter(Boolean).join("\n\n") },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
-      ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, hasActions ? [...gated.reminder, ACTIONS_PROMPT_NOTE] : gated.reminder) }] : []),
+      ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, hasActions ? [...gated.reminder, ACTIONS_PROMPT_NOTE] : gated.reminder) }] : [{ role: "system" as const, content: offTopicReminder(bot.client_name) }]),
     ],
     ...modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) }),
     stopWhen: [stepCountIs(maxSteps), () => actionReply !== null, () => shown !== null],
@@ -713,7 +718,8 @@ export async function runChat(opts: {
         // registro próprio, separado das perguntas sem resposta (que são lacuna na base)
         const refusalId = await recordRefusal(db, { botId: bot.id, conversationId: convId, level: nivel, request: pedido });
         if (refusalId !== null) refusalIds.push(refusalId);
-        return { ok: true };
+        // o texto que acompanha: a recusa em uma frase, sem dizer que registrou nada
+        return { ok: true, instrucao: refusalAck(bot.client_name) };
       },
       pedir_confirmacao_18: async () => {
         // idade já respondida: não pergunta de novo (a IA ainda pode seguir um aviso velho do histórico)
@@ -761,10 +767,15 @@ export async function runChat(opts: {
         // "Não tenho essa informação" e "vou confirmar com a equipe" são pergunta do negócio que falta
         // na base, não recusa: a IA às vezes chama registrar_recusa junto (ex.: depois de uma recusa
         // na conversa); desfaz a recusa
-        const refusalStands = refusalIds.length > 0 && !isGapAnswer(text);
+        // recusa clara no texto ("aqui atendo sobre a empresa") vale mesmo que comece com "Não tenho essa informação"
+        const refusalText = Boolean(question) && isTextRefusal(text, question, bot.client_name);
+        const refusalStands = refusalIds.length > 0 && (!isGapAnswer(text) || refusalText);
         if (refusalIds.length && !refusalStands) await deleteRefusals(db, refusalIds);
+        // rede de segurança: a IA recusou no texto e esqueceu registrar_recusa; o BoaVoz registra
+        const textRefusal = !refusalIds.length && !actionReply && refusalText;
+        if (textRefusal) await recordRefusal(db, { botId: bot.id, conversationId: convId, level: refusalLevelFor(question), request: question });
         // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
-        if (!actionReply && !unansweredRecorded && !refusalStands && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
+        if (!actionReply && !unansweredRecorded && !refusalStands && !textRefusal && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
         // com reply de ação, o que fica gravado é o texto exato (no WhatsApp e no Instagram o canal
         // ainda troca pelo que saiu de fato, depois do portão)
         // valor interno de uma ação escrito na resposta: a frase sai também do que fica gravado
