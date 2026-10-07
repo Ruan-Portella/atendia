@@ -7,8 +7,9 @@ export const metadata = { title: "Política de Privacidade" };
 /*
  * Leva S (05/10/2026): papéis em três camadas, cifra por cliente, retenção por negócio, registros de
  * acesso, modo dados sensíveis, arquivos recebidos, pedido pelo chat, acesso do suporte com
- * autorização e subcontratados. Só entra aqui o que já existe: marketing com consentimento (B3),
- * encerramento com carência e o prazo dos backups (depois do Supabase Pro) entram quando existirem.
+ * autorização e subcontratados. Só entra aqui o que já existe: encerramento com carência e o prazo
+ * dos backups (depois do Supabase Pro) entram quando existirem. Leva B3 (06/10/2026): a prova do
+ * consentimento para novidades; o envio de campanhas entra com a tela de campanhas.
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -16,7 +17,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Política de Privacidade"
-      updatedAt="5 de outubro de 2026"
+      updatedAt="6 de outubro de 2026"
       intro={`Esta política explica quais dados pessoais a ${brand} trata, para quê, com quem compartilha, por quanto tempo guarda e como você exerce seus direitos, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).`}
     >
       <Section title="1. Quem somos">
@@ -147,6 +148,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Lista de supressão:</strong> quem pede para sair (&quot;SAIR&quot;, &quot;PARAR&quot; ou o pedido de exclusão) entra numa lista consultada em todo envio iniciado pela empresa, guardada por 5 anos só com um código do número (hash), o canal, o tipo de mensagem e a data, como prova; ela continua valendo mesmo que o contato seja apagado.
+          </li>
+          <li>
+            <strong>Consentimento para novidades e promoções:</strong> quando a pessoa aceita ou recusa receber novidades pelo WhatsApp, guardamos a resposta, o texto mostrado, a origem e a data, só com um código do número (hash), como prova (LGPD, art. 8º, § 2º). O aceite vale até ser revogado (responder &quot;SAIR&quot; revoga na hora); depois da revogação ou da recusa, o registro fica 5 anos e é apagado, mesmo que o contato já tenha sido apagado antes.
           </li>
           <li><strong>Totais dos relatórios:</strong> números por dia, sem dados pessoais, enquanto a conta existir.</li>
           <li><strong>Tokens de acesso do WhatsApp e do Instagram:</strong> até a desconexão ou o encerramento da conta.</li>

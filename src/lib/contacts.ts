@@ -55,9 +55,11 @@ export interface ContactRow {
   last_inbound_at: string | null;
   /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
   unavailable_notice_reason?: string | null;
+  /** A oferta de novidades já foi feita (leva B3: uma vez por contato). */
+  marketing_offer_at?: string | null;
 }
 
-const COLS = "id, phone_hash, wa_user_hash, ig_hash, first_inbound_at, last_inbound_at, unavailable_notice_reason";
+const COLS = "id, phone_hash, wa_user_hash, ig_hash, first_inbound_at, last_inbound_at, unavailable_notice_reason, marketing_offer_at";
 
 export interface WhatsAppIdentity {
   /** wa_id / from: telefone com DDI (some quando a pessoa usa nome de usuário). */
@@ -487,4 +489,9 @@ export async function reencryptContacts(db: SupabaseClient, limit = 300): Promis
     if (!upErr) done++;
   }
   return done;
+}
+
+/** A oferta de novidades saiu para este contato (leva B3: uma vez por contato). */
+export async function markMarketingOffer(db: SupabaseClient, contactId: string): Promise<void> {
+  await db.from("contacts").update({ marketing_offer_at: new Date().toISOString() }).eq("id", contactId);
 }

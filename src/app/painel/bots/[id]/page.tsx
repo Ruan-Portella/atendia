@@ -32,9 +32,10 @@ import { ChatPreviewSheet } from "@/components/chat-preview-sheet";
 import { WidgetPositionPicker } from "@/components/widget-position";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { MarketingOptInForm } from "@/components/marketing-optin-form";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { analyzeBotNow, answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, updateBot } from "../../actions";
+import { analyzeBotNow, answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
 import { UnansweredItem } from "@/components/unanswered-item";
@@ -520,6 +521,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                       Desconectar
                     </ConfirmAction>
                   </div>
+                  <MarketingOptInForm botId={id} on={Boolean(bot.marketing_optin_offer)} company={bot.client_name} canEdit={canConfig} action={setMarketingOptIn.bind(null, id)} />
                   <WhatsAppUsage botId={id} />
                   <WhatsAppTemplates botId={id} />
                 </>

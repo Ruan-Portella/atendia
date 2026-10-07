@@ -1445,3 +1445,19 @@ export async function setPlanItemPaused(kind: PlanItemKind, id: string, pause: b
   revalidatePath("/painel/cobranca/limites");
   return ok(pause ? "Pausado. A vaga ficou livre para outro item." : "Ativado.");
 }
+
+/* ------------------------------------------------------------------ novidades no WhatsApp (leva B3) */
+
+/** Liga ou desliga a oferta de novidades do chatbot (WhatsApp, uma vez por contato). */
+export async function setMarketingOptIn(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const on = formData.get("offer") === "on";
+  const supabase = await createClient();
+  // a RLS confere que o chatbot é desta agência (e do escopo de quem está logado)
+  const { data, error } = await supabase.from("bots").update({ marketing_optin_offer: on }).eq("id", botId).eq("is_demo", false).select("id");
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  if (!data?.length) return fail("Chatbot não encontrado.");
+  await auditPanel("bot.novidades", { type: "bot", id: botId }, { after: { marketing_optin_offer: on } });
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(on ? "Pronto: o assistente oferece novidades uma vez a cada contato." : "Oferta de novidades desligada.");
+}

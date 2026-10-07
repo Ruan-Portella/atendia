@@ -12,6 +12,7 @@ import { processGroup, sweepInbound, type Group, type GroupHandler, type Inbound
 import { revoke, suppress, suppressionScope } from "./suppression";
 import { recordMetaEnforcement, type MetaAccountDetail } from "./meta-enforcement";
 import { disconnectionDetail } from "./whatsapp-diagnostics";
+import { revokeConsents } from "./marketing-consent";
 
 /* ------------------------------------------------------------------ o que vai na fila */
 
@@ -68,6 +69,7 @@ const whatsappGroup: GroupHandler = async (db, events) => {
       // o contato bloqueou o marketing: entra na supressão de marketing (como um SAIR)
       if (e.bot_id && p.status.recipient_id && p.status.errors?.some((err) => err.code === MARKETING_STOPPED_CODE)) {
         await suppress(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id, kind: "marketing", reason: "meta_131050", source: "meta" });
+        await revokeConsents(db, { scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id }, "meta:131050");
       }
       // consumo: cada status de mensagem enviada diz se a Meta cobrou e em qual categoria
       if (e.bot_id) await recordUsage(db, e.bot_id, p.phoneNumberId, [p.status]);
@@ -76,7 +78,11 @@ const whatsappGroup: GroupHandler = async (db, events) => {
       for (const pref of p.prefs) {
         if (!pref.wa_id || !String(pref.category ?? "").startsWith("marketing")) continue;
         const target = { channel: "whatsapp" as const, scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id ?? "" }), contact: pref.wa_id };
-        if (pref.value === "stop") await suppress(db, { ...target, kind: "marketing", reason: "user_preferences", source: "meta" });
+        if (pref.value === "stop") {
+          await suppress(db, { ...target, kind: "marketing", reason: "user_preferences", source: "meta" });
+          // o "resume" não devolve o sim de novidades (só um novo sim da pessoa)
+          await revokeConsents(db, { scope: target.scope, contact: target.contact }, "meta:user_preferences");
+        }
         else if (pref.value === "resume") await revoke(db, { ...target, kind: "marketing", source: "meta:resume" });
       }
     }

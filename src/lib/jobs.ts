@@ -61,6 +61,10 @@ export async function applyRetention(db: SupabaseClient, hasTime: () => boolean 
   await db.from("gate_detections").delete().lt("created_at", daysAgoIso(365));
   // lista de supressão: 5 anos, só com o hash do número, como prova (LGPD, art. 16, I)
   await db.from("suppressions").delete().lt("created_at", daysAgoIso(5 * 365 + 1));
+  // consentimento de novidades (leva B3): a prova fica 5 anos depois da revogação ou da recusa;
+  // o sim ativo fica enquanto valer
+  await db.from("marketing_consents").delete().lt("revoked_at", daysAgoIso(5 * 365 + 1));
+  await db.from("marketing_consents").delete().eq("granted", false).lt("collected_at", daysAgoIso(5 * 365 + 1));
   // consumo do WhatsApp: 13 meses bastam para comparar com o mesmo mês do ano anterior
   await db.from("whatsapp_usage").delete().lt("created_at", daysAgoIso(400));
   // pareamento: código vencido ou usado sai depois de 1 dia; Idempotency-Key, depois de 24 h

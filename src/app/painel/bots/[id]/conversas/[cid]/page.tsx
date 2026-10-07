@@ -31,6 +31,8 @@ import { botGateExemptions, conversationGateCategories } from "@/lib/gate/except
 import { CATEGORIES } from "@/lib/gate/rules";
 import { GateReviewButton } from "@/components/gate-review-button";
 import { ageRecord } from "@/lib/gate/age";
+import { CONSENT_LABEL, SOURCE_LABEL, consentHistory, consentStateOf } from "@/lib/marketing-consent";
+import { suppressionScope } from "@/lib/suppression";
 
 export const metadata = { title: "Conversa" };
 
@@ -84,6 +86,12 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const identifiedName = conv.identity_hash && conv.contact_id ? await contactDisplayName(supabase, conv.contact_id) : null;
   // resposta de 18+ do contato neste bot (tabela interna: lida com a service role)
   const age = isWhatsApp || isInstagram ? await ageRecord(createAdminClient(), { botId: id, channel: isWhatsApp ? "whatsapp" : "instagram", contact: (isWhatsApp ? conv.wa_id : conv.ig_id)! }) : null;
+  // novidades (leva B3): o último sim ou não do contato, com a prova (tabela interna: service role)
+  const consent = isWhatsApp ? await (async () => {
+    const { data: wa } = await createAdminClient().from("whatsapp_channels").select("waba_id").eq("bot_id", id).maybeSingle();
+    const rows = await consentHistory(createAdminClient(), { scope: suppressionScope({ wabaId: (wa?.waba_id as string | null) ?? null, botId: id }), contact: conv.wa_id! }, 1).catch(() => []);
+    return rows[0] ? { state: consentStateOf(rows), row: rows[0] } : null;
+  })() : null;
 
   // arquivos que o contato mandou (abertos pela rota /api/files)
   const files = await attachmentsOfMessages(createAdminClient(), (messages ?? []).map((m) => m.id));
@@ -120,6 +128,14 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
+          {consent && (
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${consent.state === "granted" ? "bg-brand-soft text-brand" : "bg-ground text-muted"}`}
+              title={`${SOURCE_LABEL[consent.row.source]}, ${new Date(consent.row.revoked_at ?? consent.row.collected_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}: ${consent.row.text}`}
+            >
+              Novidades: {CONSENT_LABEL[consent.state]}
+            </span>
+          )}
           {age && (
             <ConfirmAction
               action={resetConversationAge.bind(null, cid)}

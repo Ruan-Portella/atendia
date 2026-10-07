@@ -50,6 +50,10 @@ export interface BotRow {
   pause_notify?: boolean | null;
   /** Onde o contato finaliza o pedido de bebida ou remédio (nunca no chat da Meta). */
   regulated_channel?: RegulatedChannel | null;
+  /** Oferecer novidades no WhatsApp, uma vez por contato (leva B3). */
+  marketing_optin_offer?: boolean | null;
+  /** Excedente do plano (leva B1'): modo só humano. */
+  paused_by_plan_at?: string | null;
 }
 
 export const CORS_HEADERS = {
@@ -643,6 +647,8 @@ export async function runChat(opts: {
   let unansweredRecorded = false;
   const refusalIds: number[] = [];
   let urgentCalled = false;
+  // lead gravado nesta vez (a oferta de novidades no WhatsApp, leva B3)
+  let leadCreated = false;
   let askAgeCalled = false;
   // resolve quando a resposta já está gravada (quem não usa o stream, como o WhatsApp, espera por ele)
   // resolve com o id da resposta gravada (null se não houve texto ou deu erro)
@@ -706,6 +712,7 @@ export async function runChat(opts: {
         const instagram = (opts.instagram ? await directUsername(db, bot.id, opts.instagram.igsid) : null) ?? lead.instagram;
         const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, instagram, channel, notes: input.interesse });
         notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: lead.nome }, channel, conversationId: convId }).catch(() => {});
+        leadCreated = true;
         // o que dizer depois: a equipe retorna (pela própria conversa, no WhatsApp e no Instagram), sem pedir mais dados
         return { ok: true, instrucao: leadSavedNote(channel) };
       },
@@ -819,5 +826,5 @@ export async function runChat(opts: {
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
   // components(): botões, lista ou link desta vez (o canal converte); shownText(): o texto que veio na ferramenta
-  return { result, conversationId: convId, sources: used, saved, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText, listText: () => listText };
+  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText, listText: () => listText };
 }

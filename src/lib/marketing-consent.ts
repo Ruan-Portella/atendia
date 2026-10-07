@@ -1,0 +1,207 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { activeSuppressions, contactHash, revoke, suppress } from "./suppression";
+
+/*
+ * Consentimento de marketing com prova (leva B3, parte 1; spec Peça 7 "Consentimento no contato"):
+ * cada sim ou não fica em marketing_consents com a origem, o texto mostrado, a versão e a data,
+ * pelo hash do número (como a supressão: sobrevive à exclusão do contato). No chat, o bot oferece
+ * novidades uma vez por contato, com botões Sim e Não, quando a agência liga a opção no chatbot; a
+ * IA nunca dispara marketing, só a oferta. SAIR, o descadastro do WhatsApp e o erro 131050 revogam;
+ * "Foi engano" grava um novo sim. No MVP, só WhatsApp (as campanhas são só por lá).
+ */
+
+export type ConsentState = "none" | "granted" | "declined" | "revoked";
+export type ConsentSource = "chat" | "panel" | "import" | "api";
+
+/** Contato no WhatsApp: escopo da supressão (waba:<id> ou bot:<id>) e o número. */
+export interface ConsentTarget {
+  scope: string;
+  contact: string;
+}
+
+export interface ConsentRow {
+  id: number;
+  granted: boolean;
+  source: ConsentSource;
+  text: string;
+  text_version: string;
+  collected_by: string | null;
+  collected_at: string;
+  revoked_at: string | null;
+  revoke_source: string | null;
+}
+
+/* ------------------------------------------------------------------ textos fixos da oferta */
+
+export const OPTIN_YES = "mkt_optin_yes";
+export const OPTIN_NO = "mkt_optin_no";
+/** Versão do texto da oferta: muda quando o texto mudar (a prova guarda qual foi mostrado). */
+export const OPTIN_VERSION = "oferta-chat-1";
+export const OPTIN_BUTTONS = [
+  { id: OPTIN_YES, title: "Sim, quero" },
+  { id: OPTIN_NO, title: "Não, obrigado" },
+];
+
+export const optInOfferText = (company: string) => `Quer receber novidades e promoções da ${company} por aqui no WhatsApp? Você pode parar quando quiser respondendo SAIR.`;
+export const optInYesText = (company: string) => `Pronto! Você vai receber as novidades da ${company} por aqui. Para parar, é só responder SAIR.`;
+export const OPTIN_NO_TEXT = "Tudo bem, não vou mandar promoções. O atendimento continua normal por aqui.";
+
+/** A oferta respondida por digitação vale por 24 horas (como a pergunta de 18+). */
+export const OPTIN_TYPED_HOURS = 24;
+
+const strip = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const TYPED_YES = new Set(["sim", "sim quero", "quero", "quero sim", "pode", "pode sim", "pode mandar", "claro", "aceito", "sim aceito", "s"]);
+const TYPED_NO = new Set(["nao", "nao quero", "nao obrigado", "nao obrigada", "agora nao", "nao precisa", "n"]);
+
+/** Sim ou não digitado logo depois da oferta (até 24 horas). Pura. */
+export function typedOptInAnswer(text: string | null, offeredAt: string | null | undefined, now = Date.now()): "sim" | "nao" | null {
+  if (!text || !offeredAt || now - Date.parse(offeredAt) > OPTIN_TYPED_HOURS * 3_600_000) return null;
+  const t = strip(text);
+  if (TYPED_YES.has(t)) return "sim";
+  if (TYPED_NO.has(t)) return "nao";
+  return null;
+}
+
+/* ------------------------------------------------------------------ quando oferecer */
+
+const CLOSING = /^(?:(?:ok|ta bom|ta|beleza|blz|perfeito|otimo|show|entendi|certo|legal|top) )*(?:muito )?(?:obrigad[oa]|obg|brigad[oa]|valeu|vlw|agradeco|tchau|ate (?:mais|logo|breve|amanha)|era (?:so )?isso|so isso|nada mais)(?: (?:mesmo|pela ajuda|viu|ta|tchau|de novo|demais|valeu|vlw|(?:muito )?obrigad[oa]))*$/;
+
+/** Agradecimento ou despedida curta ("obrigado!", "valeu, era só isso"). Pura. */
+export const isClosingMessage = (text: string | null | undefined) => {
+  const t = strip(text ?? "");
+  return t.length > 0 && t.length <= 60 && CLOSING.test(t);
+};
+
+/**
+ * A oferta sai agora? Uma vez por contato, só com a opção ligada no chatbot, sem resposta anterior
+ * (sim, não ou revogado), sem descadastro ativo e nunca para quem disse que não tem 18 anos; no fim
+ * natural da conversa (o contato deixou o contato ou agradeceu/se despediu). Pura.
+ */
+export function offerDue(o: { enabled: boolean; state: ConsentState; offeredAt: string | null; suppressed: boolean; under18: boolean; leadSaved: boolean; closing: boolean }): boolean {
+  return o.enabled && o.state === "none" && !o.offeredAt && !o.suppressed && !o.under18 && (o.leadSaved || o.closing);
+}
+
+/** Estado pelo registro mais recente (a lista vem do mais novo para o mais velho). Pura. */
+export function consentStateOf(rows: Array<Pick<ConsentRow, "granted" | "revoked_at">>): ConsentState {
+  const last = rows[0];
+  if (!last) return "none";
+  if (!last.granted) return "declined";
+  return last.revoked_at ? "revoked" : "granted";
+}
+
+/* ------------------------------------------------------------------ banco */
+
+const CONSENT_COLS = "id, granted, source, text, text_version, collected_by, collected_at, revoked_at, revoke_source";
+
+/** Registros do contato, do mais novo para o mais velho. */
+export async function consentHistory(db: SupabaseClient, t: ConsentTarget, limit = 20): Promise<ConsentRow[]> {
+  const { data, error } = await db
+    .from("marketing_consents")
+    .select(CONSENT_COLS)
+    .eq("channel", "whatsapp")
+    .eq("scope", t.scope)
+    .eq("contact_hash", contactHash("whatsapp", t.contact))
+    .order("collected_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`consentimento: ${error.message}`);
+  return (data ?? []) as ConsentRow[];
+}
+
+export interface ConsentOrigin {
+  agencyId: string | null;
+  clientId: string | null;
+  botId: string | null;
+  wabaId: string | null;
+  contactId: string | null;
+}
+
+/**
+ * Grava um sim ou um não. O sim é um novo opt-in da própria pessoa: desfaz o descadastro de
+ * promoções (o de lembretes continua).
+ */
+export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null }): Promise<void> {
+  const { error } = await db.from("marketing_consents").insert({
+    agency_id: t.agencyId,
+    client_id: t.clientId,
+    bot_id: t.botId,
+    waba_id: t.wabaId,
+    contact_id: t.contactId,
+    channel: "whatsapp",
+    scope: t.scope,
+    contact_hash: contactHash("whatsapp", t.contact),
+    granted: t.granted,
+    source: t.source,
+    text: t.text.slice(0, 1000),
+    text_version: t.textVersion,
+    collected_by: t.collectedBy ?? null,
+  });
+  if (error) throw new Error(`consentimento: ${error.message}`);
+  if (!t.granted) return;
+  const target = { channel: "whatsapp" as const, scope: t.scope, contact: t.contact };
+  const active = (await activeSuppressions(db, target)).map((s) => s.kind);
+  if (active.includes("marketing")) await revoke(db, { ...target, kind: "marketing", source: `optin:${t.source}` });
+  if (active.includes("all")) {
+    // "tudo" vira só lembretes: o sim vale para as promoções
+    await revoke(db, { ...target, kind: "all", source: `optin:${t.source}` });
+    await suppress(db, { ...target, kind: "utility", reason: "opt_out", source: "optin:resto" });
+  }
+}
+
+/** Revoga os sins ativos (SAIR, descadastro do WhatsApp, erro 131050). Devolve quantos. */
+export async function revokeConsents(db: SupabaseClient, t: ConsentTarget, source: string): Promise<number> {
+  const { data, error } = await db
+    .from("marketing_consents")
+    .update({ revoked_at: new Date().toISOString(), revoke_source: source })
+    .eq("channel", "whatsapp")
+    .eq("scope", t.scope)
+    .eq("contact_hash", contactHash("whatsapp", t.contact))
+    .eq("granted", true)
+    .is("revoked_at", null)
+    .select("id");
+  if (error) throw new Error(`consentimento: ${error.message}`);
+  return data?.length ?? 0;
+}
+
+/**
+ * "Foi engano" depois do SAIR: o sim revogado por aquele SAIR volta como um novo sim da própria
+ * pessoa (origem chat, com o texto anterior).
+ */
+export async function restoreConsents(db: SupabaseClient, t: ConsentTarget, revokedBy: string): Promise<boolean> {
+  const { data } = await db
+    .from("marketing_consents")
+    .select("agency_id, client_id, bot_id, waba_id, contact_id, text")
+    .eq("channel", "whatsapp")
+    .eq("scope", t.scope)
+    .eq("contact_hash", contactHash("whatsapp", t.contact))
+    .eq("revoke_source", revokedBy)
+    .order("collected_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return false;
+  await recordConsent(db, {
+    ...t,
+    agencyId: data.agency_id as string | null,
+    clientId: data.client_id as string | null,
+    botId: data.bot_id as string | null,
+    wabaId: data.waba_id as string | null,
+    contactId: data.contact_id as string | null,
+    granted: true,
+    source: "chat",
+    text: `Foi engano (desfez o SAIR). Antes: ${data.text as string}`,
+    textVersion: "foi-engano-1",
+  });
+  return true;
+}
+
+/** Rótulo curto para o painel. Pura. */
+export const CONSENT_LABEL: Record<ConsentState, string> = { none: "sem resposta", granted: "aceitou", declined: "recusou", revoked: "revogado" };
+export const SOURCE_LABEL: Record<ConsentSource, string> = { chat: "pelo chat", panel: "pelo painel", import: "por planilha", api: "pela API" };

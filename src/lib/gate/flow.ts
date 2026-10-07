@@ -127,7 +127,13 @@ export interface GateQuestion {
 }
 
 /** Responde à pergunta passando pelo portão. Erro sobe para o canal (acesso, pagamento, cota). */
-export async function answerWithGate(io: GateIO, q: GateQuestion) {
+/** O que aconteceu na vez da IA (undefined: a IA não respondeu, ex.: pergunta de 18+ ou envio bloqueado). */
+export interface GateAnswer {
+  /** A IA gravou um lead nesta resposta. */
+  leadSaved: boolean;
+}
+
+export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateAnswer | undefined> {
   const { db, bot, channel, contact, conversationId: convId } = io;
   const who = { botId: bot.id, channel, contact };
   const contactPhone = channel === "whatsapp" ? contact : null;
@@ -272,7 +278,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
-  const { result, saved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, shownText, listText } = await runChat({
+  const { result, saved, leadSaved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, shownText, listText } = await runChat({
     db,
     bot,
     messages: history,
@@ -365,6 +371,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion) {
   // não foi perguntada, então "sim" digitado não conta)
   if (adultButton) await db.from("conversations").update({ age_pending_question: await sealField("conversations.age_pending_question", question.slice(0, 2000), await scopeOfConversation(convId)), age_pending_reply_enc: null, age_asked_at: null, regulated_at: new Date().toISOString() }).eq("id", convId);
   else if (pending?.question) await clearAgePending(db, convId);
+  return { leadSaved: leadSaved() };
 }
 
 /** Fecha a pergunta de 18+ guardada (e a resposta que esperava o "Sim"). A pergunta só é gravada aqui, cifrada. */

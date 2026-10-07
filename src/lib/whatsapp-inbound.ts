@@ -4,12 +4,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
 import { deliver, type SendKind, type SendRecord } from "./send";
-import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf } from "./contacts";
+import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf, markMarketingOffer } from "./contacts";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
+import { OPTIN_BUTTONS, OPTIN_NO, OPTIN_NO_TEXT, OPTIN_VERSION, OPTIN_YES, consentHistory, consentStateOf, isClosingMessage, offerDue, optInOfferText, optInYesText, recordConsent, restoreConsents, revokeConsents, typedOptInAnswer } from "./marketing-consent";
+import { ageRecord } from "./gate/age";
 import { isAccessError, isPaymentError } from "./whatsapp-access";
 import { answerWithGate, gateButtons } from "./gate/flow";
 import { LIMITS, SHORT_BODY, whatsappPlan } from "./components";
@@ -366,6 +368,27 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   for (const i of erasure) optOut.handled.add(i);
   if (optOut.handled.size === burst.length) return;
 
+  // novidades (leva B3): resposta à oferta (botões, ou sim/não digitado até 24 h depois, enquanto
+  // ninguém respondeu), em qualquer degrau que grava; a IA não responde a ela
+  const consentTarget = { scope: suppressionScope({ wabaId: channel.waba_id, botId: bot.id }), contact: waId };
+  const typedCandidate = Boolean(contact?.marketing_offer_at) && burst.some((_, i) => !optOut.handled.has(i) && typedOptInAnswer(texts[i], contact?.marketing_offer_at) !== null);
+  const offerOpen = typedCandidate && consentStateOf(await consentHistory(db, consentTarget, 1)) === "none";
+  for (let i = 0; i < burst.length; i++) {
+    if (optOut.handled.has(i)) continue;
+    const button = burst[i].msg.interactive?.button_reply?.id ?? null;
+    const answer = button === OPTIN_YES ? "sim" : button === OPTIN_NO ? "nao" : offerOpen ? typedOptInAnswer(texts[i], contact?.marketing_offer_at) : null;
+    if (!answer) continue;
+    optOut.handled.add(i);
+    const convId = await plainConversation();
+    if (convId) await storeOnce(db, convId, shown(i), burst[i].key);
+    // a prova: o texto mostrado e a resposta exata
+    await recordConsent(db, { ...consentTarget, agencyId: bot.agency_id, clientId: bot.client_id ?? null, botId: bot.id, wabaId: channel.waba_id ?? null, contactId, granted: answer === "sim", source: "chat", text: `${optInOfferText(bot.client_name)} Resposta: ${shown(i)}`, textVersion: OPTIN_VERSION });
+    const confirm = answer === "sim" ? optInYesText(bot.client_name) : OPTIN_NO_TEXT;
+    if (mode.canSend) await say("sistema", confirm, convId ? { insert: { role: "assistant", content: confirm, author: SYSTEM_AUTHOR } } : null, convId);
+    break;
+  }
+  if (optOut.handled.size === burst.length) return;
+
   // degrau 3, gente atendendo: o assistente fica quieto, sem "digitando…", e as mensagens vão
   // para o painel; o risco à vida ainda é vigiado (alerta urgente e texto fixo)
   if (mode.step === 3) {
@@ -449,7 +472,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
-    await answerWithGate(
+    const answered = await answerWithGate(
       {
         db,
         bot,
@@ -480,6 +503,31 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     );
     // saiu depois da recusa por pagamento: o cartão entrou, o número volta ao normal
     if (channel.payment_issue_at) await db.from("whatsapp_channels").update({ payment_issue_at: null }).eq("bot_id", bot.id);
+    // novidades (leva B3): a oferta, uma vez por contato, no fim natural da conversa (o contato
+    // deixou o contato ou agradeceu); falha aqui não vira o texto de erro da resposta
+    const closing = isClosingMessage(texts[qi]);
+    if (answered && (answered.leadSaved || closing) && bot.marketing_optin_offer && contact && !contact.marketing_offer_at) {
+      const convId = conv.id;
+      await (async () => {
+        const [history, suppressed, age] = await Promise.all([
+          consentHistory(db, consentTarget, 1),
+          activeSuppressions(db, { channel: "whatsapp", ...consentTarget }),
+          ageRecord(db, { botId: bot.id, channel: "whatsapp", contact: waId }),
+        ]);
+        const due = offerDue({ enabled: true, state: consentStateOf(history), offeredAt: contact.marketing_offer_at ?? null, suppressed: suppressed.some((s) => s.kind !== "utility"), under18: age?.status === "nao", leadSaved: answered.leadSaved, closing });
+        if (!due) return;
+        const text = optInOfferText(bot.client_name);
+        const r = await deliver(db, {
+          botId: bot.id,
+          channel: "whatsapp",
+          conversationId: convId,
+          kind: "sistema",
+          record: { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR, components: { type: "options", options: OPTIN_BUTTONS } } },
+          transport: async () => (await sendButtons(channel, waId, toWhatsAppText(text), OPTIN_BUTTONS)).messages?.[0]?.id ?? null,
+        });
+        if (r.status === "sent") await markMarketingOffer(db, contact.id);
+      })().catch((e) => console.error("whatsapp: oferta de novidades", (e as Error).message));
+    }
   } catch (e) {
     // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)
     if (isAccessError(e) || isPaymentError(e)) throw e;
@@ -523,6 +571,7 @@ async function handleOptOuts(
 ): Promise<{ handled: Set<number>; conversationId: string | null }> {
   const handled = new Set<number>();
   const target = { channel: "whatsapp" as const, scope: suppressionScope({ wabaId: channel.waba_id, botId: bot.id }), contact: waId };
+  const consentTarget = { scope: target.scope, contact: waId };
   const company = bot.client_name;
   let convId = conversationId;
   const conversation = async () => {
@@ -559,16 +608,21 @@ async function handleOptOuts(
       // receber tudo) e fica gravado como novo opt-in dado pela própria pessoa. O que veio da Meta
       // (preferências do WhatsApp, erro 131050) continua: não foi dado por esse SAIR.
       await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" });
+      // o sim de novidades que esse SAIR revogou volta como um novo sim da própria pessoa
+      await restoreConsents(db, consentTarget, `chat:sair:${button.slice(OPTOUT_UNDO.length + 1)}`);
       await answer(`Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${company}.`);
     } else if (button.startsWith(`${OPTOUT_ALSO}:`)) {
       const kind = button.slice(OPTOUT_ALSO.length + 1) === "marketing" ? "marketing" : "utility";
       await suppress(db, { ...target, kind, reason: "opt_out", source: "chat" });
+      if (kind === "marketing") await revokeConsents(db, consentTarget, "chat:sair");
       await answer(optOutConfirmation("all", company));
     } else if (!keywordDone) {
       keywordDone = true;
       const kind = await lastTemplateKind(db, bot.id, waId);
       const active = (await activeSuppressions(db, target)).map((s) => s.kind);
       const sid = await suppress(db, { ...target, kind, reason: "opt_out", source: "chat" });
+      // SAIR de promoções (ou de tudo) revoga o sim de novidades; "Foi engano" devolve
+      if (kind !== "utility") await revokeConsents(db, consentTarget, `chat:sair:${sid}`);
       const buttons = [{ id: `${OPTOUT_UNDO}:${sid}`, title: "Foi engano" }];
       // a outra categoria só aparece se ainda estiver ativa
       const other: SuppressionKind | null = kind === "marketing" ? "utility" : kind === "utility" ? "marketing" : null;
