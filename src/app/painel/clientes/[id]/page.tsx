@@ -28,12 +28,14 @@ import { ClientPrivacy } from "@/components/client-privacy";
 import { ExportLinks } from "@/components/export-links";
 import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
 import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePortal, eraseContactData, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientMemberRole, setClientPermissions, updateClientRecord } from "../../actions";
+import { ClientContacts } from "@/components/client-contacts";
 
 export const metadata = { title: "Cliente" };
 
 const TABS = [
   ["chatbots", "Chatbots"],
   ["leads", "Leads"],
+  ["contatos", "Contatos"],
   ["conversas", "Conversas"],
   ["relatorio", "Relatório e portal"],
   ["acesso", "Acesso do cliente"],
@@ -177,6 +179,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           <LeadList leads={leads} originLabel="Chatbot" originOf={(bid) => botName.get(bid) ?? ""} empty="Nenhum lead deste cliente ainda. Eles aparecem aqui assim que um visitante deixar contato no chat." />
         </>
       )}
+
+      {tab === "contatos" && <ClientContacts clientId={client.id} botIds={botIds} botName={botName} searchParams={sp} />}
 
       {tab === "conversas" && (
         <div className="card overflow-hidden">

@@ -495,3 +495,112 @@ export async function reencryptContacts(db: SupabaseClient, limit = 300): Promis
 export async function markMarketingOffer(db: SupabaseClient, contactId: string): Promise<void> {
   await db.from("contacts").update({ marketing_offer_at: new Date().toISOString() }).eq("id", contactId);
 }
+
+/* ------------------------------------------------------------------ aba Contatos do cliente (leva B3) */
+
+export interface ContactListRow {
+  id: string;
+  bot_id: string;
+  channel: string;
+  name: string | null;
+  tags: string[];
+  phone: string | null;
+  instagram: string | null;
+  last_inbound_at: string | null;
+  created_at: string;
+}
+
+export interface ContactPanelRow extends ContactListRow {
+  bsuid: string | null;
+  email: string | null;
+  first_inbound_at: string | null;
+  marketing_offer_at: string | null;
+}
+
+const LIST_COLS = "id, bot_id, channel, name, tags, phone_enc, ig_enc, last_inbound_at, created_at";
+
+async function listRow(r: Record<string, unknown>): Promise<ContactListRow> {
+  return {
+    id: r.id as string,
+    bot_id: r.bot_id as string,
+    channel: r.channel as string,
+    name: (r.name as string | null) ?? null,
+    tags: (r.tags as string[] | null) ?? [],
+    phone: await openNullable("contacts.phone_enc", r.phone_enc),
+    instagram: await openNullable("contacts.ig_enc", r.ig_enc),
+    last_inbound_at: (r.last_inbound_at as string | null) ?? null,
+    created_at: r.created_at as string,
+  };
+}
+
+/** Etiquetas digitadas no painel: separadas por vírgula, sem "#", até 20, cada uma com até 30 caracteres, sem repetir. Pura. */
+export function normalizeTags(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,\n;]/)) {
+    const tag = part.replace(/\s+/g, " ").trim().replace(/^#+\s*/, "").slice(0, 30);
+    if (!tag || seen.has(tag.toLowerCase())) continue;
+    seen.add(tag.toLowerCase());
+    out.push(tag);
+    if (out.length === 20) break;
+  }
+  return out;
+}
+
+/**
+ * Contatos dos chatbots de um cliente, os de mensagem mais recente primeiro. A busca é pelo nome
+ * (em texto) ou pelo telefone (pelo hash: o número nunca é buscado em texto); a etiqueta é exata.
+ */
+export async function listClientContacts(db: SupabaseClient, o: { botIds: string[]; q?: string | null; channel?: string | null; tag?: string | null; page?: number; limit?: number }): Promise<{ rows: ContactListRow[]; more: boolean }> {
+  if (!o.botIds.length) return { rows: [], more: false };
+  const limit = o.limit ?? 50;
+  const from = Math.max(0, o.page ?? 0) * limit;
+  let q = db.from("contacts").select(LIST_COLS).in("bot_id", o.botIds);
+  if (o.channel) q = q.eq("channel", o.channel);
+  if (o.tag) q = q.contains("tags", [o.tag]);
+  const term = (o.q ?? "").trim();
+  if (term) {
+    const ph = term.replace(/\D/g, "").length >= 8 ? typedPhoneHash(term) : null;
+    if (ph) q = q.eq("phone_hash", ph);
+    else {
+      const clean = term.replace(/[%_*,()\\]/g, " ").trim();
+      if (clean) q = q.ilike("name", `%${clean}%`);
+    }
+  }
+  const { data, error } = await q.order("last_inbound_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).range(from, from + limit);
+  if (error) throw new Error(`contatos: ${error.message}`);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  return { rows: await Promise.all(rows.slice(0, limit).map(listRow)), more: rows.length > limit };
+}
+
+/** Etiquetas já usadas nos contatos do cliente (para o filtro), em ordem alfabética. */
+export async function clientContactTags(db: SupabaseClient, botIds: string[]): Promise<string[]> {
+  if (!botIds.length) return [];
+  const { data } = await db.from("contacts").select("tags").in("bot_id", botIds).not("tags", "eq", "{}").limit(2000);
+  const all = new Set<string>();
+  for (const r of data ?? []) for (const t of (r.tags as string[] | null) ?? []) all.add(t);
+  return [...all].sort((a, b) => a.localeCompare(b, "pt-BR")).slice(0, 200);
+}
+
+/** Um contato para o painel, só se for de um dos chatbots informados. */
+export async function contactForPanel(db: SupabaseClient, id: string, botIds: string[]): Promise<ContactPanelRow | null> {
+  if (!botIds.length) return null;
+  const { data } = await db.from("contacts").select(`${LIST_COLS}, wa_user_enc, email, first_inbound_at, marketing_offer_at`).eq("id", id).in("bot_id", botIds).maybeSingle();
+  if (!data) return null;
+  const r = data as Record<string, unknown>;
+  return {
+    ...(await listRow(r)),
+    bsuid: await openNullable("contacts.wa_user_enc", r.wa_user_enc),
+    email: (r.email as string | null) ?? null,
+    first_inbound_at: (r.first_inbound_at as string | null) ?? null,
+    marketing_offer_at: (r.marketing_offer_at as string | null) ?? null,
+  };
+}
+
+/** Troca as etiquetas do contato (só de um dos chatbots informados). */
+export async function setContactTags(db: SupabaseClient, id: string, botIds: string[], tags: string[]): Promise<boolean> {
+  if (!botIds.length) return false;
+  const { data, error } = await db.from("contacts").update({ tags, updated_at: new Date().toISOString() }).eq("id", id).in("bot_id", botIds).select("id");
+  if (error) throw new Error(`contatos: ${error.message}`);
+  return Boolean(data?.length);
+}

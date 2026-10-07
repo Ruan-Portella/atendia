@@ -43,7 +43,8 @@ import { notifyAgencyOwner, notifyClientPeople, notifyPlatform } from "@/lib/not
 import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retentionReduced } from "@/lib/retention";
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
-import { findContactIds, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { contactForPanel, findContactIds, normalizeTags, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { recordConsent, revokeConsents } from "@/lib/marketing-consent";
 import { deleteLeads, findLeadsByContact, leadIdsOfConversations } from "@/lib/leads";
 import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
@@ -1460,4 +1461,77 @@ export async function setMarketingOptIn(botId: string, formData: FormData): Prom
   await auditPanel("bot.novidades", { type: "bot", id: botId }, { after: { marketing_optin_offer: on } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok(on ? "Pronto: o assistente oferece novidades uma vez a cada contato." : "Oferta de novidades desligada.");
+}
+
+/* ------------------------------------------------------------------ contatos do cliente (leva B3) */
+
+/** Contato de um cliente que quem está logado pode ver (a RLS dá os chatbots do cliente). */
+async function clientContact(clientId: string, contactId: string) {
+  const supabase = await createClient();
+  const { data: bots } = await supabase.from("bots").select("id, agency_id").eq("client_id", clientId).eq("is_demo", false);
+  const botIds = (bots ?? []).map((b) => b.id as string);
+  const contact = await contactForPanel(createAdminClient(), contactId, botIds);
+  const bot = contact ? (bots ?? []).find((b) => b.id === contact.bot_id) : null;
+  return contact && bot ? { contact, bot: { id: bot.id as string, agency_id: bot.agency_id as string }, botIds } : null;
+}
+
+/** Contato do WhatsApp do cliente com o escopo do consentimento (o número da conta, como a supressão). */
+async function whatsappConsentTarget(clientId: string, contactId: string) {
+  const found = await clientContact(clientId, contactId);
+  if (!found) return { error: "Contato não encontrado." } as const;
+  const number = found.contact.phone ?? found.contact.bsuid;
+  if (found.contact.channel !== "whatsapp" || !number) return { error: "Novidades valem só para contatos do WhatsApp." } as const;
+  const { data: wa } = await createAdminClient().from("whatsapp_channels").select("waba_id").eq("bot_id", found.bot.id).maybeSingle();
+  const wabaId = (wa?.waba_id as string | null | undefined) ?? null;
+  return { ...found, number, wabaId, target: { scope: suppressionScope({ wabaId, botId: found.bot.id }), contact: number } };
+}
+
+export async function saveContactTags(clientId: string, contactId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const found = await clientContact(clientId, contactId);
+  if (!found) return fail("Contato não encontrado.");
+  const tags = normalizeTags(text(formData.get("tags")));
+  await setContactTags(createAdminClient(), contactId, found.botIds, tags);
+  await auditPanel("contato.etiquetas", { type: "contact", id: contactId }, { before: { tags: found.contact.tags }, after: { tags } });
+  revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
+  return ok("Etiquetas salvas.");
+}
+
+/** Versão do registro de aceite feito pelo painel (a prova guarda qual foi). */
+const PANEL_CONSENT_VERSION = "painel-1";
+
+/**
+ * Aceite de novidades que a empresa coletou fora do chat (cadastro, formulário, balcão), registrado
+ * pelo painel com a origem, a data e o texto aceito. Não desfaz um SAIR: só a própria pessoa tira
+ * o número do descadastro.
+ */
+export async function recordContactConsent(clientId: string, contactId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const origem = text(formData.get("origem")).slice(0, 200);
+  const texto = text(formData.get("texto")).slice(0, 600);
+  const data = text(formData.get("data"));
+  if (origem.length < 5) return fail("Diga onde a pessoa aceitou (ex.: cadastro na loja, formulário do site).");
+  if (texto.length < 10) return fail("Cole o texto que a pessoa aceitou.");
+  const when = /^\d{4}-\d{2}-\d{2}$/.test(data) ? new Date(`${data}T12:00:00-03:00`) : null;
+  if (!when || Number.isNaN(when.getTime()) || when.getTime() > Date.now()) return fail("Informe a data em que a pessoa aceitou (não pode ser no futuro).");
+  if (formData.get("confirm") !== "on") return fail("Confirme que a empresa tem como provar este aceite.");
+  const t = await whatsappConsentTarget(clientId, contactId);
+  if ("error" in t) return fail(t.error ?? "Contato não encontrado.");
+  const { email } = await requireAgency();
+  await recordConsent(createAdminClient(), { ...t.target, agencyId: t.bot.agency_id, clientId, botId: t.bot.id, wabaId: t.wabaId, contactId, granted: true, source: "panel", text: `Origem: ${origem}. Texto aceito: ${texto}`, textVersion: PANEL_CONSENT_VERSION, collectedBy: email, collectedAt: when.toISOString() });
+  await auditPanel("contato.consentimento", { type: "contact", id: contactId }, { after: { origem, data } });
+  revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
+  return ok("Aceite registrado.");
+}
+
+export async function revokeContactConsent(clientId: string, contactId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const t = await whatsappConsentTarget(clientId, contactId);
+  if ("error" in t) return fail(t.error ?? "Contato não encontrado.");
+  const { email } = await requireAgency();
+  const n = await revokeConsents(createAdminClient(), t.target, `panel:${email}`);
+  if (!n) return fail("Este contato não tem um aceite ativo.");
+  await auditPanel("contato.consentimento_revogar", { type: "contact", id: contactId });
+  revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
+  return ok("Aceite revogado: o contato não recebe mais promoções.");
 }

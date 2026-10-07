@@ -128,7 +128,7 @@ export interface ConsentOrigin {
  * Grava um sim ou um não. O sim é um novo opt-in da própria pessoa: desfaz o descadastro de
  * promoções (o de lembretes continua).
  */
-export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null }): Promise<void> {
+export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null; collectedAt?: string | null }): Promise<void> {
   const { error } = await db.from("marketing_consents").insert({
     agency_id: t.agencyId,
     client_id: t.clientId,
@@ -143,9 +143,12 @@ export async function recordConsent(db: SupabaseClient, t: ConsentTarget & Conse
     text: t.text.slice(0, 1000),
     text_version: t.textVersion,
     collected_by: t.collectedBy ?? null,
+    ...(t.collectedAt ? { collected_at: t.collectedAt } : {}),
   });
   if (error) throw new Error(`consentimento: ${error.message}`);
-  if (!t.granted) return;
+  // só o sim dado pela própria pessoa no chat tira do descadastro; o registrado pela empresa (painel,
+  // planilha) não desfaz um SAIR (e o envio confere a supressão de qualquer jeito)
+  if (!t.granted || t.source !== "chat") return;
   const target = { channel: "whatsapp" as const, scope: t.scope, contact: t.contact };
   const active = (await activeSuppressions(db, target)).map((s) => s.kind);
   if (active.includes("marketing")) await revoke(db, { ...target, kind: "marketing", source: `optin:${t.source}` });
@@ -205,3 +208,20 @@ export async function restoreConsents(db: SupabaseClient, t: ConsentTarget, revo
 /** Rótulo curto para o painel. Pura. */
 export const CONSENT_LABEL: Record<ConsentState, string> = { none: "sem resposta", granted: "aceitou", declined: "recusou", revoked: "revogado" };
 export const SOURCE_LABEL: Record<ConsentSource, string> = { chat: "pelo chat", panel: "pelo painel", import: "por planilha", api: "pela API" };
+
+/** Situação de novidades de cada contato (pelo registro mais recente ligado à ficha), para a lista do painel. */
+export async function consentByContact(db: SupabaseClient, contactIds: string[]): Promise<Map<string, ConsentState>> {
+  const out = new Map<string, ConsentState>();
+  if (!contactIds.length) return out;
+  const { data, error } = await db.from("marketing_consents").select("contact_id, granted, revoked_at, collected_at").in("contact_id", contactIds).order("collected_at", { ascending: false }).order("id", { ascending: false });
+  if (error) throw new Error(`consentimento: ${error.message}`);
+  const seen = new Set<string>();
+  for (const r of data ?? []) {
+    const id = r.contact_id as string;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.set(id, consentStateOf([{ granted: r.granted as boolean, revoked_at: (r.revoked_at as string | null) ?? null }]));
+  }
+  return out;
+}
+
