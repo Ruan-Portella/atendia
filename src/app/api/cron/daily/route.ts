@@ -15,6 +15,7 @@ import { classifyPending } from "@/lib/gate/base";
 import { runDueAnalyses } from "@/lib/bot-analysis";
 import { deleteStalePending } from "@/lib/acceptance";
 import { linkLegacyConversations } from "@/lib/contacts";
+import { runContinuousChecks } from "@/lib/continuous-check";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
 export const maxDuration = 300;
@@ -53,6 +54,8 @@ async function daily() {
   const trial = await run("avisos de teste", () => trialReminders(db));
   // totais diários antes da retenção: o que ela apagar já está somado nos relatórios
   const reports = await run("totais diários", () => refreshReportDaily(db, () => hasTime()));
+  // verificação contínua por cliente (B1'): depois dos totais diários, que dão o volume da semana
+  const continuous = await run("verificação contínua", () => runContinuousChecks(db));
   const retention = await run("limpeza LGPD", () => applyRetention(db, () => hasTime()));
   // arquivos recebidos que ficaram sem conversa (chatbot ou cliente excluído) ou venceram
   const files = await run("arquivos sem conversa", () => sweepAttachments(db, () => hasTime()));
@@ -90,5 +93,5 @@ async function daily() {
   // análise do bot: as agendadas (gatilhos agrupados) e os clientes antigos
   // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, trial, reports, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, trial, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

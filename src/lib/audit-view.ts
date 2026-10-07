@@ -26,6 +26,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "plano.excedente": "Troca de plano: excedente pausado ou devolvido",
   "plano.pausar": "Item pausado pelo plano",
   "plano.ativar": "Item ativado dentro do plano",
+  "conformidade.verificar": "Verificação contínua rodada pela BoaVoz",
+  "conformidade.resolver_sinal": "Sinal da verificação contínua revisado pela BoaVoz",
   "canal.conectar": "Canal conectado",
   "canal.desconectar": "Canal desconectado",
   "canal.link_gerar": "Link de conexão gerado",
@@ -116,6 +118,7 @@ export const ACTION_GROUPS: Record<string, string> = {
   seguranca: "Segurança",
   equipe: "Equipe",
   plano: "Plano",
+  conformidade: "Verificação da BoaVoz",
   plataforma: "Avisos da BoaVoz",
 };
 

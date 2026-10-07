@@ -1,6 +1,9 @@
 import { Kpi } from "@/components/kpi";
 import { requireAdmin } from "@/lib/platform-admin";
-import { getCompliance } from "@/lib/backoffice-ops";
+import { cronsScheduledHere, getCompliance } from "@/lib/backoffice-ops";
+import { continuousView } from "@/lib/continuous-check";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ContinuousChecks } from "@/components/admin/continuous-checks";
 import { getBotAnalyses, getBusinessReviews, getGateReviews, getIncidents, getMeasures, getRecentAcceptances, rangeFor } from "@/lib/backoffice";
 import { BotAnalyses } from "@/components/admin/bot-analyses";
 import { GateReviews } from "@/components/admin/gate-reviews";
@@ -23,7 +26,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const email = typeof sp.email === "string" ? sp.email.trim().slice(0, 120) : "";
   const range = rangeFor("30d");
-  const [c, measures, reviews, acceptances, incidents, gate, analyses] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 }), getBusinessReviews(), getRecentAcceptances(), getIncidents(), getGateReviews(), getBotAnalyses()]);
+  const [c, measures, reviews, acceptances, incidents, gate, analyses, continuous] = await Promise.all([getCompliance(range.since, email || null), getMeasures({ limit: 50 }), getBusinessReviews(), getRecentAcceptances(), getIncidents(), getGateReviews(), getBotAnalyses(), continuousView(createAdminClient())]);
   const active = c.suppressions.reduce((t, s) => t + s.active, 0);
   const created = c.suppressions.reduce((t, s) => t + s.created_since, 0);
   const revoked = c.suppressions.reduce((t, s) => t + s.revoked_since, 0);
@@ -50,6 +53,8 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
       <GateReviews open={gate.open} recent={gate.recent} exceptions={gate.exceptions} />
 
       <BotAnalyses pending={analyses.pending} recent={analyses.recent} due={analyses.due} />
+
+      <ContinuousChecks {...continuous} testAllowed={!cronsScheduledHere()} />
 
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="text-base font-bold">Medidas: suspensões da BoaVoz e avisos da Meta</h2>

@@ -20,6 +20,10 @@ import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "
 import { WEBHOOK_EVENTS, createWebhook, sendWebhookTest, type WebhookEvent } from "@/lib/webhooks";
 import { BlockedUrlError, checkUrl } from "@/lib/safe-fetch";
 import { applyPlanLimits, manualPlanSwitch } from "@/lib/plan-limits";
+import { SIGNAL_KINDS, TEST_THRESHOLDS, THRESHOLDS, runContinuousChecks } from "@/lib/continuous-check";
+import { refreshReportDaily } from "@/lib/report-daily";
+import { cronsScheduledHere } from "@/lib/backoffice-ops";
+import { deadline } from "@/lib/cron";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -416,6 +420,45 @@ export async function runAnalysesNow(): Promise<ActionResult> {
   await auditAdmin(s.email, "analise.rodar_agendadas", { after: r });
   revalidatePath("/admin", "layout");
   return ok(`Análises: ${r.feitas} feitas, ${r.puladas} sem mudança ou sem base${r.falhas ? `, ${r.falhas} com erro` : ""}. Ainda agendadas: ${r.restantes}.`);
+}
+
+/**
+ * Verificação contínua agora (no staging não há cron): atualiza os totais diários e roda os sinais.
+ * Limites de teste só fora da produção.
+ */
+export async function runContinuousNow(fd: FormData): Promise<ActionResult> {
+  const test = fd.get("test") === "on" && !cronsScheduledHere();
+  const s = await requireAdmin(`/admin/conformidade (rodou a verificação contínua${test ? " com limites de teste" : ""})`);
+  const db = createAdminClient();
+  try {
+    const hasTime = deadline(30_000);
+    await refreshReportDaily(db, () => hasTime());
+    const r = await runContinuousChecks(db, { thresholds: test ? TEST_THRESHOLDS : THRESHOLDS });
+    await auditAdmin(s.email, "conformidade.verificar", { after: { test, clientes: r.clients, sinais: r.opened.length } });
+    revalidatePath("/admin", "layout");
+    return ok(`${r.clients} cliente(s) com dados nas 8 semanas · ${r.opened.length ? `${r.opened.length} sinal(is) novo(s)` : "nenhum sinal novo"}.`);
+  } catch (e) {
+    return fail(`A verificação falhou: ${(e as Error).message}`);
+  }
+}
+
+/** Revisão de um sinal da verificação contínua: fecha a pendência com a nota (nada muda para o cliente). */
+export async function resolveSignal(id: number, fd: FormData): Promise<ActionResult> {
+  const note = text(fd.get("note")).slice(0, 200) || "revisado: segue normal";
+  const s = await requireAdmin(`/admin/conformidade (resolveu o sinal ${id})`);
+  const { data, error } = await createAdminClient()
+    .from("compliance_checks")
+    .update({ review_state: "resolved", resolved_by: s.email, resolved_at: new Date().toISOString(), resolution: note })
+    .eq("id", id)
+    .eq("review_state", "pending")
+    .in("kind", SIGNAL_KINDS as string[])
+    .select("agency_id, client_id")
+    .maybeSingle();
+  if (error) return fail("Não foi possível resolver. Tente de novo.");
+  if (!data) return fail("Sinal não encontrado ou já resolvido.");
+  await auditAdmin(s.email, "conformidade.resolver_sinal", { agencyId: data.agency_id as string, targetType: "client", targetId: (data.client_id as string | null) ?? undefined, after: { note } });
+  revalidatePath("/admin", "layout");
+  return ok("Sinal resolvido.");
 }
 
 /** Roda de novo a análise de um chatbot, mesmo sem mudança. */

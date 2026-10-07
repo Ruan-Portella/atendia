@@ -4,6 +4,8 @@ import { Kpi } from "@/components/kpi";
 import { AgencyActions, ChannelSuspension } from "@/components/admin/pause-controls";
 import { AgencyFeatures } from "@/components/admin/release-controls";
 import { SupportConversations } from "@/components/admin/support-conversations";
+import { ContinuousChecks } from "@/components/admin/continuous-checks";
+import { continuousView } from "@/lib/continuous-check";
 import { requireAdmin } from "@/lib/platform-admin";
 import { agencyStatus, botChunkCounts, daysAgoIso, getAgencies, getMeasures, kindLabel, usd, usdBrl } from "@/lib/backoffice";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -24,9 +26,10 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
 
   const db = createAdminClient();
   const since30 = daysAgoIso(30);
-  const [{ data: bots }, measures] = await Promise.all([
+  const [{ data: bots }, measures, continuous] = await Promise.all([
     db.from("bots").select("id, name, client_name, status, is_demo, paused_at, paused_by_plan_at, created_at").eq("agency_id", id).order("created_at"),
     getMeasures({ agencyId: id, active: true }),
+    continuousView(db, { agencyId: id }),
   ]);
   const botIds = (bots ?? []).map((b) => b.id as string);
   const [{ data: wa }, { data: ig }, { data: usage }, { data: monthly }, convCounts, chunkCounts] = await Promise.all([
@@ -81,6 +84,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
       <AgencyActions agency={agency} />
       <AgencyFeatures agencyId={id} plan={agency.plan} features={agency.features} />
       <ChannelSuspension agencyId={id} bots={(bots ?? []).filter((b) => !b.is_demo).map((b) => ({ id: b.id as string, label: `${b.name} · ${b.client_name}` }))} measures={measures} />
+      <ContinuousChecks {...continuous} testAllowed={false} agencyView />
 
       <section className="card overflow-x-auto">
         <h2 className="px-5 pt-4 text-lg font-bold">Chatbots</h2>
