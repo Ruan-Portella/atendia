@@ -373,19 +373,36 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const consentTarget = { scope: suppressionScope({ wabaId: channel.waba_id, botId: bot.id }), contact: waId };
   const typedCandidate = Boolean(contact?.marketing_offer_at) && burst.some((_, i) => !optOut.handled.has(i) && typedOptInAnswer(texts[i], contact?.marketing_offer_at) !== null);
   const offerOpen = typedCandidate && consentStateOf(await consentHistory(db, consentTarget, 1)) === "none";
+  const answers: Array<{ i: number; answer: "sim" | "nao" }> = [];
   for (let i = 0; i < burst.length; i++) {
     if (optOut.handled.has(i)) continue;
     const button = burst[i].msg.interactive?.button_reply?.id ?? null;
     const answer = button === OPTIN_YES ? "sim" : button === OPTIN_NO ? "nao" : offerOpen ? typedOptInAnswer(texts[i], contact?.marketing_offer_at) : null;
-    if (!answer) continue;
-    optOut.handled.add(i);
+    if (answer) answers.push({ i, answer });
+  }
+  if (answers.length) {
+    for (const a of answers) optOut.handled.add(a.i);
     const convId = await plainConversation();
-    if (convId) await storeOnce(db, convId, shown(i), burst[i].key);
-    // a prova: o texto mostrado e a resposta exata
-    await recordConsent(db, { ...consentTarget, agencyId: bot.agency_id, clientId: bot.client_id ?? null, botId: bot.id, wabaId: channel.waba_id ?? null, contactId, granted: answer === "sim", source: "chat", text: `${optInOfferText(bot.client_name)} Resposta: ${shown(i)}`, textVersion: OPTIN_VERSION });
-    const confirm = answer === "sim" ? optInYesText(bot.client_name) : OPTIN_NO_TEXT;
-    if (mode.canSend) await say("sistema", confirm, convId ? { insert: { role: "assistant", content: confirm, author: SYSTEM_AUTHOR } } : null, convId);
-    break;
+    // cada resposta fica na conversa e na prova, na ordem; a confirmação vai só para a última
+    let latest: "sim" | "nao" | null = null;
+    for (const { i, answer } of answers) {
+      // reprocesso: esta resposta já foi gravada (e a prova também); não grava de novo
+      const already = await findMessage(db, { inboundKey: burst[i].key }, ["id"] as const);
+      if (convId) await storeOnce(db, convId, shown(i), burst[i].key);
+      if (already) continue;
+      // a prova: o texto mostrado e a resposta exata
+      await recordConsent(db, { ...consentTarget, agencyId: bot.agency_id, clientId: bot.client_id ?? null, botId: bot.id, wabaId: channel.waba_id ?? null, contactId, granted: answer === "sim", source: "chat", text: `${optInOfferText(bot.client_name)} Resposta: ${shown(i)}`, textVersion: OPTIN_VERSION });
+      latest = answer;
+    }
+    if (latest && mode.canSend) {
+      const confirm = latest === "sim" ? optInYesText(bot.client_name) : OPTIN_NO_TEXT;
+      // a resposta já está gravada: se o canal recusar a confirmação (ex.: nome de exibição sem
+      // aprovação), fica "não entregue" no painel e a rodada segue (refazer não adianta)
+      await say("sistema", confirm, convId ? { insert: { role: "assistant", content: confirm, author: SYSTEM_AUTHOR } } : null, convId).catch((e) => {
+        if (isAccessError(e) || isPaymentError(e)) throw e;
+        console.error("whatsapp: confirmação de novidades não saiu", (e as Error).message);
+      });
+    }
   }
   if (optOut.handled.size === burst.length) return;
 
@@ -591,6 +608,10 @@ async function handleOptOuts(
       kind: "sistema",
       record: id ? { insert: { role: "assistant", content, author: SYSTEM_AUTHOR } } : null,
       transport: async () => (buttons?.length ? await sendButtons(channel, waId, content, buttons) : await sendText(channel, waId, content)).messages?.[0]?.id ?? null,
+    }).catch((e) => {
+      // a supressão já vale; recusa do canal fica "não entregue" no painel e a rodada segue
+      if (isAccessError(e) || isPaymentError(e)) throw e;
+      console.error("whatsapp: confirmação do SAIR não saiu", (e as Error).message);
     });
   };
 
