@@ -130,7 +130,7 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
                     {c.pause_reason && <div className="text-xs text-amber-ink">{c.pause_reason}</div>}
                     {c.finished_at && <div className="text-xs text-muted">terminou {relativeTime(c.finished_at)}</div>}
                   </td>
-                  <td className="px-3 py-2.5 text-xs">{totals.length ? totals.map(([k, n]) => <div key={k}>{SEND_STATUS_LABEL[k as SendStatus] ?? k}: {n}</div>) : <span className="text-muted">{c.estimated_contacts ?? 0} na fila (totais no próximo tique)</span>}</td>
+                  <td className="px-3 py-2.5 text-xs">{totals.length ? totals.map(([k, n]) => <div key={k}>{SEND_STATUS_LABEL[k as SendStatus] ?? k}: {n}</div>) : <span className="text-muted">{c.estimated_contacts ?? 0} envio(s)</span>}</td>
                   <td className="px-5 py-2.5">
                     <div className="flex flex-col items-end gap-1.5">
                       {(c.status === "sending" || c.status === "scheduled") && (

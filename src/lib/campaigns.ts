@@ -413,11 +413,15 @@ export interface CampaignView {
   estimated_contacts: number | null;
 }
 
-/** Campanhas de um conjunto de chatbots, as mais novas primeiro. */
+/**
+ * Campanhas de um conjunto de chatbots, as mais novas primeiro. Os totais são contados na hora:
+ * entregue e lida chegam pelos status da Meta depois que a campanha terminou.
+ */
 export async function listCampaigns(db: SupabaseClient, botIds: string[], limit = 20): Promise<CampaignView[]> {
   if (!botIds.length) return [];
   const { data } = await db.from("campaigns").select("id, bot_id, name, kind, status, pause_reason, template_name, scheduled_at, created_at, finished_at, totals, estimated_contacts").in("bot_id", botIds).order("created_at", { ascending: false }).limit(limit);
-  return (data ?? []) as CampaignView[];
+  const rows = (data ?? []) as CampaignView[];
+  return Promise.all(rows.map(async (c) => ({ ...c, totals: ((await db.rpc("campaign_totals", { p_campaign: c.id })).data as Record<string, number> | null) ?? c.totals })));
 }
 
 /**
