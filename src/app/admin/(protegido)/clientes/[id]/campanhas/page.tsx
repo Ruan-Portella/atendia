@@ -7,7 +7,7 @@ import { relativeTime } from "@/lib/utils";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { CAMPAIGN_STATUS_LABEL, SEND_STATUS_LABEL, listCampaigns, templateProblem, tierLimit, type SendStatus } from "@/lib/campaigns";
+import { CAMPAIGN_STATUS_LABEL, SEND_STATUS_LABEL, listCampaigns, missingSecrets, templateProblem, tickCallHint, tickDiagnostics, tierLimit, type SendStatus } from "@/lib/campaigns";
 import { listTemplates, loadTemplateChannel, templateBody, templateVariables, type Template } from "@/lib/whatsapp-templates";
 import { messagingLimitTier } from "@/lib/whatsapp";
 import { changeCampaignStatus, createTestCampaign, runCampaignsNow } from "../../../acoes";
@@ -31,7 +31,12 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
   const db = createAdminClient();
   const { data: bots } = await db.from("bots").select("id, name, client_name").eq("agency_id", id).eq("is_demo", false).order("created_at");
   const botIds = (bots ?? []).map((b) => b.id as string);
-  const [campaigns, { data: lock }] = await Promise.all([listCampaigns(db, botIds, 30), db.from("cron_locks").select("last_run_at, last_ok_at").eq("name", "campanhas").maybeSingle()]);
+  const [campaigns, { data: lock }, diag] = await Promise.all([listCampaigns(db, botIds, 30), db.from("cron_locks").select("last_run_at, last_ok_at").eq("name", "campanhas").maybeSingle(), tickDiagnostics(db)]);
+  const missing = diag ? missingSecrets(diag) : [];
+  const job = diag?.job?.[0];
+  const lastCall = diag?.calls?.[0];
+  const lastRun = diag?.runs?.[0];
+  const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
   // cada chatbot com WhatsApp: os modelos que dá para usar e o nível do número na Meta
   const channels = await Promise.all(
     (bots ?? []).map(async (b) => {
@@ -63,6 +68,30 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
           O Supabase chama o tique a cada minuto quando há campanha enviando ou agendada (pg_cron, migração 0082, com o endereço e o segredo no cofre).{" "}
           {lock?.last_run_at ? <>Último tique {relativeTime(lock.last_run_at as string)}{lock.last_ok_at && lock.last_ok_at !== lock.last_run_at ? `, último sem erro ${relativeTime(lock.last_ok_at as string)}` : ""}.</> : "Nenhum tique registrado ainda."}
         </p>
+        {diag ? (
+          <ul className="flex flex-col gap-1 rounded-lg bg-ground p-3 text-xs">
+            <li>Agendador do Supabase: {job ? (job.active ? `ativo (${job.schedule})` : "agendamento desligado") : diag.cron_error ? `não deu para ler (${diag.cron_error})` : "sem agendamento (pg_cron)"}</li>
+            <li>
+              Cofre:{" "}
+              {diag.secrets_error
+                ? `não deu para ler (${diag.secrets_error})`
+                : missing.length
+                  ? <span className="text-danger">falta {missing.join(" e ")}</span>
+                  : `endereço e segredo gravados${(diag.secrets ?? []).includes("boavoz_vercel_bypass") ? ", com a liberação da Vercel" : ", sem a liberação da Vercel (precisa na dev)"}`}
+            </li>
+            {lastRun && lastRun.status !== "succeeded" && <li className="text-danger">Última execução do agendador ({when(lastRun.start_time)}): {lastRun.status} {lastRun.message ?? ""}</li>}
+            <li>
+              Última chamada ao BoaVoz:{" "}
+              {lastCall ? (
+                <span className={lastCall.status_code && lastCall.status_code < 300 ? "" : "text-danger"}>
+                  {when(lastCall.created)}, {lastCall.status_code ? `HTTP ${lastCall.status_code}` : "sem resposta"}: {tickCallHint(lastCall)}
+                </span>
+              ) : diag.calls_error ? `não deu para ler (${diag.calls_error})` : "nenhuma nas últimas horas"}
+            </li>
+          </ul>
+        ) : (
+          <p className="text-xs text-muted">Diagnóstico do Supabase indisponível (migração 0083 ainda não aplicada?).</p>
+        )}
         <ResultForm action={runCampaignsNow.bind(null, id)}>
           <SubmitButton className="btn-ghost self-start py-1.5" pendingLabel="Enviando…">Rodar agora</SubmitButton>
         </ResultForm>

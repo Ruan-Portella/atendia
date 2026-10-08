@@ -398,6 +398,48 @@ export async function reconcileCampaignStatus(db: SupabaseClient, ref: string, m
 
 /* ------------------------------------------------------------------ painel e backoffice */
 
+/** O que o Supabase sabe do tique automático (migração 0083): agendamento, cofre e últimas chamadas. */
+export interface TickDiagnostics {
+  pg_net: boolean;
+  pg_cron: boolean;
+  secrets?: string[];
+  secrets_error?: string;
+  job?: Array<{ jobname: string; schedule: string; active: boolean }>;
+  runs?: Array<{ status: string; message: string | null; start_time: string }>;
+  cron_error?: string;
+  calls?: TickCall[];
+  calls_error?: string;
+}
+export interface TickCall {
+  created: string;
+  status_code: number | null;
+  timed_out: boolean | null;
+  error: string | null;
+  body: string | null;
+}
+
+export async function tickDiagnostics(db: SupabaseClient): Promise<TickDiagnostics | null> {
+  const { data, error } = await db.rpc("campaign_tick_diagnostics");
+  return error ? null : (data as TickDiagnostics);
+}
+
+/** Segredos do cofre que faltam para o tique automático (o de bypass só vale atrás da proteção da Vercel). Pura. */
+export const missingSecrets = (d: TickDiagnostics) => ["boavoz_campaigns_url", "boavoz_cron_secret"].filter((n) => !(d.secrets ?? []).includes(n));
+
+/** O que a resposta do BoaVoz a uma chamada do Supabase quer dizer. Pura. */
+export function tickCallHint(c: TickCall): string {
+  if (c.timed_out) return "o BoaVoz não respondeu a tempo (o tique pode ter rodado mesmo assim)";
+  if (c.error) return `a chamada não chegou: ${c.error}`;
+  const status = c.status_code ?? 0;
+  const body = c.body ?? "";
+  if (status >= 200 && status < 300) return "ok: o tique rodou";
+  if (/vercel/i.test(body) || status === 302 || status === 307) return "a proteção da Vercel barrou a chamada: confira o segredo boavoz_vercel_bypass (Protection Bypass for Automation)";
+  if (status === 401) return "o segredo boavoz_cron_secret não bate com o CRON_SECRET da Vercel (ou a variável entrou sem um novo deploy)";
+  if (status === 404) return "endereço errado em boavoz_campaigns_url";
+  if (status >= 500) return "o tique deu erro no BoaVoz (veja o Sentry e os logs da Vercel)";
+  return `resposta inesperada (HTTP ${status})`;
+}
+
 export interface CampaignView {
   id: string;
   bot_id: string;

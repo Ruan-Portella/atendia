@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowance, decideSend, nextSendStatus, sendErrorOutcome, templateProblem, tierLimit } from "../campaigns";
+import { allowance, decideSend, missingSecrets, nextSendStatus, sendErrorOutcome, templateProblem, tickCallHint, tierLimit } from "../campaigns";
 
 const base: Parameters<typeof decideSend>[0] = { templateCategory: "MARKETING", suppressed: [], consent: "granted", regulated: false, age: null, contactGone: false };
 const approved = (category: string, components: Array<{ type: string; format?: string; text?: string }> = [{ type: "BODY", text: "Oi {{1}}" }]) => ({ status: "APPROVED", category, components });
@@ -93,5 +93,25 @@ describe("campanhas: o modelo na hora de enviar", () => {
 
   it("recurso que o BoaVoz ainda não envia", () => {
     expect(templateProblem("marketing", approved("MARKETING", [{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "Oi" }]))).toMatch(/imagem/);
+  });
+});
+
+describe("campanhas: diagnóstico do tique automático", () => {
+  const call = (o: Partial<Parameters<typeof tickCallHint>[0]>) => tickCallHint({ created: "2026-10-08T23:00:00Z", status_code: null, timed_out: false, error: null, body: null, ...o });
+
+  it("explica a resposta do BoaVoz", () => {
+    expect(call({ status_code: 200, body: "{}" })).toMatch(/^ok/);
+    expect(call({ status_code: 401, body: "unauthorized" })).toMatch(/CRON_SECRET/);
+    expect(call({ status_code: 401, body: "<html>Authentication Required ... Vercel</html>" })).toMatch(/proteção da Vercel/);
+    expect(call({ status_code: 302 })).toMatch(/proteção da Vercel/);
+    expect(call({ status_code: 404 })).toMatch(/endereço errado/);
+    expect(call({ status_code: 500 })).toMatch(/erro no BoaVoz/);
+    expect(call({ error: "Couldn't resolve host name" })).toMatch(/não chegou/);
+    expect(call({ timed_out: true })).toMatch(/a tempo/);
+  });
+
+  it("segredos que faltam no cofre (a liberação da Vercel é opcional)", () => {
+    expect(missingSecrets({ pg_net: true, pg_cron: true, secrets: [] })).toEqual(["boavoz_campaigns_url", "boavoz_cron_secret"]);
+    expect(missingSecrets({ pg_net: true, pg_cron: true, secrets: ["boavoz_campaigns_url", "boavoz_cron_secret"] })).toEqual([]);
   });
 });
