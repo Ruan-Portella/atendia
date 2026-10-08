@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { canonicalPhone } from "./phone";
 import { hmacHex } from "./hash";
 import { openNullable, sealField, sealNullable, scopeOfBot, type CipherField } from "./field-cipher";
+export { normalizeTags } from "./tags";
 
 /*
  * Contatos (L1): a identidade de quem conversa com cada chatbot, por canal, achada por hash com
@@ -533,20 +534,6 @@ async function listRow(r: Record<string, unknown>): Promise<ContactListRow> {
   };
 }
 
-/** Etiquetas digitadas no painel: separadas por vírgula, sem "#", até 20, cada uma com até 30 caracteres, sem repetir. Pura. */
-export function normalizeTags(raw: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const part of raw.split(/[,\n;]/)) {
-    const tag = part.replace(/\s+/g, " ").trim().replace(/^#+\s*/, "").slice(0, 30);
-    if (!tag || seen.has(tag.toLowerCase())) continue;
-    seen.add(tag.toLowerCase());
-    out.push(tag);
-    if (out.length === 20) break;
-  }
-  return out;
-}
-
 /**
  * Contatos dos chatbots de um cliente, os de mensagem mais recente primeiro. A busca é pelo nome
  * (em texto) ou pelo telefone (pelo hash: o número nunca é buscado em texto); a etiqueta é exata.
@@ -603,4 +590,61 @@ export async function setContactTags(db: SupabaseClient, id: string, botIds: str
   const { data, error } = await db.from("contacts").update({ tags, updated_at: new Date().toISOString() }).eq("id", id).in("bot_id", botIds).select("id");
   if (error) throw new Error(`contatos: ${error.message}`);
   return Boolean(data?.length);
+}
+
+/**
+ * Planilha (leva B3): contatos do WhatsApp de um chatbot pelo telefone canônico. Cria quem não
+ * existe (sem "já conversou": a pessoa ainda não escreveu) e completa quem existe (nome só se
+ * estava vazio; etiquetas somadas). Em lotes, para caber no tempo de uma requisição.
+ */
+export async function importWhatsAppContacts(db: SupabaseClient, bot: { id: string; agency_id: string }, rows: Array<{ phone: string; name: string | null; tags: string[] }>): Promise<{ ids: Map<string, string>; created: number; updated: number }> {
+  const ids = new Map<string, string>();
+  const byHash = new Map(rows.map((r) => [phoneHash(r.phone), r]));
+  const hashes = [...byHash.keys()];
+  const existing = new Map<string, { id: string; name: string | null; tags: string[] }>();
+  for (let i = 0; i < hashes.length; i += 300) {
+    const { data, error } = await db.from("contacts").select("id, phone_hash, name, tags").eq("bot_id", bot.id).eq("channel", "whatsapp").in("phone_hash", hashes.slice(i, i + 300));
+    if (error) throw new Error(`contatos: ${error.message}`);
+    for (const c of data ?? []) existing.set(c.phone_hash as string, { id: c.id as string, name: (c.name as string | null) ?? null, tags: (c.tags as string[] | null) ?? [] });
+  }
+
+  // novos: o telefone vai cifrado com a chave do cliente (uma busca da chave para o lote todo)
+  const scope = await scopeOfBot(bot.id);
+  const fresh = hashes.filter((h) => !existing.has(h));
+  let created = 0;
+  for (let i = 0; i < fresh.length; i += 200) {
+    const chunk = await Promise.all(
+      fresh.slice(i, i + 200).map(async (h) => {
+        const r = byHash.get(h)!;
+        return { agency_id: bot.agency_id, bot_id: bot.id, channel: "whatsapp", hash_key_version: HASH_KEY_VERSION, phone_hash: h, phone_enc: await sealNullable("contacts.phone_enc", r.phone, scope), name: r.name, tags: r.tags };
+      }),
+    );
+    const { data, error } = await db.from("contacts").insert(chunk).select("id, phone_hash");
+    if (error) throw new Error(`contatos: ${error.message}`);
+    for (const c of data ?? []) ids.set(byHash.get(c.phone_hash as string)!.phone, c.id as string);
+    created += data?.length ?? 0;
+  }
+
+  // existentes: só o que muda (nome vazio, etiqueta nova), 20 de cada vez
+  let updated = 0;
+  const changes: Array<{ id: string; patch: Record<string, unknown> }> = hashes
+    .filter((h) => existing.has(h))
+    .map((h) => {
+      const r = byHash.get(h)!;
+      const c = existing.get(h)!;
+      ids.set(r.phone, c.id);
+      const tags = [...c.tags, ...r.tags.filter((t) => !c.tags.some((x) => x.toLowerCase() === t.toLowerCase()))].slice(0, 20);
+      const name = !c.name && r.name ? r.name : null;
+      const patch: Record<string, unknown> = { tags, ...(name ? { name } : {}), updated_at: new Date().toISOString() };
+      return tags.length !== c.tags.length || name ? { id: c.id, patch } : null;
+    })
+    .filter((x) => x !== null);
+  for (let i = 0; i < changes.length; i += 20) {
+    await Promise.all(changes.slice(i, i + 20).map(async (c) => {
+      const { error } = await db.from("contacts").update(c.patch).eq("id", c.id);
+      if (error) throw new Error(`contatos: ${error.message}`);
+    }));
+    updated += changes.slice(i, i + 20).length;
+  }
+  return { ids, created, updated };
 }

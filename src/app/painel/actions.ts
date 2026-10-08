@@ -43,8 +43,10 @@ import { notifyAgencyOwner, notifyClientPeople, notifyPlatform } from "@/lib/not
 import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retentionReduced } from "@/lib/retention";
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
-import { contactForPanel, findContactIds, normalizeTags, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
-import { recordConsent, revokeConsents } from "@/lib/marketing-consent";
+import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
+import { IMPORT_MAX_ROWS, validateImportRows, type ImportError, type RawImportRow } from "@/lib/contact-import";
+import { setCompanyAgesBulk } from "@/lib/gate/age";
 import { deleteLeads, findLeadsByContact, leadIdsOfConversations } from "@/lib/leads";
 import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
@@ -1534,4 +1536,55 @@ export async function revokeContactConsent(clientId: string, contactId: string):
   await auditPanel("contato.consentimento_revogar", { type: "contact", id: contactId });
   revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
   return ok("Aceite revogado: o contato não recebe mais promoções.");
+}
+
+/* ------------------------------------------------------------------ planilha de contatos (leva B3, parte 2b) */
+
+export type ImportContactsResult =
+  | { ok: true; created: number; updated: number; consents: number; consentsSkipped: number; ages: number; agesSkipped: number; errors: ImportError[] }
+  | { ok: false; message: string };
+
+/** Versão do registro de aceite vindo da planilha (a prova guarda qual foi). */
+const IMPORT_CONSENT_VERSION = "planilha-1";
+
+/**
+ * Importa a planilha que o navegador leu: confere tudo de novo, grava os contatos do WhatsApp do
+ * chatbot, os aceites (com origem e data) e as idades informadas pela empresa. Linha com problema
+ * fica de fora e volta na lista de erros.
+ */
+export async function importClientContacts(clientId: string, input: { botId: string; rows: RawImportRow[]; consentText: string; consentTerms: boolean; ageTerms: boolean }): Promise<ImportContactsResult> {
+  if (!(await allowed("config"))) return { ok: false, message: DENIED };
+  if (!Array.isArray(input?.rows) || !input.rows.length) return { ok: false, message: "A planilha está vazia." };
+  if (input.rows.length > IMPORT_MAX_ROWS) return { ok: false, message: `Até ${IMPORT_MAX_ROWS} contatos por planilha. Divida em partes.` };
+  const supabase = await createClient();
+  // a RLS confere que o chatbot é deste cliente e do escopo de quem está logado
+  const { data: bot } = await supabase.from("bots").select("id, agency_id").eq("id", String(input.botId)).eq("client_id", clientId).eq("is_demo", false).maybeSingle();
+  if (!bot) return { ok: false, message: "Chatbot não encontrado." };
+  const db = createAdminClient();
+  const { data: wa } = await db.from("whatsapp_channels").select("waba_id").eq("bot_id", bot.id).is("disconnected_at", null).maybeSingle();
+  if (!wa) return { ok: false, message: "Conecte o WhatsApp deste chatbot antes de importar: os aceites valem para o número dele." };
+
+  const { valid, errors } = validateImportRows(input.rows.map((r) => ({ ...r, line: Number(r.line) || 0 })));
+  if (!valid.length) return { ok: true, created: 0, updated: 0, consents: 0, consentsSkipped: 0, ages: 0, agesSkipped: 0, errors };
+  const sheetText = text(input.consentText).slice(0, 600);
+  const withConsent = valid.filter((r) => r.consent);
+  if (withConsent.length && !input.consentTerms) return { ok: false, message: "Confirme o termo do aceite: a empresa coletou os aceites e consegue prová-los." };
+  if (withConsent.some((r) => !r.consent!.text) && sheetText.length < 10) return { ok: false, message: "Escreva o texto que as pessoas aceitaram (ou use a coluna aceite_texto)." };
+  const withAge = valid.filter((r) => r.age);
+  if (withAge.length && !input.ageTerms) return { ok: false, message: "Confirme o termo da idade: a empresa responde pela idade informada." };
+
+  const { email } = await requireAgency();
+  const owner = { id: bot.id as string, agency_id: bot.agency_id as string };
+  const contacts = await importWhatsAppContacts(db, owner, valid.map((r) => ({ phone: r.phone, name: r.name, tags: r.tags })));
+  const wabaId = (wa.waba_id as string | null) ?? null;
+  const scope = suppressionScope({ wabaId, botId: owner.id });
+  const consents = await recordImportedConsents(
+    db,
+    withConsent.map((r) => ({ scope, contact: r.phone, agencyId: owner.agency_id, clientId, botId: owner.id, wabaId, contactId: contacts.ids.get(r.phone) ?? null, text: `Origem: ${r.consent!.origin}. Texto aceito: ${r.consent!.text ?? sheetText}`, collectedAt: r.consent!.date })),
+    { textVersion: IMPORT_CONSENT_VERSION, collectedBy: email },
+  );
+  const ages = withAge.length ? await setCompanyAgesBulk(db, owner.id, withAge.map((r) => ({ contact: r.phone, adult: r.age!.adult, origin: `planilha: ${r.age!.origin}` }))) : { set: 0, skipped: 0 };
+  await auditPanel("contato.importar", { type: "bot", id: owner.id }, { after: { linhas: input.rows.length, criados: contacts.created, atualizados: contacts.updated, aceites: consents.recorded, idades: ages.set, erros: errors.length } });
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return { ok: true, created: contacts.created, updated: contacts.updated, consents: consents.recorded, consentsSkipped: consents.skipped, ages: ages.set, agesSkipped: ages.skipped, errors };
 }

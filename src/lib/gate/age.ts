@@ -65,6 +65,28 @@ export async function setCompanyAge(db: SupabaseClient, botId: string, who: Arra
   return { confirmed: verified, source: "company" };
 }
 
+/**
+ * Idades da planilha (leva B3): a empresa informa sim ou não por contato, com a origem. Como na
+ * API, o "Não" dado no chat continua valendo. Em lotes.
+ */
+export async function setCompanyAgesBulk(db: SupabaseClient, botId: string, items: Array<{ contact: string; adult: boolean; origin: string }>, now = Date.now()): Promise<{ set: number; skipped: number }> {
+  const byHash = new Map(items.map((i) => [contactHash("whatsapp", i.contact), i]));
+  const hashes = [...byHash.keys()];
+  const keepChat = new Set<string>();
+  for (let i = 0; i < hashes.length; i += 300) {
+    const { data, error } = await db.from("contact_ages").select("contact_hash, status, source, decided_at").eq("bot_id", botId).in("contact_hash", hashes.slice(i, i + 300));
+    if (error) throw new Error(`idade: ${error.message}`);
+    for (const r of data ?? []) if (chatNoStands(r as { status: string; source: string; decided_at: string }, now)) keepChat.add(r.contact_hash as string);
+  }
+  const decided = new Date(now).toISOString();
+  const rows = hashes.filter((h) => !keepChat.has(h)).map((h) => ({ bot_id: botId, contact_hash: h, status: byHash.get(h)!.adult ? "sim" : "nao", source: "empresa", origin: byHash.get(h)!.origin, api_key_id: null, decided_at: decided }));
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await db.from("contact_ages").upsert(rows.slice(i, i + 500), { onConflict: "bot_id,contact_hash" });
+    if (error) throw new Error(`idade: ${error.message}`);
+  }
+  return { set: rows.length, skipped: keepChat.size };
+}
+
 export async function setAge(db: SupabaseClient, w: Who, status: "sim" | "nao", source: "chat" | "empresa" | "equipe" = "chat") {
   const hash = contactHash(w.channel, w.contact);
   // o "Não" sempre vence: um "Sim" não sobrescreve um "Não" recente

@@ -225,3 +225,35 @@ export async function consentByContact(db: SupabaseClient, contactIds: string[])
   return out;
 }
 
+/**
+ * Aceites da planilha (leva B3): um registro por contato, com a origem e a data informadas pela
+ * empresa. Pula quem já tem um aceite ativo (importar de novo não duplica a prova). Não mexe no
+ * descadastro: só o sim dado no chat tira dele.
+ */
+export async function recordImportedConsents(db: SupabaseClient, items: Array<ConsentTarget & ConsentOrigin & { text: string; collectedAt: string }>, o: { textVersion: string; collectedBy: string | null }): Promise<{ recorded: number; skipped: number }> {
+  const active = await consentByContact(db, items.map((i) => i.contactId).filter((x): x is string => Boolean(x)));
+  const todo = items.filter((i) => !(i.contactId && active.get(i.contactId) === "granted"));
+  for (let i = 0; i < todo.length; i += 500) {
+    const { error } = await db.from("marketing_consents").insert(
+      todo.slice(i, i + 500).map((t) => ({
+        agency_id: t.agencyId,
+        client_id: t.clientId,
+        bot_id: t.botId,
+        waba_id: t.wabaId,
+        contact_id: t.contactId,
+        channel: "whatsapp",
+        scope: t.scope,
+        contact_hash: contactHash("whatsapp", t.contact),
+        granted: true,
+        source: "import",
+        text: t.text.slice(0, 1000),
+        text_version: o.textVersion,
+        collected_by: o.collectedBy,
+        collected_at: t.collectedAt,
+      })),
+    );
+    if (error) throw new Error(`consentimento: ${error.message}`);
+  }
+  return { recorded: todo.length, skipped: items.length - todo.length };
+}
+

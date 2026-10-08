@@ -29,6 +29,9 @@ export async function ClientContacts({ clientId, botIds, botName, searchParams }
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <Link href={`/painel/clientes/${clientId}/contatos/importar`} className="btn-ghost">Importar planilha</Link>
+      </div>
       <form className="card flex flex-wrap items-end gap-2 p-4" action={`/painel/clientes/${clientId}`}>
         <input type="hidden" name="tab" value="contatos" />
         <div className="min-w-[200px] flex-1">
