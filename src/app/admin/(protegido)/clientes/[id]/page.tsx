@@ -71,7 +71,10 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         {agency.stripeCustomerId && (
           <a href={`https://dashboard.stripe.com/${testMode ? "test/" : ""}customers/${agency.stripeCustomerId}`} target="_blank" rel="noreferrer" className="btn-ghost">Abrir no Stripe ↗</a>
         )}
-        <Link href={`/admin/clientes/${id}/integracoes`} className="btn-ghost">Integrações (piloto)</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/admin/clientes/${id}/integracoes`} className="btn-ghost">Integrações (piloto)</Link>
+          <Link href={`/admin/clientes/${id}/campanhas`} className="btn-ghost">Campanhas (teste)</Link>
+        </div>
       </div>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">

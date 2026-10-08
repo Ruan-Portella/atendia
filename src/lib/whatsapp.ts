@@ -226,6 +226,12 @@ export async function startAppSync(phoneNumberId: string, token: string, syncTyp
   await graph(`${phoneNumberId}/smb_app_data`, token, { body: { messaging_product: "whatsapp", sync_type: syncType } });
 }
 
+/** Nível do limite de contatos por 24 h que a Meta dá ao número (TIER_250, TIER_2K…), ou null. */
+export async function messagingLimitTier(ch: WaChannel): Promise<string | null> {
+  const res = await graph<{ messaging_limit_tier?: string }>(`${ch.phone_number_id}?fields=messaging_limit_tier`, channelToken(ch));
+  return res.messaging_limit_tier ?? null;
+}
+
 /** A conta do WhatsApp já tem forma de pagamento? (primary_funding_id preenchido) */
 export async function hasPaymentMethod(ch: WaChannel & { waba_id: string }): Promise<boolean> {
   const res = await graph<{ primary_funding_id?: string }>(`${ch.waba_id}?fields=primary_funding_id`, channelToken(ch));

@@ -3,6 +3,7 @@ import { ingestSource, type SourceRow } from "./ingest";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl, daysAgoIso } from "./utils";
 import { applyRetentionTerms } from "./retention";
+import { purgeCampaignData } from "./campaigns";
 
 /**
  * Tarefas diárias (rodam juntas em /api/cron/daily: o plano Hobby da Vercel só permite 2 crons).
@@ -65,6 +66,8 @@ export async function applyRetention(db: SupabaseClient, hasTime: () => boolean 
   // o sim ativo fica enquanto valer
   await db.from("marketing_consents").delete().lt("revoked_at", daysAgoIso(5 * 365 + 1));
   await db.from("marketing_consents").delete().eq("granted", false).lt("collected_at", daysAgoIso(5 * 365 + 1));
+  // campanhas (leva B3): variáveis dos envios saem em 30 dias; campanhas e envios, em 13 meses
+  await purgeCampaignData(db);
   // consumo do WhatsApp: 13 meses bastam para comparar com o mesmo mês do ano anterior
   await db.from("whatsapp_usage").delete().lt("created_at", daysAgoIso(400));
   // pareamento: código vencido ou usado sai depois de 1 dia; Idempotency-Key, depois de 24 h

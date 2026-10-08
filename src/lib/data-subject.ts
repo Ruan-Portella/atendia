@@ -3,7 +3,7 @@ import { audit } from "./audit";
 import { logDeletion } from "./deletions";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl } from "./utils";
-import { contactsForErasure, deleteContacts, type ErasureContact } from "./contacts";
+import { contactsForErasure, deleteContacts, phoneHash, type ErasureContact } from "./contacts";
 import { deleteLeads, leadIdsOfConversations } from "./leads";
 import { deleteUnanswered, unansweredIdsOfConversations } from "./unanswered";
 import { deleteActionCallsOfConversations } from "./actions";
@@ -13,6 +13,8 @@ import { suppress, suppressionScope } from "./suppression";
 import { deliver } from "./send";
 import { sendText } from "./whatsapp";
 import { purgeAttachments } from "./attachments";
+import { forgetCampaignSends } from "./campaigns";
+import { canonicalPhone } from "./phone";
 
 /*
  * Pedido do titular (LGPD, art. 18; leva S). Pelo chat: o contato escreve "apaga meus dados", o
@@ -242,6 +244,9 @@ export async function eraseTargets(
   const conversations = [...convIds];
   // primeiro o que sai do BoaVoz para fora (entregas de webhook) e os logs ligados
   const entregas = await deleteContactDeliveries(db, contactIds);
+  // envios de campanha: sem telefone nem variáveis, e o que estava na fila não sai mais
+  const phones = contacts.map((c) => (c.channel === "whatsapp" ? canonicalPhone(c.phone) : null)).filter((p): p is string => Boolean(p));
+  await forgetCampaignSends(db, { contactIds, phoneHashes: phones.map(phoneHash) });
   let chamadas = 0;
   for (const ids of chunked(conversations)) chamadas += await deleteActionCallsOfConversations(db, ids);
   let perguntas = 0;

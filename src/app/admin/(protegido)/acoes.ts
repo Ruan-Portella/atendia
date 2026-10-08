@@ -23,7 +23,10 @@ import { applyPlanLimits, manualPlanSwitch } from "@/lib/plan-limits";
 import { SIGNAL_KINDS, TEST_THRESHOLDS, THRESHOLDS, runContinuousChecks } from "@/lib/continuous-check";
 import { refreshReportDaily } from "@/lib/report-daily";
 import { cronsScheduledHere } from "@/lib/backoffice-ops";
-import { deadline } from "@/lib/cron";
+import { deadline, withCronLock } from "@/lib/cron";
+import { createCampaign, runCampaignTick, setCampaignStatus, templateProblem } from "@/lib/campaigns";
+import { whatsappContact } from "@/lib/contacts";
+import { canonicalPhone } from "@/lib/phone";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -796,4 +799,100 @@ export async function runReencryptNow(): Promise<ActionResult> {
   await auditAdmin(s.email, "cifra.recifrar", { after: done });
   revalidatePath("/admin/operacao");
   return ok(total ? `Cifradas agora: ${Object.entries(done).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(" · ")}.` : "Nada a cifrar: o histórico já está todo cifrado.");
+}
+
+/* ------------------------------------------------------------------ campanhas (B3): teste pelo backoffice até a tela da parte 4 */
+
+/** No teste, até tantos números de uma vez. */
+const TEST_CAMPAIGN_MAX = 50;
+
+/**
+ * Campanha de teste: um modelo aprovado, as mesmas variáveis para todos e os números, um por linha.
+ * Passa pelas mesmas conferências da campanha de verdade (SAIR, aceite de novidades no marketing,
+ * 18+ quando marcada como bebida ou remédio). Sem data, sai no próximo tique (ou no "Rodar agora").
+ */
+export async function createTestCampaign(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const botId = text(fd.get("bot"));
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/campanhas (campanha de teste no bot ${botId})`);
+  const db = createAdminClient();
+  const { data: bot } = await db.from("bots").select("id, agency_id, client_id, is_demo").eq("id", botId).eq("agency_id", agencyId).maybeSingle();
+  if (!bot || bot.is_demo) return fail("Chatbot não encontrado nesta agência.");
+  const { listTemplates, loadTemplateChannel, templateBody, templateVariables } = await import("@/lib/whatsapp-templates");
+  const ch = await loadTemplateChannel(db, botId);
+  if (!ch) return fail("Este chatbot não tem WhatsApp conectado.");
+  const name = text(fd.get("template"));
+  let template;
+  try {
+    template = (await listTemplates(ch)).find((t) => t.name === name);
+  } catch (e) {
+    return fail(`A Meta não listou os modelos: ${(e as Error).message}`);
+  }
+  const kind = template?.category.toUpperCase() === "MARKETING" ? "marketing" : "utility_reminder";
+  const problem = templateProblem(kind, template ?? null);
+  if (problem || !template) return fail(`Não dá para usar este modelo: ${problem}.`);
+  const vars = templateVariables(templateBody(template)).length;
+  const variables = String(fd.get("variables") ?? "").split(/\r?\n/).map((v) => v.trim()).filter(Boolean);
+  if (variables.length < vars) return fail(`O modelo tem ${vars} variáve${vars === 1 ? "l" : "is"}: escreva ${vars === 1 ? "o valor" : "um valor por linha"}.`);
+  const phones = [...new Set(String(fd.get("phones") ?? "").split(/[\n,;]+/).map((p) => canonicalPhone(p, { typed: true })).filter((p): p is string => Boolean(p)))];
+  if (!phones.length) return fail("Informe ao menos um WhatsApp com DDD, um por linha.");
+  if (phones.length > TEST_CAMPAIGN_MAX) return fail(`No teste, até ${TEST_CAMPAIGN_MAX} números.`);
+  const scheduledRaw = text(fd.get("scheduled_at"));
+  const scheduled = scheduledRaw ? new Date(`${scheduledRaw}:00-03:00`) : null;
+  if (scheduled && Number.isNaN(scheduled.getTime())) return fail("Data de envio inválida.");
+
+  const recipients = [];
+  for (const [i, phone] of phones.entries()) {
+    const contact = await whatsappContact(db, { id: botId, agency_id: agencyId }, { phone });
+    // marketing é por contato; o lembrete é por linha (a mesma pessoa pode ter dois lembretes)
+    recipients.push({ contactId: contact?.id ?? null, phone, dedupeKey: kind === "marketing" && contact ? `c:${contact.id}` : `l:${i + 1}`, variables: variables.slice(0, vars) });
+  }
+  const campaignName = text(fd.get("name")).slice(0, 120) || `Teste ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`;
+  try {
+    const r = await createCampaign(db, {
+      agencyId,
+      clientId: (bot.client_id as string | null) ?? null,
+      botId,
+      kind,
+      name: campaignName,
+      template: { name: template.name, language: template.language, category: template.category },
+      regulated: fd.get("regulated") === "on",
+      audience: { teste_backoffice: true },
+      scheduledAt: scheduled?.toISOString() ?? null,
+      createdBy: `suporte:${s.email}`,
+      recipients,
+    });
+    await auditAdmin(s.email, "campanha.criar", { agencyId, targetType: "bot", targetId: botId, after: { campanha: r.id, modelo: template.name, tipo: kind, envios: r.queued, teste: true } });
+    revalidatePath(`/admin/clientes/${agencyId}/campanhas`);
+    return ok(`Campanha criada com ${r.queued} envio(s) (${kind === "marketing" ? "marketing: só sai para quem aceitou novidades" : "lembrete de utilidade"}). ${scheduled && scheduled.getTime() > Date.now() ? `Agendada para ${scheduled.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.` : "Sai no próximo tique, ou clique em Rodar agora."}`);
+  } catch (e) {
+    return fail(`A campanha não foi criada: ${(e as Error).message}`);
+  }
+}
+
+/** Roda um tique agora (o mesmo do pg_cron, com a mesma trava). */
+export async function runCampaignsNow(agencyId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/campanhas (rodou o tique das campanhas)`);
+  const db = createAdminClient();
+  try {
+    const r = await withCronLock(db, "campanhas", 90, () => runCampaignTick(db, { hasTime: deadline(40_000) }));
+    if (!("campaigns" in r)) return fail("Outro tique está rodando agora. Espere alguns segundos e clique de novo.");
+    await auditAdmin(s.email, "campanha.rodar", { after: { ...r } });
+    revalidatePath(`/admin/clientes/${agencyId}/campanhas`);
+    return ok(`Tique: ${r.campaigns} campanha(s) · ${r.sent} enviada(s) · ${r.skipped} pulada(s) pelas conferências · ${r.failed} com erro · ${r.uncertain} incerta(s) · ${r.finished} terminada(s)${r.paused ? ` · ${r.paused} pausada(s)` : ""}.`);
+  } catch (e) {
+    return fail(`O tique falhou: ${(e as Error).message}`);
+  }
+}
+
+/** Pausar, retomar ou cancelar uma campanha da agência. */
+export async function changeCampaignStatus(agencyId: string, campaignId: string, status: "paused" | "sending" | "canceled"): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId}/campanhas (campanha ${campaignId}: ${status})`);
+  const db = createAdminClient();
+  const { data: c } = await db.from("campaigns").select("id").eq("id", campaignId).eq("agency_id", agencyId).maybeSingle();
+  if (!c) return fail("Campanha não encontrada nesta agência.");
+  if (!(await setCampaignStatus(db, campaignId, status, status === "paused" ? "pausada pela equipe BoaVoz" : null))) return fail("A campanha já não está nesse ponto. Recarregue a página.");
+  const action = { paused: "campanha.pausar", sending: "campanha.retomar", canceled: "campanha.cancelar" }[status];
+  await auditAdmin(s.email, action, { agencyId, targetType: "campaign", targetId: campaignId });
+  revalidatePath(`/admin/clientes/${agencyId}/campanhas`);
+  return ok({ paused: "Campanha pausada.", sending: "Campanha retomada: sai no próximo tique.", canceled: "Campanha cancelada: o que faltava não sai mais." }[status]);
 }

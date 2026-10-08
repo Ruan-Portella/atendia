@@ -13,10 +13,11 @@ import { revoke, suppress, suppressionScope } from "./suppression";
 import { recordMetaEnforcement, type MetaAccountDetail } from "./meta-enforcement";
 import { disconnectionDetail } from "./whatsapp-diagnostics";
 import { revokeConsents } from "./marketing-consent";
+import { reconcileCampaignStatus } from "./campaigns";
 
 /* ------------------------------------------------------------------ o que vai na fila */
 
-export type WaStatus = MessageStatus & { recipient_id?: string; errors?: Array<{ code?: number; title?: string }> };
+export type WaStatus = MessageStatus & { recipient_id?: string; errors?: Array<{ code?: number; title?: string }>; biz_opaque_callback_data?: string };
 /** webhook user_preferences: a pessoa parou (ou voltou a aceitar) as mensagens de marketing. */
 export interface WaPreference {
   wa_id?: string;
@@ -71,6 +72,9 @@ const whatsappGroup: GroupHandler = async (db, events) => {
         await suppress(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id, kind: "marketing", reason: "meta_131050", source: "meta" });
         await revokeConsents(db, { scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id }, "meta:131050");
       }
+      // envio de campanha ("cs:<id>"): o status concilia a linha (enviado, entregue, lido ou falhou)
+      const ref = p.status.biz_opaque_callback_data;
+      if (ref?.startsWith("cs:") && p.status.status) await reconcileCampaignStatus(db, ref, p.status.status, p.status.errors?.[0]?.code);
       // consumo: cada status de mensagem enviada diz se a Meta cobrou e em qual categoria
       if (e.bot_id) await recordUsage(db, e.bot_id, p.phoneNumberId, [p.status]);
     } else if (p?.type === "prefs" && (p.wabaId || e.bot_id)) {
