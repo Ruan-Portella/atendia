@@ -8,7 +8,7 @@ import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
-import { downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
+import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { OPTIN_BUTTONS, OPTIN_NO, OPTIN_NO_TEXT, OPTIN_VERSION, OPTIN_YES, consentHistory, consentStateOf, isClosingMessage, offerDue, optInOfferText, optInYesText, recordConsent, restoreConsents, revokeConsents, typedOptInAnswer } from "./marketing-consent";
 import { ageRecord } from "./gate/age";
@@ -552,6 +552,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     // sem vaga na cota (agência ou sublimite do cliente) ou teste vencido: modo só humano, sem perder a mensagem
     if (code === "quota_exceeded" || code === "client_quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("whatsapp: falha ao responder", e);
+    // o canal recusou a resposta (ex.: 131037): o texto de erro seria recusado do mesmo jeito
+    if (e instanceof WhatsAppError && e.code) return;
     await say("ia", FALLBACK, conv ? fixedRecord(FALLBACK) : null).catch(() => {});
   }
 }
