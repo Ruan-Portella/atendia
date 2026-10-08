@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { activeSuppressions, contactHash, revoke, suppress } from "./suppression";
+import { activeSuppressions, contactHash, revoke, suppress, suppressionScope } from "./suppression";
+import { ageRecord } from "./gate/age";
+import { displayPhone } from "./phone";
+import type { MessageComponent } from "./components";
 
 /*
  * Consentimento de marketing com prova (leva B3, parte 1; spec Peça 7 "Consentimento no contato"):
@@ -128,7 +131,7 @@ export interface ConsentOrigin {
  * Grava um sim ou um não. O sim é um novo opt-in da própria pessoa: desfaz o descadastro de
  * promoções (o de lembretes continua).
  */
-export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null; collectedAt?: string | null }): Promise<void> {
+export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null; collectedAt?: string | null; keepSuppression?: boolean }): Promise<void> {
   const { error } = await db.from("marketing_consents").insert({
     agency_id: t.agencyId,
     client_id: t.clientId,
@@ -148,7 +151,7 @@ export async function recordConsent(db: SupabaseClient, t: ConsentTarget & Conse
   if (error) throw new Error(`consentimento: ${error.message}`);
   // só o sim dado pela própria pessoa no chat tira do descadastro; o registrado pela empresa (painel,
   // planilha) não desfaz um SAIR (e o envio confere a supressão de qualquer jeito)
-  if (!t.granted || t.source !== "chat") return;
+  if (!t.granted || t.source !== "chat" || t.keepSuppression) return;
   const target = { channel: "whatsapp" as const, scope: t.scope, contact: t.contact };
   const active = (await activeSuppressions(db, target)).map((s) => s.kind);
   if (active.includes("marketing")) await revoke(db, { ...target, kind: "marketing", source: `optin:${t.source}` });
@@ -255,5 +258,39 @@ export async function recordImportedConsents(db: SupabaseClient, items: Array<Co
     if (error) throw new Error(`consentimento: ${error.message}`);
   }
   return { recorded: todo.length, skipped: items.length - todo.length };
+}
+
+/* ------------------------------------------------------------------ oferta no site (leva B3, parte 2c) */
+
+/** Versão do texto da oferta no site (a prova guarda qual foi mostrado). */
+export const OPTIN_SITE_VERSION = "oferta-site-1";
+/** Os botões da oferta, como o widget mostra. */
+export const OPTIN_COMPONENT: MessageComponent = { type: "options", options: OPTIN_BUTTONS };
+
+export const optInSiteText = (company: string, phone: string) => `Quer receber novidades e promoções da ${company} no seu WhatsApp (${displayPhone(phone)})? Você pode parar quando quiser respondendo SAIR por lá.`;
+export const optInSiteYesText = (company: string, phone: string) => `Pronto! Você vai receber as novidades da ${company} no WhatsApp ${displayPhone(phone)}. Para parar, é só responder SAIR por lá.`;
+
+/** A mensagem do assistente traz a oferta do site? Pura. */
+export const isSiteOffer = (content: string | null | undefined, company: string) => Boolean(content?.includes(`Quer receber novidades e promoções da ${company} no seu WhatsApp (`));
+
+/** O número do WhatsApp conectado ao chatbot dá o escopo do aceite (sem WhatsApp, não há oferta). */
+export async function whatsappScopeOfBot(db: SupabaseClient, botId: string): Promise<{ scope: string; wabaId: string | null } | null> {
+  const { data } = await db.from("whatsapp_channels").select("waba_id").eq("bot_id", botId).is("disconnected_at", null).maybeSingle();
+  if (!data) return null;
+  const wabaId = (data.waba_id as string | null) ?? null;
+  return { scope: suppressionScope({ wabaId, botId }), wabaId };
+}
+
+/** O WhatsApp digitado no site pode receber a oferta? Sem resposta anterior, sem descadastro e sem "não" ao 18+. */
+export async function siteOfferDue(db: SupabaseClient, botId: string, phone: string): Promise<boolean> {
+  const wa = await whatsappScopeOfBot(db, botId);
+  if (!wa) return false;
+  const target = { scope: wa.scope, contact: phone };
+  const [history, suppressed, age] = await Promise.all([
+    consentHistory(db, target, 1),
+    activeSuppressions(db, { channel: "whatsapp", ...target }),
+    ageRecord(db, { botId, channel: "whatsapp", contact: phone }),
+  ]);
+  return consentStateOf(history) === "none" && !suppressed.some((s) => s.kind !== "utility") && age?.status !== "nao";
 }
 

@@ -15,8 +15,9 @@ export function MarketingOptInForm({ botId, on, company, canEdit, action }: { bo
         <span className={on ? "rounded-full bg-brand-soft px-2 py-0.5 text-xs font-semibold text-brand" : "text-xs text-muted"}>{on ? "Ligado" : "Desligado"}</span>
       </div>
       <p className="text-sm text-ink-2">
-        O assistente pergunta uma vez a cada contato, quando a conversa termina (a pessoa deixou o contato ou agradeceu), se ela quer receber novidades e promoções por aqui. Só quem aceita
-        poderá receber campanhas. A resposta, o texto e a data ficam guardados como prova; quem responde SAIR deixa de receber na hora. Quem disse que não tem 18 anos não recebe a pergunta.
+        O assistente pergunta uma vez a cada contato, quando a conversa termina (a pessoa deixou o contato ou agradeceu), se ela quer receber novidades e promoções por aqui. No chat do
+        site, a pergunta vai para quem deixou o WhatsApp como contato. Só quem aceita poderá receber campanhas. A resposta, o texto e a data ficam guardados como prova; quem responde SAIR
+        deixa de receber na hora. Quem disse que não tem 18 anos não recebe a pergunta.
       </p>
       <div className="flex flex-col gap-2 rounded-xl bg-ground p-3 text-sm" aria-label="Prévia da mensagem">
         <span className="text-xs font-semibold text-muted">Prévia no WhatsApp</span>

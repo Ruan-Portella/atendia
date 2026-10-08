@@ -3,7 +3,8 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { CORS_HEADERS, SYSTEM_AUTHOR, conversationHistory, lastUserText, openConversation, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { CORS_HEADERS, SYSTEM_AUTHOR, appendSiteOffer, conversationHistory, lastUserText, openConversation, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { handleSiteOptIn } from "@/lib/site-optin";
 import { handleErasureRequest } from "@/lib/data-subject";
 import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
 import { logWidgetAccess } from "@/lib/access-log";
@@ -146,6 +147,33 @@ export async function POST(req: Request) {
     }
   }
 
+  // novidades no site (leva B3): "Sim, quero" ou "Não, obrigado" logo depois da oferta, com texto
+  // fixo e sem a IA, em qualquer estado da conversa (o teste ao vivo do painel não grava aceite)
+  if (channel === "widget" && convId && bot.marketing_optin_offer) {
+    const reply = await handleSiteOptIn(db, bot, convId, text).catch((e) => {
+      console.error("site: resposta às novidades", (e as Error).message);
+      return null;
+    });
+    if (reply) {
+      const id = convId;
+      await saveMessage(db, { conversation_id: id, role: "user", content: text }, { touch: "visitante" });
+      await saveMessage(db, { conversation_id: id, role: "assistant", content: reply, author: SYSTEM_AUTHOR });
+      after(() => logWidgetAccess(db, { botId: bot.id, conversationId: id, ip: clientIp(req), isNew: false }));
+      return createUIMessageStreamResponse({
+        stream: createUIMessageStream({
+          execute: ({ writer }) => {
+            writer.write({ type: "start" });
+            writer.write({ type: "text-start", id: "novidades" });
+            writer.write({ type: "text-delta", id: "novidades", delta: reply });
+            writer.write({ type: "text-end", id: "novidades" });
+            writer.write({ type: "finish" });
+          },
+        }),
+        headers: { ...CORS_HEADERS, "X-Conversation-Id": id, "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
+      });
+    }
+  }
+
   // Uma pessoa da agência assumiu: o assistente fica quieto; a mensagem vai para o painel
   // e a resposta chega ao widget por /api/chat/updates.
   if (convId && mode.step === 3) {
@@ -172,7 +200,7 @@ export async function POST(req: Request) {
 
   try {
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];
-    const { result, conversationId: activeId } = await runChat({
+    const { result, conversationId: activeId, siteOffer } = await runChat({
       db,
       bot,
       messages: [...history, { id: "novo", role: "user", parts: [{ type: "text", text }] }],
@@ -188,7 +216,7 @@ export async function POST(req: Request) {
     // atendimento aberto antes da conversa existir: liga a primeira conversa a ele
     if (slot?.isNew && slot.id && !convId) after(async () => void (await db.from("atendimentos").update({ first_conversation_id: activeId }).eq("id", slot.id)));
     return createUIMessageStreamResponse({
-      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts()),
+      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts()).pipeThrough(appendSiteOffer(siteOffer)),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": activeId, ...(handoff ? { "X-Handoff": handoff } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
     });
   } catch (e) {

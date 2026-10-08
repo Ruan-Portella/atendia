@@ -12,6 +12,8 @@ import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { isTextRefusal, refusalLevelFor } from "./refusal-text";
+import { OPTIN_COMPONENT, optInSiteText, siteOfferDue } from "./marketing-consent";
+import { canonicalPhone } from "./phone";
 import { instagramUsername } from "./instagram";
 import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, optionsFromText, parseComponents, type MessageComponent } from "./components";
 import { RISK_TEXT, detectRisk } from "./risk";
@@ -85,6 +87,29 @@ export function lastUserText(messages: UIMessage[]): string {
  * O navegador não recebe as chamadas de ferramenta (nome, WhatsApp e e-mail do lead, motivo do
  * pedido de atendente). O pedido de atendente vira só o sinal data-handoff para o widget.
  */
+/**
+ * Novidades no site (leva B3, parte 2c): a oferta entra no fim da resposta, com os botões, quando a
+ * IA gravou um contato com WhatsApp nesta vez e a resposta não trouxe outros botões.
+ */
+export function appendSiteOffer(offer: () => { text: string } | null) {
+  let component = false;
+  return new TransformStream<UIMessageChunk, UIMessageChunk>({
+    transform(chunk, ctrl) {
+      if (chunk.type === "data-components") component = true;
+      if (chunk.type === "finish") {
+        const o = offer();
+        if (o && !component) {
+          ctrl.enqueue({ type: "text-start", id: "novidades" });
+          ctrl.enqueue({ type: "text-delta", id: "novidades", delta: `\n\n${o.text}` });
+          ctrl.enqueue({ type: "text-end", id: "novidades" });
+          ctrl.enqueue({ type: "data-components", data: OPTIN_COMPONENT });
+        }
+      }
+      ctrl.enqueue(chunk);
+    },
+  });
+}
+
 export function withoutToolParts() {
   // como no WhatsApp e no Instagram, só o primeiro reply da vez vai (duas ações em paralelo)
   let replied = false;
@@ -649,6 +674,8 @@ export async function runChat(opts: {
   let urgentCalled = false;
   // lead gravado nesta vez (a oferta de novidades no WhatsApp, leva B3)
   let leadCreated = false;
+  // oferta de novidades no site desta vez (leva B3)
+  let siteOffer: { phone: string; text: string } | null = null;
   let askAgeCalled = false;
   // resolve quando a resposta já está gravada (quem não usa o stream, como o WhatsApp, espera por ele)
   // resolve com o id da resposta gravada (null se não houve texto ou deu erro)
@@ -713,6 +740,11 @@ export async function runChat(opts: {
         const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, instagram, channel, notes: input.interesse });
         notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: lead.nome }, channel, conversationId: convId }).catch(() => {});
         leadCreated = true;
+        // novidades no site (leva B3): o WhatsApp digitado recebe a oferta no fim desta resposta
+        if (channel === "widget" && bot.marketing_optin_offer && lead.whatsapp) {
+          const phone = canonicalPhone(lead.whatsapp, { typed: true });
+          if (phone && (await siteOfferDue(db, bot.id, phone).catch(() => false))) siteOffer = { phone, text: optInSiteText(bot.client_name, phone) };
+        }
         // o que dizer depois: a equipe retorna (pela própria conversa, no WhatsApp e no Instagram), sem pedir mais dados
         return { ok: true, instrucao: leadSavedNote(channel) };
       },
@@ -809,9 +841,13 @@ export async function runChat(opts: {
             listText = fromList.text;
           }
         }
-        if (content) {
+        // novidades no site: a oferta fica no fim do texto gravado, com os botões (como o widget mostrou)
+        const offer = siteOffer && !shown && !actionReply ? siteOffer : null;
+        if (offer) shown = OPTIN_COMPONENT;
+        const stored = offer && content ? `${content}\n\n${offer.text}` : content;
+        if (stored) {
           const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })));
-          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: actionReply ? null : shown }).catch((e) => {
+          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content: stored, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: actionReply ? null : shown }).catch((e) => {
             console.error("chat: resposta não gravada", (e as Error).message);
             return null;
           });
@@ -826,5 +862,5 @@ export async function runChat(opts: {
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
   // components(): botões, lista ou link desta vez (o canal converte); shownText(): o texto que veio na ferramenta
-  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText, listText: () => listText };
+  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText, listText: () => listText };
 }

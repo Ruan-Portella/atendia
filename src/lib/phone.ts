@@ -23,3 +23,13 @@ export function canonicalPhone(raw: string | null | undefined, opts: { typed?: b
   if (d.length < 8 || d.length > 15) return null;
   return d;
 }
+
+/** Telefone canônico para mostrar: "+55 21 99999-0000"; de outro país, "+" e os dígitos. Pura. */
+export function displayPhone(canonical: string): string {
+  const d = canonical.replace(/\D/g, "");
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) {
+    const n = d.slice(4);
+    return `+55 ${d.slice(2, 4)} ${n.slice(0, -4)}-${n.slice(-4)}`;
+  }
+  return `+${d}`;
+}
