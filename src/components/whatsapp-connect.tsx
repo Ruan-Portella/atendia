@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { MessageCircle } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import { useToast } from "@/components/ui/toast";
+import { ES_VARIANTS, signupExtras, type EsVariant } from "@/lib/embedded-signup";
 
 interface SessionInfo {
   /** Não vem na coexistência (a Meta só informa a conta). */
@@ -56,7 +57,7 @@ function loadSdk(appId: string, version: string): Promise<FacebookSdk> {
  * conta do WhatsApp e o número, e a Meta devolve um código (FB.login) e os IDs (postMessage).
  * Com os dois em mãos, a server action termina a conexão.
  */
-export function WhatsAppConnect({ appId, configId, graphVersion, action, coexistence = false, autoRepliesOff = false, label = "Conectar WhatsApp", primary = true }: {
+export function WhatsAppConnect({ appId, configId, graphVersion, action, coexistence = false, autoRepliesOff = false, variant = "a", label = "Conectar WhatsApp", primary = true }: {
   appId: string;
   configId: string;
   graphVersion: string;
@@ -65,6 +66,8 @@ export function WhatsAppConnect({ appId, configId, graphVersion, action, coexist
   coexistence?: boolean;
   /** Coexistência: o dono marcou que desligou a saudação e a ausência do app. */
   autoRepliesOff?: boolean;
+  /** Formato do pedido de coexistência (teste com ?es=b no endereço da página). */
+  variant?: EsVariant;
   label?: string;
   primary?: boolean;
 }) {
@@ -122,6 +125,9 @@ export function WhatsAppConnect({ appId, configId, graphVersion, action, coexist
       toast.error("Não deu para abrir a janela da Meta. Desative o bloqueador de anúncios nesta página e tente de novo.");
       return setBusy(false);
     }
+    const extras = signupExtras(coexistence, variant);
+    // teste dos formatos da coexistência: o que foi pedido fica no console do navegador
+    if (coexistence && variant !== "a") console.info("cadastro incorporado: formato", variant, extras);
     // o SDK não aceita callback async: o trabalho assíncrono fica em finish()
     fb.login(
       (res) => {
@@ -133,19 +139,17 @@ export function WhatsAppConnect({ appId, configId, graphVersion, action, coexist
         }
       },
       // sessionInfoVersion 3: formato do postMessage lido acima (o mesmo do link hospedado da Meta)
-      {
-        config_id: configId,
-        response_type: "code",
-        override_default_response_type: true,
-        extras: { setup: {}, version: "v4", sessionInfoVersion: "3", ...(coexistence ? { featureType: "whatsapp_business_app_onboarding" } : {}) },
-      },
+      { config_id: configId, response_type: "code", override_default_response_type: true, extras },
     );
   }
 
   return (
-    <button type="button" onClick={start} disabled={busy} className={primary ? "btn-primary self-start" : "btn-ghost self-start"}>
-      <MessageCircle size={16} />
-      {busy ? "Conectando…" : label}
-    </button>
+    <div className="flex flex-col gap-1 self-start">
+      <button type="button" onClick={start} disabled={busy} className={primary ? "btn-primary self-start" : "btn-ghost self-start"}>
+        <MessageCircle size={16} />
+        {busy ? "Conectando…" : label}
+      </button>
+      {coexistence && variant !== "a" && <span className="text-xs text-muted">Teste do pedido à Meta: formato {variant} ({ES_VARIANTS[variant]})</span>}
+    </div>
   );
 }

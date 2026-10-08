@@ -10,6 +10,7 @@ import { embeddedSignupConfig } from "@/lib/whatsapp";
 import { TRIAL_VERDICT_TEXT, TRIAL_WHATSAPP_LOCKED, channelAccessOf, trialAnalysisVerdict, trialContentProblem } from "@/lib/features";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { CoexistenceConnect } from "@/components/coexistence-connect";
+import { esVariantOf } from "@/lib/embedded-signup";
 import { ConnectChecklist } from "@/components/connect-checklist";
 import { ConnectLinkButton } from "@/components/connect-link-button";
 import { WhatsAppTemplates } from "@/components/whatsapp-templates";
@@ -540,7 +541,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                       <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
                         <div className="text-sm font-semibold">Já atende pelo WhatsApp Business no celular</div>
                         <p className="text-sm text-ink-2">O número continua funcionando no app do celular. {bot.name} responde as mensagens; quando alguém da equipe responde pelo celular, a resposta aparece em Conversas e {bot.name} fica quieto naquela conversa por 1 hora.</p>
-                        <CoexistenceConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar o WhatsApp Business do celular" />
+                        <CoexistenceConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar o WhatsApp Business do celular" variant={esVariantOf(sp.es)} />
                         <p className="text-xs text-muted">No celular, abra o WhatsApp Business atualizado e aceite quando a Meta pedir para compartilhar contatos e histórico.</p>
                       </div>
                       <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
