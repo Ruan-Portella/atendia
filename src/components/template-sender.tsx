@@ -41,7 +41,7 @@ export function TemplateSender({ templates, action, askPhone = false, submitLabe
       <div>
         <label htmlFor="tpl-name" className="label">Modelo</label>
         <select id="tpl-name" name="template" value={name} onChange={(e) => setName(e.target.value)} className="input">
-          {templates.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+          {templates.map((x) => <option key={x.name} value={x.name}>{x.category === "MARKETING" ? `${x.name} (marketing: só para quem aceitou novidades)` : x.name}</option>)}
         </select>
       </div>
       {t && t.vars > 0 && (

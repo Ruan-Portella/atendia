@@ -25,7 +25,6 @@ import { refreshReportDaily } from "@/lib/report-daily";
 import { cronsScheduledHere } from "@/lib/backoffice-ops";
 import { deadline, withCronLock } from "@/lib/cron";
 import { costText, createCampaign, estimateFor, runCampaignTick, setCampaignStatus, templateProblem } from "@/lib/campaigns";
-import { usdBrl } from "@/lib/backoffice";
 import { whatsappContact } from "@/lib/contacts";
 import { canonicalPhone } from "@/lib/phone";
 
@@ -863,12 +862,12 @@ export async function createTestCampaign(agencyId: string, fd: FormData): Promis
       scheduledAt: scheduled?.toISOString() ?? null,
       createdBy: `suporte:${s.email}`,
       recipients,
-      estimatedCostUsd: estimate.costUsd,
+      estimatedCostBrl: estimate.costBrl,
     });
     await auditAdmin(s.email, "campanha.criar", { agencyId, targetType: "bot", targetId: botId, after: { campanha: r.id, modelo: template.name, tipo: kind, envios: r.queued, teste: true } });
     revalidatePath(`/admin/clientes/${agencyId}/campanhas`);
     const pace = estimate.days > 1 ? ` Pelo limite de ${estimate.limit.toLocaleString("pt-BR")} contatos por 24 h, este envio leva ${estimate.days} dias.` : "";
-    return ok(`Campanha criada com ${r.queued} envio(s) (${kind === "marketing" ? "marketing: só sai para quem aceitou novidades" : "lembrete de utilidade"}). Custo estimado na Meta: ${costText(estimate.costUsd, usdBrl())}, cobrado da conta do cliente.${pace} ${scheduled && scheduled.getTime() > Date.now() ? `Agendada para ${scheduled.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.` : "Sai no próximo tique, ou clique em Rodar agora."}`);
+    return ok(`Campanha criada com ${r.queued} envio(s) (${kind === "marketing" ? "marketing: só sai para quem aceitou novidades" : "lembrete de utilidade"}). Custo estimado na Meta: ${costText(estimate.costBrl)}, cobrado da conta do cliente.${pace} ${scheduled && scheduled.getTime() > Date.now() ? `Agendada para ${scheduled.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.` : "Sai no próximo tique, ou clique em Rodar agora."}`);
   } catch (e) {
     return fail(`A campanha não foi criada: ${(e as Error).message}`);
   }

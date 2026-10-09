@@ -110,7 +110,7 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
         const r = await createMarketingCampaign({ ...input(), name, when: extra.when ?? when, scheduledLocal, confirmNight: extra.confirmNight });
         if (r.ok) {
           toast.success(r.message);
-          router.push("/painel/campanhas");
+          router.push(`/painel/campanhas/${r.id}`);
           return;
         }
         if (r.night) setNight(r.night);

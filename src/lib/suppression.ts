@@ -98,6 +98,10 @@ export const OPTOUT_BUTTON_TEXT = "Parar promoções";
  * SAIR, PARAR ou STOP (sozinhos, sem diferença de maiúsculas, acento ou pontuação), ou o botão
  * "Parar promoções" do modelo de marketing (vale para a categoria do último modelo, marketing).
  */
+/** O toque no botão "Parar promoções" (sempre descadastro de marketing). */
+export const isPromoOptOutButton = (text: string | null | undefined): boolean =>
+  Boolean(text) && text!.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z]/g, "").toUpperCase() === "PARARPROMOCOES";
+
 export function isOptOutKeyword(text: string | null | undefined): boolean {
   if (!text) return false;
   const t = text.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z]/g, "").toUpperCase();

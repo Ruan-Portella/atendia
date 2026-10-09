@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { campaignsInPlan } from "@/lib/plan-limits";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { attendantOf, can } from "@/lib/team";
@@ -125,7 +126,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   let newChatTemplates: SendableTemplate[] | null = null;
   if (tab === "conversas" && waAllowed && !bot.is_demo) {
     const ch = await loadTemplateChannel(createAdminClient(), id);
-    newChatTemplates = ch ? await listSendable(ch).catch(() => []) : null;
+    newChatTemplates = ch ? await listSendable(ch, { marketing: campaignsInPlan(owner.plan) }).catch(() => []) : null;
   }
   const embedSnippet = `<script src="${base}/widget.js" data-key="${bot.public_key}" async></script>`;
 

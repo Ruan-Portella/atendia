@@ -7,7 +7,6 @@ import { relativeTime } from "@/lib/utils";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { usdBrl } from "@/lib/backoffice";
 import { CAMPAIGN_STATUS_LABEL, QUALITY_LABEL, SEND_STATUS_LABEL, costText, listCampaigns, missingSecrets, templateProblem, tickCallHint, tickDiagnostics, tierLimit, type SendStatus } from "@/lib/campaigns";
 import { listTemplates, loadTemplateChannel, templateBody, templateVariables, type Template } from "@/lib/whatsapp-templates";
 import { phoneStanding } from "@/lib/whatsapp";
@@ -153,7 +152,7 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
                 <tr key={c.id} className="border-b border-line-2 align-top last:border-0">
                   <td className="px-5 py-2.5">
                     <span className="font-semibold">{c.name}</span>
-                    <div className="text-xs text-muted">{botName.get(c.bot_id) ?? "?"} · {KIND_LABEL[c.kind]} · <span className="font-mono">{c.template_name}</span> · criada {relativeTime(c.created_at)}{c.scheduled_at ? ` · agendada para ${new Date(c.scheduled_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}{c.estimated_cost_cents != null ? ` · custo estimado ${costText(c.estimated_cost_cents / 100, usdBrl())}` : ""}</div>
+                    <div className="text-xs text-muted">{botName.get(c.bot_id) ?? "?"} · {KIND_LABEL[c.kind]} · <span className="font-mono">{c.template_name}</span> · criada {relativeTime(c.created_at)}{c.scheduled_at ? ` · agendada para ${new Date(c.scheduled_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}{c.estimated_cost_cents != null ? ` · custo estimado ${costText(c.estimated_cost_cents / 100)}` : ""}</div>
                   </td>
                   <td className="px-3 py-2.5">
                     <span className={STATUS_TONE[c.status] ?? ""}>{CAMPAIGN_STATUS_LABEL[c.status]}</span>

@@ -22,7 +22,7 @@ import { applySensitiveMode, sensitiveChangeText, sensitiveSavedText } from "@/l
 import { logAccess } from "@/lib/access-log";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, aiNoticeProblem, awayMessageProblem, backNoticeProblem, entryNoticeProblem, parseHoursForm, type BusinessHours, type HumanHandoff } from "@/lib/handoff-hours";
 import { isChatLink, type RegulatedChannel } from "@/lib/gate/sales-channel";
-import { resetAge } from "@/lib/gate/age";
+import { getAge, resetAge } from "@/lib/gate/age";
 import { clearAgePending } from "@/lib/gate/flow";
 import { isGateCategory } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
@@ -44,7 +44,7 @@ import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retenti
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
 import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
-import { carryWhatsAppPreferences, recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
+import { carryWhatsAppPreferences, consentHistory, consentStateOf, recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
 import { IMPORT_MAX_ROWS, validateImportRows, type ImportError, type RawImportRow } from "@/lib/contact-import";
 import { setCompanyAgesBulk } from "@/lib/gate/age";
 import { deleteLeads, findLeadsByContact, leadIdsOfConversations } from "@/lib/leads";
@@ -52,7 +52,7 @@ import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
-import { setPlanPause, type PlanItemKind } from "@/lib/plan-limits";
+import { campaignsInPlan, setPlanPause, type PlanItemKind } from "@/lib/plan-limits";
 import { firstExceeded } from "@/lib/rate-limit";
 import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -933,9 +933,10 @@ async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: stri
   // regra de estado: ordem da Meta, desligamento geral ou suspensão pela BoaVoz
   const blocked = await sendBlockedReason(createAdminClient(), botId, "whatsapp");
   if (blocked) return { error: `${blocked} O modelo não foi enviado.` };
+  const { plan } = await requireAgency();
   let templates;
   try {
-    templates = await listSendable(ch);
+    templates = await listSendable(ch, { marketing: campaignsInPlan(plan.id) });
   } catch (e) {
     return { error: `Não deu para ler os modelos: ${await metaError(botId, e)}` };
   }
@@ -946,6 +947,12 @@ async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: stri
   // envio iniciado pela empresa: quem pediu para sair não recebe
   const kinds = (await activeSuppressions(createAdminClient(), { channel: "whatsapp", scope: suppressionScope({ wabaId: ch.waba_id, botId }), contact: to })).map((s) => s.kind);
   if (blocks(kinds, t.category)) return { error: "Este contato pediu para não receber esse tipo de mensagem (respondeu SAIR, PARAR ou STOP). O modelo não foi enviado. Se ele escrever, a conversa continua normal." };
+  // marketing pelo painel (leva B3): só para quem aceitou novidades deste número e não disse que é menor
+  if (t.category.toUpperCase() === "MARKETING") {
+    const target = { scope: suppressionScope({ wabaId: ch.waba_id, botId }), contact: to };
+    if (consentStateOf(await consentHistory(createAdminClient(), target, 1)) !== "granted") return { error: "Este contato não aceitou receber novidades deste número. Modelo de marketing só vai para quem aceitou; use um modelo de utilidade." };
+    if ((await getAge(createAdminClient(), { botId, channel: "whatsapp", contact: to })) === "nao") return { error: "Este contato disse que não tem 18 anos: modelo de marketing não vai para ele." };
+  }
   let wamid: string | null;
   try {
     wamid = (await sendTemplate(ch, to, t, params)).messages?.[0]?.id ?? null;

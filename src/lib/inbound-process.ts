@@ -13,7 +13,7 @@ import { revoke, suppress, suppressionScope } from "./suppression";
 import { recordMetaEnforcement, type MetaAccountDetail } from "./meta-enforcement";
 import { disconnectionDetail } from "./whatsapp-diagnostics";
 import { revokeConsents } from "./marketing-consent";
-import { handleCampaignNotice, reconcileCampaignStatus } from "./campaigns";
+import { botsOfWaba, handleCampaignNotice, markCampaignContact, reconcileCampaignStatus } from "./campaigns";
 
 /* ------------------------------------------------------------------ o que vai na fila */
 
@@ -90,6 +90,9 @@ const whatsappGroup: GroupHandler = async (db, events) => {
           await suppress(db, { ...target, kind: "marketing", reason: "user_preferences", source: "meta" });
           // o "resume" não devolve o sim de novidades (só um novo sim da pessoa)
           await revokeConsents(db, { scope: target.scope, contact: target.contact }, "meta:user_preferences");
+          // descadastro pelo próprio WhatsApp depois de uma campanha: conta no relatório dela
+          const bots = p.wabaId ? await botsOfWaba(db, p.wabaId) : e.bot_id ? [e.bot_id] : [];
+          await markCampaignContact(db, bots, pref.wa_id, "opt_out", "whatsapp");
         }
         else if (pref.value === "resume") await revoke(db, { ...target, kind: "marketing", source: "meta:resume" });
       }

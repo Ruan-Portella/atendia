@@ -26,8 +26,11 @@ export async function loadTemplateChannel(admin: SupabaseClient, botId: string):
  * prova de consentimento de marketing, nenhum modelo de marketing sai). Se a Meta reclassificar
  * um modelo para marketing, ele some daqui sozinho.
  */
-export async function listSendable(ch: TemplateChannel): Promise<SendableTemplate[]> {
-  return (await listTemplates(ch)).filter((t) => t.status === "APPROVED" && t.category === "UTILITY" && !unsupportedReason(t)).map(toSendable);
+/** Categorias que o painel envia: utilidade; marketing também nos planos pagos (só para quem aceitou novidades). */
+const panelCategory = (category: string, marketing: boolean) => category === "UTILITY" || (marketing && category === "MARKETING");
+
+export async function listSendable(ch: TemplateChannel, o: { marketing?: boolean } = {}): Promise<SendableTemplate[]> {
+  return (await listTemplates(ch)).filter((t) => t.status === "APPROVED" && panelCategory(t.category, Boolean(o.marketing)) && !unsupportedReason(t)).map(toSendable);
 }
 
 export async function listTemplates(ch: TemplateChannel): Promise<Template[]> {
@@ -101,9 +104,9 @@ export async function ensureResumeTemplate(ch: TemplateChannel, company: string)
 }
 
 /** Os modelos que dá para mandar numa conversa, com o de retomada primeiro, e o estado dele. */
-export async function conversationTemplates(ch: TemplateChannel): Promise<{ templates: SendableTemplate[]; resume: ResumeStatus }> {
+export async function conversationTemplates(ch: TemplateChannel, o: { marketing?: boolean } = {}): Promise<{ templates: SendableTemplate[]; resume: ResumeStatus }> {
   const all = await listTemplates(ch);
-  const sendable = all.filter((t) => t.status === "APPROVED" && t.category === "UTILITY" && !unsupportedReason(t)).map(toSendable);
+  const sendable = all.filter((t) => t.status === "APPROVED" && panelCategory(t.category, Boolean(o.marketing)) && !unsupportedReason(t)).map(toSendable);
   sendable.sort((a, b) => Number(b.name === RESUME_TEMPLATE_NAME) - Number(a.name === RESUME_TEMPLATE_NAME));
   return { templates: sendable, resume: resumeStatus(all) };
 }

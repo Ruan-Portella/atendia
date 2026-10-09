@@ -62,7 +62,7 @@ export async function recordUsage(db: SupabaseClient, botId: string, phoneNumber
  * aparece só na contagem.
  */
 export function referencePrices(raw = process.env.WHATSAPP_PRICES_BRL): Record<string, number> {
-  const prices: Record<string, number> = { service: 0.035, utility: 0.035 };
+  const prices: Record<string, number> = { service: 0.035, utility: 0.035, marketing: 0.35 };
   for (const pair of (raw ?? "").split(",")) {
     const [k, v] = pair.split("=").map((x) => x?.trim());
     const n = Number(v);

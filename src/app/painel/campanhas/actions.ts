@@ -15,7 +15,6 @@ import { botGateExemptions } from "@/lib/gate/exceptions";
 import { costText, createCampaign, estimateFor, setCampaignStatus, templateProblem } from "@/lib/campaigns";
 import { EXCLUSION_LABEL, buildMarketingAudience, renderVariables, templateGate, variablesProblem, type ExclusionReason, type VariableSpec } from "@/lib/campaign-audience";
 import { DEFAULT_TIMEZONE, formatInZone, isQuietHour, localHour, localInputToIso, nextEightAm } from "@/lib/timezone";
-import { usdBrl } from "@/lib/backoffice";
 
 /*
  * Campanhas pelo painel (leva B3, parte 4a): dono, administrador e editor, nos chatbots do escopo
@@ -161,7 +160,7 @@ export async function previewCampaign(input: AudienceInput): Promise<CampaignPre
     truncated: p.audience.truncated,
     regulated: p.regulated,
     regulatedItems: p.regulatedItems,
-    cost: costText(p.estimate.costUsd, usdBrl()),
+    cost: costText(p.estimate.costBrl),
     days: p.estimate.days,
     limit: p.estimate.limit,
     sample: first ? renderTemplate(p.body, renderVariables(p.specs, first.name)) : null,
@@ -209,7 +208,7 @@ export async function createMarketingCampaign(input: AudienceInput & { name: str
       scheduledAt,
       createdBy: p.ctx.email,
       recipients,
-      estimatedCostUsd: p.estimate.costUsd,
+      estimatedCostBrl: p.estimate.costBrl,
     });
     id = r.id;
   } catch (e) {

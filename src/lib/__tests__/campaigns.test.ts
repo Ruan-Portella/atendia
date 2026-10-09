@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { accountStopReason, allowance, billedAsMarketing, campaignNoticeEffect, costText, decideSend, estimateCampaign, missingSecrets, nextSendStatus, qualityDropped, sendErrorOutcome, templateProblem, tickCallHint, tierLimit } from "../campaigns";
+import { accountStopReason, allowance, billedAsMarketing, campaignNoticeEffect, costText, decideSend, estimateCampaign, missingSecrets, nextSendStatus, qualityDropped, reportNumbers, sendErrorOutcome, templateProblem, tickCallHint, tierLimit } from "../campaigns";
+import { isPromoOptOutButton } from "../suppression";
 
 const base: Parameters<typeof decideSend>[0] = { templateCategory: "MARKETING", suppressed: [], consent: "granted", regulated: false, age: null, contactGone: false };
 const approved = (category: string, components: Array<{ type: string; format?: string; text?: string }> = [{ type: "BODY", text: "Oi {{1}}" }]) => ({ status: "APPROVED", category, components });
@@ -176,17 +177,30 @@ describe("campanhas: avisos da Meta", () => {
 
 describe("campanhas: estimativa", () => {
   it("custo pela categoria e dias pelo limite de 24 h", () => {
-    expect(estimateCampaign({ contacts: 100, category: "MARKETING", limit: 250, recent: 0 })).toEqual({ contacts: 100, costUsd: 6.25, days: 1 });
-    expect(estimateCampaign({ contacts: 1000, category: "UTILITY", limit: 1000, recent: 0 })).toEqual({ contacts: 1000, costUsd: 6.8, days: 1 });
+    expect(estimateCampaign({ contacts: 100, price: 0.35, limit: 250, recent: 0 })).toEqual({ contacts: 100, costBrl: 35, days: 1 });
+    expect(estimateCampaign({ contacts: 1000, price: 0.035, limit: 1000, recent: 0 })).toEqual({ contacts: 1000, costBrl: 35, days: 1 });
     // 250 hoje, depois 250 por dia: 1.000 contatos levam 4 dias
-    expect(estimateCampaign({ contacts: 1000, category: "MARKETING", limit: 250, recent: 0 }).days).toBe(4);
+    expect(estimateCampaign({ contacts: 1000, price: 0.35, limit: 250, recent: 0 }).days).toBe(4);
     // o portfólio já usou 200 hoje: sobram 50, e os outros 150 saem amanhã
-    expect(estimateCampaign({ contacts: 200, category: "MARKETING", limit: 250, recent: 200 }).days).toBe(2);
-    expect(estimateCampaign({ contacts: 50_000, category: "MARKETING", limit: Number.POSITIVE_INFINITY, recent: 0 }).days).toBe(1);
-    expect(estimateCampaign({ contacts: 0, category: "MARKETING", limit: 250, recent: 0 })).toEqual({ contacts: 0, costUsd: 0, days: 0 });
+    expect(estimateCampaign({ contacts: 200, price: 0.35, limit: 250, recent: 200 }).days).toBe(2);
+    expect(estimateCampaign({ contacts: 50_000, price: 0.35, limit: Number.POSITIVE_INFINITY, recent: 0 }).days).toBe(1);
+    expect(estimateCampaign({ contacts: 0, price: 0.35, limit: 250, recent: 0 })).toEqual({ contacts: 0, costBrl: 0, days: 0 });
   });
 
-  it("custo em dólar e em reais", () => {
-    expect(costText(6.25, 5.5).replace(/\s/g, " ")).toBe("≈ US$ 6,25 (R$ 34,38)");
+  it("custo em reais", () => {
+    expect(costText(34.38).replace(/\s/g, " ")).toBe("≈ R$ 34,38");
+  });
+});
+
+describe("campanhas: relatório (parte 4b)", () => {
+  it("funil: lidas contam como entregues, e entregues como enviadas", () => {
+    const n = reportNumbers({ status: { sent: 2, delivered: 3, read: 5, uncertain: 1, failed: 1, queued: 4, skipped_no_consent: 2, skipped_suppressed: 1 }, replied: 2, optOut: { sair: 1, whatsapp: 1 }, errors: { "131049": 1 } });
+    expect(n).toEqual({ sent: 11, delivered: 8, read: 5, replied: 2, failed: 1, optOuts: 2, skipped: 3, pending: 4, uncertain: 1 });
+  });
+
+  it("o botão Parar promoções é descadastro de marketing", () => {
+    expect(isPromoOptOutButton("Parar promoções")).toBe(true);
+    expect(isPromoOptOutButton("SAIR")).toBe(false);
+    expect(isPromoOptOutButton(null)).toBe(false);
   });
 });

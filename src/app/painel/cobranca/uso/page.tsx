@@ -33,11 +33,13 @@ export default async function UsoPage() {
   const period = currentPeriodBR();
   const supabase = await createClient();
   const db = createAdminClient();
-  const [rows, byClient, { data: clientData }, { data: botData }] = await Promise.all([
+  const [rows, byClient, { data: clientData }, { data: botData }, { data: usageRow }] = await Promise.all([
     agencyMonthUsage(db, agency.id, period),
     clientMonthAtendimentos(db, agency.id, period),
     supabase.from("clients").select("id, name, monthly_quota_cap").eq("agency_id", agency.id).order("name"),
     supabase.from("bots").select("id, name").eq("agency_id", agency.id).eq("is_demo", false),
+    // contatos em campanhas e lembretes no mês (leva B3): só informativo, não é limite do plano
+    db.from("usage").select("campaign_contacts").eq("agency_id", agency.id).eq("period", period).maybeSingle(),
   ]);
   const clients = (clientData ?? []) as ClientRow[];
   const botName = new Map((botData ?? []).map((b) => [b.id as string, b.name as string]));
@@ -76,10 +78,11 @@ export default async function UsoPage() {
         Uso de <strong className="text-ink">{periodLabel(period)}</strong> (mês civil, horário de Brasília). Você recebe e-mail em 80% e 100% da cota e do limite de cada cliente.
       </p>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="Atendimentos do mês" value={`${num(usage)} / ${num(quota)}`} sub={state} />
         <Kpi label="Mensagens no mês" value={num(messages)} sub="enviadas e recebidas, em todos os canais" />
         <Kpi label="Custo estimado da Meta" value={money(metaTotal)} sub="WhatsApp; a Meta cobra direto do cliente" />
+        <Kpi label="Contatos em campanhas" value={num(Number(usageRow?.campaign_contacts) || 0)} sub="campanhas e lembretes; não conta na cota nem tem limite no plano" />
       </div>
 
       {usage >= quota && (

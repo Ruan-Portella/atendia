@@ -38,7 +38,7 @@ describe("recordUsage", () => {
 
 describe("preços e estimativa", () => {
   it("valores de referência podem ser trocados pelo .env", () => {
-    expect(referencePrices("")).toEqual({ service: 0.035, utility: 0.035 });
+    expect(referencePrices("")).toEqual({ service: 0.035, utility: 0.035, marketing: 0.35 });
     expect(referencePrices("marketing=0.35, service=0.04, lixo, x=abc")).toEqual({ service: 0.04, utility: 0.035, marketing: 0.35 });
   });
 

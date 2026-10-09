@@ -9,7 +9,8 @@ import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
-import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
+import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, isPromoOptOutButton, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
+import { markCampaignContact } from "./campaigns";
 import { OPTIN_BUTTONS, OPTIN_NO, OPTIN_NO_TEXT, OPTIN_VERSION, OPTIN_YES, consentHistory, consentStateOf, isClosingMessage, offerDue, optInOfferText, optInYesText, recordConsent, restoreConsents, revokeConsents, typedOptInAnswer } from "./marketing-consent";
 import { ageRecord } from "./gate/age";
 import { isAccessError, isPaymentError } from "./whatsapp-access";
@@ -283,6 +284,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const optOut = await handleOptOuts(db, channel, bot, waId, burst, texts, shown, conv?.id ?? null, mode, contactId);
   if (optOut.conversationId && !conv) conv = { id: optOut.conversationId, takeover_at: null, handled_at: null };
   if (optOut.handled.size === burst.length) return;
+  // respondeu a uma campanha ou lembrete recente: conta no relatório (a primeira resposta)
+  await markCampaignContact(db, [bot.id], waId, "reply");
 
   // degrau 1 (ordem da Meta, desligamento geral): nem grava, nada passa pela Cloud API
   if (!mode.storeInbound) return void console.warn("whatsapp: entrada descartada", mode.reason, channel.phone_number_id);
@@ -641,11 +644,14 @@ async function handleOptOuts(
       await answer(optOutConfirmation("all", company));
     } else if (!keywordDone) {
       keywordDone = true;
-      const kind = await lastTemplateKind(db, bot.id, waId);
+      // o botão "Parar promoções" do modelo de marketing vale sempre para as promoções
+      const promoButton = isPromoOptOutButton(texts[i]);
+      const kind = promoButton ? "marketing" : await lastTemplateKind(db, bot.id, waId);
       const active = (await activeSuppressions(db, target)).map((s) => s.kind);
       const sid = await suppress(db, { ...target, kind, reason: "opt_out", source: "chat" });
       // SAIR de promoções (ou de tudo) revoga o sim de novidades; "Foi engano" devolve
       if (kind !== "utility") await revokeConsents(db, consentTarget, `chat:sair:${sid}`);
+      await markCampaignContact(db, [bot.id], waId, "opt_out", promoButton ? "botao" : "sair");
       const buttons = [{ id: `${OPTOUT_UNDO}:${sid}`, title: "Foi engano" }];
       // a outra categoria só aparece se ainda estiver ativa
       const other: SuppressionKind | null = kind === "marketing" ? "utility" : kind === "utility" ? "marketing" : null;

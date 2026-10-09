@@ -8,12 +8,13 @@ import { listTemplates, loadTemplateChannel, sendTemplate, type TemplateChannel 
 import { renderTemplate, templateBody, unsupportedReason, type Template } from "./template-text";
 import { channelMsgHash } from "./hash";
 import { saveMessage } from "./messages";
-import { phoneHash, whatsappContact } from "./contacts";
+import { metaPhoneHash, phoneHash, whatsappContact } from "./contacts";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 import { sendBlockedReason } from "./conversation-mode";
 import { aiBlockedReason, type AiBlockReason } from "./chat";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl, currentPeriodBR } from "./utils";
+import { referencePrices } from "./whatsapp-usage";
 
 /*
  * Motor das campanhas e lembretes (leva B3, parte 3a; spec Peça 7). Só WhatsApp no MVP.
@@ -76,23 +77,17 @@ export function qualityDropped(start: string | null | undefined, now: string | n
 }
 
 /**
- * Preço por mensagem entregue que a Meta cobra no Brasil, em dólar (tabela por mensagem de
- * jul/2025). É estimativa: a Meta cobra direto da conta do cliente e a utilidade dentro da
- * janela de atendimento sai de graça.
+ * Estimativa da campanha: custo na Meta (preço de referência por mensagem, em R$, o mesmo de
+ * Cobrança > Uso) e em quantos dias sai, pelo saldo de hoje no limite de 24 h do portfólio e o
+ * limite cheio nos dias seguintes. Pura.
  */
-export const META_PRICE_USD: Record<string, number> = { MARKETING: 0.0625, UTILITY: 0.0068 };
-
-/**
- * Estimativa da campanha: custo na Meta e em quantos dias sai, pelo saldo de hoje no limite de
- * 24 h do portfólio e o limite cheio nos dias seguintes. Pura.
- */
-export function estimateCampaign(o: { contacts: number; category: string; limit: number; recent: number }): { contacts: number; costUsd: number; days: number } {
+export function estimateCampaign(o: { contacts: number; price: number; limit: number; recent: number }): { contacts: number; costBrl: number; days: number } {
   const contacts = Math.max(0, Math.floor(o.contacts));
-  const costUsd = Math.round(contacts * (META_PRICE_USD[o.category.toUpperCase()] ?? META_PRICE_USD.MARKETING) * 100) / 100;
-  if (!contacts) return { contacts, costUsd, days: 0 };
+  const costBrl = Math.round(contacts * o.price * 100) / 100;
+  if (!contacts) return { contacts, costBrl, days: 0 };
   const today = Math.max(0, o.limit - o.recent);
   const days = contacts <= today ? 1 : 1 + Math.ceil((contacts - today) / o.limit);
-  return { contacts, costUsd, days };
+  return { contacts, costBrl, days };
 }
 
 /**
@@ -166,14 +161,12 @@ async function portfolioRecipients(db: SupabaseClient, wabaId: string, botId: st
 export async function estimateFor(db: SupabaseClient, ch: TemplateChannel, botId: string, contacts: number, category: string): Promise<ReturnType<typeof estimateCampaign> & { limit: number; recent: number }> {
   const [standing, recent] = await Promise.all([phoneStanding(ch).catch(() => ({ tier: null, quality: null })), portfolioRecipients(db, ch.waba_id, botId, new Date())]);
   const limit = tierLimit(standing.tier);
-  return { ...estimateCampaign({ contacts, category, limit, recent }), limit, recent };
+  const prices = referencePrices();
+  return { ...estimateCampaign({ contacts, price: prices[category.toLowerCase()] ?? prices.marketing, limit, recent }), limit, recent };
 }
 
-/** "≈ US$ 3,13 (R$ 17,19)": o custo estimado na Meta. Pura. */
-export function costText(costUsd: number, fx: number): string {
-  const money = (v: number, currency: string) => v.toLocaleString("pt-BR", { style: "currency", currency });
-  return `≈ ${money(costUsd, "USD")} (${money(costUsd * fx, "BRL")})`;
-}
+/** "≈ R$ 17,50": o custo estimado na Meta. Pura. */
+export const costText = (costBrl: number) => `≈ ${costBrl.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`;
 
 /* ------------------------------------------------------------------ montar */
 
@@ -188,11 +181,11 @@ export interface NewRecipient {
 }
 
 /** Grava a campanha e os envios. Sem data, começa a enviar no próximo tique. */
-export async function createCampaign(db: SupabaseClient, c: { agencyId: string; clientId: string | null; botId: string; kind: CampaignKind; name: string; template: { name: string; language: string; category: string }; regulated: boolean; audience: Record<string, unknown>; scheduledAt: string | null; createdBy: string | null; recipients: NewRecipient[]; estimatedCostUsd?: number | null }): Promise<{ id: string; queued: number }> {
+export async function createCampaign(db: SupabaseClient, c: { agencyId: string; clientId: string | null; botId: string; kind: CampaignKind; name: string; template: { name: string; language: string; category: string }; regulated: boolean; audience: Record<string, unknown>; scheduledAt: string | null; createdBy: string | null; recipients: NewRecipient[]; estimatedCostBrl?: number | null }): Promise<{ id: string; queued: number }> {
   const scheduled = c.scheduledAt && Date.parse(c.scheduledAt) > Date.now() ? c.scheduledAt : null;
   const { data, error } = await db
     .from("campaigns")
-    .insert({ agency_id: c.agencyId, client_id: c.clientId, bot_id: c.botId, kind: c.kind, name: c.name.slice(0, 120), template_name: c.template.name, template_language: c.template.language, template_category: c.template.category.toUpperCase(), regulated: c.regulated, audience: c.audience, scheduled_at: scheduled, status: scheduled ? "scheduled" : "sending", estimated_contacts: c.recipients.length, estimated_cost_cents: c.estimatedCostUsd == null ? null : Math.round(c.estimatedCostUsd * 100), created_by: c.createdBy })
+    .insert({ agency_id: c.agencyId, client_id: c.clientId, bot_id: c.botId, kind: c.kind, name: c.name.slice(0, 120), template_name: c.template.name, template_language: c.template.language, template_category: c.template.category.toUpperCase(), regulated: c.regulated, audience: c.audience, scheduled_at: scheduled, status: scheduled ? "scheduled" : "sending", estimated_contacts: c.recipients.length, estimated_cost_cents: c.estimatedCostBrl == null ? null : Math.round(c.estimatedCostBrl * 100), created_by: c.createdBy })
     .select("id")
     .single();
   if (error || !data) throw new Error(`campanha: ${error?.message ?? "não gravada"}`);
@@ -630,7 +623,7 @@ export interface CampaignView {
   finished_at: string | null;
   totals: Record<string, number>;
   estimated_contacts: number | null;
-  /** centavos de dólar (custo estimado na Meta) */
+  /** centavos de real (custo estimado na Meta) */
   estimated_cost_cents: number | null;
 }
 
@@ -669,4 +662,123 @@ export async function purgeCampaignData(db: SupabaseClient, now = Date.now()): P
   await db.from("campaign_sends").update({ variables_enc: null }).lt("updated_at", new Date(now - 30 * 86_400_000).toISOString()).not("variables_enc", "is", null).not("status", "in", "(queued,sending)");
   await db.from("campaign_sends").delete().lt("updated_at", new Date(now - 400 * 86_400_000).toISOString()).not("status", "in", "(queued,sending)");
   await db.from("campaigns").delete().lt("finished_at", new Date(now - 400 * 86_400_000).toISOString());
+}
+
+/* ------------------------------------------------------------------ relatório (parte 4b) */
+
+/** Chatbots ligados a uma conta do WhatsApp (o descadastro nativo vem pela conta). */
+export async function botsOfWaba(db: SupabaseClient, wabaId: string): Promise<string[]> {
+  const { data } = await db.from("whatsapp_channels").select("bot_id").eq("waba_id", wabaId);
+  return (data ?? []).map((c) => c.bot_id as string);
+}
+
+export type OptOutSource = "sair" | "botao" | "whatsapp";
+
+/**
+ * Resposta ou descadastro de quem recebeu campanha ou lembrete: marca o envio mais recente do
+ * contato nesses chatbots (resposta nos 3 dias seguintes, descadastro nos 7). Nunca derruba o
+ * atendimento: erro só vai para o log.
+ */
+export async function markCampaignContact(db: SupabaseClient, botIds: string[], waId: string, event: "reply" | "opt_out", source: OptOutSource | null = null): Promise<void> {
+  const hash = metaPhoneHash(waId);
+  if (!hash || !botIds.length) return;
+  try {
+    const { error } = await db.rpc("campaign_mark_contact", { p_bot_ids: botIds, p_phone_hash: hash, p_event: event, p_source: source });
+    if (error) console.error("campanha: resposta ou descadastro não marcado", error.message);
+  } catch (e) {
+    console.error("campanha: resposta ou descadastro não marcado", (e as Error).message);
+  }
+}
+
+/** Erros da Meta no envio de modelos, para o relatório. */
+export const SEND_ERROR_LABEL: Record<string, string> = {
+  "131049": "a Meta limita quantas promoções cada pessoa recebe, somando todas as empresas (sem contorno; tente outro dia)",
+  "131026": "o número não pode receber (sem WhatsApp ou aplicativo desatualizado)",
+  "131037": "o número da empresa ainda não tem o nome de exibição aprovado pela Meta",
+  "131042": "a conta do WhatsApp está sem forma de pagamento na Meta",
+  "131051": "tipo de mensagem não aceito",
+  "130472": "a Meta segurou a mensagem (o número participa de um teste da própria Meta)",
+  "132000": "o número de variáveis não bate com o modelo",
+  "132001": "o modelo não existe nesse idioma",
+  "132015": "o modelo foi pausado por baixa qualidade",
+  "132016": "o modelo foi desativado pela Meta",
+  "131000": "erro interno da Meta",
+};
+
+export const OPT_OUT_LABEL: Record<string, string> = {
+  sair: "responderam SAIR, PARAR ou STOP",
+  botao: "tocaram em “Parar promoções”",
+  whatsapp: "pararam as promoções pelo próprio WhatsApp",
+  meta_131050: "a Meta recusou o envio: a pessoa já tinha parado as promoções (erro 131050)",
+};
+
+export interface CampaignReport {
+  status: Partial<Record<SendStatus, number>>;
+  replied: number;
+  optOut: Record<string, number>;
+  errors: Record<string, number>;
+}
+
+export async function campaignReport(db: SupabaseClient, id: string): Promise<CampaignReport> {
+  const { data } = await db.rpc("campaign_report", { p_campaign: id });
+  const r = (data ?? {}) as { status?: Record<string, number>; replied?: number; opt_out?: Record<string, number>; errors?: Record<string, number> };
+  return { status: r.status ?? {}, replied: r.replied ?? 0, optOut: r.opt_out ?? {}, errors: r.errors ?? {} };
+}
+
+/** Os números do funil a partir das contagens por status. Pura. */
+export function reportNumbers(r: CampaignReport) {
+  const n = (s: SendStatus) => r.status[s] ?? 0;
+  const read = n("read");
+  const delivered = n("delivered") + read;
+  const sent = n("sent") + delivered + n("uncertain");
+  const optOuts = Object.values(r.optOut).reduce((a, b) => a + b, 0);
+  const skipped = n("skipped_no_consent") + n("skipped_suppressed") + n("skipped_no_age") + n("skipped_contact_deleted");
+  return { sent, delivered, read, replied: r.replied, failed: n("failed"), optOuts, skipped, pending: n("queued") + n("sending"), uncertain: n("uncertain") };
+}
+
+export interface CampaignDetail extends CampaignView {
+  template_language: string;
+  template_category: string;
+  regulated: boolean;
+  created_by: string | null;
+  updated_at: string;
+}
+
+/** Uma campanha, só se for de um dos chatbots informados (o escopo de quem está logado). */
+export async function campaignDetail(db: SupabaseClient, id: string, botIds: string[]): Promise<CampaignDetail | null> {
+  if (!botIds.length) return null;
+  const { data } = await db
+    .from("campaigns")
+    .select("id, bot_id, name, kind, status, pause_reason, template_name, template_language, template_category, regulated, scheduled_at, created_at, created_by, updated_at, finished_at, totals, estimated_contacts, estimated_cost_cents")
+    .eq("id", id)
+    .in("bot_id", botIds)
+    .maybeSingle();
+  return (data as CampaignDetail | null) ?? null;
+}
+
+export interface WhatsAppLimit {
+  wabaId: string;
+  phones: string[];
+  botIds: string[];
+  tier: string | null;
+  limit: number;
+  quality: string | null;
+  /** contatos únicos que receberam campanha ou lembrete nas últimas 24 h, na conta toda */
+  used: number;
+}
+
+/** Limite de envio da Meta de cada conta do WhatsApp destes chatbots, com o uso das últimas 24 h. */
+export async function whatsappLimits(db: SupabaseClient, botIds: string[]): Promise<WhatsAppLimit[]> {
+  if (!botIds.length) return [];
+  const { data } = await db.from("whatsapp_channels").select("bot_id, phone_number_id, waba_id, access_token_enc, display_phone").in("bot_id", botIds).is("disconnected_at", null).not("waba_id", "is", null);
+  const byWaba = new Map<string, Array<Record<string, unknown>>>();
+  for (const c of data ?? []) byWaba.set(c.waba_id as string, [...(byWaba.get(c.waba_id as string) ?? []), c]);
+  const now = new Date();
+  return Promise.all(
+    [...byWaba.entries()].map(async ([wabaId, chs]) => {
+      const first = chs[0] as unknown as TemplateChannel & { bot_id: string };
+      const [standing, used] = await Promise.all([phoneStanding(first).catch(() => ({ tier: null, quality: null })), portfolioRecipients(db, wabaId, first.bot_id, now)]);
+      return { wabaId, phones: chs.map((c) => (c.display_phone as string | null) ?? "").filter(Boolean), botIds: chs.map((c) => c.bot_id as string), tier: standing.tier, limit: tierLimit(standing.tier), quality: standing.quality, used };
+    }),
+  );
 }
