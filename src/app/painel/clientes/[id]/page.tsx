@@ -29,6 +29,7 @@ import { ExportLinks } from "@/components/export-links";
 import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
 import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePortal, eraseContactData, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientMemberRole, setClientPermissions, updateClientRecord } from "../../actions";
 import { ClientContacts } from "@/components/client-contacts";
+import { ClientReminderSettings } from "@/components/client-reminder-settings";
 
 export const metadata = { title: "Cliente" };
 
@@ -349,6 +350,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             <p className="text-xs text-muted">Mudar o nome aqui atualiza o nome que aparece no chat de todos os chatbots deste cliente.</p>
             <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
           </ActionForm>
+          <ClientReminderSettings clientId={client.id} clientName={client.name} />
           {can(role, "security") && <ClientPrivacy clientId={client.id} clientName={client.name} clientMonths={(client.retention_months as number | null) ?? null} agencyMonths={agency.retention_months} />}
           {can(role, "export") && <ExportLinks clientId={client.id} description={`Os dados de ${client.name}: conversas, contatos e leads, em CSV (abre no Excel) ou JSON. Na saída do cliente, entregue a ele. A exportação fica registrada.`} />}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">

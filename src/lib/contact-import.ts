@@ -46,7 +46,7 @@ const HEADERS: Record<string, ImportField> = {
   data_de_nascimento: "birth",
 };
 
-const headerKey = (h: string) =>
+export const headerKey = (h: string) =>
   h
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")

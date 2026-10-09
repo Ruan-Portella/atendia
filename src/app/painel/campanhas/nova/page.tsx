@@ -4,16 +4,24 @@ import { requirePermission } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { campaignsInPlan } from "@/lib/plan-limits";
+import { cn } from "@/lib/utils";
 import { CampaignWizard } from "@/components/campaign-wizard";
+import { ReminderWizard } from "@/components/reminder-wizard";
 
 export const metadata = { title: "Nova campanha" };
-// a prévia monta o público (até 10.000 contatos) e consulta a Meta
+// a prévia monta o público (até 10.000 contatos ou 2.000 linhas) e consulta a Meta
 export const maxDuration = 60;
 
-/** Nova campanha (leva B3, parte 4a): os chatbots do escopo com o WhatsApp conectado. */
-export default async function NewCampaignPage() {
-  const { plan } = await requirePermission("config");
+const KINDS = [
+  { id: "marketing", title: "Marketing", hint: "Promoções e novidades, só para quem aceitou receber." },
+  { id: "lembrete", title: "Lembrete de utilidade", hint: "Consulta, vencimento, revisão: uma planilha com a data e a hora de cada um." },
+] as const;
+
+/** Nova campanha (leva B3, partes 4a e 5): os chatbots do escopo com o WhatsApp conectado. */
+export default async function NewCampaignPage({ searchParams }: PageProps<"/painel/campanhas/nova">) {
+  const [{ plan }, sp] = await Promise.all([requirePermission("config"), searchParams]);
   if (!campaignsInPlan(plan.id)) notFound();
+  const kind = sp.tipo === "lembrete" ? "lembrete" : "marketing";
   const supabase = await createClient();
   const { data: bots } = await supabase.from("bots").select("id, name, client_name").eq("is_demo", false).order("name");
   const ids = (bots ?? []).map((b) => b.id as string);
@@ -29,10 +37,31 @@ export default async function NewCampaignPage() {
         </Link>
         <h1 className="text-2xl font-bold sm:text-[28px]">Nova campanha</h1>
         <p className="text-sm text-muted">
-          Só vai para quem aceitou receber novidades deste número e não pediu para sair. Antes de criar, você vê quantos recebem, quem fica de fora e o custo estimado na Meta, que cobra direto da conta do cliente.
+          Antes de enviar, você vê quantos recebem, quem fica de fora e por quê, e o custo estimado na Meta, que cobra direto da conta do cliente. O BoaVoz confere cada envio de novo (SAIR, aceite e 18+).
         </p>
       </div>
-      <CampaignWizard bots={options} />
+
+      <section className="card flex flex-col gap-3 p-5">
+        <h2 className="flex items-center gap-2.5 font-semibold">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand">1</span>
+          Tipo
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {KINDS.map((k) => (
+            <Link
+              key={k.id}
+              href={k.id === "lembrete" ? "/painel/campanhas/nova?tipo=lembrete" : "/painel/campanhas/nova"}
+              aria-current={kind === k.id ? "page" : undefined}
+              className={cn("flex flex-col rounded-lg border p-3 text-sm", kind === k.id ? "border-brand bg-brand-soft/40" : "border-line hover:bg-ground")}
+            >
+              <span className="font-semibold">{k.title}</span>
+              <span className="text-xs text-muted">{k.hint}</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {kind === "lembrete" ? <ReminderWizard key="lembrete" bots={options} /> : <CampaignWizard key="marketing" bots={options} />}
     </div>
   );
 }

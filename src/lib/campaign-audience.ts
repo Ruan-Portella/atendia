@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { campaignAudience, type AudienceContact } from "./contacts";
+import { campaignAudience, whatsappContactsByPhone, type AudienceContact } from "./contacts";
+import type { ReminderRow } from "./reminder-sheet";
 import { activeSuppressionsMany, blocks, suppressionScope, type SuppressionKind } from "./suppression";
 import { consentStatesMany, type ConsentState } from "./marketing-consent";
 import { agesMany, type AgeStatus } from "./gate/age";
@@ -79,4 +80,39 @@ export async function buildMarketingAudience(db: SupabaseClient, o: { botId: str
     }
   }
   return { included, excluded, truncated };
+}
+
+/* ------------------------------------------------------------------ lembretes (parte 5) */
+
+export type ReminderExclusion = "suppressed" | "no_declaration";
+
+export const REMINDER_EXCLUSION_LABEL: Record<ReminderExclusion, string> = {
+  suppressed: "pediram para sair dos lembretes (SAIR)",
+  no_declaration: "nunca falaram com o chatbot, e o cliente ainda não fez a declaração de consentimento para lembretes",
+};
+
+/** Por que uma linha de lembrete fica de fora, ou null (entra). Pura. */
+export function reminderExclusionOf(o: { suppressed: SuppressionKind[]; declared: boolean; messaged: boolean }): ReminderExclusion | null {
+  if (blocks(o.suppressed, "UTILITY")) return "suppressed";
+  // sem a declaração do cliente, só quem já mandou mensagem ao chatbot (spec Peça 7)
+  if (!o.declared && !o.messaged) return "no_declaration";
+  return null;
+}
+
+/** As linhas que entram, com o contato quando ele já existe, e as que ficam de fora por motivo. */
+export async function buildReminderAudience(db: SupabaseClient, o: { botId: string; wabaId: string | null; rows: ReminderRow[]; declared: boolean }): Promise<{ included: Array<ReminderRow & { contactId: string | null }>; excluded: Partial<Record<ReminderExclusion, number>> }> {
+  const phones = [...new Set(o.rows.map((r) => r.phone))];
+  const [contacts, suppressed] = await Promise.all([
+    whatsappContactsByPhone(db, o.botId, phones),
+    activeSuppressionsMany(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: o.wabaId, botId: o.botId }), contacts: phones }),
+  ]);
+  const included: Array<ReminderRow & { contactId: string | null }> = [];
+  const excluded: Partial<Record<ReminderExclusion, number>> = {};
+  for (const r of o.rows) {
+    const contact = contacts.get(r.phone);
+    const reason = reminderExclusionOf({ suppressed: suppressed.get(r.phone) ?? [], declared: o.declared, messaged: Boolean(contact?.messaged) });
+    if (reason) excluded[reason] = (excluded[reason] ?? 0) + 1;
+    else included.push({ ...r, name: r.name ?? contact?.name ?? null, contactId: contact?.id ?? null });
+  }
+  return { included, excluded };
 }

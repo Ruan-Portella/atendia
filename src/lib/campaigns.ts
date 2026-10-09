@@ -375,6 +375,9 @@ export async function runCampaignTick(db: SupabaseClient, o: { hasTime: () => bo
 
 async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: () => boolean; now: Date; standings: Map<string, { tier: string | null; quality: string | null }> }): Promise<{ sent: number; skipped: number; failed: number; paused: boolean; finished: boolean }> {
   const out = { sent: 0, skipped: 0, failed: 0, paused: false, finished: false };
+  // nada vencido (lembrete esperando a data da linha): só confere se terminou, sem chamar a Meta
+  const { data: due } = await db.from("campaign_sends").select("id").eq("campaign_id", c.id).eq("status", "queued").lte("send_at", o.now.toISOString()).limit(1);
+  if (!due?.length) return { ...out, finished: await finishIfDone(db, c.id) };
   const ch = await loadTemplateChannel(db, c.bot_id);
   if (!ch) {
     await pause(db, c, "o WhatsApp do chatbot foi desconectado");

@@ -16,7 +16,7 @@ interface BotOption {
 
 const tzLabel = (tz: string) => CLIENT_TIMEZONES.find((t) => t.id === tz)?.label ?? "Brasília";
 
-function Step({ n, title, children, muted }: { n: number; title: string; children: React.ReactNode; muted?: boolean }) {
+export function Step({ n, title, children, muted }: { n: number; title: string; children: React.ReactNode; muted?: boolean }) {
   return (
     <section className={cn("card flex flex-col gap-3 p-5", muted && "opacity-60")}>
       <h2 className="flex items-center gap-2.5 font-semibold">
@@ -29,7 +29,8 @@ function Step({ n, title, children, muted }: { n: number; title: string; childre
 }
 
 /**
- * Nova campanha (leva B3, parte 4a): tipo, chatbot, modelo, público, estimativa e envio. A prévia
+ * Nova campanha de marketing (leva B3, parte 4a): chatbot, modelo, público, estimativa e envio (o tipo
+ * fica na página). A prévia
  * vem do servidor (público montado lá, com quem fica de fora e por quê); qualquer mudança depois da
  * prévia pede para calcular de novo antes de criar.
  */
@@ -125,25 +126,6 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Step n={1} title="Tipo">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-brand bg-brand-soft/40 p-3 text-sm">
-            <input type="radio" name="kind" defaultChecked className="mt-1" />
-            <span>
-              <span className="font-semibold">Marketing</span>
-              <span className="block text-xs text-muted">Promoções e novidades, só para quem aceitou receber.</span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2.5 rounded-lg border border-line p-3 text-sm opacity-60">
-            <input type="radio" name="kind" disabled className="mt-1" />
-            <span>
-              <span className="font-semibold">Lembrete de utilidade</span>
-              <span className="block text-xs text-muted">Consulta, vencimento, revisão, por planilha. Chega em breve.</span>
-            </span>
-          </label>
-        </div>
-      </Step>
-
       <Step n={2} title="Chatbot">
         {bots.length ? (
           <select className="input" value={botId} onChange={(e) => chooseBot(e.target.value)} aria-label="Chatbot">

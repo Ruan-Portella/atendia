@@ -699,3 +699,21 @@ export async function campaignAudience(db: SupabaseClient, botId: string, o: { t
   const contacts = await Promise.all(list.map(async (r) => ({ id: r.id as string, name: (r.name as string | null) ?? null, phone: canonicalPhone(await openNullable("contacts.phone_enc", r.phone_enc)) })));
   return { contacts, unknownPhones: hashes.filter((h) => !found.has(h)).map((h) => wanted.get(h)!), truncated };
 }
+
+/**
+ * Contatos do WhatsApp do chatbot por telefone (lembretes da leva B3): id, nome e se a pessoa já
+ * mandou mensagem pelo canal (first_inbound_at: nunca eco, histórico sincronizado ou envio).
+ * Chave: o telefone canônico informado.
+ */
+export async function whatsappContactsByPhone(db: SupabaseClient, botId: string, phones: string[]): Promise<Map<string, { id: string; name: string | null; messaged: boolean }>> {
+  const byHash = new Map<string, string>();
+  for (const p of phones) byHash.set(phoneHash(p), p);
+  const hashes = [...byHash.keys()];
+  const out = new Map<string, { id: string; name: string | null; messaged: boolean }>();
+  for (let i = 0; i < hashes.length; i += 300) {
+    const { data, error } = await db.from("contacts").select("id, name, phone_hash, first_inbound_at").eq("bot_id", botId).eq("channel", "whatsapp").in("phone_hash", hashes.slice(i, i + 300));
+    if (error) throw new Error(`contatos: ${error.message}`);
+    for (const r of data ?? []) out.set(byHash.get(r.phone_hash as string)!, { id: r.id as string, name: (r.name as string | null) ?? null, messaged: Boolean(r.first_inbound_at) });
+  }
+  return out;
+}
