@@ -105,6 +105,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "titular.pedido": "Pedido de exclusão recebido pelo chat",
   "webhook.apagar": "Webhook apagado",
   "webhook.reativar": "Webhook reativado",
+  "webhook.desativar": "Webhook desativado",
 };
 
 /** Tipos de evento (o começo da ação) para o filtro. */

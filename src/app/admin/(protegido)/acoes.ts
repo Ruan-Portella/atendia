@@ -15,10 +15,9 @@ import { FEATURES, isFeature, type Feature } from "@/lib/features";
 import { CATEGORIES, type GateCategory } from "@/lib/gate/rules";
 import { analyzeBot, runDueAnalyses } from "@/lib/bot-analysis";
 import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
-import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiKeyScope } from "@/lib/api-keys";
+import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey } from "@/lib/api-keys";
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
-import { WEBHOOK_EVENTS, createWebhook, sendWebhookTest, type WebhookEvent } from "@/lib/webhooks";
-import { BlockedUrlError, checkUrl } from "@/lib/safe-fetch";
+import { createWebhook, sendWebhookTest } from "@/lib/webhooks";
 import { applyPlanLimits, manualPlanSwitch } from "@/lib/plan-limits";
 import { SIGNAL_KINDS, TEST_THRESHOLDS, THRESHOLDS, runContinuousChecks } from "@/lib/continuous-check";
 import { refreshReportDaily } from "@/lib/report-daily";
@@ -27,6 +26,7 @@ import { deadline, withCronLock } from "@/lib/cron";
 import { costText, createCampaign, estimateFor, runCampaignTick, setCampaignStatus, templateProblem } from "@/lib/campaigns";
 import { whatsappContact } from "@/lib/contacts";
 import { canonicalPhone } from "@/lib/phone";
+import { actionInputFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -534,22 +534,8 @@ export async function generateActionSecret(agencyId: string, botId: string, fd: 
 export async function saveAction(agencyId: string, botId: string, actionId: string | null, fd: FormData): Promise<ActionResult> {
   const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (${actionId ? "editou" : "criou"} ação)`);
   if (!(await pilotBot(agencyId, botId))) return fail("Chatbot não encontrado nesta agência.");
-  let schema: unknown;
-  try {
-    schema = JSON.parse(text(fd.get("params_schema")) || '{"type":"object","properties":{}}');
-  } catch {
-    return fail("Os parâmetros não são um JSON válido.");
-  }
-  const input = {
-    name: text(fd.get("name")),
-    description: String(fd.get("description") ?? "").trim(),
-    url: text(fd.get("url")),
-    params_schema: schema,
-    min_level: (["anonimo", "canal", "usuario"].includes(text(fd.get("min_level"))) ? text(fd.get("min_level")) : "anonimo") as "anonimo" | "canal" | "usuario",
-    context_required: (fd.get("context_required") === "signed" ? "signed" : "none") as "none" | "signed",
-    outcomes: text(fd.get("outcomes")).split(",").map((o) => o.trim()).filter(Boolean),
-    active: fd.get("active") === "on",
-  };
+  const input = actionInputFromForm(fd);
+  if ("error" in input) return fail(input.error);
   const problem = actionInputProblem(input);
   if (problem) return fail(problem);
   const db = createAdminClient();
@@ -601,20 +587,9 @@ export async function testAction(agencyId: string, actionId: string, fd: FormDat
 export async function createPilotApiKey(agencyId: string, fd: FormData): Promise<ActionResult> {
   const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (criou chave de API)`);
   const db = createAdminClient();
-  const scopeType = text(fd.get("scope_type"));
   const permissions = fd.getAll("permission").map(String);
-  let scope: ApiKeyScope;
-  if (scopeType === "all") scope = { type: "all" };
-  else if (scopeType === "client") {
-    const clientId = text(fd.get("client_id"));
-    const { data: client } = await db.from("clients").select("id").eq("id", clientId).eq("agency_id", agencyId).maybeSingle();
-    if (!client) return fail("Escolha um cliente desta agência.");
-    scope = { type: "client", clientId };
-  } else {
-    const wanted = fd.getAll("bot").map(String);
-    const { data: bots } = wanted.length ? await db.from("bots").select("id").in("id", wanted).eq("agency_id", agencyId).eq("is_demo", false) : { data: [] };
-    scope = { type: "bots", botIds: (bots ?? []).map((b) => b.id as string) };
-  }
+  const scope = await scopeFromForm(db, agencyId, fd);
+  if ("error" in scope) return fail(scope.error);
   const name = text(fd.get("name"));
   const problem = apiKeyProblem({ name, scope, permissions });
   if (problem) return fail(problem);
@@ -687,29 +662,11 @@ export async function revokePilotIdentitySecret(agencyId: string, id: string): P
 export async function createPilotWebhook(agencyId: string, fd: FormData): Promise<ActionResult> {
   const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (criou webhook)`);
   const db = createAdminClient();
-  const name = text(fd.get("name"));
-  if (!name || name.length > 80) return fail("Dê um nome ao webhook (até 80 caracteres).");
-  const url = text(fd.get("url"));
-  try {
-    const u = checkUrl(url);
-    if (u.protocol !== "https:") return fail("O webhook precisa ser HTTPS.");
-  } catch (e) {
-    return fail(e instanceof BlockedUrlError ? "Endereço interno não é aceito." : "URL inválida.");
-  }
-  const events = fd.getAll("event").map(String).filter((e): e is WebhookEvent => (WEBHOOK_EVENTS as readonly string[]).includes(e));
-  if (!events.length) return fail("Marque ao menos um evento.");
-  const scopeType = text(fd.get("scope_type"));
-  let scope: { type: "bots"; botIds: string[] } | { type: "client"; clientId: string } | { type: "all" } = { type: "all" };
-  if (scopeType === "client") {
-    const clientId = text(fd.get("client_id"));
-    const { data: client } = await db.from("clients").select("id").eq("id", clientId).eq("agency_id", agencyId).maybeSingle();
-    if (!client) return fail("Escolha um cliente desta agência.");
-    scope = { type: "client", clientId };
-  } else if (scopeType === "bots") {
-    const botId = text(fd.get("bot_id"));
-    if (!(await pilotBot(agencyId, botId))) return fail("Escolha um chatbot desta agência.");
-    scope = { type: "bots", botIds: [botId] };
-  }
+  const w = webhookInputFromForm(fd);
+  if ("error" in w) return fail(w.error);
+  const { name, url, events } = w;
+  const scope = await scopeFromForm(db, agencyId, fd);
+  if ("error" in scope) return fail(scope.error);
   const created = await createWebhook(db, { agencyId, name, url, events, scope, createdBy: s.email });
   await auditAdmin(s.email, "webhook.criar", { agencyId, targetType: "webhook", targetId: created.id, after: { name, url, events, escopo: scope } });
   await notifyAgencyOwner(db, agencyId, "Webhook criado", [

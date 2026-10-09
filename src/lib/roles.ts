@@ -25,8 +25,9 @@ export const isInvitableRole = (v: unknown): v is InvitableRole => INVITABLE_ROL
  *  - team: equipe; security: Segurança, retenção e pedidos do titular; brand: marca e domínio;
  *    export: exportar conversas, contatos e leads
  *  - billing: cobrança, uso e custo, afiliados
+ *  - integrations: Integrações (ações, webhooks, chaves de API); o editor só vê as ações (C pública)
  */
-export type Permission = "attend" | "config" | "team" | "security" | "brand" | "export" | "billing";
+export type Permission = "attend" | "config" | "team" | "security" | "brand" | "export" | "billing" | "integrations";
 
 const ALLOWED: Record<Permission, readonly AgencyRole[]> = {
   attend: ["owner", "admin", "editor", "agent"],
@@ -36,6 +37,7 @@ const ALLOWED: Record<Permission, readonly AgencyRole[]> = {
   brand: ["owner", "admin"],
   export: ["owner", "admin"],
   billing: ["owner"],
+  integrations: ["owner", "admin"],
 };
 
 export const can = (role: AgencyRole, perm: Permission): boolean => ALLOWED[perm].includes(role);
