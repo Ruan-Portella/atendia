@@ -7,9 +7,10 @@ import { relativeTime } from "@/lib/utils";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { CAMPAIGN_STATUS_LABEL, SEND_STATUS_LABEL, listCampaigns, missingSecrets, templateProblem, tickCallHint, tickDiagnostics, tierLimit, type SendStatus } from "@/lib/campaigns";
+import { usdBrl } from "@/lib/backoffice";
+import { CAMPAIGN_STATUS_LABEL, QUALITY_LABEL, SEND_STATUS_LABEL, costText, listCampaigns, missingSecrets, templateProblem, tickCallHint, tickDiagnostics, tierLimit, type SendStatus } from "@/lib/campaigns";
 import { listTemplates, loadTemplateChannel, templateBody, templateVariables, type Template } from "@/lib/whatsapp-templates";
-import { messagingLimitTier } from "@/lib/whatsapp";
+import { phoneStanding } from "@/lib/whatsapp";
 import { changeCampaignStatus, createTestCampaign, runCampaignsNow } from "../../../acoes";
 
 export const metadata = { title: "Campanhas (teste)" };
@@ -41,12 +42,12 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
   const channels = await Promise.all(
     (bots ?? []).map(async (b) => {
       const ch = await loadTemplateChannel(db, b.id as string);
-      if (!ch) return { bot: b, ch: null, templates: [] as Template[], tier: null, error: null };
+      if (!ch) return { bot: b, ch: null, templates: [] as Template[], tier: null, quality: null, error: null };
       try {
-        const [templates, tier] = await Promise.all([listTemplates(ch), messagingLimitTier(ch).catch(() => null)]);
-        return { bot: b, ch, templates: templates.filter((t) => !templateProblem(t.category.toUpperCase() === "MARKETING" ? "marketing" : "utility_reminder", t)), tier, error: null };
+        const [templates, standing] = await Promise.all([listTemplates(ch), phoneStanding(ch).catch(() => null)]);
+        return { bot: b, ch, templates: templates.filter((t) => !templateProblem(t.category.toUpperCase() === "MARKETING" ? "marketing" : "utility_reminder", t)), tier: standing?.tier ?? null, quality: standing?.quality ?? null, error: null };
       } catch (e) {
-        return { bot: b, ch, templates: [] as Template[], tier: null, error: (e as Error).message };
+        return { bot: b, ch, templates: [] as Template[], tier: null, quality: null, error: (e as Error).message };
       }
     }),
   );
@@ -97,13 +98,13 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
         </ResultForm>
       </section>
 
-      {channels.map(({ bot, ch, templates, tier, error }) => (
+      {channels.map(({ bot, ch, templates, tier, quality, error }) => (
         <section key={bot.id as string} className="card flex flex-col gap-3 p-5">
           <div>
             <h2 className="text-lg font-bold">{bot.name as string}</h2>
             <p className="text-xs text-muted">
               {bot.client_name as string}
-              {ch ? ` · nível na Meta: ${tier ?? "desconhecido"} (${Number.isFinite(tierLimit(tier)) ? `${tierLimit(tier).toLocaleString("pt-BR")} contatos por 24 h` : "sem limite"})` : " · sem WhatsApp conectado"}
+              {ch ? ` · nível na Meta: ${tier ?? "desconhecido"} (${Number.isFinite(tierLimit(tier)) ? `${tierLimit(tier).toLocaleString("pt-BR")} contatos por 24 h` : "sem limite"}) · qualidade: ${QUALITY_LABEL[quality ?? ""] ?? "sem nota"}` : " · sem WhatsApp conectado"}
             </p>
           </div>
           {error && <p className="text-sm text-danger">A Meta não listou os modelos: {error}</p>}
@@ -152,7 +153,7 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
                 <tr key={c.id} className="border-b border-line-2 align-top last:border-0">
                   <td className="px-5 py-2.5">
                     <span className="font-semibold">{c.name}</span>
-                    <div className="text-xs text-muted">{botName.get(c.bot_id) ?? "?"} · {KIND_LABEL[c.kind]} · <span className="font-mono">{c.template_name}</span> · criada {relativeTime(c.created_at)}{c.scheduled_at ? ` · agendada para ${new Date(c.scheduled_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}</div>
+                    <div className="text-xs text-muted">{botName.get(c.bot_id) ?? "?"} · {KIND_LABEL[c.kind]} · <span className="font-mono">{c.template_name}</span> · criada {relativeTime(c.created_at)}{c.scheduled_at ? ` · agendada para ${new Date(c.scheduled_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}{c.estimated_cost_cents != null ? ` · custo estimado ${costText(c.estimated_cost_cents / 100, usdBrl())}` : ""}</div>
                   </td>
                   <td className="px-3 py-2.5">
                     <span className={STATUS_TONE[c.status] ?? ""}>{CAMPAIGN_STATUS_LABEL[c.status]}</span>

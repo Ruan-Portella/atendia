@@ -6,6 +6,7 @@ import { acceptInbound, sha256, type Group, type InboundInput } from "@/lib/inbo
 import { processAfterWebhook, type WaPayload, type WaPreference, type WaStatus } from "@/lib/inbound-process";
 import { deadline } from "@/lib/cron";
 import type { MetaAccountDetail } from "@/lib/meta-enforcement";
+import { isCampaignNoticeField } from "@/lib/campaigns";
 
 export const maxDuration = 60;
 
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
   }
   if (body.object !== "whatsapp_business_account") return new Response("ok");
 
-  const changes: Change[] = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => ({ ...c, entryId: e.id }))).filter((c) => c.value && (c.field === "messages" || c.field === "account_update" || c.field === "smb_message_echoes" || c.field === "user_preferences"));
+  const changes: Change[] = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => ({ ...c, entryId: e.id }))).filter((c) => c.value && (c.field === "messages" || c.field === "account_update" || c.field === "smb_message_echoes" || c.field === "user_preferences" || isCampaignNoticeField(c.field)));
   if (!changes.length) return new Response("ok");
 
   const db = createAdminClient();
@@ -108,6 +109,12 @@ async function toEvents(db: ReturnType<typeof createAdminClient>, changes: Chang
       const detail: MetaAccountDetail = { ban_info: v.ban_info, violation_info: v.violation_info, restriction_info: v.restriction_info, disconnection_info: v.disconnection_info };
       const payload: WaPayload = { type: "account_update", entryId: change.entryId, event: v.event, wabaId: v.waba_info?.waba_id, detail };
       out.push({ key: `account_update:${sha256(JSON.stringify(v))}`, source: "whatsapp", kind: "account_update", botId: null, payload });
+      continue;
+    }
+    // qualidade do número e situação ou categoria de modelo: valem para a conta (WABA = id da entrada)
+    if (isCampaignNoticeField(change.field)) {
+      const payload: WaPayload = { type: "notice", wabaId: change.entryId, field: change.field, value: v as Record<string, unknown> };
+      out.push({ key: `notice:${sha256(JSON.stringify({ field: change.field, v }))}`, source: "whatsapp", kind: "account_update", botId: null, payload });
       continue;
     }
     const phoneNumberId = v.metadata?.phone_number_id;

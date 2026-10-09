@@ -3,7 +3,7 @@ import { openNullable, scopeOfBot, sealNullable } from "./field-cipher";
 import { activeSuppressions, blocks, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { consentHistory, consentStateOf, revokeConsents, type ConsentState } from "./marketing-consent";
 import { getAge, type AgeStatus } from "./gate/age";
-import { WhatsAppError, messagingLimitTier, waIdVariants } from "./whatsapp";
+import { WhatsAppError, phoneStanding, waIdVariants } from "./whatsapp";
 import { listTemplates, loadTemplateChannel, sendTemplate, type TemplateChannel } from "./whatsapp-templates";
 import { renderTemplate, templateBody, unsupportedReason, type Template } from "./template-text";
 import { channelMsgHash } from "./hash";
@@ -11,8 +11,9 @@ import { saveMessage } from "./messages";
 import { phoneHash, whatsappContact } from "./contacts";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 import { sendBlockedReason } from "./conversation-mode";
+import { aiBlockedReason, type AiBlockReason } from "./chat";
 import { notifyAgencyOwner } from "./notify";
-import { appUrl } from "./utils";
+import { appUrl, currentPeriodBR } from "./utils";
 
 /*
  * Motor das campanhas e lembretes (leva B3, parte 3a; spec Peça 7). Só WhatsApp no MVP.
@@ -25,6 +26,10 @@ import { appUrl } from "./utils";
  *   - Envio com biz_opaque_callback_data = "cs:<id>": o status da Meta concilia (conciliar abaixo).
  *     Sem resposta da Meta a linha fica "sending" e vira "uncertain" em 5 minutos, nunca reenviada.
  *   - Erro 131050 (a pessoa parou o marketing): opted_out, supressão e o aceite revogado.
+ *   - Pausa sozinha e avisa o dono (parte 3b): nota de qualidade do número caiu durante o envio
+ *     (conferida a cada tique e pelo aviso da Meta), modelo pausado ou reclassificado (a cada
+ *     tique, pelos avisos message_template_status_update e template_category_update e pelo
+ *     pricing.category dos status: lembrete cobrado como marketing).
  * Camada única: só este arquivo lê e grava campaign_sends (telefone e variáveis cifrados).
  */
 
@@ -58,6 +63,50 @@ const BATCH = 25;
 export const MARKETING_STOPPED = 131050;
 /** Erros de ritmo da Meta: a linha volta para a fila e sai um minuto depois. */
 const RATE_LIMITED = new Set([130429, 131056, 131048]);
+
+/** Nota de qualidade do número na Meta. */
+export const QUALITY_LABEL: Record<string, string> = { GREEN: "alta (verde)", YELLOW: "média (amarela)", RED: "baixa (vermelha)" };
+const QUALITY_RANK: Record<string, number> = { GREEN: 3, YELLOW: 2, RED: 1 };
+
+/** A nota caiu desde o começo (ou a retomada) da campanha? Sem nota de um dos lados, não. Pura. */
+export function qualityDropped(start: string | null | undefined, now: string | null | undefined): boolean {
+  const a = QUALITY_RANK[(start ?? "").toUpperCase()];
+  const b = QUALITY_RANK[(now ?? "").toUpperCase()];
+  return Boolean(a && b && b < a);
+}
+
+/**
+ * Preço por mensagem entregue que a Meta cobra no Brasil, em dólar (tabela por mensagem de
+ * jul/2025). É estimativa: a Meta cobra direto da conta do cliente e a utilidade dentro da
+ * janela de atendimento sai de graça.
+ */
+export const META_PRICE_USD: Record<string, number> = { MARKETING: 0.0625, UTILITY: 0.0068 };
+
+/**
+ * Estimativa da campanha: custo na Meta e em quantos dias sai, pelo saldo de hoje no limite de
+ * 24 h do portfólio e o limite cheio nos dias seguintes. Pura.
+ */
+export function estimateCampaign(o: { contacts: number; category: string; limit: number; recent: number }): { contacts: number; costUsd: number; days: number } {
+  const contacts = Math.max(0, Math.floor(o.contacts));
+  const costUsd = Math.round(contacts * (META_PRICE_USD[o.category.toUpperCase()] ?? META_PRICE_USD.MARKETING) * 100) / 100;
+  if (!contacts) return { contacts, costUsd, days: 0 };
+  const today = Math.max(0, o.limit - o.recent);
+  const days = contacts <= today ? 1 : 1 + Math.ceil((contacts - today) / o.limit);
+  return { contacts, costUsd, days };
+}
+
+/**
+ * Conta ou chatbot em que as campanhas param (regra de estado, degraus 4 e 5): chatbot pausado pelo
+ * dono ou pelo limite do plano, teste grátis vencido, assinatura cancelada. Cota de atendimentos
+ * esgotada não para (campanha não consome cota). Pura.
+ */
+export function accountStopReason(o: { botPaused: boolean; planPaused: boolean; block: AiBlockReason | null }): string | null {
+  if (o.botPaused) return "o chatbot está pausado (botão de emergência)";
+  if (o.planPaused) return "o chatbot está pausado pelo limite do plano";
+  if (o.block === "trial_expired") return "o teste grátis da agência venceu";
+  if (o.block === "cancelled") return "a assinatura da agência foi cancelada";
+  return null;
+}
 
 /** Contatos únicos por 24 h do nível da Meta. Sem a informação, o menor nível (250). Pura. */
 export function tierLimit(tier: string | null | undefined): number {
@@ -104,6 +153,27 @@ export function templateProblem(kind: CampaignKind, template: Pick<Template, "st
   return unsupported ? `o modelo ${unsupported}` : null;
 }
 
+/** Contatos únicos que receberam campanha ou lembrete nas últimas 24 h, em todos os chatbots da mesma conta do WhatsApp. */
+async function portfolioRecipients(db: SupabaseClient, wabaId: string, botId: string, now: Date): Promise<number> {
+  const { data: siblings } = await db.from("whatsapp_channels").select("bot_id").eq("waba_id", wabaId).is("disconnected_at", null);
+  const botIds = [...new Set([botId, ...(siblings ?? []).map((s) => s.bot_id as string)])];
+  const { data } = await db.rpc("campaign_recent_recipients", { p_bot_ids: botIds, p_since: new Date(now.getTime() - 86_400_000).toISOString() });
+  return Number(data) || 0;
+}
+
+/** Estimativa para um chatbot: o nível do número na Meta e o que o portfólio já enviou nas 24 h. */
+export async function estimateFor(db: SupabaseClient, ch: TemplateChannel, botId: string, contacts: number, category: string): Promise<ReturnType<typeof estimateCampaign> & { limit: number; recent: number }> {
+  const [standing, recent] = await Promise.all([phoneStanding(ch).catch(() => ({ tier: null, quality: null })), portfolioRecipients(db, ch.waba_id, botId, new Date())]);
+  const limit = tierLimit(standing.tier);
+  return { ...estimateCampaign({ contacts, category, limit, recent }), limit, recent };
+}
+
+/** "≈ US$ 3,13 (R$ 17,19)": o custo estimado na Meta. Pura. */
+export function costText(costUsd: number, fx: number): string {
+  const money = (v: number, currency: string) => v.toLocaleString("pt-BR", { style: "currency", currency });
+  return `≈ ${money(costUsd, "USD")} (${money(costUsd * fx, "BRL")})`;
+}
+
 /* ------------------------------------------------------------------ montar */
 
 export interface NewRecipient {
@@ -117,11 +187,11 @@ export interface NewRecipient {
 }
 
 /** Grava a campanha e os envios. Sem data, começa a enviar no próximo tique. */
-export async function createCampaign(db: SupabaseClient, c: { agencyId: string; clientId: string | null; botId: string; kind: CampaignKind; name: string; template: { name: string; language: string; category: string }; regulated: boolean; audience: Record<string, unknown>; scheduledAt: string | null; createdBy: string | null; recipients: NewRecipient[] }): Promise<{ id: string; queued: number }> {
+export async function createCampaign(db: SupabaseClient, c: { agencyId: string; clientId: string | null; botId: string; kind: CampaignKind; name: string; template: { name: string; language: string; category: string }; regulated: boolean; audience: Record<string, unknown>; scheduledAt: string | null; createdBy: string | null; recipients: NewRecipient[]; estimatedCostUsd?: number | null }): Promise<{ id: string; queued: number }> {
   const scheduled = c.scheduledAt && Date.parse(c.scheduledAt) > Date.now() ? c.scheduledAt : null;
   const { data, error } = await db
     .from("campaigns")
-    .insert({ agency_id: c.agencyId, client_id: c.clientId, bot_id: c.botId, kind: c.kind, name: c.name.slice(0, 120), template_name: c.template.name, template_language: c.template.language, template_category: c.template.category.toUpperCase(), regulated: c.regulated, audience: c.audience, scheduled_at: scheduled, status: scheduled ? "scheduled" : "sending", estimated_contacts: c.recipients.length, created_by: c.createdBy })
+    .insert({ agency_id: c.agencyId, client_id: c.clientId, bot_id: c.botId, kind: c.kind, name: c.name.slice(0, 120), template_name: c.template.name, template_language: c.template.language, template_category: c.template.category.toUpperCase(), regulated: c.regulated, audience: c.audience, scheduled_at: scheduled, status: scheduled ? "scheduled" : "sending", estimated_contacts: c.recipients.length, estimated_cost_cents: c.estimatedCostUsd == null ? null : Math.round(c.estimatedCostUsd * 100), created_by: c.createdBy })
     .select("id")
     .single();
   if (error || !data) throw new Error(`campanha: ${error?.message ?? "não gravada"}`);
@@ -150,18 +220,98 @@ export async function createCampaign(db: SupabaseClient, c: { agencyId: string; 
 export async function setCampaignStatus(db: SupabaseClient, id: string, status: "paused" | "sending" | "canceled", reason: string | null = null): Promise<boolean> {
   const from = status === "sending" ? ["paused"] : ["scheduled", "sending", "paused"];
   const now = new Date().toISOString();
-  // cancelada termina ali (o prazo de guarda conta do fim); o que estava na fila não sai mais
-  const { data } = await db.from("campaigns").update({ status, pause_reason: status === "paused" ? reason : null, updated_at: now, ...(status === "canceled" ? { finished_at: now } : {}) }).eq("id", id).in("status", from).select("id");
+  // cancelada termina ali (o prazo de guarda conta do fim); o que estava na fila não sai mais.
+  // Retomada: a nota de qualidade de agora vira a referência (quem retomou já viu a nota)
+  const { data } = await db
+    .from("campaigns")
+    .update({ status, pause_reason: status === "paused" ? reason : null, updated_at: now, ...(status === "canceled" ? { finished_at: now } : {}), ...(status === "sending" ? { quality_at_start: null } : {}) })
+    .eq("id", id)
+    .in("status", from)
+    .select("id");
   return Boolean(data?.length);
 }
 
-async function pause(db: SupabaseClient, c: CampaignRow, reason: string) {
-  await setCampaignStatus(db, c.id, "paused", reason);
+/** Modelo reclassificado: o que o dono pode fazer (pedir revisão da categoria à Meta). */
+export const CATEGORY_REVIEW_HINT = "Se o modelo é mesmo de utilidade, peça revisão da categoria no Gerenciador do WhatsApp (Modelos de mensagem, abra o modelo e peça a revisão). Ou troque o texto por um sem promoção.";
+
+/** Pausa e avisa o dono (só quando a campanha estava enviando ou agendada). */
+async function pause(db: SupabaseClient, c: Pick<CampaignRow, "id" | "agency_id" | "bot_id" | "name">, reason: string, extra: string[] = []): Promise<boolean> {
+  const { data } = await db.from("campaigns").update({ status: "paused", pause_reason: reason, updated_at: new Date().toISOString() }).eq("id", c.id).in("status", ["scheduled", "sending"]).select("id");
+  if (!data?.length) return false;
   await notifyAgencyOwner(db, c.agency_id, `Campanha pausada: ${c.name}`, [
     `A campanha "${c.name}" foi pausada: ${reason}.`,
+    ...extra,
     "Os envios que já saíram continuam valendo; os que faltam esperam você retomar.",
     `Veja em ${appUrl(`/painel/bots/${c.bot_id}`)}`,
   ]).catch(() => false);
+  return true;
+}
+
+/**
+ * Aviso da Meta sobre a conta (qualidade do número, modelo pausado ou reclassificado): pausa as
+ * campanhas enviando ou agendadas dos chatbots daquela conta. phone: só o desse número;
+ * templateName: só as desse modelo; kinds: só desses tipos. Devolve quantas pausou.
+ */
+export async function pauseCampaignsFor(db: SupabaseClient, where: { wabaId: string; phone?: string | null; templateName?: string; templateLanguage?: string | null; kinds?: CampaignKind[] }, reason: string, extra: string[] = []): Promise<number> {
+  const { data: chs } = await db.from("whatsapp_channels").select("bot_id, display_phone").eq("waba_id", where.wabaId).is("disconnected_at", null);
+  const digits = (v: string | null | undefined) => String(v ?? "").replace(/\D/g, "");
+  const botIds = (chs ?? []).filter((c) => !where.phone || digits(c.display_phone as string) === digits(where.phone)).map((c) => c.bot_id as string);
+  if (!botIds.length) return 0;
+  let q = db.from("campaigns").select("id, agency_id, bot_id, name").in("bot_id", botIds).in("status", ["scheduled", "sending"]);
+  if (where.templateName) q = q.eq("template_name", where.templateName);
+  if (where.templateLanguage) q = q.eq("template_language", where.templateLanguage);
+  if (where.kinds?.length) q = q.in("kind", where.kinds);
+  const { data: campaigns } = await q;
+  let paused = 0;
+  for (const c of (campaigns ?? []) as Array<Pick<CampaignRow, "id" | "agency_id" | "bot_id" | "name">>) if (await pause(db, c, reason, extra)) paused++;
+  return paused;
+}
+
+/* ------------------------------------------------------------------ avisos da Meta */
+
+/** Campos do webhook da conta que mexem com as campanhas (assinados no app da Meta). */
+export const CAMPAIGN_NOTICE_FIELDS = ["phone_number_quality_update", "message_template_status_update", "template_category_update"] as const;
+export type CampaignNoticeField = (typeof CAMPAIGN_NOTICE_FIELDS)[number];
+export const isCampaignNoticeField = (f: string | undefined): f is CampaignNoticeField => (CAMPAIGN_NOTICE_FIELDS as readonly string[]).includes(f ?? "");
+
+const QUALITY_HINT = "Nota em queda costuma vir de bloqueios e denúncias: revise o público (só quem pediu novidades) e o texto antes de retomar.";
+/** Situações do modelo em que a campanha para (pausado, desativado, recusado, saindo ou com nota baixa). */
+const TEMPLATE_STOP: Record<string, string> = { PAUSED: "pausou", DISABLED: "desativou", REJECTED: "recusou", PENDING_DELETION: "está apagando", FLAGGED: "marcou com nota baixa" };
+
+export interface NoticeEffect {
+  where: { phone?: string | null; templateName?: string; templateLanguage?: string | null; kinds?: CampaignKind[] };
+  reason: string;
+  extra: string[];
+}
+
+/** O que um aviso da Meta faz com as campanhas da conta, ou null (nada a pausar). Pura. */
+export function campaignNoticeEffect(field: string, value: Record<string, unknown>): NoticeEffect | null {
+  const str = (k: string) => (typeof value[k] === "string" && value[k] ? (value[k] as string) : null);
+  if (field === "phone_number_quality_update") {
+    if ((str("event") ?? "").toUpperCase() !== "FLAGGED") return null;
+    return { where: { phone: str("display_phone_number") }, reason: "a Meta avisou que a nota de qualidade do número caiu", extra: [QUALITY_HINT] };
+  }
+  const name = str("message_template_name");
+  if (!name) return null;
+  const template = { templateName: name, templateLanguage: str("message_template_language") };
+  if (field === "message_template_status_update") {
+    const verb = TEMPLATE_STOP[(str("event") ?? "").toUpperCase()];
+    if (!verb) return null;
+    const why = str("reason");
+    return { where: template, reason: `a Meta ${verb} o modelo ${name}${why && why.toUpperCase() !== "NONE" ? ` (motivo: ${why})` : ""}`, extra: [] };
+  }
+  if (field === "template_category_update") {
+    // o aviso antecipado traz correct_category; a mudança feita traz new_category
+    if ((str("new_category") ?? str("correct_category") ?? "").toUpperCase() !== "MARKETING") return null;
+    return { where: { ...template, kinds: ["utility_reminder"] }, reason: `a Meta mudou o modelo ${name} de utilidade para marketing`, extra: [CATEGORY_REVIEW_HINT] };
+  }
+  return null;
+}
+
+/** Aviso da Meta sobre a conta (entry.id = WABA): pausa e avisa o dono quando preciso. */
+export async function handleCampaignNotice(db: SupabaseClient, wabaId: string, field: string, value: Record<string, unknown>): Promise<number> {
+  const effect = campaignNoticeEffect(field, value);
+  return effect ? pauseCampaignsFor(db, { wabaId, ...effect.where }, effect.reason, effect.extra) : 0;
 }
 
 /* ------------------------------------------------------------------ enviar (o tique) */
@@ -177,6 +327,7 @@ interface CampaignRow {
   template_language: string;
   template_category: string;
   regulated: boolean;
+  quality_at_start: string | null;
 }
 
 interface SendRow {
@@ -213,12 +364,12 @@ export async function runCampaignTick(db: SupabaseClient, o: { hasTime: () => bo
   result.uncertain = unsure?.length ?? 0;
   await db.from("campaigns").update({ status: "sending", updated_at: now.toISOString() }).eq("status", "scheduled").lte("scheduled_at", now.toISOString());
 
-  const { data: active } = await db.from("campaigns").select("id, agency_id, client_id, bot_id, kind, name, template_name, template_language, template_category, regulated").eq("status", "sending").order("created_at").limit(20);
-  const tiers = new Map<string, number>();
+  const { data: active } = await db.from("campaigns").select("id, agency_id, client_id, bot_id, kind, name, template_name, template_language, template_category, regulated, quality_at_start").eq("status", "sending").order("created_at").limit(20);
+  const standings = new Map<string, { tier: string | null; quality: string | null }>();
   for (const c of (active ?? []) as CampaignRow[]) {
     if (!o.hasTime()) break;
     result.campaigns++;
-    const r = await sendCampaign(db, c, { hasTime: o.hasTime, now, tiers });
+    const r = await sendCampaign(db, c, { hasTime: o.hasTime, now, standings });
     result.sent += r.sent;
     result.skipped += r.skipped;
     result.failed += r.failed;
@@ -228,7 +379,7 @@ export async function runCampaignTick(db: SupabaseClient, o: { hasTime: () => bo
   return result;
 }
 
-async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: () => boolean; now: Date; tiers: Map<string, number> }): Promise<{ sent: number; skipped: number; failed: number; paused: boolean; finished: boolean }> {
+async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: () => boolean; now: Date; standings: Map<string, { tier: string | null; quality: string | null }> }): Promise<{ sent: number; skipped: number; failed: number; paused: boolean; finished: boolean }> {
   const out = { sent: 0, skipped: 0, failed: 0, paused: false, finished: false };
   const ch = await loadTemplateChannel(db, c.bot_id);
   if (!ch) {
@@ -236,8 +387,9 @@ async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: ()
     return { ...out, paused: true };
   }
   const bot = await botInfo(db, c.bot_id);
-  // chatbot pausado pelo limite do plano: nada sai por ele (nem campanha)
-  const blocked = bot.paused_by_plan_at ? "o chatbot está pausado pelo limite do plano" : await sendBlockedReason(db, c.bot_id, "whatsapp");
+  // chatbot pausado, conta sem plano válido ou canal bloqueado: nada sai por ele (nem campanha)
+  const stop = accountStopReason({ botPaused: Boolean(bot.paused_at), planPaused: Boolean(bot.paused_by_plan_at), block: await aiBlockedReason(db, c.agency_id) });
+  const blocked = stop ?? (await sendBlockedReason(db, c.bot_id, "whatsapp"));
   if (blocked) {
     await pause(db, c, blocked.replace(/[.\s]+$/, ""));
     return { ...out, paused: true };
@@ -253,18 +405,23 @@ async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: ()
   }
   const problem = templateProblem(c.kind, template);
   if (problem) {
-    await pause(db, c, problem);
+    await pause(db, c, problem, /marketing/.test(problem) ? [CATEGORY_REVIEW_HINT] : []);
     return { ...out, paused: true };
   }
+  // nível e nota do número, uma vez por tique; a nota caiu desde o começo (ou a retomada): pausa
+  if (!o.standings.has(ch.phone_number_id)) o.standings.set(ch.phone_number_id, await phoneStanding(ch).catch(() => ({ tier: null, quality: null })));
+  const standing = o.standings.get(ch.phone_number_id)!;
+  if (qualityDropped(c.quality_at_start, standing.quality)) {
+    const from = QUALITY_LABEL[c.quality_at_start!.toUpperCase()];
+    const to = QUALITY_LABEL[standing.quality!.toUpperCase()];
+    await pause(db, c, `a nota de qualidade do número caiu de ${from} para ${to}`, [QUALITY_HINT]);
+    return { ...out, paused: true };
+  }
+  if (!c.quality_at_start && standing.quality) await db.from("campaigns").update({ quality_at_start: standing.quality.toUpperCase() }).eq("id", c.id);
   const body = templateBody(template!);
   const category = template!.category.toUpperCase();
 
-  // saldo do portfólio: contatos únicos nas 24 h, em todos os chatbots da mesma conta do WhatsApp
-  const { data: siblings } = await db.from("whatsapp_channels").select("bot_id").eq("waba_id", ch.waba_id).is("disconnected_at", null);
-  const botIds = [...new Set([c.bot_id, ...(siblings ?? []).map((s) => s.bot_id as string)])];
-  if (!o.tiers.has(ch.waba_id)) o.tiers.set(ch.waba_id, tierLimit(await messagingLimitTier(ch).catch(() => null)));
-  const { data: recent } = await db.rpc("campaign_recent_recipients", { p_bot_ids: botIds, p_since: new Date(o.now.getTime() - 86_400_000).toISOString() });
-  let left = allowance({ limit: o.tiers.get(ch.waba_id)!, recent: Number(recent) || 0 });
+  let left = allowance({ limit: tierLimit(standing.tier), recent: await portfolioRecipients(db, ch.waba_id, c.bot_id, o.now) });
   const scope = suppressionScope({ wabaId: ch.waba_id, botId: c.bot_id });
 
   while (left > 0 && o.hasTime()) {
@@ -280,19 +437,26 @@ async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: ()
         else if (r === "failed" || r === "opted_out") out.failed++;
         else if (r !== "retry" && r !== "unknown") out.skipped++;
       }
-      if (out.paused) break;
+      if (out.paused) {
+        // reservados e ainda não tentados voltam para a fila (não viram "incerta" sem ter saído)
+        const untouched = batch.slice(i + 5).map((r) => r.id);
+        if (untouched.length) await db.from("campaign_sends").update({ status: "queued", claimed_at: null, updated_at: new Date().toISOString() }).in("id", untouched).eq("status", "sending");
+        break;
+      }
     }
     if (out.paused) break;
     left -= batch.length;
   }
+  // contatos que receberam no mês (uso da agência; não é limite de plano)
+  if (out.sent) await db.rpc("usage_add_campaign_contacts", { p_agency: c.agency_id, p_period: currentPeriodBR(o.now), p_n: out.sent });
   if (!out.paused) out.finished = await finishIfDone(db, c.id);
   else await updateTotals(db, c.id);
   return out;
 }
 
-async function botInfo(db: SupabaseClient, botId: string): Promise<{ id: string; agency_id: string; paused_by_plan_at: string | null }> {
-  const { data } = await db.from("bots").select("id, agency_id, paused_by_plan_at").eq("id", botId).single();
-  return data as { id: string; agency_id: string; paused_by_plan_at: string | null };
+async function botInfo(db: SupabaseClient, botId: string): Promise<{ id: string; agency_id: string; paused_at: string | null; paused_by_plan_at: string | null }> {
+  const { data } = await db.from("bots").select("id, agency_id, paused_at, paused_by_plan_at").eq("id", botId).single();
+  return data as { id: string; agency_id: string; paused_at: string | null; paused_by_plan_at: string | null };
 }
 
 type RowOutcome = SendStatus | SendDecision | "retry" | "stop" | "unknown";
@@ -385,12 +549,24 @@ async function finishIfDone(db: SupabaseClient, id: string): Promise<boolean> {
 
 /* ------------------------------------------------------------------ conciliar (status da Meta) */
 
-/** Status de uma mensagem de campanha ("cs:<id>" em biz_opaque_callback_data). */
-export async function reconcileCampaignStatus(db: SupabaseClient, ref: string, metaStatus: string, errorCode?: number): Promise<void> {
+/** Lembrete de utilidade cobrado pela Meta como marketing: o modelo foi reclassificado. Pura. */
+export const billedAsMarketing = (kind: string, pricingCategory: string | null | undefined) => kind === "utility_reminder" && (pricingCategory ?? "").toLowerCase() === "marketing";
+
+/**
+ * Status de uma mensagem de campanha ("cs:<id>" em biz_opaque_callback_data). pricingCategory: a
+ * categoria em que a Meta cobrou; lembrete cobrado como marketing pausa a campanha.
+ */
+export async function reconcileCampaignStatus(db: SupabaseClient, ref: string, metaStatus: string, errorCode?: number, pricingCategory?: string | null): Promise<void> {
   const id = Number(ref.replace(/^cs:/, ""));
   if (!Number.isSafeInteger(id) || id <= 0) return;
-  const { data: row } = await db.from("campaign_sends").select("status").eq("id", id).maybeSingle();
+  const { data: row } = await db.from("campaign_sends").select("status, campaign_id").eq("id", id).maybeSingle();
   if (!row) return;
+  if (pricingCategory) {
+    const { data: c } = await db.from("campaigns").select("id, agency_id, bot_id, name, kind, template_name").eq("id", row.campaign_id as string).maybeSingle();
+    if (c && billedAsMarketing(c.kind as string, pricingCategory)) {
+      await pause(db, c as Pick<CampaignRow, "id" | "agency_id" | "bot_id" | "name">, `a Meta cobrou o lembrete como marketing (o modelo ${c.template_name as string} foi reclassificado)`, [CATEGORY_REVIEW_HINT]);
+    }
+  }
   const next = nextSendStatus(row.status as SendStatus, metaStatus, errorCode);
   if (!next) return;
   await db.from("campaign_sends").update({ status: next, updated_at: new Date().toISOString(), ...(next === "failed" || next === "opted_out" ? { error_code: errorCode ? String(errorCode) : "erro" } : {}), ...(next === "sent" ? { sent_at: new Date().toISOString() } : {}) }).eq("id", id).eq("status", row.status as string);
@@ -453,6 +629,8 @@ export interface CampaignView {
   finished_at: string | null;
   totals: Record<string, number>;
   estimated_contacts: number | null;
+  /** centavos de dólar (custo estimado na Meta) */
+  estimated_cost_cents: number | null;
 }
 
 /**
@@ -461,7 +639,7 @@ export interface CampaignView {
  */
 export async function listCampaigns(db: SupabaseClient, botIds: string[], limit = 20): Promise<CampaignView[]> {
   if (!botIds.length) return [];
-  const { data } = await db.from("campaigns").select("id, bot_id, name, kind, status, pause_reason, template_name, scheduled_at, created_at, finished_at, totals, estimated_contacts").in("bot_id", botIds).order("created_at", { ascending: false }).limit(limit);
+  const { data } = await db.from("campaigns").select("id, bot_id, name, kind, status, pause_reason, template_name, scheduled_at, created_at, finished_at, totals, estimated_contacts, estimated_cost_cents").in("bot_id", botIds).order("created_at", { ascending: false }).limit(limit);
   const rows = (data ?? []) as CampaignView[];
   return Promise.all(rows.map(async (c) => ({ ...c, totals: ((await db.rpc("campaign_totals", { p_campaign: c.id })).data as Record<string, number> | null) ?? c.totals })));
 }

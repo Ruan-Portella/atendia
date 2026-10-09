@@ -294,3 +294,13 @@ export async function siteOfferDue(db: SupabaseClient, botId: string, phone: str
   return consentStateOf(history) === "none" && !suppressed.some((s) => s.kind !== "utility") && age?.status !== "nao";
 }
 
+
+/**
+ * O chatbot conectou uma conta do WhatsApp: se era outra (número ou WABA diferente), o SAIR e o
+ * aceite de novidades vão junto para o escopo novo (migração 0084). Nunca derruba a conexão.
+ */
+export async function carryWhatsAppPreferences(db: SupabaseClient, botId: string, wabaId: string | null): Promise<void> {
+  const { data, error } = await db.rpc("carry_whatsapp_preferences", { p_bot: botId, p_to: suppressionScope({ wabaId, botId }) });
+  if (error) console.error("whatsapp: SAIR e aceite não levados para a conta nova", error.message);
+  else if (data?.suppressions || data?.consents) console.log("whatsapp: preferências levadas da conta anterior", JSON.stringify(data));
+}

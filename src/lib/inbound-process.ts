@@ -13,7 +13,7 @@ import { revoke, suppress, suppressionScope } from "./suppression";
 import { recordMetaEnforcement, type MetaAccountDetail } from "./meta-enforcement";
 import { disconnectionDetail } from "./whatsapp-diagnostics";
 import { revokeConsents } from "./marketing-consent";
-import { reconcileCampaignStatus } from "./campaigns";
+import { handleCampaignNotice, reconcileCampaignStatus } from "./campaigns";
 
 /* ------------------------------------------------------------------ o que vai na fila */
 
@@ -33,7 +33,9 @@ export type WaPayload =
   | { type: "echo"; phoneNumberId: string; echo: EchoMessage }
   | { type: "status"; phoneNumberId: string; status: WaStatus; wabaId?: string }
   | { type: "prefs"; phoneNumberId?: string; wabaId?: string; prefs: WaPreference[] }
-  | { type: "account_update"; entryId?: string; event?: string; wabaId?: string; detail?: MetaAccountDetail };
+  | { type: "account_update"; entryId?: string; event?: string; wabaId?: string; detail?: MetaAccountDetail }
+  // avisos da conta que mexem com campanhas: qualidade do número, situação e categoria do modelo
+  | { type: "notice"; wabaId?: string; field: string; value: Record<string, unknown> };
 
 export type IgPayload = { type: "msg" | "echo" | "edit" | "delete"; igUserId: string; ev: IgMessagingEvent };
 
@@ -74,9 +76,11 @@ const whatsappGroup: GroupHandler = async (db, events) => {
       }
       // envio de campanha ("cs:<id>"): o status concilia a linha (enviado, entregue, lido ou falhou)
       const ref = p.status.biz_opaque_callback_data;
-      if (ref?.startsWith("cs:") && p.status.status) await reconcileCampaignStatus(db, ref, p.status.status, p.status.errors?.[0]?.code);
+      if (ref?.startsWith("cs:") && p.status.status) await reconcileCampaignStatus(db, ref, p.status.status, p.status.errors?.[0]?.code, p.status.pricing?.category);
       // consumo: cada status de mensagem enviada diz se a Meta cobrou e em qual categoria
       if (e.bot_id) await recordUsage(db, e.bot_id, p.phoneNumberId, [p.status]);
+    } else if (p?.type === "notice" && p.wabaId) {
+      await handleCampaignNotice(db, p.wabaId, p.field, p.value);
     } else if (p?.type === "prefs" && (p.wabaId || e.bot_id)) {
       // preferências do WhatsApp: "stop" suprime o marketing; "resume" é novo opt-in da própria pessoa
       for (const pref of p.prefs) {

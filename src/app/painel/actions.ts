@@ -44,7 +44,7 @@ import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retenti
 import { audit, requestMeta } from "@/lib/audit";
 import { channelMsgHash } from "@/lib/hash";
 import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
-import { recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
+import { carryWhatsAppPreferences, recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
 import { IMPORT_MAX_ROWS, validateImportRows, type ImportError, type RawImportRow } from "@/lib/contact-import";
 import { setCompanyAgesBulk } from "@/lib/gate/age";
 import { deleteLeads, findLeadsByContact, leadIdsOfConversations } from "@/lib/leads";
@@ -685,6 +685,7 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
   const { error } = await admin.from("whatsapp_channels").insert({ bot_id: botId, phone_number_id: phoneNumberId, waba_id: wabaId, display_phone: phone.display_phone_number ?? null, verified_name: phone.verified_name ?? null });
   if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await carryWhatsAppPreferences(admin, botId, wabaId);
   await confirmAcceptance(admin, { clientId: bot.client_id as string, channel: "whatsapp", metaAccount: wabaId ?? phoneNumberId, metaVerifiedName: phone.verified_name ?? null });
   // modelo padrão de retomada (utilidade, pt_BR), quando a conta do WhatsApp veio junto
   if (wabaId) await ensureResumeTemplate({ phone_number_id: phoneNumberId, waba_id: wabaId, access_token_enc: null }, String((await admin.from("bots").select("client_name").eq("id", botId).maybeSingle()).data?.client_name ?? ""));

@@ -8,6 +8,7 @@ import { channelBlock } from "./features";
 import { markAnalysisDue } from "./bot-analysis";
 import { WHATSAPP_BILLING_URL, WhatsAppError, exchangeSignupCode, getPhoneNumber, listWabaPhoneNumbers, newPin, registerNumber, startAppSync, subscribeApp } from "./whatsapp";
 import { ensureResumeTemplate } from "./whatsapp-templates";
+import { carryWhatsAppPreferences } from "./marketing-consent";
 
 export interface SignupResult {
   code: string;
@@ -109,6 +110,8 @@ export async function connectFromSignup(admin: SupabaseClient, opts: { botId: st
     auto_replies_off_at: coexistence && input.autoRepliesOff ? new Date().toISOString() : null,
   });
   if (error) return fail("O número foi conectado na Meta, mas não deu para salvar. Tente de novo.");
+  // outra conta do WhatsApp: quem pediu para sair continua fora, e o aceite de novidades vai junto
+  await carryWhatsAppPreferences(admin, botId, wabaId);
   // modelo padrão de retomada (utilidade, pt_BR): a equipe retoma conversas depois das 24 h
   await ensureResumeTemplate({ phone_number_id: phoneNumberId, waba_id: wabaId, access_token_enc: seal(token) }, opts.clientName);
   if (previous?.business_id && businessId && previous.business_id !== businessId) await forgetBsuids(admin, botId);

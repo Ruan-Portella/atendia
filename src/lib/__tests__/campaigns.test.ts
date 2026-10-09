@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowance, decideSend, missingSecrets, nextSendStatus, sendErrorOutcome, templateProblem, tickCallHint, tierLimit } from "../campaigns";
+import { accountStopReason, allowance, billedAsMarketing, campaignNoticeEffect, costText, decideSend, estimateCampaign, missingSecrets, nextSendStatus, qualityDropped, sendErrorOutcome, templateProblem, tickCallHint, tierLimit } from "../campaigns";
 
 const base: Parameters<typeof decideSend>[0] = { templateCategory: "MARKETING", suppressed: [], consent: "granted", regulated: false, age: null, contactGone: false };
 const approved = (category: string, components: Array<{ type: string; format?: string; text?: string }> = [{ type: "BODY", text: "Oi {{1}}" }]) => ({ status: "APPROVED", category, components });
@@ -113,5 +113,80 @@ describe("campanhas: diagnóstico do tique automático", () => {
   it("segredos que faltam no cofre (a liberação da Vercel é opcional)", () => {
     expect(missingSecrets({ pg_net: true, pg_cron: true, secrets: [] })).toEqual(["boavoz_campaigns_url", "boavoz_cron_secret"]);
     expect(missingSecrets({ pg_net: true, pg_cron: true, secrets: ["boavoz_campaigns_url", "boavoz_cron_secret"] })).toEqual([]);
+  });
+});
+
+describe("campanhas: proteções da parte 3b", () => {
+  it("nota de qualidade: pausa só quando cai desde o começo (ou a retomada)", () => {
+    expect(qualityDropped("GREEN", "YELLOW")).toBe(true);
+    expect(qualityDropped("YELLOW", "RED")).toBe(true);
+    expect(qualityDropped("green", "red")).toBe(true);
+    expect(qualityDropped("YELLOW", "GREEN")).toBe(false);
+    expect(qualityDropped("RED", "RED")).toBe(false);
+    // sem nota de um dos lados, não pausa
+    expect(qualityDropped(null, "RED")).toBe(false);
+    expect(qualityDropped("GREEN", "UNKNOWN")).toBe(false);
+  });
+
+  it("lembrete cobrado como marketing: reclassificado", () => {
+    expect(billedAsMarketing("utility_reminder", "marketing")).toBe(true);
+    expect(billedAsMarketing("utility_reminder", "utility")).toBe(false);
+    expect(billedAsMarketing("marketing", "marketing")).toBe(false);
+    expect(billedAsMarketing("utility_reminder", undefined)).toBe(false);
+  });
+
+  it("chatbot pausado, teste vencido e assinatura cancelada param; cota esgotada não", () => {
+    expect(accountStopReason({ botPaused: true, planPaused: false, block: null })).toMatch(/pausado/);
+    expect(accountStopReason({ botPaused: false, planPaused: true, block: null })).toMatch(/limite do plano/);
+    expect(accountStopReason({ botPaused: false, planPaused: false, block: "trial_expired" })).toMatch(/teste grátis/);
+    expect(accountStopReason({ botPaused: false, planPaused: false, block: "cancelled" })).toMatch(/cancelada/);
+    expect(accountStopReason({ botPaused: false, planPaused: false, block: "quota_exceeded" })).toBeNull();
+    expect(accountStopReason({ botPaused: false, planPaused: false, block: "paused" })).toBeNull();
+    expect(accountStopReason({ botPaused: false, planPaused: false, block: null })).toBeNull();
+  });
+});
+
+describe("campanhas: avisos da Meta", () => {
+  it("qualidade: só o FLAGGED pausa, e só o número do aviso", () => {
+    const e = campaignNoticeEffect("phone_number_quality_update", { display_phone_number: "5521999990000", event: "FLAGGED", current_limit: "TIER_1K" });
+    expect(e?.where).toEqual({ phone: "5521999990000" });
+    expect(e?.reason).toMatch(/qualidade/);
+    expect(campaignNoticeEffect("phone_number_quality_update", { display_phone_number: "5521999990000", event: "UPGRADE" })).toBeNull();
+    expect(campaignNoticeEffect("phone_number_quality_update", { event: "UNFLAGGED" })).toBeNull();
+  });
+
+  it("modelo pausado, desativado ou recusado pausa as campanhas dele", () => {
+    const e = campaignNoticeEffect("message_template_status_update", { event: "PAUSED", message_template_name: "promo_sexta", message_template_language: "pt_BR", reason: "LOW_QUALITY" });
+    expect(e?.where).toEqual({ templateName: "promo_sexta", templateLanguage: "pt_BR" });
+    expect(e?.reason).toBe("a Meta pausou o modelo promo_sexta (motivo: LOW_QUALITY)");
+    expect(campaignNoticeEffect("message_template_status_update", { event: "DISABLED", message_template_name: "x", reason: "NONE" })?.reason).toBe("a Meta desativou o modelo x");
+    expect(campaignNoticeEffect("message_template_status_update", { event: "APPROVED", message_template_name: "x" })).toBeNull();
+    expect(campaignNoticeEffect("message_template_status_update", { event: "PAUSED" })).toBeNull();
+  });
+
+  it("utilidade que vira marketing pausa só os lembretes, com a dica de pedir revisão", () => {
+    const e = campaignNoticeEffect("template_category_update", { message_template_name: "lembrete_consulta", message_template_language: "pt_BR", previous_category: "UTILITY", new_category: "MARKETING" });
+    expect(e?.where).toEqual({ templateName: "lembrete_consulta", templateLanguage: "pt_BR", kinds: ["utility_reminder"] });
+    expect(e?.extra.join(" ")).toMatch(/revisão/);
+    // aviso antecipado (correct_category) também pausa
+    expect(campaignNoticeEffect("template_category_update", { message_template_name: "y", correct_category: "MARKETING" })).not.toBeNull();
+    expect(campaignNoticeEffect("template_category_update", { message_template_name: "y", previous_category: "MARKETING", new_category: "UTILITY" })).toBeNull();
+  });
+});
+
+describe("campanhas: estimativa", () => {
+  it("custo pela categoria e dias pelo limite de 24 h", () => {
+    expect(estimateCampaign({ contacts: 100, category: "MARKETING", limit: 250, recent: 0 })).toEqual({ contacts: 100, costUsd: 6.25, days: 1 });
+    expect(estimateCampaign({ contacts: 1000, category: "UTILITY", limit: 1000, recent: 0 })).toEqual({ contacts: 1000, costUsd: 6.8, days: 1 });
+    // 250 hoje, depois 250 por dia: 1.000 contatos levam 4 dias
+    expect(estimateCampaign({ contacts: 1000, category: "MARKETING", limit: 250, recent: 0 }).days).toBe(4);
+    // o portfólio já usou 200 hoje: sobram 50, e os outros 150 saem amanhã
+    expect(estimateCampaign({ contacts: 200, category: "MARKETING", limit: 250, recent: 200 }).days).toBe(2);
+    expect(estimateCampaign({ contacts: 50_000, category: "MARKETING", limit: Number.POSITIVE_INFINITY, recent: 0 }).days).toBe(1);
+    expect(estimateCampaign({ contacts: 0, category: "MARKETING", limit: 250, recent: 0 })).toEqual({ contacts: 0, costUsd: 0, days: 0 });
+  });
+
+  it("custo em dólar e em reais", () => {
+    expect(costText(6.25, 5.5).replace(/\s/g, " ")).toBe("≈ US$ 6,25 (R$ 34,38)");
   });
 });
