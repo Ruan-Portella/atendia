@@ -29,7 +29,9 @@ import { ExportLinks } from "@/components/export-links";
 import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
 import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePortal, eraseContactData, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientMemberRole, setClientPermissions, updateClientRecord } from "../../actions";
 import { ClientContacts } from "@/components/client-contacts";
-import { ClientReminderSettings } from "@/components/client-reminder-settings";
+import { ClientCampaigns } from "@/components/client-campaigns";
+import { ClientIntegrationsSummary } from "@/components/integrations/client-integrations-summary";
+import { campaignsInPlan } from "@/lib/plan-limits";
 
 export const metadata = { title: "Cliente" };
 
@@ -37,6 +39,7 @@ const TABS = [
   ["chatbots", "Chatbots"],
   ["leads", "Leads"],
   ["contatos", "Contatos"],
+  ["campanhas", "Campanhas"],
   ["conversas", "Conversas"],
   ["relatorio", "Relatório e portal"],
   ["acesso", "Acesso do cliente"],
@@ -64,7 +67,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "chatbots") as Tab;
   const supabase = await createClient();
   // a RLS limita os dados à agência logada
-  const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
+  const [{ agency, plan }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
     supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance, paused_by_plan_at").eq("client_id", id).eq("is_demo", false).order("created_at"),
@@ -182,6 +185,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       )}
 
       {tab === "contatos" && <ClientContacts clientId={client.id} botIds={botIds} botName={botName} searchParams={sp} />}
+
+      {tab === "campanhas" && <ClientCampaigns clientId={client.id} clientName={client.name} bots={bots.map((b) => ({ id: b.id, name: b.name, client_name: b.client_name, client_id: client.id }))} inPlan={campaignsInPlan(plan.id)} isOwner={role === "owner"} />}
 
       {tab === "conversas" && (
         <div className="card overflow-hidden">
@@ -350,7 +355,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             <p className="text-xs text-muted">Mudar o nome aqui atualiza o nome que aparece no chat de todos os chatbots deste cliente.</p>
             <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
           </ActionForm>
-          <ClientReminderSettings clientId={client.id} clientName={client.name} />
+          {can(role, "integrations") && <ClientIntegrationsSummary agencyId={agency.id} clientId={client.id} bots={bots.map((b) => ({ id: b.id, name: b.name }))} />}
           {can(role, "security") && <ClientPrivacy clientId={client.id} clientName={client.name} clientMonths={(client.retention_months as number | null) ?? null} agencyMonths={agency.retention_months} />}
           {can(role, "export") && <ExportLinks clientId={client.id} description={`Os dados de ${client.name}: conversas, contatos e leads, em CSV (abre no Excel) ou JSON. Na saída do cliente, entregue a ele. A exportação fica registrada.`} />}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">

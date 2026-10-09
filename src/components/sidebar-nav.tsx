@@ -10,7 +10,7 @@ import { can, type AgencyRole, type Permission } from "@/lib/roles";
 const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Permission; also?: string }> = [
   { href: "/painel/clientes", label: "Clientes", icon: Users, perm: "attend", also: "/painel/bots" },
   { href: "/painel/campanhas", label: "Campanhas", icon: Megaphone, perm: "config" },
-  { href: "/painel/integracoes", label: "Integrações", icon: Plug, perm: "config" },
+  { href: "/painel/integracoes", label: "Integrações", icon: Plug, perm: "integrations" },
   { href: "/painel/demos", label: "Demos", icon: Sparkles, perm: "config" },
   { href: "/painel/marca", label: "Marca e domínio", icon: Palette, perm: "brand" },
   { href: "/painel/equipe", label: "Equipe", icon: UsersRound, perm: "team" },

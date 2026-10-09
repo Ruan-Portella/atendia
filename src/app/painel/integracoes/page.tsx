@@ -3,53 +3,44 @@ import { requirePermission } from "@/lib/agency";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { can } from "@/lib/team";
 import { planLimits } from "@/lib/plan-limits";
 import { daysAgoIso, relativeTime } from "@/lib/utils";
 import { WEBHOOK_EVENTS } from "@/lib/webhooks";
-import type { ActionRow } from "@/lib/actions";
 import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from "@/lib/api-keys";
 import { TRIAL_KEY_PERMISSIONS } from "@/lib/integrations-plan";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { ActionFields } from "@/components/integrations/action-fields";
 import { ScopeFieldset } from "@/components/integrations/scope-fieldset";
-import { createAgencyApiKey, createAgencyWebhook, deleteAgencyWebhook, deleteBotAction, revokeAgencyApiKey, rotateBotActionSecret, saveBotAction, setAgencyWebhookActive, testAgencyWebhook, testBotAction } from "./actions";
+import { createAgencyApiKey, createAgencyWebhook, deleteAgencyWebhook, revokeAgencyApiKey, setAgencyWebhookActive, testAgencyWebhook } from "./actions";
 
 export const metadata = { title: "Integrações" };
 // o Testar chama o endpoint (até 8 s) e salvar classifica a ação com IA
 export const maxDuration = 30;
 
 const TABS = [
-  ["acoes", "Ações"],
   ["webhooks", "Webhooks"],
   ["chaves", "Chaves de API"],
   ["logs", "Logs"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
-const LEVEL_LABEL: Record<string, string> = { anonimo: "qualquer contato", canal: "telefone conhecido", usuario: "identificado pela empresa" };
 const CALL_TONE: Record<string, string> = { ok: "text-brand", not_found: "text-amber-ink", error: "text-danger", timeout: "text-danger", uncertain: "text-danger", blocked: "text-danger" };
 const DELIVERY_LABEL: Record<string, string> = { delivered: "entregue", failed: "falhou", pending: "nova tentativa agendada" };
 
-/** Segredo anterior ainda valendo (troca sem queda): até quando. */
-const previousSecretNote = (until: string | null) => (until && Date.parse(until) > Date.now() ? ` O anterior vale até ${new Date(until).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.` : "");
 const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 100)}%` : "—");
 
 /**
- * Integrações (C pública, parte 1a): ações de consulta que a IA chama na conversa, webhooks de
- * eventos, chaves da API e o registro das chamadas. Dono e administrador mexem (com o segundo
- * fator); o editor só vê as ações dos chatbots do escopo dele.
+ * Integrações da conta (C pública): webhooks de eventos, chaves da API e o registro das chamadas
+ * e entregas. Cobrem vários clientes de uma vez, então ficam na conta, só para dono e
+ * administrador, com o segundo fator. As ações de consulta ficam em cada chatbot (aba Ações).
  */
 export default async function IntegrationsPage({ searchParams }: PageProps<"/painel/integracoes">) {
-  const [{ agency, plan, role }, sp] = await Promise.all([requirePermission("config"), searchParams]);
-  const manage = can(role, "integrations");
+  const [{ agency, plan, role }, sp] = await Promise.all([requirePermission("integrations"), searchParams]);
   const limits = planLimits(plan.id);
   const query = new URLSearchParams(Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : []))).toString();
-  if (manage && limits.integrations) await requireAgencyMfa(`/painel/integracoes${query ? `?${query}` : ""}`);
-  const tabs = TABS.filter(([t]) => manage || t === "acoes");
-  const tab = (tabs.some(([t]) => t === sp.aba) ? sp.aba : "acoes") as Tab;
+  if (limits.integrations) await requireAgencyMfa(`/painel/integracoes${query ? `?${query}` : ""}`);
+  const tab = (TABS.some(([t]) => t === sp.aba) ? sp.aba : "webhooks") as Tab;
 
   if (!limits.integrations) {
     return (
@@ -70,7 +61,7 @@ export default async function IntegrationsPage({ searchParams }: PageProps<"/pai
 
   const supabase = await createClient();
   // a RLS limita os chatbots ao escopo de quem está logado
-  const { data: botRows } = await supabase.from("bots").select("id, name, client_name, action_secret_enc, action_secret_prev_until").eq("is_demo", false).order("created_at");
+  const { data: botRows } = await supabase.from("bots").select("id, name, client_name").eq("is_demo", false).order("created_at");
   const bots = botRows ?? [];
   const botName = new Map(bots.map((b) => [b.id as string, b.name as string]));
   const db = createAdminClient();
@@ -80,136 +71,26 @@ export default async function IntegrationsPage({ searchParams }: PageProps<"/pai
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold sm:text-[28px]">Integrações</h1>
         <p className="text-sm text-muted">
-          Ligue o assistente ao sistema do cliente: ações de consulta que a IA chama na conversa, webhooks que avisam o sistema do que acontece e a API para ele agir por conta própria.
+          Webhooks que avisam o sistema do cliente do que acontece e chaves para ele usar a API. As ações de consulta que a IA chama na conversa ficam em cada chatbot, na aba Ações.
           {plan.id === "trial" ? " No teste grátis: ações de consulta e chaves de leitura e pausa." : ""}
         </p>
       </div>
       <nav className="flex gap-1 overflow-x-auto border-b border-line" aria-label="Integrações">
-        {tabs.map(([key, label]) => (
+        {TABS.map(([key, label]) => (
           <Link key={key} href={`/painel/integracoes?aba=${key}`} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm ${tab === key ? "border-brand font-semibold text-brand" : "border-transparent font-medium text-ink-2 hover:text-ink"}`}>
             {label}
           </Link>
         ))}
       </nav>
 
-      {tab === "acoes" && <ActionsTab bots={bots} selected={typeof sp.bot === "string" ? sp.bot : null} manage={manage} />}
-      {tab === "webhooks" && manage && <WebhooksTab agencyId={agency.id} webhookLimit={limits.webhooks} bots={bots} botName={botName} />}
-      {tab === "chaves" && manage && <KeysTab agencyId={agency.id} trial={plan.id === "trial"} bots={bots} botName={botName} />}
-      {tab === "logs" && manage && <LogsTab agencyId={agency.id} botIds={bots.map((b) => b.id as string)} botName={botName} db={db} />}
+      {tab === "webhooks" && <WebhooksTab agencyId={agency.id} webhookLimit={limits.webhooks} bots={bots} botName={botName} />}
+      {tab === "chaves" && <KeysTab agencyId={agency.id} trial={plan.id === "trial"} bots={bots} botName={botName} />}
+      {tab === "logs" && <LogsTab agencyId={agency.id} botIds={bots.map((b) => b.id as string)} botName={botName} db={db} />}
     </div>
   );
 }
 
-type BotRow = { id: unknown; name: unknown; client_name: unknown; action_secret_enc: unknown; action_secret_prev_until: unknown };
-
-async function ActionsTab({ bots, selected, manage }: { bots: BotRow[]; selected: string | null; manage: boolean }) {
-  if (!bots.length) return <p className="card p-5 text-sm text-muted">Nenhum chatbot ainda.</p>;
-  const bot = bots.find((b) => b.id === selected) ?? bots[0];
-  const botId = bot.id as string;
-  const db = createAdminClient();
-  const { data: rows } = await db.from("actions").select("*").eq("bot_id", botId).order("name");
-  const actions = (rows ?? []) as unknown as Array<ActionRow & { updated_at: string; creates_order: boolean; paused_by_plan_at: string | null }>;
-  // última chamada e taxa de erro de cada ação nos últimos 7 dias
-  const since = daysAgoIso(7);
-  const { data: calls } = actions.length ? await db.from("action_calls").select("action_id, status, created_at").in("action_id", actions.map((a) => a.id)).gte("created_at", since).neq("mode", "test").order("created_at", { ascending: false }).limit(2000) : { data: [] };
-  const stats = new Map<string, { total: number; errors: number; last: string | null }>();
-  for (const c of calls ?? []) {
-    const s = stats.get(c.action_id as string) ?? { total: 0, errors: 0, last: null };
-    s.total++;
-    if (["error", "timeout", "uncertain"].includes(c.status as string)) s.errors++;
-    s.last ??= c.created_at as string;
-    stats.set(c.action_id as string, s);
-  }
-
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-muted">Chatbot:</span>
-        {bots.map((b) => (
-          <Link key={b.id as string} href={`/painel/integracoes?aba=acoes&bot=${b.id as string}`} className={`rounded-full border px-3 py-1 text-xs font-semibold ${b.id === botId ? "border-brand bg-brand text-ground" : "border-line bg-panel text-ink-2 hover:bg-ground"}`}>
-            {b.name as string} <span className="font-normal opacity-80">· {b.client_name as string}</span>
-          </Link>
-        ))}
-      </div>
-
-      {manage && (
-        <ResultForm action={rotateBotActionSecret.bind(null, botId)} copy className="card p-4">
-          <div className="text-sm font-semibold">Segredo de ações deste chatbot</div>
-          <p className="text-xs text-muted">
-            {bot.action_secret_enc ? "Configurado." : "Ainda não gerado: as ações deste chatbot não funcionam sem ele."}
-            {previousSecretNote(bot.action_secret_prev_until as string | null)} Cada chamada vai assinada no padrão Standard Webhooks; o seu endpoint confere com este segredo. Aparece uma vez só: quem perder, gera outro.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <SubmitButton className="btn-ghost py-1.5" pendingLabel="Gerando…">{bot.action_secret_enc ? "Trocar o segredo" : "Gerar segredo"}</SubmitButton>
-            {Boolean(bot.action_secret_enc) && (
-              <label className="flex items-center gap-1.5 text-xs">
-                <input type="checkbox" name="invalidate" /> invalidar o anterior agora (vazou)
-              </label>
-            )}
-          </div>
-        </ResultForm>
-      )}
-
-      <div className="card overflow-hidden">
-        {actions.length ? (
-          actions.map((a) => {
-            const s = stats.get(a.id);
-            return (
-              <details key={a.id} className="border-b border-line-2 last:border-0">
-                <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
-                  <span className="font-mono font-semibold">{a.name}</span>
-                  <span className={a.active ? "text-xs text-brand" : "text-xs text-muted"}>{a.active ? "ativa" : "desativada"}</span>
-                  <span className="text-xs text-muted">consulta · {LEVEL_LABEL[a.min_level] ?? a.min_level}</span>
-                  {a.creates_order && <span className="text-xs text-danger">parece criar pedido, reserva ou cobrança (fica desativada até a confirmação por botão)</span>}
-                  {a.paused_by_plan_at && <span className="text-xs text-amber-ink">pausada pelo plano</span>}
-                  <span className="ml-auto text-xs text-muted">
-                    {s ? `última chamada ${relativeTime(s.last!)} · erros ${pct(s.errors, s.total)} em 7 dias` : "sem chamadas em 7 dias"}
-                  </span>
-                </summary>
-                <div className="flex flex-col gap-4 border-t border-line-2 px-4 py-4">
-                  {manage ? (
-                    <>
-                      <ActionFields action={saveBotAction.bind(null, botId, a.id)} a={a} label="Salvar" />
-                      <ResultForm action={testBotAction.bind(null, a.id)} className="border-t border-line-2 pt-3">
-                        <label className="label" htmlFor={`test-${a.id}`}>Testar (chama o endpoint de verdade, com test: true)</label>
-                        <textarea id={`test-${a.id}`} name="params" rows={3} className="input font-mono text-xs" defaultValue="{}" />
-                        <SubmitButton className="btn-ghost self-start py-1.5" pendingLabel="Chamando…">Testar</SubmitButton>
-                      </ResultForm>
-                      <ConfirmAction action={deleteBotAction.bind(null, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="self-start text-xs font-semibold text-danger hover:underline">
-                        Apagar ação
-                      </ConfirmAction>
-                    </>
-                  ) : (
-                    <div className="flex flex-col gap-1 text-sm">
-                      <p className="text-ink-2">{a.description}</p>
-                      <p className="truncate font-mono text-xs text-muted">{a.url}</p>
-                      <p className="text-xs text-muted">Só o dono ou um administrador da agência edita as ações.</p>
-                    </div>
-                  )}
-                </div>
-              </details>
-            );
-          })
-        ) : (
-          <p className="px-5 py-6 text-center text-sm text-muted">Nenhuma ação neste chatbot.</p>
-        )}
-      </div>
-
-      {manage && (
-        <details className="card p-4">
-          <summary className="cursor-pointer text-sm font-semibold">+ Nova ação de consulta</summary>
-          <p className="mt-2 text-xs text-muted">
-            A IA chama a ação quando a descrição combina com a conversa e responde com o que o endpoint devolver (data, reply exato ou anexos). Ação que cria pedido, reserva ou cobrança precisa de confirmação por
-            botão do contato, que chega numa próxima parte: por enquanto ela fica salva e desativada.
-          </p>
-          <div className="mt-3">
-            <ActionFields action={saveBotAction.bind(null, botId, null)} label="Criar ação" />
-          </div>
-        </details>
-      )}
-    </>
-  );
-}
+type BotRow = { id: unknown; name: unknown; client_name: unknown };
 
 async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId: string; webhookLimit: number; bots: BotRow[]; botName: Map<string, string> }) {
   const db = createAdminClient();

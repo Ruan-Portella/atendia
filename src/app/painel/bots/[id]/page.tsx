@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { BotActions } from "@/components/integrations/bot-actions";
+import { requireAgencyMfa } from "@/lib/agency-mfa";
+import { planLimits } from "@/lib/plan-limits";
 import { campaignsInPlan } from "@/lib/plan-limits";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
@@ -59,6 +62,7 @@ const TABS = [
   ["aparencia", "Aparência e marca"],
   ["leads", "Captura de leads"],
   ["atendimento", "Atendimento humano"],
+  ["acoes", "Ações"],
   ["conversas", "Conversas"],
   ["whatsapp", "WhatsApp"],
   ["instagram", "Instagram"],
@@ -80,6 +84,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const igAllowed = access.instagram === "liberado";
   const tabs = TABS.filter(([t]) => (canConfig || t === "conversas") && (t === "whatsapp" ? waAllowed || waWaiting : t === "instagram" ? igAllowed : true));
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : canConfig ? "fontes" : "conversas") as Tab;
+  // Ações (C pública): dono e administrador mexem com o segundo fator; o editor só vê
+  const manageActions = can(role, "integrations");
+  const actionsInPlan = planLimits(owner.plan).integrations;
+  if (tab === "acoes" && manageActions && actionsInPlan) await requireAgencyMfa(`/painel/bots/${id}?tab=acoes`);
   const supabase = await createClient();
 
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
@@ -637,6 +645,18 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               )}
             </div>
           )}
+
+          {tab === "acoes" &&
+            (bot.is_demo ? (
+              <p className="card p-5 text-sm text-muted">Demonstrações não têm ações: converta a demo em chatbot de um cliente para ligar o sistema dele.</p>
+            ) : actionsInPlan ? (
+              <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
+            ) : (
+              <div className="card flex max-w-[860px] flex-col gap-2 p-5 text-sm">
+                <p className="font-semibold">Ações fazem parte das Integrações, nos planos Agência e Escala.</p>
+                <p className="text-ink-2">Com elas, o assistente consulta o sistema do cliente na conversa: status do pedido, agenda, saldo.</p>
+              </div>
+            ))}
 
           {tab === "instalacao" && (
             <div className="flex max-w-[860px] flex-col gap-5">

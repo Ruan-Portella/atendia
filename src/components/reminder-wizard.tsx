@@ -118,7 +118,7 @@ export function ReminderWizard({ bots }: { bots: Array<{ id: string; name: strin
               ? `O cliente já fez a declaração de consentimento para lembretes: vão para todos da planilha, menos quem pediu para sair. Fuso: ${tzLabel(options.timezone)}.`
               : `O cliente ainda não fez a declaração de consentimento para lembretes: só recebe quem já mandou mensagem ao chatbot. Fuso: ${tzLabel(options.timezone)}.`}{" "}
             {options.clientId && (
-              <Link href={`/painel/clientes/${options.clientId}?tab=dados`} className="font-semibold underline">
+              <Link href={`/painel/clientes/${options.clientId}?tab=campanhas`} className="font-semibold underline">
                 {options.declared ? "Ver a declaração e o fuso" : "Fazer a declaração ou mudar o fuso"}
               </Link>
             )}

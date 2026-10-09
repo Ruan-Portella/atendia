@@ -41,8 +41,8 @@ export default async function CampaignReportPage({ params }: PageProps<"/painel/
   return (
     <div className="flex max-w-[960px] flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link href="/painel/campanhas" className="text-sm font-semibold text-muted">
-          ← Campanhas
+        <Link href={bot?.client_id ? `/painel/clientes/${bot.client_id as string}?tab=campanhas` : "/painel/campanhas"} className="text-sm font-semibold text-muted">
+          ← {bot?.client_id ? `Campanhas de ${bot.client_name as string}` : "Campanhas"}
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold sm:text-[28px]">{c.name}</h1>

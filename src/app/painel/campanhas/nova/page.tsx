@@ -23,7 +23,12 @@ export default async function NewCampaignPage({ searchParams }: PageProps<"/pain
   if (!campaignsInPlan(plan.id)) notFound();
   const kind = sp.tipo === "lembrete" ? "lembrete" : "marketing";
   const supabase = await createClient();
-  const { data: bots } = await supabase.from("bots").select("id, name, client_name").eq("is_demo", false).order("name");
+  // vindo da aba Campanhas do cliente: só os chatbots dele, e a volta é para lá
+  const clientId = typeof sp.cliente === "string" && /^[0-9a-f-]{36}$/i.test(sp.cliente) ? sp.cliente : null;
+  const { data: client } = clientId ? await supabase.from("clients").select("id, name").eq("id", clientId).maybeSingle() : { data: null };
+  let botQuery = supabase.from("bots").select("id, name, client_name").eq("is_demo", false).order("name");
+  if (client) botQuery = botQuery.eq("client_id", client.id as string);
+  const { data: bots } = await botQuery;
   const ids = (bots ?? []).map((b) => b.id as string);
   const { data: channels } = ids.length ? await createAdminClient().from("whatsapp_channels").select("bot_id").in("bot_id", ids).is("disconnected_at", null).not("waba_id", "is", null) : { data: [] };
   const connected = new Set((channels ?? []).map((c) => c.bot_id as string));
@@ -32,8 +37,8 @@ export default async function NewCampaignPage({ searchParams }: PageProps<"/pain
   return (
     <div className="flex max-w-[860px] flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <Link href="/painel/campanhas" className="text-sm font-semibold text-muted">
-          ← Campanhas
+        <Link href={client ? `/painel/clientes/${client.id as string}?tab=campanhas` : "/painel/campanhas"} className="text-sm font-semibold text-muted">
+          ← {client ? `Campanhas de ${client.name as string}` : "Campanhas"}
         </Link>
         <h1 className="text-2xl font-bold sm:text-[28px]">Nova campanha</h1>
         <p className="text-sm text-muted">
@@ -50,7 +55,7 @@ export default async function NewCampaignPage({ searchParams }: PageProps<"/pain
           {KINDS.map((k) => (
             <Link
               key={k.id}
-              href={k.id === "lembrete" ? "/painel/campanhas/nova?tipo=lembrete" : "/painel/campanhas/nova"}
+              href={`/painel/campanhas/nova?${new URLSearchParams({ ...(client ? { cliente: client.id as string } : {}), ...(k.id === "lembrete" ? { tipo: "lembrete" } : {}) }).toString()}`}
               aria-current={kind === k.id ? "page" : undefined}
               className={cn("flex flex-col rounded-lg border p-3 text-sm", kind === k.id ? "border-brand bg-brand-soft/40" : "border-line hover:bg-ground")}
             >

@@ -18,7 +18,8 @@ import { TRIAL_KEY_PERMISSIONS } from "@/lib/integrations-plan";
 
 /*
  * Integrações no painel da agência (C pública, parte 1a): dono e administrador, com o segundo
- * fator, nos planos com Integrações (Agência, Escala e o teste grátis). Cada mudança vai para a
+ * fator, nos planos com Integrações (Agência, Escala e o teste grátis). As ações ficam na aba Ações
+ * de cada chatbot; webhooks e chaves, na área Integrações da conta. Cada mudança vai para a
  * auditoria; chave, segredo, URL nova e webhook novo viram alerta de segurança ao dono.
  */
 
@@ -46,7 +47,10 @@ async function scopedBot(botId: string) {
   return data;
 }
 
-const done = () => revalidatePath("/painel/integracoes");
+const done = (botId?: string) => {
+  revalidatePath("/painel/integracoes");
+  if (botId) revalidatePath(`/painel/bots/${botId}`);
+};
 
 /* ------------------------------------------------------------------ ações */
 
@@ -59,7 +63,7 @@ export async function rotateBotActionSecret(botId: string, fd: FormData): Promis
   const invalidate = fd.get("invalidate") === "on";
   const secret = await rotateActionSecret(c.db, bot.id as string, { invalidatePrevious: invalidate });
   await auditIntegration(c.ctx, "acoes.segredo", { type: "bot", id: bot.id as string }, { invalidou_anterior: invalidate });
-  done();
+  done(bot.id as string);
   return ok(`${secret}\n\nCopie agora: ele não aparece de novo. ${invalidate ? "O anterior deixou de valer." : "O anterior (se havia) vale por mais 24 horas."}`);
 }
 
@@ -80,7 +84,7 @@ export async function saveBotAction(botId: string, actionId: string | null, fd: 
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : "Não foi possível salvar. Tente de novo.");
   if (!data?.length) return fail("Ação não encontrada.");
   await auditIntegration(c.ctx, actionId ? "acoes.editar" : "acoes.criar", { type: "bot", id: bot.id as string }, { name: input.name, url: input.url, creates_order: createsOrder });
-  done();
+  done(bot.id as string);
   return createsOrder
     ? ok("Ação salva e DESATIVADA: ela parece criar pedido, reserva ou cobrança, e isso precisa da confirmação por botão do contato (chega numa próxima parte das Integrações).")
     : ok(`Ação ${input.name} salva${input.active ? " e ativa" : " (desativada)"}.`);
@@ -100,7 +104,7 @@ export async function deleteBotAction(actionId: string): Promise<ActionResult> {
   if (!action) return fail("Ação não encontrada.");
   await c.db.from("actions").delete().eq("id", action.id);
   await auditIntegration(c.ctx, "acoes.apagar", { type: "bot", id: action.bot_id }, { name: action.name });
-  done();
+  done(action.bot_id);
   return ok("Ação apagada.");
 }
 
