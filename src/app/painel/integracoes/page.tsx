@@ -12,7 +12,11 @@ import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ScopeFieldset } from "@/components/integrations/scope-fieldset";
-import { createAgencyApiKey, createAgencyWebhook, deleteAgencyWebhook, revokeAgencyApiKey, setAgencyWebhookActive, testAgencyWebhook } from "./actions";
+import { HeaderFields } from "@/components/integrations/action-fields";
+import { headerNames } from "@/lib/integrations-input";
+import { openField, openNullable } from "@/lib/field-cipher";
+import { unseal } from "@/lib/secret-box";
+import { createAgencyApiKey, createAgencyWebhook, deleteAgencyWebhook, redeliverAgencyDelivery, requeueAgencyFailures, revokeAgencyApiKey, setAgencyWebhookActive, testAgencyWebhook, updateAgencyWebhook } from "./actions";
 
 export const metadata = { title: "Integrações" };
 // o Testar chama o endpoint (até 8 s) e salvar classifica a ação com IA
@@ -95,7 +99,7 @@ type BotRow = { id: unknown; name: unknown; client_name: unknown };
 async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId: string; webhookLimit: number; bots: BotRow[]; botName: Map<string, string> }) {
   const db = createAdminClient();
   const [{ data: hookRows }, { data: clients }] = await Promise.all([
-    db.from("webhooks").select("id, name, url, events, scope_type, scope_bot_ids, scope_client_id, active, disabled_at, disabled_reason, failing_since, created_at, paused_by_plan_at").eq("agency_id", agencyId).order("created_at"),
+    db.from("webhooks").select("id, name, url, events, scope_type, scope_bot_ids, scope_client_id, active, disabled_at, disabled_reason, failing_since, created_at, paused_by_plan_at, headers_enc").eq("agency_id", agencyId).order("created_at"),
     db.from("clients").select("id, name").eq("agency_id", agencyId).order("name"),
   ]);
   const hooks = hookRows ?? [];
@@ -113,6 +117,13 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
     }
     health.set(d.webhook_id as string, h);
   }
+  // falhas em 7 dias, para o "Reenviar falhas desde"
+  const { data: failedRows } = hooks.length ? await db.from("webhook_deliveries").select("webhook_id").in("webhook_id", hooks.map((h) => h.id as string)).eq("status", "failed").gte("created_at", daysAgoIso(7)).limit(5000) : { data: [] };
+  const failed7 = new Map<string, number>();
+  for (const f of failedRows ?? []) failed7.set(f.webhook_id as string, (failed7.get(f.webhook_id as string) ?? 0) + 1);
+  const weekAgo = daysAgoIso(7).slice(0, 10);
+  const botOptions = bots.map((b) => ({ id: b.id as string, name: b.name as string, clientName: b.client_name as string }));
+  const clientOptions = (clients ?? []).map((c) => ({ id: c.id as string, name: c.name as string }));
   const scopeText = (h: Record<string, unknown>) =>
     h.scope_type === "all" ? "todos os chatbots" : h.scope_type === "client" ? `cliente ${clientName.get(h.scope_client_id as string) ?? "?"}` : ((h.scope_bot_ids as string[]) ?? []).map((b) => botName.get(b) ?? "?").join(", ");
 
@@ -133,6 +144,7 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
               <span className="block truncate text-xs text-muted">{h.url as string}</span>
               <span className="block text-xs text-muted">
                 Eventos: {(h.events as string[]).join(", ")} · escopo: {scopeText(h)}
+                {headerNames(h.headers_enc as string | null).length ? ` · cabeçalhos: ${headerNames(h.headers_enc as string | null).join(", ")}` : ""}
               </span>
               <span className="block text-xs text-muted">
                 Saúde em 24 h: {hh ? `${pct(hh.failed, hh.total)} de falha em ${hh.total} entrega${hh.total === 1 ? "" : "s"}${worst ? ` · mais falha: ${worst[0]}` : ""}` : "sem entregas"}
@@ -150,6 +162,41 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
                 Apagar
               </ConfirmAction>
             </div>
+            {(failed7.get(h.id as string) ?? 0) > 0 && (
+              <ResultForm action={requeueAgencyFailures.bind(null, h.id as string)} className="flex-row flex-wrap items-center gap-2 rounded-lg bg-ground p-2">
+                <label className="text-xs" htmlFor={`since-${h.id as string}`}>
+                  {failed7.get(h.id as string)} falha{failed7.get(h.id as string) === 1 ? "" : "s"} em 7 dias. Reenviar as falhas desde
+                </label>
+                <input id={`since-${h.id as string}`} type="date" name="since" defaultValue={h.failing_since ? (h.failing_since as string).slice(0, 10) : weekAgo} className="input w-auto py-1 text-xs" />
+                <SubmitButton className="btn-ghost py-1 text-xs" pendingLabel="Reenviando…">Reenviar</SubmitButton>
+              </ResultForm>
+            )}
+            <details className="rounded-lg border border-line-2 p-3">
+              <summary className="cursor-pointer text-xs font-semibold">Editar</summary>
+              <ResultForm action={updateAgencyWebhook.bind(null, h.id as string)} className="mt-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="label" htmlFor={`wh-name-${h.id as string}`}>Nome</label>
+                    <input id={`wh-name-${h.id as string}`} name="name" required maxLength={80} defaultValue={h.name as string} className="input" />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor={`wh-url-${h.id as string}`}>URL (HTTPS)</label>
+                    <input id={`wh-url-${h.id as string}`} name="url" required defaultValue={h.url as string} className="input" />
+                  </div>
+                </div>
+                <fieldset className="flex flex-col gap-1">
+                  <legend className="label">Eventos</legend>
+                  {WEBHOOK_EVENTS.map((e) => (
+                    <label key={e} className="flex items-center gap-2 text-xs">
+                      <input type="checkbox" name="event" value={e} defaultChecked={(h.events as string[]).includes(e)} /> <span className="font-mono">{e}</span>
+                    </label>
+                  ))}
+                </fieldset>
+                <ScopeFieldset bots={botOptions} clients={clientOptions} value={{ type: h.scope_type as string, botIds: (h.scope_bot_ids as string[] | null) ?? [], clientId: (h.scope_client_id as string | null) ?? null }} />
+                <HeaderFields id={`wh-${h.id as string}`} saved={headerNames(h.headers_enc as string | null)} />
+                <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Salvando…">Salvar</SubmitButton>
+              </ResultForm>
+            </details>
           </div>
         );
       })}
@@ -176,7 +223,8 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
                 </label>
               ))}
             </fieldset>
-            <ScopeFieldset bots={bots.map((b) => ({ id: b.id as string, name: b.name as string, clientName: b.client_name as string }))} clients={(clients ?? []).map((c) => ({ id: c.id as string, name: c.name as string }))} />
+            <ScopeFieldset bots={botOptions} clients={clientOptions} />
+            <HeaderFields id="wh-novo" saved={[]} />
             <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar webhook</SubmitButton>
           </ResultForm>
         </details>
@@ -247,55 +295,72 @@ async function KeysTab({ agencyId, trial, bots, botName }: { agencyId: string; t
   );
 }
 
+/** O corpo guardado, legível (JSON identado quando dá). */
+function pretty(text: string | null): string {
+  if (!text) return "(vazio)";
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2).slice(0, 6000);
+  } catch {
+    return text.slice(0, 6000);
+  }
+}
+
 async function LogsTab({ agencyId, botIds, botName, db }: { agencyId: string; botIds: string[]; botName: Map<string, string>; db: ReturnType<typeof createAdminClient> }) {
   const { data: actionRows } = botIds.length ? await db.from("actions").select("id, name, bot_id").in("bot_id", botIds) : { data: [] };
   const actionOf = new Map((actionRows ?? []).map((a) => [a.id as string, a]));
   const [{ data: calls }, { data: hooks }] = await Promise.all([
-    actionOf.size ? db.from("action_calls").select("id, action_id, call_id, attempt, mode, status, http_status, duration_ms, created_at").in("action_id", [...actionOf.keys()]).order("created_at", { ascending: false }).limit(50) : Promise.resolve({ data: [] }),
-    db.from("webhooks").select("id, name").eq("agency_id", agencyId),
+    actionOf.size ? db.from("action_calls").select("id, action_id, call_id, attempt, mode, status, http_status, duration_ms, created_at, request_enc, response_enc").in("action_id", [...actionOf.keys()]).order("created_at", { ascending: false }).limit(50) : Promise.resolve({ data: [] }),
+    db.from("webhooks").select("id, name, active").eq("agency_id", agencyId),
   ]);
-  const hookName = new Map((hooks ?? []).map((h) => [h.id as string, h.name as string]));
-  const { data: deliveries } = hookName.size ? await db.from("webhook_deliveries").select("id, webhook_id, event_type, status, attempts, last_status, last_error, created_at").in("webhook_id", [...hookName.keys()]).order("created_at", { ascending: false }).limit(50) : { data: [] };
+  const hookOf = new Map((hooks ?? []).map((h) => [h.id as string, h]));
+  const { data: deliveries } = hookOf.size ? await db.from("webhook_deliveries").select("id, webhook_id, event_id, event_type, status, attempts, last_status, last_error, created_at, payload_enc, last_response_enc").in("webhook_id", [...hookOf.keys()]).order("created_at", { ascending: false }).limit(50) : { data: [] };
+  // corpo e resposta abertos só aqui, para quem tem o segundo fator (os cabeçalhos nunca vão para o log)
+  const callRows = await Promise.all(
+    (calls ?? []).map(async (c) => ({ ...c, request: await openNullable("action_calls.request_enc", c.request_enc).catch(() => null), response: await openNullable("action_calls.response_enc", c.response_enc).catch(() => null) })),
+  );
+  const deliveryRows = await Promise.all(
+    (deliveries ?? []).map(async (d) => ({ ...d, body: await openField("webhook_deliveries.payload_enc", d.payload_enc as string).catch(() => null), response: d.last_response_enc ? (() => { try { return unseal(d.last_response_enc as string); } catch { return null; } })() : null })),
+  );
 
   return (
     <>
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="font-semibold">Chamadas de ações</h2>
-        {calls?.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-xs">
-              <thead className="text-left text-muted">
-                <tr>
-                  <th className="py-1 font-semibold">Quando</th>
-                  <th className="py-1 font-semibold">Ação</th>
-                  <th className="py-1 font-semibold">Modo</th>
-                  <th className="py-1 font-semibold">Resultado</th>
-                  <th className="py-1 text-right font-semibold">Tempo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {calls.map((c) => {
-                  const a = actionOf.get(c.action_id as string);
-                  return (
-                    <tr key={c.id as number} className="border-t border-line-2">
-                      <td className="py-1.5">{relativeTime(c.created_at as string)}</td>
-                      <td className="py-1.5">
-                        <span className="font-mono">{(a?.name as string | undefined) ?? "?"}</span> <span className="text-muted">· {botName.get(a?.bot_id as string) ?? ""}</span>
-                      </td>
-                      <td className="py-1.5">
-                        {c.mode as string}
-                        {(c.attempt as number) > 1 ? ` · tentativa ${c.attempt}` : ""}
-                      </td>
-                      <td className={`py-1.5 font-semibold ${CALL_TONE[c.status as string] ?? ""}`}>
-                        {c.status as string}
-                        {c.http_status ? ` · ${c.http_status}` : ""}
-                      </td>
-                      <td className="py-1.5 text-right">{c.duration_ms as number} ms</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <p className="text-xs text-muted">As últimas 50, com o corpo enviado e a resposta. Os cabeçalhos personalizados nunca entram no registro.</p>
+        {callRows.length ? (
+          <div className="flex flex-col divide-y divide-line-2 text-xs">
+            {callRows.map((c) => {
+              const a = actionOf.get(c.action_id as string);
+              return (
+                <details key={c.id as number} className="py-1.5">
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="w-24 text-muted">{relativeTime(c.created_at as string)}</span>
+                    <span>
+                      <span className="font-mono">{(a?.name as string | undefined) ?? "?"}</span> <span className="text-muted">· {botName.get(a?.bot_id as string) ?? ""}</span>
+                    </span>
+                    <span className="text-muted">
+                      {c.mode as string}
+                      {(c.attempt as number) > 1 ? ` · tentativa ${c.attempt}` : ""}
+                    </span>
+                    <span className={`font-semibold ${CALL_TONE[c.status as string] ?? ""}`}>
+                      {c.status as string}
+                      {c.http_status ? ` · ${c.http_status}` : ""}
+                    </span>
+                    <span className="ml-auto text-muted">{c.duration_ms as number} ms</span>
+                  </summary>
+                  <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                    <div>
+                      <span className="label">Enviado</span>
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ground p-2 font-mono">{pretty(c.request)}</pre>
+                    </div>
+                    <div>
+                      <span className="label">Resposta</span>
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ground p-2 font-mono">{pretty(c.response)}</pre>
+                    </div>
+                  </div>
+                </details>
+              );
+            })}
           </div>
         ) : (
           <p className="text-sm text-muted">Nenhuma chamada ainda.</p>
@@ -304,33 +369,44 @@ async function LogsTab({ agencyId, botIds, botName, db }: { agencyId: string; bo
 
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="font-semibold">Entregas de webhooks</h2>
-        {deliveries?.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-xs">
-              <thead className="text-left text-muted">
-                <tr>
-                  <th className="py-1 font-semibold">Quando</th>
-                  <th className="py-1 font-semibold">Webhook</th>
-                  <th className="py-1 font-semibold">Evento</th>
-                  <th className="py-1 font-semibold">Situação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deliveries.map((d) => (
-                  <tr key={d.id as string} className="border-t border-line-2">
-                    <td className="py-1.5">{relativeTime(d.created_at as string)}</td>
-                    <td className="py-1.5">{hookName.get(d.webhook_id as string)}</td>
-                    <td className="py-1.5 font-mono">{d.event_type as string}</td>
-                    <td className={`py-1.5 font-semibold ${d.status === "delivered" ? "text-brand" : d.status === "failed" ? "text-danger" : "text-amber-ink"}`}>
+        <p className="text-xs text-muted">As últimas 50, com o corpo e o começo da resposta. Reenviar usa o mesmo id de evento, com assinatura nova.</p>
+        {deliveryRows.length ? (
+          <div className="flex flex-col divide-y divide-line-2 text-xs">
+            {deliveryRows.map((d) => {
+              const hook = hookOf.get(d.webhook_id as string);
+              return (
+                <details key={d.id as string} className="py-1.5">
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="w-24 text-muted">{relativeTime(d.created_at as string)}</span>
+                    <span>{(hook?.name as string | undefined) ?? "?"}</span>
+                    <span className="font-mono">{d.event_type as string}</span>
+                    <span className={`font-semibold ${d.status === "delivered" ? "text-brand" : d.status === "failed" ? "text-danger" : "text-amber-ink"}`}>
                       {DELIVERY_LABEL[d.status as string] ?? (d.status as string)}
                       {d.last_status ? ` · HTTP ${d.last_status as number}` : ""}
                       {(d.attempts as number) > 1 ? ` · ${d.attempts as number} tentativas` : ""}
                       {d.status !== "delivered" && d.last_error ? ` · ${d.last_error as string}` : ""}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </span>
+                  </summary>
+                  <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                    <div>
+                      <span className="label">Corpo ({d.event_id as string})</span>
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ground p-2 font-mono">{pretty(d.body)}</pre>
+                    </div>
+                    <div>
+                      <span className="label">Resposta</span>
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ground p-2 font-mono">{pretty(d.response)}</pre>
+                    </div>
+                  </div>
+                  {hook?.active ? (
+                    <ResultForm action={redeliverAgencyDelivery.bind(null, d.id as string)} className="mt-2">
+                      <SubmitButton className="btn-ghost self-start py-1 text-xs" pendingLabel="Reenviando…">Reenviar</SubmitButton>
+                    </ResultForm>
+                  ) : (
+                    <p className="mt-2 text-muted">Reative o webhook para reenviar.</p>
+                  )}
+                </details>
+              );
+            })}
           </div>
         ) : (
           <p className="text-sm text-muted">Nenhuma entrega ainda.</p>

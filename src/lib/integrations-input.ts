@@ -4,6 +4,8 @@ import { BlockedUrlError, checkUrl } from "./safe-fetch";
 import { WEBHOOK_EVENTS, type WebhookEvent } from "./webhooks";
 import type { ApiKeyScope } from "./api-keys";
 import type { ActionInput, ActionLevel } from "./actions";
+import { parseCustomHeaders } from "./custom-headers";
+import { seal, unseal } from "./secret-box";
 
 /*
  * Formulários das Integrações (C pública): o mesmo cadastro de ação, escopo e webhook serve ao
@@ -76,4 +78,30 @@ export function webhookInputFromForm(fd: FormData, allowedEvents: readonly Webho
     .filter((e): e is WebhookEvent => (allowedEvents as readonly string[]).includes(e));
   if (!events.length) return { error: "Marque ao menos um evento." };
   return { name, url, events };
+}
+
+/**
+ * Cabeçalhos personalizados do formulário: texto novo troca todos, "apagar" tira, vazio mantém os
+ * guardados (os valores nunca voltam à tela). headers: objeto = troca, null = apaga, undefined = mantém.
+ */
+export function headersFromForm(fd: FormData): { headers: Record<string, string> | null | undefined } | { error: string } {
+  if (fd.get("headers_clear") === "on") return { headers: null };
+  const text = String(fd.get("headers") ?? "").trim();
+  if (!text) return { headers: undefined };
+  const r = parseCustomHeaders(text);
+  return "error" in r ? r : { headers: r.headers };
+}
+
+/** A coluna headers_enc para gravar (nada quando é para manter). */
+export const headersColumn = (h: Record<string, string> | null | undefined): { headers_enc?: string | null } => (h === undefined ? {} : { headers_enc: h && Object.keys(h).length ? seal(JSON.stringify(h)) : null });
+
+/** Nomes dos cabeçalhos personalizados guardados (os valores nunca voltam à tela). */
+export const headerNames = (headersEnc: string | null | undefined): string[] => (headersEnc ? Object.keys(JSON.parse(unseal(headersEnc)) as Record<string, string>) : []);
+
+/**
+ * Quanto as ações ativas pesam em cada resposta da IA (as definições vão junto em toda chamada):
+ * cerca de 4 caracteres por token, mais a moldura de cada ferramenta. Estimativa. Pura.
+ */
+export function actionsTokenWeight(actions: Array<{ name: string; description: string; params_schema: unknown; active: boolean }>): number {
+  return actions.filter((a) => a.active).reduce((t, a) => t + Math.ceil(JSON.stringify({ name: `acao_${a.name}`, description: a.description, parameters: a.params_schema }).length / 4) + 10, 0);
 }

@@ -26,7 +26,7 @@ import { deadline, withCronLock } from "@/lib/cron";
 import { costText, createCampaign, estimateFor, runCampaignTick, setCampaignStatus, templateProblem } from "@/lib/campaigns";
 import { whatsappContact } from "@/lib/contacts";
 import { canonicalPhone } from "@/lib/phone";
-import { actionInputFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
+import { actionInputFromForm, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -538,10 +538,12 @@ export async function saveAction(agencyId: string, botId: string, actionId: stri
   if ("error" in input) return fail(input.error);
   const problem = actionInputProblem(input);
   if (problem) return fail(problem);
+  const h = headersFromForm(fd);
+  if ("error" in h) return fail(h.error);
   const db = createAdminClient();
   // efeito classificado pela IA do BoaVoz: pedido, reserva ou cobrança só com confirmação por botão (C pública)
   const createsOrder = await classifyCreatesOrder(db, agencyId, input);
-  const row = { bot_id: botId, ...input, type: "query", active: input.active && !createsOrder, creates_order: createsOrder, updated_at: new Date().toISOString() };
+  const row = { bot_id: botId, ...input, ...headersColumn(h.headers), type: "query", active: input.active && !createsOrder, creates_order: createsOrder, updated_at: new Date().toISOString() };
   const { error } = actionId ? await db.from("actions").update(row).eq("id", actionId).eq("bot_id", botId) : await db.from("actions").insert(row);
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : `Não foi possível salvar: ${error.message}`);
   await auditAdmin(s.email, actionId ? "acoes.editar" : "acoes.criar", { agencyId, targetType: "bot", targetId: botId, after: { name: input.name, url: input.url, creates_order: createsOrder } });

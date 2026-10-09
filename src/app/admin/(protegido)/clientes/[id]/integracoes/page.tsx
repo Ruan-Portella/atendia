@@ -12,6 +12,7 @@ import { WEBHOOK_EVENTS } from "@/lib/webhooks";
 import type { ActionRow } from "@/lib/actions";
 import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from "@/lib/api-keys";
 import { ActionFields } from "@/components/integrations/action-fields";
+import { headerNames } from "@/lib/integrations-input";
 
 export const metadata = { title: "Integrações (piloto)" };
 // o Testar chama o endpoint (até 8 s) e salvar classifica a ação com IA
@@ -104,7 +105,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
                   <span className="block truncate text-xs text-muted">{a.url}</span>
                 </summary>
                 <div className="mt-3 flex flex-col gap-4">
-                  <ActionFields action={saveAction.bind(null, id, b.id as string, a.id)} a={a} label="Salvar" />
+                  <ActionFields action={saveAction.bind(null, id, b.id as string, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
                   <ResultForm action={testAction.bind(null, id, a.id)} className="border-t border-line-2 pt-3">
                     <label className="label" htmlFor={`test-${a.id}`}>Testar (chama o endpoint de verdade, com test: true)</label>
                     <textarea id={`test-${a.id}`} name="params" rows={3} className="input font-mono text-xs" defaultValue="{}" />

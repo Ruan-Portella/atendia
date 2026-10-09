@@ -5,6 +5,7 @@ import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ActionFields } from "@/components/integrations/action-fields";
+import { actionsTokenWeight, headerNames } from "@/lib/integrations-input";
 import { deleteBotAction, rotateBotActionSecret, saveBotAction, testBotAction } from "@/app/painel/integracoes/actions";
 
 const LEVEL_LABEL: Record<string, string> = { anonimo: "qualquer contato", canal: "telefone conhecido", usuario: "identificado pela empresa" };
@@ -22,6 +23,7 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
   const db = createAdminClient();
   const { data: rows } = await db.from("actions").select("*").eq("bot_id", bot.id).order("name");
   const actions = (rows ?? []) as unknown as Array<ActionRow & { creates_order: boolean; paused_by_plan_at: string | null }>;
+  const weight = actionsTokenWeight(actions);
   // última chamada e taxa de erro de cada ação nos últimos 7 dias
   const { data: calls } = actions.length ? await db.from("action_calls").select("action_id, status, created_at").in("action_id", actions.map((a) => a.id)).gte("created_at", daysAgoIso(7)).neq("mode", "test").order("created_at", { ascending: false }).limit(2000) : { data: [] };
   const stats = new Map<string, { total: number; errors: number; last: string | null }>();
@@ -61,6 +63,12 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
         </ResultForm>
       )}
 
+      {weight > 0 && (
+        <p className="text-xs text-muted">
+          As ações ativas deste chatbot somam ~{weight.toLocaleString("pt-BR")} tokens em cada resposta da IA (as definições vão junto em toda chamada). Descrições curtas e poucos parâmetros deixam a resposta mais rápida e barata.
+        </p>
+      )}
+
       <div className="card overflow-hidden">
         {actions.length ? (
           actions.map((a) => {
@@ -78,7 +86,7 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
                 <div className="flex flex-col gap-4 border-t border-line-2 px-4 py-4">
                   {manage ? (
                     <>
-                      <ActionFields action={saveBotAction.bind(null, bot.id, a.id)} a={a} label="Salvar" />
+                      <ActionFields action={saveBotAction.bind(null, bot.id, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
                       <ResultForm action={testBotAction.bind(null, a.id)} className="border-t border-line-2 pt-3">
                         <label className="label" htmlFor={`test-${a.id}`}>Testar (chama o endpoint de verdade, com test: true)</label>
                         <textarea id={`test-${a.id}`} name="params" rows={3} className="input font-mono text-xs" defaultValue="{}" />

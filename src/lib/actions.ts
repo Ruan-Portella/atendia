@@ -6,6 +6,7 @@ import { Webhook } from "standardwebhooks";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { seal, unseal } from "./secret-box";
 import { BlockedUrlError, checkUrl, safePost } from "./safe-fetch";
+import { sendableHeaders } from "./custom-headers";
 import { chatModel, classifierModelId, modelCallOptions } from "./ai";
 import { recordAiUsage, usageFrom } from "./ai-usage";
 
@@ -254,7 +255,6 @@ export function callBody(a: Pick<ActionRow, "name" | "bot_id">, callId: string, 
   };
 }
 
-const RESERVED_HEADERS = /^(webhook-|host$|content-length$|content-type$|connection$|transfer-encoding$)/i;
 
 /** Lê a resposta do endpoint: 2xx = ok; 404 = não encontrado; o resto = falha. Função pura. */
 export function readResponse(httpStatus: number, text: string): Pick<CallResult, "status" | "data" | "reply" | "internal" | "attachments" | "outcome" | "error"> {
@@ -299,7 +299,7 @@ export async function callAction(db: SupabaseClient, action: ActionRow, i: CallI
     result = { status: "error", callId, httpStatus: null, durationMs: 0, error: "o bot ainda não tem segredo de ações", warnings: [] };
   } else {
     const headers: Record<string, string> = { "content-type": "application/json", "user-agent": "BoaVoz-Acoes/1" };
-    for (const [k, v] of Object.entries(custom)) if (!RESERVED_HEADERS.test(k)) headers[k] = String(v);
+    Object.assign(headers, sendableHeaders(custom));
     const now = new Date();
     headers["webhook-id"] = callId;
     headers["webhook-timestamp"] = String(Math.floor(now.getTime() / 1000));

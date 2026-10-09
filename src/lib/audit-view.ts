@@ -106,6 +106,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "webhook.apagar": "Webhook apagado",
   "webhook.reativar": "Webhook reativado",
   "webhook.desativar": "Webhook desativado",
+  "webhook.reenviar": "Entrega de webhook reenviada",
+  "webhook.reenviar_falhas": "Falhas de webhook reenviadas",
 };
 
 /** Tipos de evento (o começo da ação) para o filtro. */

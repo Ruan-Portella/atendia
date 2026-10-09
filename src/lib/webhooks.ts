@@ -4,6 +4,7 @@ import { seal, unseal } from "./secret-box";
 import { openField, sealField, scopeOfBot } from "./field-cipher";
 import { newActionSecret, signatureHeader } from "./actions";
 import { safePost } from "./safe-fetch";
+import { sendableHeaders } from "./custom-headers";
 import { contactChannelIds } from "./contacts";
 
 /*
@@ -66,8 +67,10 @@ export interface WebhookRow {
   failing_since: string | null;
   /** Excedente do plano (downgrade): não gera entregas nem acumula. */
   paused_by_plan_at?: string | null;
+  /** Cabeçalhos personalizados, cifrados (C pública). */
+  headers_enc?: string | null;
 }
-const WEBHOOK_COLS = "id, agency_id, url, secret_enc, events, scope_type, scope_bot_ids, scope_client_id, active, failing_since, paused_by_plan_at";
+const WEBHOOK_COLS = "id, agency_id, url, secret_enc, events, scope_type, scope_bot_ids, scope_client_id, active, failing_since, paused_by_plan_at, headers_enc";
 
 /** O webhook recebe eventos deste chatbot? Função pura. */
 export const webhookCovers = (w: Pick<WebhookRow, "scope_type" | "scope_bot_ids" | "scope_client_id">, bot: { id: string; client_id: string | null }) =>
@@ -96,17 +99,43 @@ export async function createWebhook(db: SupabaseClient, i: { agencyId: string; n
   return { id: data.id as string, secret };
 }
 
+/**
+ * Muda o webhook (nome, URL, eventos, escopo e, quando vier, os cabeçalhos: objeto = troca,
+ * null = apaga, undefined = mantém). Devolve false se não é desta agência.
+ */
+export async function updateWebhook(db: SupabaseClient, agencyId: string, id: string, i: { name: string; url: string; events: WebhookEvent[]; scope: { type: "bots"; botIds: string[] } | { type: "client"; clientId: string } | { type: "all" }; headers?: Record<string, string> | null }): Promise<boolean> {
+  const { data } = await db
+    .from("webhooks")
+    .update({
+      name: i.name.trim(),
+      url: i.url,
+      events: i.events,
+      scope_type: i.scope.type,
+      scope_bot_ids: i.scope.type === "bots" ? i.scope.botIds : [],
+      scope_client_id: i.scope.type === "client" ? i.scope.clientId : null,
+      ...(i.headers === undefined ? {} : { headers_enc: i.headers && Object.keys(i.headers).length ? seal(JSON.stringify(i.headers)) : null }),
+    })
+    .eq("id", id)
+    .eq("agency_id", agencyId)
+    .select("id");
+  return Boolean(data?.length);
+}
+
 /* ------------------------------------------------------------------ entrega */
 
-async function post(w: Pick<WebhookRow, "url" | "secret_enc">, id: string, body: string): Promise<{ status: number | null; error: string | null }> {
-  const headers = { "content-type": "application/json", "user-agent": "BoaVoz-Webhooks/1", "webhook-id": id, "webhook-timestamp": String(Math.floor(Date.now() / 1000)), "webhook-signature": signatureHeader([unseal(w.secret_enc)], id, new Date(), body) };
+async function post(w: Pick<WebhookRow, "url" | "secret_enc" | "headers_enc">, id: string, body: string): Promise<{ status: number | null; error: string | null; response: string }> {
+  const custom = w.headers_enc ? sendableHeaders(JSON.parse(unseal(w.headers_enc)) as Record<string, string>) : {};
+  const headers = { ...custom, "content-type": "application/json", "user-agent": "BoaVoz-Webhooks/1", "webhook-id": id, "webhook-timestamp": String(Math.floor(Date.now() / 1000)), "webhook-signature": signatureHeader([unseal(w.secret_enc)], id, new Date(), body) };
   try {
     const r = await safePost(w.url, { body, headers, timeoutMs: TIMEOUT_MS, maxBytes: 4096 });
-    return { status: r.status, error: r.redirect ? "redirecionamento não é seguido" : null };
+    return { status: r.status, error: r.redirect ? "redirecionamento não é seguido" : null, response: r.text.slice(0, 1000) };
   } catch (e) {
-    return { status: null, error: (e as Error).name === "TimeoutError" ? "sem resposta em 10 s" : (e as Error).message.slice(0, 200) };
+    return { status: null, error: (e as Error).name === "TimeoutError" ? "sem resposta em 10 s" : (e as Error).message.slice(0, 200), response: "" };
   }
 }
+
+/** O começo da resposta guardado cifrado, para o log do painel. */
+const responseEnc = (text: string) => (text ? seal(text) : null);
 
 interface DeliveryRow {
   id: string;
@@ -122,13 +151,13 @@ async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = 
   const r = await post(w, d.event_id, body);
   const attempts = d.attempts + 1;
   if (r.status !== null && r.status >= 200 && r.status < 300 && !r.error) {
-    await db.from("webhook_deliveries").update({ status: "delivered", attempts, last_status: r.status, last_error: null, delivered_at: new Date(now).toISOString() }).eq("id", d.id);
+    await db.from("webhook_deliveries").update({ status: "delivered", attempts, last_status: r.status, last_error: null, last_response_enc: responseEnc(r.response), delivered_at: new Date(now).toISOString() }).eq("id", d.id);
     if (w.failing_since) await db.from("webhooks").update({ failing_since: null }).eq("id", w.id);
     return "delivered";
   }
   const gone = r.status === 410;
   const next = gone ? null : nextAttemptAt(attempts, now);
-  await db.from("webhook_deliveries").update({ status: next ? "pending" : "failed", attempts, last_status: r.status, last_error: r.error ?? `HTTP ${r.status}`, ...(next ? { next_attempt_at: next } : {}) }).eq("id", d.id);
+  await db.from("webhook_deliveries").update({ status: next ? "pending" : "failed", attempts, last_status: r.status, last_error: r.error ?? `HTTP ${r.status}`, last_response_enc: responseEnc(r.response), ...(next ? { next_attempt_at: next } : {}) }).eq("id", d.id);
   const failingSince = w.failing_since ?? new Date(now).toISOString();
   if (gone || now - Date.parse(failingSince) > DISABLE_AFTER_MS) {
     await db.from("webhooks").update({ active: false, disabled_at: new Date(now).toISOString(), disabled_reason: gone ? "respondeu 410 Gone" : "3 dias seguidos só de falhas", failing_since: failingSince }).eq("id", w.id);
@@ -190,9 +219,11 @@ export async function emitContactDeleted(db: SupabaseClient, c: { contactId: str
   });
 }
 
-/** Novas tentativas que já venceram (cron e de carona em cada evento novo). */
-export async function retryDueDeliveries(db: SupabaseClient, o: { limit?: number; hasTime?: () => boolean } = {}): Promise<number> {
-  const { data } = await db.from("webhook_deliveries").select("id, webhook_id, event_id, payload_enc, attempts").eq("status", "pending").lte("next_attempt_at", new Date().toISOString()).order("next_attempt_at").limit(o.limit ?? 50);
+/** Novas tentativas que já venceram (cron e de carona em cada evento novo). webhookId: só as desse webhook. */
+export async function retryDueDeliveries(db: SupabaseClient, o: { limit?: number; hasTime?: () => boolean; webhookId?: string } = {}): Promise<number> {
+  let q = db.from("webhook_deliveries").select("id, webhook_id, event_id, payload_enc, attempts").eq("status", "pending").lte("next_attempt_at", new Date().toISOString());
+  if (o.webhookId) q = q.eq("webhook_id", o.webhookId);
+  const { data } = await q.order("next_attempt_at").limit(o.limit ?? 50);
   let done = 0;
   for (const d of (data ?? []) as DeliveryRow[]) {
     if (o.hasTime && !o.hasTime()) break;
@@ -208,13 +239,38 @@ export async function retryDueDeliveries(db: SupabaseClient, o: { limit?: number
   return done;
 }
 
+/**
+ * "Reenviar" uma entrega: o mesmo id de evento, com timestamp e assinatura novos, na hora. Só com
+ * o webhook ativo; o corpo é o guardado (se a linha sumiu por exclusão, não há o que reenviar).
+ */
+export async function redeliver(db: SupabaseClient, agencyId: string, deliveryId: string): Promise<{ result: "delivered" | "pending" | "failed" } | { error: string }> {
+  const { data: d } = await db.from("webhook_deliveries").select("id, webhook_id, event_id, payload_enc, attempts").eq("id", deliveryId).maybeSingle<DeliveryRow>();
+  if (!d) return { error: "Entrega não encontrada (pode ter sido apagada por um pedido de exclusão)." };
+  const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", d.webhook_id).eq("agency_id", agencyId).maybeSingle<WebhookRow>();
+  if (!w) return { error: "Entrega não encontrada." };
+  if (!w.active || w.paused_by_plan_at) return { error: "Reative o webhook antes de reenviar." };
+  return { result: await attempt(db, d, w) };
+}
+
+/** Falhas do webhook desde a data voltam para a fila; as primeiras já saem agora. */
+export async function requeueFailed(db: SupabaseClient, agencyId: string, webhookId: string, since: string, hasTime: () => boolean): Promise<{ requeued: number; sent: number } | { error: string }> {
+  const { data: w } = await db.from("webhooks").select("id, active, paused_by_plan_at").eq("id", webhookId).eq("agency_id", agencyId).maybeSingle();
+  if (!w) return { error: "Webhook não encontrado." };
+  if (!w.active || w.paused_by_plan_at) return { error: "Reative o webhook antes de reenviar as falhas." };
+  const { data } = await db.from("webhook_deliveries").update({ status: "pending", next_attempt_at: new Date().toISOString() }).eq("webhook_id", webhookId).eq("status", "failed").gte("created_at", since).select("id");
+  const requeued = data?.length ?? 0;
+  const sent = requeued ? await retryDueDeliveries(db, { webhookId, hasTime, limit: 200 }) : 0;
+  return { requeued, sent };
+}
+
 /** "Enviar teste": webhook.test com a mesma assinatura, fora das novas tentativas e da contagem para desativar. */
 export async function sendWebhookTest(db: SupabaseClient, webhookId: string, agencyId: string): Promise<{ status: number | null; error: string | null } | null> {
   const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", webhookId).eq("agency_id", agencyId).maybeSingle<WebhookRow>();
   if (!w) return null;
   const now = new Date().toISOString();
   const id = eventId("webhook.test", `${w.id}:${now}`);
-  return post(w, id, JSON.stringify({ id, type: "webhook.test", created_at: now, bot: null, client: null, conversation: null, contact: null, data: {} }));
+  const r = await post(w, id, JSON.stringify({ id, type: "webhook.test", created_at: now, bot: null, client: null, conversation: null, contact: null, data: {} }));
+  return { status: r.status, error: r.error };
 }
 
 /* ------------------------------------------------------------------ vínculos (P2) */

@@ -12,8 +12,9 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { planLimits } from "@/lib/plan-limits";
 import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
 import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiPermission } from "@/lib/api-keys";
-import { createWebhook, sendWebhookTest } from "@/lib/webhooks";
-import { actionInputFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
+import { createWebhook, redeliver, requeueFailed, sendWebhookTest, updateWebhook } from "@/lib/webhooks";
+import { deadline } from "@/lib/cron";
+import { actionInputFromForm, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 import { TRIAL_KEY_PERMISSIONS } from "@/lib/integrations-plan";
 
 /*
@@ -77,13 +78,16 @@ export async function saveBotAction(botId: string, actionId: string | null, fd: 
   if ("error" in input) return fail(input.error);
   const problem = actionInputProblem(input);
   if (problem) return fail(problem);
+  const h = headersFromForm(fd);
+  if ("error" in h) return fail(h.error);
   // efeito classificado pela IA do BoaVoz: pedido, reserva ou cobrança só com confirmação por botão
   const createsOrder = await classifyCreatesOrder(c.db, c.ctx.agency.id, input);
-  const row = { bot_id: bot.id, ...input, type: "query", active: input.active && !createsOrder, creates_order: createsOrder, updated_at: new Date().toISOString() };
+  const row = { bot_id: bot.id, ...input, ...headersColumn(h.headers), type: "query", active: input.active && !createsOrder, creates_order: createsOrder, updated_at: new Date().toISOString() };
   const { data, error } = actionId ? await c.db.from("actions").update(row).eq("id", String(actionId)).eq("bot_id", bot.id as string).select("id") : await c.db.from("actions").insert(row).select("id");
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : "Não foi possível salvar. Tente de novo.");
   if (!data?.length) return fail("Ação não encontrada.");
-  await auditIntegration(c.ctx, actionId ? "acoes.editar" : "acoes.criar", { type: "bot", id: bot.id as string }, { name: input.name, url: input.url, creates_order: createsOrder });
+  // os logs guardam só os nomes dos cabeçalhos, nunca os valores
+  await auditIntegration(c.ctx, actionId ? "acoes.editar" : "acoes.criar", { type: "bot", id: bot.id as string }, { name: input.name, url: input.url, creates_order: createsOrder, ...(h.headers === undefined ? {} : { cabecalhos: h.headers ? Object.keys(h.headers) : [] }) });
   done(bot.id as string);
   return createsOrder
     ? ok("Ação salva e DESATIVADA: ela parece criar pedido, reserva ou cobrança, e isso precisa da confirmação por botão do contato (chega numa próxima parte das Integrações).")
@@ -210,4 +214,46 @@ export async function testAgencyWebhook(id: string): Promise<ActionResult> {
   if (!r) return fail("Webhook não encontrado.");
   const delivered = r.status !== null && r.status >= 200 && r.status < 300 && !r.error;
   return delivered ? ok(`Entregue: HTTP ${r.status}.`) : fail(`Não entregue: ${r.error ?? `HTTP ${r.status}`}.`);
+}
+
+/** Muda o webhook: nome, URL, eventos, escopo e cabeçalhos. Vira alerta ao dono (para onde vão os dados). */
+export async function updateAgencyWebhook(id: string, fd: FormData): Promise<ActionResult> {
+  const c = await integrationsContext();
+  if ("error" in c) return fail(c.error!);
+  const w = webhookInputFromForm(fd);
+  if ("error" in w) return fail(w.error);
+  const scope = await scopeFromForm(c.db, c.ctx.agency.id, fd);
+  if ("error" in scope) return fail(scope.error);
+  const h = headersFromForm(fd);
+  if ("error" in h) return fail(h.error);
+  if (!(await updateWebhook(c.db, c.ctx.agency.id, String(id), { ...w, scope, headers: h.headers }))) return fail("Webhook não encontrado.");
+  await auditIntegration(c.ctx, "webhook.editar", { type: "webhook", id: String(id) }, { name: w.name, url: w.url, events: w.events, escopo: scope, ...(h.headers === undefined ? {} : { cabecalhos: h.headers ? Object.keys(h.headers) : [] }) });
+  done();
+  return ok("Webhook salvo.");
+}
+
+/** "Reenviar": a mesma entrega (mesmo id de evento), com timestamp e assinatura novos, na hora. */
+export async function redeliverAgencyDelivery(deliveryId: string): Promise<ActionResult> {
+  const c = await integrationsContext();
+  if ("error" in c) return fail(c.error!);
+  const r = await redeliver(c.db, c.ctx.agency.id, String(deliveryId));
+  if ("error" in r) return fail(r.error);
+  await auditIntegration(c.ctx, "webhook.reenviar", { type: "webhook_delivery", id: String(deliveryId) }, { resultado: r.result });
+  done();
+  return r.result === "delivered" ? ok("Reenviado e entregue.") : fail(r.result === "pending" ? "Não entregue: ficou agendada uma nova tentativa." : "Não entregue de novo. Veja a resposta no log.");
+}
+
+/** "Reenviar falhas desde <data>": voltam para a fila, e as primeiras já saem agora. */
+export async function requeueAgencyFailures(webhookId: string, fd: FormData): Promise<ActionResult> {
+  const c = await integrationsContext();
+  if ("error" in c) return fail(c.error!);
+  const day = text(fd.get("since"));
+  const since = /^\d{4}-\d{2}-\d{2}$/.test(day) ? new Date(`${day}T00:00:00-03:00`) : null;
+  if (!since || Number.isNaN(since.getTime())) return fail("Escolha a data.");
+  const r = await requeueFailed(c.db, c.ctx.agency.id, String(webhookId), since.toISOString(), deadline(20_000));
+  if ("error" in r) return fail(r.error);
+  await auditIntegration(c.ctx, "webhook.reenviar_falhas", { type: "webhook", id: String(webhookId) }, { desde: day, eventos: r.requeued });
+  done();
+  if (!r.requeued) return ok("Nenhuma falha desde essa data.");
+  return ok(`${r.requeued} evento(s) voltaram para a fila; ${r.sent} já saíram agora${r.requeued > r.sent ? ", o resto sai nas próximas tentativas" : ""}.`);
 }

@@ -32,3 +32,14 @@ describe("formulários das Integrações", () => {
     expect(TRIAL_KEY_PERMISSIONS).not.toContain("campaigns");
   });
 });
+
+describe("cabeçalhos personalizados", () => {
+  it("lê Nome: valor e recusa os reservados", async () => {
+    const { parseCustomHeaders } = await import("../custom-headers");
+    expect(parseCustomHeaders("x-api-key: abc123\nX-Tenant: loja-1")).toEqual({ headers: { "x-api-key": "abc123", "X-Tenant": "loja-1" } });
+    expect(parseCustomHeaders("webhook-signature: x")).toMatchObject({ error: expect.stringMatching(/reservado/) });
+    expect(parseCustomHeaders("Content-Type: text/plain")).toMatchObject({ error: expect.stringMatching(/reservado/) });
+    expect(parseCustomHeaders("sem dois pontos")).toMatchObject({ error: expect.stringMatching(/Nome: valor/) });
+    expect(parseCustomHeaders("x-a: 1\nX-A: 2")).toMatchObject({ error: expect.stringMatching(/duas vezes/) });
+  });
+});
