@@ -124,7 +124,8 @@ export function decideSend(o: { templateCategory: string; suppressed: Suppressio
   if (o.contactGone) return "skipped_contact_deleted";
   if (blocks(o.suppressed, o.templateCategory)) return "skipped_suppressed";
   if (o.templateCategory.toUpperCase() === "MARKETING" && o.consent !== "granted") return "skipped_no_consent";
-  if (o.regulated && o.age !== "sim") return "skipped_no_age";
+  // quem disse "não" ao 18+ não entra em campanha de marketing; bebida ou remédio, só com 18+ confirmado
+  if ((o.templateCategory.toUpperCase() === "MARKETING" && o.age === "nao") || (o.regulated && o.age !== "sim")) return "skipped_no_age";
   return "send";
 }
 
@@ -475,7 +476,7 @@ async function sendRow(db: SupabaseClient, c: CampaignRow, row: SendRow, o: { ch
   const [suppressed, history, age] = await Promise.all([
     activeSuppressions(db, { channel: "whatsapp", ...target }),
     o.category === "MARKETING" ? consentHistory(db, target, 1) : Promise.resolve([]),
-    c.regulated ? getAge(db, { botId: c.bot_id, channel: "whatsapp", contact: phone }) : Promise.resolve(null),
+    getAge(db, { botId: c.bot_id, channel: "whatsapp", contact: phone }),
   ]);
   // marketing gravado pelo contato ("c:") cujo contato foi apagado depois (pedido do titular)
   const decision = decideSend({ templateCategory: o.category, suppressed: suppressed.map((s) => s.kind), consent: consentStateOf(history), regulated: c.regulated, age, contactGone: row.dedupe_key.startsWith("c:") && !row.contact_id });

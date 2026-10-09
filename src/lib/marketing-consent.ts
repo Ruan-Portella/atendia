@@ -304,3 +304,27 @@ export async function carryWhatsAppPreferences(db: SupabaseClient, botId: string
   if (error) console.error("whatsapp: SAIR e aceite não levados para a conta nova", error.message);
   else if (data?.suppressions || data?.consents) console.log("whatsapp: preferências levadas da conta anterior", JSON.stringify(data));
 }
+
+/** Situação do aceite de vários contatos de uma vez (público de campanha). Chave: o contato informado. */
+export async function consentStatesMany(db: SupabaseClient, scope: string, contacts: string[]): Promise<Map<string, ConsentState>> {
+  const byHash = new Map(contacts.map((c) => [contactHash("whatsapp", c), c]));
+  const hashes = [...byHash.keys()];
+  const out = new Map<string, ConsentState>();
+  for (let i = 0; i < hashes.length; i += 300) {
+    const { data, error } = await db
+      .from("marketing_consents")
+      .select("contact_hash, granted, revoked_at")
+      .eq("channel", "whatsapp")
+      .eq("scope", scope)
+      .in("contact_hash", hashes.slice(i, i + 300))
+      .order("collected_at", { ascending: false })
+      .order("id", { ascending: false });
+    if (error) throw new Error(`consentimento: ${error.message}`);
+    // o primeiro de cada contato é o mais recente
+    for (const r of data ?? []) {
+      const contact = byHash.get(r.contact_hash as string)!;
+      if (!out.has(contact)) out.set(contact, consentStateOf([r as { granted: boolean; revoked_at: string | null }]));
+    }
+  }
+  return out;
+}

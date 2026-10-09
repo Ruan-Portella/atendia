@@ -36,6 +36,22 @@ export async function getAge(db: SupabaseClient, w: Who, now = Date.now()): Prom
   return data.status as AgeStatus;
 }
 
+/** Idade de vários contatos do WhatsApp de uma vez (público de campanha), com a regra do getAge. Chave: o contato informado. */
+export async function agesMany(db: SupabaseClient, botId: string, contacts: string[], now = Date.now()): Promise<Map<string, AgeStatus>> {
+  const byHash = new Map(contacts.map((c) => [contactHash("whatsapp", c), c]));
+  const hashes = [...byHash.keys()];
+  const out = new Map<string, AgeStatus>();
+  for (let i = 0; i < hashes.length; i += 300) {
+    const { data, error } = await db.from("contact_ages").select("contact_hash, status, decided_at, source").eq("bot_id", botId).in("contact_hash", hashes.slice(i, i + 300));
+    if (error) throw new Error(`idade: ${error.message}`);
+    for (const r of data ?? []) {
+      const stale = r.status === "nao" && r.source !== "empresa" && now - new Date(r.decided_at as string).getTime() > AGE_NO_REASK_DAYS * 86_400_000;
+      out.set(byHash.get(r.contact_hash as string)!, stale ? null : (r.status as AgeStatus));
+    }
+  }
+  return out;
+}
+
 /** Origem da idade no formato da API e das ações: chat (botão de 18+) ou company (a empresa informou). */
 export async function ageSource(db: SupabaseClient, w: Who): Promise<"chat" | "company" | null> {
   const { data } = await db.from("contact_ages").select("source").eq("bot_id", w.botId).eq("contact_hash", contactHash(w.channel, w.contact)).maybeSingle();

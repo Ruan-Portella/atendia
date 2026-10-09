@@ -648,3 +648,54 @@ export async function importWhatsAppContacts(db: SupabaseClient, bot: { id: stri
   }
   return { ids, created, updated };
 }
+
+/** Teto de contatos lidos para o público de uma campanha. */
+export const AUDIENCE_MAX = 10_000;
+
+export interface AudienceContact {
+  id: string;
+  /** canônico, aberto */
+  phone: string | null;
+  name: string | null;
+}
+
+/**
+ * Público de uma campanha (leva B3): os contatos do WhatsApp do chatbot com qualquer uma das
+ * etiquetas e os dos telefones informados, cada um uma vez. Telefone da lista que não é contato
+ * do chatbot volta em unknownPhones (sem contato, não há aceite).
+ */
+export async function campaignAudience(db: SupabaseClient, botId: string, o: { tags: string[]; phones: string[] }): Promise<{ contacts: AudienceContact[]; unknownPhones: string[]; truncated: boolean }> {
+  const rows = new Map<string, Record<string, unknown>>();
+  let truncated = false;
+  if (o.tags.length) {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await db.from("contacts").select("id, name, phone_enc").eq("bot_id", botId).eq("channel", "whatsapp").overlaps("tags", o.tags).order("created_at").range(from, from + 999);
+      if (error) throw new Error(`contatos: ${error.message}`);
+      for (const r of data ?? []) rows.set(r.id as string, r);
+      if ((data ?? []).length < 1000) break;
+      if (rows.size >= AUDIENCE_MAX) {
+        truncated = true;
+        break;
+      }
+    }
+  }
+  const wanted = new Map<string, string>();
+  for (const p of o.phones) {
+    const c = canonicalPhone(p, { typed: true });
+    if (c) wanted.set(phoneHash(c), c);
+  }
+  const found = new Set<string>();
+  const hashes = [...wanted.keys()];
+  for (let i = 0; i < hashes.length; i += 300) {
+    const { data, error } = await db.from("contacts").select("id, name, phone_enc, phone_hash").eq("bot_id", botId).eq("channel", "whatsapp").in("phone_hash", hashes.slice(i, i + 300));
+    if (error) throw new Error(`contatos: ${error.message}`);
+    for (const r of data ?? []) {
+      rows.set(r.id as string, r);
+      found.add(r.phone_hash as string);
+    }
+  }
+  const list = [...rows.values()].slice(0, AUDIENCE_MAX);
+  if (rows.size > AUDIENCE_MAX) truncated = true;
+  const contacts = await Promise.all(list.map(async (r) => ({ id: r.id as string, name: (r.name as string | null) ?? null, phone: canonicalPhone(await openNullable("contacts.phone_enc", r.phone_enc)) })));
+  return { contacts, unknownPhones: hashes.filter((h) => !found.has(h)).map((h) => wanted.get(h)!), truncated };
+}

@@ -990,8 +990,8 @@ export async function createWhatsAppTemplate(botId: string, formData: FormData):
   const name = templateName(text(formData.get("name")));
   const body = String(formData.get("body") ?? "").trim();
   const examples = lines(String(formData.get("examples") ?? ""));
-  // marketing só volta na B3, com o consentimento registrado
-  const category = "UTILITY";
+  // marketing (leva B3): só sai em campanha para quem aceitou novidades
+  const category = text(formData.get("category")) === "MARKETING" ? "MARKETING" : "UTILITY";
   const invalid = validateTemplate({ name, body, examples });
   if (invalid) return fail(invalid);
   try {

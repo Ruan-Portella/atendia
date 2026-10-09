@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Sparkles, Palette, Share2, CreditCard, ShieldCheck, UsersRound, CircleUser } from "lucide-react";
+import { Users, Sparkles, Palette, Share2, CreditCard, ShieldCheck, UsersRound, CircleUser, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type AgencyRole, type Permission } from "@/lib/roles";
 
 /** Itens do menu e quem vê cada um (equipe, leva B1'). */
 const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Permission; also?: string }> = [
   { href: "/painel/clientes", label: "Clientes", icon: Users, perm: "attend", also: "/painel/bots" },
+  { href: "/painel/campanhas", label: "Campanhas", icon: Megaphone, perm: "config" },
   { href: "/painel/demos", label: "Demos", icon: Sparkles, perm: "config" },
   { href: "/painel/marca", label: "Marca e domínio", icon: Palette, perm: "brand" },
   { href: "/painel/equipe", label: "Equipe", icon: UsersRound, perm: "team" },

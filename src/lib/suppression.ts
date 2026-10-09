@@ -28,6 +28,22 @@ interface Target {
   contact: string;
 }
 
+/** Categorias suprimidas e ativas de vários contatos de uma vez (público de campanha). Chave: o contato informado. */
+export async function activeSuppressionsMany(db: SupabaseClient, t: { channel: SuppressionChannel; scope: string; contacts: string[] }): Promise<Map<string, SuppressionKind[]>> {
+  const byHash = new Map(t.contacts.map((c) => [contactHash(t.channel, c), c]));
+  const hashes = [...byHash.keys()];
+  const out = new Map<string, SuppressionKind[]>();
+  for (let i = 0; i < hashes.length; i += 300) {
+    const { data, error } = await db.from("suppressions").select("contact_hash, kind").eq("channel", t.channel).eq("scope", t.scope).is("revoked_at", null).in("contact_hash", hashes.slice(i, i + 300));
+    if (error) throw new Error(`supressão: ${error.message}`);
+    for (const r of data ?? []) {
+      const contact = byHash.get(r.contact_hash as string)!;
+      out.set(contact, [...(out.get(contact) ?? []), r.kind as SuppressionKind]);
+    }
+  }
+  return out;
+}
+
 /** Categorias suprimidas e ativas para o contato (vazio = pode receber). */
 export async function activeSuppressions(db: SupabaseClient, t: Target): Promise<Array<{ id: number; kind: SuppressionKind }>> {
   const { data, error } = await db.from("suppressions").select("id, kind").eq("contact_hash", contactHash(t.channel, t.contact)).eq("channel", t.channel).eq("scope", t.scope).is("revoked_at", null);
@@ -75,11 +91,17 @@ export async function revoke(db: SupabaseClient, t: Target & { kind?: Suppressio
 
 /* ------------------------------------------------------------------ opt-out pelo chat */
 
-/** SAIR, PARAR ou STOP (sozinhos, sem diferença de maiúsculas, acento ou pontuação). */
+/** Botão de descadastro dos modelos de marketing criados pelo BoaVoz (resposta rápida). */
+export const OPTOUT_BUTTON_TEXT = "Parar promoções";
+
+/**
+ * SAIR, PARAR ou STOP (sozinhos, sem diferença de maiúsculas, acento ou pontuação), ou o botão
+ * "Parar promoções" do modelo de marketing (vale para a categoria do último modelo, marketing).
+ */
 export function isOptOutKeyword(text: string | null | undefined): boolean {
   if (!text) return false;
   const t = text.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z]/g, "").toUpperCase();
-  return t === "SAIR" || t === "PARAR" || t === "STOP";
+  return t === "SAIR" || t === "PARAR" || t === "STOP" || t === "PARARPROMOCOES";
 }
 
 /** Confirmação fixa ao contato (aba Textos legais, seção 6). */

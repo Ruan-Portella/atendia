@@ -33,6 +33,12 @@ export interface PlanLimits {
   integrations: boolean;
 }
 
+/**
+ * Campanhas pelo painel (leva B3): em todos os planos pagos, nunca no teste grátis (spec Peça 7;
+ * também fecha o envio de marketing em massa por conta de teste). Pura.
+ */
+export const campaignsInPlan = (planId: string): boolean => ["freelancer", "agencia", "escala"].includes(getPlan(planId).id);
+
 /** Limites do plano. Pura. */
 export function planLimits(planId: string): PlanLimits {
   const plan = getPlan(planId);

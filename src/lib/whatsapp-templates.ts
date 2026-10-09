@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { graphFor, recipientOf, type WaChannel } from "./whatsapp";
+import { OPTOUT_BUTTON_TEXT } from "./suppression";
 import { TEMPLATE_LANGUAGE, templateVariables, toSendable, unsupportedReason, type SendableTemplate, type Template, type TemplateCategory } from "./template-text";
 
 /**
@@ -38,8 +39,11 @@ export async function createTemplate(ch: TemplateChannel, input: { name: string;
   const vars = templateVariables(input.body);
   const bodyComponent: Record<string, unknown> = { type: "BODY", text: input.body.trim() };
   if (vars.length) bodyComponent.example = { body_text: [input.examples.slice(0, vars.length)] };
+  const components: Array<Record<string, unknown>> = [bodyComponent];
+  // marketing: botão de descadastro (resposta rápida); o toque vale como SAIR das promoções
+  if (input.category === "MARKETING") components.push({ type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: OPTOUT_BUTTON_TEXT }] });
   return graphFor<{ id: string; status: string }>(ch, `${ch.waba_id}/message_templates`, {
-    body: { name: input.name, language: TEMPLATE_LANGUAGE, category: input.category, components: [bodyComponent] },
+    body: { name: input.name, language: TEMPLATE_LANGUAGE, category: input.category, components },
   });
 }
 
