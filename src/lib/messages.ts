@@ -30,6 +30,8 @@ export interface MessageRow {
   tool_results: unknown;
   template_category: string | null;
   channel_msg_id: string | null;
+  /** o status mais avançado que o canal informou (sent, delivered, read, failed) */
+  delivery_status: string | null;
   blocked_reason: string | null;
   failed_at: string | null;
   error_code: string | null;
@@ -197,6 +199,7 @@ export async function touchConversation(db: SupabaseClient, conversationId: stri
 /* ------------------------------------------------------------------ leitura */
 
 export interface MessageQuery {
+  id?: number;
   conversationId?: string;
   conversationIds?: string[];
   inboundKey?: string;
@@ -219,6 +222,7 @@ export interface MessageQuery {
 /** Lê mensagens (o conteúdo é decifrado aqui). Com o cliente da sessão, a RLS continua valendo. */
 export async function loadMessages<K extends MessageColumn>(db: SupabaseClient, q: MessageQuery, columns: readonly K[]): Promise<Array<Pick<MessageRow, K>>> {
   let r = db.from("messages").select(columns.join(", "));
+  if (q.id !== undefined) r = r.eq("id", q.id);
   if (q.conversationId) r = r.eq("conversation_id", q.conversationId);
   if (q.conversationIds) r = r.in("conversation_id", q.conversationIds);
   if (q.inboundKey) r = r.eq("inbound_key", q.inboundKey);

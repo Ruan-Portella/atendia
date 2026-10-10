@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { endApiPauses } from "./api-pause";
 import { getPlan } from "./plans";
 import { inviteOpen, memberLimit, type AgencyMember } from "./team";
 import { audit, type AuditActor } from "./audit";
@@ -192,6 +193,8 @@ export async function applyPlanLimits(db: SupabaseClient, agencyId: string, acto
     await setPaused(db, kind, agencyId, ch.resume, null);
   }
   if (c.actions) await setActionsPaused(db, agencyId, c.actions === "pause" ? now : null);
+  // plano sem Integrações: as pausas da IA feitas pela API acabam de uma vez (com auditoria)
+  if (!s.limits.integrations) await endApiPauses(db, agencyId, "plano");
 
   const changed = [c.bots, c.members, c.webhooks].some((x) => x.pause.length || x.resume.length) || c.actions !== null;
   if (!changed) return c;

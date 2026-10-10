@@ -119,3 +119,24 @@ export async function hasPendingFrom(db: SupabaseClient, source: InboundSource, 
   const { count } = await db.from("inbound_events").select("key_hash", { count: "exact", head: true }).eq("source", source).eq("bot_id", botId).eq("contact_hash", sha256(`${source}:${contact}`)).eq("status", "received");
   return Boolean(count);
 }
+
+/** Id da mensagem num evento rearmado (não é da Meta): não marca "lida" nem conta como mensagem nova do contato. */
+export const REARM_PREFIX = "rearm:";
+export const isRearmed = (id: string | null | undefined) => Boolean(id?.startsWith(REARM_PREFIX));
+
+/**
+ * Rearma um evento já concluído com um corpo novo (a pausa da integração venceu e a última
+ * mensagem do contato ficou sem resposta): a mesma chave faz o reprocesso responder a pergunta já
+ * gravada, sem gravar de novo. Devolve o grupo para processar, ou null se o evento não está lá.
+ */
+export async function rearmInbound(db: SupabaseClient, keyHash: string, source: InboundSource, payload: unknown): Promise<Group | null> {
+  const { data } = await db
+    .from("inbound_events")
+    .update({ status: "received", payload_enc: seal(JSON.stringify(payload)), attempts: 0, locked_until: null, last_error: null })
+    .eq("key_hash", keyHash)
+    .eq("source", source)
+    .eq("status", "done")
+    .select("source, bot_id, contact_hash");
+  const g = data?.[0] as Group | undefined;
+  return g ?? null;
+}

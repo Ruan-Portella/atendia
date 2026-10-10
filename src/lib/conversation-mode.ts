@@ -3,6 +3,7 @@ import { HUMAN_ONLY_NOTICE, aiBlockedReason, type AiBlockReason } from "./chat";
 import { IG_APP_AUTHOR, PHONE_AUTHOR, phonePauseActive } from "./authors";
 import { contactNoticeReason, setContactNotice } from "./contacts";
 import { findMessage } from "./messages";
+import { apiPauseActive } from "./presence";
 
 /*
  * Regra única de estado da conversa (L1; spec "Estados da conversa e precedência"): decide se a
@@ -11,7 +12,8 @@ import { findMessage } from "./messages";
  *   1. Envio bloqueado: canal desconectado; ordem da Meta e desligamento geral (só WhatsApp; a
  *      entrada nem grava); número sem pagamento na Meta (grava e testa de novo depois de 1 hora)
  *   2. Suspensão pela BoaVoz (enforcement_actions): nada sai, nem resposta da equipe pelo painel
- *   3. Humano na conversa: "Assumir" ou resposta pelo celular/app há menos de 1 hora
+ *   3. Humano na conversa: "Assumir", resposta pelo celular/app há menos de 1 hora, ou IA pausada
+ *      pela integração (API, com prazo; sem avisar a equipe)
  *   4. Bot pausado pelo dono (botão de emergência): aviso só se ele pediu
  *   5. Modo só humano: teste vencido, assinatura cancelada, IA pausada pela BoaVoz, chatbot pausado
  *      pelo plano (excedente do downgrade); a cota (do
@@ -42,6 +44,8 @@ export interface ModeFacts {
   boavozSuspended: boolean;
   /** Alguém da equipe assumiu, ou respondeu pelo celular/app há menos de 1 hora. */
   humanInConversation: boolean;
+  /** IA pausada pela integração (POST /v1/conversations/{id}/pause), dentro do prazo. */
+  apiPaused: boolean;
   /** Pausa pelo dono (botão de emergência). */
   botPaused: boolean;
   botPauseNotify: boolean;
@@ -83,7 +87,7 @@ export function decideMode(f: ModeFacts): Mode {
   if (f.boavozSuspended) {
     return { ...base, step: 2, state: "suspenso", reason: "canal suspenso pela BoaVoz", canSend: false, riskWatch: false, notice: f.coexistence ? null : { reason: "suspenso", text: SUSPENDED_NOTICE } };
   }
-  if (f.humanInConversation) return { ...base, step: 3, state: "humano", reason: "equipe na conversa" };
+  if (f.humanInConversation || f.apiPaused) return { ...base, step: 3, state: "humano", reason: f.humanInConversation ? "equipe na conversa" : "IA pausada pela integração" };
   if (f.botPaused) {
     return { ...base, step: 4, state: "bot_pausado", reason: "bot pausado pelo dono", handoff: true, blockReason: "bot_paused", notice: f.botPauseNotify && !f.coexistence ? { reason: "bot_pausado", text: HUMAN_ONLY_NOTICE } : null };
   }
@@ -99,7 +103,7 @@ export const PAYMENT_RETRY_MS = 60 * 60_000;
 export interface ModeInput {
   bot: { id: string; agency_id: string; paused_at?: string | null; pause_notify?: boolean | null; paused_by_plan_at?: string | null };
   channel: ModeChannel;
-  conversation: { id: string; takeover_at?: string | null; handled_at?: string | null } | null;
+  conversation: { id: string; takeover_at?: string | null; handled_at?: string | null; ai_paused_until?: string | null } | null;
   /** Número do WhatsApp ligado ao bot (as colunas que importam aqui). */
   wa?: { disconnected_at?: string | null; payment_issue_at?: string | null; waba_id?: string | null; coexistence?: boolean | null } | null;
   /** Conta do Instagram ligada ao bot. */
@@ -157,6 +161,7 @@ export async function resolveMode(db: SupabaseClient, input: ModeInput, now = Da
     metaPaymentIssue: Boolean(paymentAt) && now - paymentAt < PAYMENT_RETRY_MS,
     boavozSuspended: hits("boavoz"),
     humanInConversation: Boolean(conversation?.takeover_at && !conversation.handled_at) || phonePauseActive(lastHumanReply?.created_at, now),
+    apiPaused: apiPauseActive(conversation?.ai_paused_until, now),
     botPaused: Boolean(bot.paused_at),
     botPauseNotify: Boolean(bot.pause_notify),
     humanOnly: humanOnly ?? (bot.paused_by_plan_at ? "plan_paused" : null),

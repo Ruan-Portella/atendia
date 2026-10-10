@@ -71,9 +71,9 @@ export async function POST(req: Request) {
   // Só continua uma conversa deste bot e da mesma pessoa (navegador ou identidade); qualquer outro id vira conversa nova.
   let convId = conversationId ?? null;
   let handoff: "requested" | "agent" | null = null;
-  let conv: { id: string; takeover_at: string | null; handled_at: string | null } | null = null;
+  let conv: { id: string; takeover_at: string | null; handled_at: string | null; ai_paused_until: string | null } | null = null;
   if (convId) {
-    const { data } = await db.from("conversations").select("id, visitor_id, identity_hash, context_hash, handoff_requested_at, takeover_at, handled_at, last_message_at").eq("id", convId).eq("bot_id", bot.id).maybeSingle();
+    const { data } = await db.from("conversations").select("id, visitor_id, identity_hash, context_hash, handoff_requested_at, takeover_at, handled_at, ai_paused_until, last_message_at").eq("id", convId).eq("bot_id", bot.id).maybeSingle();
     // outra conversa, outra pessoa ou outro contexto, ou parada há horas: começa uma nova
     const access = data ? conversationAccess(data, who, visitorId ?? null) : "denied";
     if (!data || access === "denied" || !isResumable(data.last_message_at)) convId = null;

@@ -332,12 +332,19 @@ export const SYSTEM_AUTHOR = "sistema";
  */
 export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" | "client_name" | "human_handoff">, conversationId: string): Promise<string | null> {
   const [last, ai] = await Promise.all([
-    findMessage(db, { conversationId, notRole: "user", notAuthor: SYSTEM_AUTHOR, newestFirst: true }, ["role"] as const),
+    findMessage(db, { conversationId, notRole: "user", notAuthor: SYSTEM_AUTHOR, newestFirst: true }, ["role", "author_type"] as const),
     findMessage(db, { conversationId, roles: ["assistant"], notAuthor: SYSTEM_AUTHOR }, ["id"] as const),
   ]);
   // a IA nunca falou nesta conversa (mesmo que a equipe tenha aberto com um modelo): apresenta
   if (!ai) return renderAiNotice(bot.human_handoff?.ai_notice, bot);
-  if (last?.role === "agent") return renderBackNotice(bot.human_handoff?.back_notice, bot);
+  if (last?.role === "agent") {
+    // a integração respondeu e devolveu sem pedir anúncio (announce): a IA volta sem o "Voltei!"
+    if (last.author_type === "api") {
+      const { data: conv } = await db.from("conversations").select("ai_pause_announce").eq("id", conversationId).maybeSingle();
+      if (conv?.ai_pause_announce === false) return null;
+    }
+    return renderBackNotice(bot.human_handoff?.back_notice, bot);
+  }
   return null;
 }
 

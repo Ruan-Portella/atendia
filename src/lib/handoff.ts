@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { API_PAUSE_CLEAR } from "./api-pause";
 import { queueHandoffReturned } from "./message-events";
 import { fail, ok, type ActionResult } from "./action-result";
 import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendText } from "./whatsapp";
@@ -56,7 +57,8 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
   const now = new Date().toISOString();
   let q = admin
     .from("conversations")
-    .update({ takeover_at: now, handled_at: null, needs_human: true, assigned_to_type: who.type, assigned_to_id: who.id, assigned_to_name: who.name, assigned_at: now, announce_pending: true })
+    // quem assume fica com a conversa: a pausa da integração (API) acaba junto
+    .update({ takeover_at: now, handled_at: null, needs_human: true, assigned_to_type: who.type, assigned_to_id: who.id, assigned_to_name: who.name, assigned_at: now, announce_pending: true, ...API_PAUSE_CLEAR })
     .eq("id", conversationId);
   if (!opts.force) q = q.or("takeover_at.is.null,handled_at.not.is.null,assigned_to_id.is.null");
   const { data, error } = await q.select("id");

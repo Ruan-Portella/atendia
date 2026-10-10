@@ -45,7 +45,7 @@ export function sourceOf(m: { author?: string | null; author_type?: string | nul
   }
 }
 
-interface SavedMessage {
+export interface SavedMessage {
   conversation_id: string;
   role: string;
   content: string;
@@ -87,7 +87,7 @@ export async function contactObject(db: SupabaseClient, contactId: string | null
 }
 
 /** Quem enviou: atendente (equipe ou portal), integração pela API ou o app do celular. */
-function agentObject(m: SavedMessage, source: MessageSource): Record<string, unknown> | null {
+export function agentObject(m: SavedMessage, source: MessageSource): Record<string, unknown> | null {
   if (source === "human") return { id: m.author_id ? `mbr_${m.author_id}` : null, display_name: m.author_display_name ?? null, type: m.author_type };
   if (source === "api") return { type: "api", display_name: m.author_display_name ?? null, sender: m.author ?? null };
   if (source === "phone_app") return { type: "phone_app", display_name: null };

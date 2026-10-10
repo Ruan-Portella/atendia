@@ -88,3 +88,6 @@ export function whatsappWindowOpen(c: PresenceInput, now = Date.now()): boolean 
   const from = c.last_user_at ?? c.last_message_at;
   return now - new Date(from).getTime() < WHATSAPP_WINDOW_HOURS * 3_600_000;
 }
+
+/** A pausa da IA pela integração (API) ainda vale (o tique do minuto encerra a vencida). Pura. */
+export const apiPauseActive = (until: string | null | undefined, now = Date.now()) => Boolean(until) && Date.parse(until!) > now;

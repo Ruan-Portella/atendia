@@ -9,7 +9,7 @@ import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./in
 import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage, updateMessages } from "./messages";
 import { clearUnseen, igUnseenKind, markUnseen, recentUnseen, unseenMediaText, type UnseenMark } from "./unseen-media";
-import { hasPendingFrom, markOwnMessage } from "./inbound-queue";
+import { hasPendingFrom, isRearmed, markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
@@ -101,7 +101,7 @@ const FOLLOW_UP_WAIT_MS = 3500;
 /** Conversa recente do contato com o chatbot (dentro da janela de 24 h). */
 async function recentConversation(db: SupabaseClient, botId: string, igsid: string, contactId: string | null = null): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
-  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, unavailable_notice_reason, contact_id, unseen_media_at, unseen_media_kind").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
+  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, ai_paused_until, unavailable_notice_reason, contact_id, unseen_media_at, unseen_media_kind").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
   if (contactId) {
     const { data } = await recent().eq("contact_id", contactId).maybeSingle<RecentConversation>();
     if (data) return data;
@@ -120,6 +120,8 @@ interface RecentConversation extends UnseenMark {
   contact_id?: string | null;
   takeover_at: string | null;
   handled_at: string | null;
+  /** IA pausada pela integração até (API). */
+  ai_paused_until?: string | null;
   /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
   unavailable_notice_reason?: string | null;
 }
@@ -172,7 +174,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const contactId = contact?.id ?? null;
   let conv = await recentConversation(db, bot.id, igsid, contactId);
   const mode = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch });
-  if (contact && mode.storeInbound) await touchInbound(db, contact);
+  // a pergunta pendente rearmada na volta da IA não é mensagem nova do contato
+  if (contact && mode.storeInbound && !burst.every((q) => isRearmed(q.ev.message?.mid))) await touchInbound(db, contact);
 
   const reply = (text: string) => send(db, ch, igsid, text);
   /** Texto pela camada única de envio: regra de estado na hora do envio e registro na conversa. */

@@ -1,7 +1,7 @@
-import { Headset } from "lucide-react";
+import { Headset, PauseCircle } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import { relativeTime } from "@/lib/utils";
-import { WHATSAPP_WINDOW_HOURS, canTakeOver, conversationState, lastSeen } from "@/lib/presence";
+import { WHATSAPP_WINDOW_HOURS, apiPauseActive, canTakeOver, conversationState, lastSeen } from "@/lib/presence";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AutoRefresh } from "@/components/auto-refresh";
@@ -19,7 +19,14 @@ export interface HandoffConversation {
   /** quem está com a conversa (leva B1': um atendente por conversa) */
   assigned_to_id?: string | null;
   assigned_to_name?: string | null;
+  /** IA pausada pela integração (API) até esta hora */
+  ai_paused_until?: string | null;
 }
+
+/** A integração pausou a IA e ninguém da equipe assumiu. */
+const apiPaused = (conv: HandoffConversation) => !(conv.takeover_at && !conv.handled_at) && apiPauseActive(conv.ai_paused_until);
+
+const pauseEnd = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 /** Com quem está a conversa, do ponto de vista de quem vê a tela. Pura. */
 export function holderView(conv: HandoffConversation, meId: string): "mine" | "other" | "free" {
@@ -46,16 +53,25 @@ function VisitorPresence({ conv }: { conv: HandoffConversation }) {
  * Status do atendimento (pediu atendente / você está atendendo) + atualização ao vivo. Vai no
  * rodapé fixo, acima da resposta: com muitas mensagens, o aviso e o botão de assumir continuam à vista.
  */
-export function HandoffStatus({ conv, onTakeOver, meId }: { conv: HandoffConversation; onTakeOver: () => Promise<ActionResult>; meId: string }) {
+export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: HandoffConversation; onTakeOver: () => Promise<ActionResult>; onResumeAi?: () => Promise<ActionResult>; meId: string }) {
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
   const waiting = open && !conv.takeover_at && Boolean(conv.handoff_requested_at);
-  if (!active && !waiting) return null;
+  const paused = apiPaused(conv);
+  if (!active && !waiting && !paused) return null;
   const who = conv.channel === "whatsapp" || conv.channel === "instagram" ? "O contato" : "O visitante";
   return (
     <>
       <AutoRefresh ms={active ? 3000 : 5000} />
-      {waiting ? (
+      {paused ? (
+        // pausa da integração: sem aviso à equipe; quem quiser responder por aqui assume
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-ground px-3 py-2 text-sm">
+          <PauseCircle size={16} className="shrink-0 text-muted" />
+          <span className="min-w-0 flex-1"><strong>IA pausada pela integração</strong> até {pauseEnd(conv.ai_paused_until!)}. O sistema integrado responde esta conversa; a equipe não é avisada.</span>
+          {onResumeAi && <ActionForm action={onResumeAi}><SubmitButton pendingLabel="Devolvendo…" className="btn-ghost py-1.5">Devolver para a IA</SubmitButton></ActionForm>}
+          <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir</SubmitButton></ActionForm>
+        </div>
+      ) : waiting ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-sm">
           <Headset size={16} className="shrink-0 text-amber-ink" />
           <span className="min-w-0 flex-1 text-amber-ink"><strong>{who} pediu para falar com alguém</strong> {relativeTime(conv.handoff_requested_at!)}. Assuma para responder por aqui.</span>
@@ -120,7 +136,7 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
           </ActionForm>
         </div>
       ) : (
-        !waiting && canTakeOver(conv) && (
+        !waiting && !apiPaused(conv) && canTakeOver(conv) && (
           <ActionForm action={onTakeOver} className="self-start">
             <SubmitButton pendingLabel="Assumindo…" className="btn-ghost"><Headset size={15} />Assumir esta conversa</SubmitButton>
           </ActionForm>

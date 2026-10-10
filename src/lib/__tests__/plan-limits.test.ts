@@ -61,7 +61,7 @@ describe("planChanges", () => {
 });
 
 describe("estado da conversa", () => {
-  const facts: ModeFacts = { channel: "whatsapp", channelDisconnected: false, metaOrder: false, whatsappDisabled: false, metaPaymentIssue: false, boavozSuspended: false, humanInConversation: false, botPaused: false, botPauseNotify: false, humanOnly: null, coexistence: false };
+  const facts: ModeFacts = { channel: "whatsapp", channelDisconnected: false, metaOrder: false, whatsappDisabled: false, metaPaymentIssue: false, boavozSuspended: false, humanInConversation: false, apiPaused: false, botPaused: false, botPauseNotify: false, humanOnly: null, coexistence: false };
 
   it("chatbot pausado pelo plano é modo só humano: a IA não responde e vira pedido de atendente", () => {
     const m = decideMode({ ...facts, humanOnly: "plan_paused" });

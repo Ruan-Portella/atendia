@@ -26,7 +26,7 @@ import { firstExceeded } from "@/lib/rate-limit";
 import { loadTemplateChannel, type SendableTemplate, conversationTemplates, ensureResumeTemplate, type ResumeStatus } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
+import { deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
 import { botGateExemptions, conversationGateCategories } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { GateReviewButton } from "@/components/gate-review-button";
@@ -42,7 +42,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, regulated_at, identity_hash, context_display, context_since, bots(name, client_id, client_name, sensitive_mode)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, bots(name, client_id, client_name, sensitive_mode)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -196,7 +196,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
             </p>
           )}
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
-          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} meId={member.id} />
+          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} onResumeAi={resumeConversationAiFromPanel.bind(null, cid)} meId={member.id} />
           <HandoffReply conv={handoffConv} meId={member.id} onTakeOver={takeOver} onForceTakeOver={forceTakeOverConversation.bind(null, cid)} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked paymentCheck={regulated} />
         </div>
       </footer>

@@ -36,7 +36,7 @@ export const AUDIO_PREFIX = "🎤 ";
 // autores do celular e do app e a pausa de 60 minutos moram em authors.ts (a regra de estado usa)
 export { PHONE_AUTHOR, PHONE_PAUSE_MINUTES, phonePauseActive } from "./authors";
 import { PHONE_AUTHOR } from "./authors";
-import { hasPendingFrom } from "./inbound-queue";
+import { hasPendingFrom, isRearmed } from "./inbound-queue";
 import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage } from "./messages";
 import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
@@ -121,7 +121,7 @@ export function inboundText(m: InboundMessage): string | null {
  */
 async function recentConversation(db: SupabaseClient, botId: string, waId: string, contactId: string | null = null): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
-  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, unavailable_notice_reason, contact_id, unseen_media_at, unseen_media_kind").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
+  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, ai_paused_until, unavailable_notice_reason, contact_id, unseen_media_at, unseen_media_kind").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
   if (contactId) {
     const { data } = await recent().eq("contact_id", contactId).maybeSingle<RecentConversation>();
     if (data) return data;
@@ -138,6 +138,8 @@ interface RecentConversation extends UnseenMark {
   id: string;
   takeover_at: string | null;
   handled_at: string | null;
+  /** IA pausada pela integração até (API). */
+  ai_paused_until?: string | null;
   contact_id?: string | null;
   /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
   unavailable_notice_reason?: string | null;
@@ -207,8 +209,10 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const contactId = contact?.id ?? null;
   let conv = await recentConversation(db, bot.id, waId, contactId);
   const mode = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel });
-  // "já conversou" e a janela de 24 h: só mensagem do próprio contato que chegou (ordem da Meta e desligamento geral: nada)
-  if (contact && mode.storeInbound) await touchInbound(db, contact);
+  // "já conversou" e a janela de 24 h: só mensagem do próprio contato que chegou (ordem da Meta e
+  // desligamento geral: nada; a pergunta pendente rearmada na volta da IA não é mensagem nova)
+  const rearmed = isRearmed(last.msg.id);
+  if (contact && mode.storeInbound && !rearmed) await touchInbound(db, contact);
   /** Texto pela camada única de envio: regra de estado na hora do envio e registro na conversa. */
   const say = (kind: SendKind, text: string, record: SendRecord, conversationId: string | null = conv?.id ?? null) =>
     deliver(db, { botId: bot.id, channel: "whatsapp", conversationId, kind, record, transport: async () => (await reply(text)).messages?.[0]?.id ?? null });
@@ -488,7 +492,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     // e cai no modo só humano (no catch)
     await requireAtendimento(db, bot, { channel: "whatsapp", contactKey: contactId ?? waId, conversationId: conv.id });
     if (noticeMarked) await clearNotice(db, { contactId, conversationId: conv.id });
-    await markReadTyping(channel, last.msg.id);
+    if (!rearmed) await markReadTyping(channel, last.msg.id);
     for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso

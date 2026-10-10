@@ -11,6 +11,7 @@ const normal: ModeFacts = {
   metaPaymentIssue: false,
   boavozSuspended: false,
   humanInConversation: false,
+  apiPaused: false,
   botPaused: false,
   botPauseNotify: false,
   humanOnly: null,

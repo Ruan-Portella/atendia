@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { endApiPauses } from "./api-pause";
 import { ingestSource, type SourceRow } from "./ingest";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl, daysAgoIso } from "./utils";
@@ -41,6 +42,8 @@ export async function trialReminders(db: SupabaseClient) {
       `Assine um plano para o assistente voltar a responder na hora: ${billing}`,
     ]);
     await db.from("agencies").update({ trial_expired_notified_at: now.toISOString() }).eq("id", a.id);
+    // fim do teste: as pausas da IA feitas pela API acabam de uma vez (com auditoria)
+    await endApiPauses(db, a.id, "teste").catch((e) => console.error("teste: pausas da integração", (e as Error).message));
     sent++;
   }
   return { sent };

@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
 import { isEmail, text } from "@/lib/validation";
 import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { resumeConversationAi } from "@/lib/api-pause";
 import { answerQuestion, deleteTextSource, dismissQuestion, saveTextSource } from "@/lib/knowledge";
 import { logAccess } from "@/lib/access-log";
 import { audit, requestMeta } from "@/lib/audit";
@@ -98,6 +99,17 @@ export async function memberSend(clientId: string, conversationId: string, formD
   const r = await postAgentMessage(ctx.admin, conversationId, text(formData.get("content")), memberAttendant(ctx.member, ctx.email));
   revalidatePath(convPath(clientId, conversationId));
   return r;
+}
+
+/** Faixa "IA pausada pela integração": devolve para a IA antes do prazo. */
+export async function memberResumeAi(clientId: string, conversationId: string): Promise<ActionResult> {
+  const ctx = await ownConversation(clientId, conversationId);
+  if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
+  const who = memberAttendant(ctx.member, ctx.email);
+  const resumed = await resumeConversationAi(ctx.admin, conversationId, { reason: "agent_resumed", agent: { id: who.id, name: who.name, type: who.type }, background: true });
+  if (resumed) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "conversa.retomar_ia", targetType: "conversation", targetId: conversationId, ...(await requestMeta()) });
+  revalidatePath(convPath(clientId, conversationId));
+  return ok(resumed ? "A IA voltou a responder esta conversa." : "A pausa da integração já tinha acabado.");
 }
 
 export async function memberRelease(clientId: string, conversationId: string): Promise<ActionResult> {

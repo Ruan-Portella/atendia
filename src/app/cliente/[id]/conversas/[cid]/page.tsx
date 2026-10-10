@@ -14,7 +14,7 @@ import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { authorLabel } from "@/lib/authors";
-import { memberForceTakeOver, memberRelease, memberSend, memberTakeOver } from "../../../actions";
+import { memberForceTakeOver, memberRelease, memberResumeAi, memberSend, memberTakeOver } from "../../../actions";
 
 export const metadata = { title: { absolute: "Conversa" }, robots: { index: false, follow: false } };
 
@@ -23,7 +23,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, regulated_at, bots(sensitive_mode)")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, bots(sensitive_mode)")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
@@ -74,7 +74,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
       {member.allowHandoff && (
         <footer className="flex flex-col gap-2 border-t border-line py-3">
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
-          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} meId={member.memberId} />
+          <HandoffStatus conv={handoffConv} onTakeOver={takeOver} onResumeAi={memberResumeAi.bind(null, id, cid)} meId={member.memberId} />
           <HandoffReply conv={handoffConv} meId={member.memberId} onTakeOver={takeOver} onForceTakeOver={memberForceTakeOver.bind(null, id, cid)} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked paymentCheck={regulated} />
         </footer>
       )}

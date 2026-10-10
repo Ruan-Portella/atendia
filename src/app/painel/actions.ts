@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { queueBotPauseEvent, queueChannelEvent, queueConsentEvent, trackCompliance } from "@/lib/platform-events";
+import { resumeConversationAi } from "@/lib/api-pause";
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { z } from "zod";
@@ -612,6 +613,18 @@ export async function resetConversationAge(conversationId: string): Promise<Acti
   await auditPanel("idade.zerar", { type: "conversation", id: conversationId }, { after: { channel: conv.channel } });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return ok("Confirmação de 18+ zerada. Se o contato pedir bebida ou remédio, ele é perguntado de novo.");
+}
+
+/** Faixa "IA pausada pela integração": devolve para a IA antes do prazo (ela responde a pergunta pendente). */
+export async function resumeConversationAiFromPanel(conversationId: string): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const who = await me();
+  const resumed = await resumeConversationAi(owned.admin, conversationId, { reason: "agent_resumed", agent: { id: who.id, name: who.name, type: who.type }, background: true });
+  if (resumed) await auditPanel("conversa.retomar_ia", { type: "conversation", id: conversationId });
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  return ok(resumed ? "A IA voltou a responder esta conversa." : "A pausa da integração já tinha acabado.");
 }
 
 /** Devolve a conversa ao assistente (ele volta a responder, sabendo o que você escreveu). */
