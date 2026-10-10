@@ -26,6 +26,27 @@ export class WhatsAppError extends Error {
   }
 }
 
+/**
+ * O envio passou do tempo sem resposta da Meta: não dá para saber se a mensagem saiu (a API
+ * responde 202 "uncertain" e o status da Meta concilia depois; nunca reenviamos sozinhos).
+ */
+export class SendTimeoutError extends Error {
+  constructor(readonly channel: "whatsapp" | "instagram") {
+    super(`sem resposta do ${channel === "whatsapp" ? "WhatsApp" : "Instagram"} no prazo`);
+  }
+}
+
+/** Abre a requisição com prazo (só quem pede: a API pública); estourar o prazo vira SendTimeoutError. */
+export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number | undefined, channel: "whatsapp" | "instagram"): Promise<Response> {
+  if (!timeoutMs) return fetch(url, init);
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    if ((e as Error).name === "TimeoutError" || (e as Error).name === "AbortError") throw new SendTimeoutError(channel);
+    throw e;
+  }
+}
+
 /** Fora da janela de 24 h desde a última mensagem do contato: só modelo aprovado passa. */
 export const OUTSIDE_WINDOW_CODE = 131047;
 /** A Meta recusou a mensagem por problema de pagamento da conta (sem cartão, cartão recusado). */
@@ -63,13 +84,18 @@ function channelToken(ch: WaChannel): string {
   return ch.access_token_enc ? unseal(ch.access_token_enc) : envToken();
 }
 
-async function graph<T>(path: string, token: string, init?: { method?: string; body?: unknown }): Promise<T> {
-  const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${path}`, {
-    method: init?.method ?? (init?.body ? "POST" : "GET"),
-    headers: { Authorization: `Bearer ${token}`, ...(init?.body ? { "Content-Type": "application/json" } : {}) },
-    body: init?.body ? JSON.stringify(init.body) : undefined,
-    cache: "no-store",
-  });
+async function graph<T>(path: string, token: string, init?: { method?: string; body?: unknown; timeoutMs?: number }): Promise<T> {
+  const res = await fetchWithTimeout(
+    `https://graph.facebook.com/${GRAPH_VERSION}/${path}`,
+    {
+      method: init?.method ?? (init?.body ? "POST" : "GET"),
+      headers: { Authorization: `Bearer ${token}`, ...(init?.body ? { "Content-Type": "application/json" } : {}) },
+      body: init?.body ? JSON.stringify(init.body) : undefined,
+      cache: "no-store",
+    },
+    init?.timeoutMs,
+    "whatsapp",
+  );
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = (data as { error?: { message?: string; code?: number; error_user_title?: string; error_user_msg?: string; error_data?: { details?: string } } }).error;
@@ -82,13 +108,15 @@ async function graph<T>(path: string, token: string, init?: { method?: string; b
 }
 
 /** Chamada à Graph API com o token do número (para quem monta outras operações, ex.: modelos). */
-export function graphFor<T>(ch: WaChannel, path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+export function graphFor<T>(ch: WaChannel, path: string, init?: { method?: string; body?: unknown; timeoutMs?: number }): Promise<T> {
   return graph<T>(path, channelToken(ch), init);
 }
 
-export async function sendText(ch: WaChannel, to: string, body: string) {
+/** callbackData volta nos status da Meta (concilia o envio incerto da API); timeoutMs: prazo da resposta. */
+export async function sendText(ch: WaChannel, to: string, body: string, opts: { callbackData?: string; timeoutMs?: number } = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
-    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true } },
+    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true }, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
+    timeoutMs: opts.timeoutMs,
   });
 }
 

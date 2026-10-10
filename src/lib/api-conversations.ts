@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { apiContacts, parseContactAddress } from "./contacts";
-import { loadMessages, findMessage, type MessageRow } from "./messages";
+import { loadMessages, findMessage, UNCERTAIN, type MessageRow } from "./messages";
 import { agentObject, sourceOf } from "./message-events";
 import { audit } from "./audit";
 import { clientIp } from "./rate-limit";
@@ -166,10 +166,12 @@ const MSG_COLS = ["id", "conversation_id", "role", "content", "author", "author_
 type MsgRow = Pick<MessageRow, (typeof MSG_COLS)[number]>;
 
 /** Status de uma mensagem: recebida (do contato), ou o mais avançado que o canal informou. Pura. */
-export function messageStatus(m: Pick<MsgRow, "role" | "failed_at" | "channel_msg_id" | "delivery_status">, channel: ApiChannel): string {
+export function messageStatus(m: Pick<MsgRow, "role" | "failed_at" | "channel_msg_id" | "delivery_status" | "error_code">, channel: ApiChannel): string {
   if (m.role === "user") return "received";
   if (m.failed_at || m.delivery_status === "failed") return "failed";
   if (m.delivery_status) return m.delivery_status;
+  // enviada pela API sem resposta da Meta no prazo: o status da Meta concilia depois
+  if (m.error_code === UNCERTAIN && !m.channel_msg_id) return "uncertain";
   return channel === "widget" || m.channel_msg_id ? "sent" : "pending";
 }
 

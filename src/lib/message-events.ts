@@ -117,7 +117,10 @@ export async function queueMessageEvent(db: SupabaseClient, id: number, m: Saved
       await emitEvent(db, { ...base, type: "message.failed", key: `${id}:${m.error_code ?? "erro"}`, data: { message: { id: `msg_${id}` }, error: { code: m.error_code ?? null, message: null } } }, { background: true });
       return;
     }
-    await emitEvent(db, { ...base, type: "message.sent", key: String(id), data: { message: { id: `msg_${id}`, text: m.content, media: null }, source, agent: agentObject(m, source) } }, { background: true, consumerOnly: source === "campaign" });
+    const agent = agentObject(m, source);
+    // enviada pela API: o início da chave que enviou (author_id é o id da chave)
+    if (agent && source === "api" && m.author_id) agent.key_prefix = ((await db.from("api_keys").select("prefix").eq("id", m.author_id).maybeSingle()).data?.prefix as string | undefined) ?? null;
+    await emitEvent(db, { ...base, type: "message.sent", key: String(id), data: { message: { id: `msg_${id}`, text: m.content, media: null }, source, agent } }, { background: true, consumerOnly: source === "campaign" });
   } catch (e) {
     console.error("webhook: evento da mensagem não registrado", (e as Error).message);
   }

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PRIMARY_INACTIVITY_TEXT, queueTemplateEvent } from "./platform-events";
 import { queueStatusEvent } from "./message-events";
+import { API_SEND_REF, reconcileUncertain } from "./messages";
 import { channelMsgHash } from "./hash";
 import { PAYMENT_ISSUE_CODE } from "./whatsapp";
 import { handleEcho, handleInboundBurst, type ChannelRow, type EchoMessage, type InboundMessage, type QueuedMessage } from "./whatsapp-inbound";
@@ -80,10 +81,12 @@ const whatsappGroup: GroupHandler = async (db, events) => {
         await suppress(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id, kind: "marketing", reason: "meta_131050", source: "meta" });
         await revokeConsents(db, { scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id }, "meta:131050");
       }
+      const ref = p.status.biz_opaque_callback_data;
+      // envio incerto pela API ("am:<ref>"): a mensagem gravada sem o id da Meta ganha o id de verdade
+      if (ref?.startsWith(API_SEND_REF) && p.status.id) await reconcileUncertain(db, channelMsgHash("whatsapp", ref), channelMsgHash("whatsapp", p.status.id));
       // webhooks: message.status (entregue, lida) e message.failed, só quando o status avança
       if (p.status.id && p.status.status) await queueStatusEvent(db, channelMsgHash("whatsapp", p.status.id), p.status.status, { errorCode: p.status.errors?.[0]?.code ?? null, at: p.status.timestamp ? new Date(Number(p.status.timestamp) * 1000).toISOString() : null });
       // envio de campanha ("cs:<id>"): o status concilia a linha (enviado, entregue, lido ou falhou)
-      const ref = p.status.biz_opaque_callback_data;
       if (ref?.startsWith("cs:") && p.status.status) await reconcileCampaignStatus(db, ref, p.status.status, p.status.errors?.[0]?.code, p.status.pricing?.category);
       // consumo: cada status de mensagem enviada diz se a Meta cobrou e em qual categoria
       if (e.bot_id) await recordUsage(db, e.bot_id, p.phoneNumberId, [p.status]);

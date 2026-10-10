@@ -54,11 +54,12 @@ export async function deleteTemplate(ch: TemplateChannel, name: string) {
   await graphFor(ch, `${ch.waba_id}/message_templates?name=${encodeURIComponent(name)}`, { method: "DELETE" });
 }
 
-export async function sendTemplate(ch: WaChannel, to: string, t: { name: string; language: string }, params: string[], opts: { callbackData?: string } = {}) {
+export async function sendTemplate(ch: WaChannel, to: string, t: { name: string; language: string }, params: string[], opts: { callbackData?: string; timeoutMs?: number } = {}) {
   const components = params.length ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }] : [];
   return graphFor<{ messages?: Array<{ id: string }> }>(ch, `${ch.phone_number_id}/messages`, {
     // biz_opaque_callback_data volta nos status da Meta: as campanhas conciliam o envio por ele
     body: { messaging_product: "whatsapp", ...recipientOf(to), type: "template", template: { name: t.name, language: { code: t.language }, components }, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
+    timeoutMs: opts.timeoutMs,
   });
 }
 

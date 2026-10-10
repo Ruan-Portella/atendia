@@ -71,7 +71,7 @@ export function authorLabel(m: AuthoredMessage, o: { view: "agency" | "client"; 
   const name = m.author_display_name?.trim();
   const mine = (o.meId && m.author_id === o.meId) || (!m.author_id && o.meLegacy && m.author === o.meLegacy);
   if (type === "phone_app") return m.author === IG_APP_AUTHOR ? "Pelo app do Instagram" : "Pelo celular (WhatsApp Business)";
-  if (type === "api") return "Integração";
+  if (type === "api") return name && name !== "Integração" ? `Integração · ${name}` : "Integração";
   if (type === "client_member") {
     const who = name || m.author || "Pessoa do cliente";
     return mine ? `${who} (você)` : o.view === "agency" ? `Cliente · ${who}` : who;

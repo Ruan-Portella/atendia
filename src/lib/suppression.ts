@@ -45,10 +45,10 @@ export async function activeSuppressionsMany(db: SupabaseClient, t: { channel: S
 }
 
 /** Categorias suprimidas e ativas para o contato (vazio = pode receber). */
-export async function activeSuppressions(db: SupabaseClient, t: Target): Promise<Array<{ id: number; kind: SuppressionKind }>> {
-  const { data, error } = await db.from("suppressions").select("id, kind").eq("contact_hash", contactHash(t.channel, t.contact)).eq("channel", t.channel).eq("scope", t.scope).is("revoked_at", null);
+export async function activeSuppressions(db: SupabaseClient, t: Target): Promise<Array<{ id: number; kind: SuppressionKind; reason: string }>> {
+  const { data, error } = await db.from("suppressions").select("id, kind, reason").eq("contact_hash", contactHash(t.channel, t.contact)).eq("channel", t.channel).eq("scope", t.scope).is("revoked_at", null);
   if (error) throw new Error(`supressão: ${error.message}`);
-  return (data ?? []) as Array<{ id: number; kind: SuppressionKind }>;
+  return (data ?? []) as Array<{ id: number; kind: SuppressionKind; reason: string }>;
 }
 
 /** O contato pode receber um modelo dessa categoria? (MARKETING, UTILITY, …) */

@@ -79,12 +79,13 @@ describe("conversas e mensagens pela API", () => {
   });
 
   it("status da mensagem: recebida, o mais avançado do canal, enviada no site e pendente no canal", () => {
-    expect(messageStatus({ role: "user", failed_at: null, channel_msg_id: null, delivery_status: null }, "whatsapp")).toBe("received");
-    expect(messageStatus({ role: "assistant", failed_at: iso(-1), channel_msg_id: null, delivery_status: null }, "whatsapp")).toBe("failed");
-    expect(messageStatus({ role: "assistant", failed_at: null, channel_msg_id: "x", delivery_status: "read" }, "whatsapp")).toBe("read");
-    expect(messageStatus({ role: "assistant", failed_at: null, channel_msg_id: "x", delivery_status: null }, "whatsapp")).toBe("sent");
-    expect(messageStatus({ role: "assistant", failed_at: null, channel_msg_id: null, delivery_status: null }, "widget")).toBe("sent");
-    expect(messageStatus({ role: "assistant", failed_at: null, channel_msg_id: null, delivery_status: null }, "instagram")).toBe("pending");
+    expect(messageStatus({ role: "user", failed_at: null, channel_msg_id: null, delivery_status: null, error_code: null }, "whatsapp")).toBe("received");
+    expect(messageStatus({ role: "assistant", failed_at: iso(-1), channel_msg_id: null, delivery_status: null, error_code: null }, "whatsapp")).toBe("failed");
+    expect(messageStatus({ role: "assistant", failed_at: null, channel_msg_id: "x", delivery_status: "read", error_code: null }, "whatsapp")).toBe("read");
+    expect(messageStatus({ role: "assistant", failed_at: null, channel_msg_id: "x", delivery_status: null, error_code: null }, "whatsapp")).toBe("sent");
+    expect(messageStatus({ role: "assistant", failed_at: null, channel_msg_id: null, delivery_status: null, error_code: null }, "widget")).toBe("sent");
+    expect(messageStatus({ role: "assistant", failed_at: null, channel_msg_id: null, delivery_status: null, error_code: null }, "instagram")).toBe("pending");
+    expect(messageStatus({ role: "agent", failed_at: null, channel_msg_id: null, delivery_status: null, error_code: "uncertain" }, "whatsapp")).toBe("uncertain");
   });
 
   it("mensagem no formato da API: desfeita sem texto; de quem é e o atendente", () => {

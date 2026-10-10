@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
 import { facesOfMessages, holderFace } from "@/lib/attendants";
 import { WIDGET_ALLOW_HEADERS, conversationAccess, widgetWho } from "@/lib/widget-identity";
+import { apiPauseActive } from "@/lib/presence";
 
 const HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -34,7 +35,7 @@ export async function GET(req: Request) {
   const db = createAdminClient();
   const { data: conv } = await db
     .from("conversations")
-    .select("id, visitor_id, identity_hash, context_hash, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, bots!inner(id, agency_id, client_id, public_key)")
+    .select("id, visitor_id, identity_hash, context_hash, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, ai_paused_until, bots!inner(id, agency_id, client_id, public_key)")
     .eq("id", conversationId)
     .eq("bots.public_key", key)
     .maybeSingle();
@@ -57,6 +58,7 @@ export async function GET(req: Request) {
   const rows = await loadMessages(db, { conversationId, roles: ["agent"], afterId: after, limit: 50 }, ["id", "content", "author_type", "author_id", "author_display_name"] as const);
   const faces = await facesOfMessages(db, rows);
   const messages = rows.map((m) => ({ id: m.id, content: m.content, name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null }));
-  const mode = conv.handled_at ? "bot" : conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : "bot";
+  // a integração pausou a IA (API): quem responde é ela, como um atendente
+  const mode = conv.takeover_at && !conv.handled_at ? "agent" : apiPauseActive(conv.ai_paused_until) ? "agent" : conv.handoff_requested_at && !conv.handled_at ? "requested" : "bot";
   return Response.json({ mode, agent: await holderFace(db, conv), messages }, { headers: HEADERS });
 }

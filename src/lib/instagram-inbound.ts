@@ -127,7 +127,7 @@ interface RecentConversation extends UnseenMark {
 }
 
 /** Manda a DM e guarda o id dela: o webhook ecoa as nossas mensagens, e assim o eco é ignorado. */
-export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string, quickReplies?: Array<{ title: string; payload: string }>, opts: { humanAgent?: boolean } = {}): Promise<string | null> {
+export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string, quickReplies?: Array<{ title: string; payload: string }>, opts: { humanAgent?: boolean; timeoutMs?: number } = {}): Promise<string | null> {
   // resposta longa: até 3 DMs cortadas no fim de um parágrafo (as respostas rápidas vão na última)
   const parts = splitDm(text);
   let mid: string | null = null;

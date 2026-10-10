@@ -55,7 +55,8 @@ export type SendRecord =
   | { update: number; content?: string; announce_chars?: number | null; components?: MessageComponent | null }
   | null;
 
-export type SendOutcome = { status: "sent"; id: string | null } | { status: "blocked"; reason: string };
+/** id: o da mensagem no canal; messageId: a linha gravada na conversa (null sem registro). */
+export type SendOutcome = { status: "sent"; id: string | null; messageId: number | null } | { status: "blocked"; reason: string };
 
 /** Código do erro do canal, para o painel ("não entregue"). */
 const errorCode = (e: unknown) => {
@@ -74,14 +75,18 @@ export async function deliver(
   o: { botId: string; channel: SendChannel; conversationId: string | null; kind: SendKind; record: SendRecord; recordFailures?: boolean; transport: () => Promise<string | null> },
 ): Promise<SendOutcome> {
   const recordFailures = o.recordFailures ?? true;
-  const write = async (fields: MessagePatch) => {
-    if (!o.record) return;
+  const write = async (fields: MessagePatch): Promise<number | null> => {
+    if (!o.record) return null;
     try {
-      if ("update" in o.record) await updateMessages(db, { id: o.record.update }, { ...fields, ...(o.record.content !== undefined ? { content: o.record.content } : {}), ...(o.record.announce_chars !== undefined ? { announce_chars: o.record.announce_chars } : {}), ...(o.record.components !== undefined ? { components: o.record.components } : {}) });
-      else if (o.conversationId) await saveMessage(db, { conversation_id: o.conversationId, ...o.record.insert, ...fields });
+      if ("update" in o.record) {
+        await updateMessages(db, { id: o.record.update }, { ...fields, ...(o.record.content !== undefined ? { content: o.record.content } : {}), ...(o.record.announce_chars !== undefined ? { announce_chars: o.record.announce_chars } : {}), ...(o.record.components !== undefined ? { components: o.record.components } : {}) });
+        return o.record.update;
+      }
+      if (o.conversationId) return await saveMessage(db, { conversation_id: o.conversationId, ...o.record.insert, ...fields });
     } catch (e) {
       console.error("envio: registro não gravado", (e as Error).message);
     }
+    return null;
   };
 
   const blocked = await sendCheck(db, o);
@@ -98,6 +103,6 @@ export async function deliver(
     if (recordFailures) await write({ failed_at: new Date().toISOString(), error_code: errorCode(e) });
     throw e;
   }
-  await write({ channel_msg_id: "enviada", channel_msg_hash: id ? channelMsgHash(o.channel, id) : null });
-  return { status: "sent", id };
+  const messageId = await write({ channel_msg_id: "enviada", channel_msg_hash: id ? channelMsgHash(o.channel, id) : null });
+  return { status: "sent", id, messageId };
 }

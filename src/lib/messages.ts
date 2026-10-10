@@ -270,3 +270,19 @@ export async function reencryptMessages(db: SupabaseClient, limit = 300): Promis
   }
   return done;
 }
+
+/** error_code de quem foi enviado sem resposta da Meta no prazo (sem saber se saiu). */
+export const UNCERTAIN = "uncertain";
+/** O ref do envio pela API em biz_opaque_callback_data (a campanha usa "cs:"). */
+export const API_SEND_REF = "am:";
+
+/**
+ * Envio incerto da API (a Meta não respondeu no prazo): a mensagem ficou gravada com o hash do ref
+ * mandado em biz_opaque_callback_data. O primeiro status da Meta com esse ref troca pelo hash do id
+ * de verdade e marca como enviada. Devolve se havia o que conciliar.
+ */
+export async function reconcileUncertain(db: SupabaseClient, refHash: string, channelMsgHash: string): Promise<boolean> {
+  const { data, error } = await db.from("messages").update({ channel_msg_hash: channelMsgHash, channel_msg_id: "enviada", error_code: null }).eq("channel_msg_hash", refHash).eq("error_code", UNCERTAIN).select("id");
+  if (error) throw new Error(`envio incerto: ${error.message}`);
+  return Boolean(data?.length);
+}
