@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueStatusEvent } from "./message-events";
+import { channelMsgHash } from "./hash";
 import { PAYMENT_ISSUE_CODE } from "./whatsapp";
 import { handleEcho, handleInboundBurst, type ChannelRow, type EchoMessage, type InboundMessage, type QueuedMessage } from "./whatsapp-inbound";
 import { recordUsage, type MessageStatus } from "./whatsapp-usage";
@@ -74,6 +76,8 @@ const whatsappGroup: GroupHandler = async (db, events) => {
         await suppress(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id, kind: "marketing", reason: "meta_131050", source: "meta" });
         await revokeConsents(db, { scope: suppressionScope({ wabaId: p.wabaId, botId: e.bot_id }), contact: p.status.recipient_id }, "meta:131050");
       }
+      // webhooks: message.status (entregue, lida) e message.failed, só quando o status avança
+      if (p.status.id && p.status.status) await queueStatusEvent(db, channelMsgHash("whatsapp", p.status.id), p.status.status, { errorCode: p.status.errors?.[0]?.code ?? null, at: p.status.timestamp ? new Date(Number(p.status.timestamp) * 1000).toISOString() : null });
       // envio de campanha ("cs:<id>"): o status concilia a linha (enviado, entregue, lido ou falhou)
       const ref = p.status.biz_opaque_callback_data;
       if (ref?.startsWith("cs:") && p.status.status) await reconcileCampaignStatus(db, ref, p.status.status, p.status.errors?.[0]?.code, p.status.pricing?.category);

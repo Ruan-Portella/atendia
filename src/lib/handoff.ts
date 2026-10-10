@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueHandoffReturned } from "./message-events";
 import { fail, ok, type ActionResult } from "./action-result";
 import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendText } from "./whatsapp";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
@@ -198,10 +199,13 @@ export async function release(admin: SupabaseClient, conversationId: string, who
   const { data: conv } = await admin.from("conversations").select(HOLDER_COLS).eq("id", conversationId).maybeSingle<Holder>();
   if (!conv) return fail("Conversa não encontrada.");
   if (heldByOther(conv, who.id)) return fail(`${otherName(conv)} está atendendo esta conversa: só quem atende devolve para a IA. Para encerrar, use “Assumir no lugar” antes.`);
+  const at = new Date().toISOString();
   const { error } = await admin
     .from("conversations")
-    .update({ takeover_at: null, handled_at: new Date().toISOString(), assigned_to_type: null, assigned_to_id: null, assigned_to_name: null, assigned_at: null, announce_pending: false })
+    .update({ takeover_at: null, handled_at: at, assigned_to_type: null, assigned_to_id: null, assigned_to_name: null, assigned_at: null, announce_pending: false })
     .eq("id", conversationId);
   if (error) return fail("Não foi possível encerrar. Tente de novo.");
+  // webhooks: handoff.returned com quem devolveu
+  await queueHandoffReturned(admin, conversationId, { reason: "agent_resumed", agent: { id: who.id, name: who.name, type: who.type }, at });
   return ok("Atendimento encerrado. O assistente volta a responder esta conversa.");
 }

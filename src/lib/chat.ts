@@ -578,7 +578,7 @@ export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversati
     .eq("id", conversationId)
     .or("handoff_requested_at.is.null,handled_at.not.is.null")
     .select("id");
-  if (updated?.length) notifyHandoff({ db, bot, conversationId, reason: AI_BLOCK_LABEL[reason] }).catch(() => {});
+  if (updated?.length) notifyHandoff({ db, bot, conversationId, reason: AI_BLOCK_LABEL[reason], aiUnavailable: true }).catch(() => {});
 }
 
 /**

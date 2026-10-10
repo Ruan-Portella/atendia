@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { planLimits } from "@/lib/plan-limits";
 import { daysAgoIso, relativeTime } from "@/lib/utils";
-import { WEBHOOK_EVENTS } from "@/lib/webhooks";
+import { HIGH_VOLUME_EVENTS, WEBHOOK_EVENT_GROUPS, type WebhookEvent } from "@/lib/webhooks";
 import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from "@/lib/api-keys";
 import { TRIAL_KEY_PERMISSIONS } from "@/lib/integrations-plan";
 import { ResultForm } from "@/components/admin/result-form";
@@ -131,7 +131,7 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
     <>
       <p className="text-sm text-muted">
         O BoaVoz avisa o sistema do cliente do que acontece, assinado no padrão Standard Webhooks. 2xx em até 10 s é entrega; senão, novas tentativas em 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h e 24 h. Resposta 410 ou 3 dias só de falhas
-        desativam. Limite do plano: {webhookLimit} webhook{webhookLimit === 1 ? "" : "s"}. Mais eventos chegam na próxima parte das Integrações.
+        desativam. Limite do plano: {webhookLimit} webhook{webhookLimit === 1 ? "" : "s"}. Eventos de canal, modelo, pausa do chatbot, novidades, campanha e conformidade chegam na próxima parte das Integrações.
       </p>
       {hooks.map((h) => {
         const hh = health.get(h.id as string);
@@ -184,14 +184,7 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
                     <input id={`wh-url-${h.id as string}`} name="url" required defaultValue={h.url as string} className="input" />
                   </div>
                 </div>
-                <fieldset className="flex flex-col gap-1">
-                  <legend className="label">Eventos</legend>
-                  {WEBHOOK_EVENTS.map((e) => (
-                    <label key={e} className="flex items-center gap-2 text-xs">
-                      <input type="checkbox" name="event" value={e} defaultChecked={(h.events as string[]).includes(e)} /> <span className="font-mono">{e}</span>
-                    </label>
-                  ))}
-                </fieldset>
+                <EventFields checked={(e) => (h.events as string[]).includes(e)} />
                 <ScopeFieldset bots={botOptions} clients={clientOptions} value={{ type: h.scope_type as string, botIds: (h.scope_bot_ids as string[] | null) ?? [], clientId: (h.scope_client_id as string | null) ?? null }} />
                 <HeaderFields id={`wh-${h.id as string}`} saved={headerNames(h.headers_enc as string | null)} />
                 <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Salvando…">Salvar</SubmitButton>
@@ -215,14 +208,7 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
                 <input id="wh-url" name="url" required className="input" placeholder="https://api.loja.com.br/boavoz/webhook" />
               </div>
             </div>
-            <fieldset className="flex flex-col gap-1">
-              <legend className="label">Eventos</legend>
-              {WEBHOOK_EVENTS.map((e) => (
-                <label key={e} className="flex items-center gap-2 text-xs">
-                  <input type="checkbox" name="event" value={e} defaultChecked /> <span className="font-mono">{e}</span>
-                </label>
-              ))}
-            </fieldset>
+            <EventFields checked={(e) => !HIGH_VOLUME_EVENTS.includes(e)} />
             <ScopeFieldset bots={botOptions} clients={clientOptions} />
             <HeaderFields id="wh-novo" saved={[]} />
             <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar webhook</SubmitButton>
@@ -292,6 +278,37 @@ async function KeysTab({ agencyId, trial, bots, botName }: { agencyId: string; t
         </ResultForm>
       </details>
     </>
+  );
+}
+
+const EVENT_HINT: Partial<Record<WebhookEvent, string>> = {
+  "message.received": "o contato mandou mensagem ou clicou num botão (antes da IA responder)",
+  "message.sent": "IA, equipe, API, campanha ou o celular respondeu",
+  "message.status": "entregue e lida: até 2 eventos por mensagem enviada",
+  "message.failed": "a entrega falhou, com o código da Meta",
+  "message.deleted": "o contato desfez a mensagem (Instagram)",
+  "lead.created": "a IA registrou um lead",
+  "handoff.requested": "pediram atendente",
+  "handoff.returned": "a conversa voltou para a IA",
+};
+
+/** Caixas dos eventos, por grupo; message.status vem desmarcado (alto volume). */
+function EventFields({ checked }: { checked: (e: WebhookEvent) => boolean }) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="label">Eventos</legend>
+      {WEBHOOK_EVENT_GROUPS.map((g) => (
+        <div key={g.label} className="flex flex-col gap-1">
+          <span className="text-xs font-semibold text-ink-2">{g.label}</span>
+          {g.events.map((e) => (
+            <label key={e} className="flex items-center gap-2 text-xs">
+              <input type="checkbox" name="event" value={e} defaultChecked={checked(e)} /> <span className="font-mono">{e}</span>
+              {EVENT_HINT[e] && <span className="text-muted">· {EVENT_HINT[e]}</span>}
+            </label>
+          ))}
+        </div>
+      ))}
+    </fieldset>
   );
 }
 

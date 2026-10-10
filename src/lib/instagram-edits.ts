@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueDeletedEvent } from "./message-events";
 import { sha256 } from "./inbound-queue";
 import { logDeletion } from "./deletions";
 import { loadMessages, updateMessages } from "./messages";
@@ -75,7 +76,8 @@ export async function handleInstagramDelete(db: SupabaseClient, ev: IgMessagingE
   const mid = ev.message?.mid;
   if (!mid) return "marcada";
   const key = igMessageKey(mid);
-  const ids = (await loadMessages(db, { inboundKey: key }, ["id"] as const)).map((r) => String(r.id));
+  const rows = await loadMessages(db, { inboundKey: key }, ["id", "conversation_id"] as const);
+  const ids = rows.map((r) => String(r.id));
   if (!ids.length) {
     await logDeletion(db, "inbound_key", [key]);
     return "marcada";
@@ -84,6 +86,8 @@ export async function handleInstagramDelete(db: SupabaseClient, ev: IgMessagingE
   await updateMessages(db, { ids }, { content: DELETED_LABEL, channel_ref: null, deleted_at: new Date().toISOString() });
   // lápide: os arquivos da mensagem saem também (objeto e linha)
   await purgeAttachments(db, { messageIds: ids.map(Number) });
+  // webhooks: as entregas dessa mensagem saem antes, e o sistema do cliente recebe message.deleted
+  await queueDeletedEvent(db, ids.map(Number), String(rows[0].conversation_id));
   return "apagada";
 }
 

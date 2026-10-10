@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { seal, unseal } from "./secret-box";
 import { openField, sealField, scopeOfBot } from "./field-cipher";
@@ -18,8 +19,30 @@ import { contactChannelIds } from "./contacts";
  *   e 24 h (9 no total); 410 Gone ou 3 dias seguidos só de falhas desativam o webhook.
  */
 
-export const WEBHOOK_EVENTS = ["contact.linked", "contact.unlinked", "contact.deleted"] as const;
+export const WEBHOOK_EVENTS = [
+  "message.received",
+  "message.sent",
+  "message.status",
+  "message.failed",
+  "message.deleted",
+  "lead.created",
+  "handoff.requested",
+  "handoff.returned",
+  "contact.linked",
+  "contact.unlinked",
+  "contact.deleted",
+] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
+
+/** Grupos do editor de webhooks (spec Peça 2). */
+export const WEBHOOK_EVENT_GROUPS: Array<{ label: string; events: WebhookEvent[] }> = [
+  { label: "Mensagens", events: ["message.received", "message.sent", "message.status", "message.failed", "message.deleted"] },
+  { label: "Atendimento", events: ["lead.created", "handoff.requested", "handoff.returned"] },
+  { label: "Contato", events: ["contact.linked", "contact.unlinked", "contact.deleted"] },
+];
+
+/** Desmarcados por padrão no editor: até 2 eventos por mensagem enviada. */
+export const HIGH_VOLUME_EVENTS: readonly WebhookEvent[] = ["message.status"];
 
 /** Espera antes de cada nova tentativa (a primeira é na hora). */
 export const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 30 * 60_000, 2 * 3_600_000, 6 * 3_600_000, 12 * 3_600_000, 24 * 3_600_000, 24 * 3_600_000];
@@ -166,10 +189,32 @@ async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = 
   return next ? "pending" : "failed";
 }
 
-/** Envelope do evento para cada webhook ativo que cobre o chatbot; a primeira tentativa é na hora. */
-export async function emitEvent(db: SupabaseClient, e: { type: WebhookEvent; key: string; bot: { id: string; agency_id: string; client_id: string | null; name: string }; createdAt: string; conversation: { id: string; channel: string } | null; contact: Record<string, unknown> | null; data: Record<string, unknown>; contactId?: string | null }): Promise<void> {
-  const { data: hooks } = await db.from("webhooks").select(WEBHOOK_COLS).eq("agency_id", e.bot.agency_id).eq("active", true).is("paused_by_plan_at", null);
-  const targets = ((hooks ?? []) as WebhookRow[]).filter((w) => w.events.includes(e.type) && webhookCovers(w, e.bot));
+/** Webhooks ativos da agência que querem este evento deste chatbot. */
+export async function webhookTargets(db: SupabaseClient, agencyId: string, type: WebhookEvent, bot: { id: string; client_id: string | null }): Promise<WebhookRow[]> {
+  const { data: hooks } = await db.from("webhooks").select(WEBHOOK_COLS).eq("agency_id", agencyId).eq("active", true).is("paused_by_plan_at", null);
+  return ((hooks ?? []) as WebhookRow[]).filter((w) => w.events.includes(type) && webhookCovers(w, bot));
+}
+
+/** Roda depois da resposta (nunca no caminho do contato); fora de uma requisição, roda solto. */
+function inBackground(fn: () => Promise<unknown>) {
+  try {
+    after(fn);
+  } catch {
+    void fn().catch(() => undefined);
+  }
+}
+
+/**
+ * Envelope do evento para cada webhook ativo que cobre o chatbot. A primeira tentativa é na hora
+ * (background: depois da resposta ao contato); consumerOnly (alto volume: status e envios de
+ * campanha) só sai pelo consumidor do minuto. messageId liga a entrega à mensagem (desfeita apaga).
+ */
+export async function emitEvent(
+  db: SupabaseClient,
+  e: { type: WebhookEvent; key: string; bot: { id: string; agency_id: string; client_id: string | null; name: string }; createdAt: string; conversation: { id: string; channel: string } | null; contact: Record<string, unknown> | null; data: Record<string, unknown>; contactId?: string | null; messageId?: number | null },
+  o: { background?: boolean; consumerOnly?: boolean } = {},
+): Promise<void> {
+  const targets = await webhookTargets(db, e.bot.agency_id, e.type, e.bot);
   if (!targets.length) return;
   const id = eventId(e.type, e.key);
   const envelope = {
@@ -184,15 +229,30 @@ export async function emitEvent(db: SupabaseClient, e: { type: WebhookEvent; key
   };
   // o corpo guardado vai cifrado com a chave do cliente (as novas tentativas leem dele)
   const payload_enc = await sealField("webhook_deliveries.payload_enc", JSON.stringify(envelope), await scopeOfBot(e.bot.id));
+  const created: Array<{ d: DeliveryRow; w: WebhookRow }> = [];
   for (const w of targets) {
     // o mesmo fato para o mesmo webhook sai uma vez só (repetição do evento não duplica)
     // contact_id: o pedido do titular apaga as entregas do contato (o corpo cifrado não dá para buscar)
-    const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, contact_id: e.contactId ?? null }).select("id, webhook_id, event_id, payload_enc, attempts").maybeSingle<DeliveryRow>();
+    const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, contact_id: e.contactId ?? null, message_id: e.messageId ?? null }).select("id, webhook_id, event_id, payload_enc, attempts").maybeSingle<DeliveryRow>();
     if (error && !/duplicate|unique/i.test(error.message)) console.error("webhook: entrega não registrada", error.message);
-    if (d) await attempt(db, d, w).catch((err) => console.error("webhook: tentativa", (err as Error).message));
+    // webhook com falha recente vai direto para o consumidor (não segura nada esperando um endpoint fora do ar)
+    if (d && !o.consumerOnly && !w.failing_since) created.push({ d, w });
   }
-  // de carona: novas tentativas que já venceram (sem cron por minuto no Hobby)
-  await retryDueDeliveries(db, { limit: 5 }).catch(() => undefined);
+  const run = async () => {
+    for (const { d, w } of created) await attempt(db, d, w).catch((err) => console.error("webhook: tentativa", (err as Error).message));
+    // de carona: novas tentativas que já venceram
+    await retryDueDeliveries(db, { limit: 5 }).catch(() => undefined);
+  };
+  if (o.background) inBackground(run);
+  else await run();
+}
+
+/** Mensagem desfeita: as entregas dela (entregues ou pendentes) saem antes do message.deleted. */
+export async function deleteMessageDeliveries(db: SupabaseClient, messageIds: number[]): Promise<number> {
+  if (!messageIds.length) return 0;
+  const { count, error } = await db.from("webhook_deliveries").delete({ count: "exact" }).in("message_id", messageIds);
+  if (error) throw new Error(`entregas da mensagem: ${error.message}`);
+  return count ?? 0;
 }
 
 /** Pedido do titular: apaga as entregas (entregues ou pendentes) ligadas a estes contatos. */

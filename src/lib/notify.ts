@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueHandoffRequested } from "./message-events";
+import { nextOpening } from "./handoff-hours";
 import type { BotRow } from "./chat";
 import { appUrl } from "./utils";
 import { agencyBaseUrl } from "./domain";
@@ -69,9 +71,11 @@ async function recipients(db: SupabaseClient, bot: BotRow): Promise<string[]> {
  *  - as pessoas do cliente, se ele pode atender, com link para a área do cliente e a marca
  *    da agência. Ninguém recebe o aviso duas vezes.
  */
-export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string; urgent?: boolean }) {
+export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string; urgent?: boolean; aiUnavailable?: boolean }) {
   // o motivo (o que o contato disse) não vai por e-mail (leva S): a conversa fica no painel
   const { db, bot, conversationId, urgent } = opts;
+  // webhooks: handoff.requested (com ou sem e-mail configurado)
+  await queueHandoffRequested(db, conversationId, { urgent, aiUnavailable: opts.aiUnavailable, outsideHours: nextOpening(bot.human_handoff?.hours) !== null });
   // risco à vida: assunto destacado e a agência sempre avisada (mesmo com o atendimento delegado)
   const urgentTag = urgent ? "URGENTE (possível risco à vida) · " : "";
   const apiKey = process.env.RESEND_API_KEY;

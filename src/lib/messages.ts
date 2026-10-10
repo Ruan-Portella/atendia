@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueMessageEvent } from "./message-events";
 import { openField, sealField, scopeOfConversation } from "./field-cipher";
 import { authorTypeOf, type AuthorType } from "./authors";
 import type { MessageComponent } from "./components";
@@ -113,7 +114,30 @@ export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { tou
   if (error) throw new Error(`mensagem não gravada: ${error.message}`);
   const id = (data?.[0]?.id as number | undefined) ?? null;
   if (id !== null && opts.touch) await touchConversation(db, m.conversation_id, { visitorSeen: opts.touch === "visitante" });
+  // webhooks (C pública): message.received ou message.sent, depois da resposta ao contato
+  if (id !== null) await queueMessageEvent(db, id, m);
   return id;
+}
+
+const DELIVERY_RANK: Record<string, number> = { sent: 1, delivered: 2, read: 3 };
+
+/**
+ * Status de entrega informado pelo canal, só quando avança (lida não volta a entregue); falha
+ * grava também a hora e o código, que o painel mostra. Devolve a mensagem quando mudou.
+ */
+export async function advanceDeliveryStatus(db: SupabaseClient, channelMsgHash: string, status: "delivered" | "read" | "failed", errorCode: number | null = null): Promise<{ id: number; conversation_id: string } | null> {
+  const { data } = await db.from("messages").select("id, conversation_id, delivery_status").eq("channel_msg_hash", channelMsgHash).order("id", { ascending: false }).limit(1).maybeSingle();
+  if (!data) return null;
+  const current = (data.delivery_status as string | null) ?? null;
+  if (status === "failed") {
+    if (current === "failed") return null;
+    const { data: upd } = await db.from("messages").update({ delivery_status: "failed", failed_at: new Date().toISOString(), error_code: errorCode ? String(errorCode) : "erro" }).eq("id", data.id).or("delivery_status.is.null,delivery_status.neq.failed").select("id");
+    return upd?.length ? { id: data.id as number, conversation_id: data.conversation_id as string } : null;
+  }
+  if (current === "failed" || (DELIVERY_RANK[current ?? ""] ?? 0) >= DELIVERY_RANK[status]) return null;
+  const lower = Object.entries(DELIVERY_RANK).filter(([, r]) => r < DELIVERY_RANK[status]).map(([k]) => k);
+  const { data: upd } = await db.from("messages").update({ delivery_status: status }).eq("id", data.id).or(`delivery_status.is.null,delivery_status.in.(${lower.join(",")})`).select("id");
+  return upd?.length ? { id: data.id as number, conversation_id: data.conversation_id as string } : null;
 }
 
 /** Quais mensagens mudar: por id, por ids ou pela chave do evento do canal. */

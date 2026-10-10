@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueLeadEvent } from "./message-events";
 import { openNullable, scopeOfBot, sealNullable } from "./field-cipher";
 
 /*
@@ -65,7 +66,10 @@ export async function createLead(
     .select("id")
     .single();
   if (error) console.error("lead não gravado", error.message);
-  return (data?.id as string | undefined) ?? null;
+  const id = (data?.id as string | undefined) ?? null;
+  // webhooks: lead.created para o sistema do cliente
+  if (id) await queueLeadEvent(db, { id, conversationId: lead.conversationId, name: lead.name, phone: lead.phone, email: lead.email, notes: lead.notes });
+  return id;
 }
 
 /** Leads destes chatbots, mais novos primeiro; from/to limitam pela data de criação. */
