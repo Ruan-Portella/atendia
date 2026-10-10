@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { PRIMARY_INACTIVITY_TEXT, queueTemplateEvent } from "./platform-events";
 import { queueStatusEvent } from "./message-events";
 import { channelMsgHash } from "./hash";
 import { PAYMENT_ISSUE_CODE } from "./whatsapp";
@@ -61,10 +62,13 @@ const whatsappGroup: GroupHandler = async (db, events) => {
       // a conta do cliente deixou de ser nossa: desliga os números dela e avisa a agência
       const lost = ACCESS_LOST_EVENTS[p.event ?? ""];
       if (!lost) continue;
-      // PARTNER_REMOVED traz o motivo e quem iniciou: aparece no Diagnóstico do número
+      // PARTNER_REMOVED traz o motivo e quem iniciou: aparece no Diagnóstico do número; na
+      // inatividade da coexistência, o texto diz o que fazer (abrir o app do celular e conectar de novo)
+      const metaReason = p.detail?.disconnection_info?.reason?.toUpperCase() ?? null;
       const extra = disconnectionDetail(p.detail?.disconnection_info);
-      const reason = extra ? `${lost} (${extra})` : lost;
-      for (const wabaId of wabaIds) await markDisconnected(db, { column: "waba_id", value: wabaId }, reason);
+      const reason = metaReason === "PRIMARY_INACTIVITY" ? PRIMARY_INACTIVITY_TEXT : extra ? `${lost} (${extra})` : lost;
+      // webhooks: o código é o motivo da Meta quando vem (ex.: PRIMARY_INACTIVITY), senão o evento
+      for (const wabaId of wabaIds) await markDisconnected(db, { column: "waba_id", value: wabaId }, reason, metaReason ?? p.event ?? "access_lost");
     } else if (p?.type === "status") {
       if (p.status.status === "failed") {
         console.warn("whatsapp: mensagem não entregue", p.phoneNumberId, p.status.errors?.[0]);
@@ -85,6 +89,8 @@ const whatsappGroup: GroupHandler = async (db, events) => {
       if (e.bot_id) await recordUsage(db, e.bot_id, p.phoneNumberId, [p.status]);
     } else if (p?.type === "notice" && p.wabaId) {
       await handleCampaignNotice(db, p.wabaId, p.field, p.value);
+      // webhooks: template.status_changed (aprovado, recusado, pausado…)
+      if (p.field === "message_template_status_update") await queueTemplateEvent(db, p.wabaId, p.value);
     } else if (p?.type === "prefs" && (p.wabaId || e.bot_id)) {
       // preferências do WhatsApp: "stop" suprime o marketing; "resume" é novo opt-in da própria pessoa
       for (const pref of p.prefs) {

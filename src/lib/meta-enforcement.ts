@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { clientsOfScope, trackCompliance } from "./platform-events";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl } from "./utils";
 import { audit } from "./audit";
@@ -54,8 +55,12 @@ export function metaMeasureFor(event: string, detail: MetaAccountDetail): MetaMe
 export async function recordMetaEnforcement(db: SupabaseClient, input: { event: string; wabaId: string; detail: MetaAccountDetail }) {
   const measure = metaMeasureFor(input.event, input.detail);
   if (!measure) return;
+  // webhooks: compliance.changed para os clientes dos chatbots desta conta do WhatsApp
+  const clients = () => clientsOfScope(db, { wabaId: input.wabaId });
   if (measure === "reinstate") {
-    const { data } = await db.from("enforcement_actions").update({ lifted_at: new Date().toISOString(), lifted_by: "meta" }).eq("source", "meta_order").eq("waba_id", input.wabaId).is("lifted_at", null).select("id");
+    const { data } = await trackCompliance(db, clients, (r) => `medida:${(r.data ?? []).map((m) => m.id).join(",")}:levantada`, async () =>
+      db.from("enforcement_actions").update({ lifted_at: new Date().toISOString(), lifted_by: "meta" }).eq("source", "meta_order").eq("waba_id", input.wabaId).is("lifted_at", null).select("id"),
+    );
     if (data?.length) {
       console.warn("whatsapp: Meta reativou a conta", input.wabaId);
       await audit(db, { agencyId: null, actorType: "system", actorId: "meta", action: "meta.levantar_ordem", targetType: "waba", targetId: input.wabaId });
@@ -68,17 +73,23 @@ export async function recordMetaEnforcement(db: SupabaseClient, input: { event: 
   const bot = (Array.isArray(first?.bots) ? first.bots[0] : first?.bots) as { name: string; client_name: string; agency_id: string } | null | undefined;
   const { data: same } = await db.from("enforcement_actions").select("id").eq("source", measure.source).eq("feature", measure.feature).eq("waba_id", input.wabaId).eq("reason", measure.reason).is("lifted_at", null).limit(1);
   if (same?.length) return;
-  await db.from("enforcement_actions").insert({
-    source: measure.source,
-    feature: measure.feature,
-    channel: "whatsapp",
-    agency_id: bot?.agency_id ?? null,
-    bot_id: channels?.length === 1 ? first!.bot_id : null,
-    waba_id: input.wabaId,
-    reason: measure.reason,
-    detail: { event: input.event, ...input.detail },
-    created_by: "meta",
-  });
+  await trackCompliance(db, clients, (r) => `medida:${r.data?.id}`, async () =>
+    db
+      .from("enforcement_actions")
+      .insert({
+        source: measure.source,
+        feature: measure.feature,
+        channel: "whatsapp",
+        agency_id: bot?.agency_id ?? null,
+        bot_id: channels?.length === 1 ? first!.bot_id : null,
+        waba_id: input.wabaId,
+        reason: measure.reason,
+        detail: { event: input.event, ...input.detail },
+        created_by: "meta",
+      })
+      .select("id")
+      .single(),
+  );
   console.warn("whatsapp: medida da Meta", input.wabaId, measure);
   await audit(db, { agencyId: bot?.agency_id ?? null, actorType: "system", actorId: "meta", action: "meta.medida", targetType: "waba", targetId: input.wabaId, after: { ...measure } });
   if (!bot) return;

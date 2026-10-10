@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const signed = parseSignedRequest(form?.get("signed_request")?.toString(), metaAppSecrets());
   if (!signed) return new Response("invalid signed_request", { status: 400 });
   if (signed.app === "instagram") {
-    const n = await markInstagramDisconnected(createAdminClient(), { column: "ig_user_id", value: signed.data.user_id }, "o acesso do app foi removido nas configurações do Instagram");
+    const n = await markInstagramDisconnected(createAdminClient(), { column: "ig_user_id", value: signed.data.user_id }, "o acesso do app foi removido nas configurações do Instagram", "app_removed");
     console.log("meta: desautorização do Instagram", { contas: n });
   } else {
     console.log("meta: desautorização no app do Facebook/WhatsApp (sem dado vinculado ao usuário)");

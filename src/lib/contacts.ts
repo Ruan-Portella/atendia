@@ -717,3 +717,11 @@ export async function whatsappContactsByPhone(db: SupabaseClient, botId: string,
   }
   return out;
 }
+
+/** O contato do chatbot pelo número (ou BSUID) do WhatsApp ou pelo IGSID, sem criar (eventos de consentimento). */
+export async function channelContactId(db: SupabaseClient, botId: string, channel: ContactChannel, contact: string): Promise<string | null> {
+  const [column, hash] = channel === "instagram" ? ["ig_hash", igHash(contact)] : /[a-z]/i.test(contact) ? ["wa_user_hash", waUserHash(contact)] : ["phone_hash", metaPhoneHash(contact)];
+  if (!hash) return null;
+  const { data } = await db.from("contacts").select("id").eq("bot_id", botId).eq("channel", channel).eq(column, hash).maybeSingle();
+  return (data?.id as string | undefined) ?? null;
+}

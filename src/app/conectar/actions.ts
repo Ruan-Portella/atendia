@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { trackCompliance } from "@/lib/platform-events";
 import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
@@ -55,10 +56,12 @@ export async function acceptViaLink(token: string, fd: FormData): Promise<Action
   if (!answered && !answers) return fail("Responda todas as atividades (Não, Sim ou Não sei).");
   const h = await headers();
   let status;
+  const clientId = link.clientId;
   try {
-    status = await recordAcceptance(admin, {
+    // webhooks: a primeira resposta de atividades pode pôr o negócio em revisão (compliance.changed)
+    status = await trackCompliance(admin, [clientId], "atividades", () => recordAcceptance(admin, {
       agencyId: link.agencyId,
-      clientId: link.clientId,
+      clientId,
       botId: link.botId,
       channel: link.channel,
       via: "link",
@@ -69,7 +72,7 @@ export async function acceptViaLink(token: string, fd: FormData): Promise<Action
       ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
       userAgent: h.get("user-agent"),
       answers,
-    });
+    }));
   } catch (e) {
     console.error("aceite pelo link: falhou", e);
     return fail("Não foi possível registrar agora. Tente de novo.");

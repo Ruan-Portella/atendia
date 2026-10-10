@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueChannelEvent } from "./platform-events";
 import { notifyAgencyOwner } from "./notify";
 import { seal, unseal } from "./secret-box";
 import { appUrl } from "./utils";
@@ -31,6 +32,8 @@ export async function connectInstagram(db: SupabaseClient, opts: { botId: string
   await db.from("instagram_channels").delete().eq("bot_id", opts.botId);
   const { error } = await db.from("instagram_channels").insert({ bot_id: opts.botId, ig_user_id: me.igUserId, username: me.username, access_token_enc: seal(token), token_expires_at: expiresAt });
   if (error) return { ok: false, message: "A conta foi autorizada, mas não deu para salvar. Tente de novo." };
+  // webhooks: channel.connected
+  await queueChannelEvent(db, opts.botId, "connected", { type: "instagram", igUserId: me.igUserId, username: me.username ?? null }, { at: new Date().toISOString() });
 
   const { data: bot } = await db.from("bots").select("name, client_name, agency_id").eq("id", opts.botId).maybeSingle();
   if (bot) {
@@ -47,10 +50,11 @@ export async function connectInstagram(db: SupabaseClient, opts: { botId: string
 }
 
 /** Marca a conta como desconectada, apaga o token e avisa a agência (uma vez só). */
-export async function markInstagramDisconnected(db: SupabaseClient, where: { column: "bot_id" | "ig_user_id"; value: string }, reason: string): Promise<number> {
+export async function markInstagramDisconnected(db: SupabaseClient, where: { column: "bot_id" | "ig_user_id"; value: string }, reason: string, code = reason === IG_TOKEN_REJECTED ? "token_rejected" : "access_lost"): Promise<number> {
+  const at = new Date().toISOString();
   const { data: rows } = await db
     .from("instagram_channels")
-    .update({ disconnected_at: new Date().toISOString(), disconnect_reason: reason, access_token_enc: null })
+    .update({ disconnected_at: at, disconnect_reason: reason, access_token_enc: null })
     .eq(where.column, where.value)
     .is("disconnected_at", null)
     .select("bot_id, username, ig_user_id, bots(name, client_name, agency_id)");
@@ -58,6 +62,8 @@ export async function markInstagramDisconnected(db: SupabaseClient, where: { col
     const bot = (Array.isArray(r.bots) ? r.bots[0] : r.bots) as { name: string; client_name: string; agency_id: string } | null;
     console.warn("instagram: conta desconectada", r.ig_user_id, reason);
     if (!bot) continue;
+    // webhooks: channel.disconnected com o motivo
+    await queueChannelEvent(db, r.bot_id, "disconnected", { type: "instagram", igUserId: r.ig_user_id, username: r.username ?? null }, { at, reason: { code, message: reason } });
     await notifyAgencyOwner(db, bot.agency_id, `O Instagram de ${bot.client_name} foi desconectado`, [
       `A conta @${r.username ?? r.ig_user_id} do chatbot ${bot.name} (${bot.client_name}) foi desconectada: ${reason}.`,
       "",
@@ -80,7 +86,7 @@ export async function refreshInstagramTokens(db: SupabaseClient): Promise<{ refr
   let disconnected = 0;
   for (const r of rows ?? []) {
     if (!r.access_token_enc || (r.token_expires_at && new Date(r.token_expires_at) < new Date())) {
-      disconnected += await markInstagramDisconnected(db, { column: "bot_id", value: r.bot_id }, "o acesso venceu (60 dias sem renovar)");
+      disconnected += await markInstagramDisconnected(db, { column: "bot_id", value: r.bot_id }, "o acesso venceu (60 dias sem renovar)", "token_expired");
       continue;
     }
     try {

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueChannelEvent } from "./platform-events";
 import { notifyAgencyOwner } from "./notify";
 import { PAYMENT_ISSUE_CODE, WHATSAPP_BILLING_URL, WhatsAppError } from "./whatsapp";
 import { appUrl } from "./utils";
@@ -33,9 +34,10 @@ export function isPaymentError(e: unknown): boolean {
  * conectado; volta a funcionar sozinho quando o cartão entrar.
  */
 export async function markPaymentIssue(db: SupabaseClient, where: { column: "bot_id" | "phone_number_id"; value: string }): Promise<void> {
+  const at = new Date().toISOString();
   const { data: rows } = await db
     .from("whatsapp_channels")
-    .update({ payment_issue_at: new Date().toISOString() })
+    .update({ payment_issue_at: at })
     .eq(where.column, where.value)
     .is("payment_issue_at", null)
     .select("bot_id, display_phone, phone_number_id, bots(name, client_name, agency_id)");
@@ -52,6 +54,8 @@ export async function markPaymentIssue(db: SupabaseClient, where: { column: "bot
     const bot = (Array.isArray(r.bots) ? r.bots[0] : r.bots) as { name: string; client_name: string; agency_id: string } | null;
     console.warn("whatsapp: mensagens recusadas por pagamento", r.phone_number_id);
     if (!bot) continue;
+    // webhooks: channel.issue (conectado, mas a Meta não entrega)
+    await queueChannelEvent(db, r.bot_id, "issue", { type: "whatsapp", phoneNumberId: r.phone_number_id, display: r.display_phone ?? null }, { at, issue: { code: String(PAYMENT_ISSUE_CODE), message: "a conta do WhatsApp está sem forma de pagamento na Meta" } });
     await notifyAgencyOwner(db, bot.agency_id, `WhatsApp de ${bot.client_name}: a Meta está recusando mensagens`, [
       `A Meta recusou mensagens do número ${r.display_phone ?? r.phone_number_id} (${bot.name} · ${bot.client_name}) por falta de forma de pagamento.`,
       "",
@@ -71,10 +75,11 @@ export const TOKEN_REJECTED = "a Meta recusou o acesso (o app foi removido ou a 
  * e a política diz que ele sai ao desconectar) e avisa o dono de cada agência, uma vez só.
  * Service role. Devolve quantos números foram marcados agora.
  */
-export async function markDisconnected(db: SupabaseClient, where: { column: "bot_id" | "phone_number_id" | "waba_id"; value: string }, reason: string): Promise<number> {
+export async function markDisconnected(db: SupabaseClient, where: { column: "bot_id" | "phone_number_id" | "waba_id"; value: string }, reason: string, code = reason === TOKEN_REJECTED ? "token_rejected" : "access_lost"): Promise<number> {
+  const at = new Date().toISOString();
   const { data: rows } = await db
     .from("whatsapp_channels")
-    .update({ disconnected_at: new Date().toISOString(), disconnect_reason: reason, access_token_enc: null })
+    .update({ disconnected_at: at, disconnect_reason: reason, access_token_enc: null })
     .eq(where.column, where.value)
     .is("disconnected_at", null)
     .select("bot_id, display_phone, phone_number_id, bots(name, client_name, agency_id)");
@@ -83,6 +88,8 @@ export async function markDisconnected(db: SupabaseClient, where: { column: "bot
     const bot = (Array.isArray(r.bots) ? r.bots[0] : r.bots) as { name: string; client_name: string; agency_id: string } | null;
     console.warn("whatsapp: número desconectado", r.phone_number_id, reason);
     if (!bot) continue;
+    // webhooks: channel.disconnected com o motivo
+    await queueChannelEvent(db, r.bot_id, "disconnected", { type: "whatsapp", phoneNumberId: r.phone_number_id, display: r.display_phone ?? null }, { at, reason: { code, message: reason } });
     await notifyAgencyOwner(db, bot.agency_id, `O WhatsApp de ${bot.client_name} foi desconectado`, [
       `O número ${r.display_phone ?? r.phone_number_id} do chatbot ${bot.name} (${bot.client_name}) foi desconectado: ${reason}.`,
       "",

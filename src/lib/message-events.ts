@@ -14,7 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 let cache: { at: number; agencies: Set<string> } | null = null;
 
 /** Agências com webhook ativo (cache de 1 minuto: a maioria das mensagens não tem para quem ir). */
-async function agenciesWithWebhooks(db: SupabaseClient): Promise<Set<string>> {
+export async function agenciesWithWebhooks(db: SupabaseClient): Promise<Set<string>> {
   if (!cache || Date.now() - cache.at > 60_000) {
     const { data } = await db.from("webhooks").select("agency_id").eq("active", true).is("paused_by_plan_at", null);
     cache = { at: Date.now(), agencies: new Set((data ?? []).map((w) => w.agency_id as string)) };
@@ -60,7 +60,7 @@ interface SavedMessage {
 
 const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
 
-type BotRef = { id: string; agency_id: string; client_id: string | null; name: string };
+export type BotRef = { id: string; agency_id: string; client_id: string | null; name: string };
 
 /** Conversa, chatbot e se ela pode gerar eventos de conteúdo (aceite do negócio nos canais da Meta). */
 async function eventContext(db: SupabaseClient, conversationId: string): Promise<{ bot: BotRef; channel: string; contactId: string | null } | null> {
@@ -79,7 +79,7 @@ async function eventContext(db: SupabaseClient, conversationId: string): Promise
 }
 
 /** O contato no envelope: ids de canal e o nome, nunca o conteúdo da conversa. */
-async function contactObject(db: SupabaseClient, contactId: string | null): Promise<Record<string, unknown> | null> {
+export async function contactObject(db: SupabaseClient, contactId: string | null): Promise<Record<string, unknown> | null> {
   if (!contactId) return null;
   const { contactChannelIds, contactDisplayName } = await import("./contacts");
   const [ids, name] = await Promise.all([contactChannelIds(db, contactId), contactDisplayName(db, contactId).catch(() => null)]);

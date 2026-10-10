@@ -9,7 +9,7 @@ import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
-import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, isPromoOptOutButton, optOutConfirmation, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
+import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, isPromoOptOutButton, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { markCampaignContact } from "./campaigns";
 import { OPTIN_BUTTONS, OPTIN_NO, OPTIN_NO_TEXT, OPTIN_VERSION, OPTIN_YES, consentHistory, consentStateOf, isClosingMessage, offerDue, optInOfferText, optInYesText, recordConsent, restoreConsents, revokeConsents, typedOptInAnswer } from "./marketing-consent";
 import { ageRecord } from "./gate/age";
@@ -633,7 +633,8 @@ async function handleOptOuts(
       // "Foi engano": desfaz todos os SAIR/PARAR/STOP ativos do contato (quem tocou espera voltar a
       // receber tudo) e fica gravado como novo opt-in dado pela própria pessoa. O que veio da Meta
       // (preferências do WhatsApp, erro 131050) continua: não foi dado por esse SAIR.
-      await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" });
+      const undone = await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" });
+      await queueUndoEvents(db, target, undone);
       // o sim de novidades que esse SAIR revogou volta como um novo sim da própria pessoa
       await restoreConsents(db, consentTarget, `chat:sair:${button.slice(OPTOUT_UNDO.length + 1)}`);
       await answer(`Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${company}.`);

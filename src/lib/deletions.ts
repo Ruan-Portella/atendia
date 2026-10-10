@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { queueChannelEvent } from "./platform-events";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { contactIdsOfChannel, deleteContacts } from "./contacts";
 import { deleteLeads, leadIdsOfConversations } from "./leads";
@@ -67,7 +68,7 @@ export const metaAppSecrets = () => [
  * daquele chatbot, com os contatos capturados nelas. Tudo registrado no registro de exclusões.
  */
 export async function deleteInstagramAccountData(db: SupabaseClient, igUserId: string, code: string) {
-  const { data: channels } = await db.from("instagram_channels").select("id, bot_id").eq("ig_user_id", igUserId);
+  const { data: channels } = await db.from("instagram_channels").select("id, bot_id, username, disconnected_at").eq("ig_user_id", igUserId);
   let conversations = 0;
   let leads = 0;
   for (const ch of channels ?? []) {
@@ -92,6 +93,8 @@ export async function deleteInstagramAccountData(db: SupabaseClient, igUserId: s
     await logDeletion(db, "instagram_channels", [ch.id as string], code);
     const { error } = await db.from("instagram_channels").delete().eq("id", ch.id);
     if (error) throw new Error(`exclusão da conexão: ${error.message}`);
+    // webhooks: channel.disconnected (a conta pediu a exclusão dos dados pela Meta)
+    if (!ch.disconnected_at) await queueChannelEvent(db, ch.bot_id as string, "disconnected", { type: "instagram", igUserId, username: (ch.username as string | null) ?? null }, { at: new Date().toISOString(), reason: { code: "data_deletion", message: "a conta pediu a exclusão dos dados pela Meta" } });
   }
   return { accounts: channels?.length ?? 0, conversations, leads };
 }

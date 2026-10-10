@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueBotEvent } from "./platform-events";
 import { openNullable, scopeOfBot, sealNullable } from "./field-cipher";
 import { activeSuppressions, blocks, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { consentHistory, consentStateOf, revokeConsents, type ConsentState } from "./marketing-consent";
@@ -536,12 +537,38 @@ async function updateTotals(db: SupabaseClient, id: string): Promise<Record<stri
   return totals;
 }
 
-/** Sem nada na fila nem enviando: a campanha termina. */
+/** Sem nada na fila nem enviando: a campanha termina (e os webhooks recebem campaign.finished). */
 async function finishIfDone(db: SupabaseClient, id: string): Promise<boolean> {
   const totals = await updateTotals(db, id);
   if ((totals.queued ?? 0) > 0 || (totals.sending ?? 0) > 0) return false;
-  const { data } = await db.from("campaigns").update({ status: "finished", finished_at: new Date().toISOString() }).eq("id", id).eq("status", "sending").select("id");
-  return Boolean(data?.length);
+  const finishedAt = new Date().toISOString();
+  const { data } = await db.from("campaigns").update({ status: "finished", finished_at: finishedAt }).eq("id", id).eq("status", "sending").select("id, bot_id, name, kind");
+  const c = data?.[0];
+  if (!c) return false;
+  await queueBotEvent(db, [c.bot_id as string], { type: "campaign.finished", key: id, createdAt: finishedAt, data: campaignFinishedData({ id, name: c.name as string, kind: c.kind as CampaignKind }, await campaignReport(db, id)) });
+  return true;
+}
+
+/** Totais do campaign.finished (o envio incerto conta como enviado, como no relatório). Pura. */
+export function campaignFinishedData(c: { id: string; name: string; kind: CampaignKind }, r: CampaignReport) {
+  const n = reportNumbers(r);
+  const s = (k: SendStatus) => r.status[k] ?? 0;
+  return {
+    campaign: {
+      id: `cmp_${c.id}`,
+      name: c.name,
+      kind: c.kind === "utility_reminder" ? "reminder" : "marketing",
+      sent: n.sent,
+      delivered: n.delivered,
+      read: n.read,
+      failed: n.failed,
+      skipped_no_consent: s("skipped_no_consent"),
+      skipped_no_age: s("skipped_no_age"),
+      // contato apagado (pedido do titular) está na supressão por outro motivo
+      skipped_suppressed: s("skipped_suppressed") + s("skipped_contact_deleted"),
+      opted_out: n.optOuts,
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ conciliar (status da Meta) */

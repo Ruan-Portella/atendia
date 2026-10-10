@@ -76,17 +76,41 @@ export async function suppress(db: SupabaseClient, t: Target & { kind: Suppressi
     .select("id")
     .single();
   if (error) throw new Error(`supressão: ${error.message}`);
-  return (data?.id as number | undefined) ?? null;
+  const id = (data?.id as number | undefined) ?? null;
+  // webhooks: contact.opted_out (o pedido do titular e o resto de um aceite não são descadastro)
+  if (id && t.reason !== "erasure" && !t.source.startsWith("optin:")) {
+    const { consentSource, queueConsentEvent } = await import("./platform-events");
+    await queueConsentEvent(db, { channel: t.channel, scope: t.scope, contact: t.contact, type: t.kind, source: consentSource(t.source), granted: false, key: `supp:${id}` });
+  }
+  return id;
 }
 
-/** Novo opt-in dado pela própria pessoa: desfaz supressões ativas (todas ou só de uma categoria). */
-export async function revoke(db: SupabaseClient, t: Target & { kind?: SuppressionKind; ids?: number[]; reason?: string; source: string }) {
+/**
+ * Novo opt-in dado pela própria pessoa: desfaz supressões ativas (todas ou só de uma categoria).
+ * Devolve o que saiu (o "Foi engano" avisa os webhooks por categoria).
+ */
+export async function revoke(db: SupabaseClient, t: Target & { kind?: SuppressionKind; ids?: number[]; reason?: string; source: string }): Promise<Array<{ id: number; kind: SuppressionKind }>> {
   let q = db.from("suppressions").update({ revoked_at: new Date().toISOString(), revoke_source: t.source }).eq("contact_hash", contactHash(t.channel, t.contact)).eq("channel", t.channel).eq("scope", t.scope).is("revoked_at", null);
   if (t.kind) q = q.eq("kind", t.kind);
   if (t.ids?.length) q = q.in("id", t.ids);
   if (t.reason) q = q.eq("reason", t.reason);
-  const { error } = await q;
+  const { data, error } = await q.select("id, kind");
   if (error) throw new Error(`supressão: ${error.message}`);
+  return (data ?? []) as Array<{ id: number; kind: SuppressionKind }>;
+}
+
+/**
+ * "Foi engano": cada descadastro desfeito sai como contact.opted_in (origem chat). O de tudo volta
+ * como promoções e lembretes (o tipo all só existe no descadastro).
+ */
+export async function queueUndoEvents(db: SupabaseClient, t: Target, undone: Array<{ id: number; kind: SuppressionKind }>): Promise<void> {
+  if (!undone.length) return;
+  const { queueConsentEvent } = await import("./platform-events");
+  for (const u of undone) {
+    for (const type of u.kind === "all" ? (["marketing", "utility"] as const) : [u.kind]) {
+      await queueConsentEvent(db, { ...t, type, source: "chat", granted: true, key: `undo:${u.id}:${type}` });
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ opt-out pelo chat */

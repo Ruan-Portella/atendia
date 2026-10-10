@@ -290,6 +290,16 @@ const EVENT_HINT: Partial<Record<WebhookEvent, string>> = {
   "lead.created": "a IA registrou um lead",
   "handoff.requested": "pediram atendente",
   "handoff.returned": "a conversa voltou para a IA",
+  "contact.opted_in": "aceitou promoções ou lembretes (chat, painel ou “Foi engano”)",
+  "contact.opted_out": "pediu para sair (SAIR, botão, WhatsApp ou painel)",
+  "campaign.finished": "a campanha ou o lembrete terminou de enviar, com os totais",
+  "channel.connected": "WhatsApp ou Instagram conectado",
+  "channel.disconnected": "WhatsApp ou Instagram desconectado, com o motivo",
+  "channel.issue": "o canal está conectado mas não entrega (ex.: sem pagamento na Meta)",
+  "template.status_changed": "a Meta aprovou, recusou ou pausou um modelo",
+  "bot.paused": "a IA do chatbot foi pausada pelo dono",
+  "bot.resumed": "a IA do chatbot voltou",
+  "compliance.changed": "mudou o estado de conformidade do cliente ou as restrições",
 };
 
 /** Caixas dos eventos, por grupo; message.status vem desmarcado (alto volume). */

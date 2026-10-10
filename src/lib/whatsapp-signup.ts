@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { queueChannelEvent } from "./platform-events";
 import { fail, ok, type ActionResult } from "./action-result";
 import { notifyAgencyOwner, notifyPlatform } from "./notify";
 import { seal, unseal } from "./secret-box";
@@ -110,6 +111,8 @@ export async function connectFromSignup(admin: SupabaseClient, opts: { botId: st
     auto_replies_off_at: coexistence && input.autoRepliesOff ? new Date().toISOString() : null,
   });
   if (error) return fail("O número foi conectado na Meta, mas não deu para salvar. Tente de novo.");
+  // webhooks: channel.connected
+  await queueChannelEvent(admin, botId, "connected", { type: "whatsapp", phoneNumberId, display: phone.display_phone_number ?? null }, { at: new Date().toISOString() });
   // outra conta do WhatsApp: quem pediu para sair continua fora, e o aceite de novidades vai junto
   await carryWhatsAppPreferences(admin, botId, wabaId);
   // modelo padrão de retomada (utilidade, pt_BR): a equipe retoma conversas depois das 24 h

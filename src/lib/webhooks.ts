@@ -30,7 +30,17 @@ export const WEBHOOK_EVENTS = [
   "handoff.returned",
   "contact.linked",
   "contact.unlinked",
+  "contact.opted_in",
+  "contact.opted_out",
   "contact.deleted",
+  "campaign.finished",
+  "channel.connected",
+  "channel.disconnected",
+  "channel.issue",
+  "template.status_changed",
+  "bot.paused",
+  "bot.resumed",
+  "compliance.changed",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -38,7 +48,10 @@ export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 export const WEBHOOK_EVENT_GROUPS: Array<{ label: string; events: WebhookEvent[] }> = [
   { label: "Mensagens", events: ["message.received", "message.sent", "message.status", "message.failed", "message.deleted"] },
   { label: "Atendimento", events: ["lead.created", "handoff.requested", "handoff.returned"] },
-  { label: "Contato", events: ["contact.linked", "contact.unlinked", "contact.deleted"] },
+  { label: "Contato", events: ["contact.linked", "contact.unlinked", "contact.opted_in", "contact.opted_out", "contact.deleted"] },
+  { label: "Campanhas", events: ["campaign.finished"] },
+  { label: "Canais", events: ["channel.connected", "channel.disconnected", "channel.issue", "template.status_changed", "bot.paused", "bot.resumed"] },
+  { label: "Conformidade", events: ["compliance.changed"] },
 ];
 
 /** Desmarcados por padrão no editor: até 2 eventos por mensagem enviada. */

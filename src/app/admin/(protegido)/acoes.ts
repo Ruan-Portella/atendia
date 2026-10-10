@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { clientsOfScope, trackCompliance } from "@/lib/platform-events";
 import { requireAdmin } from "@/lib/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { text } from "@/lib/validation";
@@ -172,7 +173,10 @@ export async function suspendChannel(agencyId: string, fd: FormData): Promise<Ac
     const { data: bot } = await db.from("bots").select("id").eq("id", botId).eq("agency_id", agencyId).maybeSingle();
     if (!bot) return fail("Chatbot não encontrado nesta agência.");
   }
-  const { error } = await db.from("enforcement_actions").insert({ source: "boavoz", feature: "channel", channel, agency_id: agencyId, bot_id: botId, reason, created_by: s.email });
+  // webhooks: compliance.changed para cada cliente tocado (o do chatbot, ou todos os da agência)
+  const { error } = await trackCompliance(db, () => clientsOfScope(db, { botId, agencyId }), (r) => `medida:${r.data?.id}`, async () =>
+    db.from("enforcement_actions").insert({ source: "boavoz", feature: "channel", channel, agency_id: agencyId, bot_id: botId, reason, created_by: s.email }).select("id").single(),
+  );
   if (error) return fail("Não foi possível suspender. Tente de novo.");
   await auditAdmin(s.email, "canal.suspender", { agencyId, targetType: botId ? "bot" : "agency", targetId: botId ?? agencyId, after: { channel, reason } });
   revalidatePath("/admin", "layout");
@@ -182,7 +186,12 @@ export async function suspendChannel(agencyId: string, fd: FormData): Promise<Ac
 /** Levanta uma medida (da BoaVoz ou registrada da Meta): o canal volta a funcionar se nada mais o bloqueia. */
 export async function liftMeasure(id: number): Promise<ActionResult> {
   const s = await requireAdmin(`/admin (levantou a medida ${id})`);
-  const { data: lifted, error } = await createAdminClient().from("enforcement_actions").update({ lifted_at: new Date().toISOString(), lifted_by: s.email }).eq("id", id).is("lifted_at", null).select("agency_id, source, channel");
+  const db = createAdminClient();
+  const { data: measure } = await db.from("enforcement_actions").select("agency_id, bot_id, waba_id, source").eq("id", id).maybeSingle();
+  const scope = measure?.source === "boavoz" ? { botId: measure.bot_id as string | null, agencyId: measure.agency_id as string | null } : { wabaId: (measure?.waba_id as string | null) ?? null };
+  const { data: lifted, error } = await trackCompliance(db, () => (measure ? clientsOfScope(db, scope) : Promise.resolve([])), `medida:${id}:levantada`, async () =>
+    db.from("enforcement_actions").update({ lifted_at: new Date().toISOString(), lifted_by: s.email }).eq("id", id).is("lifted_at", null).select("agency_id, source, channel"),
+  );
   if (error) return fail("Não foi possível levantar. Tente de novo.");
   if (lifted?.[0]) await auditAdmin(s.email, "medida.levantar", { agencyId: lifted[0].agency_id as string | null, targetType: "measure", targetId: String(id), after: { source: lifted[0].source, channel: lifted[0].channel } });
   revalidatePath("/admin", "layout");
@@ -198,9 +207,14 @@ export async function approveBusiness(clientId: string): Promise<ActionResult> {
   const row = await reviewedBusiness(clientId);
   if (!row) return fail("Negócio não encontrado.");
   const now = new Date().toISOString();
-  const { error } = await db.from("business_compliance").update({ status: "ativo", reviewed_at: now, reviewed_by: s.email, review_note: null }).eq("client_id", clientId);
-  if (error) return fail("Não foi possível aprovar. Tente de novo.");
-  await db.from("enforcement_actions").update({ lifted_at: now, lifted_by: s.email }).eq("source", "boavoz").eq("detail->>client_id", clientId).is("lifted_at", null);
+  // webhooks: compliance.changed (estado e restrições, depois de levantar as suspensões do bloqueio)
+  const approved = await trackCompliance(db, [clientId], `revisao:${now}`, async () => {
+    const { error } = await db.from("business_compliance").update({ status: "ativo", reviewed_at: now, reviewed_by: s.email, review_note: null }).eq("client_id", clientId);
+    if (error) return false;
+    await db.from("enforcement_actions").update({ lifted_at: now, lifted_by: s.email }).eq("source", "boavoz").eq("detail->>client_id", clientId).is("lifted_at", null);
+    return true;
+  });
+  if (!approved) return fail("Não foi possível aprovar. Tente de novo.");
   const sent = await tellAgency(row, { decision: "aprovado" });
   await auditAdmin(s.email, "negocio.aprovar", { agencyId: row.agencyId, targetType: "client", targetId: clientId, after: { previous: row.previous } });
   revalidatePath("/admin", "layout");
@@ -233,13 +247,19 @@ export async function blockBusiness(clientId: string, fd: FormData): Promise<Act
   const db = createAdminClient();
   const row = await reviewedBusiness(clientId);
   if (!row) return fail("Negócio não encontrado.");
-  const { error } = await db.from("business_compliance").update({ status: "bloqueado", reviewed_at: new Date().toISOString(), reviewed_by: s.email, review_note: reason }).eq("client_id", clientId);
-  if (error) return fail("Não foi possível bloquear. Tente de novo.");
-  const { data: bots } = await db.from("bots").select("id").eq("client_id", clientId).eq("is_demo", false);
-  const measures = (bots ?? []).flatMap((b) =>
-    (["whatsapp", "instagram"] as const).map((channel) => ({ source: "boavoz", feature: "channel", channel, agency_id: row.agencyId, bot_id: b.id, reason: `negócio bloqueado na revisão: ${reason}`, detail: { client_id: clientId }, created_by: s.email })),
-  );
-  if (measures.length) await db.from("enforcement_actions").insert(measures);
+  const now = new Date().toISOString();
+  // webhooks: compliance.changed (o texto da revisão fica no BoaVoz: o evento leva um resumo fixo)
+  const blocked = await trackCompliance(db, [clientId], `revisao:${now}`, async () => {
+    const { error } = await db.from("business_compliance").update({ status: "bloqueado", reviewed_at: now, reviewed_by: s.email, review_note: reason }).eq("client_id", clientId);
+    if (error) return false;
+    const { data: bots } = await db.from("bots").select("id").eq("client_id", clientId).eq("is_demo", false);
+    const measures = (bots ?? []).flatMap((b) =>
+      (["whatsapp", "instagram"] as const).map((channel) => ({ source: "boavoz", feature: "channel", channel, agency_id: row.agencyId, bot_id: b.id, reason: `negócio bloqueado na revisão: ${reason}`, detail: { client_id: clientId }, created_by: s.email })),
+    );
+    if (measures.length) await db.from("enforcement_actions").insert(measures);
+    return true;
+  });
+  if (!blocked) return fail("Não foi possível bloquear. Tente de novo.");
   const sent = await tellAgency(row, { decision: "bloqueado", reason });
   await auditAdmin(s.email, "negocio.bloquear", { agencyId: row.agencyId, targetType: "client", targetId: clientId, after: { previous: row.previous, reason } });
   revalidatePath("/admin", "layout");

@@ -240,7 +240,7 @@ export async function memberSetSensitive(clientId: string, botId: string, formDa
 export async function memberDisconnectChannel(clientId: string, botId: string, channel: "whatsapp" | "instagram"): Promise<ActionResult> {
   const ctx = await memberForAction(clientId, "manager");
   if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");
-  const r = channel === "whatsapp" ? await disconnectWhatsAppChannel(ctx.admin, botId) : await disconnectInstagramChannel(ctx.admin, botId);
+  const r = channel === "whatsapp" ? await disconnectWhatsAppChannel(ctx.admin, botId, "cliente") : await disconnectInstagramChannel(ctx.admin, botId, "cliente");
   if (!r.ok) return fail("Não foi possível desconectar. Tente de novo.");
   await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "canal.desconectar", targetType: "bot", targetId: botId, before: { channel }, ...(await requestMeta()) });
   const { data: bot } = await ctx.admin.from("bots").select("name").eq("id", botId).maybeSingle();

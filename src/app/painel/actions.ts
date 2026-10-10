@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { queueBotPauseEvent, queueChannelEvent, queueConsentEvent, trackCompliance } from "@/lib/platform-events";
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { z } from "zod";
@@ -384,14 +385,17 @@ export async function pauseBot(botId: string, formData: FormData): Promise<Actio
   const { email } = await requireAgency();
   const supabase = await createClient();
   const reason = text(formData.get("reason")).slice(0, 200) || null;
+  const pausedAt = new Date().toISOString();
   const { data, error } = await supabase
     .from("bots")
-    .update({ paused_at: new Date().toISOString(), paused_by: `painel (${email})`, pause_reason: reason, pause_notify: formData.get("notify") === "on" })
+    .update({ paused_at: pausedAt, paused_by: `painel (${email})`, pause_reason: reason, pause_notify: formData.get("notify") === "on" })
     .eq("id", botId)
     .is("paused_at", null)
     .select("id");
   if (error) return fail("Não foi possível pausar. Tente de novo.");
   if (!data?.length) return fail("Este chatbot já está pausado.");
+  // webhooks: bot.paused (o motivo vai como o dono escreveu)
+  await queueBotPauseEvent(createAdminClient(), botId, { paused: true, pausedAt, at: pausedAt, by: "panel", reason });
   await auditPanel("bot.pausar", { type: "bot", id: botId }, { after: { reason, notify: formData.get("notify") === "on" } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("IA pausada. As próximas mensagens ficam para a sua equipe responder.");
@@ -400,8 +404,11 @@ export async function pauseBot(botId: string, formData: FormData): Promise<Actio
 export async function resumeBot(botId: string): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
-  const { error } = await supabase.from("bots").update({ paused_at: null, paused_by: null, pause_reason: null, pause_notify: false }).eq("id", botId);
+  const { data: before } = await supabase.from("bots").select("paused_at").eq("id", botId).maybeSingle();
+  const { data: resumed, error } = await supabase.from("bots").update({ paused_at: null, paused_by: null, pause_reason: null, pause_notify: false }).eq("id", botId).not("paused_at", "is", null).select("id");
   if (error) return fail("Não foi possível retomar. Tente de novo.");
+  // webhooks: bot.resumed, só se estava pausado (a chave é a pausa que terminou)
+  if (resumed?.length && before?.paused_at) await queueBotPauseEvent(createAdminClient(), botId, { paused: false, pausedAt: before.paused_at as string, at: new Date().toISOString(), by: "panel" });
   await auditPanel("bot.retomar", { type: "bot", id: botId });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("IA retomada. O assistente volta a responder a partir da próxima mensagem.");
@@ -685,6 +692,7 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   await admin.from("whatsapp_channels").delete().eq("bot_id", botId);
   const { error } = await admin.from("whatsapp_channels").insert({ bot_id: botId, phone_number_id: phoneNumberId, waba_id: wabaId, display_phone: phone.display_phone_number ?? null, verified_name: phone.verified_name ?? null });
   if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await queueChannelEvent(admin, botId, "connected", { type: "whatsapp", phoneNumberId, display: phone.display_phone_number ?? null }, { at: new Date().toISOString() });
   await carryWhatsAppPreferences(admin, botId, wabaId);
   await confirmAcceptance(admin, { clientId: bot.client_id as string, channel: "whatsapp", metaAccount: wabaId ?? phoneNumberId, metaVerifiedName: phone.verified_name ?? null });
   // modelo padrão de retomada (utilidade, pt_BR), quando a conta do WhatsApp veio junto
@@ -739,7 +747,8 @@ export async function acceptChannelTerms(botId: string, channel: AcceptanceChann
   const h = await headers();
   let status;
   try {
-    status = await recordAcceptance(admin, {
+    // webhooks: a primeira resposta de atividades pode pôr o negócio em revisão (compliance.changed)
+    status = await trackCompliance(admin, [bot.client_id as string], "atividades", () => recordAcceptance(admin, {
       agencyId: agency.id,
       clientId: bot.client_id as string,
       botId,
@@ -751,7 +760,7 @@ export async function acceptChannelTerms(botId: string, channel: AcceptanceChann
       ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
       userAgent: h.get("user-agent"),
       answers,
-    });
+    }));
   } catch (e) {
     console.error("aceite: falhou", e);
     return fail("Não foi possível registrar o aceite. Tente de novo.");
@@ -1541,6 +1550,8 @@ export async function revokeContactConsent(clientId: string, contactId: string):
   const { email } = await requireAgency();
   const n = await revokeConsents(createAdminClient(), t.target, `panel:${email}`);
   if (!n) return fail("Este contato não tem um aceite ativo.");
+  // webhooks: contact.opted_out pelo painel (revogar o aceite não cria supressão)
+  await queueConsentEvent(createAdminClient(), { channel: "whatsapp", ...t.target, type: "marketing", source: "panel", granted: false, key: `panel-revoke:${contactId}:${Date.now()}` });
   await auditPanel("contato.consentimento_revogar", { type: "contact", id: contactId });
   revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
   return ok("Aceite revogado: o contato não recebe mais promoções.");

@@ -131,8 +131,8 @@ export interface ConsentOrigin {
  * Grava um sim ou um não. O sim é um novo opt-in da própria pessoa: desfaz o descadastro de
  * promoções (o de lembretes continua).
  */
-export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null; collectedAt?: string | null; keepSuppression?: boolean }): Promise<void> {
-  const { error } = await db.from("marketing_consents").insert({
+export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null; collectedAt?: string | null; keepSuppression?: boolean; quiet?: boolean }): Promise<void> {
+  const { data: row, error } = await db.from("marketing_consents").insert({
     agency_id: t.agencyId,
     client_id: t.clientId,
     bot_id: t.botId,
@@ -147,8 +147,13 @@ export async function recordConsent(db: SupabaseClient, t: ConsentTarget & Conse
     text_version: t.textVersion,
     collected_by: t.collectedBy ?? null,
     ...(t.collectedAt ? { collected_at: t.collectedAt } : {}),
-  });
+  }).select("id").single();
   if (error) throw new Error(`consentimento: ${error.message}`);
+  // webhooks: contact.opted_in (quiet: o "Foi engano" já avisa pelo descadastro desfeito)
+  if (t.granted && !t.quiet && row?.id) {
+    const { queueConsentEvent } = await import("./platform-events");
+    await queueConsentEvent(db, { channel: "whatsapp", scope: t.scope, contact: t.contact, type: "marketing", source: t.source === "import" ? "panel" : t.source, granted: true, key: `consent:${row.id}` });
+  }
   // só o sim dado pela própria pessoa no chat tira do descadastro; o registrado pela empresa (painel,
   // planilha) não desfaz um SAIR (e o envio confere a supressão de qualquer jeito)
   if (!t.granted || t.source !== "chat" || t.keepSuppression) return;
@@ -204,6 +209,7 @@ export async function restoreConsents(db: SupabaseClient, t: ConsentTarget, revo
     source: "chat",
     text: `Foi engano (desfez o SAIR). Antes: ${data.text as string}`,
     textVersion: "foi-engano-1",
+    quiet: true,
   });
   return true;
 }

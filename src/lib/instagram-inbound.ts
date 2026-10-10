@@ -10,7 +10,7 @@ import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage, updateMessages } from "./messages";
 import { clearUnseen, igUnseenKind, markUnseen, recentUnseen, unseenMediaText, type UnseenMark } from "./unseen-media";
 import { hasPendingFrom, markOwnMessage } from "./inbound-queue";
-import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, revoke, suppress, suppressionScope } from "./suppression";
+import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope } from "./suppression";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
@@ -271,7 +271,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   if (undo.size) {
     const convId = await plainConversation();
     if (convId) for (const i of undo) await storeOnce(db, convId, shown(i), burst[i].key);
-    await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" });
+    await queueUndoEvents(db, target, await revoke(db, { ...target, reason: "opt_out", source: "chat:foi_engano" }));
     await systemReply(convId, `Tudo certo, desfiz o pedido. Você continua recebendo as mensagens da ${bot.client_name}.`);
   }
   const handled = new Set(texts.map((t, i) => (isOptOutKeyword(t) || undo.has(i) ? i : -1)).filter((i) => i >= 0));
