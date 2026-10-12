@@ -995,7 +995,7 @@
                 "pairings"
               ]
             },
-            "description": "Devolve o código de 6 caracteres e o link (vale 10 minutos). Mande \"Conectar <código>\" para o número para parear.",
+            "description": "Devolve o código de 6 caracteres e o link (vale 10 minutos). O pareamento só termina quando a pessoa abre o link no celular (ele abre o WhatsApp do bot com \"Conectar <código>\" escrito), manda a mensagem e confirma. Guarda o código e o link no ambiente (`pairing_code`, `pairing_link`).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"channel\": \"whatsapp\",\n  \"external_id\": \"{{external_id}}\",\n  \"display\": {\n    \"name\": \"Teste Postman\"\n  }\n}",
@@ -1013,7 +1013,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
-                  "const r = pm.response.json(); console.log(\"código:\", r.code, \"link:\", r.link);"
+                  "const r = pm.response.json();",
+                  "pm.environment.set(\"pairing_code\", r.code);",
+                  "pm.environment.set(\"pairing_link\", r.link || \"\");",
+                  "console.log(\"código:\", r.code, \"| abra no celular:\", r.link);"
                 ]
               }
             }
@@ -1035,7 +1038,7 @@
                 "links"
               ]
             },
-            "description": ""
+            "description": "Só depois de concluir o pareamento pelo celular (veja a requisição anterior). Sem nenhum vínculo ativo com o `external_id`, a API responde 404 not_found; depois de desvincular, também."
           },
           "event": [
             {
@@ -1043,8 +1046,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "const d = pm.response.json().data || []; if (d[0]) pm.environment.set(\"link_id\", d[0].id);"
+                  "if (pm.response.code === 404) console.log(\"Sem vínculo ativo para\", pm.environment.get(\"external_id\"), \"- abra o pairing_link no celular, mande a mensagem e confirme; depois rode de novo.\");",
+                  "pm.test(\"status 200 (pareamento concluído)\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.code === 200 ? pm.response.json().data || [] : [];",
+                  "if (d[0]) pm.environment.set(\"link_id\", d[0].id);"
                 ]
               }
             }

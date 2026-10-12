@@ -191,14 +191,26 @@ contatos = folder(
             "POST",
             "pairings",
             body={"bot_id": BOT, "channel": "whatsapp", "external_id": "{{external_id}}", "display": {"name": "Teste Postman"}},
-            desc="Devolve o código de 6 caracteres e o link (vale 10 minutos). Mande \"Conectar <código>\" para o número para parear.",
-            tests=expect_status(201) + ['const r = pm.response.json(); console.log("código:", r.code, "link:", r.link);'],
+            desc="Devolve o código de 6 caracteres e o link (vale 10 minutos). O pareamento só termina quando a pessoa abre o link no celular (ele abre o WhatsApp do bot com \"Conectar <código>\" escrito), manda a mensagem e confirma. Guarda o código e o link no ambiente (`pairing_code`, `pairing_link`).",
+            tests=expect_status(201)
+            + [
+                "const r = pm.response.json();",
+                "pm.environment.set(\"pairing_code\", r.code);",
+                "pm.environment.set(\"pairing_link\", r.link || \"\");",
+                "console.log(\"código:\", r.code, \"| abra no celular:\", r.link);",
+            ],
         ),
         req(
             "Vínculos do usuário",
             "GET",
             "contacts/ext:{{external_id}}/links",
-            tests=expect_status(200) + ['const d = pm.response.json().data || []; if (d[0]) pm.environment.set("link_id", d[0].id);'],
+            desc="Só depois de concluir o pareamento pelo celular (veja a requisição anterior). Sem nenhum vínculo ativo com o `external_id`, a API responde 404 not_found; depois de desvincular, também.",
+            tests=[
+                "if (pm.response.code === 404) console.log(\"Sem vínculo ativo para\", pm.environment.get(\"external_id\"), \"- abra o pairing_link no celular, mande a mensagem e confirme; depois rode de novo.\");",
+                'pm.test("status 200 (pareamento concluído)", () => pm.response.to.have.status(200));',
+                'const d = pm.response.code === 200 ? pm.response.json().data || [] : [];',
+                'if (d[0]) pm.environment.set("link_id", d[0].id);',
+            ],
         ),
         req("Desvincular", "DELETE", "contacts/ext:{{external_id}}/links/{{link_id}}", tests=expect_status(204)),
     ],
@@ -299,6 +311,8 @@ env = {
         {"key": "message_id", "value": "", "type": "default", "enabled": True},
         {"key": "next_cursor", "value": "", "type": "default", "enabled": True},
         {"key": "link_id", "value": "", "type": "default", "enabled": True},
+        {"key": "pairing_code", "value": "", "type": "default", "enabled": True},
+        {"key": "pairing_link", "value": "", "type": "default", "enabled": True},
     ],
     "_postman_variable_scope": "environment",
 }
