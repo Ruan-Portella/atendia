@@ -204,12 +204,12 @@ contatos = folder(
             "Vínculos do usuário",
             "GET",
             "contacts/ext:{{external_id}}/links",
-            desc="Só depois de concluir o pareamento pelo celular (veja a requisição anterior). Sem nenhum vínculo ativo com o `external_id`, a API responde 404 not_found; depois de desvincular, também.",
-            tests=[
-                "if (pm.response.code === 404) console.log(\"Sem vínculo ativo para\", pm.environment.get(\"external_id\"), \"- abra o pairing_link no celular, mande a mensagem e confirme; depois rode de novo.\");",
-                'pm.test("status 200 (pareamento concluído)", () => pm.response.to.have.status(200));',
-                'const d = pm.response.code === 200 ? pm.response.json().data || [] : [];',
-                'if (d[0]) pm.environment.set("link_id", d[0].id);',
+            desc="Os vínculos ativos do `external_id`. Sem vínculo (pareamento ainda não concluído pelo celular, ou depois de desvincular), a lista vem vazia. Guarda o primeiro em `link_id`.",
+            tests=expect_status(200)
+            + [
+                "const d = pm.response.json().data || [];",
+                "if (d[0]) pm.environment.set(\"link_id\", d[0].id);",
+                "else console.log(\"Sem vínculo ativo para\", pm.environment.get(\"external_id\"), \"- abra o pairing_link no celular, mande a mensagem e confirme; depois rode de novo.\");",
             ],
         ),
         req("Desvincular", "DELETE", "contacts/ext:{{external_id}}/links/{{link_id}}", tests=expect_status(204)),

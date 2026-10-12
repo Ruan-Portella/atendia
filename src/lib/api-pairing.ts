@@ -11,7 +11,8 @@ import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type
  * Rotas de pareamento da API (P2, permissão pairing; spec "Formatos de payload", rotas):
  * - POST /v1/pairings {bot_id, channel, external_id, context, display, expected_phone?}
  *   → 201 {code, link, expires_at} (código de 6 caracteres, 10 minutos, uso único);
- * - GET /v1/contacts/{contact}/links → os vínculos ativos;
+ * - GET /v1/contacts/{contact}/links → os vínculos ativos (ext: sem vínculo → 200 com a lista vazia:
+ *   "este usuário não tem vínculo" é resposta, não erro; nos outros formatos, contato inexistente → 404);
  * - DELETE /v1/contacts/{contact}/links/{id} → 204.
  */
 
@@ -69,7 +70,11 @@ async function linksOf(req: Request, api: ApiContext, contactParam: string) {
   const botParam = new URL(req.url).searchParams.get("bot_id");
   const botIds = botParam ? [api.requireBot(botParam)] : api.botIds;
   const contacts = await apiContacts(api.db, botIds, addr);
-  if (!contacts.length) throw notFound();
+  if (!contacts.length) {
+    // ext: é o id do sistema do cliente: sem vínculo ativo, a resposta é a lista vazia
+    if (addr.kind === "ext") return [];
+    throw notFound();
+  }
   const { data } = await api.db
     .from("contact_links")
     .select("id, bot_id, contact_id, channel, external_id_enc, context_enc, display, linked_at")
