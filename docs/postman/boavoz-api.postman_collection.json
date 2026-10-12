@@ -22,7 +22,7 @@
         "type": "text/javascript",
         "exec": [
           "// proteção da Vercel: só o dev.boavoz.com pede (fica vazio em produção)",
-          "const bypass = pm.environment.get(\"vercel_bypass\");",
+          "const bypass = pm.variables.get(\"vercel_bypass\");",
           "if (bypass) pm.request.headers.upsert({ key: \"x-vercel-protection-bypass\", value: bypass });"
         ]
       }
@@ -1223,7 +1223,7 @@
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
                   "const data = pm.response.json().data || [];",
                   "const wa = data.find((c) => c.channel === \"whatsapp\");",
-                  "if (wa && !pm.environment.get(\"whatsapp_contact\")) pm.environment.set(\"whatsapp_contact\", wa.id);",
+                  "if (wa && !pm.variables.get(\"whatsapp_contact\")) pm.environment.set(\"whatsapp_contact\", wa.id);",
                   "console.log(data.map((c) => `${c.channel} ${c.id} ${c.name || \"\"} tags=${c.tags.join(\"|\")} promo=${c.consent ? c.consent.marketing : \"-\"}`).join(\"\\n\"));"
                 ]
               }
@@ -1544,7 +1544,7 @@
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
                   "const d = pm.response.json().data || [];",
                   "if (d[0]) pm.environment.set(\"link_id\", d[0].id);",
-                  "else console.log(\"Sem vínculo ativo para\", pm.environment.get(\"external_id\"), \"- abra o pairing_link no celular, mande a mensagem e confirme; depois rode de novo.\");"
+                  "else console.log(\"Sem vínculo ativo para\", pm.variables.get(\"external_id\"), \"- abra o pairing_link no celular, mande a mensagem e confirme; depois rode de novo.\");"
                 ]
               }
             }
@@ -2295,6 +2295,123 @@
           ]
         }
       ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "template_name",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "template_language",
+      "value": "pt_BR",
+      "type": "string"
+    },
+    {
+      "key": "template_variable_1",
+      "value": "Ruan",
+      "type": "string"
+    },
+    {
+      "key": "marketing_template",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reminder_template",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "send_at_future",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "campaign_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "external_id",
+      "value": "user_postman_1",
+      "type": "string"
+    },
+    {
+      "key": "idempotency_key",
+      "value": "teste-idempotencia-1",
+      "type": "string"
+    },
+    {
+      "key": "conversation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "whatsapp_conversation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "instagram_conversation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "widget_conversation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "whatsapp_contact",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "instagram_contact",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "message_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "next_cursor",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "link_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "image_url",
+      "value": "https://placehold.co/600x400.png",
+      "type": "string"
+    },
+    {
+      "key": "document_url",
+      "value": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "type": "string"
+    },
+    {
+      "key": "media_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pairing_code",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pairing_link",
+      "value": "",
+      "type": "string"
     }
   ]
 }

@@ -10,7 +10,7 @@ Arquivos desta pasta:
 
 ### Importar
 
-1. No Postman, **Import** e arraste os dois arquivos `.json`.
+1. No Postman, **Import** e arraste os dois arquivos `.json`. O ambiente se importa **uma vez só**: nas próximas versões, reimporte só a coleção (os valores-padrão do resto, como as URLs de exemplo e o idioma do modelo, ficam dentro dela, e o seu ambiente não é tocado).
 2. No canto superior direito, escolha o ambiente **BoaVoz dev**.
 3. Abra o ambiente e preencha:
    - `api_key`: a chave criada em Integrações, Chaves de API (com as permissões que for testar);
@@ -18,7 +18,7 @@ Arquivos desta pasta:
    - `bot_id`: o id do chatbot de teste, com o prefixo `bot_`;
    - `phone`: o seu WhatsApp com 55 e DDD, só números.
 
-   As duas primeiras são secretas: não exporte nem compartilhe o ambiente com elas preenchidas.
+   As duas primeiras são secretas: não exporte nem compartilhe o ambiente com elas preenchidas, e nunca as coloque nos arquivos desta pasta (ficam no Git). Para os testes de erro, preencha também `phone_sem_idade`, `phone_fora_da_janela` e `phone_para_apagar` (números completos, com 55 e DDD).
 
 ### Usar
 

@@ -246,7 +246,7 @@ contatos = folder(
             + [
                 "const data = pm.response.json().data || [];",
                 "const wa = data.find((c) => c.channel === \"whatsapp\");",
-                "if (wa && !pm.environment.get(\"whatsapp_contact\")) pm.environment.set(\"whatsapp_contact\", wa.id);",
+                "if (wa && !pm.variables.get(\"whatsapp_contact\")) pm.environment.set(\"whatsapp_contact\", wa.id);",
                 "console.log(data.map((c) => `${c.channel} ${c.id} ${c.name || \"\"} tags=${c.tags.join(\"|\")} promo=${c.consent ? c.consent.marketing : \"-\"}`).join(\"\\n\"));",
             ],
         ),
@@ -306,7 +306,7 @@ contatos = folder(
             + [
                 "const d = pm.response.json().data || [];",
                 "if (d[0]) pm.environment.set(\"link_id\", d[0].id);",
-                "else console.log(\"Sem vínculo ativo para\", pm.environment.get(\"external_id\"), \"- abra o pairing_link no celular, mande a mensagem e confirme; depois rode de novo.\");",
+                "else console.log(\"Sem vínculo ativo para\", pm.variables.get(\"external_id\"), \"- abra o pairing_link no celular, mande a mensagem e confirme; depois rode de novo.\");",
             ],
         ),
         req("Desvincular", "DELETE", "contacts/ext:{{external_id}}/links/{{link_id}}", tests=expect_status(204)),
@@ -431,7 +431,7 @@ collection = {
             "listen": "prerequest",
             "script": script(
                 "// proteção da Vercel: só o dev.boavoz.com pede (fica vazio em produção)",
-                'const bypass = pm.environment.get("vercel_bypass");',
+                'const bypass = pm.variables.get("vercel_bypass");',
                 'if (bypass) pm.request.headers.upsert({ key: "x-vercel-protection-bypass", value: bypass });',
             ),
         },
@@ -450,6 +450,10 @@ collection = {
     ],
     "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas],
 }
+
+# Só o que é de cada pessoa fica no ambiente (importado uma vez e preenchido no Postman, nunca no Git).
+# O resto tem o valor-padrão dentro da coleção: reimportar a coleção não mexe no ambiente de ninguém.
+PERSONAL = {"base_url", "api_key", "vercel_bypass", "bot_id", "phone", "phone_sem_idade", "phone_fora_da_janela", "phone_para_apagar"}
 
 env = {
     "id": str(uuid.uuid5(uuid.NAMESPACE_URL, "boavoz-env-dev")),
@@ -489,6 +493,9 @@ env = {
     ],
     "_postman_variable_scope": "environment",
 }
+
+collection["variable"] = [{"key": v["key"], "value": v["value"], "type": "string"} for v in env["values"] if v["key"] not in PERSONAL]
+env["values"] = [v for v in env["values"] if v["key"] in PERSONAL]
 
 with io.open(f"{OUT}/boavoz-api.postman_collection.json", "w", encoding="utf-8", newline="\n") as f:
     json.dump(collection, f, ensure_ascii=False, indent=2)
