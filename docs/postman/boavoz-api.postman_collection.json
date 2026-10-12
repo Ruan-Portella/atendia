@@ -1,0 +1,1358 @@
+{
+  "info": {
+    "_postman_id": "550613ba-6863-52fd-81eb-9e687798e482",
+    "name": "BoaVoz API v1",
+    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_key}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// proteção da Vercel: só o dev.boavoz.com pede (fica vazio em produção)",
+          "const bypass = pm.environment.get(\"vercel_bypass\");",
+          "if (bypass) pm.request.headers.upsert({ key: \"x-vercel-protection-bypass\", value: bypass });"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// erro da API: código, mensagem e detalhes no Console do Postman",
+          "if (pm.response.code >= 400) {",
+          "  try {",
+          "    const e = pm.response.json().error;",
+          "    console.log(pm.info.requestName, pm.response.code, e.code, e.message, JSON.stringify(e.details || {}));",
+          "  } catch (_) {}",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Conversas",
+      "description": "Leitura das conversas e do histórico (permissão **conversations**). A listagem guarda no ambiente o id da conversa mais recente de cada canal (`whatsapp_conversation_id`, `instagram_conversation_id`, `widget_conversation_id`), o contato delas e o `conversation_id` usado nas pausas (o do WhatsApp, quando há).",
+      "item": [
+        {
+          "name": "Listar conversas (guarda os ids)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "channel",
+                  "value": "whatsapp",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ai_paused",
+                  "disabled": true
+                },
+                {
+                  "key": "since",
+                  "value": "2026-10-01T00:00:00Z",
+                  "disabled": true
+                },
+                {
+                  "key": "contact",
+                  "value": "phone:{{phone}}",
+                  "disabled": true
+                },
+                {
+                  "key": "bot_id",
+                  "value": "{{bot_id}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Mais recente primeiro. Filtros (ligue na aba Params): `channel` (widget, whatsapp, instagram), `status` (ai, ai_paused, waiting_human, human), `since`, `contact` e `bot_id`. Paginação por `next_cursor`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const data = body.data || [];",
+                  "for (const ch of [\"whatsapp\", \"instagram\", \"widget\"]) {",
+                  "  const c = data.find((x) => x.channel === ch);",
+                  "  if (!c) continue;",
+                  "  pm.environment.set(ch + \"_conversation_id\", c.id);",
+                  "  if (c.contact) pm.environment.set(ch + \"_contact\", c.contact.id);",
+                  "}",
+                  "const main = data.find((x) => x.channel === \"whatsapp\") || data[0];",
+                  "if (main) pm.environment.set(\"conversation_id\", main.id);",
+                  "pm.environment.set(\"next_cursor\", body.next_cursor || \"\");",
+                  "console.log(\"conversas:\", data.map((c) => `${c.channel} ${c.status} ${c.id}`).join(\"\\n\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Próxima página",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations?limit=20&cursor={{next_cursor}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{next_cursor}}"
+                }
+              ]
+            },
+            "description": "Usa o `next_cursor` da listagem anterior."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"next_cursor\", pm.response.json().next_cursor || \"\");"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Só as pausadas pela integração",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations?status=ai_paused",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ai_paused"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Histórico da conversa",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/messages?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Da mais antiga para a mais nova, com status (received, sent, delivered, read, failed, uncertain) e error. Guarda o id da última mensagem em `message_id`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data || [];",
+                  "if (data.length) pm.environment.set(\"message_id\", data[data.length - 1].id);",
+                  "console.log(data.map((m) => `${m.direction} ${m.source} ${m.status}: ${(m.text || \"\").slice(0, 60)}`).join(\"\\n\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Uma mensagem",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/messages/{{message_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages",
+                "{{message_id}}"
+              ]
+            },
+            "description": "Permissão **messages**. O status também chega por webhook (message.status) e no histórico."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Pausa da IA",
+      "description": "A integração pausa a IA numa conversa (sem avisar a equipe). Toda pausa tem prazo: sem `minutes`, 24 horas renovadas a cada mensagem enviada pela API; com `minutes`, de 1 a 10.080. Usa `{{conversation_id}}` (rode a listagem antes).",
+      "item": [
+        {
+          "name": "Pausar por 10 minutos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/pause",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}",
+                "pause"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minutes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"tem ai_paused_until\", () => pm.expect(pm.response.json().ai_paused_until).to.be.a(\"string\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pausar 24 h com anúncio (Ana)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/pause",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}",
+                "pause"
+              ]
+            },
+            "description": "A primeira mensagem enviada pela API sai com o anúncio de entrada com o nome; na volta, a IA usa o \"Voltei!\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"announce\": true,\n  \"agent_name\": \"Ana\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pausar por 1 minuto (testar o vencimento)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/pause",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}",
+                "pause"
+              ]
+            },
+            "description": "Mande uma mensagem pelo celular durante a pausa e espere uns 2 minutos: a IA responde sozinha (handoff.returned com reason timeout).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minutes\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retomar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/resume",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}",
+                "resume"
+              ]
+            },
+            "description": "A IA responde a última mensagem do contato se ela ficou sem resposta (handoff.returned com reason api).",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retomar com anúncio",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/resume",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}",
+                "resume"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"announce\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Enviar mensagens",
+      "description": "POST /v1/messages (permissão **messages**). Cada envio leva uma Idempotency-Key nova; a requisição \"Repetir com a mesma chave\" mostra a idempotência. WhatsApp: mande um \"oi\" do seu celular antes, para abrir a janela de 24 horas.",
+      "item": [
+        {
+          "name": "Texto no WhatsApp (pelo telefone)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"text\",\n  \"text\": \"Teste da API do BoaVoz\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Texto assinado (agent_name e sender)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "Chega como \"*Ana:* …\". No webhook message.sent: source api, agent.display_name Ana, agent.sender postman e o key_prefix.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"text\",\n  \"text\": \"Seu pedido saiu para entrega.\",\n  \"agent_name\": \"Ana\",\n  \"sender\": \"postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Texto no WhatsApp (pelo contato)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"{{whatsapp_contact}}\",\n  \"type\": \"text\",\n  \"text\": \"Teste pelo id do contato\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Texto no Instagram",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "Usa o contato da conversa de Instagram mais recente (rode a listagem antes). A pessoa precisa ter escrito nas últimas 24 horas.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"{{instagram_contact}}\",\n  \"type\": \"text\",\n  \"text\": \"Teste da API pelo Instagram\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Texto no chat do site",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "O visitante vê em segundos (o widget busca as novidades). Abra o chat do site e mande uma mensagem antes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{widget_conversation_id}}\",\n  \"type\": \"text\",\n  \"text\": \"Oi! Aqui é o sistema integrado.\",\n  \"agent_name\": \"Ana\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Modelo do WhatsApp",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "Funciona também fora da janela de 24 horas. Ajuste `variables` ao número de variáveis do modelo (veja em \"Modelos do bot\"); modelo sem variável: `[]`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{template_name}}\",\n    \"language\": \"{{template_language}}\",\n    \"variables\": [\n      \"{{template_variable_1}}\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repetir com a mesma chave (idempotência)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "Rode duas vezes: a segunda devolve o mesmo message_id, com o cabeçalho Idempotent-Replayed: true, e só uma mensagem chega. Troque `idempotency_key` no ambiente para testar de novo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"text\",\n  \"text\": \"Mensagem idempotente\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "pm.test(\"replay na segunda vez\", () => { if (pm.response.headers.get(\"Idempotent-Replayed\")) pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Modelos",
+      "description": "Modelos do WhatsApp do bot (permissão **messages**).",
+      "item": [
+        {
+          "name": "Modelos do bot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "templates"
+              ]
+            },
+            "description": "Com categoria, status da Meta, número de variáveis e se dá para enviar. Guarda o primeiro modelo enviável em `template_name` e `template_language`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const t = (pm.response.json().data || []).find((x) => x.sendable);",
+                  "if (t) { pm.environment.set(\"template_name\", t.name); pm.environment.set(\"template_language\", t.language); }",
+                  "console.log((pm.response.json().data || []).map((x) => `${x.name} (${x.language}) ${x.category} ${x.status} vars=${x.variables}${x.sendable ? \"\" : \" — não enviável\"}`).join(\"\\n\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Contatos e pareamento",
+      "description": "Idade informada pela empresa (permissão **contacts**) e pareamento com o sistema do cliente (permissão **pairing**).",
+      "item": [
+        {
+          "name": "Idade confirmada pela empresa",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/contacts/phone:{{phone}}/age",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "phone:{{phone}}",
+                "age"
+              ]
+            },
+            "description": "O contato passa a ter 18+ confirmado (origem company).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"age_verified\": true,\n  \"origin\": \"Teste pelo Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Criar código de pareamento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pairings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pairings"
+              ]
+            },
+            "description": "Devolve o código de 6 caracteres e o link (vale 10 minutos). Mande \"Conectar <código>\" para o número para parear.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"channel\": \"whatsapp\",\n  \"external_id\": \"{{external_id}}\",\n  \"display\": {\n    \"name\": \"Teste Postman\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json(); console.log(\"código:\", r.code, \"link:\", r.link);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vínculos do usuário",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/ext:{{external_id}}/links",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "ext:{{external_id}}",
+                "links"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data || []; if (d[0]) pm.environment.set(\"link_id\", d[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Desvincular",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/ext:{{external_id}}/links/{{link_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "ext:{{external_id}}",
+                "links",
+                "{{link_id}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Erros esperados",
+      "description": "Cada requisição confere o código de erro que a API deve devolver.",
+      "item": [
+        {
+          "name": "Corpo inválido (type)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"audio\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pausa com minutes inválido",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/pause",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}",
+                "pause"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minutes\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Conversa inexistente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations/conv_00000000-0000-4000-8000-000000000000/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "conv_00000000-0000-4000-8000-000000000000",
+                "messages"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"erro not_found\", () => pm.expect(pm.response.json().error.code).to.eql(\"not_found\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Portão: regulamentado sem 18+",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "Use em `phone_sem_idade` um número que escreveu nas últimas 24 horas e não confirmou 18+. Volta prohibited_content com reason age_not_confirmed e o termo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone_sem_idade}}\",\n  \"type\": \"text\",\n  \"text\": \"Temos cerveja gelada hoje!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"erro prohibited_content\", () => pm.expect(pm.response.json().error.code).to.eql(\"prohibited_content\"));",
+                  "pm.test(\"motivo age_not_confirmed\", () => pm.expect(pm.response.json().error.details.reason).to.eql(\"age_not_confirmed\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fora da janela de 24 h",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "Use em `phone_fora_da_janela` um número que não escreveu nas últimas 24 horas.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone_fora_da_janela}}\",\n  \"type\": \"text\",\n  \"text\": \"Oi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"erro outside_messaging_window\", () => pm.expect(pm.response.json().error.code).to.eql(\"outside_messaging_window\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chave inválida",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations"
+              ]
+            },
+            "description": "Sobrescreve a autenticação da coleção com uma chave que não existe.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "bv_live_esta_chave_nao_existe_000000",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"erro invalid_api_key\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_api_key\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
