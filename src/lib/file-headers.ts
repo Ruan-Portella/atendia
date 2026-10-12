@@ -46,7 +46,8 @@ export function downloadName(f: { id: string; mime: string; filename: string | n
   return clean || `arquivo-${f.id.slice(0, 8)}.${EXT[f.mime] ?? "bin"}`;
 }
 
-export function fileHeaders(f: { id: string; mime: string; filename: string | null; size: number }): Record<string, string> {
+/** crossOrigin: o link assinado (widget em outro domínio, API, webhooks); com a sessão do painel, só a mesma origem. */
+export function fileHeaders(f: { id: string; mime: string; filename: string | null; size: number }, o: { crossOrigin?: boolean } = {}): Record<string, string> {
   const inline = opensInline(f.mime);
   const name = downloadName(f);
   return {
@@ -56,6 +57,6 @@ export function fileHeaders(f: { id: string; mime: string; filename: string | nu
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; sandbox",
     "Cache-Control": "private, no-store",
-    "Cross-Origin-Resource-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": o.crossOrigin ? "cross-origin" : "same-origin",
   };
 }

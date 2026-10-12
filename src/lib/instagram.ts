@@ -229,6 +229,12 @@ export async function sendInstagramText(ch: IgChannel, recipientId: string, text
   return r.message_id ?? null;
 }
 
+/** Anexo pela URL (o Instagram baixa): imagem (PNG ou JPEG) ou arquivo (só PDF). Devolve o id da mensagem. */
+export async function sendInstagramAttachment(ch: IgChannel, recipientId: string, a: { type: "image" | "file"; url: string }, opts: { timeoutMs?: number } = {}): Promise<string | null> {
+  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message: { attachment: { type: a.type, payload: { url: a.url } } } }, timeoutMs: opts.timeoutMs });
+  return r.message_id ?? null;
+}
+
 /**
  * O @ de quem escreveu pelo Direct (API de perfil do usuário; só para quem mandou mensagem à conta).
  * Usado quando vira lead. Falha (permissão, perfil restrito) devolve null: o lead fica "pelo Instagram".

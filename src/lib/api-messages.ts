@@ -5,9 +5,12 @@ import { API_SEND_REF, saveMessage, touchConversation, UNCERTAIN } from "./messa
 import { channelMsgHash } from "./hash";
 import { deliver, type SendRecord } from "./send";
 import { sendBlockedReason } from "./conversation-mode";
-import { OUTSIDE_WINDOW_CODE, SendTimeoutError, WhatsAppError, sendText } from "./whatsapp";
+import { OUTSIDE_WINDOW_CODE, SendTimeoutError, WhatsAppError, sendMedia, sendText } from "./whatsapp";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
-import { InstagramError, isInstagramAccessError, isOutsideWindow } from "./instagram";
+import { InstagramError, isInstagramAccessError, isOutsideWindow, sendInstagramAttachment } from "./instagram";
+import { markOwnMessage } from "./inbound-queue";
+import { storeAttachment } from "./attachments";
+import { OutboundFileError, fetchOutboundFile, type OutboundKind } from "./outbound-file";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { send as sendInstagram } from "./instagram-inbound";
 import { listTemplates, loadTemplateChannel, renderTemplate, sendTemplate, templateBody, templateVariables, unsupportedReason, type TemplateChannel } from "./whatsapp-templates";
@@ -35,7 +38,9 @@ import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type
  * O envio à Meta é síncrono: 201 {message_id, conversation_id, status: "sent"}. Erro temporário da
  * Meta: 503 ou 429 com Retry-After (fora da idempotência). Sem resposta no prazo: 202 "uncertain";
  * o status da Meta concilia depois (biz_opaque_callback_data) e o BoaVoz nunca reenvia sozinho.
- * Documento e imagem chegam na parte 3c.
+ * Documento e imagem (parte 3c): o BoaVoz baixa a URL, confere o tipo pelos primeiros bytes e o
+ * tamanho do canal, guarda uma cópia cifrada (painel, widget e API) e a Meta busca na URL original;
+ * text vira a legenda.
  */
 
 /** Prazo da resposta da Meta: passou, o envio fica incerto (202). */
@@ -52,18 +57,28 @@ export interface Signature {
   sender: string | null;
 }
 
+export interface FileSpec {
+  kind: OutboundKind;
+  url: string;
+  filename: string | null;
+}
+
 export type SendBody =
-  | ({ target: "widget"; conversationId: string; type: "text"; text: string } & Signature)
-  | ({ target: "channel"; to: string; channel: Channel | null; type: "text"; text: string } & Signature)
+  | ({ target: "widget"; conversationId: string; type: "text"; text: string; file: null } & Signature)
+  | ({ target: "widget"; conversationId: string; type: "image" | "document"; text: string | null; file: FileSpec } & Signature)
+  | ({ target: "channel"; to: string; channel: Channel | null; type: "text"; text: string; file: null } & Signature)
+  | ({ target: "channel"; to: string; channel: Channel | null; type: "image" | "document"; text: string | null; file: FileSpec } & Signature)
   | ({ target: "channel"; to: string; channel: Channel | null; type: "template"; template: { name: string; language: string; variables: string[] } } & Signature);
+
+/** Legenda de imagem e documento (limite do WhatsApp). */
+export const MAX_CAPTION = 1024;
 
 const CONV_ID = /^conv_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
 /** Confere o corpo (400 com o campo). Função pura. */
 export function parseSendBody(body: Record<string, unknown>): SendBody {
   const type = body.type;
-  if (type === "document" || type === "image") throw invalidRequest("Documento e imagem ainda não estão disponíveis nesta versão da API: envie text ou template.", { field: "type" });
-  if (type !== "text" && type !== "template") throw invalidRequest('type deve ser "text" ou "template".', { field: "type" });
+  if (type !== "text" && type !== "template" && type !== "image" && type !== "document") throw invalidRequest('type deve ser "text", "template", "image" ou "document".', { field: "type" });
   const agent = body.agent_name;
   if (agent !== undefined && agent !== null && (typeof agent !== "string" || !agent.trim() || agent.trim().length > 80)) throw invalidRequest("agent_name deve ser texto de até 80 caracteres.", { field: "agent_name" });
   const sender = body.sender;
@@ -75,20 +90,41 @@ export function parseSendBody(body: Record<string, unknown>): SendBody {
     if (body.text.length > MAX_TEXT) throw invalidRequest(`text pode ter até ${MAX_TEXT} caracteres.`, { field: "text" });
     return body.text.trim();
   };
+  const caption = (): string | null => {
+    if (body.text === undefined || body.text === null) return null;
+    if (typeof body.text !== "string" || body.text.length > MAX_CAPTION) throw invalidRequest(`text (a legenda) pode ter até ${MAX_CAPTION} caracteres.`, { field: "text" });
+    return body.text.trim() || null;
+  };
+  const file = (kind: OutboundKind): FileSpec => {
+    const f = body[kind] as Record<string, unknown> | undefined;
+    if (!f || typeof f !== "object" || Array.isArray(f)) throw invalidRequest(`${kind} é obrigatório com type: ${kind}: {url${kind === "document" ? ", filename" : ""}}.`, { field: kind });
+    let ok = typeof f.url === "string" && f.url.length <= 2048;
+    try {
+      ok &&= new URL(f.url as string).protocol === "https:";
+    } catch {
+      ok = false;
+    }
+    if (!ok) throw invalidRequest(`${kind}.url deve ser um endereço HTTPS público.`, { field: `${kind}.url` });
+    const name = f.filename;
+    if (name !== undefined && name !== null && (typeof name !== "string" || !name.trim() || name.length > 200)) throw invalidRequest(`${kind}.filename deve ser texto de até 200 caracteres.`, { field: `${kind}.filename` });
+    return { kind, url: f.url as string, filename: typeof name === "string" ? name.trim() : null };
+  };
 
   if (body.conversation_id !== undefined) {
     if (body.to !== undefined) throw invalidRequest("Use to (WhatsApp e Instagram) ou conversation_id (chat do site), não os dois.", { field: "conversation_id" });
     const m = typeof body.conversation_id === "string" ? CONV_ID.exec(body.conversation_id) : null;
     if (!m) throw invalidRequest("conversation_id inválido: use o id com o prefixo conv_.", { field: "conversation_id" });
-    if (type !== "text") throw invalidRequest("No chat do site, só type: text (modelos são do WhatsApp).", { field: "type" });
-    return { target: "widget", conversationId: m[1].toLowerCase(), type, text: text(), ...sig };
+    if (type === "template") throw invalidRequest("No chat do site não há modelo (modelos são do WhatsApp): use text, image ou document.", { field: "type" });
+    if (type === "text") return { target: "widget", conversationId: m[1].toLowerCase(), type, text: text(), file: null, ...sig };
+    return { target: "widget", conversationId: m[1].toLowerCase(), type, text: caption(), file: file(type), ...sig };
   }
 
   if (typeof body.to !== "string" || !body.to.trim()) throw invalidRequest("to é obrigatório (ctc_…, phone:…, wa:…, ig:… ou ext:…); no chat do site, use conversation_id.", { field: "to" });
   const channel = body.channel;
   if (channel !== undefined && channel !== null && channel !== "whatsapp" && channel !== "instagram") throw invalidRequest('channel deve ser "whatsapp" ou "instagram".', { field: "channel" });
   const base = { target: "channel" as const, to: body.to.trim(), channel: (channel as Channel | undefined) ?? null, ...sig };
-  if (type === "text") return { ...base, type, text: text() };
+  if (type === "text") return { ...base, type, text: text(), file: null };
+  if (type === "image" || type === "document") return { ...base, type, text: caption(), file: file(type) };
 
   if (body.text !== undefined) throw invalidRequest("Com type: template, o texto vem do modelo: não mande text.", { field: "text" });
   const t = body.template as Record<string, unknown> | undefined;
@@ -286,7 +322,7 @@ const sentBody = (messageId: number | null, conversationId: string, status: "sen
  */
 async function sendThroughChannel(
   db: SupabaseClient,
-  o: { botId: string; channel: Channel; conv: ConvRow; kind: "equipe" | "modelo"; rec: ReturnType<typeof record>; ref: string; claimed: boolean; transport: () => Promise<string | null> },
+  o: { botId: string; channel: Channel; conv: ConvRow; kind: "equipe" | "modelo"; rec: ReturnType<typeof record>; ref: string; claimed: boolean; transport: () => Promise<string | null>; onSaved?: (messageId: number) => Promise<void> },
 ): Promise<Sent> {
   try {
     const r = await deliver(db, { botId: o.botId, channel: o.channel, conversationId: o.conv.id, kind: o.kind, recordFailures: false, record: o.rec, transport: o.transport });
@@ -294,6 +330,7 @@ async function sendThroughChannel(
       await restoreAnnounce(db, o.conv, o.claimed);
       throw new ApiError(403, "feature_suspended", r.reason, { feature: "channel", channel: o.channel });
     }
+    if (r.messageId && o.onSaved) await o.onSaved(r.messageId);
     await touchConversation(db, o.conv.id);
     await renewPause(db, o.conv);
     return sentBody(r.messageId, o.conv.id, "sent");
@@ -302,6 +339,7 @@ async function sendThroughChannel(
     if (e instanceof SendTimeoutError) {
       // sem saber se saiu: grava como incerta, com o ref que volta no status da Meta
       const id = await saveMessage(db, { conversation_id: o.conv.id, ...o.rec.insert, error_code: UNCERTAIN, channel_msg_hash: o.channel === "whatsapp" ? channelMsgHash("whatsapp", o.ref) : null }, { touch: "equipe" });
+      if (id && o.onSaved) await o.onSaved(id);
       await renewPause(db, o.conv);
       return sentBody(id, o.conv.id, "uncertain");
     }
@@ -323,8 +361,21 @@ async function sendThroughChannel(
   }
 }
 
-/** Texto para o WhatsApp ou o Instagram, dentro da janela de 24 horas. */
-async function sendChannelText(api: ApiContext, botId: string, p: Extract<SendBody, { target: "channel"; type: "text" }>): Promise<Sent> {
+/** O arquivo baixado e conferido para o canal (400 apontando a URL quando não dá). */
+async function outboundFile(f: FileSpec, channel: Channel | "widget") {
+  try {
+    return await fetchOutboundFile(f.url, { channel, kind: f.kind, filename: f.filename });
+  } catch (e) {
+    if (e instanceof OutboundFileError) throw invalidRequest(e.message, { field: `${f.kind}.url` });
+    throw e;
+  }
+}
+
+/** O que fica gravado na conversa para imagem ou documento sem legenda. Pura. */
+export const fileLabel = (f: { kind: OutboundKind; filename: string | null }) => (f.kind === "image" ? "📷 (foto)" : `📄 ${f.filename ?? "(documento)"}`);
+
+/** Texto, imagem ou documento para o WhatsApp ou o Instagram, dentro da janela de 24 horas. */
+async function sendChannelMessage(api: ApiContext, botId: string, p: Extract<SendBody, { target: "channel"; type: "text" | "image" | "document" }>): Promise<Sent> {
   const db = api.db;
   const bot = await loadBot(db, botId);
   const to = await resolveRecipient(db, botId, p);
@@ -338,18 +389,26 @@ async function sendChannelText(api: ApiContext, botId: string, p: Extract<SendBo
   const conv = last && Date.now() - Date.parse(last) <= WINDOW_MS ? await recentConversation(db, botId, to, WINDOW_MS) : null;
   if (!conv) throw new ApiError(422, "outside_messaging_window", "O contato não escreveu nas últimas 24 horas: só modelo aprovado (type: template, no WhatsApp).");
 
-  const problem = contentProblem(p.text, {
-    channel: to.channel,
-    contactPhone: to.phone,
-    age: await getAge(db, { botId, channel: to.channel, contact: to.address }),
-    regulatedConversation: regulatedConversation(conv.regulated_at),
-    exempt: await botGateExemptions(db, botId),
-  });
-  if (problem) throw new ApiError(422, "prohibited_content", "O portão do BoaVoz barrou o texto (ele nunca é editado).", { ...problem, channel: to.channel });
+  if (p.text) {
+    const problem = contentProblem(p.text, {
+      channel: to.channel,
+      contactPhone: to.phone,
+      age: await getAge(db, { botId, channel: to.channel, contact: to.address }),
+      regulatedConversation: regulatedConversation(conv.regulated_at),
+      exempt: await botGateExemptions(db, botId),
+    });
+    if (problem) throw new ApiError(422, "prohibited_content", "O portão do BoaVoz barrou o texto (ele nunca é editado).", { ...problem, channel: to.channel });
+  }
+  // o arquivo é baixado e conferido antes de qualquer envio
+  const file = p.file ? await outboundFile(p.file, to.channel) : null;
 
   const { prefix, claimed } = await prefixFor(db, conv, bot, to.channel, p.agentName);
-  const content = prefix ? `${prefix}\n${p.text}` : p.text;
+  // texto com o prefixo; na mídia, ele vira a legenda (ou a legenda inteira, sem texto)
+  const lead = [prefix, p.text].filter(Boolean).join("\n") || null;
+  const content = lead ?? (p.file ? fileLabel(p.file) : "");
   const ref = `${API_SEND_REF}${randomUUID()}`;
+  const waCh = wa as { phone_number_id: string; access_token_enc: string | null };
+  const igCh = ig as { bot_id: string; ig_user_id: string; access_token_enc: string | null };
   return sendThroughChannel(db, {
     botId,
     channel: to.channel,
@@ -358,11 +417,29 @@ async function sendChannelText(api: ApiContext, botId: string, p: Extract<SendBo
     rec: record(api, p, content, prefix),
     ref,
     claimed,
-    transport: async () =>
-      to.channel === "whatsapp"
-        ? ((await sendText(wa as { phone_number_id: string; access_token_enc: string | null }, to.address, content, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })).messages?.[0]?.id ?? null)
-        : sendInstagram(db, ig as { bot_id: string; ig_user_id: string; access_token_enc: string | null }, to.address, content, undefined, { timeoutMs: SEND_TIMEOUT_MS }),
+    transport: async () => {
+      if (to.channel === "whatsapp") {
+        const sent = file
+          ? await sendMedia(waCh, to.address, { type: p.type === "image" ? "image" : "document", link: file.url, caption: lead, filename: file.filename }, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })
+          : await sendText(waCh, to.address, content, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS });
+        return sent.messages?.[0]?.id ?? null;
+      }
+      if (!file) return sendInstagram(db, igCh, to.address, content, undefined, { timeoutMs: SEND_TIMEOUT_MS });
+      // o Instagram não tem legenda: o texto vai antes, numa DM própria
+      if (lead) await sendInstagram(db, igCh, to.address, lead, undefined, { timeoutMs: SEND_TIMEOUT_MS });
+      const mid = await sendInstagramAttachment(igCh, to.address, { type: p.type === "image" ? "image" : "file", url: file.url }, { timeoutMs: SEND_TIMEOUT_MS });
+      // o eco do anexo volta pelo webhook: é nosso, não é o app do Instagram
+      if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
+      return mid;
+    },
+    onSaved: file ? (messageId) => keepCopy(db, { botId, conversationId: conv.id, messageId, channel: to.channel, file }) : undefined,
   });
+}
+
+/** A cópia cifrada do arquivo enviado (painel, widget e GET /v1/media); falha aqui não desfaz o envio. */
+async function keepCopy(db: SupabaseClient, o: { botId: string; conversationId: string; messageId: number; channel: Channel | "widget"; file: { data: Uint8Array; mime: string; filename: string | null } }) {
+  const id = await storeAttachment(db, { botId: o.botId, conversationId: o.conversationId, messageId: o.messageId, channel: o.channel, data: o.file.data, mime: o.file.mime, filename: o.file.filename }).catch(() => null);
+  if (!id) console.error("api: cópia do arquivo enviado não guardada", o.messageId);
 }
 
 /** Modelo aprovado do WhatsApp: abre (ou continua) a conversa, fora da janela também. */
@@ -448,9 +525,11 @@ async function sendToWidget(api: ApiContext, p: Extract<SendBody, { target: "wid
   const conv = data as unknown as ConvRow & { bot_id: string };
   const bot = await loadBot(db, conv.bot_id);
   await requireSendable(db, conv.bot_id, "widget");
+  const file = p.file ? await outboundFile(p.file, "widget") : null;
   const { prefix } = await prefixFor(db, conv, bot, "widget", p.agentName);
-  const content = prefix ? `${prefix}\n${p.text}` : p.text;
+  const content = [prefix, p.text].filter(Boolean).join("\n") || (p.file ? fileLabel(p.file) : "");
   const id = await saveMessage(db, { conversation_id: conv.id, ...record(api, p, content, prefix).insert }, { touch: "equipe" });
+  if (id && file) await keepCopy(db, { botId: conv.bot_id, conversationId: conv.id, messageId: id, channel: "widget", file });
   await renewPause(db, conv);
   return sentBody(id, conv.id, "sent");
 }
@@ -460,7 +539,7 @@ export async function postMessage(req: Request, api: ApiContext): Promise<Respon
   const p = parseSendBody(body);
   if (p.target === "widget") return withIdempotency(api, req, raw, () => sendToWidget(api, p));
   const botId = api.requireBot(body.bot_id);
-  return withIdempotency(api, req, raw, () => (p.type === "template" ? sendTemplateMessage(api, botId, p) : sendChannelText(api, botId, p)));
+  return withIdempotency(api, req, raw, () => (p.type === "template" ? sendTemplateMessage(api, botId, p) : sendChannelMessage(api, botId, p)));
 }
 
 /* ------------------------------------------------------------------ GET /v1/bots/{id}/templates */

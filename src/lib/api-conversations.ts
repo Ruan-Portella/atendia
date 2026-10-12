@@ -7,6 +7,9 @@ import { clientIp } from "./rate-limit";
 import { apiPauseActive } from "./presence";
 import { pauseConversationAi, pausePlan, resumeConversationAi } from "./api-pause";
 import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type ApiContext } from "./api-v1";
+import { attachmentExpired, attachmentRow, attachmentsOfMessages, readAttachment, streamBytes, type AttachmentInfo } from "./attachments";
+import { signedFileUrl } from "./file-links";
+import { fileHeaders } from "./file-headers";
 
 /*
  * Conversas e mensagens pela API (C pública, parte 3a; permissões conversations e messages):
@@ -15,6 +18,7 @@ import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type
  * - GET /v1/messages/{id}
  * - POST /v1/conversations/{id}/pause {minutes?, announce?, agent_name?} → 200 {ai_paused_until}
  * - POST /v1/conversations/{id}/resume {announce?} → 200 {ai_paused_until: null}
+ * - GET /v1/media/{id}: o arquivo, decifrado (410 depois do prazo de guarda ou da exclusão)
  * Só conversas dos canais de verdade (site, WhatsApp, Instagram; nunca o teste do painel). As
  * mensagens do WhatsApp e do Instagram de cliente sem o aceite do negócio não saem pela API (a
  * mesma regra dos eventos de conteúdo).
@@ -175,18 +179,46 @@ export function messageStatus(m: Pick<MsgRow, "role" | "failed_at" | "channel_ms
   return channel === "widget" || m.channel_msg_id ? "sent" : "pending";
 }
 
-/** A mensagem no formato da API (desfeita: sem o texto). Pura. */
-export function messageObject(m: MsgRow, channel: ApiChannel) {
+/** Prefixo do áudio transcrito no texto gravado ("🎤 " + transcrição; whatsapp-inbound). */
+const AUDIO_PREFIX = "🎤 ";
+const MEDIA_LABEL = /^(\p{Extended_Pictographic}\uFE0F?\s)?\(([^()]+)\)(?:\s+([\s\S]*))?$/u;
+
+/**
+ * Texto de mensagem com arquivo: o rótulo ("📷 (foto)") sai, a legenda fica; no áudio, a
+ * transcrição vai para media.transcript, sem o prefixo. Pura.
+ */
+export function splitMediaText(content: string): { text: string | null; transcript: string | null } {
+  if (content.startsWith(AUDIO_PREFIX)) {
+    const rest = content.slice(AUDIO_PREFIX.length).trim();
+    return { text: null, transcript: rest && !/^\([^()]+\)$/.test(rest) ? rest : null };
+  }
+  const m = MEDIA_LABEL.exec(content.trim());
+  if (m) return { text: m[3]?.trim() || null, transcript: null };
+  // documento enviado pela API sem legenda: "📄 nome.pdf"
+  if (/^📄 \S/u.test(content) && !content.includes("\n")) return { text: null, transcript: null };
+  return { text: content, transcript: null };
+}
+
+/** O arquivo no formato da API, com o link assinado de 1 hora (spec "Objetos", media). */
+export function mediaObject(a: AttachmentInfo, transcript: string | null, now = Date.now()) {
+  const link = signedFileUrl(a.id, now);
+  return { id: `med_${a.id}`, type: a.doc_type, mime: a.mime, size: a.size, filename: a.filename, transcript, url: link.url, url_expires_at: link.expiresAt };
+}
+
+/** A mensagem no formato da API (desfeita: sem o texto). media: o primeiro arquivo dela. Pura. */
+export function messageObject(m: MsgRow, channel: ApiChannel, files: AttachmentInfo[] = []) {
   const inbound = m.role === "user";
   const source = inbound ? "contact" : sourceOf(m);
   const status = messageStatus(m, channel);
+  const file = m.deleted_at ? null : (files[0] ?? null);
+  const split = file ? splitMediaText(m.content) : { text: m.content, transcript: null };
   return {
     id: `msg_${m.id}`,
     conversation_id: `conv_${m.conversation_id}`,
     direction: inbound ? "inbound" : "outbound",
     source,
-    text: m.deleted_at ? null : m.content,
-    media: null,
+    text: m.deleted_at ? null : split.text,
+    media: file ? mediaObject(file, split.transcript) : null,
     agent: inbound || source === "contact" ? null : agentObject(m, source),
     status,
     error: status === "failed" ? { code: m.error_code ?? null, message: null } : null,
@@ -211,9 +243,11 @@ export async function listConversationMessages(req: Request, api: ApiContext, ra
   const rows = await loadMessages(api.db, { conversationId: conv.id, afterId, limit: limit + 1 }, MSG_COLS);
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];
+  const shown = page.filter(visible);
+  const files = await attachmentsOfMessages(api.db, shown.map((m) => m.id));
   return Response.json({
     conversation: conversationObject(conv),
-    data: page.filter(visible).map((m) => messageObject(m, conv.channel)),
+    data: shown.map((m) => messageObject(m, conv.channel, files.get(m.id))),
     next_cursor: rows.length > limit && last ? encodeCursor([String(last.id)]) : null,
   });
 }
@@ -227,7 +261,24 @@ export async function getMessage(api: ApiContext, rawId: string): Promise<Respon
   if (!msg || !visible(msg)) throw notFound();
   const conv = await scopedConversation(api, `conv_${msg.conversation_id}`);
   await requireAcceptance(api.db, conv.bot_id, conv.channel);
-  return Response.json(messageObject(msg, conv.channel));
+  const files = await attachmentsOfMessages(api.db, [msg.id]);
+  return Response.json(messageObject(msg, conv.channel, files.get(msg.id)));
+}
+
+const MEDIA_ID = /^med_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+/** GET /v1/media/{id}: o arquivo decifrado, em blocos; depois do prazo de guarda ou da exclusão, 410. */
+export async function getMedia(api: ApiContext, rawId: string): Promise<Response> {
+  const m = MEDIA_ID.exec(rawId);
+  if (!m) throw notFound();
+  const row = await attachmentRow(api.db, m[1].toLowerCase());
+  if (!row || !api.botIds.includes(row.bot_id)) throw notFound();
+  if (row.channel === "whatsapp" || row.channel === "instagram") await requireAcceptance(api.db, row.bot_id, row.channel);
+  const gone = () => new ApiError(410, "media_gone", "O arquivo passou do prazo de guarda ou foi apagado.");
+  if (attachmentExpired(row)) throw gone();
+  const file = await readAttachment(api.db, row);
+  if (!file.data) throw gone();
+  return new Response(streamBytes(file.data), { headers: fileHeaders({ id: file.id, mime: file.mime, filename: file.filename, size: file.data.byteLength }) });
 }
 
 /* ------------------------------------------------------------------ pausar e retomar a IA */

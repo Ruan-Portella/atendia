@@ -36,6 +36,15 @@ interface TimelineItem {
   /** quem escreveu ou entrou: nome de exibição e foto (sem nome, "Equipe {empresa}") */
   name?: string | null;
   avatar?: string | null;
+  /** imagem ou documento junto (link de 1 hora) */
+  file?: AgentFile | null;
+}
+
+/** Arquivo de uma mensagem de atendente (link assinado de 1 hora, gerado a cada consulta). */
+interface AgentFile {
+  url: string;
+  name: string | null;
+  kind: "image" | "document";
 }
 
 /** Mensagem de atendente vinda do servidor. */
@@ -44,6 +53,7 @@ interface AgentMessage {
   content: string;
   name?: string | null;
   avatar?: string | null;
+  file?: AgentFile | null;
 }
 
 /** Quem está atendendo agora (para "Viviane entrou na conversa"). */
@@ -78,7 +88,7 @@ export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState 
         mode: a.mode,
         count: a.count,
         lastAgentId: a.agents.reduce((m, x) => Math.max(m, x.id), 0),
-        timeline: a.agents.map((x) => ({ key: `a${x.id}`, kind: "agent" as const, content: x.content, after: x.after, name: x.name, avatar: x.avatar })),
+        timeline: a.agents.map((x) => ({ key: `a${x.id}`, kind: "agent" as const, content: x.content, after: x.after, name: x.name, avatar: x.avatar, file: x.file ?? null })),
       };
     case "count":
       return a.n === s.count ? s : { ...s, count: a.n };
@@ -87,7 +97,7 @@ export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState 
     case "agent": {
       const fresh = a.messages.filter((m) => !s.timeline.some((x) => x.key === `a${m.id}`));
       if (!fresh.length) return s;
-      return { ...s, lastAgentId: Math.max(s.lastAgentId, ...fresh.map((m) => m.id)), timeline: [...s.timeline, ...fresh.map((m) => ({ key: `a${m.id}`, kind: "agent" as const, content: m.content, after: s.count, name: m.name, avatar: m.avatar }))] };
+      return { ...s, lastAgentId: Math.max(s.lastAgentId, ...fresh.map((m) => m.id)), timeline: [...s.timeline, ...fresh.map((m) => ({ key: `a${m.id}`, kind: "agent" as const, content: m.content, after: s.count, name: m.name, avatar: m.avatar, file: m.file ?? null }))] };
     }
     case "server": {
       if (a.mode === s.mode) return s;
@@ -326,7 +336,7 @@ export function ChatWindow({
       try {
         const qs = `key=${bot.key}&visitorId=${encodeURIComponent(visitorId ?? "")}${saved ? `&conversationId=${saved}` : ""}`;
         const res = await fetch(`${apiBase}/api/chat/history?${qs}`, { cache: "no-store", headers: auth() });
-        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string; name?: string | null; avatar?: string | null; components?: MessageComponent | null }> };
+        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string; name?: string | null; avatar?: string | null; components?: MessageComponent | null; file?: AgentFile | null }> };
         if (cancelled) return;
         if (!j.resumable || !j.conversationId) {
           if (saved) localStorage.removeItem(convKey);
@@ -336,7 +346,7 @@ export function ChatWindow({
         const ui: UIMessage[] = [];
         const agents: Array<AgentMessage & { after: number }> = [];
         for (const m of j.messages ?? []) {
-          if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length, name: m.name, avatar: m.avatar });
+          if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length, name: m.name, avatar: m.avatar, file: m.file ?? null });
           else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }, ...(m.components ? [{ type: "data-components" as const, data: m.components }] : [])] });
         }
         setMessages(ui);
@@ -599,7 +609,7 @@ function ContactFallback({ bot, apiBase, conversationId, message }: { bot: ChatB
 }
 
 function Extra({ item, label, botName }: { item: TimelineItem; label: string; botName: string }) {
-  if (item.kind === "agent") return <AgentBubble label={item.name ?? label} avatar={item.avatar ?? null}>{item.content}</AgentBubble>;
+  if (item.kind === "agent") return <AgentBubble label={item.name ?? label} avatar={item.avatar ?? null} file={item.file ?? null}>{item.file ? fileCaption(item.content) : item.content}</AgentBubble>;
   return (
     <div className="self-center rounded-full bg-[#e9ecef] px-3 py-1 text-center text-[12px] text-[#4c5551]">
       {item.kind === "joined" ? (item.name ? `${item.name} entrou na conversa.` : "Uma pessoa da equipe entrou na conversa.") : `Atendimento encerrado. ${botName} voltou a responder.`}
@@ -607,8 +617,29 @@ function Extra({ item, label, botName }: { item: TimelineItem; label: string; bo
   );
 }
 
+/** Com arquivo, o rótulo gravado ("📷 (foto)", "📄 nome.pdf") não aparece: o arquivo já está ali. */
+const fileCaption = (content: string) => (/^(📷 \(foto\)|📄 \S[^\n]*)$/u.test(content.trim()) ? "" : content);
+
+/** Imagem (abre ampliada em outra aba) ou documento (link com o nome). */
+function AgentAttachment({ file }: { file: AgentFile }) {
+  if (file.kind === "image") {
+    return (
+      <a href={file.url} target="_blank" rel="noopener noreferrer" className="mt-1 block">
+        {/* imagem da conversa, pelo link assinado do BoaVoz */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={file.url} alt={file.name ?? "imagem"} className="max-h-60 max-w-full rounded-lg" />
+      </a>
+    );
+  }
+  return (
+    <a href={file.url} target="_blank" rel="noopener noreferrer" className="mt-1 flex items-center gap-1.5 rounded-lg border border-[#cfe3d8] bg-white px-2.5 py-1.5 text-[13px] font-semibold text-[#1f4e3d] underline-offset-2 hover:underline">
+      📄 <span className="min-w-0 truncate">{file.name ?? "Documento"}</span>
+    </a>
+  );
+}
+
 /** Mensagem de alguém da equipe: foto (ou a inicial) e o nome de exibição. */
-function AgentBubble({ label, avatar, children }: { label: string; avatar: string | null; children: React.ReactNode }) {
+function AgentBubble({ label, avatar, file, children }: { label: string; avatar: string | null; file?: AgentFile | null; children: React.ReactNode }) {
   return (
     <div className="flex max-w-[92%] items-end gap-2 self-start">
       {avatar ? (
@@ -620,7 +651,8 @@ function AgentBubble({ label, avatar, children }: { label: string; avatar: strin
       )}
       <div className="min-w-0 rounded-[14px_14px_14px_4px] border border-[#cfe3d8] bg-[#eef6f1] px-3.5 py-2.5 text-sm leading-[1.45]">
         <div className="mb-0.5 text-[11px] font-semibold text-[#1f4e3d]">{label}</div>
-        <div className="whitespace-pre-wrap">{children}</div>
+        {children ? <div className="whitespace-pre-wrap">{children}</div> : null}
+        {file && <AgentAttachment file={file} />}
       </div>
     </div>
   );

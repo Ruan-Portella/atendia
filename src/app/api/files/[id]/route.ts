@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { attachmentRow, readAttachment } from "@/lib/attachments";
+import { attachmentExpired, attachmentRow, readAttachment, streamBytes } from "@/lib/attachments";
+import { validFileLink } from "@/lib/file-links";
 import { memberForAction, memberHasMfa } from "@/lib/member";
 import { adminSession } from "@/lib/platform-admin";
 import { activeGrant } from "@/lib/support-access";
@@ -11,19 +12,22 @@ import { fileHeaders } from "@/lib/file-headers";
  * Rota única dos arquivos recebidos (leva S): abre o arquivo cifrado para quem pode ver a conversa:
  * a agência dona (com o segundo fator se o chatbot estiver em modo dados sensíveis), as pessoas do
  * cliente e o suporte do BoaVoz com a liberação da agência (a leitura vai para a auditoria dela).
- * Imagem, áudio e vídeo abrem na página; o resto só baixa, sem rodar nada.
+ * Sem sessão, com o link assinado de 1 hora (?exp=&sig=: API, widget e webhooks). Depois do prazo
+ * (modo dados sensíveis) ou da exclusão do objeto, 410. Imagem, áudio e vídeo abrem na página; o
+ * resto só baixa, sem rodar nada. Resposta em blocos (streaming).
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) return new Response("não encontrado", { status: 404 });
   const db = createAdminClient();
   const row = await attachmentRow(db, id);
   if (!row) return new Response("não encontrado", { status: 404 });
 
-  const { data } = await (await createClient()).auth.getClaims();
+  const sp = new URL(req.url).searchParams;
+  let viewer: "agency" | "member" | "support" | "link" | null = validFileLink(id, sp.get("exp"), sp.get("sig")) ? "link" : null;
+  const { data } = viewer ? { data: null } : await (await createClient()).auth.getClaims();
   const claims = data?.claims;
-  let viewer: "agency" | "member" | "support" | null = null;
-  if (claims?.sub) {
+  if (!viewer && claims?.sub) {
     // equipe da agência: a RLS da sessão diz se o chatbot está no escopo da pessoa
     // (modo dados sensíveis: segundo fator nesta sessão)
     const { data: bot } = await (await createClient()).from("bots").select("id, agency_id, sensitive_mode").eq("id", row.bot_id).maybeSingle();
@@ -51,7 +55,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
   if (!viewer) return new Response("não encontrado", { status: 404 });
 
+  if (attachmentExpired(row)) return new Response("arquivo indisponível (prazo de guarda vencido)", { status: 410 });
   const file = await readAttachment(db, row);
   if (!file.data) return new Response("arquivo indisponível", { status: 410 });
-  return new Response(new Uint8Array(file.data), { headers: fileHeaders({ id: file.id, mime: file.mime, filename: file.filename, size: file.data.byteLength }) });
+  return new Response(streamBytes(file.data), { headers: fileHeaders({ id: file.id, mime: file.mime, filename: file.filename, size: file.data.byteLength }, { crossOrigin: viewer === "link" }) });
 }

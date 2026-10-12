@@ -105,10 +105,19 @@ conversas = folder(
             + [
                 "const data = pm.response.json().data || [];",
                 "if (data.length) pm.environment.set(\"message_id\", data[data.length - 1].id);",
+                "const comArquivo = data.filter((m) => m.media).pop();",
+                "if (comArquivo) pm.environment.set(\"media_id\", comArquivo.media.id);",
                 "console.log(data.map((m) => `${m.direction} ${m.source} ${m.status}: ${(m.text || \"\").slice(0, 60)}`).join(\"\\n\"));",
             ],
         ),
-        req("Uma mensagem", "GET", "messages/{{message_id}}", desc="Permissão **messages**. O status também chega por webhook (message.status) e no histórico.", tests=expect_status(200)),
+        req("Uma mensagem", "GET", "messages/{{message_id}}", desc="Permissão **messages**. O status também chega por webhook (message.status) e no histórico. Mensagem com arquivo traz `media` (id, tipo, tamanho, nome e um link de 1 hora).", tests=expect_status(200)),
+        req(
+            "Baixar arquivo",
+            "GET",
+            "media/{{media_id}}",
+            desc="O arquivo da última mensagem com mídia do histórico (`media_id`), decifrado. Clique em **Save Response** para salvar. Depois do prazo de guarda (ou da exclusão), 410.",
+            tests=expect_status(200) + ['pm.test("tem o tipo do arquivo", () => pm.expect(pm.response.headers.get("Content-Type")).to.be.a("string"));'],
+        ),
     ],
 )
 
@@ -140,6 +149,38 @@ mensagens = folder(
         req("Texto no WhatsApp (pelo contato)", "POST", "messages", body={"bot_id": BOT, "to": "{{whatsapp_contact}}", "type": "text", "text": "Teste pelo id do contato"}, tests=expect_status(201, 202) + SAVE_SENT),
         req("Texto no Instagram", "POST", "messages", body={"bot_id": BOT, "to": "{{instagram_contact}}", "type": "text", "text": "Teste da API pelo Instagram"}, desc="Usa o contato da conversa de Instagram mais recente (rode a listagem antes). A pessoa precisa ter escrito nas últimas 24 horas.", tests=expect_status(201, 202) + SAVE_SENT),
         req("Texto no chat do site", "POST", "messages", body={"conversation_id": "{{widget_conversation_id}}", "type": "text", "text": "Oi! Aqui é o sistema integrado.", "agent_name": "Ana"}, desc="O visitante vê em segundos (o widget busca as novidades). Abra o chat do site e mande uma mensagem antes.", tests=expect_status(201) + SAVE_SENT),
+        req(
+            "Imagem no WhatsApp (com legenda)",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "image", "image": {"url": "{{image_url}}"}, "text": "Foto do seu pedido"},
+            desc="JPEG ou PNG até 5 MB. O BoaVoz baixa a URL, confere o tipo e guarda uma cópia; a Meta busca o arquivo na URL. `text` vira a legenda.",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req(
+            "Documento no WhatsApp",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "document", "document": {"url": "{{document_url}}", "filename": "Boleto teste.pdf"}, "text": "Segue o seu boleto"},
+            desc="PDF, Word, Excel, PowerPoint, TXT ou CSV, até 16 MB. `filename` é o nome que o contato vê.",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req(
+            "Documento no Instagram (PDF)",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "{{instagram_contact}}", "type": "document", "document": {"url": "{{document_url}}"}, "text": "Segue o PDF"},
+            desc="No Instagram, arquivo só em PDF e imagem em PNG ou JPEG (até 8 MB). O Instagram não tem legenda: o texto chega numa DM antes do arquivo.",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req(
+            "Imagem no chat do site",
+            "POST",
+            "messages",
+            body={"conversation_id": "{{widget_conversation_id}}", "type": "image", "image": {"url": "{{image_url}}"}, "text": "Olha a foto", "agent_name": "Ana"},
+            desc="O visitante vê a imagem no balão da Ana (clicar abre ampliada). Documento no site: só PDF.",
+            tests=expect_status(201) + SAVE_SENT,
+        ),
         req(
             "Modelo do WhatsApp",
             "POST",
@@ -221,6 +262,7 @@ erros = folder(
     "Cada requisição confere o código de erro que a API deve devolver.",
     [
         req("Corpo inválido (type)", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "audio"}, tests=expect_error(400, "invalid_request")),
+        req("Arquivo com tipo errado (PDF como imagem)", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "image", "image": {"url": "{{document_url}}"}}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta a URL", () => pm.expect(pm.response.json().error.details.field).to.eql("image.url"));']),
         req("Pausa com minutes inválido", "POST", "conversations/{{conversation_id}}/pause", body={"minutes": 0}, tests=expect_error(400, "invalid_request")),
         req("Conversa inexistente", "GET", "conversations/conv_00000000-0000-4000-8000-000000000000/messages", tests=expect_error(404, "not_found")),
         req(
@@ -311,6 +353,9 @@ env = {
         {"key": "message_id", "value": "", "type": "default", "enabled": True},
         {"key": "next_cursor", "value": "", "type": "default", "enabled": True},
         {"key": "link_id", "value": "", "type": "default", "enabled": True},
+        {"key": "image_url", "value": "https://placehold.co/600x400.png", "type": "default", "enabled": True},
+        {"key": "document_url", "value": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", "type": "default", "enabled": True},
+        {"key": "media_id", "value": "", "type": "default", "enabled": True},
         {"key": "pairing_code", "value": "", "type": "default", "enabled": True},
         {"key": "pairing_link", "value": "", "type": "default", "enabled": True},
     ],

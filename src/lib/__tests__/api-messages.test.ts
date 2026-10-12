@@ -21,6 +21,7 @@ describe("POST /v1/messages: o corpo (C pública, parte 3b)", () => {
       channel: null,
       type: "text",
       text: "Seu pedido saiu",
+      file: null,
       agentName: "Ana",
       sender: "zendesk",
     });
@@ -40,7 +41,7 @@ describe("POST /v1/messages: o corpo (C pública, parte 3b)", () => {
 
   it("recusa o que está fora do formato, apontando o campo", () => {
     expect(err(() => parseSendBody({ to: "x", type: "audio" })).details).toEqual({ field: "type" });
-    expect(err(() => parseSendBody({ to: "x", type: "document" })).details).toEqual({ field: "type" });
+    expect(err(() => parseSendBody({ to: "x", type: "document" })).details).toEqual({ field: "document" });
     expect(err(() => parseSendBody({ type: "text", text: "oi" })).details).toEqual({ field: "to" });
     expect(err(() => parseSendBody({ to: "x", type: "text" })).details).toEqual({ field: "text" });
     expect(err(() => parseSendBody({ to: "x", type: "text", text: "a".repeat(4097) })).details).toEqual({ field: "text" });

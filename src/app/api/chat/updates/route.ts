@@ -3,6 +3,8 @@ import { loadMessages } from "@/lib/messages";
 import { facesOfMessages, holderFace } from "@/lib/attendants";
 import { WIDGET_ALLOW_HEADERS, conversationAccess, widgetWho } from "@/lib/widget-identity";
 import { apiPauseActive } from "@/lib/presence";
+import { attachmentsOfMessages } from "@/lib/attachments";
+import { widgetFile } from "@/lib/file-links";
 
 const HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -57,7 +59,9 @@ export async function GET(req: Request) {
 
   const rows = await loadMessages(db, { conversationId, roles: ["agent"], afterId: after, limit: 50 }, ["id", "content", "author_type", "author_id", "author_display_name"] as const);
   const faces = await facesOfMessages(db, rows);
-  const messages = rows.map((m) => ({ id: m.id, content: m.content, name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null }));
+  // imagem ou documento mandado pela equipe ou pela API: link assinado de 1 hora
+  const files = await attachmentsOfMessages(db, rows.map((m) => m.id));
+  const messages = rows.map((m) => ({ id: m.id, content: m.content, name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null, file: widgetFile(files.get(m.id)) }));
   // a integração pausou a IA (API): quem responde é ela, como um atendente
   const mode = conv.takeover_at && !conv.handled_at ? "agent" : apiPauseActive(conv.ai_paused_until) ? "agent" : conv.handoff_requested_at && !conv.handled_at ? "requested" : "bot";
   return Response.json({ mode, agent: await holderFace(db, conv), messages }, { headers: HEADERS });

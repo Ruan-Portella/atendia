@@ -108,18 +108,37 @@ export interface AttachmentFile extends AttachmentInfo {
   data: Uint8Array | null;
 }
 
+type AttachmentRow = Omit<AttachmentFile, "data" | "filename"> & { storage_path: string; filename_enc: string | null; channel: string; expires_at: string | null };
+
 /** A linha (para conferir quem pode ver). */
-export async function attachmentRow(db: SupabaseClient, id: string): Promise<Omit<AttachmentFile, "data" | "filename"> & { storage_path: string; filename_enc: string | null } | null> {
-  const { data } = await db.from("attachments").select("id, agency_id, client_id, bot_id, conversation_id, mime, size, doc_type, filename_enc, storage_path").eq("id", id).maybeSingle();
-  return (data as (Omit<AttachmentFile, "data" | "filename"> & { storage_path: string; filename_enc: string | null }) | null) ?? null;
+export async function attachmentRow(db: SupabaseClient, id: string): Promise<AttachmentRow | null> {
+  const { data } = await db.from("attachments").select("id, agency_id, client_id, bot_id, conversation_id, channel, mime, size, doc_type, filename_enc, storage_path, expires_at").eq("id", id).maybeSingle();
+  return (data as AttachmentRow | null) ?? null;
+}
+
+/** Passou do prazo (modo dados sensíveis): a rota responde 410, mesmo antes da varredura apagar. Pura. */
+export const attachmentExpired = (row: { expires_at: string | null }, now = Date.now()) => Boolean(row.expires_at) && Date.parse(row.expires_at!) <= now;
+
+/** O arquivo em blocos de 64 KB (resposta em streaming: sem ele, a Vercel corta a resposta em 4,5 MB). */
+export function streamBytes(data: Uint8Array, chunk = 64 * 1024): ReadableStream<Uint8Array> {
+  let offset = 0;
+  return new ReadableStream({
+    pull(controller) {
+      if (offset >= data.byteLength) return controller.close();
+      controller.enqueue(data.subarray(offset, offset + chunk));
+      offset += chunk;
+    },
+  });
 }
 
 /** O arquivo aberto (data null: objeto ausente ou chave apagada). */
 export async function readAttachment(db: SupabaseClient, row: NonNullable<Awaited<ReturnType<typeof attachmentRow>>>): Promise<AttachmentFile> {
   const { data: blob } = await db.storage.from(ATTACHMENTS_BUCKET).download(row.storage_path);
   const data = blob ? await openBytes("attachments.object", new Uint8Array(await blob.arrayBuffer())) : null;
-  const { storage_path: _path, filename_enc, ...rest } = row;
+  const { storage_path: _path, filename_enc, channel: _channel, expires_at: _expires, ...rest } = row;
   void _path;
+  void _channel;
+  void _expires;
   return { ...rest, filename: await openNullable("attachments.filename_enc", filename_enc), data };
 }
 

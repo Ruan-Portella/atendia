@@ -230,6 +230,8 @@
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
                   "const data = pm.response.json().data || [];",
                   "if (data.length) pm.environment.set(\"message_id\", data[data.length - 1].id);",
+                  "const comArquivo = data.filter((m) => m.media).pop();",
+                  "if (comArquivo) pm.environment.set(\"media_id\", comArquivo.media.id);",
                   "console.log(data.map((m) => `${m.direction} ${m.source} ${m.status}: ${(m.text || \"\").slice(0, 60)}`).join(\"\\n\"));"
                 ]
               }
@@ -251,7 +253,7 @@
                 "{{message_id}}"
               ]
             },
-            "description": "Permissão **messages**. O status também chega por webhook (message.status) e no histórico."
+            "description": "Permissão **messages**. O status também chega por webhook (message.status) e no histórico. Mensagem com arquivo traz `media` (id, tipo, tamanho, nome e um link de 1 hora)."
           },
           "event": [
             {
@@ -260,6 +262,36 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Baixar arquivo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/media/{{media_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "media",
+                "{{media_id}}"
+              ]
+            },
+            "description": "O arquivo da última mensagem com mídia do histórico (`media_id`), decifrado. Clique em **Save Response** para salvar. Depois do prazo de guarda (ou da exclusão), 410."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"tem o tipo do arquivo\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.be.a(\"string\"));"
                 ]
               }
             }
@@ -784,6 +816,214 @@
           ]
         },
         {
+          "name": "Imagem no WhatsApp (com legenda)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "JPEG ou PNG até 5 MB. O BoaVoz baixa a URL, confere o tipo e guarda uma cópia; a Meta busca o arquivo na URL. `text` vira a legenda.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"url\": \"{{image_url}}\"\n  },\n  \"text\": \"Foto do seu pedido\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Documento no WhatsApp",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "PDF, Word, Excel, PowerPoint, TXT ou CSV, até 16 MB. `filename` é o nome que o contato vê.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"document\",\n  \"document\": {\n    \"url\": \"{{document_url}}\",\n    \"filename\": \"Boleto teste.pdf\"\n  },\n  \"text\": \"Segue o seu boleto\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Documento no Instagram (PDF)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "No Instagram, arquivo só em PDF e imagem em PNG ou JPEG (até 8 MB). O Instagram não tem legenda: o texto chega numa DM antes do arquivo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"{{instagram_contact}}\",\n  \"type\": \"document\",\n  \"document\": {\n    \"url\": \"{{document_url}}\"\n  },\n  \"text\": \"Segue o PDF\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Imagem no chat do site",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "O visitante vê a imagem no balão da Ana (clicar abre ampliada). Documento no site: só PDF.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{widget_conversation_id}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"url\": \"{{image_url}}\"\n  },\n  \"text\": \"Olha a foto\",\n  \"agent_name\": \"Ana\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Modelo do WhatsApp",
           "request": {
             "method": "POST",
@@ -1135,6 +1375,55 @@
                 "exec": [
                   "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
                   "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Arquivo com tipo errado (PDF como imagem)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"url\": \"{{document_url}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta a URL\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"image.url\"));"
                 ]
               }
             }
