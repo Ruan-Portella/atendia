@@ -85,7 +85,7 @@ describe("eventos sem conteúdo de conversa (C pública, parte 2b)", () => {
       { id: "c1", name: "Black Friday", kind: "utility_reminder" },
       { status: { sent: 2, delivered: 3, read: 4, uncertain: 1, failed: 1, skipped_no_consent: 5, skipped_no_age: 1, skipped_suppressed: 2, skipped_contact_deleted: 1 }, replied: 0, optOut: { sair: 2, whatsapp: 1 }, errors: {} },
     );
-    expect(data.campaign).toEqual({ id: "cmp_c1", name: "Black Friday", kind: "reminder", sent: 10, delivered: 7, read: 4, failed: 1, skipped_no_consent: 5, skipped_no_age: 1, skipped_suppressed: 3, opted_out: 3 });
+    expect(data.campaign).toEqual({ id: "cmp_c1", name: "Black Friday", kind: "utility_reminder", sent: 10, delivered: 7, read: 4, failed: 1, skipped_no_consent: 5, skipped_no_age: 1, skipped_suppressed: 3, opted_out: 3 });
   });
 
   it("sem webhook ativo, a conformidade não é consultada e a mudança roda igual", async () => {

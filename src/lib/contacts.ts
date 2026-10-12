@@ -778,3 +778,14 @@ export async function apiContactsPage(db: SupabaseClient, o: { botIds: string[];
     })),
   );
 }
+
+/** Telefone (canônico) de cada contato do WhatsApp deste chatbot, pelo id (sem telefone: null). Campanha pela API. */
+export async function whatsappPhonesOf(db: SupabaseClient, botId: string, contactIds: string[]): Promise<Map<string, { phone: string | null; name: string | null; messaged: boolean }>> {
+  const out = new Map<string, { phone: string | null; name: string | null; messaged: boolean }>();
+  for (let i = 0; i < contactIds.length; i += 300) {
+    const { data, error } = await db.from("contacts").select("id, name, phone_enc, first_inbound_at").eq("bot_id", botId).eq("channel", "whatsapp").in("id", contactIds.slice(i, i + 300));
+    if (error) throw new Error(`contatos: ${error.message}`);
+    for (const r of data ?? []) out.set(r.id as string, { phone: await openNullable("contacts.phone_enc", r.phone_enc), name: (r.name as string | null) ?? null, messaged: Boolean(r.first_inbound_at) });
+  }
+  return out;
+}

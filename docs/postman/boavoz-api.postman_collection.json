@@ -1153,8 +1153,13 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "const t = (pm.response.json().data || []).find((x) => x.sendable);",
+                  "const all = pm.response.json().data || [];",
+                  "const t = all.find((x) => x.sendable);",
                   "if (t) { pm.environment.set(\"template_name\", t.name); pm.environment.set(\"template_language\", t.language); }",
+                  "const mkt = all.find((x) => x.sendable && x.category === \"marketing\");",
+                  "if (mkt) pm.environment.set(\"marketing_template\", mkt.name);",
+                  "const utl = all.find((x) => x.sendable && x.category === \"utility\");",
+                  "if (utl) pm.environment.set(\"reminder_template\", utl.name);",
                   "console.log((pm.response.json().data || []).map((x) => `${x.name} (${x.language}) ${x.category} ${x.status} vars=${x.variables}${x.sendable ? \"\" : \" — não enviável\"}`).join(\"\\n\"));"
                 ]
               }
@@ -1730,6 +1735,50 @@
           ]
         },
         {
+          "name": "Campanha sem Idempotency-Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/campaigns",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"kind\": \"marketing\",\n  \"template\": {\n    \"name\": \"x\"\n  },\n  \"audience\": {\n    \"tags\": [\n      \"vip\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta o cabeçalho\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"Idempotency-Key\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Etiquetas em contato que não existe",
           "request": {
             "method": "PUT",
@@ -2028,6 +2077,218 @@
                 "exec": [
                   "pm.test(\"status 202\", () => pm.response.to.have.status(202));",
                   "console.log(\"pedido:\", pm.response.json().request_id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Campanhas e lembretes",
+      "description": "POST /v1/campaigns (permissão **campaigns**, só nos planos pagos), sempre com Idempotency-Key (a coleção gera uma por envio). Campanha de marketing só vai para quem aceitou novidades; lembrete usa modelo de utilidade. Os envios saem pelo mesmo motor do painel e aparecem na aba Campanhas do cliente.",
+      "item": [
+        {
+          "name": "Campanha de marketing (por etiqueta)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/campaigns",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns"
+              ]
+            },
+            "description": "Público: contatos com a etiqueta \"vip\" (use **5. Etiquetas do contato** antes) que aceitaram novidades. `{\"type\": \"first_name\", \"fallback\": \"cliente\"}` põe o primeiro nome do contato na variável. Ajuste `variables` ao modelo. Público sem ninguém apto: 422 empty_audience, com quem ficou de fora e por quê.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"kind\": \"marketing\",\n  \"name\": \"Teste Postman\",\n  \"template\": {\n    \"name\": \"{{marketing_template}}\",\n    \"language\": \"pt_BR\",\n    \"variables\": [\n      {\n        \"type\": \"first_name\",\n        \"fallback\": \"cliente\"\n      }\n    ]\n  },\n  \"audience\": {\n    \"tags\": [\n      \"vip\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"campaign_id\", r.campaign_id);",
+                  "  console.log(\"campanha:\", r.campaign_id, r.status, \"contatos:\", r.estimated_contacts, \"fora:\", JSON.stringify(r.excluded));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Campanha agendada (pelo telefone)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/campaigns",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns"
+              ]
+            },
+            "description": "Sai daqui a 10 minutos (status scheduled). `contacts` aceita phone:, ctc_ e ext:.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"kind\": \"marketing\",\n  \"template\": {\n    \"name\": \"{{marketing_template}}\",\n    \"language\": \"pt_BR\",\n    \"variables\": [\n      {\n        \"type\": \"first_name\",\n        \"fallback\": \"cliente\"\n      }\n    ]\n  },\n  \"audience\": {\n    \"contacts\": [\n      \"phone:{{phone}}\"\n    ]\n  },\n  \"send_at\": \"{{send_at_future}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// daqui a 10 minutos (o lembrete e a campanha agendada precisam de data no futuro)",
+                  "pm.environment.set(\"send_at_future\", new Date(Date.now() + 10 * 60 * 1000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"campaign_id\", r.campaign_id);",
+                  "  console.log(\"campanha:\", r.campaign_id, r.status, \"contatos:\", r.estimated_contacts, \"fora:\", JSON.stringify(r.excluded));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lembretes (uma linha por envio)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/campaigns",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns"
+              ]
+            },
+            "description": "Modelo de utilidade; cada linha sai na hora dela. `variables` precisa ter o número de variáveis do modelo. Contato que nunca conversou com o bot exige a declaração de lembretes do cliente (sem ela: 400 apontando utility_consent).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"kind\": \"utility_reminder\",\n  \"name\": \"Lembrete teste\",\n  \"template\": {\n    \"name\": \"{{reminder_template}}\",\n    \"language\": \"pt_BR\"\n  },\n  \"sends\": [\n    {\n      \"contact\": \"phone:{{phone}}\",\n      \"send_at\": \"{{send_at_future}}\",\n      \"variables\": [\n        \"{{template_variable_1}}\"\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// daqui a 10 minutos (o lembrete e a campanha agendada precisam de data no futuro)",
+                  "pm.environment.set(\"send_at_future\", new Date(Date.now() + 10 * 60 * 1000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"campaign_id\", r.campaign_id);",
+                  "  console.log(\"campanha:\", r.campaign_id, r.status, \"contatos:\", r.estimated_contacts, \"fora:\", JSON.stringify(r.excluded));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status da campanha",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}"
+              ]
+            },
+            "description": "Status (scheduled, sending, paused, finished, canceled) e os totais: enviadas, entregues, lidas, respondidas, falhas, puladas por motivo e descadastros."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json().totals; console.log(pm.response.json().status, JSON.stringify(t));"
                 ]
               }
             }

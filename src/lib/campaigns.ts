@@ -557,7 +557,7 @@ export function campaignFinishedData(c: { id: string; name: string; kind: Campai
     campaign: {
       id: `cmp_${c.id}`,
       name: c.name,
-      kind: c.kind === "utility_reminder" ? "reminder" : "marketing",
+      kind: c.kind,
       sent: n.sent,
       delivered: n.delivered,
       read: n.read,

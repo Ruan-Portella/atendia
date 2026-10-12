@@ -12,7 +12,7 @@ def script(*lines):
     return {"type": "text/javascript", "exec": list(lines)}
 
 
-def req(name, method, path, *, body=None, query=None, desc="", tests=(), idem=True, headers=None, token=None):
+def req(name, method, path, *, body=None, query=None, desc="", tests=(), idem=True, headers=None, token=None, pre=()):
     hdr = []
     if body is not None:
         hdr.append({"key": "Content-Type", "value": "application/json"})
@@ -33,8 +33,13 @@ def req(name, method, path, *, body=None, query=None, desc="", tests=(), idem=Tr
     if body is not None:
         r["body"] = {"mode": "raw", "raw": json.dumps(body, ensure_ascii=False, indent=2), "options": {"raw": {"language": "json"}}}
     item = {"name": name, "request": r}
+    events = []
+    if pre:
+        events.append({"listen": "prerequest", "script": script(*pre)})
     if tests:
-        item["event"] = [{"listen": "test", "script": script(*tests)}]
+        events.append({"listen": "test", "script": script(*tests)})
+    if events:
+        item["event"] = events
     return item
 
 
@@ -214,8 +219,13 @@ modelos = folder(
             desc="Com categoria, status da Meta, número de variáveis e se dá para enviar. Guarda o primeiro modelo enviável em `template_name` e `template_language`.",
             tests=expect_status(200)
             + [
-                "const t = (pm.response.json().data || []).find((x) => x.sendable);",
+                "const all = pm.response.json().data || [];",
+                "const t = all.find((x) => x.sendable);",
                 "if (t) { pm.environment.set(\"template_name\", t.name); pm.environment.set(\"template_language\", t.language); }",
+                "const mkt = all.find((x) => x.sendable && x.category === \"marketing\");",
+                "if (mkt) pm.environment.set(\"marketing_template\", mkt.name);",
+                "const utl = all.find((x) => x.sendable && x.category === \"utility\");",
+                "if (utl) pm.environment.set(\"reminder_template\", utl.name);",
                 "console.log((pm.response.json().data || []).map((x) => `${x.name} (${x.language}) ${x.category} ${x.status} vars=${x.variables}${x.sendable ? \"\" : \" — não enviável\"}`).join(\"\\n\"));",
             ],
         ),
@@ -303,6 +313,55 @@ contatos = folder(
     ],
 )
 
+FUTURE = ['// daqui a 10 minutos (o lembrete e a campanha agendada precisam de data no futuro)', 'pm.environment.set("send_at_future", new Date(Date.now() + 10 * 60 * 1000).toISOString());']
+SAVE_CAMPAIGN = [
+    "if (pm.response.code === 201) {",
+    "  const r = pm.response.json();",
+    "  pm.environment.set(\"campaign_id\", r.campaign_id);",
+    "  console.log(\"campanha:\", r.campaign_id, r.status, \"contatos:\", r.estimated_contacts, \"fora:\", JSON.stringify(r.excluded));",
+    "}",
+]
+
+campanhas = folder(
+    "8. Campanhas e lembretes",
+    "POST /v1/campaigns (permissão **campaigns**, só nos planos pagos), sempre com Idempotency-Key (a coleção gera uma por envio). Campanha de marketing só vai para quem aceitou novidades; lembrete usa modelo de utilidade. Os envios saem pelo mesmo motor do painel e aparecem na aba Campanhas do cliente.",
+    [
+        req(
+            "Campanha de marketing (por etiqueta)",
+            "POST",
+            "campaigns",
+            body={"bot_id": BOT, "kind": "marketing", "name": "Teste Postman", "template": {"name": "{{marketing_template}}", "language": "pt_BR", "variables": [{"type": "first_name", "fallback": "cliente"}]}, "audience": {"tags": ["vip"]}},
+            desc="Público: contatos com a etiqueta \"vip\" (use **5. Etiquetas do contato** antes) que aceitaram novidades. `{\"type\": \"first_name\", \"fallback\": \"cliente\"}` põe o primeiro nome do contato na variável. Ajuste `variables` ao modelo. Público sem ninguém apto: 422 empty_audience, com quem ficou de fora e por quê.",
+            tests=expect_status(201) + SAVE_CAMPAIGN,
+        ),
+        req(
+            "Campanha agendada (pelo telefone)",
+            "POST",
+            "campaigns",
+            body={"bot_id": BOT, "kind": "marketing", "template": {"name": "{{marketing_template}}", "language": "pt_BR", "variables": [{"type": "first_name", "fallback": "cliente"}]}, "audience": {"contacts": ["phone:{{phone}}"]}, "send_at": "{{send_at_future}}"},
+            desc="Sai daqui a 10 minutos (status scheduled). `contacts` aceita phone:, ctc_ e ext:.",
+            pre=FUTURE,
+            tests=expect_status(201) + SAVE_CAMPAIGN,
+        ),
+        req(
+            "Lembretes (uma linha por envio)",
+            "POST",
+            "campaigns",
+            body={"bot_id": BOT, "kind": "utility_reminder", "name": "Lembrete teste", "template": {"name": "{{reminder_template}}", "language": "pt_BR"}, "sends": [{"contact": "phone:{{phone}}", "send_at": "{{send_at_future}}", "variables": ["{{template_variable_1}}"]}]},
+            desc="Modelo de utilidade; cada linha sai na hora dela. `variables` precisa ter o número de variáveis do modelo. Contato que nunca conversou com o bot exige a declaração de lembretes do cliente (sem ela: 400 apontando utility_consent).",
+            pre=FUTURE,
+            tests=expect_status(201) + SAVE_CAMPAIGN,
+        ),
+        req(
+            "Status da campanha",
+            "GET",
+            "campaigns/{{campaign_id}}",
+            desc="Status (scheduled, sending, paused, finished, canceled) e os totais: enviadas, entregues, lidas, respondidas, falhas, puladas por motivo e descadastros.",
+            tests=expect_status(200) + ['const t = pm.response.json().totals; console.log(pm.response.json().status, JSON.stringify(t));'],
+        ),
+    ],
+)
+
 exclusao = folder(
     "7. Exclusão (LGPD)",
     "**Cuidado: apaga de verdade.** O pedido do titular pela API apaga as conversas, os arquivos, os leads e a ficha do contato, põe o número na lista de supressão e emite o webhook contact.deleted. Use um número de teste em `phone_para_apagar`.",
@@ -325,6 +384,7 @@ erros = folder(
         req("Corpo inválido (type)", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "audio"}, tests=expect_error(400, "invalid_request")),
         req("Arquivo com tipo errado (PDF como imagem)", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "image", "image": {"url": "{{document_url}}"}}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta a URL", () => pm.expect(pm.response.json().error.details.field).to.eql("image.url"));']),
         req("Pausa com minutes inválido", "POST", "conversations/{{conversation_id}}/pause", body={"minutes": 0}, tests=expect_error(400, "invalid_request")),
+        req("Campanha sem Idempotency-Key", "POST", "campaigns", body={"bot_id": BOT, "kind": "marketing", "template": {"name": "x"}, "audience": {"tags": ["vip"]}}, idem=False, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o cabeçalho", () => pm.expect(pm.response.json().error.details.field).to.eql("Idempotency-Key"));']),
         req("Etiquetas em contato que não existe", "PUT", "contacts/ctc_00000000-0000-4000-8000-000000000000/tags", body={"bot_id": BOT, "tags": ["vip"]}, tests=expect_error(404, "not_found")),
         req("Aceite sem a prova", "POST", "contacts/phone:{{phone}}/consent", body={"bot_id": BOT, "granted": True}, tests=expect_error(400, "invalid_request")),
         req("Conversa inexistente", "GET", "conversations/conv_00000000-0000-4000-8000-000000000000/messages", tests=expect_error(404, "not_found")),
@@ -388,7 +448,7 @@ collection = {
             ),
         },
     ],
-    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao],
+    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas],
 }
 
 env = {
@@ -406,6 +466,10 @@ env = {
         {"key": "template_name", "value": "", "type": "default", "enabled": True},
         {"key": "template_language", "value": "pt_BR", "type": "default", "enabled": True},
         {"key": "template_variable_1", "value": "Ruan", "type": "default", "enabled": True},
+        {"key": "marketing_template", "value": "", "type": "default", "enabled": True},
+        {"key": "reminder_template", "value": "", "type": "default", "enabled": True},
+        {"key": "send_at_future", "value": "", "type": "default", "enabled": True},
+        {"key": "campaign_id", "value": "", "type": "default", "enabled": True},
         {"key": "external_id", "value": "user_postman_1", "type": "default", "enabled": True},
         {"key": "idempotency_key", "value": "teste-idempotencia-1", "type": "default", "enabled": True},
         {"key": "conversation_id", "value": "", "type": "default", "enabled": True},
