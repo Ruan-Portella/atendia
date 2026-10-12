@@ -7,6 +7,7 @@ import { newActionSecret, signatureHeader } from "./actions";
 import { safePost } from "./safe-fetch";
 import { sendableHeaders } from "./custom-headers";
 import { contactChannelIds } from "./contacts";
+import { refreshMediaLink } from "./file-links";
 
 /*
  * Webhooks (spec "Formatos de payload", seção 3). Na P2 só saem contact.linked e
@@ -183,7 +184,8 @@ interface DeliveryRow {
 
 /** Uma tentativa: entregue, nova tentativa agendada, ou falha final; 410 e 3 dias de falhas desativam. */
 async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = Date.now()): Promise<"delivered" | "pending" | "failed"> {
-  const body = await openField("webhook_deliveries.payload_enc", d.payload_enc);
+  // o link do arquivo (media.url) vale 1 hora: cada tentativa leva um novo
+  const body = refreshMediaLink(await openField("webhook_deliveries.payload_enc", d.payload_enc), now);
   const r = await post(w, d.event_id, body);
   const attempts = d.attempts + 1;
   if (r.status !== null && r.status >= 200 && r.status < 300 && !r.error) {

@@ -9,6 +9,7 @@ import { OUTSIDE_WINDOW_CODE, SendTimeoutError, WhatsAppError, sendMedia, sendTe
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 import { InstagramError, isInstagramAccessError, isOutsideWindow, sendInstagramAttachment } from "./instagram";
 import { markOwnMessage } from "./inbound-queue";
+import { queueMessageEvent } from "./message-events";
 import { storeAttachment } from "./attachments";
 import { OutboundFileError, fetchOutboundFile, type OutboundKind } from "./outbound-file";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
@@ -324,13 +325,19 @@ async function sendThroughChannel(
   db: SupabaseClient,
   o: { botId: string; channel: Channel; conv: ConvRow; kind: "equipe" | "modelo"; rec: ReturnType<typeof record>; ref: string; claimed: boolean; transport: () => Promise<string | null>; onSaved?: (messageId: number) => Promise<void> },
 ): Promise<Sent> {
+  // com arquivo, o message.sent sai depois da cópia guardada (o evento leva a mídia)
+  const saved = async (id: number) => {
+    if (!o.onSaved) return;
+    await o.onSaved(id);
+    await queueMessageEvent(db, id, { conversation_id: o.conv.id, ...o.rec.insert }, { withMedia: true });
+  };
   try {
-    const r = await deliver(db, { botId: o.botId, channel: o.channel, conversationId: o.conv.id, kind: o.kind, recordFailures: false, record: o.rec, transport: o.transport });
+    const r = await deliver(db, { botId: o.botId, channel: o.channel, conversationId: o.conv.id, kind: o.kind, recordFailures: false, deferEvent: Boolean(o.onSaved), record: o.rec, transport: o.transport });
     if (r.status === "blocked") {
       await restoreAnnounce(db, o.conv, o.claimed);
       throw new ApiError(403, "feature_suspended", r.reason, { feature: "channel", channel: o.channel });
     }
-    if (r.messageId && o.onSaved) await o.onSaved(r.messageId);
+    if (r.messageId) await saved(r.messageId);
     await touchConversation(db, o.conv.id);
     await renewPause(db, o.conv);
     return sentBody(r.messageId, o.conv.id, "sent");
@@ -338,8 +345,8 @@ async function sendThroughChannel(
     if (e instanceof ApiError) throw e;
     if (e instanceof SendTimeoutError) {
       // sem saber se saiu: grava como incerta, com o ref que volta no status da Meta
-      const id = await saveMessage(db, { conversation_id: o.conv.id, ...o.rec.insert, error_code: UNCERTAIN, channel_msg_hash: o.channel === "whatsapp" ? channelMsgHash("whatsapp", o.ref) : null }, { touch: "equipe" });
-      if (id && o.onSaved) await o.onSaved(id);
+      const id = await saveMessage(db, { conversation_id: o.conv.id, ...o.rec.insert, error_code: UNCERTAIN, channel_msg_hash: o.channel === "whatsapp" ? channelMsgHash("whatsapp", o.ref) : null }, { touch: "equipe", deferEvent: Boolean(o.onSaved) });
+      if (id) await saved(id);
       await renewPause(db, o.conv);
       return sentBody(id, o.conv.id, "uncertain");
     }
@@ -528,8 +535,12 @@ async function sendToWidget(api: ApiContext, p: Extract<SendBody, { target: "wid
   const file = p.file ? await outboundFile(p.file, "widget") : null;
   const { prefix } = await prefixFor(db, conv, bot, "widget", p.agentName);
   const content = [prefix, p.text].filter(Boolean).join("\n") || (p.file ? fileLabel(p.file) : "");
-  const id = await saveMessage(db, { conversation_id: conv.id, ...record(api, p, content, prefix).insert }, { touch: "equipe" });
-  if (id && file) await keepCopy(db, { botId: conv.bot_id, conversationId: conv.id, messageId: id, channel: "widget", file });
+  const rec = record(api, p, content, prefix).insert;
+  const id = await saveMessage(db, { conversation_id: conv.id, ...rec }, { touch: "equipe", deferEvent: Boolean(file) });
+  if (id && file) {
+    await keepCopy(db, { botId: conv.bot_id, conversationId: conv.id, messageId: id, channel: "widget", file });
+    await queueMessageEvent(db, id, { conversation_id: conv.id, ...rec }, { withMedia: true });
+  }
   await renewPause(db, conv);
   return sentBody(id, conv.id, "sent");
 }

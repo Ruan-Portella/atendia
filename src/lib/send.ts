@@ -72,7 +72,7 @@ const errorCode = (e: unknown) => {
  */
 export async function deliver(
   db: SupabaseClient,
-  o: { botId: string; channel: SendChannel; conversationId: string | null; kind: SendKind; record: SendRecord; recordFailures?: boolean; transport: () => Promise<string | null> },
+  o: { botId: string; channel: SendChannel; conversationId: string | null; kind: SendKind; record: SendRecord; recordFailures?: boolean; deferEvent?: boolean; transport: () => Promise<string | null> },
 ): Promise<SendOutcome> {
   const recordFailures = o.recordFailures ?? true;
   const write = async (fields: MessagePatch): Promise<number | null> => {
@@ -82,7 +82,7 @@ export async function deliver(
         await updateMessages(db, { id: o.record.update }, { ...fields, ...(o.record.content !== undefined ? { content: o.record.content } : {}), ...(o.record.announce_chars !== undefined ? { announce_chars: o.record.announce_chars } : {}), ...(o.record.components !== undefined ? { components: o.record.components } : {}) });
         return o.record.update;
       }
-      if (o.conversationId) return await saveMessage(db, { conversation_id: o.conversationId, ...o.record.insert, ...fields });
+      if (o.conversationId) return await saveMessage(db, { conversation_id: o.conversationId, ...o.record.insert, ...fields }, { deferEvent: o.deferEvent });
     } catch (e) {
       console.error("envio: registro não gravado", (e as Error).message);
     }

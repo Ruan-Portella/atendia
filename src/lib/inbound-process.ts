@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PRIMARY_INACTIVITY_TEXT, queueTemplateEvent } from "./platform-events";
-import { queueStatusEvent } from "./message-events";
+import { expectInbound, igInboundExtra, queueStatusEvent, releaseInbound, waInboundExtra } from "./message-events";
 import { API_SEND_REF, reconcileUncertain } from "./messages";
 import { channelMsgHash } from "./hash";
 import { PAYMENT_ISSUE_CODE } from "./whatsapp";
@@ -117,9 +117,11 @@ const whatsappGroup: GroupHandler = async (db, events) => {
   const phoneNumberId = (contact[0].payload as { phoneNumberId: string }).phoneNumberId;
   const channel = await activeWaChannel(db, phoneNumberId);
   if (!channel) return;
+  const burst: QueuedMessage[] = contact.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, msg: e.payload.msg, profileName: e.payload.profileName, identityKeyHash: e.payload.identityKeyHash ?? null, receivedAt: e.created_at }] : []));
+  // webhooks: o clique e o arquivo de cada mensagem (message.received com arquivo sai depois da captura)
+  const keys = expectInbound(burst.map((q) => ({ key: q.key, ...waInboundExtra(q.msg as unknown as Parameters<typeof waInboundExtra>[0]) })));
   try {
     for (const e of contact) if (e.payload.type === "echo") await handleEcho(db, channel, e.payload.echo, e.key_hash);
-    const burst: QueuedMessage[] = contact.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, msg: e.payload.msg, profileName: e.payload.profileName, identityKeyHash: e.payload.identityKeyHash ?? null, receivedAt: e.created_at }] : []));
     await handleInboundBurst(db, channel, burst);
     // mídia recebida: guardada cifrada depois da resposta (falha aqui não refaz a conversa)
     await captureWhatsAppMedia(db, channel, burst).catch((e) => console.error("whatsapp: mídia", (e as Error).message));
@@ -128,6 +130,8 @@ const whatsappGroup: GroupHandler = async (db, events) => {
     if (isAccessError(err)) return void (await markDisconnected(db, { column: "phone_number_id", value: phoneNumberId }, TOKEN_REJECTED));
     if (isPaymentError(err)) return void (await markPaymentIssue(db, { column: "phone_number_id", value: phoneNumberId }));
     throw err;
+  } finally {
+    await releaseInbound(db, keys);
   }
 };
 
@@ -139,9 +143,11 @@ const instagramGroup: GroupHandler = async (db, events) => {
   const igUserId = all[0].payload.igUserId;
   const { data: ch } = await db.from("instagram_channels").select("bot_id, ig_user_id, access_token_enc, disconnected_at").eq("ig_user_id", igUserId).maybeSingle<IgChannelRow & { disconnected_at: string | null }>();
   if (!ch || ch.disconnected_at) return console.log("instagram: conta sem chatbot ou desconectada, evento ignorado", igUserId);
+  const igBurst = all.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, ev: e.payload.ev, receivedAt: e.created_at }] : []));
+  // webhooks: o clique e o arquivo de cada mensagem (message.received com arquivo sai depois da captura)
+  const keys = expectInbound(igBurst.map((q) => ({ key: q.key, ...igInboundExtra(q.ev) })));
   try {
     for (const e of all) if (e.payload.type === "echo") await handleInstagramEcho(db, ch, e.payload.ev, e.key_hash);
-    const igBurst = all.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, ev: e.payload.ev, receivedAt: e.created_at }] : []));
     await handleInstagramBurst(db, ch, igBurst);
     // mídia recebida: guardada cifrada depois da resposta (o link do CDN da Meta vence)
     await captureInstagramMedia(db, ch.bot_id, igBurst).catch((e) => console.error("instagram: mídia", (e as Error).message));
@@ -153,6 +159,8 @@ const instagramGroup: GroupHandler = async (db, events) => {
   } catch (err) {
     if (isInstagramAccessError(err)) return void (await markInstagramDisconnected(db, { column: "ig_user_id", value: igUserId }, IG_TOKEN_REJECTED));
     throw err;
+  } finally {
+    await releaseInbound(db, keys);
   }
 };
 

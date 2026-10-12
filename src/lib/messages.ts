@@ -107,9 +107,10 @@ const opened = async <T extends object>(row: T): Promise<T> => {
 /**
  * Grava uma mensagem e devolve o id; null quando a chave do evento (inbound_key) já estava
  * gravada (reprocesso). Erro do banco sobe. touch: atualiza a conversa (última mensagem e
- * contador); "visitante" também marca o contato como presente (widget).
+ * contador); "visitante" também marca o contato como presente (widget). deferEvent: quem grava
+ * emite o webhook depois (mensagem com arquivo: o evento leva a mídia).
  */
-export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { touch?: "visitante" | "equipe" } = {}): Promise<number | null> {
+export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { touch?: "visitante" | "equipe"; deferEvent?: boolean } = {}): Promise<number | null> {
   const row = await sealed({ ...m, author_type: m.author_type !== undefined ? m.author_type : authorTypeOf(m.role, m.author) }, m.conversation_id);
   const query = m.inbound_key ? db.from("messages").upsert(row, { onConflict: "inbound_key", ignoreDuplicates: true }) : db.from("messages").insert(row);
   const { data, error } = await query.select("id");
@@ -117,7 +118,7 @@ export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { tou
   const id = (data?.[0]?.id as number | undefined) ?? null;
   if (id !== null && opts.touch) await touchConversation(db, m.conversation_id, { visitorSeen: opts.touch === "visitante" });
   // webhooks (C pública): message.received ou message.sent, depois da resposta ao contato
-  if (id !== null) await queueMessageEvent(db, id, m);
+  if (id !== null && !opts.deferEvent) await queueMessageEvent(db, id, m);
   return id;
 }
 

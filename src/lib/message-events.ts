@@ -9,6 +9,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   - a primeira tentativa vai depois da resposta ao contato; envio de campanha e status de
  *     entrega (alto volume) só saem pelo consumidor do minuto.
  * O módulo dos webhooks entra por import dinâmico (messages.ts não carrega o motor de entrega).
+ * Parte 3d: message.received leva interactive (clique em botão, item de lista, resposta rápida) e,
+ * quando o contato manda arquivo, media; nesse caso o evento espera o arquivo ser guardado (a
+ * captura roda depois da resposta) e sai em releaseInbound. message.sent com arquivo da API leva
+ * media também. O link do arquivo é gerado de novo a cada tentativa de entrega.
  */
 
 let cache: { at: number; agencies: Set<string> } | null = null;
@@ -47,6 +51,7 @@ export function sourceOf(m: { author?: string | null; author_type?: string | nul
 
 export interface SavedMessage {
   conversation_id: string;
+  inbound_key?: string | null;
   role: string;
   content: string;
   author?: string | null;
@@ -99,17 +104,24 @@ export function agentObject(m: SavedMessage, source: MessageSource): Record<stri
  * da API, de campanha ou do celular). Barrada pela regra de estado não sai; falha no envio vira
  * message.failed. Nunca derruba quem gravou.
  */
-export async function queueMessageEvent(db: SupabaseClient, id: number, m: SavedMessage): Promise<void> {
+export async function queueMessageEvent(db: SupabaseClient, id: number, m: SavedMessage, o: { withMedia?: boolean; interactive?: Interactive | null } = {}): Promise<void> {
   try {
     if (!["user", "assistant", "agent"].includes(m.role) || m.blocked_reason) return;
+    const extra = m.role === "user" && m.inbound_key ? inboundExtras.get(m.inbound_key) : undefined;
+    // arquivo do contato: o evento sai depois de o arquivo ser guardado (releaseInbound)
+    if (extra?.media && m.inbound_key) {
+      deferredReceived.add(m.inbound_key);
+      return;
+    }
     const ctx = await eventContext(db, m.conversation_id);
     if (!ctx) return;
     const { emitEvent } = await import("./webhooks");
     const contact = await contactObject(db, ctx.contactId);
     const conversation = { id: m.conversation_id, channel: ctx.channel };
     const base = { bot: ctx.bot, createdAt: new Date().toISOString(), conversation, contact, contactId: ctx.contactId, messageId: id };
+    const content = o.withMedia ? await withMediaOf(db, id, m.content) : { text: m.content, media: null };
     if (m.role === "user") {
-      await emitEvent(db, { ...base, type: "message.received", key: String(id), data: { message: { id: `msg_${id}`, text: m.content, media: null } } }, { background: true });
+      await emitEvent(db, { ...base, type: "message.received", key: String(id), data: { message: { id: `msg_${id}`, ...content, interactive: o.interactive ?? extra?.interactive ?? null } } }, { background: true });
       return;
     }
     const source = sourceOf(m);
@@ -120,7 +132,7 @@ export async function queueMessageEvent(db: SupabaseClient, id: number, m: Saved
     const agent = agentObject(m, source);
     // enviada pela API: o início da chave que enviou (author_id é o id da chave)
     if (agent && source === "api" && m.author_id) agent.key_prefix = ((await db.from("api_keys").select("prefix").eq("id", m.author_id).maybeSingle()).data?.prefix as string | undefined) ?? null;
-    await emitEvent(db, { ...base, type: "message.sent", key: String(id), data: { message: { id: `msg_${id}`, text: m.content, media: null }, source, agent } }, { background: true, consumerOnly: source === "campaign" });
+    await emitEvent(db, { ...base, type: "message.sent", key: String(id), data: { message: { id: `msg_${id}`, ...content }, source, agent } }, { background: true, consumerOnly: source === "campaign" });
   } catch (e) {
     console.error("webhook: evento da mensagem não registrado", (e as Error).message);
   }
@@ -226,4 +238,89 @@ export async function queueHandoffReturned(db: SupabaseClient, conversationId: s
   } catch (e) {
     console.error("webhook: evento de devolução não registrado", (e as Error).message);
   }
+}
+
+/* ------------------------------------------------------------------ arquivo e clique na mensagem recebida */
+
+export interface Interactive {
+  type: "button_reply" | "list_reply" | "button" | "quick_reply" | "postback";
+  id: string | null;
+  title: string | null;
+}
+
+export interface InboundExtra {
+  /** O contato mandou arquivo (o evento espera a captura). */
+  media: boolean;
+  interactive: Interactive | null;
+}
+
+/** O que cada mensagem da rajada traz além do texto, pela chave do evento (vale durante o processamento). */
+const inboundExtras = new Map<string, InboundExtra>();
+/** message.received segurados até o arquivo ser guardado. */
+const deferredReceived = new Set<string>();
+
+const WA_MEDIA = new Set(["image", "video", "audio", "document", "sticker"]);
+const IG_MEDIA = new Set(["image", "video", "audio", "file"]);
+
+/** Mensagem do WhatsApp: arquivo que será guardado e o clique (botão, lista ou botão de modelo). Pura. */
+export function waInboundExtra(m: { type: string; button?: { text?: string; payload?: string }; interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } } } & Record<string, unknown>): InboundExtra {
+  const media = WA_MEDIA.has(m.type) && Boolean((m[m.type] as { id?: string } | undefined)?.id);
+  const b = m.interactive?.button_reply;
+  const l = m.interactive?.list_reply;
+  const interactive: Interactive | null = b
+    ? { type: "button_reply", id: b.id ?? null, title: b.title ?? null }
+    : l
+      ? { type: "list_reply", id: l.id ?? null, title: l.title ?? null }
+      : m.button
+        ? { type: "button", id: m.button.payload ?? null, title: m.button.text ?? null }
+        : null;
+  return { media, interactive };
+}
+
+/** Mensagem do Instagram: arquivo que será guardado e o clique (resposta rápida ou botão). Pura. */
+export function igInboundExtra(ev: { message?: { text?: string; quick_reply?: { payload?: string }; attachments?: Array<{ type?: string; payload?: { url?: string } }> }; postback?: { title?: string; payload?: string } }): InboundExtra {
+  const media = (ev.message?.attachments ?? []).some((a) => IG_MEDIA.has(a.type ?? "") && Boolean(a.payload?.url));
+  const interactive: Interactive | null = ev.message?.quick_reply
+    ? { type: "quick_reply", id: ev.message.quick_reply.payload ?? null, title: ev.message.text ?? null }
+    : ev.postback
+      ? { type: "postback", id: ev.postback.payload ?? null, title: ev.postback.title ?? null }
+      : null;
+  return { media, interactive };
+}
+
+/** Antes de tratar a rajada: o que cada mensagem traz. Devolve as chaves (para o releaseInbound). */
+export function expectInbound(items: Array<{ key: string } & InboundExtra>): string[] {
+  for (const i of items) inboundExtras.set(i.key, { media: i.media, interactive: i.interactive });
+  return items.map((i) => i.key);
+}
+
+/**
+ * Depois da captura dos arquivos (ou se algo falhou no meio): os message.received segurados saem,
+ * com a mídia quando o arquivo foi guardado. Nunca derruba quem chamou.
+ */
+export async function releaseInbound(db: SupabaseClient, keys: string[]): Promise<void> {
+  for (const key of keys) {
+    const extra = inboundExtras.get(key);
+    inboundExtras.delete(key);
+    if (!deferredReceived.delete(key)) continue;
+    try {
+      const { findMessage } = await import("./messages");
+      const m = await findMessage(db, { inboundKey: key }, ["id", "conversation_id", "role", "content", "deleted_at"] as const);
+      if (!m || m.deleted_at) continue;
+      // fora do registro: queueMessageEvent emite na hora, com a mídia guardada
+      await queueMessageEvent(db, m.id, { conversation_id: m.conversation_id, role: m.role, content: m.content }, { withMedia: true, interactive: extra?.interactive ?? null });
+    } catch (e) {
+      console.error("webhook: evento da mensagem com arquivo não registrado", (e as Error).message);
+    }
+  }
+}
+
+/** Texto e media da mensagem com arquivo (o rótulo sai, a transcrição do áudio vai para media). */
+async function withMediaOf(db: SupabaseClient, messageId: number, content: string): Promise<{ text: string | null; media: Record<string, unknown> | null }> {
+  const { attachmentsOfMessages } = await import("./attachments");
+  const file = (await attachmentsOfMessages(db, [messageId])).get(messageId)?.[0];
+  if (!file) return { text: content, media: null };
+  const { mediaObject, splitMediaText } = await import("./file-links");
+  const split = splitMediaText(content);
+  return { text: split.text, media: mediaObject(file, split.transcript) };
 }

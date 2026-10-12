@@ -8,7 +8,7 @@ import { apiPauseActive } from "./presence";
 import { pauseConversationAi, pausePlan, resumeConversationAi } from "./api-pause";
 import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type ApiContext } from "./api-v1";
 import { attachmentExpired, attachmentRow, attachmentsOfMessages, readAttachment, streamBytes, type AttachmentInfo } from "./attachments";
-import { signedFileUrl } from "./file-links";
+import { mediaObject, splitMediaText } from "./file-links";
 import { fileHeaders } from "./file-headers";
 
 /*
@@ -179,31 +179,7 @@ export function messageStatus(m: Pick<MsgRow, "role" | "failed_at" | "channel_ms
   return channel === "widget" || m.channel_msg_id ? "sent" : "pending";
 }
 
-/** Prefixo do áudio transcrito no texto gravado ("🎤 " + transcrição; whatsapp-inbound). */
-const AUDIO_PREFIX = "🎤 ";
-const MEDIA_LABEL = /^(\p{Extended_Pictographic}\uFE0F?\s)?\(([^()]+)\)(?:\s+([\s\S]*))?$/u;
-
-/**
- * Texto de mensagem com arquivo: o rótulo ("📷 (foto)") sai, a legenda fica; no áudio, a
- * transcrição vai para media.transcript, sem o prefixo. Pura.
- */
-export function splitMediaText(content: string): { text: string | null; transcript: string | null } {
-  if (content.startsWith(AUDIO_PREFIX)) {
-    const rest = content.slice(AUDIO_PREFIX.length).trim();
-    return { text: null, transcript: rest && !/^\([^()]+\)$/.test(rest) ? rest : null };
-  }
-  const m = MEDIA_LABEL.exec(content.trim());
-  if (m) return { text: m[3]?.trim() || null, transcript: null };
-  // documento enviado pela API sem legenda: "📄 nome.pdf"
-  if (/^📄 \S/u.test(content) && !content.includes("\n")) return { text: null, transcript: null };
-  return { text: content, transcript: null };
-}
-
-/** O arquivo no formato da API, com o link assinado de 1 hora (spec "Objetos", media). */
-export function mediaObject(a: AttachmentInfo, transcript: string | null, now = Date.now()) {
-  const link = signedFileUrl(a.id, now);
-  return { id: `med_${a.id}`, type: a.doc_type, mime: a.mime, size: a.size, filename: a.filename, transcript, url: link.url, url_expires_at: link.expiresAt };
-}
+export { mediaObject, splitMediaText };
 
 /** A mensagem no formato da API (desfeita: sem o texto). media: o primeiro arquivo dela. Pura. */
 export function messageObject(m: MsgRow, channel: ApiChannel, files: AttachmentInfo[] = []) {
