@@ -190,3 +190,18 @@ export async function reencryptLeads(db: SupabaseClient, limit = 200): Promise<n
   }
   return done;
 }
+
+/**
+ * Uma página de leads destes chatbots para a API (C pública, parte 4a), do mais antigo para o mais
+ * novo. after: [created_at, id] do último da página anterior; since: criados a partir dela.
+ */
+export async function apiLeadsPage(db: SupabaseClient, o: { botIds: string[]; channel?: string | null; since?: string | null; after?: [string, string] | null; limit: number }): Promise<Lead[]> {
+  if (!o.botIds.length) return [];
+  let q = db.from("leads").select(COLS).in("bot_id", o.botIds);
+  if (o.channel) q = q.eq("channel", o.channel);
+  if (o.since) q = q.gte("created_at", o.since);
+  if (o.after) q = q.or(`created_at.gt."${o.after[0]}",and(created_at.eq."${o.after[0]}",id.gt.${o.after[1]})`);
+  const { data, error } = await q.order("created_at").order("id").limit(o.limit);
+  if (error) throw new Error(`leads da API: ${error.message}`);
+  return openAll(data);
+}

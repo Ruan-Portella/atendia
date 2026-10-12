@@ -725,3 +725,56 @@ export async function channelContactId(db: SupabaseClient, botId: string, channe
   const { data } = await db.from("contacts").select("id").eq("bot_id", botId).eq("channel", channel).eq(column, hash).maybeSingle();
   return (data?.id as string | undefined) ?? null;
 }
+
+/* ------------------------------------------------------------------ API pública (C pública, parte 4a) */
+
+/** Contato na listagem da API, com as identidades do canal abertas. */
+export interface ApiContactRow {
+  id: string;
+  bot_id: string;
+  channel: ContactChannel | "widget";
+  name: string | null;
+  email: string | null;
+  tags: string[];
+  phone: string | null;
+  bsuid: string | null;
+  igsid: string | null;
+  external_id: string | null;
+  first_inbound_at: string | null;
+  last_inbound_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Uma página de contatos destes chatbots para a API, na ordem da última alteração (sincronização:
+ * since e o cursor andam juntos). after: [updated_at, id] da última da página anterior.
+ */
+export async function apiContactsPage(db: SupabaseClient, o: { botIds: string[]; channel?: string | null; tag?: string | null; since?: string | null; after?: [string, string] | null; limit: number }): Promise<ApiContactRow[]> {
+  if (!o.botIds.length) return [];
+  let q = db.from("contacts").select("id, bot_id, channel, name, email, tags, phone_enc, wa_user_enc, ig_enc, external_id_enc, first_inbound_at, last_inbound_at, created_at, updated_at").in("bot_id", o.botIds);
+  if (o.channel) q = q.eq("channel", o.channel);
+  if (o.tag) q = q.contains("tags", [o.tag]);
+  if (o.since) q = q.gte("updated_at", o.since);
+  if (o.after) q = q.or(`updated_at.gt."${o.after[0]}",and(updated_at.eq."${o.after[0]}",id.gt.${o.after[1]})`);
+  const { data, error } = await q.order("updated_at").order("id").limit(o.limit);
+  if (error) throw new Error(`contatos da API: ${error.message}`);
+  return Promise.all(
+    ((data ?? []) as Array<Record<string, unknown>>).map(async (r) => ({
+      id: r.id as string,
+      bot_id: r.bot_id as string,
+      channel: r.channel as ApiContactRow["channel"],
+      name: (r.name as string | null) ?? null,
+      email: (r.email as string | null) ?? null,
+      tags: (r.tags as string[] | null) ?? [],
+      phone: await openNullable("contacts.phone_enc", r.phone_enc),
+      bsuid: await openNullable("contacts.wa_user_enc", r.wa_user_enc),
+      igsid: await openNullable("contacts.ig_enc", r.ig_enc),
+      external_id: await openNullable("contacts.external_id_enc", r.external_id_enc),
+      first_inbound_at: (r.first_inbound_at as string | null) ?? null,
+      last_inbound_at: (r.last_inbound_at as string | null) ?? null,
+      created_at: r.created_at as string,
+      updated_at: r.updated_at as string,
+    })),
+  );
+}

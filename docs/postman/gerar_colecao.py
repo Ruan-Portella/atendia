@@ -224,8 +224,54 @@ modelos = folder(
 
 contatos = folder(
     "5. Contatos e pareamento",
-    "Idade informada pela empresa (permissão **contacts**) e pareamento com o sistema do cliente (permissão **pairing**).",
+    "Contatos, etiquetas, leads e idade (permissão **contacts**), aceite de novidades (permissão **campaigns**) e pareamento com o sistema do cliente (permissão **pairing**).",
     [
+        req(
+            "Listar contatos",
+            "GET",
+            "contacts",
+            query=[("limit", "20", False), ("channel", "whatsapp", True), ("tag", "vip", True), ("since", "2026-10-01T00:00:00Z", True), ("bot_id", BOT, True)],
+            desc="Na ordem da última alteração (para sincronizar: guarde o `updated_at` do último e use em `since`). Cada contato vem com etiquetas, consentimento (`consent.marketing` e `consent.opted_out`) e `age_confirmed`.",
+            tests=expect_status(200)
+            + [
+                "const data = pm.response.json().data || [];",
+                "const wa = data.find((c) => c.channel === \"whatsapp\");",
+                "if (wa && !pm.environment.get(\"whatsapp_contact\")) pm.environment.set(\"whatsapp_contact\", wa.id);",
+                "console.log(data.map((c) => `${c.channel} ${c.id} ${c.name || \"\"} tags=${c.tags.join(\"|\")} promo=${c.consent ? c.consent.marketing : \"-\"}`).join(\"\\n\"));",
+            ],
+        ),
+        req(
+            "Etiquetas do contato",
+            "PUT",
+            "contacts/{{whatsapp_contact}}/tags",
+            body={"bot_id": BOT, "tags": ["vip", "postman"]},
+            desc="Troca todas as etiquetas (lista vazia apaga). Com `ext:<id>`, vale para todos os contatos do bot com aquele id externo.",
+            tests=expect_status(200),
+        ),
+        req(
+            "Aceite de novidades (sim)",
+            "POST",
+            "contacts/phone:{{phone}}/consent",
+            body={"bot_id": BOT, "channel": "whatsapp", "granted": True, "source": "Teste pelo Postman", "text": "Aceito receber novidades e promoções por WhatsApp"},
+            desc="Permissão **campaigns**. Grava o aceite com a prova (origem, texto e data). Cria o contato do WhatsApp se ele ainda não existe. Quem pediu para sair continua fora (`opted_out: true`): só um novo sim dele no chat tira do descadastro.",
+            tests=expect_status(201) + ['const r = pm.response.json(); console.log("consent:", r.consent_id, "opted_out:", r.opted_out);'],
+        ),
+        req(
+            "Retirar o aceite",
+            "POST",
+            "contacts/phone:{{phone}}/consent",
+            body={"bot_id": BOT, "channel": "whatsapp", "granted": False, "source": "Pedido pelo atendimento", "text": "Não quero mais receber promoções"},
+            desc="Revoga o aceite ativo e sai o webhook contact.opted_out (source api).",
+            tests=expect_status(201),
+        ),
+        req(
+            "Leads",
+            "GET",
+            "leads",
+            query=[("limit", "20", False), ("channel", "whatsapp", True), ("since", "2026-10-01T00:00:00Z", True), ("bot_id", BOT, True)],
+            desc="Do mais antigo para o mais novo, com nome, telefone, e-mail e o interesse (notes). Paginação por `next_cursor`.",
+            tests=expect_status(200),
+        ),
         req("Idade confirmada pela empresa", "PUT", "contacts/phone:{{phone}}/age", body={"bot_id": BOT, "age_verified": True, "origin": "Teste pelo Postman"}, desc="O contato passa a ter 18+ confirmado (origem company).", tests=expect_status(200)),
         req(
             "Criar código de pareamento",
@@ -257,6 +303,21 @@ contatos = folder(
     ],
 )
 
+exclusao = folder(
+    "7. Exclusão (LGPD)",
+    "**Cuidado: apaga de verdade.** O pedido do titular pela API apaga as conversas, os arquivos, os leads e a ficha do contato, põe o número na lista de supressão e emite o webhook contact.deleted. Use um número de teste em `phone_para_apagar`.",
+    [
+        req(
+            "Apagar contato (pedido do titular)",
+            "DELETE",
+            "contacts/phone:{{phone_para_apagar}}",
+            query=[("bot_id", BOT, False)],
+            desc="Responde 202 com o `request_id` na hora; a exclusão roda logo depois. O pedido aparece em Segurança, no painel, como executado (origem API). Depois disso, mandar modelo para esse número volta 422 contact_suppressed.",
+            tests=expect_status(202) + ['console.log("pedido:", pm.response.json().request_id);'],
+        ),
+    ],
+)
+
 erros = folder(
     "6. Erros esperados",
     "Cada requisição confere o código de erro que a API deve devolver.",
@@ -264,6 +325,8 @@ erros = folder(
         req("Corpo inválido (type)", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "audio"}, tests=expect_error(400, "invalid_request")),
         req("Arquivo com tipo errado (PDF como imagem)", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "image", "image": {"url": "{{document_url}}"}}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta a URL", () => pm.expect(pm.response.json().error.details.field).to.eql("image.url"));']),
         req("Pausa com minutes inválido", "POST", "conversations/{{conversation_id}}/pause", body={"minutes": 0}, tests=expect_error(400, "invalid_request")),
+        req("Etiquetas em contato que não existe", "PUT", "contacts/ctc_00000000-0000-4000-8000-000000000000/tags", body={"bot_id": BOT, "tags": ["vip"]}, tests=expect_error(404, "not_found")),
+        req("Aceite sem a prova", "POST", "contacts/phone:{{phone}}/consent", body={"bot_id": BOT, "granted": True}, tests=expect_error(400, "invalid_request")),
         req("Conversa inexistente", "GET", "conversations/conv_00000000-0000-4000-8000-000000000000/messages", tests=expect_error(404, "not_found")),
         req(
             "Portão: regulamentado sem 18+",
@@ -325,7 +388,7 @@ collection = {
             ),
         },
     ],
-    "item": [conversas, pausa, mensagens, modelos, contatos, erros],
+    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao],
 }
 
 env = {
@@ -339,6 +402,7 @@ env = {
         {"key": "phone", "value": "55", "type": "default", "enabled": True},
         {"key": "phone_sem_idade", "value": "55", "type": "default", "enabled": True},
         {"key": "phone_fora_da_janela", "value": "55", "type": "default", "enabled": True},
+        {"key": "phone_para_apagar", "value": "55", "type": "default", "enabled": True},
         {"key": "template_name", "value": "", "type": "default", "enabled": True},
         {"key": "template_language", "value": "pt_BR", "type": "default", "enabled": True},
         {"key": "template_variable_1", "value": "Ruan", "type": "default", "enabled": True},

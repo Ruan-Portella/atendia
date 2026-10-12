@@ -1165,8 +1165,258 @@
     },
     {
       "name": "5. Contatos e pareamento",
-      "description": "Idade informada pela empresa (permissão **contacts**) e pareamento com o sistema do cliente (permissão **pairing**).",
+      "description": "Contatos, etiquetas, leads e idade (permissão **contacts**), aceite de novidades (permissão **campaigns**) e pareamento com o sistema do cliente (permissão **pairing**).",
       "item": [
+        {
+          "name": "Listar contatos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "channel",
+                  "value": "whatsapp",
+                  "disabled": true
+                },
+                {
+                  "key": "tag",
+                  "value": "vip",
+                  "disabled": true
+                },
+                {
+                  "key": "since",
+                  "value": "2026-10-01T00:00:00Z",
+                  "disabled": true
+                },
+                {
+                  "key": "bot_id",
+                  "value": "{{bot_id}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Na ordem da última alteração (para sincronizar: guarde o `updated_at` do último e use em `since`). Cada contato vem com etiquetas, consentimento (`consent.marketing` e `consent.opted_out`) e `age_confirmed`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data || [];",
+                  "const wa = data.find((c) => c.channel === \"whatsapp\");",
+                  "if (wa && !pm.environment.get(\"whatsapp_contact\")) pm.environment.set(\"whatsapp_contact\", wa.id);",
+                  "console.log(data.map((c) => `${c.channel} ${c.id} ${c.name || \"\"} tags=${c.tags.join(\"|\")} promo=${c.consent ? c.consent.marketing : \"-\"}`).join(\"\\n\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Etiquetas do contato",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/contacts/{{whatsapp_contact}}/tags",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "{{whatsapp_contact}}",
+                "tags"
+              ]
+            },
+            "description": "Troca todas as etiquetas (lista vazia apaga). Com `ext:<id>`, vale para todos os contatos do bot com aquele id externo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"tags\": [\n    \"vip\",\n    \"postman\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aceite de novidades (sim)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/contacts/phone:{{phone}}/consent",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "phone:{{phone}}",
+                "consent"
+              ]
+            },
+            "description": "Permissão **campaigns**. Grava o aceite com a prova (origem, texto e data). Cria o contato do WhatsApp se ele ainda não existe. Quem pediu para sair continua fora (`opted_out: true`): só um novo sim dele no chat tira do descadastro.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"channel\": \"whatsapp\",\n  \"granted\": true,\n  \"source\": \"Teste pelo Postman\",\n  \"text\": \"Aceito receber novidades e promoções por WhatsApp\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json(); console.log(\"consent:\", r.consent_id, \"opted_out:\", r.opted_out);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retirar o aceite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/contacts/phone:{{phone}}/consent",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "phone:{{phone}}",
+                "consent"
+              ]
+            },
+            "description": "Revoga o aceite ativo e sai o webhook contact.opted_out (source api).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"channel\": \"whatsapp\",\n  \"granted\": false,\n  \"source\": \"Pedido pelo atendimento\",\n  \"text\": \"Não quero mais receber promoções\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Leads",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/leads?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "leads"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "channel",
+                  "value": "whatsapp",
+                  "disabled": true
+                },
+                {
+                  "key": "since",
+                  "value": "2026-10-01T00:00:00Z",
+                  "disabled": true
+                },
+                {
+                  "key": "bot_id",
+                  "value": "{{bot_id}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Do mais antigo para o mais novo, com nome, telefone, e-mail e o interesse (notes). Paginação por `next_cursor`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "Idade confirmada pela empresa",
           "request": {
@@ -1480,6 +1730,101 @@
           ]
         },
         {
+          "name": "Etiquetas em contato que não existe",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/contacts/ctc_00000000-0000-4000-8000-000000000000/tags",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "ctc_00000000-0000-4000-8000-000000000000",
+                "tags"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"tags\": [\n    \"vip\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"erro not_found\", () => pm.expect(pm.response.json().error.code).to.eql(\"not_found\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aceite sem a prova",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/contacts/phone:{{phone}}/consent",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "phone:{{phone}}",
+                "consent"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"granted\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Conversa inexistente",
           "request": {
             "method": "GET",
@@ -1641,6 +1986,48 @@
                 "exec": [
                   "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
                   "pm.test(\"erro invalid_api_key\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_api_key\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Exclusão (LGPD)",
+      "description": "**Cuidado: apaga de verdade.** O pedido do titular pela API apaga as conversas, os arquivos, os leads e a ficha do contato, põe o número na lista de supressão e emite o webhook contact.deleted. Use um número de teste em `phone_para_apagar`.",
+      "item": [
+        {
+          "name": "Apagar contato (pedido do titular)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/phone:{{phone_para_apagar}}?bot_id={{bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "phone:{{phone_para_apagar}}"
+              ],
+              "query": [
+                {
+                  "key": "bot_id",
+                  "value": "{{bot_id}}"
+                }
+              ]
+            },
+            "description": "Responde 202 com o `request_id` na hora; a exclusão roda logo depois. O pedido aparece em Segurança, no painel, como executado (origem API). Depois disso, mandar modelo para esse número volta 422 contact_suppressed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));",
+                  "console.log(\"pedido:\", pm.response.json().request_id);"
                 ]
               }
             }

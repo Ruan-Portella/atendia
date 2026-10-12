@@ -120,6 +120,11 @@ const whatsappGroup: GroupHandler = async (db, events) => {
   const burst: QueuedMessage[] = contact.flatMap((e) => (e.payload.type === "msg" ? [{ key: e.key_hash, msg: e.payload.msg, profileName: e.payload.profileName, identityKeyHash: e.payload.identityKeyHash ?? null, receivedAt: e.created_at }] : []));
   // webhooks: o clique e o arquivo de cada mensagem (message.received com arquivo sai depois da captura)
   const keys = expectInbound(burst.map((q) => ({ key: q.key, ...waInboundExtra(q.msg as unknown as Parameters<typeof waInboundExtra>[0]) })));
+  // resposta a status do WhatsApp (teste de 12/10/2026): só os nomes dos campos do context, sem valores
+  for (const q of burst) {
+    const context = (q.msg as { context?: Record<string, unknown> }).context;
+    if (context) console.log("whatsapp: mensagem com contexto", q.msg.type, contextShape(context));
+  }
   try {
     for (const e of contact) if (e.payload.type === "echo") await handleEcho(db, channel, e.payload.echo, e.key_hash);
     await handleInboundBurst(db, channel, burst);
@@ -165,6 +170,17 @@ const instagramGroup: GroupHandler = async (db, events) => {
 };
 
 export const inboundHandlers = { whatsapp: whatsappGroup, instagram: instagramGroup };
+
+/** Os nomes dos campos (e dos campos de dentro), nunca os valores: "from,id,referred_product{...}". Pura. */
+export function contextShape(o: Record<string, unknown>): string {
+  return Object.keys(o)
+    .sort()
+    .map((k) => {
+      const v = o[k];
+      return v && typeof v === "object" && !Array.isArray(v) ? `${k}{${Object.keys(v as object).sort().join(",")}}` : k;
+    })
+    .join(",");
+}
 
 /**
  * Depois de o webhook responder: trata os contatos que acabaram de chegar (até 8 em paralelo)

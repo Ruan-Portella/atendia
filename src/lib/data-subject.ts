@@ -365,3 +365,31 @@ export async function emitErasedContacts(db: SupabaseClient, erased: ErasureCont
     if (bot) await emitContactDeleted(db, { contactId: c.id, externalId: c.externalId, bot, requestId: requestKey }).catch((e) => console.error("webhook: contact.deleted", (e as Error).message));
   }
 }
+
+/* ------------------------------------------------------------------ pela API (C pública, parte 4a) */
+
+/**
+ * DELETE /v1/contacts/{contact}: o pedido nasce já confirmado (origem api, a chave como quem
+ * confirmou). A rotina roda em seguida (executeApiRequest); se ela não terminar, o pedido fica
+ * aguardando em Segurança, como um pedido do chat. Devolve o id do pedido.
+ */
+export async function createApiRequest(db: SupabaseClient, r: { bot: { id: string; agency_id: string; client_id: string | null }; contactIds: string[]; by: string }): Promise<string> {
+  const now = new Date().toISOString();
+  const { data, error } = await db
+    .from("data_subject_requests")
+    .insert({ agency_id: r.bot.agency_id, client_id: r.bot.client_id, bot_id: r.bot.id, contact_id: r.contactIds[0] ?? null, channel: "api", origin: "api", requested_at: now, due_at: now, confirmed_at: now, confirmed_by: r.by })
+    .select("id")
+    .single();
+  if (error || !data) throw new Error(`pedido do titular (API) não registrado: ${error?.message}`);
+  return data.id as string;
+}
+
+/** Apaga os contatos do pedido da API pela rotina única, emite contact.deleted e conclui o pedido. */
+export async function executeApiRequest(db: SupabaseClient, requestId: string, contactIds: string[]): Promise<ErasureSummary | null> {
+  const { data: req } = await db.from("data_subject_requests").select("id, status, origin").eq("id", requestId).maybeSingle();
+  if (!req || req.status !== "aguardando" || req.origin !== "api") return null;
+  const { erased, ...summary } = await eraseTargets(db, { contactIds, conversationIds: [] }, { code: `dsr:${requestId}`, source: "api" });
+  await emitErasedContacts(db, erased, requestId);
+  await db.from("data_subject_requests").update({ status: "executado", executed_at: new Date().toISOString(), summary }).eq("id", requestId).eq("status", "aguardando");
+  return summary;
+}

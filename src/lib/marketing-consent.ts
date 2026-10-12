@@ -131,7 +131,7 @@ export interface ConsentOrigin {
  * Grava um sim ou um não. O sim é um novo opt-in da própria pessoa: desfaz o descadastro de
  * promoções (o de lembretes continua).
  */
-export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null; collectedAt?: string | null; keepSuppression?: boolean; quiet?: boolean }): Promise<void> {
+export async function recordConsent(db: SupabaseClient, t: ConsentTarget & ConsentOrigin & { granted: boolean; source: ConsentSource; text: string; textVersion: string; collectedBy?: string | null; collectedAt?: string | null; keepSuppression?: boolean; quiet?: boolean }): Promise<number | null> {
   const { data: row, error } = await db.from("marketing_consents").insert({
     agency_id: t.agencyId,
     client_id: t.clientId,
@@ -154,9 +154,10 @@ export async function recordConsent(db: SupabaseClient, t: ConsentTarget & Conse
     const { queueConsentEvent } = await import("./platform-events");
     await queueConsentEvent(db, { channel: "whatsapp", scope: t.scope, contact: t.contact, type: "marketing", source: t.source === "import" ? "panel" : t.source, granted: true, key: `consent:${row.id}` });
   }
+  const id = (row?.id as number | undefined) ?? null;
   // só o sim dado pela própria pessoa no chat tira do descadastro; o registrado pela empresa (painel,
-  // planilha) não desfaz um SAIR (e o envio confere a supressão de qualquer jeito)
-  if (!t.granted || t.source !== "chat" || t.keepSuppression) return;
+  // planilha, API) não desfaz um SAIR (e o envio confere a supressão de qualquer jeito)
+  if (!t.granted || t.source !== "chat" || t.keepSuppression) return id;
   const target = { channel: "whatsapp" as const, scope: t.scope, contact: t.contact };
   const active = (await activeSuppressions(db, target)).map((s) => s.kind);
   if (active.includes("marketing")) await revoke(db, { ...target, kind: "marketing", source: `optin:${t.source}` });
@@ -165,6 +166,7 @@ export async function recordConsent(db: SupabaseClient, t: ConsentTarget & Conse
     await revoke(db, { ...target, kind: "all", source: `optin:${t.source}` });
     await suppress(db, { ...target, kind: "utility", reason: "opt_out", source: "optin:resto" });
   }
+  return id;
 }
 
 /** Revoga os sins ativos (SAIR, descadastro do WhatsApp, erro 131050). Devolve quantos. */
