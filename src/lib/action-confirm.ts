@@ -148,6 +148,28 @@ export function confirmationLines(schema: ParamsSchema, params: Record<string, u
   return { lines: lines.slice(0, 15), unresolved: [...new Set(unresolved)].slice(0, 10) };
 }
 
+/** Parâmetro que leva lista de itens (itens, produtos, skus): é onde a IA às vezes põe o nome no lugar do id. */
+const ITEM_PARAM = /(^|_)(itens|items?|produtos?|skus?)$/i;
+
+/**
+ * A IA mandou nome ("calabresa") num parâmetro de itens, e a conversa já tem os ids de uma
+ * consulta: devolve o parâmetro e os ids conhecidos (para ela chamar de novo, na mesma vez). Sem
+ * ids no mapa, nada a fazer (o endpoint do dev pode aceitar nome). Função pura.
+ */
+export function namesInsteadOfIds(schema: ParamsSchema, params: Record<string, unknown>, map: IdMap): { param: string; values: string[]; known: string[] } | null {
+  const known = Object.entries(map)
+    .filter(([, e]) => !e.categoria && e.rotulo)
+    .slice(-40)
+    .map(([id, e]) => `${id} = ${e.rotulo}`);
+  if (!known.length) return null;
+  for (const [name, v] of Object.entries(params)) {
+    if (!ITEM_PARAM.test(name) || !(name in (schema.properties ?? {}))) continue;
+    const names = (Array.isArray(v) ? v : [v]).filter((x): x is string => typeof x === "string" && !map[x] && !/\d/.test(x));
+    if (names.length) return { param: name, values: [...new Set(names)], known };
+  }
+  return null;
+}
+
 /** A mensagem do Confirmar: a frase da IA, as linhas, os avisos e o lembrete. Função pura. */
 export function confirmationText(intro: string | null | undefined, lines: string[], notes: string[]): string {
   return [intro?.trim() || CONFIRM_TEXTS.intro, lines.join("\n"), ...notes, CONFIRM_TEXTS.tail].filter((x) => x && x.trim()).join("\n\n");
@@ -225,6 +247,14 @@ export function blockedOrderOutput(labels: string[], destination: { destino: str
 export async function openConfirmation(db: SupabaseClient, i: OpenInput): Promise<OpenResult> {
   const { action: a, params } = i;
   const map = await conversationIdMap(db, i.conversationId);
+
+  // nome no lugar do id, com os ids já consultados nesta conversa: a IA chama de novo com eles
+  const names = namesInsteadOfIds(a.params_schema, params, map);
+  if (names)
+    return {
+      ok: false,
+      output: { ok: false, motivo: "ids_desconhecidos", instrucao: `O parâmetro ${names.param} leva os ids da consulta, não nomes (${names.values.join(", ")}). Chame de novo com os ids certos, um por unidade. Ids conhecidos: ${names.known.join("; ")}.` },
+    };
 
   // prévia: só para ação que declarou aceitar (endpoint que não declarou criaria o pedido)
   let preview: Confirmation | null = null;
@@ -381,5 +411,5 @@ export function confirmedNote(actionName: string, output: Record<string, unknown
     return `A pessoa tocou em Confirmar e a ação acao_${actionName} foi chamada agora, mas o sistema da empresa respondeu que não encontrou: ${result}. Explique com naturalidade e ofereça ajustar o pedido. Não chame a ação de novo nesta resposta.`;
   if (output.ok === false)
     return `A pessoa tocou em Confirmar, mas a ação acao_${actionName} falhou agora: ${result}. Diga que não conseguiu concluir agora e ofereça tentar de novo daqui a pouco ou falar com alguém da equipe. Não chame a ação de novo nesta resposta.`;
-  return `A pessoa tocou em Confirmar e a ação acao_${actionName} acabou de ser executada (não chame de novo). Resultado: ${result}. Confirme para a pessoa o que foi feito a partir desse resultado, sem inventar número de pedido, valor ou prazo que não estejam nele.`;
+  return `A pessoa tocou em Confirmar e a ação acao_${actionName} acabou de ser executada (não chame de novo). Resultado: ${result}. Confirme para a pessoa o que foi feito usando esse resultado: cite o número do pedido, protocolo ou código e os outros dados que estiverem nele (status, prazo, valor). Não invente nada que não esteja no resultado: sem número nele, não cite número.`;
 }

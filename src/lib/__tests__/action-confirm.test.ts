@@ -7,6 +7,7 @@ import {
   confirmationText,
   confirmedNote,
   isConfirmComponent,
+  namesInsteadOfIds,
   parseConfirmButton,
   shortcutTarget,
   stillCallable,
@@ -100,6 +101,15 @@ describe("resumo do Confirmar", () => {
     expect(confirmationText(null, r.lines, [CONFIRM_TEXTS.unresolved(r.unresolved)])).toBe(`${CONFIRM_TEXTS.intro}\n\n• Itens: Pizza Calabresa, 999\n\n${CONFIRM_TEXTS.unresolved(["999"])}\n\n${CONFIRM_TEXTS.tail}`);
   });
 
+  it("nome no lugar do id, com os ids já consultados: a IA recebe os ids e chama de novo", () => {
+    expect(namesInsteadOfIds(schema, { itens: ["calabresa", "calabresa", "coca"] }, map)).toEqual({ param: "itens", values: ["calabresa", "coca"], known: ["101 = Pizza Calabresa", "201 = Coca-Cola 2L"] });
+    expect(namesInsteadOfIds(schema, { itens: ["101", "201"] }, map)).toBeNull();
+    // sem consulta com ids na conversa, o nome segue (o endpoint pode aceitar)
+    expect(namesInsteadOfIds(schema, { itens: ["calabresa"] }, {})).toBeNull();
+    // parâmetro que não é de itens (endereço) e código desconhecido não entram
+    expect(namesInsteadOfIds(schema, { itens: ["999"], entrega: "Rua A" }, map)).toBeNull();
+  });
+
   it("com prévia, o que o endpoint devolveu (resumo, itens e total)", () => {
     const preview = readConfirmation({ summary: "Entrega em 40 min", items: [{ nome: "Pizza Calabresa", quantidade: 2 }, "Coca-Cola 2L", { x: 1 }], total_cents: 11180 });
     expect(preview).toEqual({ summary: "Entrega em 40 min", items: ["2x Pizza Calabresa", "Coca-Cola 2L"], total_cents: 11180 });
@@ -178,7 +188,7 @@ describe("chamada confirmada", () => {
   });
 
   it("depois do Confirmar, a IA escreve a partir do resultado e o histórico diz o que houve", () => {
-    expect(confirmedNote("criar_pedido", { ok: true, data: { pedido: "T-1" }, confirmada: true })).toMatch(/acabou de ser executada[\s\S]*T-1[\s\S]*sem inventar/);
+    expect(confirmedNote("criar_pedido", { ok: true, data: { pedido: "T-1" }, confirmada: true })).toMatch(/acabou de ser executada[\s\S]*T-1[\s\S]*cite o número do pedido/);
     expect(confirmedNote("criar_pedido", { ok: false, motivo: "falha" })).toMatch(/falhou/);
     expect(confirmedNote("criar_pedido", { ok: false, motivo: "nao_encontrado", detalhe: "item esgotado" })).toMatch(/não encontrou/);
     expect(actionsNote([{ name: "acao_criar_pedido", input: { itens: ["101"] }, output: { ok: true, confirmacao: "enviada" } }])).toMatch(/resumo com Confirmar e Cancelar enviado/);
