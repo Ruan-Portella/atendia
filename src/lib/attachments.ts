@@ -37,12 +37,18 @@ export function docTypeOf(mime: string, hint?: string | null): DocType {
 /** Mime sem parâmetros (ex.: "audio/ogg; codecs=opus" → "audio/ogg"). Pura. */
 export const baseMime = (mime: string | null | undefined) => (mime ?? "application/octet-stream").split(";")[0].trim().toLowerCase() || "application/octet-stream";
 
-/** Guarda um arquivo recebido; devolve o id (null se grande demais ou se não deu para gravar). */
+/** Anexo devolvido por uma ação (C pública, parte 5c): até 25 MB (o que o canal não aceita vai por link). */
+export const MAX_ACTION_FILE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Guarda um arquivo recebido; devolve o id (null se grande demais ou se não deu para gravar).
+ * messageId null: anexo de ação preparado antes da mensagem existir (linkAttachments liga depois).
+ */
 export async function storeAttachment(
   db: SupabaseClient,
-  a: { botId: string; conversationId: string; messageId: number; channel: "whatsapp" | "instagram" | "widget"; data: Uint8Array; mime: string; filename?: string | null; hint?: string | null },
+  a: { botId: string; conversationId: string; messageId: number | null; channel: "whatsapp" | "instagram" | "widget"; data: Uint8Array; mime: string; filename?: string | null; hint?: string | null; maxBytes?: number },
 ): Promise<string | null> {
-  if (!a.data.byteLength || a.data.byteLength > MAX_ATTACHMENT_BYTES) return null;
+  if (!a.data.byteLength || a.data.byteLength > (a.maxBytes ?? MAX_ATTACHMENT_BYTES)) return null;
   const { data: bot } = await db.from("bots").select("agency_id, client_id, sensitive_mode, sensitive_retention_days").eq("id", a.botId).maybeSingle();
   if (!bot) return null;
   const scope = await scopeOfBot(a.botId);
@@ -79,6 +85,13 @@ export async function storeAttachment(
     return null;
   }
   return id;
+}
+
+/** Liga anexos preparados antes da mensagem (ação) à mensagem que os levou. */
+export async function linkAttachments(db: SupabaseClient, ids: string[], messageId: number): Promise<void> {
+  if (!ids.length) return;
+  const { error } = await db.from("attachments").update({ message_id: messageId }).in("id", ids).is("message_id", null);
+  if (error) console.error("anexos não ligados à mensagem", error.message);
 }
 
 /** Esta mensagem já tem arquivo guardado? (reprocesso do evento não duplica) */

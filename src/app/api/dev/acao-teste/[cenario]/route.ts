@@ -13,6 +13,10 @@ import { botActionSecrets } from "@/lib/actions";
  *                   adicionar_ao_carrinho, params {item})
  *   carrinho        consulta (adicionar_ao_carrinho): reply com o item e os botões "Finalizar pedido"
  *                   (botão com ação criar_pedido) e "Ver cardápio" (sem ação: volta para a IA)
+ *   pdf             consulta: data e um anexo PDF (cardapio.pdf)
+ *   foto            consulta: reply e um anexo PNG (sai como imagem)
+ *   anexos-varios   consulta: PDF (documento), XML (link de 7 dias), "promocao-cerveja.pdf" (barrado no
+ *                   WhatsApp e no Instagram sem 18+) e uma URL quebrada ("Não consegui anexar")
  *   ok              executa: {data: {pedido, status}}; na prévia, confirmation {summary, items, total_cents}
  *   reply           executa: {reply} (texto exato, sem IA)
  *   vazio           executa: 200 sem corpo (sucesso)
@@ -32,6 +36,11 @@ const CARDAPIO = [
 ];
 
 const json = (status: number, body: unknown) => Response.json(body, { status });
+
+// arquivos públicos de teste (os mesmos da coleção do Postman)
+const PDF = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
+const PNG = "https://placehold.co/600x400.png";
+const XML = "https://www.w3.org/2001/xml.xsd";
 
 export async function POST(req: Request, { params }: { params: Promise<{ cenario: string }> }) {
   if (process.env.VERCEL_ENV === "production") return new Response("Not found", { status: 404 });
@@ -66,6 +75,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ cenario
   const repeated = async () => Boolean((await db.from("action_calls").select("id").eq("call_id", callId).limit(1)).data?.length);
 
   if (cenario === "cardapio") return json(200, { data: { itens: CARDAPIO } });
+  if (cenario === "pdf") return json(200, { data: { mensagem: "O cardápio completo vai em PDF." }, attachments: [{ url: PDF, filename: "cardapio.pdf" }] });
+  if (cenario === "foto") return json(200, { reply: "Olha a calabresa saindo do forno!", attachments: [{ url: PNG, filename: "calabresa.png" }] });
+  if (cenario === "anexos-varios")
+    return json(200, {
+      data: { mensagem: "Seguem os arquivos." },
+      attachments: [
+        { url: PDF, filename: "cardapio.pdf" },
+        { url: XML, filename: "tabela.xml" },
+        { url: PDF, filename: "promocao-cerveja.pdf" },
+        { url: "https://www.w3.org/arquivo-que-nao-existe.pdf", filename: "quebrado.pdf" },
+      ],
+    });
   if (cenario === "cardapio-botoes")
     return json(200, {
       data: { itens: CARDAPIO },

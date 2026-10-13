@@ -10,19 +10,21 @@ import { appUrl } from "./utils";
  */
 
 export const FILE_LINK_TTL_SECONDS = 3600;
+/** Anexo de ação em formato que o canal não aceita (XML, ZIP, planilha no Instagram): link de 7 dias. */
+export const LONG_FILE_LINK_TTL_SECONDS = 7 * 86_400;
 
 const signature = (id: string, exp: number) => hmacHex(`arquivo:${id}:${exp}`);
 
-/** Link de 1 hora para o arquivo. */
-export function signedFileUrl(id: string, now = Date.now()): { url: string; expiresAt: string } {
-  const exp = Math.floor(now / 1000) + FILE_LINK_TTL_SECONDS;
+/** Link de 1 hora para o arquivo (ou de até 7 dias, no anexo de ação que vai como link). */
+export function signedFileUrl(id: string, now = Date.now(), ttlSeconds = FILE_LINK_TTL_SECONDS): { url: string; expiresAt: string } {
+  const exp = Math.floor(now / 1000) + Math.min(ttlSeconds, LONG_FILE_LINK_TTL_SECONDS);
   return { url: appUrl(`/api/files/${id}?exp=${exp}&sig=${signature(id, exp)}`), expiresAt: new Date(exp * 1000).toISOString() };
 }
 
 /** O link assinado vale para este arquivo e ainda não venceu? */
 export function validFileLink(id: string, exp: string | null, sig: string | null, now = Date.now()): boolean {
   const e = Number(exp);
-  if (!exp || !sig || !Number.isSafeInteger(e) || e * 1000 < now || e * 1000 > now + FILE_LINK_TTL_SECONDS * 1000 + 60_000) return false;
+  if (!exp || !sig || !Number.isSafeInteger(e) || e * 1000 < now || e * 1000 > now + LONG_FILE_LINK_TTL_SECONDS * 1000 + 60_000) return false;
   const want = Buffer.from(signature(id, e));
   const got = Buffer.from(sig);
   return want.length === got.length && timingSafeEqual(want, got);

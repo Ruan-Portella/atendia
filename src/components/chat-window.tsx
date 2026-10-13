@@ -129,6 +129,12 @@ function componentOf(m: UIMessage): MessageComponent | null {
   return part ? parseComponents(JSON.stringify(part.data ?? null)) : null;
 }
 
+/** Anexos devolvidos por uma ação nesta resposta (data-files: links assinados de 1 hora). */
+function filesOf(m: UIMessage): AgentFile[] {
+  const part = m.parts.find((p) => p.type === "data-files") as { data?: unknown } | undefined;
+  return Array.isArray(part?.data) ? (part.data as AgentFile[]).filter((f) => typeof f?.url === "string") : [];
+}
+
 /**
  * Opções viram botões (o toque manda o título como mensagem do visitante, e o id do botão junto:
  * o Confirmar de uma ação é resolvido pelo id); link vira botão que abre a página. Só a última
@@ -344,7 +350,7 @@ export function ChatWindow({
       try {
         const qs = `key=${bot.key}&visitorId=${encodeURIComponent(visitorId ?? "")}${saved ? `&conversationId=${saved}` : ""}`;
         const res = await fetch(`${apiBase}/api/chat/history?${qs}`, { cache: "no-store", headers: auth() });
-        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string; name?: string | null; avatar?: string | null; components?: MessageComponent | null; file?: AgentFile | null }> };
+        const j = (await res.json()) as { resumable?: boolean; conversationId?: string; mode?: HandoffMode; messages?: Array<{ id: number; role: string; content: string; name?: string | null; avatar?: string | null; components?: MessageComponent | null; file?: AgentFile | null; files?: AgentFile[] }> };
         if (cancelled) return;
         if (!j.resumable || !j.conversationId) {
           if (saved) localStorage.removeItem(convKey);
@@ -355,7 +361,7 @@ export function ChatWindow({
         const agents: Array<AgentMessage & { after: number }> = [];
         for (const m of j.messages ?? []) {
           if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length, name: m.name, avatar: m.avatar, file: m.file ?? null, components: m.components ?? null });
-          else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }, ...(m.components ? [{ type: "data-components" as const, data: m.components }] : [])] });
+          else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }, ...(m.components ? [{ type: "data-components" as const, data: m.components }] : []), ...(m.files?.length ? [{ type: "data-files" as const, data: m.files }] : [])] });
         }
         setMessages(ui);
         setConversationId(j.conversationId);
@@ -493,6 +499,13 @@ export function ChatWindow({
                 <Bubble side={m.role === "user" ? "right" : "left"} color={bot.color}>
                   {t}
                 </Bubble>
+              )}
+              {m.role === "assistant" && filesOf(m).length > 0 && (
+                <div className="flex max-w-[82%] flex-col gap-1 self-start">
+                  {filesOf(m).map((f) => (
+                    <AgentAttachment key={f.url} file={f} />
+                  ))}
+                </div>
               )}
               {m.role === "assistant" && componentOf(m) && <ComponentView component={componentOf(m)!} color={bot.color} active={i === messages.length - 1 && !busy && mode !== "agent"} onPick={send} />}
               {extras.map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} color={bot.color} active={extraActive(x)} onPick={send} />)}

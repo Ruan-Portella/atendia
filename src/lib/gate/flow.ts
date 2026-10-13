@@ -20,6 +20,8 @@ import { activeLinkOf, chatIdentityFromLink, contextSwitchTool } from "../pairin
 import { callerFor, shapeActionResult } from "../action-tools";
 import { isConfirmComponent, parseConfirmButton, resolveConfirmClick } from "../action-confirm";
 import { setRefStatus } from "../button-refs";
+import { deliverActionFiles, type ActionFile } from "../action-files";
+import type { OutboundKind } from "../outbound-file";
 import { INTERNAL_FALLBACK, stripInternal } from "../internal-guard";
 import { CATEGORIES, GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
@@ -112,6 +114,8 @@ export interface GateIO {
    * botões, lista ou link da IA (mostrar_opcoes / mostrar_link), já conferidos pelo portão.
    */
   send: (text: string, buttons?: GateButtons, component?: MessageComponent | null) => Promise<string | null>;
+  /** Anexo devolvido por uma ação (imagem ou documento pela URL): devolve o id da mensagem na Meta. */
+  sendFile: (f: { kind: OutboundKind; url: string; filename: string | null }) => Promise<string | null>;
   /** Dados do contato para o runChat (nome do perfil no WhatsApp). */
   chat: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: { igsid: string } };
   historySize: number;
@@ -175,6 +179,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     const { identity } = await linkIdentity(db, (row?.contact_id as string | null | undefined) ?? null);
     return callerFor(db, { bot, conversationId: convId, channel, waPhone, age: await getAge(db, who), contactKey: contact, identity });
   };
+  /** Anexos das ações, logo depois do texto (barrado ou falho: o aviso fixo). */
+  const sendFiles = (files: ActionFile[]) => deliverActionFiles(db, files, { bot, conversationId: convId, channel, destination: destinationOf(), sendFile: io.sendFile, sendText: (t) => io.send(t) });
   const click = await resolveConfirmClick(db, { bot, conversationId: convId, buttonId: q.button ?? null, text: q.text, alone: q.alone !== false, key: q.key, caller: callerNow });
   let confirmed: Parameters<typeof runChat>[0]["confirmed"];
   if (click.kind !== "none") {
@@ -193,11 +199,12 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
       const buttons = rc.ok ? gateComponent(shaped.component, { channel, contactPhone, age, regulatedConversation, exempt }).component : null;
       const disclosure = await aiDisclosure(db, bot, convId);
       const out = disclosure ? `${disclosure}\n\n${text}` : text;
-      await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null, announce_chars: disclosure ? disclosure.length + 2 : null, ...(buttons ? { components: buttons } : {}) } }, transport: () => io.send(out, undefined, buttons) });
+      const sentReply = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null, announce_chars: disclosure ? disclosure.length + 2 : null, ...(buttons ? { components: buttons } : {}) } }, transport: () => io.send(out, undefined, buttons) });
+      if (sentReply.status === "sent") await sendFiles(shaped.files);
       return;
     }
     // sem reply: a IA escreve a partir do resultado (o clique já está gravado)
-    confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal, component: shaped.component, via: click.via };
+    confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal, component: shaped.component, files: shaped.files, via: click.via };
   }
 
   // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
@@ -323,7 +330,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
-  const { result, saved, leadSaved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, shownText, listText, confirmShown } = await runChat({
+  const { result, saved, leadSaved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, files: actionFiles, shownText, listText, confirmShown } = await runChat({
     db,
     bot,
     messages: history,
@@ -418,6 +425,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     // o aviso de IA (ou o "Voltei!") no começo fica marcado como anúncio no painel
     const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== savedRaw || reply ? { content: out } : {}), ...(disclosure ? { announce_chars: disclosure.length + 2 } : {}), ...(shownComponent() || component ? { components: component } : {}) } : null, transport: () => io.send(out, adultButton && !component ? "adulto" : undefined, component) });
     if (r.status === "blocked") return;
+    // anexos devolvidos pelas ações: logo depois do texto
+    await sendFiles(actionFiles());
   }
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).
   // Com o botão "Ver opções 18+", esta pergunta fica guardada para depois do "Sim" (a idade ainda

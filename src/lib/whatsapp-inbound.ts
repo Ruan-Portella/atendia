@@ -8,7 +8,7 @@ import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
-import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
+import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendMedia, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, isPromoOptOutButton, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { markCampaignContact } from "./campaigns";
 import { OPTIN_BUTTONS, OPTIN_NO, OPTIN_NO_TEXT, OPTIN_VERSION, OPTIN_YES, consentHistory, consentStateOf, isClosingMessage, offerDue, optInOfferText, optInYesText, recordConsent, restoreConsents, revokeConsents, typedOptInAnswer } from "./marketing-consent";
@@ -520,6 +520,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
           const sent = buttons ? await sendButtons(channel, waId, body.length > 1024 ? GATE_TEXTS.showAdultPrompt : body, gateButtons(buttons)) : await reply(text);
           return sent.messages?.[0]?.id ?? null;
         },
+        // anexo devolvido por uma ação: a Meta busca o arquivo na URL do dev
+        sendFile: async (f) => (await sendMedia(channel, waId, { type: f.kind, link: f.url, filename: f.filename })).messages?.[0]?.id ?? null,
         chat: { whatsapp: { waId, profileName } },
         historySize: HISTORY,
       },

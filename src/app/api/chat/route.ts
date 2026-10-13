@@ -3,11 +3,14 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { CORS_HEADERS, SYSTEM_AUTHOR, appendActionComponent, appendSiteOffer, conversationHistory, lastUserText, openConversation, requestHandoff, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { CORS_HEADERS, SYSTEM_AUTHOR, appendActionComponent, appendActionFiles, appendSiteOffer, conversationHistory, lastUserText, openConversation, requestHandoff, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
 import { resolveConfirmClick } from "@/lib/action-confirm";
 import { devButtonId, type Interactive } from "@/lib/message-events";
 import { callerFor, shapeActionResult } from "@/lib/action-tools";
 import type { MessageComponent } from "@/lib/components";
+import { widgetFiles, widgetFilesNotice } from "@/lib/action-files";
+import { linkAttachments } from "@/lib/attachments";
+import type { WidgetFile } from "@/lib/file-links";
 import { handleSiteOptIn } from "@/lib/site-optin";
 import { handleErasureRequest } from "@/lib/data-subject";
 import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
@@ -39,7 +42,7 @@ const FALLBACK_MESSAGE = "No momento não consigo responder por aqui. Deixe seu 
 const contactFallback = (error: string, status: number) => Response.json({ error, fallback: "contact", message: FALLBACK_MESSAGE }, { status, headers: CORS_HEADERS });
 
 /** Resposta fixa sem IA (texto, e os botões ou o sinal de atendente quando houver). */
-function fixedStream(id: string, text: string, headers: Record<string, string>, o: { component?: MessageComponent | null; handoff?: boolean } = {}) {
+function fixedStream(id: string, text: string, headers: Record<string, string>, o: { component?: MessageComponent | null; handoff?: boolean; files?: WidgetFile[] } = {}) {
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({
       execute: ({ writer }) => {
@@ -49,6 +52,7 @@ function fixedStream(id: string, text: string, headers: Record<string, string>, 
         writer.write({ type: "text-delta", id, delta: text });
         writer.write({ type: "text-end", id });
         if (o.component) writer.write({ type: "data-components", data: o.component });
+        if (o.files?.length) writer.write({ type: "data-files", data: o.files });
         writer.write({ type: "finish" });
       },
     }),
@@ -250,11 +254,14 @@ export async function POST(req: Request) {
       // no site não há trava do BoaVoz: o data e o reply saem como vieram
       const shaped = await shapeActionResult(db, { bot, conversationId: id, gateChannel: "widget", waPhone: null, age: null, regulatedAt: null }, click.call, { execute: true });
       if (shaped.reply) {
-        // reply exato da ação, com os botões que ela devolveu
-        await saveMessage(db, { conversation_id: id, role: "assistant", content: shaped.reply, components: shaped.component });
-        return fixedStream("confirmar", shaped.reply, headers, { component: shaped.component });
+        // reply exato da ação, com os botões e os anexos que ela devolveu
+        const notice = widgetFilesNotice(shaped.files);
+        const content = notice ? `${shaped.reply}\n\n${notice}` : shaped.reply;
+        const replyId = await saveMessage(db, { conversation_id: id, role: "assistant", content, components: shaped.component });
+        if (replyId) await linkAttachments(db, shaped.files.flatMap((f) => (f.id && f.status !== "falha" ? [f.id] : [])), replyId);
+        return fixedStream("confirmar", content, headers, { component: shaped.component, files: widgetFiles(shaped.files) });
       }
-      confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal, component: shaped.component, via: click.via };
+      confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal, component: shaped.component, files: shaped.files, via: click.via };
     }
   }
 
@@ -265,7 +272,7 @@ export async function POST(req: Request) {
 
   try {
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];
-    const { result, conversationId: activeId, siteOffer, components } = await runChat({
+    const { result, conversationId: activeId, siteOffer, components, files, saved } = await runChat({
       db,
       bot,
       // depois do Confirmar, o clique já está gravado (e já vem no histórico)
@@ -282,10 +289,16 @@ export async function POST(req: Request) {
     // registro de acesso do visitante (Marco Civil): IP quando a conversa começa e quando muda;
     // o teste ao vivo do painel já fica no registro de acesso do painel
     if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: activeId, ip: clientIp(req), isNew: !convId }));
+    // anexos das ações: ficam ligados à resposta gravada (o painel e o histórico mostram junto)
+    after(async () => {
+      const ids = files().flatMap((f) => (f.id && f.status !== "falha" ? [f.id] : []));
+      const answerId = ids.length ? await saved : null;
+      if (answerId) await linkAttachments(db, ids, answerId);
+    });
     // atendimento aberto antes da conversa existir: liga a primeira conversa a ele
     if (slot?.isNew && slot.id && !convId) after(async () => void (await db.from("atendimentos").update({ first_conversation_id: activeId }).eq("id", slot.id)));
     return createUIMessageStreamResponse({
-      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts({ component: components })).pipeThrough(appendActionComponent(components)).pipeThrough(appendSiteOffer(siteOffer)),
+      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts({ component: components })).pipeThrough(appendActionComponent(components)).pipeThrough(appendActionFiles(files)).pipeThrough(appendSiteOffer(siteOffer)),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": activeId, ...(handoff ? { "X-Handoff": handoff } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
     });
   } catch (e) {

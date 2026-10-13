@@ -4,6 +4,7 @@ import { callAction, needsConfirmation, paramsProblems, reaches, type ActionLeve
 import { gateActionData, idLabels, saveIdMap } from "./action-gate";
 import { openConfirmation, type Caller } from "./action-confirm";
 import { ComponentProblem, materializeComponent, parseComponentInput } from "./component-input";
+import { filesNote, prepareActionFiles, readAttachmentList, type ActionFile } from "./action-files";
 import type { MessageComponent } from "./components";
 import { firstExceeded } from "./rate-limit";
 import { hiddenNote } from "./gate/context";
@@ -163,17 +164,24 @@ async function actionComponent(db: SupabaseClient, i: ShapeInput, raw: unknown):
 /**
  * O resultado de uma chamada como a IA recebe: o data pelo portão do canal (o que sai entra no mapa
  * de ids; o resto, com o rótulo, para o resumo do Confirmar), o reply conferido, o internal com a
- * regra de nunca citar e os components convertidos. reply: o texto exato que vai ao contato (null
- * se não veio ou caiu); component: botões, lista ou link que vão junto do texto.
+ * regra de nunca citar, os components convertidos e os anexos preparados. reply: o texto exato que
+ * vai ao contato (null se não veio ou caiu); component: botões, lista ou link que vão junto do
+ * texto; files: os anexos (já baixados, conferidos e guardados), que saem logo depois do texto.
  */
-export async function shapeActionResult(db: SupabaseClient, i: ShapeInput, r: CallResult, o: { execute?: boolean } = {}): Promise<{ output: Record<string, unknown>; reply: string | null; internal: string[]; component: MessageComponent | null }> {
-  if (r.status === "not_found") return { output: { ok: false, motivo: "nao_encontrado", detalhe: r.error ?? null }, reply: null, internal: [], component: null };
+export async function shapeActionResult(
+  db: SupabaseClient,
+  i: ShapeInput,
+  r: CallResult,
+  o: { execute?: boolean } = {},
+): Promise<{ output: Record<string, unknown>; reply: string | null; internal: string[]; component: MessageComponent | null; files: ActionFile[] }> {
+  if (r.status === "not_found") return { output: { ok: false, motivo: "nao_encontrado", detalhe: r.error ?? null }, reply: null, internal: [], component: null, files: [] };
   if (r.status !== "ok")
     return {
       output: { ok: false, motivo: "falha", instrucao: o.execute ? "Diga que não conseguiu concluir agora e ofereça tentar de novo daqui a pouco ou falar com alguém da equipe." : "Diga que não conseguiu consultar agora e siga a conversa (sem inventar o resultado)." },
       reply: null,
       internal: [],
       component: null,
+      files: [],
     };
 
   // portão do canal no data (como na base): o que sai entra no mapa de ids da conversa
@@ -199,11 +207,15 @@ export async function shapeActionResult(db: SupabaseClient, i: ShapeInput, r: Ca
   // o que saiu, para o histórico: por idade (vale até o "Sim") e proibido (vale sempre)
   const byAge = gated.hidden.filter((c) => CATEGORIES[c].level === "regulamentado");
   const component = await actionComponent(db, i, r.components);
+  // anexos: preparados antes do texto (baixados, conferidos pelo portão e guardados)
+  const list = readAttachmentList(r.attachments);
+  const files = list.length ? await prepareActionFiles(db, list, { bot: i.bot, conversationId: i.conversationId, channel: i.gateChannel, gate: i.gateChannel === "widget" ? null : { contactPhone: i.waPhone, age: i.age, exempt: i.exempt } }) : [];
   return {
     output: {
       ok: true,
       data: gated.data,
       ...(component ? componentNote(component) : {}),
+      ...filesNote(files),
       ...(aviso ? { aviso } : {}),
       // só para decidir o que dizer: a resposta é conferida antes de sair (internal-guard.ts)
       ...(r.internal ? { interno: r.internal, instrucao_interno: INTERNAL_RULE } : {}),
@@ -215,6 +227,7 @@ export async function shapeActionResult(db: SupabaseClient, i: ShapeInput, r: Ca
     reply,
     internal: r.internal ? internalTerms(r.internal) : [],
     component,
+    files,
   };
 }
 
@@ -231,6 +244,8 @@ export interface ActionToolsInput extends CallerInput {
   onConfirm?: (c: { text: string; component: MessageComponent }) => void;
   /** Botões, lista ou link devolvidos por uma ação: vão junto do texto desta vez (a IA ainda escreve). */
   onComponent?: (c: MessageComponent) => void;
+  /** Anexos devolvidos por uma ação: saem logo depois do texto desta vez. */
+  onFiles?: (files: ActionFile[]) => void;
   /** Vez logo depois de um Confirmar: sem ações com Confirmar (nunca outra confirmação na mesma vez). */
   confirmRound?: boolean;
   /** Para o portão de parâmetros (etapa de IA): a agência paga a classificação. */
@@ -293,6 +308,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         if (shaped.reply) i.onReply(shaped.reply);
         if (shaped.internal.length) i.onInternal?.(shaped.internal);
         if (shaped.component) i.onComponent?.(shaped.component);
+        if (shaped.files.length) i.onFiles?.(shaped.files);
         return shaped.output;
       },
     });

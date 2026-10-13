@@ -14,7 +14,7 @@ import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, queueUndoEvents, revo
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
-import { instagramTyping, isInstagramAccessError, mediaPermalink, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
+import { instagramTyping, isInstagramAccessError, mediaPermalink, sendInstagramAttachment, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
 import { answerWithGate, gateButtons } from "./gate/flow";
@@ -438,6 +438,12 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
             return send(db, ch, igsid, plan.summary, plan.quickReplies);
           }
           return send(db, ch, igsid, text, buttons ? gateButtons(buttons).map((b) => ({ title: b.title, payload: b.id })) : undefined);
+        },
+        // anexo devolvido por uma ação; o eco volta pelo webhook e é nosso (não é o app do Instagram)
+        sendFile: async (f) => {
+          const mid = await sendInstagramAttachment(ch, igsid, { type: f.kind === "image" ? "image" : "file", url: f.url });
+          if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
+          return mid;
         },
         chat: { instagram: { igsid } },
         historySize: HISTORY,

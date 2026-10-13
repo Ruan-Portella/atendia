@@ -28,6 +28,7 @@ import { deliver } from "./send";
 import { metaPhoneHash, typedPhoneHash } from "./contacts";
 import { ACTIONS_PROMPT_NOTE, CONFIRM_RULE, actionToolsFor } from "./action-tools";
 import { confirmedNote } from "./action-confirm";
+import { widgetFiles, widgetFilesNotice, type ActionFile } from "./action-files";
 import { identityPromptNote, type ChatIdentity } from "./widget-identity";
 import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
@@ -126,6 +127,29 @@ export function appendActionComponent(component: () => MessageComponent | null) 
         if (c) {
           sent = true;
           ctrl.enqueue({ type: "data-components", data: c });
+        }
+      }
+      ctrl.enqueue(chunk);
+    },
+  });
+}
+
+/**
+ * Anexos devolvidos por uma ação (C pública, parte 5c): no widget, vão no fim da resposta (link
+ * assinado de 1 hora), com o aviso fixo se algum falhou.
+ */
+export function appendActionFiles(files: () => ActionFile[]) {
+  return new TransformStream<UIMessageChunk, UIMessageChunk>({
+    transform(chunk, ctrl) {
+      if (chunk.type === "finish") {
+        const list = files();
+        const ready = widgetFiles(list);
+        if (ready.length) ctrl.enqueue({ type: "data-files", data: ready });
+        const notice = widgetFilesNotice(list);
+        if (notice) {
+          ctrl.enqueue({ type: "text-start", id: "anexos" });
+          ctrl.enqueue({ type: "text-delta", id: "anexos", delta: `\n\n${notice}` });
+          ctrl.enqueue({ type: "text-end", id: "anexos" });
         }
       }
       ctrl.enqueue(chunk);
@@ -671,7 +695,7 @@ export async function runChat(opts: {
    * Vez logo depois de um Confirmar (C pública, parte 5a): a ação já foi chamada; a IA escreve a
    * partir do resultado (já filtrado pelo portão) e não abre outra confirmação.
    */
-  confirmed?: { action: string; params: Record<string, unknown>; output: Record<string, unknown>; internal?: string[]; component?: MessageComponent | null; via?: "confirmar" | "botao" };
+  confirmed?: { action: string; params: Record<string, unknown>; output: Record<string, unknown>; internal?: string[]; component?: MessageComponent | null; files?: ActionFile[]; via?: "confirmar" | "botao" };
   /** Botão tocado no site: o message.received da pergunta leva o id e o título. */
   interactive?: Interactive | null;
 }) {
@@ -733,6 +757,8 @@ export async function runChat(opts: {
   let confirmShown = false;
   // botões, lista ou link devolvidos por uma ação (ou pela ação do clique): vão junto do texto, sem encerrar a vez
   let actionComponent: MessageComponent | null = opts.confirmed?.component ?? null;
+  // anexos devolvidos pelas ações desta vez (já preparados): o canal manda logo depois do texto
+  const actionFiles: ActionFile[] = [...(opts.confirmed?.files ?? [])];
   /** O componente desta vez: o resumo do Confirmar, senão o da ação (também com reply), senão o da IA. */
   const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? actionComponent : (actionComponent ?? shown));
   const linkHosts = linkHostsFor(bot, context);
@@ -759,6 +785,7 @@ export async function runChat(opts: {
       confirmShown = true;
     },
     onComponent: (c) => void (actionComponent ??= c),
+    onFiles: (files) => void actionFiles.push(...files),
     confirmRound: Boolean(opts.confirmed),
     agencyId: bot.agency_id,
   });
@@ -933,5 +960,5 @@ export async function runChat(opts: {
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
   // components(): botões, lista ou link desta vez (o canal converte); shownText(): o texto que veio na ferramenta
-  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: finalComponent, shownText: () => shownText, listText: () => listText, confirmShown: () => confirmShown };
+  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: finalComponent, files: () => actionFiles, shownText: () => shownText, listText: () => listText, confirmShown: () => confirmShown };
 }
