@@ -322,7 +322,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
-  const { result, saved, leadSaved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, shownText, listText } = await runChat({
+  const { result, saved, leadSaved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, shownText, listText, confirmShown } = await runChat({
     db,
     bot,
     messages: history,
@@ -339,7 +339,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     confirmed,
   });
   // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
-  const savedRaw = joinShownText(await result.text, shownText());
+  // resumo do Confirmar: só o que o BoaVoz montou (como o runChat gravou)
+  const savedRaw = confirmShown() && shownText() ? shownText()! : joinShownText(await result.text, shownText());
   const answerId = await saved;
   // a IA escreveu as alternativas em lista: elas vão como botões e o texto vai sem a lista
   const raw = listText() ?? savedRaw;

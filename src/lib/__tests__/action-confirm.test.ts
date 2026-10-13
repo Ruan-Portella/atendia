@@ -17,9 +17,8 @@ import {
 } from "../action-confirm";
 import { callBody, needsConfirmation, paramsSchemaProblem, readConfirmation, readResponse, type ParamsSchema } from "../actions";
 import { idLabels, idMapCategories, mergeIdMap, paramsGateDecision, paramsGateFacts, type IdMap } from "../action-gate";
-import { confirmToolSchema } from "../action-tools";
 import { refCallId } from "../button-refs";
-import { actionsNote, withoutSummary } from "../chat";
+import { actionsNote } from "../chat";
 import { actionInputFromForm, actionSavedMessage } from "../integrations-input";
 
 const REF = "0b6d5c1e-2f4a-4c3b-9d8e-7f6a5b4c3d2e";
@@ -98,7 +97,7 @@ describe("resumo do Confirmar", () => {
     const r = confirmationLines(schema, { itens: ["101", "999"] }, map, null);
     expect(r.lines).toEqual(["• Itens: Pizza Calabresa, 999"]);
     expect(r.unresolved).toEqual(["999"]);
-    expect(confirmationText(null, r.lines, [CONFIRM_TEXTS.unresolved(r.unresolved)])).toBe(`${CONFIRM_TEXTS.intro}\n\n• Itens: Pizza Calabresa, 999\n\n${CONFIRM_TEXTS.unresolved(["999"])}\n\n${CONFIRM_TEXTS.tail}`);
+    expect(confirmationText(r.lines, [CONFIRM_TEXTS.unresolved(r.unresolved)])).toBe(`${CONFIRM_TEXTS.intro}\n\n• Itens: Pizza Calabresa, 999\n\n${CONFIRM_TEXTS.unresolved(["999"])}\n\n${CONFIRM_TEXTS.tail}`);
   });
 
   it("nome no lugar do id, com os ids já consultados: a IA recebe os ids e chama de novo", () => {
@@ -117,11 +116,7 @@ describe("resumo do Confirmar", () => {
     expect(readConfirmation({ total_cents: -5 })).toBeNull();
   });
 
-  it("a IA vê o schema do dev mais a frase do resumo, que não vai ao endpoint nem ao histórico", () => {
-    const s = confirmToolSchema(schema);
-    expect(s.required).toEqual(["itens", "boavoz_resumo"]);
-    expect(Object.keys(s.properties)).toEqual(["itens", "entrega", "troco", "boavoz_resumo"]);
-    expect(withoutSummary({ itens: ["101"], boavoz_resumo: "Confere:" })).toEqual({ itens: ["101"] });
+  it("o prefixo boavoz_ fica reservado nos parâmetros", () => {
     expect(paramsSchemaProblem({ type: "object", properties: { boavoz_x: { type: "string" } } })).toMatch(/reservado/);
   });
 });

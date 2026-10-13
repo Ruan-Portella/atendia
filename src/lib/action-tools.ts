@@ -1,6 +1,6 @@
 import { jsonSchema, tool, type Tool } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { callAction, needsConfirmation, paramsProblems, reaches, type ActionLevel, type ActionRow, type CallContact, type CallResult, type ParamsSchema } from "./actions";
+import { callAction, needsConfirmation, paramsProblems, reaches, type ActionLevel, type ActionRow, type CallContact, type CallResult } from "./actions";
 import { gateActionData, idLabels, saveIdMap } from "./action-gate";
 import { openConfirmation, type Caller } from "./action-confirm";
 import type { MessageComponent } from "./components";
@@ -30,7 +30,7 @@ export const ACTION_RULE = "Chame a cada pergunta que precise desses dados, mesm
 
 /** Regra das ações que fazem algo de verdade: a confirmação é do BoaVoz, por botão. */
 export const CONFIRM_RULE =
-  "Esta ação faz uma operação de verdade (cria, altera ou cancela). Chame quando a pessoa já disse o que quer, com todos os dados obrigatórios (nunca vazio nem inventado): o sistema mostra a ela um resumo com os botões Confirmar e Cancelar e só executa depois do Confirmar. Parâmetro que pede id ou código de item leva o id que uma ação de consulta devolveu nesta conversa (se ainda não consultou, chame a consulta antes); nunca escreva o nome no lugar do id. Em boavoz_resumo, escreva uma frase curta que apresenta o resumo (ex.: \"Confere o seu pedido:\"), sem repetir os itens. Nunca diga que já foi feito antes da confirmação.";
+  "Esta ação faz uma operação de verdade (cria, altera ou cancela). Chame quando a pessoa já disse o que quer, com todos os dados obrigatórios (nunca vazio nem inventado): o sistema mostra a ela um resumo com os botões Confirmar e Cancelar e só executa depois do Confirmar. Parâmetro que pede id ou código de item leva o id que uma ação de consulta devolveu nesta conversa (se ainda não consultou, chame a consulta antes); nunca escreva o nome no lugar do id. Ao chamar, não escreva texto: o resumo vai pronto para a pessoa. Nunca diga que já foi feito antes da confirmação.";
 
 /** O que a IA recebe depois de abrir a confirmação (a vez acaba aqui). */
 export const CONFIRM_SENT_NOTE = "O resumo com os botões Confirmar e Cancelar vai para a pessoa agora. Nada foi feito ainda: só depois do Confirmar.";
@@ -84,15 +84,6 @@ export async function loadBotActions(db: SupabaseClient, botId: string): Promise
     return [];
   }
   return (data ?? []) as ActionRow[];
-}
-
-/** O schema que a IA vê numa ação com Confirmar: o do dev mais a frase do resumo. Função pura. */
-export function confirmToolSchema(s: ParamsSchema): ParamsSchema {
-  return {
-    ...s,
-    properties: { ...(s.properties ?? {}), boavoz_resumo: { type: "string", description: "Frase curta que apresenta o resumo para a pessoa conferir (ex.: \"Confere o seu pedido:\")" } },
-    required: [...(s.required ?? []), "boavoz_resumo"],
-  };
 }
 
 export interface CallerInput {
@@ -241,14 +232,13 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
     if (needsConfirmation(a)) {
       tools[`acao_${a.name}`] = tool({
         description: `${a.description}\n\n${CONFIRM_RULE}`,
-        inputSchema: jsonSchema<Record<string, unknown>>(confirmToolSchema(a.params_schema) as Parameters<typeof jsonSchema>[0]),
-        execute: async (input: Record<string, unknown>) => {
-          const { boavoz_resumo: intro, ...params } = input;
+        inputSchema: jsonSchema<Record<string, unknown>>(a.params_schema as Parameters<typeof jsonSchema>[0]),
+        execute: async (params: Record<string, unknown>) => {
           if (confirmOpened || !i.onConfirm) return { ok: false, motivo: "uma_por_vez", instrucao: "Já há uma confirmação nesta resposta: espere a pessoa responder a ela." };
           const missing = paramsProblems(a.params_schema, params);
           if (missing.length) return { ok: false, motivo: "faltam_dados", faltando: missing, instrucao: `Peça à pessoa: ${missing.join(", ")}. Não chame com dado vazio ou inventado.` };
           if (await limits()) return RATE_LIMITED;
-          const opened = await openConfirmation(db, { bot: { id: i.bot.id, agency_id: i.agencyId ?? "" }, conversationId: i.conversationId, action: a, params, intro: typeof intro === "string" ? intro : null, caller, messageKey: i.messageKey, gate });
+          const opened = await openConfirmation(db, { bot: { id: i.bot.id, agency_id: i.agencyId ?? "" }, conversationId: i.conversationId, action: a, params, caller, messageKey: i.messageKey, gate });
           if (!opened.ok) return opened.output;
           confirmOpened = true;
           i.onConfirm({ text: opened.text, component: opened.component });

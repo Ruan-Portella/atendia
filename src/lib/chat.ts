@@ -266,14 +266,6 @@ export function actionsNote(results: ToolResultRow[] | null | undefined, seen = 
   return `(ações desta resposta: ${parts.join(", ")}${stale})`;
 }
 
-/** Parâmetros de uma ação sem a frase do resumo do Confirmar (boavoz_resumo). Função pura. */
-export function withoutSummary(input: unknown): unknown {
-  if (!input || typeof input !== "object" || Array.isArray(input) || !("boavoz_resumo" in input)) return input;
-  const { boavoz_resumo: _summary, ...rest } = input as Record<string, unknown>;
-  void _summary;
-  return rest;
-}
-
 /** Chave de cache da OpenAI por canal (o começo do prompt é igual em todos os bots do mesmo canal). */
 export const chatCacheKey = (channel: string) => `boavoz-chat-${channel === "whatsapp" || channel === "instagram" ? channel : "site"}`;
 
@@ -712,6 +704,8 @@ export async function runChat(opts: {
   let shownText: string | null = null;
   // a IA escreveu as alternativas em lista no texto: viram opções (o texto sem a lista fica aqui)
   let listText: string | null = null;
+  // resumo com Confirmar e Cancelar desta vez (ação "executa"): a mensagem é só o que o BoaVoz montou
+  let confirmShown = false;
   const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [...(opts.confirmed?.internal ?? [])];
@@ -733,6 +727,7 @@ export async function runChat(opts: {
     onConfirm: (c) => {
       shown ??= c.component;
       shownText ??= c.text;
+      confirmShown = true;
     },
     confirmRound: Boolean(opts.confirmed),
     agencyId: bot.agency_id,
@@ -869,7 +864,8 @@ export async function runChat(opts: {
         // ainda troca pelo que saiu de fato, depois do portão)
         // valor interno de uma ação escrito na resposta: a frase sai também do que fica gravado
         // botões, lista ou link: o texto da ferramenta entra na mensagem (sem repetir o que a IA escreveu)
-        const written = actionReply ? text : joinShownText(text, shownText);
+        // resumo do Confirmar: só o que o BoaVoz montou (o texto da IA junto com a chamada fica de fora)
+        const written = actionReply ? text : confirmShown && shownText ? shownText : joinShownText(text, shownText);
         const guarded = internal.length ? guardInternal(written, internal) : written;
         const content = actionReply ? [guarded.trim(), actionReply].filter(Boolean).join("\n\n") : guarded;
         // rede de segurança: lista curta com pergunta de escolha no texto vira opções (no site a
@@ -888,7 +884,7 @@ export async function runChat(opts: {
         if (stored) {
           // o resultado do Confirmar fica na conversa como os das consultas ("e o número do pedido?")
           const confirmedResult: ToolResultRow[] = opts.confirmed ? [{ name: `acao_${opts.confirmed.action}`, input: opts.confirmed.params, output: opts.confirmed.output }] : [];
-          const toolResults: ToolResultRow[] = [...confirmedResult, ...steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: withoutSummary(t.input) } : {}), output: t.output })))];
+          const toolResults: ToolResultRow[] = [...confirmedResult, ...steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })))];
           savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content: stored, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: actionReply ? null : shown }).catch((e) => {
             console.error("chat: resposta não gravada", (e as Error).message);
             return null;
@@ -904,5 +900,5 @@ export async function runChat(opts: {
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
   // components(): botões, lista ou link desta vez (o canal converte); shownText(): o texto que veio na ferramenta
-  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText, listText: () => listText };
+  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText, listText: () => listText, confirmShown: () => confirmShown };
 }

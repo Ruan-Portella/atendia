@@ -170,9 +170,12 @@ export function namesInsteadOfIds(schema: ParamsSchema, params: Record<string, u
   return null;
 }
 
-/** A mensagem do Confirmar: a frase da IA, as linhas, os avisos e o lembrete. Função pura. */
-export function confirmationText(intro: string | null | undefined, lines: string[], notes: string[]): string {
-  return [intro?.trim() || CONFIRM_TEXTS.intro, lines.join("\n"), ...notes, CONFIRM_TEXTS.tail].filter((x) => x && x.trim()).join("\n\n");
+/**
+ * A mensagem do Confirmar, montada só pelo BoaVoz: a frase fixa, as linhas, os avisos e o
+ * lembrete (o texto que a IA escreveu junto com a chamada não entra). Função pura.
+ */
+export function confirmationText(lines: string[], notes: string[]): string {
+  return [CONFIRM_TEXTS.intro, lines.join("\n"), ...notes, CONFIRM_TEXTS.tail].filter((x) => x && x.trim()).join("\n\n");
 }
 
 /* ------------------------------------------------------------------ quem chama (nível e contexto) */
@@ -200,8 +203,6 @@ export interface OpenInput {
   conversationId: string;
   action: ActionRow;
   params: Record<string, unknown>;
-  /** A frase da IA antes das linhas ("Confere o seu pedido:"). */
-  intro: string | null;
   caller: Caller;
   /** Chave da mensagem: forma o call_id da prévia. */
   messageKey: string;
@@ -297,7 +298,7 @@ export async function openConfirmation(db: SupabaseClient, i: OpenInput): Promis
 
   const { lines, unresolved } = confirmationLines(a.params_schema, params, map, preview);
   if (unresolved.length) notes.unshift(CONFIRM_TEXTS.unresolved(unresolved));
-  return { ok: true, refId, text: confirmationText(i.intro, lines, notes), component: confirmComponent(refId) };
+  return { ok: true, refId, text: confirmationText(lines, notes), component: confirmComponent(refId) };
 }
 
 /* ------------------------------------------------------------------ o clique */
