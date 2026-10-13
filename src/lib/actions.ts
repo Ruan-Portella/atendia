@@ -220,6 +220,8 @@ export interface CallInput {
   confirmed?: boolean;
   /** call_id fixo: o da referência do Confirmar (o mesmo em todo "Tentar de novo"). */
   callId?: string;
+  /** Regras de "executa" (20 s, incerto em timeout e 409). Padrão: chamada confirmada que não é prévia. */
+  execute?: boolean;
   /** Chave da mensagem (evento do canal ou id da mensagem): forma o call_id de uma consulta. */
   messageKey?: string;
   conversation?: { id: string; channel: "widget" | "whatsapp" | "instagram" } | null;
@@ -242,6 +244,8 @@ export interface CallResult {
   outcome?: string | null;
   /** Prévia (mode: "preview"): o resumo do Confirmar. */
   confirmation?: Confirmation | null;
+  /** components do retorno, como veio (conferido e convertido por component-input.ts). */
+  components?: unknown;
   /** Mensagem de erro para o log, para o Testar e para a IA ("não encontrado: …"). */
   error?: string;
   /** Avisos (data acima de 8 KB, resposta cortada). */
@@ -315,7 +319,7 @@ const EMPTY_OK = { status: "ok" as const, data: null, reply: null, internal: nul
  * confirmada, 2xx sem data nem reply (ou sem JSON) também é sucesso, e 409 (ainda em
  * processamento) é incerto. Função pura.
  */
-export function readResponse(httpStatus: number, text: string, o: { execute?: boolean } = {}): Pick<CallResult, "status" | "data" | "reply" | "internal" | "attachments" | "outcome" | "confirmation" | "error"> {
+export function readResponse(httpStatus: number, text: string, o: { execute?: boolean } = {}): Pick<CallResult, "status" | "data" | "reply" | "internal" | "attachments" | "outcome" | "confirmation" | "components" | "error"> {
   let json: Record<string, unknown> | null = null;
   if (text.trim()) {
     try {
@@ -336,7 +340,7 @@ export function readResponse(httpStatus: number, text: string, o: { execute?: bo
     : [];
   const outcome = typeof json.outcome === "string" && /^[a-z0-9_]{1,40}$/.test(json.outcome) ? json.outcome : null;
   const internal = json.internal && typeof json.internal === "object" && !Array.isArray(json.internal) ? (json.internal as Record<string, unknown>) : null;
-  return { status: "ok", data: json.data ?? null, reply: typeof json.reply === "string" ? json.reply.slice(0, 4000) : null, internal, attachments, outcome, confirmation: readConfirmation(json.confirmation) };
+  return { status: "ok", data: json.data ?? null, reply: typeof json.reply === "string" ? json.reply.slice(0, 4000) : null, internal, attachments, outcome, confirmation: readConfirmation(json.confirmation), ...(json.components !== undefined && json.components !== null ? { components: json.components } : {}) };
 }
 
 /**
@@ -348,7 +352,7 @@ export function readResponse(httpStatus: number, text: string, o: { execute?: bo
 export async function callAction(db: SupabaseClient, action: ActionRow, i: CallInput): Promise<CallResult> {
   const mode = i.mode ?? "normal";
   // a operação de verdade (não a prévia): prazo de 20 s, e timeout ou 409 = incerto
-  const execute = i.confirmed === true && mode !== "preview";
+  const execute = i.execute ?? (i.confirmed === true && mode !== "preview");
   const callId = i.callId ?? (mode === "test" ? `call_test_${randomBytes(12).toString("hex")}` : queryCallId(`${i.messageKey ?? randomBytes(8).toString("hex")}${mode === "preview" ? "|preview" : ""}`, action.id, i.params));
   const { data: previous } = await db.from("action_calls").select("attempt, status, response_enc, http_status").eq("call_id", callId).order("attempt", { ascending: false });
   const done = (previous ?? []).find((p) => p.status === "ok" && p.response_enc);

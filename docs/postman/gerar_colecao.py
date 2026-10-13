@@ -362,6 +362,64 @@ campanhas = folder(
     ],
 )
 
+BOTOES = [{"title": "Sim, quero", "id": "quero_cardapio"}, {"title": "Agora não", "id": "agora_nao"}]
+COM_ACAO = [{"title": "Pedir calabresa", "action": {"name": "adicionar_ao_carrinho", "params": {"item": "101"}}}, {"title": "Ver cardápio", "id": "ver_cardapio"}]
+
+componentes = folder(
+    "9. Botões, lista e link",
+    "POST /v1/messages com `components` (um por mensagem, junto de um texto): `buttons` (até 3, título até 20), `list` (até 10 itens, título até 24 e descrição até 72) e `link` (título até 20, HTTPS). Sem `action`, o clique volta para a IA como mensagem com o título, e o `id` volta no webhook message.received (`interactive.id`). Com `action`, o clique chama a ação direto, sem a IA, e vale como confirmação; os parâmetros ficam no BoaVoz. Ação que cria pedido só vai em `buttons`. No WhatsApp e no Instagram, a pessoa precisa ter escrito nas últimas 24 horas.",
+    [
+        req(
+            "Botões no WhatsApp",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "Quer receber o cardápio do dia?", "components": {"type": "buttons", "buttons": BOTOES}},
+            desc="Toque num botão: a IA responde ao título, e o webhook message.received traz `interactive` com o id (`quero_cardapio`).",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req(
+            "Botão com ação (adicionar ao carrinho)",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "A calabresa saiu do forno agora!", "components": {"type": "buttons", "buttons": COM_ACAO}},
+            desc="Precisa da ação `adicionar_ao_carrinho` no chatbot (aba Ações). \"Pedir calabresa\" chama a ação direto, com `{\"item\": \"101\"}`; \"Ver cardápio\" volta para a IA.",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req(
+            "Lista no WhatsApp",
+            "POST",
+            "messages",
+            body={
+                "bot_id": BOT,
+                "to": "phone:{{phone}}",
+                "type": "text",
+                "text": "Escolha o sabor:",
+                "components": {
+                    "type": "list",
+                    "button": "Ver sabores",
+                    "items": [
+                        {"title": "Pizza Calabresa", "description": "R$ 49,90", "action": {"name": "adicionar_ao_carrinho", "params": {"item": "101"}}},
+                        {"title": "Pizza Marguerita", "description": "R$ 45,90", "action": {"name": "adicionar_ao_carrinho", "params": {"item": "102"}}},
+                        {"title": "Falar com a loja", "id": "falar_loja"},
+                    ],
+                },
+            },
+            desc="No WhatsApp, a lista abre pelo botão \"Ver sabores\". No Instagram, vira respostas rápidas com o resumo numerado.",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req(
+            "Link no WhatsApp",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "Acompanhe o seu pedido pelo site.", "components": {"type": "link", "title": "Ver pedido", "url": "https://boavoz.com"}},
+            desc="No WhatsApp, botão que abre o link. No Instagram, o link vai no texto.",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req("Botões no Instagram", "POST", "messages", body={"bot_id": BOT, "to": "{{instagram_contact}}", "type": "text", "text": "Quer receber o cardápio do dia?", "components": {"type": "buttons", "buttons": BOTOES}}, desc="O texto e, numa DM própria, o resumo numerado com as respostas rápidas (no instagram.com pelo computador, responda com o número).", tests=expect_status(201, 202) + SAVE_SENT),
+        req("Botões no chat do site", "POST", "messages", body={"conversation_id": "{{widget_conversation_id}}", "type": "text", "text": "A calabresa saiu do forno agora!", "agent_name": "Ana", "components": {"type": "buttons", "buttons": COM_ACAO}}, desc="Os botões aparecem embaixo do balão da Ana; só a última mensagem da conversa aceita toque.", tests=expect_status(201) + SAVE_SENT),
+    ],
+)
+
 exclusao = folder(
     "7. Exclusão (LGPD)",
     "**Cuidado: apaga de verdade.** O pedido do titular pela API apaga as conversas, os arquivos, os leads e a ficha do contato, põe o número na lista de supressão e emite o webhook contact.deleted. Use um número de teste em `phone_para_apagar`.",
@@ -385,6 +443,9 @@ erros = folder(
         req("Arquivo com tipo errado (PDF como imagem)", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "image", "image": {"url": "{{document_url}}"}}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta a URL", () => pm.expect(pm.response.json().error.details.field).to.eql("image.url"));']),
         req("Pausa com minutes inválido", "POST", "conversations/{{conversation_id}}/pause", body={"minutes": 0}, tests=expect_error(400, "invalid_request")),
         req("Campanha sem Idempotency-Key", "POST", "campaigns", body={"bot_id": BOT, "kind": "marketing", "template": {"name": "x"}, "audience": {"tags": ["vip"]}}, idem=False, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o cabeçalho", () => pm.expect(pm.response.json().error.details.field).to.eql("Idempotency-Key"));']),
+        req("Componente fora do formato (4 botões)", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "x", "components": {"type": "buttons", "buttons": BOTOES + BOTOES}}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o campo", () => pm.expect(pm.response.json().error.details.field).to.eql("components.buttons"));']),
+        req("Botão com ação que não existe", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "x", "components": {"type": "buttons", "buttons": [{"title": "Teste", "action": {"name": "acao_que_nao_existe", "params": {}}}]}}, desc="Precisa da janela de 24 horas aberta (a conferência das ações vem depois da janela).", tests=expect_error(400, "invalid_request")),
+        req("Pedido numa lista", "POST", "messages", body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "x", "components": {"type": "list", "items": [{"title": "Pedir", "action": {"name": "criar_pedido", "params": {"itens": ["101"], "endereco": "Rua A, 1"}}}]}}, desc="Ação que cria pedido só vai em buttons (precisa da ação `criar_pedido` no chatbot e da janela aberta).", tests=expect_error(400, "invalid_request")),
         req("Etiquetas em contato que não existe", "PUT", "contacts/ctc_00000000-0000-4000-8000-000000000000/tags", body={"bot_id": BOT, "tags": ["vip"]}, tests=expect_error(404, "not_found")),
         req("Aceite sem a prova", "POST", "contacts/phone:{{phone}}/consent", body={"bot_id": BOT, "granted": True}, tests=expect_error(400, "invalid_request")),
         req("Conversa inexistente", "GET", "conversations/conv_00000000-0000-4000-8000-000000000000/messages", tests=expect_error(404, "not_found")),
@@ -448,7 +509,7 @@ collection = {
             ),
         },
     ],
-    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas],
+    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas, componentes],
 }
 
 # Só o que é de cada pessoa fica no ambiente (importado uma vez e preenchido no Postman, nunca no Git).

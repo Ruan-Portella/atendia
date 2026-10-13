@@ -185,18 +185,19 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     const clickRegulatedAt = click.caller.regulatedAt ?? null;
     const shaped = await shapeActionResult(db, { bot, conversationId: convId, gateChannel: channel, waPhone, age, exempt, destination: destinationOf(), regulatedAt: clickRegulatedAt }, click.call, { execute: true });
     if (shaped.reply) {
-      // reply exato da ação: sai como veio (ou o texto fixo, se o portão barrar), sem IA
+      // reply exato da ação: sai como veio (ou o texto fixo, se o portão barrar), sem IA, com os botões que ela devolveu
       const regulatedConversation = clickRegulatedAt !== null && Date.now() - Date.parse(clickRegulatedAt) < REGULATED_WINDOW_MS;
       const rc = checkActionReply({ text: shaped.reply, channel, contactPhone, age, regulatedConversation, exempt });
       if (!rc.ok) await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "reply_descartado", categories: [...rc.prohibited, ...rc.regulated] });
       const text = rc.ok ? shaped.reply : replyFallback(rc, destinationOf());
+      const buttons = rc.ok ? gateComponent(shaped.component, { channel, contactPhone, age, regulatedConversation, exempt }).component : null;
       const disclosure = await aiDisclosure(db, bot, convId);
       const out = disclosure ? `${disclosure}\n\n${text}` : text;
-      await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null, announce_chars: disclosure ? disclosure.length + 2 : null } }, transport: () => io.send(out) });
+      await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null, announce_chars: disclosure ? disclosure.length + 2 : null, ...(buttons ? { components: buttons } : {}) } }, transport: () => io.send(out, undefined, buttons) });
       return;
     }
-    // sem reply: a IA escreve a partir do resultado (a pergunta "Confirmar" já está gravada)
-    confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal };
+    // sem reply: a IA escreve a partir do resultado (o clique já está gravado)
+    confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal, component: shaped.component, via: click.via };
   }
 
   // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
@@ -393,8 +394,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     return;
   }
   const safe = exit.emptied ? (exit.prohibited.length ? GATE_TEXTS.prohibited : GATE_TEXTS.under18) : exit.text;
-  // portão nos botões, lista e link (como no texto); com reply de ação, não há componente
-  const gated = gateComponent(reply ? null : shownComponent(), { channel, contactPhone, age, regulatedConversation, exempt });
+  // portão nos botões, lista e link (como no texto); com reply de ação, só os botões que a ação devolveu
+  const gated = gateComponent(shownComponent(), { channel, contactPhone, age, regulatedConversation, exempt });
   if (gated.prohibited.length || gated.regulated.length) await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "componente", categories: [...gated.prohibited, ...gated.regulated] });
   let component = gated.component;
   // o portão mexeu no resumo de um Confirmar: os botões não saem (valeriam por um texto que a pessoa não viu)

@@ -62,7 +62,7 @@ export async function GET(req: Request) {
   const faces = await facesOfMessages(db, rows.filter((m) => m.role === "agent"));
   const files = await attachmentsOfMessages(db, rows.filter((m) => m.role === "agent").map((m) => m.id));
   // botões, lista ou link da IA (leva B1'): o widget mostra de novo depois do F5
-  const messages = rows.map((m) => ({ id: m.id, role: m.role, content: m.content, ...(m.role === "agent" ? { name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null, file: widgetFile(files.get(m.id)) } : {}), ...(m.role === "assistant" && m.components_enc ? { components: parseComponents(m.components_enc) } : {}) }));
+  const messages = rows.map((m) => ({ id: m.id, role: m.role, content: m.content, ...(m.role === "agent" ? { name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null, file: widgetFile(files.get(m.id)) } : {}), ...((m.role === "assistant" || m.role === "agent") && m.components_enc ? { components: parseComponents(m.components_enc) } : {}) }));
   const mode = conv.handled_at ? "bot" : conv.takeover_at ? "agent" : conv.handoff_requested_at ? "requested" : "bot";
   await db.from("conversations").update({ visitor_seen_at: new Date().toISOString() }).eq("id", conv.id);
   return Response.json({ resumable: true, conversationId: conv.id, mode, agent: await holderFace(db, conv), messages }, { headers: HEADERS });

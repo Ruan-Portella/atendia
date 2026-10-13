@@ -26,20 +26,22 @@ import { logGate } from "./gate/log";
  *     alguém"; o BoaVoz nunca refaz sozinho.
  */
 
-export type ConfirmVerb = "sim" | "nao" | "repetir" | "humano";
+/** acao: botão com ação (Peça 5), com o título do dev; os outros são os botões fixos desta etapa. */
+export type ConfirmVerb = "sim" | "nao" | "repetir" | "humano" | "acao";
+type FixedVerb = Exclude<ConfirmVerb, "acao">;
 
 /** Títulos dos botões (até 20 caracteres: WhatsApp e Instagram). */
-export const CONFIRM_TITLES: Record<ConfirmVerb, string> = { sim: "Confirmar", nao: "Cancelar", repetir: "Tentar de novo", humano: "Falar com alguém" };
+export const CONFIRM_TITLES: Record<FixedVerb, string> = { sim: "Confirmar", nao: "Cancelar", repetir: "Tentar de novo", humano: "Falar com alguém" };
 
 export const confirmButtonId = (refId: string, verb: ConfirmVerb) => `bvc:${refId}:${verb}`;
 
 /** O botão é de uma confirmação? Devolve a referência e o que ele faz. Função pura. */
 export function parseConfirmButton(id: string | null | undefined): { refId: string; verb: ConfirmVerb } | null {
-  const m = /^bvc:([0-9a-f-]{36}):(sim|nao|repetir|humano)$/.exec(id ?? "");
+  const m = /^bvc:([0-9a-f-]{36}):(sim|nao|repetir|humano|acao)$/.exec(id ?? "");
   return m ? { refId: m[1], verb: m[2] as ConfirmVerb } : null;
 }
 
-const options = (refId: string, verbs: ConfirmVerb[]): MessageComponent => ({ type: "options", options: verbs.map((v) => ({ id: confirmButtonId(refId, v), title: CONFIRM_TITLES[v] })) });
+const options = (refId: string, verbs: FixedVerb[]): MessageComponent => ({ type: "options", options: verbs.map((v) => ({ id: confirmButtonId(refId, v), title: CONFIRM_TITLES[v] })) });
 /** Confirmar e Cancelar apontam para a mesma referência. */
 export const confirmComponent = (refId: string) => options(refId, ["sim", "nao"]);
 /** Depois de uma chamada incerta: repetir com o mesmo call_id, ou chamar a equipe. */
@@ -55,6 +57,7 @@ export const CONFIRM_TEXTS = {
   alreadyDone: "Esse pedido já foi confirmado.",
   alreadyCanceled: "Esse pedido já tinha sido cancelado. Se ainda quiser, me diga de novo o que precisa.",
   running: "Esse pedido já está sendo confirmado. Um instante.",
+  buttonExpired: "Esse botão venceu (vale por 24 horas). Me diga de novo o que você precisa.",
   expired: "Essa proposta foi substituída ou venceu. Se ainda quiser, me diga de novo o que precisa.",
   failedBefore: "Esse pedido não foi concluído. Se ainda quiser, me diga de novo o que precisa.",
   refused: "Não consigo concluir esse pedido por aqui agora. Se quiser, posso chamar alguém da equipe.",
@@ -89,9 +92,9 @@ export function typedChoice(text: string | null | undefined): { pos: 1 | 2; numb
  */
 export function shortcutTarget(choice: { pos: 1 | 2; number: boolean }, last: MessageComponent | null): { refId: string; verb: ConfirmVerb } | null {
   if (last?.type !== "options") return null;
-  const opts = last.options.map((o) => parseConfirmButton(o.id)).filter((x) => x !== null);
-  if (!opts.length) return null;
-  const picked = opts[choice.pos - 1] ?? null;
+  // a posição na mensagem inteira (no Instagram, o número do resumo numerado)
+  const option = last.options[choice.pos - 1];
+  const picked = option ? parseConfirmButton(option.id) : null;
   if (!picked) return null;
   if (choice.number) return picked;
   if (choice.pos === 1) return picked.verb === "sim" || picked.verb === "repetir" ? picked : null;
@@ -191,9 +194,12 @@ export interface Caller {
   regulatedAt?: string | null;
 }
 
-/** A ação ainda pode ser chamada por este contato? (ativa, não pausada pelo plano, nível e contexto). Função pura. */
-export function stillCallable(a: Pick<ActionRow, "active" | "paused_by_plan_at" | "min_level" | "context_required" | "type" | "creates_order">, c: Pick<Caller, "level" | "hasContext">): boolean {
-  return a.active && !a.paused_by_plan_at && needsConfirmation(a) && reaches(c.level, a.min_level) && (a.context_required === "none" || c.hasContext);
+/**
+ * A ação ainda pode ser chamada por este contato? (ativa, não pausada pelo plano, nível e
+ * contexto; no Confirmar, ainda pede confirmação; o botão com ação vale para qualquer tipo). Pura.
+ */
+export function stillCallable(a: Pick<ActionRow, "active" | "paused_by_plan_at" | "min_level" | "context_required" | "type" | "creates_order">, c: Pick<Caller, "level" | "hasContext">, kind: "confirm" | "action" = "confirm"): boolean {
+  return a.active && !a.paused_by_plan_at && (kind === "action" || needsConfirmation(a)) && reaches(c.level, a.min_level) && (a.context_required === "none" || c.hasContext);
 }
 
 /* ------------------------------------------------------------------ abrir a confirmação (ferramenta da IA) */
@@ -322,7 +328,7 @@ export type ClickResult =
   | { kind: "none" }
   | { kind: "fixed"; text: string; component?: MessageComponent | null }
   | { kind: "handoff" }
-  | { kind: "called"; action: ActionRow; params: Record<string, unknown>; call: CallResult; caller: Caller };
+  | { kind: "called"; action: ActionRow; params: Record<string, unknown>; call: CallResult; caller: Caller; via: "confirmar" | "botao" };
 
 const fixed = (text: string, component: MessageComponent | null = null): ClickResult => ({ kind: "fixed", text, component });
 
@@ -359,6 +365,11 @@ export async function resolveConfirmClick(db: SupabaseClient, i: ClickInput): Pr
   const ref = await getRef(db, target.refId);
   if (!ref || ref.bot_id !== i.bot.id || ref.conversation_id !== i.conversationId) return fixed(CONFIRM_TEXTS.expired);
   if (target.verb === "humano") return { kind: "handoff" };
+  // botão com ação: uso único ("executa" ou pedido) consome como o Confirmar; os outros aceitam mais de um toque
+  if (target.verb === "acao") {
+    if (ref.kind !== "action") return fixed(CONFIRM_TEXTS.expired);
+    return ref.single_use ? execute(db, i, ref, ["open", "uncertain"]) : executeAgain(db, i, ref);
+  }
   if (target.verb === "nao") {
     if (await cancelRef(db, ref.id)) return fixed(CONFIRM_TEXTS.canceled);
     return fixed(ref.status === "uncertain" ? CONFIRM_TEXTS.cantCancelUncertain : unusableText(ref.status));
@@ -377,7 +388,7 @@ async function execute(db: SupabaseClient, i: ClickInput, ref: ButtonRef, from: 
   const { data } = await db.from("actions").select("*").eq("id", ref.action_id).maybeSingle();
   const action = data as ActionRow | null;
   const caller = await i.caller();
-  if (!action || !stillCallable(action, caller)) {
+  if (!action || !stillCallable(action, caller, ref.kind)) {
     if (!mine) await setRefStatus(db, ref.id, "failed");
     return fixed(CONFIRM_TEXTS.refused);
   }
@@ -391,13 +402,29 @@ async function execute(db: SupabaseClient, i: ClickInput, ref: ButtonRef, from: 
     }
   }
 
-  const call = await callAction(db, action, { params: ref.params, confirmed: true, callId: refCallId(ref.id), conversation: { id: i.conversationId, channel: caller.gateChannel }, contact: caller.contact, context: caller.context });
+  const call = await callAction(db, action, { params: ref.params, confirmed: true, execute: needsConfirmation(action), callId: refCallId(ref.id), conversation: { id: i.conversationId, channel: caller.gateChannel }, contact: caller.contact, context: caller.context });
   if (call.status === "uncertain") {
     await setRefStatus(db, ref.id, "uncertain");
     return fixed(CONFIRM_TEXTS.uncertain, uncertainComponent(ref.id));
   }
   await setRefStatus(db, ref.id, call.status === "ok" ? "done" : "failed");
-  return { kind: "called", action, params: ref.params, call, caller };
+  return { kind: "called", action, params: ref.params, call, caller, via: ref.kind === "action" ? "botao" : "confirmar" };
+}
+
+/**
+ * Botão com ação que aceita mais de um toque ("adicionar" duas vezes = duas pizzas): a referência
+ * não é consumida; cada toque é uma chamada (call_id do evento do clique, o mesmo no reprocesso).
+ */
+async function executeAgain(db: SupabaseClient, i: ClickInput, ref: ButtonRef): Promise<ClickResult> {
+  if (ref.status !== "open" || Date.parse(ref.expires_at) <= Date.now()) return fixed(CONFIRM_TEXTS.buttonExpired);
+  const { data } = await db.from("actions").select("*").eq("id", ref.action_id).maybeSingle();
+  const action = data as ActionRow | null;
+  const caller = await i.caller();
+  if (!action || !stillCallable(action, caller, "action")) return fixed(CONFIRM_TEXTS.refused);
+  const limited = await firstExceeded(db, [{ key: `acao:${i.conversationId}:m`, max: 15, windowSeconds: 60, message: "rate_limited" }]);
+  if (limited) return fixed(CONFIRM_TEXTS.tooFast);
+  const call = await callAction(db, action, { params: ref.params, confirmed: true, execute: false, messageKey: i.key, conversation: { id: i.conversationId, channel: caller.gateChannel }, contact: caller.contact, context: caller.context });
+  return { kind: "called", action, params: ref.params, call, caller, via: "botao" };
 }
 
 /* ------------------------------------------------------------------ depois do clique */
@@ -406,11 +433,10 @@ async function execute(db: SupabaseClient, i: ClickInput, ref: ButtonRef, from: 
  * O que a IA lê na vez depois do Confirmar: a ação já foi chamada (não chamar de novo) e o
  * resultado, já filtrado pelo portão. Função pura.
  */
-export function confirmedNote(actionName: string, output: Record<string, unknown>): string {
+export function confirmedNote(actionName: string, output: Record<string, unknown>, via: "confirmar" | "botao" = "confirmar"): string {
   const result = JSON.stringify(output).slice(0, 6000);
-  if (output.ok === false && output.motivo === "nao_encontrado")
-    return `A pessoa tocou em Confirmar e a ação acao_${actionName} foi chamada agora, mas o sistema da empresa respondeu que não encontrou: ${result}. Explique com naturalidade e ofereça ajustar o pedido. Não chame a ação de novo nesta resposta.`;
-  if (output.ok === false)
-    return `A pessoa tocou em Confirmar, mas a ação acao_${actionName} falhou agora: ${result}. Diga que não conseguiu concluir agora e ofereça tentar de novo daqui a pouco ou falar com alguém da equipe. Não chame a ação de novo nesta resposta.`;
-  return `A pessoa tocou em Confirmar e a ação acao_${actionName} acabou de ser executada (não chame de novo). Resultado: ${result}. Confirme para a pessoa o que foi feito usando esse resultado: cite o número do pedido, protocolo ou código e os outros dados que estiverem nele (status, prazo, valor). Não invente nada que não esteja no resultado: sem número nele, não cite número.`;
+  const who = `A pessoa tocou ${via === "botao" ? "num botão" : "em Confirmar"} e a ação acao_${actionName} foi chamada agora`;
+  if (output.ok === false && output.motivo === "nao_encontrado") return `${who}, mas o sistema da empresa respondeu que não encontrou: ${result}. Explique com naturalidade e ofereça ajustar o pedido. Não chame a ação de novo nesta resposta.`;
+  if (output.ok === false) return `${who}, mas falhou: ${result}. Diga que não conseguiu concluir agora e ofereça tentar de novo daqui a pouco ou falar com alguém da equipe. Não chame a ação de novo nesta resposta.`;
+  return `${who} (não chame de novo). Resultado: ${result}. Responda usando esse resultado: cite o número do pedido, protocolo ou código e os outros dados que estiverem nele (status, prazo, valor). Não invente nada que não esteja no resultado: sem número nele, não cite número.`;
 }

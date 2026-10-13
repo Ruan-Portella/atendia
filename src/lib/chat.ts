@@ -5,6 +5,7 @@ import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, offTo
 import { getPlan } from "./plans";
 import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
+import type { Interactive } from "./message-events";
 import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
 import { createLead } from "./leads";
 import { deleteRefusals, recordRefusal } from "./scope-refusals";
@@ -111,7 +112,28 @@ export function appendSiteOffer(offer: () => { text: string } | null) {
   });
 }
 
-export function withoutToolParts() {
+/**
+ * Botões, lista ou link devolvidos por uma ação (C pública, parte 5b): vão no fim da resposta do
+ * widget, se nenhum outro componente saiu nesta vez.
+ */
+export function appendActionComponent(component: () => MessageComponent | null) {
+  let sent = false;
+  return new TransformStream<UIMessageChunk, UIMessageChunk>({
+    transform(chunk, ctrl) {
+      if (chunk.type === "data-components") sent = true;
+      if (chunk.type === "finish" && !sent) {
+        const c = component();
+        if (c) {
+          sent = true;
+          ctrl.enqueue({ type: "data-components", data: c });
+        }
+      }
+      ctrl.enqueue(chunk);
+    },
+  });
+}
+
+export function withoutToolParts(o: { component?: () => MessageComponent | null } = {}) {
   // como no WhatsApp e no Instagram, só o primeiro reply da vez vai (duas ações em paralelo)
   let replied = false;
   // botões, lista ou link (mostrar_opcoes / mostrar_link): o texto da ferramenta e o componente
@@ -143,7 +165,8 @@ export function withoutToolParts() {
         return;
       }
       if (chunk.type === "finish") for (const id of [...held.keys()]) flush(id, ctrl);
-      if (chunk.type === "finish" && !shownSent && !replied) {
+      // lista escrita no texto vira botões só se a vez não tem outro componente (o da ação vence)
+      if (chunk.type === "finish" && !shownSent && !replied && !o.component?.()) {
         const fromList = optionsFromText(streamed);
         if (fromList) {
           shownSent = true;
@@ -648,7 +671,9 @@ export async function runChat(opts: {
    * Vez logo depois de um Confirmar (C pública, parte 5a): a ação já foi chamada; a IA escreve a
    * partir do resultado (já filtrado pelo portão) e não abre outra confirmação.
    */
-  confirmed?: { action: string; params: Record<string, unknown>; output: Record<string, unknown>; internal?: string[] };
+  confirmed?: { action: string; params: Record<string, unknown>; output: Record<string, unknown>; internal?: string[]; component?: MessageComponent | null; via?: "confirmar" | "botao" };
+  /** Botão tocado no site: o message.received da pergunta leva o id e o título. */
+  interactive?: Interactive | null;
 }) {
   const { db, bot, messages, channel } = opts;
 
@@ -681,7 +706,7 @@ export async function runChat(opts: {
   if (question && opts.storeQuestion !== false) {
     // com a chave do evento, o reprocesso não grava a mesma pergunta duas vezes
     // erro aqui sobe: na fila, o evento volta e é tentado de novo (a mensagem não some)
-    await saveMessage(db, { conversation_id: convId, role: "user", content: question, inbound_key: opts.questionKey ?? null });
+    await saveMessage(db, { conversation_id: convId, role: "user", content: question, inbound_key: opts.questionKey ?? null }, { interactive: opts.interactive ?? null });
   }
 
   let unansweredRecorded = false;
@@ -706,6 +731,10 @@ export async function runChat(opts: {
   let listText: string | null = null;
   // resumo com Confirmar e Cancelar desta vez (ação "executa"): a mensagem é só o que o BoaVoz montou
   let confirmShown = false;
+  // botões, lista ou link devolvidos por uma ação (ou pela ação do clique): vão junto do texto, sem encerrar a vez
+  let actionComponent: MessageComponent | null = opts.confirmed?.component ?? null;
+  /** O componente desta vez: o resumo do Confirmar, senão o da ação (também com reply), senão o da IA. */
+  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? actionComponent : (actionComponent ?? shown));
   const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [...(opts.confirmed?.internal ?? [])];
@@ -729,6 +758,7 @@ export async function runChat(opts: {
       shownText ??= c.text;
       confirmShown = true;
     },
+    onComponent: (c) => void (actionComponent ??= c),
     confirmRound: Boolean(opts.confirmed),
     agencyId: bot.agency_id,
   });
@@ -752,7 +782,7 @@ export async function runChat(opts: {
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
       // depois do Confirmar: o resultado da chamada (a IA confirma a partir dele)
-      ...(opts.confirmed ? [{ role: "system" as const, content: confirmedNote(opts.confirmed.action, opts.confirmed.output) }] : []),
+      ...(opts.confirmed ? [{ role: "system" as const, content: confirmedNote(opts.confirmed.action, opts.confirmed.output, opts.confirmed.via) }] : []),
       ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, hasActions ? [...gated.reminder, ACTIONS_PROMPT_NOTE] : gated.reminder) }] : [{ role: "system" as const, content: offTopicReminder(bot.client_name) }]),
     ],
     ...callOptions,
@@ -813,6 +843,8 @@ export async function runChat(opts: {
         return { ok: true };
       },
       mostrar_opcoes: async ({ texto, opcoes }) => {
+        // um componente por mensagem: o da ação já vai junto
+        if (actionComponent) return { ok: false, instrucao: "As opções da ação já vão como botões nesta resposta: responda em texto." };
         const options = normalizeOptions(opcoes);
         if (!options) return { ok: false, instrucao: "Opções insuficientes: responda em texto." };
         shown ??= { type: "options", options };
@@ -820,6 +852,7 @@ export async function runChat(opts: {
         return { ok: true, componente: shown, texto };
       },
       mostrar_link: async ({ texto, url, rotulo }) => {
+        if (actionComponent) return { ok: false, instrucao: "Os botões da ação já vão nesta resposta: responda em texto, sem o link." };
         const link = normalizeLink(url, rotulo, linkHosts);
         if (!link) return { ok: false, instrucao: "Esse endereço não está na base: responda em texto, sem o link." };
         shown ??= link;
@@ -870,7 +903,7 @@ export async function runChat(opts: {
         const content = actionReply ? [guarded.trim(), actionReply].filter(Boolean).join("\n\n") : guarded;
         // rede de segurança: lista curta com pergunta de escolha no texto vira opções (no site a
         // lista já saiu no texto; no WhatsApp e no Instagram o canal manda o texto sem ela)
-        if (!shown && !actionReply) {
+        if (!shown && !actionReply && !actionComponent) {
           const fromList = optionsFromText(content);
           if (fromList) {
             shown = fromList.component;
@@ -878,14 +911,14 @@ export async function runChat(opts: {
           }
         }
         // novidades no site: a oferta fica no fim do texto gravado, com os botões (como o widget mostrou)
-        const offer = siteOffer && !shown && !actionReply ? siteOffer : null;
+        const offer = siteOffer && !shown && !actionReply && !actionComponent ? siteOffer : null;
         if (offer) shown = OPTIN_COMPONENT;
         const stored = offer && content ? `${content}\n\n${offer.text}` : content;
         if (stored) {
           // o resultado do Confirmar fica na conversa como os das consultas ("e o número do pedido?")
           const confirmedResult: ToolResultRow[] = opts.confirmed ? [{ name: `acao_${opts.confirmed.action}`, input: opts.confirmed.params, output: opts.confirmed.output }] : [];
           const toolResults: ToolResultRow[] = [...confirmedResult, ...steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })))];
-          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content: stored, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: actionReply ? null : shown }).catch((e) => {
+          savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content: stored, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: finalComponent() }).catch((e) => {
             console.error("chat: resposta não gravada", (e as Error).message);
             return null;
           });
@@ -900,5 +933,5 @@ export async function runChat(opts: {
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
   // components(): botões, lista ou link desta vez (o canal converte); shownText(): o texto que veio na ferramenta
-  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: (): MessageComponent | null => (actionReply ? null : shown), shownText: () => shownText, listText: () => listText, confirmShown: () => confirmShown };
+  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: finalComponent, shownText: () => shownText, listText: () => listText, confirmShown: () => confirmShown };
 }

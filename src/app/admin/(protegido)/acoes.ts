@@ -28,6 +28,7 @@ import { costText, createCampaign, estimateFor, runCampaignTick, setCampaignStat
 import { whatsappContact } from "@/lib/contacts";
 import { canonicalPhone } from "@/lib/phone";
 import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
+import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -600,7 +601,15 @@ export async function testAction(agencyId: string, actionId: string, fd: FormDat
   const r = await callAction(db, row, preview ? { params, mode: "preview" } : { params, mode: "test", confirmed: needsConfirmation(row) });
   const head = `${r.status.toUpperCase()}${r.httpStatus ? ` · HTTP ${r.httpStatus}` : ""} · ${r.durationMs} ms · ${r.callId}`;
   const lines = [head, ...r.warnings.map((w) => `aviso: ${w}`), ...(r.error ? [`erro: ${r.error}`] : [])];
-  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, internal: r.internal ?? undefined, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined, confirmation: r.confirmation ?? undefined }, null, 2).slice(0, 6000));
+  // components fora do formato não vão para o contato: o Testar avisa onde está o problema
+  if (r.components !== undefined) {
+    try {
+      parseComponentInput(r.components);
+    } catch (e) {
+      if (e instanceof ComponentProblem) lines.push(`aviso: components fora do formato (${e.field}): ${e.message}`);
+    }
+  }
+  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, internal: r.internal ?? undefined, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined, confirmation: r.confirmation ?? undefined, components: r.components ?? undefined }, null, 2).slice(0, 6000));
   return r.status === "ok" || r.status === "not_found" ? ok(lines.join("\n")) : fail(lines.join("\n"));
 }
 

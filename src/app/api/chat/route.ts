@@ -3,8 +3,9 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { CORS_HEADERS, SYSTEM_AUTHOR, appendSiteOffer, conversationHistory, lastUserText, openConversation, requestHandoff, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { CORS_HEADERS, SYSTEM_AUTHOR, appendActionComponent, appendSiteOffer, conversationHistory, lastUserText, openConversation, requestHandoff, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
 import { resolveConfirmClick } from "@/lib/action-confirm";
+import { devButtonId, type Interactive } from "@/lib/message-events";
 import { callerFor, shapeActionResult } from "@/lib/action-tools";
 import type { MessageComponent } from "@/lib/components";
 import { handleSiteOptIn } from "@/lib/site-optin";
@@ -219,6 +220,8 @@ export async function POST(req: Request) {
   // Confirmar, Cancelar ou "Tentar de novo" de uma ação "executa" (C pública, parte 5a): o clique é
   // resolvido pelo id do botão (ou pelo atalho "sim" logo depois do resumo), sem IA
   let confirmed: Parameters<typeof runChat>[0]["confirmed"];
+  // o clique vai no webhook message.received (interactive), como no WhatsApp e no Instagram
+  const interactive: Interactive | null = parsed.data.buttonId ? { type: "button_reply", id: devButtonId(parsed.data.buttonId), title: text } : null;
   if (convId) {
     const id = convId;
     const identity = chatIdentityOf(who);
@@ -234,7 +237,7 @@ export async function POST(req: Request) {
     if (click.kind !== "none") {
       const headers = { ...CORS_HEADERS, "X-Conversation-Id": id, "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" };
       if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: id, ip: clientIp(req), isNew: false }));
-      await saveMessage(db, { conversation_id: id, role: "user", content: text }, { touch: "visitante" });
+      await saveMessage(db, { conversation_id: id, role: "user", content: text }, { touch: "visitante", interactive });
       if (click.kind === "fixed") {
         await saveMessage(db, { conversation_id: id, role: "assistant", content: click.text, author: SYSTEM_AUTHOR, components: click.component ?? null });
         return fixedStream("confirmar", click.text, headers, { component: click.component });
@@ -247,10 +250,11 @@ export async function POST(req: Request) {
       // no site não há trava do BoaVoz: o data e o reply saem como vieram
       const shaped = await shapeActionResult(db, { bot, conversationId: id, gateChannel: "widget", waPhone: null, age: null, regulatedAt: null }, click.call, { execute: true });
       if (shaped.reply) {
-        await saveMessage(db, { conversation_id: id, role: "assistant", content: shaped.reply });
-        return fixedStream("confirmar", shaped.reply, headers);
+        // reply exato da ação, com os botões que ela devolveu
+        await saveMessage(db, { conversation_id: id, role: "assistant", content: shaped.reply, components: shaped.component });
+        return fixedStream("confirmar", shaped.reply, headers, { component: shaped.component });
       }
-      confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal };
+      confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal, component: shaped.component, via: click.via };
     }
   }
 
@@ -261,13 +265,14 @@ export async function POST(req: Request) {
 
   try {
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];
-    const { result, conversationId: activeId, siteOffer } = await runChat({
+    const { result, conversationId: activeId, siteOffer, components } = await runChat({
       db,
       bot,
       // depois do Confirmar, o clique já está gravado (e já vem no histórico)
       messages: confirmed ? history : [...history, { id: "novo", role: "user", parts: [{ type: "text", text }] }],
       storeQuestion: !confirmed,
       confirmed,
+      interactive,
       conversationId: convId,
       visitorId: visitorId ?? null,
       channel: bot.is_demo ? "demo" : channel,
@@ -280,7 +285,7 @@ export async function POST(req: Request) {
     // atendimento aberto antes da conversa existir: liga a primeira conversa a ele
     if (slot?.isNew && slot.id && !convId) after(async () => void (await db.from("atendimentos").update({ first_conversation_id: activeId }).eq("id", slot.id)));
     return createUIMessageStreamResponse({
-      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts()).pipeThrough(appendSiteOffer(siteOffer)),
+      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts({ component: components })).pipeThrough(appendActionComponent(components)).pipeThrough(appendSiteOffer(siteOffer)),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": activeId, ...(handoff ? { "X-Handoff": handoff } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
     });
   } catch (e) {

@@ -9,6 +9,10 @@ import { botActionSecrets } from "@/lib/actions";
  * chatbot (como um endpoint de verdade faria) e segue o contrato de repetição: o mesmo call_id
  * devolve o mesmo corpo. Cenários (o último pedaço da URL):
  *   cardapio        consulta: itens com id e nome (inclui uma cerveja, para o portão de pedidos)
+ *   cardapio-botoes consulta: os mesmos itens e uma lista com "adicionar" em cada um (botão com ação
+ *                   adicionar_ao_carrinho, params {item})
+ *   carrinho        consulta (adicionar_ao_carrinho): reply com o item e os botões "Finalizar pedido"
+ *                   (botão com ação criar_pedido) e "Ver cardápio" (sem ação: volta para a IA)
  *   ok              executa: {data: {pedido, status}}; na prévia, confirmation {summary, items, total_cents}
  *   reply           executa: {reply} (texto exato, sem IA)
  *   vazio           executa: 200 sem corpo (sucesso)
@@ -62,6 +66,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ cenario
   const repeated = async () => Boolean((await db.from("action_calls").select("id").eq("call_id", callId).limit(1)).data?.length);
 
   if (cenario === "cardapio") return json(200, { data: { itens: CARDAPIO } });
+  if (cenario === "cardapio-botoes")
+    return json(200, {
+      data: { itens: CARDAPIO },
+      components: { type: "list", button: "Ver sabores", items: CARDAPIO.map((c) => ({ title: c.nome.slice(0, 24), description: c.preco, action: { name: "adicionar_ao_carrinho", params: { item: c.id } } })) },
+    });
+  if (cenario === "carrinho") {
+    const item = String(body.params?.item ?? "");
+    const nome = CARDAPIO.find((c) => c.id === item)?.nome ?? `item ${item}`;
+    return json(200, {
+      reply: `Coloquei 1x ${nome} no carrinho. Quer finalizar?`,
+      components: {
+        type: "buttons",
+        buttons: [
+          { title: "Finalizar pedido", action: { name: "criar_pedido", params: { itens: [item], endereco: "Retirada na loja" } } },
+          { title: "Ver cardápio", id: "ver_cardapio" },
+        ],
+      },
+    });
+  }
   if (body.mode === "preview") return json(200, { confirmation: { summary: "Pedido de teste (prévia, nada foi criado)", items: items.length ? items : ["1x Pizza Calabresa"], total_cents: 4990 } });
   if (cenario === "reply") return json(200, { reply: `Pedido ${order} registrado! Chega em uns 40 minutos.` });
   if (cenario === "vazio") return new Response(null, { status: 200 });

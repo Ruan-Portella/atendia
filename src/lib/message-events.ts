@@ -262,15 +262,18 @@ const deferredReceived = new Set<string>();
 const WA_MEDIA = new Set(["image", "video", "audio", "document", "sticker"]);
 const IG_MEDIA = new Set(["image", "video", "audio", "file"]);
 
+/** O id do botão como o dev mandou (sem o prefixo u: que o BoaVoz põe no canal). Pura. */
+export const devButtonId = (id: string | null | undefined): string | null => (id ? (id.startsWith("u:") ? id.slice(2) : id) : null);
+
 /** Mensagem do WhatsApp: arquivo que será guardado e o clique (botão, lista ou botão de modelo). Pura. */
 export function waInboundExtra(m: { type: string; button?: { text?: string; payload?: string }; interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } } } & Record<string, unknown>): InboundExtra {
   const media = WA_MEDIA.has(m.type) && Boolean((m[m.type] as { id?: string } | undefined)?.id);
   const b = m.interactive?.button_reply;
   const l = m.interactive?.list_reply;
   const interactive: Interactive | null = b
-    ? { type: "button_reply", id: b.id ?? null, title: b.title ?? null }
+    ? { type: "button_reply", id: devButtonId(b.id), title: b.title ?? null }
     : l
-      ? { type: "list_reply", id: l.id ?? null, title: l.title ?? null }
+      ? { type: "list_reply", id: devButtonId(l.id), title: l.title ?? null }
       : m.button
         ? { type: "button", id: m.button.payload ?? null, title: m.button.text ?? null }
         : null;
@@ -281,7 +284,7 @@ export function waInboundExtra(m: { type: string; button?: { text?: string; payl
 export function igInboundExtra(ev: { message?: { text?: string; quick_reply?: { payload?: string }; attachments?: Array<{ type?: string; payload?: { url?: string } }> }; postback?: { title?: string; payload?: string } }): InboundExtra {
   const media = (ev.message?.attachments ?? []).some((a) => IG_MEDIA.has(a.type ?? "") && Boolean(a.payload?.url));
   const interactive: Interactive | null = ev.message?.quick_reply
-    ? { type: "quick_reply", id: ev.message.quick_reply.payload ?? null, title: ev.message.text ?? null }
+    ? { type: "quick_reply", id: devButtonId(ev.message.quick_reply.payload), title: ev.message.text ?? null }
     : ev.postback
       ? { type: "postback", id: ev.postback.payload ?? null, title: ev.postback.title ?? null }
       : null;

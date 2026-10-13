@@ -44,7 +44,8 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
         <p className="text-sm text-muted">
           Chamadas ao sistema do cliente que a IA faz na conversa. Consulta (status do pedido, agenda, saldo): a IA chama quando a descrição combina e responde com o que o endpoint devolver. Executa
           (criar pedido, agendar, cancelar): a IA mostra ao contato um resumo com Confirmar e Cancelar, e o endpoint só é chamado depois do Confirmar. Ação que o BoaVoz classifica como pedido, reserva ou
-          cobrança sempre pede o Confirmar, mesmo cadastrada como consulta.
+          cobrança sempre pede o Confirmar, mesmo cadastrada como consulta. O retorno pode trazer components (botões, lista ou link): botão com action chama a ação direto no
+          toque do contato, sem a IA.
         </p>
       </div>
 

@@ -5,6 +5,7 @@ import { WIDGET_ALLOW_HEADERS, conversationAccess, widgetWho } from "@/lib/widge
 import { apiPauseActive } from "@/lib/presence";
 import { attachmentsOfMessages } from "@/lib/attachments";
 import { widgetFile } from "@/lib/file-links";
+import { parseComponents } from "@/lib/components";
 
 const HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -57,11 +58,12 @@ export async function GET(req: Request) {
     .eq("id", conversationId)
     .or(`visitor_seen_at.is.null,visitor_seen_at.lt.${new Date(now - 20_000).toISOString()}`);
 
-  const rows = await loadMessages(db, { conversationId, roles: ["agent"], afterId: after, limit: 50 }, ["id", "content", "author_type", "author_id", "author_display_name"] as const);
+  const rows = await loadMessages(db, { conversationId, roles: ["agent"], afterId: after, limit: 50 }, ["id", "content", "author_type", "author_id", "author_display_name", "components_enc"] as const);
   const faces = await facesOfMessages(db, rows);
   // imagem ou documento mandado pela equipe ou pela API: link assinado de 1 hora
   const files = await attachmentsOfMessages(db, rows.map((m) => m.id));
-  const messages = rows.map((m) => ({ id: m.id, content: m.content, name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null, file: widgetFile(files.get(m.id)) }));
+  // botões, lista ou link mandados pela integração (API, C pública parte 5b)
+  const messages = rows.map((m) => ({ id: m.id, content: m.content, name: faces.get(m.id)?.name ?? null, avatar: faces.get(m.id)?.avatar ?? null, file: widgetFile(files.get(m.id)), ...(m.components_enc ? { components: parseComponents(m.components_enc) } : {}) }));
   // a integração pausou a IA (API): quem responde é ela, como um atendente
   const mode = conv.takeover_at && !conv.handled_at ? "agent" : apiPauseActive(conv.ai_paused_until) ? "agent" : conv.handoff_requested_at && !conv.handled_at ? "requested" : "bot";
   return Response.json({ mode, agent: await holderFace(db, conv), messages }, { headers: HEADERS });

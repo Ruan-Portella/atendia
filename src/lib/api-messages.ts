@@ -5,7 +5,9 @@ import { API_SEND_REF, saveMessage, touchConversation, UNCERTAIN } from "./messa
 import { channelMsgHash } from "./hash";
 import { deliver, type SendRecord } from "./send";
 import { sendBlockedReason } from "./conversation-mode";
-import { OUTSIDE_WINDOW_CODE, SendTimeoutError, WhatsAppError, sendMedia, sendText } from "./whatsapp";
+import { OUTSIDE_WINDOW_CODE, SendTimeoutError, WhatsAppError, sendMedia, sendPlan, sendText } from "./whatsapp";
+import { ComponentProblem, componentTexts, materializeComponent, parseComponentInput, type ComponentInput } from "./component-input";
+import { LIMITS, instagramLinkText, instagramPlan, whatsappPlan, type MessageComponent } from "./components";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 import { InstagramError, isInstagramAccessError, isOutsideWindow, sendInstagramAttachment } from "./instagram";
 import { markOwnMessage } from "./inbound-queue";
@@ -42,6 +44,9 @@ import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type
  * Documento e imagem (parte 3c): o BoaVoz baixa a URL, confere o tipo pelos primeiros bytes e o
  * tamanho do canal, guarda uma cópia cifrada (painel, widget e API) e a Meta busca na URL original;
  * text vira a legenda.
+ * components (parte 5b): botões, lista ou link junto de um texto, no formato único das ações
+ * (component-input.ts); botão com ação guarda os parâmetros no BoaVoz. Componente fora do formato:
+ * 400 apontando o campo; título com item barrado no canal: 422 prohibited_content.
  */
 
 /** Prazo da resposta da Meta: passou, o envio fica incerto (202). */
@@ -65,9 +70,9 @@ export interface FileSpec {
 }
 
 export type SendBody =
-  | ({ target: "widget"; conversationId: string; type: "text"; text: string; file: null } & Signature)
+  | ({ target: "widget"; conversationId: string; type: "text"; text: string; file: null; components: ComponentInput | null } & Signature)
   | ({ target: "widget"; conversationId: string; type: "image" | "document"; text: string | null; file: FileSpec } & Signature)
-  | ({ target: "channel"; to: string; channel: Channel | null; type: "text"; text: string; file: null } & Signature)
+  | ({ target: "channel"; to: string; channel: Channel | null; type: "text"; text: string; file: null; components: ComponentInput | null } & Signature)
   | ({ target: "channel"; to: string; channel: Channel | null; type: "image" | "document"; text: string | null; file: FileSpec } & Signature)
   | ({ target: "channel"; to: string; channel: Channel | null; type: "template"; template: { name: string; language: string; variables: string[] } } & Signature);
 
@@ -96,6 +101,18 @@ export function parseSendBody(body: Record<string, unknown>): SendBody {
     if (typeof body.text !== "string" || body.text.length > MAX_CAPTION) throw invalidRequest(`text (a legenda) pode ter até ${MAX_CAPTION} caracteres.`, { field: "text" });
     return body.text.trim() || null;
   };
+  // botões, lista ou link: só junto de um texto (no WhatsApp, o corpo da mensagem com botões tem até 1.024)
+  const components = (): ComponentInput | null => {
+    if (body.components === undefined || body.components === null) return null;
+    if (type !== "text") throw invalidRequest("components só vai com type: text.", { field: "components" });
+    if (typeof body.text === "string" && body.text.length > LIMITS.body) throw invalidRequest(`Com components, text pode ter até ${LIMITS.body} caracteres.`, { field: "text" });
+    try {
+      return parseComponentInput(body.components);
+    } catch (e) {
+      if (e instanceof ComponentProblem) throw invalidRequest(e.message, { field: e.field });
+      throw e;
+    }
+  };
   const file = (kind: OutboundKind): FileSpec => {
     const f = body[kind] as Record<string, unknown> | undefined;
     if (!f || typeof f !== "object" || Array.isArray(f)) throw invalidRequest(`${kind} é obrigatório com type: ${kind}: {url${kind === "document" ? ", filename" : ""}}.`, { field: kind });
@@ -116,7 +133,8 @@ export function parseSendBody(body: Record<string, unknown>): SendBody {
     const m = typeof body.conversation_id === "string" ? CONV_ID.exec(body.conversation_id) : null;
     if (!m) throw invalidRequest("conversation_id inválido: use o id com o prefixo conv_.", { field: "conversation_id" });
     if (type === "template") throw invalidRequest("No chat do site não há modelo (modelos são do WhatsApp): use text, image ou document.", { field: "type" });
-    if (type === "text") return { target: "widget", conversationId: m[1].toLowerCase(), type, text: text(), file: null, ...sig };
+    if (type === "text") return { target: "widget", conversationId: m[1].toLowerCase(), type, text: text(), file: null, components: components(), ...sig };
+    if (body.components !== undefined && body.components !== null) components();
     return { target: "widget", conversationId: m[1].toLowerCase(), type, text: caption(), file: file(type), ...sig };
   }
 
@@ -124,7 +142,8 @@ export function parseSendBody(body: Record<string, unknown>): SendBody {
   const channel = body.channel;
   if (channel !== undefined && channel !== null && channel !== "whatsapp" && channel !== "instagram") throw invalidRequest('channel deve ser "whatsapp" ou "instagram".', { field: "channel" });
   const base = { target: "channel" as const, to: body.to.trim(), channel: (channel as Channel | undefined) ?? null, ...sig };
-  if (type === "text") return { ...base, type, text: text(), file: null };
+  if (type === "text") return { ...base, type, text: text(), file: null, components: components() };
+  if (body.components !== undefined && body.components !== null) components();
   if (type === "image" || type === "document") return { ...base, type, text: caption(), file: file(type) };
 
   if (body.text !== undefined) throw invalidRequest("Com type: template, o texto vem do modelo: não mande text.", { field: "text" });
@@ -298,9 +317,10 @@ async function renewPause(db: SupabaseClient, conv: ConvRow) {
 
 const restoreAnnounce = (db: SupabaseClient, conv: ConvRow, claimed: boolean) => (claimed ? db.from("conversations").update({ announce_pending: true }).eq("id", conv.id).then(() => undefined) : Promise.resolve());
 
-const record = (api: ApiContext, p: Signature, content: string, prefix: string | null, templateCategory: string | null = null) =>
+const record = (api: ApiContext, p: Signature, content: string, prefix: string | null, templateCategory: string | null = null, components: MessageComponent | null = null) =>
   ({
     insert: {
+      ...(components ? { components } : {}),
       role: "agent" as const,
       content,
       author: p.sender,
@@ -406,8 +426,22 @@ async function sendChannelMessage(api: ApiContext, botId: string, p: Extract<Sen
     });
     if (problem) throw new ApiError(422, "prohibited_content", "O portão do BoaVoz barrou o texto (ele nunca é editado).", { ...problem, channel: to.channel });
   }
+  const inputComponent = p.type === "text" ? p.components : null;
+  if (inputComponent) {
+    // títulos e descrições passam pelo mesmo portão do texto (nunca editados)
+    const problem = contentProblem(componentTexts(inputComponent).join("\n"), {
+      channel: to.channel,
+      contactPhone: to.phone,
+      age: await getAge(db, { botId, channel: to.channel, contact: to.address }),
+      regulatedConversation: regulatedConversation(conv.regulated_at),
+      exempt: await botGateExemptions(db, botId),
+    });
+    if (problem) throw new ApiError(422, "prohibited_content", "O portão do BoaVoz barrou um título dos components (nunca é editado).", { ...problem, channel: to.channel, field: "components" });
+  }
   // o arquivo é baixado e conferido antes de qualquer envio
   const file = p.file ? await outboundFile(p.file, to.channel) : null;
+  // botão com ação: a referência (parâmetros guardados no BoaVoz) nasce antes do envio
+  const component = inputComponent ? await apiComponent(db, inputComponent, { botId, conversationId: conv.id, gate: { channel: to.channel, contactPhone: to.phone, exempt: await botGateExemptions(db, botId) } }) : null;
 
   const { prefix, claimed } = await prefixFor(db, conv, bot, to.channel, p.agentName);
   // texto com o prefixo; na mídia, ele vira a legenda (ou a legenda inteira, sem texto)
@@ -421,10 +455,18 @@ async function sendChannelMessage(api: ApiContext, botId: string, p: Extract<Sen
     channel: to.channel,
     conv,
     kind: "equipe",
-    rec: record(api, p, content, prefix),
+    rec: record(api, p, content, prefix, null, component),
     ref,
     claimed,
     transport: async () => {
+      if (to.channel === "whatsapp" && component) return (await sendPlan(waCh, to.address, content, whatsappPlan(component), { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })).messages?.[0]?.id ?? null;
+      if (to.channel === "instagram" && component) {
+        // link no texto; opções com o resumo numerado e as respostas rápidas numa DM própria
+        if (component.type === "link") return sendInstagram(db, igCh, to.address, instagramLinkText(content, component), undefined, { timeoutMs: SEND_TIMEOUT_MS });
+        const plan = instagramPlan(component);
+        await sendInstagram(db, igCh, to.address, content, undefined, { timeoutMs: SEND_TIMEOUT_MS });
+        return sendInstagram(db, igCh, to.address, plan.summary, plan.quickReplies, { timeoutMs: SEND_TIMEOUT_MS });
+      }
       if (to.channel === "whatsapp") {
         const sent = file
           ? await sendMedia(waCh, to.address, { type: p.type === "image" ? "image" : "document", link: file.url, caption: lead, filename: file.filename }, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })
@@ -533,9 +575,11 @@ async function sendToWidget(api: ApiContext, p: Extract<SendBody, { target: "wid
   const bot = await loadBot(db, conv.bot_id);
   await requireSendable(db, conv.bot_id, "widget");
   const file = p.file ? await outboundFile(p.file, "widget") : null;
+  // no site não há portão do BoaVoz: só o formato e as ações do chatbot
+  const component = p.type === "text" && p.components ? await apiComponent(db, p.components, { botId: conv.bot_id, conversationId: conv.id, gate: null }) : null;
   const { prefix } = await prefixFor(db, conv, bot, "widget", p.agentName);
   const content = [prefix, p.text].filter(Boolean).join("\n") || (p.file ? fileLabel(p.file) : "");
-  const rec = record(api, p, content, prefix).insert;
+  const rec = record(api, p, content, prefix, null, component).insert;
   const id = await saveMessage(db, { conversation_id: conv.id, ...rec }, { touch: "equipe", deferEvent: Boolean(file) });
   if (id && file) {
     await keepCopy(db, { botId: conv.bot_id, conversationId: conv.id, messageId: id, channel: "widget", file });
@@ -543,6 +587,17 @@ async function sendToWidget(api: ApiContext, p: Extract<SendBody, { target: "wid
   }
   await renewPause(db, conv);
   return sentBody(id, conv.id, "sent");
+}
+
+/** components da API prontos para o canal; problema vira 400 (ou 422, se o portão barrou o botão). */
+async function apiComponent(db: SupabaseClient, c: ComponentInput, o: { botId: string; conversationId: string; gate: { channel: Channel; contactPhone: string | null; exempt: GateCategory[] } | null }): Promise<MessageComponent | null> {
+  try {
+    return (await materializeComponent(db, c, { bot: { id: o.botId }, conversationId: o.conversationId, gate: o.gate, strict: true })).component;
+  } catch (e) {
+    if (!(e instanceof ComponentProblem)) throw e;
+    if (e.kind === "prohibited") throw new ApiError(422, "prohibited_content", e.message, { reason: "prohibited", field: e.field, channel: o.gate?.channel ?? "widget" });
+    throw invalidRequest(e.message, { field: e.field });
+  }
 }
 
 export async function postMessage(req: Request, api: ApiContext): Promise<Response> {

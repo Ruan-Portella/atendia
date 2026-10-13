@@ -15,6 +15,7 @@ import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiPer
 import { createWebhook, redeliver, requeueFailed, sendWebhookTest, updateWebhook } from "@/lib/webhooks";
 import { deadline } from "@/lib/cron";
 import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
+import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
 import { TRIAL_KEY_PERMISSIONS } from "@/lib/integrations-plan";
 
 /*
@@ -130,7 +131,15 @@ export async function testBotAction(actionId: string, fd: FormData): Promise<Act
   const r = await callAction(c.db, action, preview ? { params, mode: "preview" } : { params, mode: "test", confirmed: needsConfirmation(action) });
   const head = `${r.status.toUpperCase()}${r.httpStatus ? ` · HTTP ${r.httpStatus}` : ""} · ${r.durationMs} ms · ${r.callId}`;
   const lines = [head, ...r.warnings.map((w) => `aviso: ${w}`), ...(r.error ? [`erro: ${r.error}`] : [])];
-  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, internal: r.internal ?? undefined, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined, confirmation: r.confirmation ?? undefined }, null, 2).slice(0, 6000));
+  // components fora do formato não vão para o contato: o Testar avisa onde está o problema
+  if (r.components !== undefined) {
+    try {
+      parseComponentInput(r.components);
+    } catch (e) {
+      if (e instanceof ComponentProblem) lines.push(`aviso: components fora do formato (${e.field}): ${e.message}`);
+    }
+  }
+  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, internal: r.internal ?? undefined, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined, confirmation: r.confirmation ?? undefined, components: r.components ?? undefined }, null, 2).slice(0, 6000));
   if (r.status === "uncertain") lines.push("", "Incerto: na conversa, o contato veria \"não consegui confirmar se deu certo\" e os botões Tentar de novo (mesmo call_id) e Falar com alguém.");
   return r.status === "ok" || r.status === "not_found" ? ok(lines.join("\n")) : fail(lines.join("\n"));
 }

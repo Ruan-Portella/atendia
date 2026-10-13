@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { queueMessageEvent } from "./message-events";
+import { queueMessageEvent, type Interactive } from "./message-events";
 import { openField, sealField, scopeOfConversation } from "./field-cipher";
 import { authorTypeOf, type AuthorType } from "./authors";
 import type { MessageComponent } from "./components";
@@ -110,7 +110,7 @@ const opened = async <T extends object>(row: T): Promise<T> => {
  * contador); "visitante" também marca o contato como presente (widget). deferEvent: quem grava
  * emite o webhook depois (mensagem com arquivo: o evento leva a mídia).
  */
-export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { touch?: "visitante" | "equipe"; deferEvent?: boolean } = {}): Promise<number | null> {
+export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { touch?: "visitante" | "equipe"; deferEvent?: boolean; interactive?: Interactive | null } = {}): Promise<number | null> {
   const row = await sealed({ ...m, author_type: m.author_type !== undefined ? m.author_type : authorTypeOf(m.role, m.author) }, m.conversation_id);
   const query = m.inbound_key ? db.from("messages").upsert(row, { onConflict: "inbound_key", ignoreDuplicates: true }) : db.from("messages").insert(row);
   const { data, error } = await query.select("id");
@@ -118,7 +118,8 @@ export async function saveMessage(db: SupabaseClient, m: NewMessage, opts: { tou
   const id = (data?.[0]?.id as number | undefined) ?? null;
   if (id !== null && opts.touch) await touchConversation(db, m.conversation_id, { visitorSeen: opts.touch === "visitante" });
   // webhooks (C pública): message.received ou message.sent, depois da resposta ao contato
-  if (id !== null && !opts.deferEvent) await queueMessageEvent(db, id, m);
+  // clique num botão do site: o message.received leva o id e o título (interactive)
+  if (id !== null && !opts.deferEvent) await queueMessageEvent(db, id, m, opts.interactive ? { interactive: opts.interactive } : {});
   return id;
 }
 

@@ -38,6 +38,8 @@ interface TimelineItem {
   avatar?: string | null;
   /** imagem ou documento junto (link de 1 hora) */
   file?: AgentFile | null;
+  /** botões, lista ou link mandados pela integração (API) */
+  components?: MessageComponent | null;
 }
 
 /** Arquivo de uma mensagem de atendente (link assinado de 1 hora, gerado a cada consulta). */
@@ -54,6 +56,7 @@ interface AgentMessage {
   name?: string | null;
   avatar?: string | null;
   file?: AgentFile | null;
+  components?: MessageComponent | null;
 }
 
 /** Quem está atendendo agora (para "Viviane entrou na conversa"). */
@@ -88,7 +91,7 @@ export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState 
         mode: a.mode,
         count: a.count,
         lastAgentId: a.agents.reduce((m, x) => Math.max(m, x.id), 0),
-        timeline: a.agents.map((x) => ({ key: `a${x.id}`, kind: "agent" as const, content: x.content, after: x.after, name: x.name, avatar: x.avatar, file: x.file ?? null })),
+        timeline: a.agents.map((x) => ({ key: `a${x.id}`, kind: "agent" as const, content: x.content, after: x.after, name: x.name, avatar: x.avatar, file: x.file ?? null, components: x.components ?? null })),
       };
     case "count":
       return a.n === s.count ? s : { ...s, count: a.n };
@@ -97,7 +100,7 @@ export function handoffReducer(s: HandoffState, a: HandoffAction): HandoffState 
     case "agent": {
       const fresh = a.messages.filter((m) => !s.timeline.some((x) => x.key === `a${m.id}`));
       if (!fresh.length) return s;
-      return { ...s, lastAgentId: Math.max(s.lastAgentId, ...fresh.map((m) => m.id)), timeline: [...s.timeline, ...fresh.map((m) => ({ key: `a${m.id}`, kind: "agent" as const, content: m.content, after: s.count, name: m.name, avatar: m.avatar, file: m.file ?? null }))] };
+      return { ...s, lastAgentId: Math.max(s.lastAgentId, ...fresh.map((m) => m.id)), timeline: [...s.timeline, ...fresh.map((m) => ({ key: `a${m.id}`, kind: "agent" as const, content: m.content, after: s.count, name: m.name, avatar: m.avatar, file: m.file ?? null, components: m.components ?? null }))] };
     }
     case "server": {
       if (a.mode === s.mode) return s;
@@ -351,7 +354,7 @@ export function ChatWindow({
         const ui: UIMessage[] = [];
         const agents: Array<AgentMessage & { after: number }> = [];
         for (const m of j.messages ?? []) {
-          if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length, name: m.name, avatar: m.avatar, file: m.file ?? null });
+          if (m.role === "agent") agents.push({ id: m.id, content: m.content, after: ui.length, name: m.name, avatar: m.avatar, file: m.file ?? null, components: m.components ?? null });
           else ui.push({ id: `h${m.id}`, role: m.role === "user" ? "user" : "assistant", parts: [{ type: "text", text: m.content }, ...(m.components ? [{ type: "data-components" as const, data: m.components }] : [])] });
         }
         setMessages(ui);
@@ -417,6 +420,9 @@ export function ChatWindow({
   };
 
   const showSuggestions = messages.length === 0 && bot.suggestedQuestions.length > 0;
+  // botões de uma mensagem da equipe ou da integração: só a última coisa da conversa aceita toque
+  const lastExtra = timeline[timeline.length - 1];
+  const extraActive = (x: TimelineItem) => x.key === lastExtra?.key && x.after >= messages.length && !busy;
 
   // botão "Falar com uma pessoa": pede atendente sem passar pela IA (a conversa vai para a equipe)
   const [askingHuman, setAskingHuman] = useState(false);
@@ -477,7 +483,7 @@ export function ChatWindow({
             ))}
           </div>
         )}
-        {timeline.filter((x) => x.after === 0).map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} />)}
+        {timeline.filter((x) => x.after === 0).map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} color={bot.color} active={extraActive(x)} onPick={send} />)}
         {messages.map((m, i) => {
           const t = textOf(m);
           const extras = timeline.filter((x) => x.after === i + 1);
@@ -489,11 +495,11 @@ export function ChatWindow({
                 </Bubble>
               )}
               {m.role === "assistant" && componentOf(m) && <ComponentView component={componentOf(m)!} color={bot.color} active={i === messages.length - 1 && !busy && mode !== "agent"} onPick={send} />}
-              {extras.map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} />)}
+              {extras.map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} color={bot.color} active={extraActive(x)} onPick={send} />)}
             </Fragment>
           );
         })}
-        {timeline.filter((x) => x.after > messages.length).map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} />)}
+        {timeline.filter((x) => x.after > messages.length).map((x) => <Extra key={x.key} item={x} label={`Equipe ${bot.clientName}`} botName={bot.name} color={bot.color} active={extraActive(x)} onPick={send} />)}
         {mode !== "bot" && (
           <div className="self-center rounded-full bg-white px-3 py-1 text-center text-[12px] text-[#4c5551] shadow-sm">
             {mode === "agent" ? "Você está falando com uma pessoa da equipe" : "Avisamos a equipe. Alguém vai responder aqui."}
@@ -613,8 +619,16 @@ function ContactFallback({ bot, apiBase, conversationId, message }: { bot: ChatB
   );
 }
 
-function Extra({ item, label, botName }: { item: TimelineItem; label: string; botName: string }) {
-  if (item.kind === "agent") return <AgentBubble label={item.name ?? label} avatar={item.avatar ?? null} file={item.file ?? null}>{item.file ? fileCaption(item.content) : item.content}</AgentBubble>;
+function Extra({ item, label, botName, color, active, onPick }: { item: TimelineItem; label: string; botName: string; color: string; active: boolean; onPick: (text: string, buttonId: string) => void }) {
+  if (item.kind === "agent")
+    return (
+      <>
+        <AgentBubble label={item.name ?? label} avatar={item.avatar ?? null} file={item.file ?? null}>
+          {item.file ? fileCaption(item.content) : item.content}
+        </AgentBubble>
+        {item.components && <ComponentView component={item.components} color={color} active={active} onPick={onPick} />}
+      </>
+    );
   return (
     <div className="self-center rounded-full bg-[#e9ecef] px-3 py-1 text-center text-[12px] text-[#4c5551]">
       {item.kind === "joined" ? (item.name ? `${item.name} entrou na conversa.` : "Uma pessoa da equipe entrou na conversa.") : `Atendimento encerrado. ${botName} voltou a responder.`}

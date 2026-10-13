@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { callAction, needsConfirmation, paramsProblems, reaches, type ActionLevel, type ActionRow, type CallContact, type CallResult } from "./actions";
 import { gateActionData, idLabels, saveIdMap } from "./action-gate";
 import { openConfirmation, type Caller } from "./action-confirm";
+import { ComponentProblem, materializeComponent, parseComponentInput } from "./component-input";
 import type { MessageComponent } from "./components";
 import { firstExceeded } from "./rate-limit";
 import { hiddenNote } from "./gate/context";
@@ -139,18 +140,40 @@ export interface ShapeInput {
   regulatedAt: string | null;
 }
 
+/** O que a IA lê sobre os botões que a ação mandou junto (a mensagem dela vai com eles). Pura. */
+export function componentNote(c: MessageComponent): Record<string, unknown> {
+  if (c.type === "link") return { link: c.label, instrucao_botoes: "Um botão com esse link vai junto da sua resposta: não escreva o endereço." };
+  return { botoes: c.options.map((x) => x.title), instrucao_botoes: "Essas opções vão como botões junto da sua resposta: não repita a lista inteira; diga para a pessoa tocar numa delas." };
+}
+
+/** components do retorno de uma ação: conferido e convertido (botão com ação vira referência). Fora do formato: aviso no log e nada vai. */
+async function actionComponent(db: SupabaseClient, i: ShapeInput, raw: unknown): Promise<MessageComponent | null> {
+  if (raw === undefined || raw === null) return null;
+  try {
+    const input = parseComponentInput(raw);
+    const gate = i.gateChannel === "widget" ? null : { channel: i.gateChannel, contactPhone: i.waPhone, exempt: i.exempt };
+    return (await materializeComponent(db, input, { bot: i.bot, conversationId: i.conversationId, gate, strict: false })).component;
+  } catch (e) {
+    if (!(e instanceof ComponentProblem)) throw e;
+    console.warn("ação: components fora do formato", e.field, e.message);
+    return null;
+  }
+}
+
 /**
  * O resultado de uma chamada como a IA recebe: o data pelo portão do canal (o que sai entra no mapa
- * de ids; o resto, com o rótulo, para o resumo do Confirmar), o reply conferido e o internal com a
- * regra de nunca citar. reply: o texto exato que vai ao contato (null se não veio ou caiu).
+ * de ids; o resto, com o rótulo, para o resumo do Confirmar), o reply conferido, o internal com a
+ * regra de nunca citar e os components convertidos. reply: o texto exato que vai ao contato (null
+ * se não veio ou caiu); component: botões, lista ou link que vão junto do texto.
  */
-export async function shapeActionResult(db: SupabaseClient, i: ShapeInput, r: CallResult, o: { execute?: boolean } = {}): Promise<{ output: Record<string, unknown>; reply: string | null; internal: string[] }> {
-  if (r.status === "not_found") return { output: { ok: false, motivo: "nao_encontrado", detalhe: r.error ?? null }, reply: null, internal: [] };
+export async function shapeActionResult(db: SupabaseClient, i: ShapeInput, r: CallResult, o: { execute?: boolean } = {}): Promise<{ output: Record<string, unknown>; reply: string | null; internal: string[]; component: MessageComponent | null }> {
+  if (r.status === "not_found") return { output: { ok: false, motivo: "nao_encontrado", detalhe: r.error ?? null }, reply: null, internal: [], component: null };
   if (r.status !== "ok")
     return {
       output: { ok: false, motivo: "falha", instrucao: o.execute ? "Diga que não conseguiu concluir agora e ofereça tentar de novo daqui a pouco ou falar com alguém da equipe." : "Diga que não conseguiu consultar agora e siga a conversa (sem inventar o resultado)." },
       reply: null,
       internal: [],
+      component: null,
     };
 
   // portão do canal no data (como na base): o que sai entra no mapa de ids da conversa
@@ -175,10 +198,12 @@ export async function shapeActionResult(db: SupabaseClient, i: ShapeInput, r: Ca
   const aviso = [hiddenAviso, shownAviso].filter(Boolean).join(" ") || null;
   // o que saiu, para o histórico: por idade (vale até o "Sim") e proibido (vale sempre)
   const byAge = gated.hidden.filter((c) => CATEGORIES[c].level === "regulamentado");
+  const component = await actionComponent(db, i, r.components);
   return {
     output: {
       ok: true,
       data: gated.data,
+      ...(component ? componentNote(component) : {}),
       ...(aviso ? { aviso } : {}),
       // só para decidir o que dizer: a resposta é conferida antes de sair (internal-guard.ts)
       ...(r.internal ? { interno: r.internal, instrucao_interno: INTERNAL_RULE } : {}),
@@ -189,6 +214,7 @@ export async function shapeActionResult(db: SupabaseClient, i: ShapeInput, r: Ca
     },
     reply,
     internal: r.internal ? internalTerms(r.internal) : [],
+    component,
   };
 }
 
@@ -203,6 +229,8 @@ export interface ActionToolsInput extends CallerInput {
   onInternal?: (terms: string[]) => void;
   /** Resumo com Confirmar e Cancelar desta vez (a vez acaba; o canal manda os botões). */
   onConfirm?: (c: { text: string; component: MessageComponent }) => void;
+  /** Botões, lista ou link devolvidos por uma ação: vão junto do texto desta vez (a IA ainda escreve). */
+  onComponent?: (c: MessageComponent) => void;
   /** Vez logo depois de um Confirmar: sem ações com Confirmar (nunca outra confirmação na mesma vez). */
   confirmRound?: boolean;
   /** Para o portão de parâmetros (etapa de IA): a agência paga a classificação. */
@@ -264,6 +292,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         const shaped = await shapeActionResult(db, shape, r);
         if (shaped.reply) i.onReply(shaped.reply);
         if (shaped.internal.length) i.onInternal?.(shaped.internal);
+        if (shaped.component) i.onComponent?.(shaped.component);
         return shaped.output;
       },
     });

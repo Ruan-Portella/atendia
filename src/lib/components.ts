@@ -10,14 +10,19 @@ import { isChatLink } from "./gate/sales-channel";
  *    aparecem). Site: botões.
  *  - link: WhatsApp, botão com link (CTA URL); Instagram, o link no texto; site, botão.
  * O clique volta para a IA como mensagem com o título da opção. Um componente por mensagem.
+ * Ações e API (C pública, parte 5b) usam o mesmo formato: a lista pode vir pedida (list), com a
+ * descrição de cada item e o rótulo do botão que abre a lista; botão com ação leva o id de uma
+ * referência (bvc:<ref>:acao), resolvido sem IA (action-confirm.ts).
  */
 
 export interface OptionItem {
   id: string;
   title: string;
+  /** Linha de baixo do item da lista (até 72 caracteres). */
+  description?: string;
 }
 
-export type MessageComponent = { type: "options"; options: OptionItem[] } | { type: "link"; url: string; label: string };
+export type MessageComponent = { type: "options"; options: OptionItem[]; list?: boolean; button?: string } | { type: "link"; url: string; label: string };
 
 export const LIMITS = { buttons: 3, buttonTitle: 20, list: 10, listTitle: 24, listDetail: 72, title: 60, linkLabel: 20, body: 1024, text: 600 } as const;
 
@@ -147,18 +152,23 @@ export function parseComponents(json: string | null | undefined): MessageCompone
 /** WhatsApp: botões de resposta, lista interativa ou botão com link. Pura. */
 export type WhatsAppPlan =
   | { kind: "buttons"; buttons: Array<{ id: string; title: string }> }
-  | { kind: "list"; rows: Array<{ id: string; title: string; description?: string }> }
+  | { kind: "list"; button: string; rows: Array<{ id: string; title: string; description?: string }> }
   | { kind: "link"; label: string; url: string };
+
+/** Rótulo padrão do botão que abre a lista. */
+export const LIST_BUTTON = "Ver opções";
 
 export function whatsappPlan(c: MessageComponent): WhatsAppPlan {
   if (c.type === "link") return { kind: "link", label: c.label, url: c.url };
-  if (asButtons(c.options)) return { kind: "buttons", buttons: c.options.map((o) => ({ id: o.id, title: o.title })) };
-  // título cortado na lista: o inteiro vai na descrição do item
+  if (!c.list && asButtons(c.options)) return { kind: "buttons", buttons: c.options.map((o) => ({ id: o.id, title: o.title })) };
+  // título cortado na lista: o inteiro vai na descrição do item (se o item não trouxe a dele)
   return {
     kind: "list",
+    button: shortTitle(c.button?.trim() || LIST_BUTTON, LIMITS.buttonTitle),
     rows: c.options.map((o) => {
       const title = shortTitle(o.title, LIMITS.listTitle);
-      return { id: o.id, title, ...(title !== o.title ? { description: o.title.slice(0, LIMITS.listDetail) } : {}) };
+      const description = o.description ?? (title !== o.title ? o.title : undefined);
+      return { id: o.id, title, ...(description ? { description: description.slice(0, LIMITS.listDetail) } : {}) };
     }),
   };
 }

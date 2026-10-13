@@ -22,6 +22,7 @@ describe("POST /v1/messages: o corpo (C pública, parte 3b)", () => {
       type: "text",
       text: "Seu pedido saiu",
       file: null,
+      components: null,
       agentName: "Ana",
       sender: "zendesk",
     });

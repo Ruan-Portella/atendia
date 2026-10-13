@@ -183,7 +183,8 @@ describe("chamada confirmada", () => {
   });
 
   it("depois do Confirmar, a IA escreve a partir do resultado e o histórico diz o que houve", () => {
-    expect(confirmedNote("criar_pedido", { ok: true, data: { pedido: "T-1" }, confirmada: true })).toMatch(/acabou de ser executada[\s\S]*T-1[\s\S]*cite o número do pedido/);
+    expect(confirmedNote("criar_pedido", { ok: true, data: { pedido: "T-1" }, confirmada: true })).toMatch(/tocou em Confirmar e a ação acao_criar_pedido foi chamada agora[\s\S]*T-1[\s\S]*cite o número do pedido/);
+    expect(confirmedNote("adicionar", { ok: true, data: {} }, "botao")).toMatch(/^A pessoa tocou num botão/);
     expect(confirmedNote("criar_pedido", { ok: false, motivo: "falha" })).toMatch(/falhou/);
     expect(confirmedNote("criar_pedido", { ok: false, motivo: "nao_encontrado", detalhe: "item esgotado" })).toMatch(/não encontrou/);
     expect(actionsNote([{ name: "acao_criar_pedido", input: { itens: ["101"] }, output: { ok: true, confirmacao: "enviada" } }])).toMatch(/resumo com Confirmar e Cancelar enviado/);

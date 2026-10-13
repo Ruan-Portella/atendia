@@ -1,5 +1,6 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { unseal } from "./secret-box";
+import type { WhatsAppPlan } from "./components";
 
 /**
  * Cloud API do WhatsApp (Meta): envio de mensagens, cadastro incorporado e conferência do webhook.
@@ -142,8 +143,12 @@ export async function enableIdentityCheck(ch: WaChannel) {
   return graph<{ success?: boolean }>(`${ch.phone_number_id}/settings`, channelToken(ch), { body: { user_identity_change: { enable_identity_key_check: true } } });
 }
 
+/** callbackData (o status da Meta volta com ele) e prazo, como no texto. */
+type InteractiveOpts = { callbackData?: string; timeoutMs?: number };
+const callbackOf = (o: InteractiveOpts) => (o.callbackData ? { biz_opaque_callback_data: o.callbackData } : {});
+
 /** Texto com até 3 botões de resposta (título de até 20 caracteres; o id volta no clique). */
-export async function sendButtons(ch: WaChannel, to: string, body: string, buttons: Array<{ id: string; title: string }>) {
+export async function sendButtons(ch: WaChannel, to: string, body: string, buttons: Array<{ id: string; title: string }>, opts: InteractiveOpts = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: {
       messaging_product: "whatsapp",
@@ -151,18 +156,21 @@ export async function sendButtons(ch: WaChannel, to: string, body: string, butto
       ...recipientOf(to),
       type: "interactive",
       interactive: { type: "button", body: { text: body.slice(0, 1024) }, action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) } },
+      ...callbackOf(opts),
     },
+    timeoutMs: opts.timeoutMs,
   });
 }
 
 /** Lista interativa (até 10 itens; título de até 24 caracteres e descrição de até 72; o id volta no clique). */
-export async function sendList(ch: WaChannel, to: string, body: string, button: string, rows: Array<{ id: string; title: string; description?: string }>) {
+export async function sendList(ch: WaChannel, to: string, body: string, button: string, rows: Array<{ id: string; title: string; description?: string }>, opts: InteractiveOpts = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: {
       messaging_product: "whatsapp",
       recipient_type: "individual",
       ...recipientOf(to),
       type: "interactive",
+      ...callbackOf(opts),
       interactive: {
         type: "list",
         body: { text: body.slice(0, 1024) },
@@ -172,11 +180,12 @@ export async function sendList(ch: WaChannel, to: string, body: string, button: 
         },
       },
     },
+    timeoutMs: opts.timeoutMs,
   });
 }
 
 /** Texto com um botão que abre um link (CTA URL; rótulo de até 20 caracteres). */
-export async function sendCtaUrl(ch: WaChannel, to: string, body: string, label: string, url: string) {
+export async function sendCtaUrl(ch: WaChannel, to: string, body: string, label: string, url: string, opts: InteractiveOpts = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: {
       messaging_product: "whatsapp",
@@ -184,8 +193,17 @@ export async function sendCtaUrl(ch: WaChannel, to: string, body: string, label:
       ...recipientOf(to),
       type: "interactive",
       interactive: { type: "cta_url", body: { text: body.slice(0, 1024) }, action: { name: "cta_url", parameters: { display_text: label.slice(0, 20), url } } },
+      ...callbackOf(opts),
     },
+    timeoutMs: opts.timeoutMs,
   });
+}
+
+/** Botões, lista ou link já convertidos para o WhatsApp (whatsappPlan), com o texto no corpo. */
+export async function sendPlan(ch: WaChannel, to: string, body: string, plan: WhatsAppPlan, opts: InteractiveOpts = {}) {
+  if (plan.kind === "buttons") return sendButtons(ch, to, body, plan.buttons, opts);
+  if (plan.kind === "list") return sendList(ch, to, body, plan.button, plan.rows, opts);
+  return sendCtaUrl(ch, to, body, plan.label, plan.url, opts);
 }
 
 /**

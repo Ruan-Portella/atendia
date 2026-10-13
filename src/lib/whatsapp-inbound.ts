@@ -512,7 +512,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
             if (long && body.trim()) await reply(text);
             const short = long ? SHORT_BODY[component.type === "link" ? "link" : "options"] : body;
             const sent =
-              plan.kind === "buttons" ? await sendButtons(channel, waId, short, plan.buttons) : plan.kind === "list" ? await sendList(channel, waId, short, "Ver opções", plan.rows) : await sendCtaUrl(channel, waId, short, plan.label, plan.url);
+              plan.kind === "buttons" ? await sendButtons(channel, waId, short, plan.buttons) : plan.kind === "list" ? await sendList(channel, waId, short, plan.button, plan.rows) : await sendCtaUrl(channel, waId, short, plan.label, plan.url);
             return sent.messages?.[0]?.id ?? null;
           }
           // mensagem com botão tem no máximo 1.024 caracteres: resposta longa vai inteira e o botão logo depois
