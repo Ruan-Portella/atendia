@@ -27,7 +27,9 @@ export function gateComponent(c: MessageComponent | null, input: ComponentGateIn
   let component: MessageComponent | null = c;
   if (c?.type === "options") {
     const kept = c.options.filter((o) => passes(o.title));
-    component = kept.length ? { type: "options", options: kept.map((o, i) => ({ id: `op_${i + 1}`, title: o.title })) } : null;
+    // as opções da IA (op_N) são renumeradas; os outros ids (Confirmar de uma ação, botões do
+    // portão) seguem como vieram: o clique é resolvido por eles
+    component = kept.length ? { type: "options", options: kept.map((o, i) => ({ id: /^op_\d+$/.test(o.id) ? `op_${i + 1}` : o.id, title: o.title })) } : null;
   } else if (c?.type === "link") {
     component = passes(`${c.label} ${c.url}`) ? c : null;
   }

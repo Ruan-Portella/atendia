@@ -100,9 +100,19 @@ export function shortcutTarget(choice: { pos: 1 | 2; number: boolean }, last: Me
 
 /* ------------------------------------------------------------------ resumo */
 
-const humanize = (name: string) => {
-  const t = name.replace(/_/g, " ").trim();
-  return t.charAt(0).toUpperCase() + t.slice(1);
+const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+/** Rótulo do parâmetro: a descrição do dev, se curta ("endereço de entrega"), senão o nome. */
+const labelFor = (name: string, description?: string) => {
+  const d = description?.trim();
+  return capitalize(d && d.length <= 30 && !/[,;:()]/.test(d) ? d : name.replace(/_/g, " ").trim());
+};
+/** Valor com cara de código (tem número): é o que o aviso de "não consegui conferir" cita. */
+const looksLikeCode = (v: string) => /\d/.test(v) && v.length <= 40;
+/** "2x calabresa, coca": repetidos contados, na ordem em que apareceram. */
+const counted = (values: string[]) => {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return [...counts].map(([v, n]) => `${n > 1 ? `${n}x ` : ""}${v}`);
 };
 /** Parâmetro que leva código de item (id, sku, codigo, ref, itens, produtos). */
 const ID_PARAM = /(^|_)(ids?|skus?|codigos?|refs?|itens|items?|produtos?)$/i;
@@ -127,15 +137,13 @@ export function confirmationLines(schema: ParamsSchema, params: Record<string, u
     const v = params[name];
     if (v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length)) continue;
     const values = Array.isArray(v) ? v : [v];
-    for (const x of values) if (ID_PARAM.test(name) && (typeof x === "string" || typeof x === "number") && !labelOf(x)) unresolved.push(show(x));
+    for (const x of values) if (ID_PARAM.test(name) && (typeof x === "string" || typeof x === "number") && !labelOf(x) && looksLikeCode(show(x))) unresolved.push(show(x));
     if (Array.isArray(v) && v.every((x) => labelOf(x))) {
       // itens do mapa: um por linha, com a quantidade ("2x Pizza Calabresa")
-      const counts = new Map<string, number>();
-      for (const x of v) counts.set(labelOf(x)!, (counts.get(labelOf(x)!) ?? 0) + 1);
-      for (const [label, n] of counts) lines.push(`• ${n > 1 ? `${n}x ` : ""}${label}`);
+      for (const item of counted(v.map((x) => labelOf(x)!))) lines.push(`• ${item}`);
       continue;
     }
-    lines.push(`• ${humanize(name)}: ${values.map((x) => labelOf(x) ?? show(x)).join(", ")}`);
+    lines.push(`• ${labelFor(name, schema.properties?.[name]?.description)}: ${counted(values.map((x) => labelOf(x) ?? show(x))).join(", ")}`);
   }
   return { lines: lines.slice(0, 15), unresolved: [...new Set(unresolved)].slice(0, 10) };
 }

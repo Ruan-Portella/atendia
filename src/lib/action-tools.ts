@@ -30,7 +30,7 @@ export const ACTION_RULE = "Chame a cada pergunta que precise desses dados, mesm
 
 /** Regra das ações que fazem algo de verdade: a confirmação é do BoaVoz, por botão. */
 export const CONFIRM_RULE =
-  "Esta ação faz uma operação de verdade (cria, altera ou cancela). Chame quando a pessoa já disse o que quer, com todos os dados obrigatórios (nunca vazio nem inventado): o sistema mostra a ela um resumo com os botões Confirmar e Cancelar e só executa depois do Confirmar. Em boavoz_resumo, escreva uma frase curta que apresenta o resumo (ex.: \"Confere o seu pedido:\"). Nunca diga que já foi feito antes da confirmação.";
+  "Esta ação faz uma operação de verdade (cria, altera ou cancela). Chame quando a pessoa já disse o que quer, com todos os dados obrigatórios (nunca vazio nem inventado): o sistema mostra a ela um resumo com os botões Confirmar e Cancelar e só executa depois do Confirmar. Parâmetro que pede id ou código de item leva o id que uma ação de consulta devolveu nesta conversa (se ainda não consultou, chame a consulta antes); nunca escreva o nome no lugar do id. Em boavoz_resumo, escreva uma frase curta que apresenta o resumo (ex.: \"Confere o seu pedido:\"), sem repetir os itens. Nunca diga que já foi feito antes da confirmação.";
 
 /** O que a IA recebe depois de abrir a confirmação (a vez acaba aqui). */
 export const CONFIRM_SENT_NOTE = "O resumo com os botões Confirmar e Cancelar vai para a pessoa agora. Nada foi feito ainda: só depois do Confirmar.";

@@ -85,6 +85,14 @@ describe("resumo do Confirmar", () => {
     });
   });
 
+  it("nome no lugar do código: aparece contado, sem o aviso (o aviso é só para código)", () => {
+    const s: ParamsSchema = { type: "object", properties: { itens: { type: "array", items: { type: "string" } }, endereco: { type: "string", description: "endereço de entrega" } } };
+    expect(confirmationLines(s, { itens: ["calabresa", "calabresa", "coca"], endereco: "Rua das Flores, 10" }, {}, null)).toEqual({
+      lines: ["• Itens: 2x calabresa, coca", "• Endereço de entrega: Rua das Flores, 10"],
+      unresolved: [],
+    });
+  });
+
   it("código que o mapa não conhece: aparece cru e entra no aviso", () => {
     const r = confirmationLines(schema, { itens: ["101", "999"] }, map, null);
     expect(r.lines).toEqual(["• Itens: Pizza Calabresa, 999"]);

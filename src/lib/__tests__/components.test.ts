@@ -87,6 +87,11 @@ describe("portão nos componentes", () => {
     expect(adult.component?.type === "options" && adult.component.options.map((o) => o.title)).toEqual(["Pizza calabresa", "Heineken long neck"]);
   });
 
+  it("ids que não são da IA seguem como vieram (o Confirmar é resolvido pelo id)", () => {
+    const c = { type: "options" as const, options: [{ id: "bvc:0b6d5c1e-2f4a-4c3b-9d8e-7f6a5b4c3d2e:sim", title: "Confirmar" }, { id: "bvc:0b6d5c1e-2f4a-4c3b-9d8e-7f6a5b4c3d2e:nao", title: "Cancelar" }] };
+    expect(gateComponent(c, { ...base, age: null }).component).toEqual(c);
+  });
+
   it("link com item barrado sai", () => {
     expect(gateComponent({ type: "link", url: "https://x.com.br/cigarro", label: "Comprar cigarro" }, { ...base, age: "sim" }).component).toBeNull();
     expect(gateComponent({ type: "link", url: "https://x.com.br/cardapio", label: "Cardápio" }, { ...base, age: null }).component).not.toBeNull();
