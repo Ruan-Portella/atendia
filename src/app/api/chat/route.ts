@@ -3,7 +3,10 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { CORS_HEADERS, SYSTEM_AUTHOR, appendSiteOffer, conversationHistory, lastUserText, openConversation, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { CORS_HEADERS, SYSTEM_AUTHOR, appendSiteOffer, conversationHistory, lastUserText, openConversation, requestHandoff, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { resolveConfirmClick } from "@/lib/action-confirm";
+import { callerFor, shapeActionResult } from "@/lib/action-tools";
+import type { MessageComponent } from "@/lib/components";
 import { handleSiteOptIn } from "@/lib/site-optin";
 import { handleErasureRequest } from "@/lib/data-subject";
 import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
@@ -27,10 +30,30 @@ const bodySchema = z.object({
   text: z.string().optional(),
   /** Formato antigo (aba aberta antes da atualização): só a última fala do visitante é usada. */
   messages: z.array(z.any()).max(200).optional(),
+  /** Botão tocado (Confirmar, Cancelar, "Tentar de novo"): o clique é resolvido pelo id, nunca pelo título. */
+  buttonId: z.string().max(120).nullable().optional(),
 });
 
 const FALLBACK_MESSAGE = "No momento não consigo responder por aqui. Deixe seu contato que a equipe retorna em breve.";
 const contactFallback = (error: string, status: number) => Response.json({ error, fallback: "contact", message: FALLBACK_MESSAGE }, { status, headers: CORS_HEADERS });
+
+/** Resposta fixa sem IA (texto, e os botões ou o sinal de atendente quando houver). */
+function fixedStream(id: string, text: string, headers: Record<string, string>, o: { component?: MessageComponent | null; handoff?: boolean } = {}) {
+  return createUIMessageStreamResponse({
+    stream: createUIMessageStream({
+      execute: ({ writer }) => {
+        writer.write({ type: "start" });
+        if (o.handoff) writer.write({ type: "data-handoff", data: true });
+        writer.write({ type: "text-start", id });
+        writer.write({ type: "text-delta", id, delta: text });
+        writer.write({ type: "text-end", id });
+        if (o.component) writer.write({ type: "data-components", data: o.component });
+        writer.write({ type: "finish" });
+      },
+    }),
+    headers,
+  });
+}
 
 export async function OPTIONS() {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -193,6 +216,44 @@ export async function POST(req: Request) {
     return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" || reason === "plan_paused" ? 503 : 402);
   }
 
+  // Confirmar, Cancelar ou "Tentar de novo" de uma ação "executa" (C pública, parte 5a): o clique é
+  // resolvido pelo id do botão (ou pelo atalho "sim" logo depois do resumo), sem IA
+  let confirmed: Parameters<typeof runChat>[0]["confirmed"];
+  if (convId) {
+    const id = convId;
+    const identity = chatIdentityOf(who);
+    const click = await resolveConfirmClick(db, {
+      bot,
+      conversationId: id,
+      buttonId: parsed.data.buttonId ?? null,
+      text,
+      alone: true,
+      key: `site:${crypto.randomUUID()}`,
+      caller: () => callerFor(db, { bot, conversationId: id, channel, waPhone: null, age: null, identity }),
+    });
+    if (click.kind !== "none") {
+      const headers = { ...CORS_HEADERS, "X-Conversation-Id": id, "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" };
+      if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: id, ip: clientIp(req), isNew: false }));
+      await saveMessage(db, { conversation_id: id, role: "user", content: text }, { touch: "visitante" });
+      if (click.kind === "fixed") {
+        await saveMessage(db, { conversation_id: id, role: "assistant", content: click.text, author: SYSTEM_AUTHOR, components: click.component ?? null });
+        return fixedStream("confirmar", click.text, headers, { component: click.component });
+      }
+      if (click.kind === "handoff") {
+        const notice = await requestHandoff(db, bot, id, "Pedido sem confirmação: o contato pediu para falar com alguém");
+        await saveMessage(db, { conversation_id: id, role: "assistant", content: notice, author: SYSTEM_AUTHOR });
+        return fixedStream("confirmar", notice, { ...headers, "X-Handoff": "requested" }, { handoff: true });
+      }
+      // no site não há trava do BoaVoz: o data e o reply saem como vieram
+      const shaped = await shapeActionResult(db, { bot, conversationId: id, gateChannel: "widget", waPhone: null, age: null, regulatedAt: null }, click.call, { execute: true });
+      if (shaped.reply) {
+        await saveMessage(db, { conversation_id: id, role: "assistant", content: shaped.reply });
+        return fixedStream("confirmar", shaped.reply, headers);
+      }
+      confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal };
+    }
+  }
+
   // cota do mês: o atendimento deste visitante (24 horas) abre antes de chamar a IA; o teste ao
   // vivo do painel e as demos não contam. Sem vaga: formulário de contato
   const slot = channel === "widget" && !bot.is_demo ? await openAtendimento(db, bot, { channel: "widget", contactKey: (who.kind === "token" ? who.identityHash : null) ?? visitorId ?? convId ?? crypto.randomUUID(), conversationId: convId }) : null;
@@ -203,7 +264,10 @@ export async function POST(req: Request) {
     const { result, conversationId: activeId, siteOffer } = await runChat({
       db,
       bot,
-      messages: [...history, { id: "novo", role: "user", parts: [{ type: "text", text }] }],
+      // depois do Confirmar, o clique já está gravado (e já vem no histórico)
+      messages: confirmed ? history : [...history, { id: "novo", role: "user", parts: [{ type: "text", text }] }],
+      storeQuestion: !confirmed,
+      confirmed,
       conversationId: convId,
       visitorId: visitorId ?? null,
       channel: bot.is_demo ? "demo" : channel,

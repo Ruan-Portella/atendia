@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
+import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, requestHandoff, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
 import { deliver } from "../send";
 import { deleteMessage } from "../messages";
 import { storeOnce } from "../whatsapp-inbound";
@@ -17,6 +17,9 @@ import { botGateExemptions } from "./exceptions";
 import { idMapCategories, idMapLinks, openIdMap } from "../action-gate";
 import { openNullable, sealField, scopeOfConversation } from "../field-cipher";
 import { activeLinkOf, chatIdentityFromLink, contextSwitchTool } from "../pairing";
+import { callerFor, shapeActionResult } from "../action-tools";
+import { isConfirmComponent, parseConfirmButton, resolveConfirmClick } from "../action-confirm";
+import { setRefStatus } from "../button-refs";
 import { INTERNAL_FALLBACK, stripInternal } from "../internal-guard";
 import { CATEGORIES, GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
@@ -124,6 +127,15 @@ export interface GateQuestion {
   stored: boolean;
   /** Botão tocado (id), quando houver. */
   button?: string | null;
+  /** Só esta mensagem com texto no lote (o atalho "sim" do Confirmar só vale sozinho). */
+  alone?: boolean;
+}
+
+/** O contato vinculado (pareamento): nível usuario e o contexto ativo. */
+async function linkIdentity(db: SupabaseClient, contactId: string | null) {
+  const links = contactId ? await activeLinkOf(db, contactId) : null;
+  const identity = links?.active ? await chatIdentityFromLink(links.active, links.all) : null;
+  return { links, identity };
 }
 
 /** Responde à pergunta passando pelo portão. Erro sobe para o canal (acesso, pagamento, cota). */
@@ -142,8 +154,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
    * Texto fixo da vez do assistente: vai ao contato pela camada única de envio e fica no painel
    * (o aviso de IA não conta esse). Devolve se saiu (alguém pode ter assumido no meio-tempo).
    */
-  const sendFixed = async (text: string, buttons?: GateButtons) => {
-    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR } }, transport: () => io.send(text, buttons) });
+  const sendFixed = async (text: string, buttons?: GateButtons, component: MessageComponent | null = null) => {
+    const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR, ...(component ? { components: component } : {}) } }, transport: () => io.send(text, buttons, component) });
     return r.status === "sent";
   };
   /** reply: resposta exata de uma ação que só esperava o 18+ (sai depois do "Sim", sem chamar de novo). */
@@ -153,6 +165,39 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     const scope = await scopeOfConversation(convId);
     await db.from("conversations").update({ age_pending_question: await sealField("conversations.age_pending_question", question.slice(0, 2000), scope), age_pending_reply_enc: reply ? await sealField("conversations.age_pending_reply_enc", reply, scope) : null, age_asked_at: now, regulated_at: now }).eq("id", convId);
   };
+
+  // 0. Confirmar, Cancelar ou "Tentar de novo" de uma ação "executa" (C pública, parte 5a): o
+  // clique é resolvido pelo id do botão (ou pelo atalho "sim" logo depois do resumo), sem IA
+  const waPhone = channel === "whatsapp" && /^\d+$/.test(contact) ? contact : null;
+  const destinationOf = () => regulatedDestination(bot.regulated_channel, bot.human_handoff?.address);
+  const callerNow = async () => {
+    const { data: row } = await db.from("conversations").select("contact_id").eq("id", convId).maybeSingle();
+    const { identity } = await linkIdentity(db, (row?.contact_id as string | null | undefined) ?? null);
+    return callerFor(db, { bot, conversationId: convId, channel, waPhone, age: await getAge(db, who), contactKey: contact, identity });
+  };
+  const click = await resolveConfirmClick(db, { bot, conversationId: convId, buttonId: q.button ?? null, text: q.text, alone: q.alone !== false, key: q.key, caller: callerNow });
+  let confirmed: Parameters<typeof runChat>[0]["confirmed"];
+  if (click.kind !== "none") {
+    await storeOnce(db, convId, q.text, q.key);
+    if (click.kind === "fixed") return void (await sendFixed(click.text, undefined, click.component ?? null));
+    if (click.kind === "handoff") return void (await sendFixed(await requestHandoff(db, bot, convId, "Pedido sem confirmação: o contato pediu para falar com alguém")));
+    const [age, exempt] = await Promise.all([getAge(db, who), botGateExemptions(db, bot.id)]);
+    const clickRegulatedAt = click.caller.regulatedAt ?? null;
+    const shaped = await shapeActionResult(db, { bot, conversationId: convId, gateChannel: channel, waPhone, age, exempt, destination: destinationOf(), regulatedAt: clickRegulatedAt }, click.call, { execute: true });
+    if (shaped.reply) {
+      // reply exato da ação: sai como veio (ou o texto fixo, se o portão barrar), sem IA
+      const regulatedConversation = clickRegulatedAt !== null && Date.now() - Date.parse(clickRegulatedAt) < REGULATED_WINDOW_MS;
+      const rc = checkActionReply({ text: shaped.reply, channel, contactPhone, age, regulatedConversation, exempt });
+      if (!rc.ok) await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "reply_descartado", categories: [...rc.prohibited, ...rc.regulated] });
+      const text = rc.ok ? shaped.reply : replyFallback(rc, destinationOf());
+      const disclosure = await aiDisclosure(db, bot, convId);
+      const out = disclosure ? `${disclosure}\n\n${text}` : text;
+      await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null, announce_chars: disclosure ? disclosure.length + 2 : null } }, transport: () => io.send(out) });
+      return;
+    }
+    // sem reply: a IA escreve a partir do resultado (a pergunta "Confirmar" já está gravada)
+    confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal };
+  }
 
   // 1. resposta da pergunta de 18+ (ou toque em "Ver opções 18+")
   const { data: pendingRow } = await db.from("conversations").select("age_pending_question, age_pending_reply_enc, age_asked_at, regulated_at, gate_id_map_enc, gate_id_map_expires_at, contact_id, context_since").eq("id", convId).maybeSingle();
@@ -177,10 +222,10 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
       return;
     }
   }
-  // já confirmou e tocou em "Ver opções 18+": segue como um "Sim"
-  const answered = ageAnswer(q.text, q.button, pending) ?? (q.button === AGE_SHOW ? "sim" : null);
+  // já confirmou e tocou em "Ver opções 18+": segue como um "Sim" (o "sim" do Confirmar nunca é resposta de 18+)
+  const answered = confirmed ? null : (ageAnswer(q.text, q.button, pending) ?? (q.button === AGE_SHOW ? "sim" : null));
   let question = q.text;
-  let storeQuestion = true;
+  let storeQuestion = !confirmed;
   let history: UIMessage[];
   if (answered) {
     await storeOnce(db, convId, q.text, q.key);
@@ -214,8 +259,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     }
   } else {
     history = await conversationHistory(db, convId, io.historySize, undefined, since);
-    // no reprocesso a pergunta já está no banco, então já vem no histórico
-    if (!q.stored) history.push({ id: q.msgId, role: "user", parts: [{ type: "text", text: q.text }] });
+    // no reprocesso a pergunta já está no banco, então já vem no histórico (o Confirmar foi gravado acima)
+    if (!q.stored && !confirmed) history.push({ id: q.msgId, role: "user", parts: [{ type: "text", text: q.text }] });
   }
 
   // 2. portão da entrada (o "Não" sempre vence: a idade é lida de novo depois do setAge)
@@ -272,8 +317,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
 
   // contato vinculado (pareamento): nível usuario e o contexto ativo; com 2 contas ou mais, a IA pode trocar
   const contactId = (pendingRow?.contact_id as string | null | undefined) ?? null;
-  const links = contactId ? await activeLinkOf(db, contactId) : null;
-  const identity = links?.active ? await chatIdentityFromLink(links.active, links.all) : null;
+  const { links, identity } = await linkIdentity(db, contactId);
   const extraTools = contactId && links ? contextSwitchTool(db, { contactId, conversationId: convId, links: links.all, activeId: links.active?.id ?? null }) : {};
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
@@ -292,6 +336,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     identity,
     extraTools,
     gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt },
+    confirmed,
   });
   // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
   const savedRaw = joinShownText(await result.text, shownText());
@@ -351,9 +396,15 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const gated = gateComponent(reply ? null : shownComponent(), { channel, contactPhone, age, regulatedConversation, exempt });
   if (gated.prohibited.length || gated.regulated.length) await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "componente", categories: [...gated.prohibited, ...gated.regulated] });
   let component = gated.component;
+  // o portão mexeu no resumo de um Confirmar: os botões não saem (valeriam por um texto que a pessoa não viu)
+  if (isConfirmComponent(component) && (exit.emptied || exit.text !== raw)) {
+    const ref = component?.type === "options" ? parseConfirmButton(component.options[0]?.id) : null;
+    if (ref) await setRefStatus(db, ref.refId, "superseded");
+    component = null;
+  }
   // 18+ sem o "Sim": "Ver opções 18+" vira mais uma opção; sem opções, vai como botão do portão
   const adultOffer = (exit.offerAdult && !exit.emptied) || gated.offerAdult;
-  if (adultOffer && component?.type === "options" && component.options.length < LIMITS.list) component = { type: "options", options: [...component.options, { id: AGE_SHOW, title: GATE_TEXTS.showAdultOptions }] };
+  if (adultOffer && component?.type === "options" && !isConfirmComponent(component) && component.options.length < LIMITS.list) component = { type: "options", options: [...component.options, { id: AGE_SHOW, title: GATE_TEXTS.showAdultOptions }] };
   const adultButton = adultOffer && component?.type !== "options";
   let answer = withRiskText(safe, urgent()).trim();
   if (answer) {

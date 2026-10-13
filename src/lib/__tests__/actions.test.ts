@@ -80,6 +80,7 @@ describe("chamada", () => {
       internal: null,
       attachments: [{ url: "https://x/a.pdf" }],
       outcome: "sem_debito",
+      confirmation: null,
     });
     expect(readResponse(404, JSON.stringify({ error: "pedido 123 não existe" }))).toEqual({ status: "not_found", error: "pedido 123 não existe" });
     expect(readResponse(500, "{}")).toMatchObject({ status: "error", error: "HTTP 500" });

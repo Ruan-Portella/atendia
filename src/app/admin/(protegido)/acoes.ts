@@ -15,7 +15,7 @@ import { audit, requestMeta } from "@/lib/audit";
 import { FEATURES, isFeature, type Feature } from "@/lib/features";
 import { CATEGORIES, type GateCategory } from "@/lib/gate/rules";
 import { analyzeBot, runDueAnalyses } from "@/lib/bot-analysis";
-import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
+import { actionInputProblem, callAction, classifyCreatesOrder, needsConfirmation, rotateActionSecret, type ActionRow } from "@/lib/actions";
 import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey } from "@/lib/api-keys";
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
 import { createWebhook, sendWebhookTest } from "@/lib/webhooks";
@@ -27,7 +27,7 @@ import { deadline, withCronLock } from "@/lib/cron";
 import { costText, createCampaign, estimateFor, runCampaignTick, setCampaignStatus, templateProblem } from "@/lib/campaigns";
 import { whatsappContact } from "@/lib/contacts";
 import { canonicalPhone } from "@/lib/phone";
-import { actionInputFromForm, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
+import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -550,7 +550,7 @@ export async function generateActionSecret(agencyId: string, botId: string, fd: 
   return ok(`${secret}\n\nCopie agora: ele não aparece de novo. ${invalidate ? "O anterior deixou de valer." : "O anterior (se havia) vale por mais 24 horas."}`);
 }
 
-/** Cria ou edita uma ação de consulta. Ação que parece criar pedido, reserva ou cobrança fica salva e desativada. */
+/** Cria ou edita uma ação. Pedido, reserva ou cobrança (classificado pelo BoaVoz) só roda depois do Confirmar do contato. */
 export async function saveAction(agencyId: string, botId: string, actionId: string | null, fd: FormData): Promise<ActionResult> {
   const s = await requireAdmin(`/admin/clientes/${agencyId}/integracoes (${actionId ? "editou" : "criou"} ação)`);
   if (!(await pilotBot(agencyId, botId))) return fail("Chatbot não encontrado nesta agência.");
@@ -561,16 +561,14 @@ export async function saveAction(agencyId: string, botId: string, actionId: stri
   const h = headersFromForm(fd);
   if ("error" in h) return fail(h.error);
   const db = createAdminClient();
-  // efeito classificado pela IA do BoaVoz: pedido, reserva ou cobrança só com confirmação por botão (C pública)
+  // efeito classificado pela IA do BoaVoz: pedido, reserva ou cobrança só depois do Confirmar do contato
   const createsOrder = await classifyCreatesOrder(db, agencyId, input);
-  const row = { bot_id: botId, ...input, ...headersColumn(h.headers), type: "query", active: input.active && !createsOrder, creates_order: createsOrder, updated_at: new Date().toISOString() };
+  const row = { bot_id: botId, ...input, ...headersColumn(h.headers), creates_order: createsOrder, updated_at: new Date().toISOString() };
   const { error } = actionId ? await db.from("actions").update(row).eq("id", actionId).eq("bot_id", botId) : await db.from("actions").insert(row);
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : `Não foi possível salvar: ${error.message}`);
-  await auditAdmin(s.email, actionId ? "acoes.editar" : "acoes.criar", { agencyId, targetType: "bot", targetId: botId, after: { name: input.name, url: input.url, creates_order: createsOrder } });
+  await auditAdmin(s.email, actionId ? "acoes.editar" : "acoes.criar", { agencyId, targetType: "bot", targetId: botId, after: { name: input.name, url: input.url, tipo: input.type, previa: input.supports_preview, creates_order: createsOrder } });
   revalidatePath("/admin", "layout");
-  return createsOrder
-    ? ok(`Ação salva e DESATIVADA: ela parece criar pedido, reserva ou cobrança, e isso precisa da confirmação por botão, que chega na C pública.`)
-    : ok(`Ação ${input.name} salva${input.active ? " e ativa" : " (desativada)"}.`);
+  return ok(actionSavedMessage(input.name, input, createsOrder));
 }
 
 export async function deleteAction(agencyId: string, actionId: string): Promise<ActionResult> {
@@ -595,10 +593,14 @@ export async function testAction(agencyId: string, actionId: string, fd: FormDat
   } catch {
     return fail("Os parâmetros de exemplo não são um JSON válido.");
   }
-  const r = await callAction(db, action as unknown as ActionRow, { params, mode: "test" });
+  const row = action as unknown as ActionRow;
+  // "executa": só com o aviso aceito (chama de verdade, com confirmed: true), ou só a prévia
+  const preview = fd.get("preview") === "on" && row.supports_preview;
+  if (needsConfirmation(row) && !preview && fd.get("real") !== "on") return fail("Esta ação executa de verdade: marque \"isto chama o endpoint de verdade\" (dados de teste) ou teste só a prévia.");
+  const r = await callAction(db, row, preview ? { params, mode: "preview" } : { params, mode: "test", confirmed: needsConfirmation(row) });
   const head = `${r.status.toUpperCase()}${r.httpStatus ? ` · HTTP ${r.httpStatus}` : ""} · ${r.durationMs} ms · ${r.callId}`;
   const lines = [head, ...r.warnings.map((w) => `aviso: ${w}`), ...(r.error ? [`erro: ${r.error}`] : [])];
-  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, internal: r.internal ?? undefined, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined }, null, 2).slice(0, 6000));
+  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, internal: r.internal ?? undefined, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined, confirmation: r.confirmation ?? undefined }, null, 2).slice(0, 6000));
   return r.status === "ok" || r.status === "not_found" ? ok(lines.join("\n")) : fail(lines.join("\n"));
 }
 

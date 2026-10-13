@@ -3,7 +3,7 @@ import { text } from "./validation";
 import { BlockedUrlError, checkUrl } from "./safe-fetch";
 import { WEBHOOK_EVENTS, type WebhookEvent } from "./webhooks";
 import type { ApiKeyScope } from "./api-keys";
-import type { ActionInput, ActionLevel } from "./actions";
+import type { ActionInput, ActionLevel, ActionType } from "./actions";
 import { parseCustomHeaders } from "./custom-headers";
 import { seal, unseal } from "./secret-box";
 
@@ -19,6 +19,8 @@ export interface ActionForm extends ActionInput {
   context_required: "none" | "signed";
   outcomes: string[];
   active: boolean;
+  type: ActionType;
+  supports_preview: boolean;
 }
 
 export function actionInputFromForm(fd: FormData): ActionForm | { error: string } {
@@ -41,7 +43,20 @@ export function actionInputFromForm(fd: FormData): ActionForm | { error: string 
       .map((o) => o.trim())
       .filter(Boolean),
     active: fd.get("active") === "on",
+    type: fd.get("type") === "execute" ? "execute" : "query",
+    supports_preview: fd.get("supports_preview") === "on",
   };
+}
+
+/**
+ * Resultado de salvar uma ação, para o painel e o backoffice: pedido, reserva ou cobrança
+ * (classificado pelo BoaVoz) passa a pedir o Confirmar do contato, mesmo cadastrada como consulta.
+ */
+export function actionSavedMessage(name: string, input: { active: boolean; type: ActionType }, createsOrder: boolean): string {
+  const state = input.active ? " e ativa" : " (desativada)";
+  if (input.type === "execute") return `Ação ${name} salva${state}. É uma "executa": a IA mostra um resumo com Confirmar e Cancelar, e o endpoint só é chamado depois do Confirmar.`;
+  if (createsOrder) return `Ação ${name} salva${state}. Ela parece criar pedido, reserva ou cobrança: mesmo cadastrada como consulta, a IA mostra um resumo com Confirmar e Cancelar, e o endpoint só é chamado depois do Confirmar.`;
+  return `Ação ${name} salva${state}.`;
 }
 
 /**

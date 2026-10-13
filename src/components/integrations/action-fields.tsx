@@ -1,5 +1,5 @@
 import type { ActionResult } from "@/lib/action-result";
-import type { ActionRow } from "@/lib/actions";
+import { needsConfirmation, type ActionRow } from "@/lib/actions";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 
@@ -11,7 +11,7 @@ export const EXAMPLE_SCHEMA = `{
   "required": []
 }`;
 
-/** Cadastro de uma ação de consulta (painel da agência e backoffice dos pilotos). savedHeaders: os nomes já guardados. */
+/** Cadastro de uma ação, consulta ou "executa" (painel da agência e backoffice dos pilotos). savedHeaders: os nomes já guardados. */
 export function ActionFields({ action, a, label, savedHeaders = [] }: { action: (fd: FormData) => Promise<ActionResult>; a?: ActionRow; label: string; savedHeaders?: string[] }) {
   const p = a?.id ?? "nova";
   return (
@@ -35,6 +35,19 @@ export function ActionFields({ action, a, label, savedHeaders = [] }: { action: 
         <textarea id={`schema-${p}`} name="params_schema" rows={6} defaultValue={a ? JSON.stringify(a.params_schema, null, 2) : EXAMPLE_SCHEMA} className="input font-mono text-xs" />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label" htmlFor={`type-${p}`}>Tipo</label>
+          <select id={`type-${p}`} name="type" defaultValue={a?.type ?? "query"} className="input">
+            <option value="query">consulta (só lê: a IA chama na hora)</option>
+            <option value="execute">executa (cria, altera ou cancela: só depois do Confirmar do contato)</option>
+          </select>
+        </div>
+        <div className="flex flex-col justify-end">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="supports_preview" defaultChecked={a?.supports_preview ?? false} /> esta ação aceita prévia (mode: &quot;preview&quot;)
+          </label>
+          <p className="text-xs text-muted">Só marque se o endpoint não cria nada quando recebe mode: &quot;preview&quot; e devolve confirmation {"{summary, items, total_cents}"} para o resumo do Confirmar.</p>
+        </div>
         <div>
           <label className="label" htmlFor={`level-${p}`}>Nível mínimo do contato</label>
           <select id={`level-${p}`} name="min_level" defaultValue={a?.min_level ?? "anonimo"} className="input">
@@ -62,6 +75,31 @@ export function ActionFields({ action, a, label, savedHeaders = [] }: { action: 
       <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Salvando (classificando o efeito)…">
         {label}
       </SubmitButton>
+    </ResultForm>
+  );
+}
+
+/**
+ * Testar: chama o endpoint de verdade com test: true. Numa ação com Confirmar ("executa", ou
+ * pedido, reserva e cobrança), só com o aviso marcado (vai com confirmed: true) ou só a prévia.
+ */
+export function ActionTestForm({ action, a }: { action: (fd: FormData) => Promise<ActionResult>; a: ActionRow }) {
+  const confirm = needsConfirmation(a);
+  return (
+    <ResultForm action={action} className="border-t border-line-2 pt-3">
+      <label className="label" htmlFor={`test-${a.id}`}>Testar (chama o endpoint de verdade, com test: true)</label>
+      <textarea id={`test-${a.id}`} name="params" rows={3} className="input font-mono text-xs" defaultValue="{}" />
+      {confirm && (
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" name="real" /> isto chama meu endpoint de verdade (com confirmed: true); use dados de teste
+        </label>
+      )}
+      {a.supports_preview && (
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" name="preview" /> só a prévia (mode: &quot;preview&quot;: o endpoint não cria nada)
+        </label>
+      )}
+      <SubmitButton className="btn-ghost self-start py-1.5" pendingLabel="Chamando…">Testar</SubmitButton>
     </ResultForm>
   );
 }

@@ -39,6 +39,7 @@ export type CipherField =
   | "webhook_deliveries.payload_enc"
   | "action_calls.request_enc"
   | "action_calls.response_enc"
+  | "button_refs.params_enc"
   | "compliance_checks.summary_enc"
   | "attachments.object"
   | "attachments.filename_enc"

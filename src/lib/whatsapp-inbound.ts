@@ -523,7 +523,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         chat: { whatsapp: { waId, profileName } },
         historySize: HISTORY,
       },
-      { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id ?? q.msg.interactive?.list_reply?.id },
+      { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id ?? q.msg.interactive?.list_reply?.id, alone: texts.filter((t, i) => t && !optOut.handled.has(i)).length === 1 },
     );
     // saiu depois da recusa por pagamento: o cartão entrou, o número volta ao normal
     if (channel.payment_issue_at) await db.from("whatsapp_channels").update({ payment_issue_at: null }).eq("bot_id", bot.id);

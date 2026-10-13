@@ -10,11 +10,14 @@ import type { GateCategory, GateChannel } from "./gate/rules";
  * sai; com item regulamentado (ou marcado regulated: true pelo dev), sai para quem não confirmou
  * 18+. No widget não há trava do BoaVoz. Os objetos que saíram (e o objeto que os contém, o
  * pedido ou carrinho) entram no mapa de ids da conversa por 24 horas: {identificador → categoria,
- * rótulo}, usado pelo portão de parâmetros das ações de pedido (C pública).
+ * rótulo}, usado pelo portão de parâmetros das ações de pedido (C pública). O mapa guarda também o
+ * rótulo dos outros objetos com id (sem categoria), em todos os canais: é com ele que o resumo do
+ * Confirmar mostra "2x Pizza Calabresa" no lugar de ["456", "456"].
  */
 
 export interface IdMapEntry {
-  categoria: GateCategory;
+  /** null: objeto liberado, só o rótulo (para o resumo do Confirmar). */
+  categoria: GateCategory | null;
   rotulo: string | null;
   /** Link do objeto que perdeu itens (o pedido completo, fora do chat). */
   link?: string | null;
@@ -136,7 +139,94 @@ export function gateActionData(data: unknown, o: { channel: GateChannel; contact
  * cerveja vira a pergunta de 18+). Função pura.
  */
 export function idMapCategories(entries: IdMapEntry[]): GateCategory[] {
-  return [...new Set(entries.map((e) => e.categoria))];
+  return [...new Set(entries.flatMap((e) => (e.categoria ? [e.categoria] : [])))];
+}
+
+/** Teto do mapa: os barrados ficam sempre; dos só-rótulo, os mais novos. */
+export const ID_MAP_MAX = 400;
+
+/**
+ * Rótulos dos objetos com id no data que a IA recebeu (já filtrado): {id → nome}, sem categoria.
+ * Função pura.
+ */
+export function idLabels(data: unknown): IdMap {
+  const out: IdMap = {};
+  const visit = (v: unknown, depth: number) => {
+    if (depth > 8 || Object.keys(out).length >= ID_MAP_MAX) return;
+    if (Array.isArray(v)) return v.forEach((x) => visit(x, depth + 1));
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    const label = labelOf(o);
+    if (label) for (const id of idsOf(o)) out[id] = { categoria: null, rotulo: label };
+    for (const child of Object.values(o)) visit(child, depth + 1);
+  };
+  visit(data, 0);
+  return out;
+}
+
+/** Junta o mapa guardado com o novo (o novo vence), no teto. Função pura. */
+export function mergeIdMap(current: IdMap, next: IdMap): IdMap {
+  const merged: IdMap = { ...current };
+  for (const [k, v] of Object.entries(next)) {
+    // um id barrado continua barrado, mesmo que outra consulta traga só o rótulo
+    if (v.categoria === null && merged[k]?.categoria) continue;
+    delete merged[k];
+    merged[k] = v;
+  }
+  const keys = Object.keys(merged);
+  if (keys.length <= ID_MAP_MAX) return merged;
+  const plain = keys.filter((k) => !merged[k].categoria);
+  for (const k of plain.slice(0, keys.length - ID_MAP_MAX)) delete merged[k];
+  return merged;
+}
+
+/** Valores dos parâmetros de uma chamada (listas abertas), como texto. Função pura. */
+export function paramValues(params: Record<string, unknown>): Array<{ name: string; value: string }> {
+  const out: Array<{ name: string; value: string }> = [];
+  for (const [name, v] of Object.entries(params)) {
+    for (const x of Array.isArray(v) ? v : [v]) if (typeof x === "string" || typeof x === "number") out.push({ name, value: String(x) });
+  }
+  return out;
+}
+
+export interface ParamsGateFacts {
+  /** Parâmetros que batem com um objeto barrado do mapa. */
+  mapHits: IdMapEntry[];
+  /** Categorias do dicionário nos valores, nos rótulos resolvidos e na prévia. */
+  dictionary: GateCategory[];
+  /** Algum texto dos parâmetros que o mapa não resolveu. */
+  unresolved: boolean;
+}
+
+/**
+ * Portão de parâmetros (spec "Peça 1"): o que a chamada leva, olhado pelo mapa de ids e pelo
+ * dicionário (nos valores, nos rótulos que o mapa resolveu e no resumo da prévia). Função pura.
+ */
+export function paramsGateFacts(params: Record<string, unknown>, map: IdMap, o: { channel: Exclude<GateChannel, "widget">; contactPhone?: string | null; exempt?: readonly GateCategory[]; preview?: string[] }): ParamsGateFacts {
+  const values = paramValues(params);
+  const mapHits: IdMapEntry[] = [];
+  const texts: string[] = [...(o.preview ?? [])];
+  let unresolved = false;
+  for (const { value } of values) {
+    const hit = map[value];
+    if (hit?.categoria && !o.exempt?.includes(hit.categoria)) mapHits.push(hit);
+    if (hit?.rotulo) texts.push(hit.rotulo);
+    else if (!hit && /[a-zà-ú]/i.test(value)) unresolved = true;
+    texts.push(value);
+  }
+  const hits = texts.length ? dictionaryHits(texts.join(". "), { channel: o.channel, contactPhone: o.contactPhone, exempt: o.exempt }) : [];
+  return { mapHits, dictionary: [...new Set(hits.filter((h) => h.level === "proibido" || h.level === "regulamentado").map((h) => h.category))], unresolved };
+}
+
+/**
+ * O que fazer com a chamada (pura): pedido, reserva ou cobrança com item barrado do mapa ou do
+ * dicionário é barrado direto (o rótulo só aperta); dicionário numa outra "executa", ou pedido com
+ * parâmetro que o mapa não resolveu, vai para a etapa de IA.
+ */
+export function paramsGateDecision(f: ParamsGateFacts, createsOrder: boolean): "liberar" | "barrar" | "perguntar_ia" {
+  if (createsOrder && (f.mapHits.length || f.dictionary.length)) return "barrar";
+  if (f.dictionary.length || (createsOrder && f.unresolved)) return "perguntar_ia";
+  return "liberar";
 }
 
 /** Links dos pedidos que perderam itens nesta conversa (onde ver o que não sai no chat). Função pura. */
@@ -151,7 +241,13 @@ export async function openIdMap(row: IdMapRow, now = Date.now()): Promise<IdMapE
   return Object.values(await openIdMapObject(row, now));
 }
 
-async function openIdMapObject(row: IdMapRow, now: number): Promise<IdMap> {
+/** O mapa da conversa como objeto {id → entrada} (resumo do Confirmar e portão de parâmetros). */
+export async function conversationIdMap(db: SupabaseClient, conversationId: string): Promise<IdMap> {
+  const { data } = await db.from("conversations").select("gate_id_map_enc, gate_id_map_expires_at").eq("id", conversationId).maybeSingle();
+  return openIdMapObject(data, Date.now());
+}
+
+async function openIdMapObject(row: IdMapRow, now = Date.now()): Promise<IdMap> {
   if (typeof row?.gate_id_map_enc !== "string" || typeof row.gate_id_map_expires_at !== "string" || Date.parse(row.gate_id_map_expires_at) <= now) return {};
   try {
     return JSON.parse(await openField("conversations.gate_id_map_enc", row.gate_id_map_enc)) as IdMap;
@@ -164,7 +260,7 @@ async function openIdMapObject(row: IdMapRow, now: number): Promise<IdMap> {
 export async function saveIdMap(db: SupabaseClient, conversationId: string, ids: IdMap): Promise<void> {
   if (!Object.keys(ids).length) return;
   const { data } = await db.from("conversations").select("gate_id_map_enc, gate_id_map_expires_at").eq("id", conversationId).maybeSingle();
-  const merged = { ...(await openIdMapObject(data, Date.now())), ...ids };
+  const merged = mergeIdMap(await openIdMapObject(data, Date.now()), ids);
   const sealed = await sealField("conversations.gate_id_map_enc", JSON.stringify(merged), await scopeOfConversation(conversationId));
   const { error } = await db
     .from("conversations")

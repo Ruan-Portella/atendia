@@ -127,10 +127,11 @@ function componentOf(m: UIMessage): MessageComponent | null {
 }
 
 /**
- * Opções viram botões (o toque manda o título como mensagem do visitante); link vira botão que
- * abre a página. Só a última mensagem aceita toque; as antigas ficam como lembrete.
+ * Opções viram botões (o toque manda o título como mensagem do visitante, e o id do botão junto:
+ * o Confirmar de uma ação é resolvido pelo id); link vira botão que abre a página. Só a última
+ * mensagem aceita toque (o primeiro toque já desabilita); as antigas ficam como lembrete.
  */
-function ComponentView({ component, color, active, onPick }: { component: MessageComponent; color: string; active: boolean; onPick: (text: string) => void }) {
+function ComponentView({ component, color, active, onPick }: { component: MessageComponent; color: string; active: boolean; onPick: (text: string, buttonId: string) => void }) {
   if (component.type === "link") {
     return (
       <a href={component.url} target="_blank" rel="noopener noreferrer" className="self-start rounded-full border bg-white px-3.5 py-1.5 text-[13px] font-semibold" style={{ borderColor: color, color }}>
@@ -141,7 +142,7 @@ function ComponentView({ component, color, active, onPick }: { component: Messag
   return (
     <div className="flex max-w-[88%] flex-wrap gap-1.5 self-start">
       {component.options.map((o) => (
-        <button key={o.id} type="button" disabled={!active} onClick={() => onPick(o.title)} className="rounded-full border bg-white px-3 py-1.5 text-left text-[13px] font-medium disabled:opacity-50" style={{ borderColor: color, color }}>
+        <button key={o.id} type="button" disabled={!active} onClick={() => onPick(o.title, o.id)} className="rounded-full border bg-white px-3 py-1.5 text-left text-[13px] font-medium disabled:opacity-50" style={{ borderColor: color, color }}>
           {o.title}
         </button>
       ))}
@@ -218,7 +219,11 @@ export function ChatWindow({
       new DefaultChatTransport({
         api: `${apiBase}/api/chat`,
         // só o texto novo: o servidor monta o histórico a partir do banco
-        prepareSendMessagesRequest: ({ messages }) => ({ body: { key: bot.key, conversationId, visitorId, channel, text: textOf(messages[messages.length - 1]) } }),
+        prepareSendMessagesRequest: ({ messages }) => {
+          const last = messages[messages.length - 1];
+          const buttonId = (last?.metadata as { buttonId?: string } | undefined)?.buttonId ?? null;
+          return { body: { key: bot.key, conversationId, visitorId, channel, text: textOf(last), ...(buttonId ? { buttonId } : {}) } };
+        },
         fetch: async (url, init) => {
           const headers = new Headers(init?.headers);
           if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -403,12 +408,12 @@ export function ChatWindow({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, busy, timeline]);
 
-  const send = (text: string) => {
+  const send = (text: string, buttonId?: string) => {
     const t = text.trim();
     if (!t || busy) return;
     setInput("");
     dispatch({ type: "count", n: messages.length + 1 });
-    sendMessage({ text: t });
+    sendMessage({ text: t, ...(buttonId ? { metadata: { buttonId } } : {}) });
   };
 
   const showSuggestions = messages.length === 0 && bot.suggestedQuestions.length > 0;

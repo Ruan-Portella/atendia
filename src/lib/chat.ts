@@ -25,7 +25,8 @@ import { visibleText, type Segment } from "./gate/base";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
 import { deliver } from "./send";
 import { metaPhoneHash, typedPhoneHash } from "./contacts";
-import { ACTIONS_PROMPT_NOTE, actionToolsFor } from "./action-tools";
+import { ACTIONS_PROMPT_NOTE, CONFIRM_RULE, actionToolsFor } from "./action-tools";
+import { confirmedNote } from "./action-confirm";
 import { identityPromptNote, type ChatIdentity } from "./widget-identity";
 import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
@@ -247,9 +248,11 @@ export function actionsNote(results: ToolResultRow[] | null | undefined, seen = 
   const when = at ? ` às ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }).format(new Date(at))}` : "";
   let withData = false;
   const parts = results.map((r) => {
-    const out = r.output as { ok?: boolean; data?: unknown; motivo?: string; ocultos_por_idade?: GateCategory[]; ocultos_proibidos?: boolean } | null;
-    const status = out?.ok === false ? `falhou${out.motivo ? ` (${out.motivo})` : ""}` : "ok";
+    const out = r.output as { ok?: boolean; data?: unknown; motivo?: string; ocultos_por_idade?: GateCategory[]; ocultos_proibidos?: boolean; confirmacao?: string; confirmada?: boolean } | null;
+    const status = out?.ok === false ? `falhou${out.motivo ? ` (${out.motivo})` : ""}` : out?.confirmada ? "executada depois do Confirmar" : "ok";
     if (!r.name.startsWith("acao_")) return `${r.name} ${status}`;
+    // resumo com Confirmar: só proposto (a execução, se houver, aparece depois do clique)
+    if (out?.confirmacao === "enviada") return `${r.name}(${JSON.stringify(r.input ?? {}).slice(0, 300)}) → resumo com Confirmar e Cancelar enviado (nada é feito antes do Confirmar)`;
     const call = `${r.name}(${JSON.stringify(r.input ?? {}).slice(0, 300)}) → ${status}`;
     if (seen.has(r.name) || out?.ok === false) return call;
     seen.add(r.name);
@@ -261,6 +264,14 @@ export function actionsNote(results: ToolResultRow[] | null | undefined, seen = 
   });
   const stale = withData ? " Esses dados são da hora da consulta e podem ter mudado: se a pessoa perguntar de novo, chame a ação de novo." : "";
   return `(ações desta resposta: ${parts.join(", ")}${stale})`;
+}
+
+/** Parâmetros de uma ação sem a frase do resumo do Confirmar (boavoz_resumo). Função pura. */
+export function withoutSummary(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input) || !("boavoz_resumo" in input)) return input;
+  const { boavoz_resumo: _summary, ...rest } = input as Record<string, unknown>;
+  void _summary;
+  return rest;
 }
 
 /** Chave de cache da OpenAI por canal (o começo do prompt é igual em todos os bots do mesmo canal). */
@@ -641,6 +652,11 @@ export async function runChat(opts: {
   retrieval?: Awaited<ReturnType<typeof retrieveContext>>;
   /** Portão (canais da Meta): idade do contato e instrução da entrada. */
   gate?: GateState;
+  /**
+   * Vez logo depois de um Confirmar (C pública, parte 5a): a ação já foi chamada; a IA escreve a
+   * partir do resultado (já filtrado pelo portão) e não abre outra confirmação.
+   */
+  confirmed?: { action: string; params: Record<string, unknown>; output: Record<string, unknown>; internal?: string[] };
 }) {
   const { db, bot, messages, channel } = opts;
 
@@ -698,7 +714,7 @@ export async function runChat(opts: {
   let listText: string | null = null;
   const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
-  const internal: string[] = [];
+  const internal: string[] = [...(opts.confirmed?.internal ?? [])];
   const actionTools = await actionToolsFor(db, {
     bot,
     destination: regulatedDestination(bot.regulated_channel, bot.human_handoff?.address),
@@ -713,10 +729,23 @@ export async function runChat(opts: {
     messageKey: opts.questionKey ?? `${convId}|${crypto.randomUUID()}`,
     onReply: (r) => void (actionReply ??= r),
     onInternal: (terms) => void internal.push(...terms),
+    // ação "executa": o resumo com Confirmar e Cancelar sai como os botões do mostrar_opcoes
+    onConfirm: (c) => {
+      shown ??= c.component;
+      shownText ??= c.text;
+    },
+    confirmRound: Boolean(opts.confirmed),
+    agencyId: bot.agency_id,
   });
   // até 5 passos com ações (o último sem ferramentas, para sempre sair texto); sem ações, 3 como antes
   const hasActions = Object.keys(actionTools).length > 0;
   const maxSteps = hasActions ? 5 : 3;
+  // com ação de Confirmar, uma chamada de ferramenta por vez (nunca duas confirmações no mesmo passo)
+  const callOptions = modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) });
+  const serialTools = Object.values(actionTools).some((t) => typeof t.description === "string" && t.description.endsWith(CONFIRM_RULE));
+  const providerOptions = serialTools
+    ? { ...callOptions.providerOptions, openai: { ...(callOptions.providerOptions?.openai ?? {}), parallelToolCalls: false }, anthropic: { ...(callOptions.providerOptions?.anthropic ?? {}), disableParallelToolUse: true } }
+    : callOptions.providerOptions;
   const result = streamText({
     model: chatModel(),
     system: prompt.fixed,
@@ -727,9 +756,12 @@ export async function runChat(opts: {
       { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null)].filter(Boolean).join("\n\n") },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
+      // depois do Confirmar: o resultado da chamada (a IA confirma a partir dele)
+      ...(opts.confirmed ? [{ role: "system" as const, content: confirmedNote(opts.confirmed.action, opts.confirmed.output) }] : []),
       ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, hasActions ? [...gated.reminder, ACTIONS_PROMPT_NOTE] : gated.reminder) }] : [{ role: "system" as const, content: offTopicReminder(bot.client_name) }]),
     ],
-    ...modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) }),
+    ...callOptions,
+    ...(providerOptions ? { providerOptions } : {}),
     stopWhen: [stepCountIs(maxSteps), () => actionReply !== null, () => shown !== null],
     prepareStep: hasActions ? ({ stepNumber }) => (stepNumber >= maxSteps - 1 ? { toolChoice: "none" as const } : undefined) : undefined,
     // limite de tokens por minuto da OpenAI (pico): o SDK tenta de novo com espera crescente
@@ -828,10 +860,11 @@ export async function runChat(opts: {
         const refusalStands = refusalIds.length > 0 && (!isGapAnswer(text) || refusalText);
         if (refusalIds.length && !refusalStands) await deleteRefusals(db, refusalIds);
         // rede de segurança: a IA recusou no texto e esqueceu registrar_recusa; o BoaVoz registra
-        const textRefusal = !refusalIds.length && !actionReply && refusalText;
+        // depois do Confirmar, a pergunta é o clique: nada de recusa nem de pergunta sem resposta
+        const textRefusal = !refusalIds.length && !actionReply && !opts.confirmed && refusalText;
         if (textRefusal) await recordRefusal(db, { botId: bot.id, conversationId: convId, level: refusalLevelFor(question), request: question });
         // o modelo disse que não sabe mas esqueceu a ferramenta: registra do mesmo jeito
-        if (!actionReply && !unansweredRecorded && !refusalStands && !textRefusal && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
+        if (!actionReply && !opts.confirmed && !unansweredRecorded && !refusalStands && !textRefusal && question && text && (looksUnanswered(text) || isTeamCheckAnswer(text))) await recordUnanswered(db, bot.id, convId, question);
         // com reply de ação, o que fica gravado é o texto exato (no WhatsApp e no Instagram o canal
         // ainda troca pelo que saiu de fato, depois do portão)
         // valor interno de uma ação escrito na resposta: a frase sai também do que fica gravado
@@ -853,7 +886,9 @@ export async function runChat(opts: {
         if (offer) shown = OPTIN_COMPONENT;
         const stored = offer && content ? `${content}\n\n${offer.text}` : content;
         if (stored) {
-          const toolResults: ToolResultRow[] = steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })));
+          // o resultado do Confirmar fica na conversa como os das consultas ("e o número do pedido?")
+          const confirmedResult: ToolResultRow[] = opts.confirmed ? [{ name: `acao_${opts.confirmed.action}`, input: opts.confirmed.params, output: opts.confirmed.output }] : [];
+          const toolResults: ToolResultRow[] = [...confirmedResult, ...steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: withoutSummary(t.input) } : {}), output: t.output })))];
           savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content: stored, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: actionReply ? null : shown }).catch((e) => {
             console.error("chat: resposta não gravada", (e as Error).message);
             return null;

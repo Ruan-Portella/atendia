@@ -9,9 +9,9 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { createPilotApiKey, createPilotIdentitySecret, createPilotWebhook, deleteAction, deletePilotWebhook, generateActionSecret, revokePilotApiKey, revokePilotIdentitySecret, saveAction, setPilotWebhookActive, testAction, testPilotWebhook } from "../../../acoes";
 import { WEBHOOK_EVENTS } from "@/lib/webhooks";
-import type { ActionRow } from "@/lib/actions";
+import { needsConfirmation, type ActionRow } from "@/lib/actions";
 import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from "@/lib/api-keys";
-import { ActionFields } from "@/components/integrations/action-fields";
+import { ActionFields, ActionTestForm } from "@/components/integrations/action-fields";
 import { headerNames } from "@/lib/integrations-input";
 
 export const metadata = { title: "Integrações (piloto)" };
@@ -67,7 +67,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
         <Link href={`/admin/clientes/${id}`} className="text-xs font-semibold text-muted">← {agency.name}</Link>
         <h1 className="text-[26px] font-bold">Integrações (piloto)</h1>
         <p className="text-sm text-muted">
-          Ações de consulta que a IA chama durante a conversa, configuradas à mão pela equipe BoaVoz (P1). Cada chamada é assinada no padrão Standard Webhooks com o segredo de ações do chatbot; prazo de 8 s e resposta até 32 KB. Ação que parece criar pedido, reserva ou cobrança fica desativada até a C pública.
+          Ações que a IA chama durante a conversa, configuradas à mão pela equipe BoaVoz (pilotos). Cada chamada é assinada no padrão Standard Webhooks com o segredo de ações do chatbot; prazo de 8 s nas consultas e de 20 s nas &quot;executa&quot;, resposta até 32 KB. &quot;Executa&quot; (e o que o BoaVoz classifica como pedido, reserva ou cobrança) só é chamada depois do Confirmar do contato.
         </p>
       </div>
 
@@ -101,16 +101,12 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
                 <summary className="cursor-pointer text-sm">
                   <strong className="font-mono">{a.name}</strong>{" "}
                   <span className={a.active ? "text-brand" : "text-muted"}>{a.active ? "ativa" : "desativada"}</span>{a.paused_by_plan_at && <span className="text-amber-ink"> · pausada pelo plano</span>}
-                  {a.creates_order && <span className="text-danger"> · parece criar pedido (fica desativada até a C pública)</span>}
+                  {needsConfirmation(a) && <span className="text-amber-ink"> · {a.type === "execute" ? "executa" : "parece criar pedido"} (com Confirmar)</span>}
                   <span className="block truncate text-xs text-muted">{a.url}</span>
                 </summary>
                 <div className="mt-3 flex flex-col gap-4">
                   <ActionFields action={saveAction.bind(null, id, b.id as string, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
-                  <ResultForm action={testAction.bind(null, id, a.id)} className="border-t border-line-2 pt-3">
-                    <label className="label" htmlFor={`test-${a.id}`}>Testar (chama o endpoint de verdade, com test: true)</label>
-                    <textarea id={`test-${a.id}`} name="params" rows={3} className="input font-mono text-xs" defaultValue="{}" />
-                    <SubmitButton className="btn-ghost self-start py-1.5" pendingLabel="Chamando…">Testar</SubmitButton>
-                  </ResultForm>
+                  <ActionTestForm action={testAction.bind(null, id, a.id)} a={a} />
                   <ConfirmAction action={deleteAction.bind(null, id, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="self-start text-xs font-semibold text-danger hover:underline">
                     Apagar ação
                   </ConfirmAction>
@@ -119,7 +115,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
             ))}
 
             <details className="rounded-lg border border-dashed border-line p-3">
-              <summary className="cursor-pointer text-sm font-semibold">+ Nova ação de consulta</summary>
+              <summary className="cursor-pointer text-sm font-semibold">+ Nova ação</summary>
               <div className="mt-3">
                 <ActionFields action={saveAction.bind(null, id, b.id as string, null)} label="Criar ação" />
               </div>

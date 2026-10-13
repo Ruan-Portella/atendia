@@ -35,6 +35,7 @@ export const TARGETS: Target[] = [
   { table: "compliance_checks", column: "summary_enc", field: "compliance_checks.summary_enc", select: "id, bot_id", botOf: (r) => r.bot_id as string },
   { table: "action_calls", column: "request_enc", field: "action_calls.request_enc", select: "id, actions(bot_id)", botOf: (r) => (one(r.actions as { bot_id: string } | null)?.bot_id ?? null) },
   { table: "action_calls", column: "response_enc", field: "action_calls.response_enc", select: "id, actions(bot_id)", botOf: (r) => (one(r.actions as { bot_id: string } | null)?.bot_id ?? null) },
+  { table: "button_refs", column: "params_enc", field: "button_refs.params_enc", select: "id, bot_id", botOf: (r) => r.bot_id as string },
   {
     table: "webhook_deliveries",
     column: "payload_enc",

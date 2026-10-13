@@ -442,7 +442,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         chat: { instagram: { igsid } },
         historySize: HISTORY,
       },
-      { text: texts[qi]!, key: q.key, msgId: q.key, stored: before.state === "unanswered", button: q.ev.message?.quick_reply?.payload },
+      { text: texts[qi]!, key: q.key, msgId: q.key, stored: before.state === "unanswered", button: q.ev.message?.quick_reply?.payload, alone: texts.filter((t, i) => t && !handled.has(i)).length === 1 },
     );
     await afterStore();
   } catch (e) {

@@ -4,7 +4,8 @@ import type { ActionRow } from "@/lib/actions";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { ActionFields } from "@/components/integrations/action-fields";
+import { ActionFields, ActionTestForm } from "@/components/integrations/action-fields";
+import { needsConfirmation } from "@/lib/actions";
 import { actionsTokenWeight, headerNames } from "@/lib/integrations-input";
 import { deleteBotAction, rotateBotActionSecret, saveBotAction, testBotAction } from "@/app/painel/integracoes/actions";
 
@@ -15,8 +16,9 @@ const previousSecretNote = (until: string | null) => (until && Date.parse(until)
 const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 100)}%` : "—");
 
 /**
- * Chatbot → Ações (C pública): as ações de consulta que a IA deste chatbot chama na conversa, o
- * segredo que assina as chamadas e o resultado de cada uma em 7 dias. Dono e administrador mexem
+ * Chatbot → Ações (C pública): as ações que a IA deste chatbot chama na conversa (consultas na
+ * hora; "executa" só depois do Confirmar do contato), o segredo que assina as chamadas e o
+ * resultado de cada uma em 7 dias. Dono e administrador mexem
  * (com o segundo fator); o editor só vê.
  */
 export async function BotActions({ bot, manage }: { bot: { id: string; action_secret_enc: string | null; action_secret_prev_until: string | null }; manage: boolean }) {
@@ -40,8 +42,9 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
       <div>
         <h2 className="text-[22px] font-bold">Ações</h2>
         <p className="text-sm text-muted">
-          Consultas ao sistema do cliente que a IA faz na conversa (status do pedido, agenda, saldo). Ela chama a ação quando a descrição combina e responde com o que o endpoint devolver. Ação que cria pedido,
-          reserva ou cobrança precisa do clique do contato em Confirmar, que chega numa próxima parte das Integrações: por enquanto ela fica salva e desativada.
+          Chamadas ao sistema do cliente que a IA faz na conversa. Consulta (status do pedido, agenda, saldo): a IA chama quando a descrição combina e responde com o que o endpoint devolver. Executa
+          (criar pedido, agendar, cancelar): a IA mostra ao contato um resumo com Confirmar e Cancelar, e o endpoint só é chamado depois do Confirmar. Ação que o BoaVoz classifica como pedido, reserva ou
+          cobrança sempre pede o Confirmar, mesmo cadastrada como consulta.
         </p>
       </div>
 
@@ -78,8 +81,11 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
                 <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
                   <span className="font-mono font-semibold">{a.name}</span>
                   <span className={a.active ? "text-xs text-brand" : "text-xs text-muted"}>{a.active ? "ativa" : "desativada"}</span>
-                  <span className="text-xs text-muted">consulta · {LEVEL_LABEL[a.min_level] ?? a.min_level}</span>
-                  {a.creates_order && <span className="text-xs text-danger">parece criar pedido, reserva ou cobrança (fica desativada até a confirmação por botão)</span>}
+                  <span className="text-xs text-muted">
+                    {needsConfirmation(a) ? "executa (com Confirmar)" : "consulta"}
+                    {a.supports_preview ? " · aceita prévia" : ""} · {LEVEL_LABEL[a.min_level] ?? a.min_level}
+                  </span>
+                  {a.creates_order && a.type === "query" && <span className="text-xs text-amber-ink">parece criar pedido, reserva ou cobrança: pede o Confirmar do contato</span>}
                   {a.paused_by_plan_at && <span className="text-xs text-amber-ink">pausada pelo plano</span>}
                   <span className="ml-auto text-xs text-muted">{s ? `última chamada ${relativeTime(s.last!)} · erros ${pct(s.errors, s.total)} em 7 dias` : "sem chamadas em 7 dias"}</span>
                 </summary>
@@ -87,11 +93,7 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
                   {manage ? (
                     <>
                       <ActionFields action={saveBotAction.bind(null, bot.id, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
-                      <ResultForm action={testBotAction.bind(null, a.id)} className="border-t border-line-2 pt-3">
-                        <label className="label" htmlFor={`test-${a.id}`}>Testar (chama o endpoint de verdade, com test: true)</label>
-                        <textarea id={`test-${a.id}`} name="params" rows={3} className="input font-mono text-xs" defaultValue="{}" />
-                        <SubmitButton className="btn-ghost self-start py-1.5" pendingLabel="Chamando…">Testar</SubmitButton>
-                      </ResultForm>
+                      <ActionTestForm action={testBotAction.bind(null, a.id)} a={a} />
                       <ConfirmAction action={deleteBotAction.bind(null, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="self-start text-xs font-semibold text-danger hover:underline">
                         Apagar ação
                       </ConfirmAction>
@@ -114,7 +116,7 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
 
       {manage && (
         <details className="card p-4">
-          <summary className="cursor-pointer text-sm font-semibold">+ Nova ação de consulta</summary>
+          <summary className="cursor-pointer text-sm font-semibold">+ Nova ação</summary>
           <div className="mt-3">
             <ActionFields action={saveBotAction.bind(null, bot.id, null)} label="Criar ação" />
           </div>

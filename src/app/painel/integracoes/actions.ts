@@ -10,11 +10,11 @@ import { can } from "@/lib/team";
 import { text } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { planLimits } from "@/lib/plan-limits";
-import { actionInputProblem, callAction, classifyCreatesOrder, rotateActionSecret, type ActionRow } from "@/lib/actions";
+import { actionInputProblem, callAction, classifyCreatesOrder, needsConfirmation, rotateActionSecret, type ActionRow } from "@/lib/actions";
 import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiPermission } from "@/lib/api-keys";
 import { createWebhook, redeliver, requeueFailed, sendWebhookTest, updateWebhook } from "@/lib/webhooks";
 import { deadline } from "@/lib/cron";
-import { actionInputFromForm, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
+import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 import { TRIAL_KEY_PERMISSIONS } from "@/lib/integrations-plan";
 
 /*
@@ -68,7 +68,7 @@ export async function rotateBotActionSecret(botId: string, fd: FormData): Promis
   return ok(`${secret}\n\nCopie agora: ele não aparece de novo. ${invalidate ? "O anterior deixou de valer." : "O anterior (se havia) vale por mais 24 horas."}`);
 }
 
-/** Cria ou edita uma ação de consulta. Ação que parece criar pedido, reserva ou cobrança fica salva e desativada. */
+/** Cria ou edita uma ação. Pedido, reserva ou cobrança (classificado pelo BoaVoz) só roda depois do Confirmar do contato. */
 export async function saveBotAction(botId: string, actionId: string | null, fd: FormData): Promise<ActionResult> {
   const c = await integrationsContext();
   if ("error" in c) return fail(c.error!);
@@ -82,16 +82,14 @@ export async function saveBotAction(botId: string, actionId: string | null, fd: 
   if ("error" in h) return fail(h.error);
   // efeito classificado pela IA do BoaVoz: pedido, reserva ou cobrança só com confirmação por botão
   const createsOrder = await classifyCreatesOrder(c.db, c.ctx.agency.id, input);
-  const row = { bot_id: bot.id, ...input, ...headersColumn(h.headers), type: "query", active: input.active && !createsOrder, creates_order: createsOrder, updated_at: new Date().toISOString() };
+  const row = { bot_id: bot.id, ...input, ...headersColumn(h.headers), creates_order: createsOrder, updated_at: new Date().toISOString() };
   const { data, error } = actionId ? await c.db.from("actions").update(row).eq("id", String(actionId)).eq("bot_id", bot.id as string).select("id") : await c.db.from("actions").insert(row).select("id");
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : "Não foi possível salvar. Tente de novo.");
   if (!data?.length) return fail("Ação não encontrada.");
   // os logs guardam só os nomes dos cabeçalhos, nunca os valores
-  await auditIntegration(c.ctx, actionId ? "acoes.editar" : "acoes.criar", { type: "bot", id: bot.id as string }, { name: input.name, url: input.url, creates_order: createsOrder, ...(h.headers === undefined ? {} : { cabecalhos: h.headers ? Object.keys(h.headers) : [] }) });
+  await auditIntegration(c.ctx, actionId ? "acoes.editar" : "acoes.criar", { type: "bot", id: bot.id as string }, { name: input.name, url: input.url, tipo: input.type, previa: input.supports_preview, creates_order: createsOrder, ...(h.headers === undefined ? {} : { cabecalhos: h.headers ? Object.keys(h.headers) : [] }) });
   done(bot.id as string);
-  return createsOrder
-    ? ok("Ação salva e DESATIVADA: ela parece criar pedido, reserva ou cobrança, e isso precisa da confirmação por botão do contato (chega numa próxima parte das Integrações).")
-    : ok(`Ação ${input.name} salva${input.active ? " e ativa" : " (desativada)"}.`);
+  return ok(actionSavedMessage(input.name, input, createsOrder));
 }
 
 /** Ação de um chatbot do escopo de quem está logado. */
@@ -112,7 +110,10 @@ export async function deleteBotAction(actionId: string): Promise<ActionResult> {
   return ok("Ação apagada.");
 }
 
-/** Testar: chama o endpoint de verdade com test: true e os parâmetros de exemplo. */
+/**
+ * Testar: chama o endpoint de verdade com test: true e os parâmetros de exemplo. Numa "executa",
+ * só com o aviso aceito (chama de verdade, com confirmed: true), ou só a prévia (mode: "preview").
+ */
 export async function testBotAction(actionId: string, fd: FormData): Promise<ActionResult> {
   const c = await integrationsContext();
   if ("error" in c) return fail(c.error!);
@@ -124,10 +125,13 @@ export async function testBotAction(actionId: string, fd: FormData): Promise<Act
   } catch {
     return fail("Os parâmetros de exemplo não são um JSON válido.");
   }
-  const r = await callAction(c.db, action, { params, mode: "test" });
+  const preview = fd.get("preview") === "on" && action.supports_preview;
+  if (needsConfirmation(action) && !preview && fd.get("real") !== "on") return fail("Esta ação executa de verdade: marque \"isto chama meu endpoint de verdade\" (use dados de teste) ou teste só a prévia.");
+  const r = await callAction(c.db, action, preview ? { params, mode: "preview" } : { params, mode: "test", confirmed: needsConfirmation(action) });
   const head = `${r.status.toUpperCase()}${r.httpStatus ? ` · HTTP ${r.httpStatus}` : ""} · ${r.durationMs} ms · ${r.callId}`;
   const lines = [head, ...r.warnings.map((w) => `aviso: ${w}`), ...(r.error ? [`erro: ${r.error}`] : [])];
-  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, internal: r.internal ?? undefined, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined }, null, 2).slice(0, 6000));
+  if (r.status === "ok" || r.status === "not_found") lines.push("", JSON.stringify({ data: r.data, internal: r.internal ?? undefined, reply: r.reply ?? undefined, attachments: r.attachments?.length ? r.attachments : undefined, outcome: r.outcome ?? undefined, confirmation: r.confirmation ?? undefined }, null, 2).slice(0, 6000));
+  if (r.status === "uncertain") lines.push("", "Incerto: na conversa, o contato veria \"não consegui confirmar se deu certo\" e os botões Tentar de novo (mesmo call_id) e Falar com alguém.");
   return r.status === "ok" || r.status === "not_found" ? ok(lines.join("\n")) : fail(lines.join("\n"));
 }
 

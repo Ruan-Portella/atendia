@@ -32,6 +32,8 @@ const OWNER: Record<string, string> = {
   attachments: "lib/attachments.ts",
   // envios das campanhas (leva B3): telefone e variáveis cifrados
   campaign_sends: "lib/campaigns.ts",
+  // Confirmar / Cancelar das ações (C pública): parâmetros cifrados
+  button_refs: "lib/button-refs.ts",
 };
 
 describe("camada única de mensagens e contatos", () => {

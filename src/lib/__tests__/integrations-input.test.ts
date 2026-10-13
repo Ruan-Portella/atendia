@@ -12,7 +12,7 @@ const form = (fields: Record<string, string | string[]>) => {
 describe("formulários das Integrações", () => {
   it("ação: lê o cadastro e recusa parâmetros que não são JSON", () => {
     const a = actionInputFromForm(form({ name: "buscar_pedido", description: " Use para status ", url: "https://api.loja.com/x", params_schema: '{"type":"object","properties":{}}', min_level: "usuario", context_required: "signed", outcomes: "ok, sem_debito", active: "on" }));
-    expect(a).toEqual({ name: "buscar_pedido", description: "Use para status", url: "https://api.loja.com/x", params_schema: { type: "object", properties: {} }, min_level: "usuario", context_required: "signed", outcomes: ["ok", "sem_debito"], active: true });
+    expect(a).toEqual({ name: "buscar_pedido", description: "Use para status", url: "https://api.loja.com/x", params_schema: { type: "object", properties: {} }, min_level: "usuario", context_required: "signed", outcomes: ["ok", "sem_debito"], active: true, type: "query", supports_preview: false });
     expect(actionInputFromForm(form({ params_schema: "{nope" }))).toEqual({ error: "Os parâmetros não são um JSON válido." });
     // nível desconhecido vira o mais aberto; sem a caixa, desativada
     expect(actionInputFromForm(form({ min_level: "admin" }))).toMatchObject({ min_level: "anonimo", active: false, context_required: "none" });
