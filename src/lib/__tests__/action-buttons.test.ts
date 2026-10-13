@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UIMessageChunk } from "ai";
 import { ComponentProblem, componentTexts, parseComponentInput } from "../component-input";
-import { confirmButtonId, confirmComponent, confirmedNote, parseConfirmButton, shortcutTarget, stillCallable } from "../action-confirm";
+import { confirmButtonId, confirmComponent, confirmedNote, isConfirmComponent, parseConfirmButton, shortcutTarget, stillCallable } from "../action-confirm";
 import { whatsappPlan, type MessageComponent } from "../components";
 import { gateComponent } from "../gate/components";
 import { devButtonId, waInboundExtra } from "../message-events";
@@ -90,6 +90,11 @@ describe("conversão por canal", () => {
 });
 
 describe("clique no botão com ação", () => {
+  it("lista com botões de ação não é o resumo do Confirmar (o portão filtra item a item)", () => {
+    expect(isConfirmComponent({ type: "options", list: true, options: [{ id: confirmButtonId(REF, "acao"), title: "Pizza Calabresa" }] })).toBe(false);
+    expect(isConfirmComponent(confirmComponent(REF))).toBe(true);
+  });
+
   it("o id é uma referência opaca; o número digitado vale pela posição na mensagem", () => {
     expect(parseConfirmButton(confirmButtonId(REF, "acao"))).toEqual({ refId: REF, verb: "acao" });
     const msg: MessageComponent = { type: "options", options: [{ id: "u:ver", title: "Ver cardápio" }, { id: confirmButtonId(REF, "acao"), title: "Pedir esse!" }] };

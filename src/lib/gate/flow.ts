@@ -406,7 +406,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   }
   // 18+ sem o "Sim": "Ver opções 18+" vira mais uma opção; sem opções, vai como botão do portão
   const adultOffer = (exit.offerAdult && !exit.emptied) || gated.offerAdult;
-  if (adultOffer && component?.type === "options" && !isConfirmComponent(component) && component.options.length < LIMITS.list) component = { type: "options", options: [...component.options, { id: AGE_SHOW, title: GATE_TEXTS.showAdultOptions }] };
+  if (adultOffer && component?.type === "options" && !isConfirmComponent(component) && component.options.length < LIMITS.list) component = { ...component, options: [...component.options, { id: AGE_SHOW, title: GATE_TEXTS.showAdultOptions }] };
   const adultButton = adultOffer && component?.type !== "options";
   let answer = withRiskText(safe, urgent()).trim();
   if (answer) {

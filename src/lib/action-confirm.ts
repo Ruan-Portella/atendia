@@ -46,8 +46,17 @@ const options = (refId: string, verbs: FixedVerb[]): MessageComponent => ({ type
 export const confirmComponent = (refId: string) => options(refId, ["sim", "nao"]);
 /** Depois de uma chamada incerta: repetir com o mesmo call_id, ou chamar a equipe. */
 export const uncertainComponent = (refId: string) => options(refId, ["repetir", "humano"]);
-/** O componente é desta etapa (Confirmar ou "Tentar de novo")? Função pura. */
-export const isConfirmComponent = (c: MessageComponent | null | undefined) => c?.type === "options" && c.options.some((o) => parseConfirmButton(o.id) !== null);
+/**
+ * O componente é desta etapa (Confirmar, Cancelar, "Tentar de novo", "Falar com alguém")? Botão
+ * com ação (acao) não conta: numa lista, o item 18+ sai e entra "Ver opções 18+", como nas da IA.
+ * Função pura.
+ */
+export const isConfirmComponent = (c: MessageComponent | null | undefined) =>
+  c?.type === "options" &&
+  c.options.some((o) => {
+    const b = parseConfirmButton(o.id);
+    return b !== null && b.verb !== "acao";
+  });
 
 /** Textos fixos ao contato (sem IA). */
 export const CONFIRM_TEXTS = {
