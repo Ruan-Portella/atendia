@@ -1,7 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { embed, embedMany, transcribe, type EmbeddingModel, type LanguageModel } from "ai";
+import { embed, embedMany, transcribe, type EmbeddingModel, type LanguageModel, type SystemModelMessage } from "ai";
 import { CATEGORIES } from "./gate/rules";
 import { audioDurationSeconds } from "./audio-duration";
 
@@ -58,9 +58,10 @@ export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 /**
  * Opções de chamada por modelo. Os que raciocinam (gpt-5 em diante, série o) pensam antes de
  * responder e esses tokens são cobrados como saída: no atendimento, esforço mínimo ("minimal"
- * no gpt-5, "none" do gpt-5.1 em diante; OPENAI_REASONING_EFFORT troca). Eles não aceitam
- * temperatura, a não ser gpt-5.1+ com "none". `cacheKey` manda as chamadas com o mesmo começo
- * de prompt para o mesmo servidor da OpenAI (mais acerto no cache).
+ * no gpt-5, "none" do gpt-5.1 em diante e no gpt-6-luna/sol; OPENAI_REASONING_EFFORT troca).
+ * Eles não aceitam temperatura, a não ser com "none" nos que o aceitam. gpt-6-astra e gpt-6.1-sol
+ * não aceitam "none" (vão com "low"). `cacheKey` manda as chamadas com o mesmo começo de prompt
+ * para o mesmo servidor da OpenAI (mais acerto no cache).
  */
 export function modelCallOptions(modelId: string, o: { temperature?: number; cacheKey?: string; effort?: ReasoningEffort } = {}): { temperature?: number; providerOptions?: ProviderOptions } {
   if (provider === "anthropic") return { temperature: o.temperature };
@@ -68,15 +69,32 @@ export function modelCallOptions(modelId: string, o: { temperature?: number; cac
   const major = gpt ? Number(gpt[1]) : 0;
   const minor = gpt?.[2] !== undefined ? Number(gpt[2]) : null;
   const reasoning = /^o\d/.test(modelId) || (major >= 5 && gpt?.[3] !== "chat");
+  const acceptsNone = (major === 5 && (minor ?? 0) >= 1) || (major === 6 && minor === null && (gpt?.[3] === "luna" || gpt?.[3] === "sol"));
   const effort: ReasoningEffort | undefined = reasoning
-    ? (o.effort ?? (process.env.OPENAI_REASONING_EFFORT as ReasoningEffort | undefined) ?? (major === 5 && minor === null ? "minimal" : major === 5 ? "none" : "low"))
+    ? (o.effort ?? (process.env.OPENAI_REASONING_EFFORT as ReasoningEffort | undefined) ?? (major === 5 && minor === null ? "minimal" : acceptsNone ? "none" : "low"))
     : undefined;
-  const keepsTemperature = !reasoning || (effort === "none" && major === 5 && (minor ?? 0) >= 1);
+  const keepsTemperature = !reasoning || (effort === "none" && acceptsNone);
   const openaiOptions = { ...(o.cacheKey ? { promptCacheKey: o.cacheKey } : {}), ...(effort ? { reasoningEffort: effort } : {}) };
   return {
     ...(keepsTemperature && o.temperature !== undefined ? { temperature: o.temperature } : {}),
     ...(Object.keys(openaiOptions).length ? { providerOptions: { openai: openaiOptions } } : {}),
   };
+}
+
+/**
+ * Prompt fixo do chat. Do gpt-5.6 em diante a OpenAI só reaproveita o cache em pontos de corte
+ * (o fim de certas mensagens) e cobra 1,25x a entrada para gravar: sem um ponto de corte no fim
+ * do prompt fixo, a parte fixa nunca é lida do cache (a base muda a cada pergunta) e toda a
+ * entrada sai pelo preço da gravação. Antes do gpt-5.6 o cache vai por blocos sozinho e o campo
+ * não existe na API.
+ */
+export function fixedInstructions(modelId: string, text: string): string | SystemModelMessage {
+  if (provider === "anthropic") return text;
+  const gpt = /^gpt-(\d+)(?:\.(\d+))?/.exec(modelId);
+  const major = gpt ? Number(gpt[1]) : 0;
+  const minor = gpt?.[2] !== undefined ? Number(gpt[2]) : 0;
+  if (!(major >= 6 || (major === 5 && minor >= 6))) return text;
+  return { role: "system", content: text, providerOptions: { openai: { promptCacheBreakpoint: { mode: "explicit" } } } };
 }
 
 export const providerName = provider === "anthropic" ? "Anthropic" : "OpenAI";

@@ -62,7 +62,7 @@ describe("custo da transcrição e das IAs pequenas", () => {
 
   it("uso de uma chamada no formato da tabela (classificador no gpt-4.1-nano)", () => {
     const u = usageFrom("gpt-4.1-nano-2025-04-14", { inputTokens: 1000, outputTokens: 100, inputTokenDetails: { cacheReadTokens: 0 } });
-    expect(u).toEqual({ model: "gpt-4.1-nano-2025-04-14", inputTokens: 1000, cachedInputTokens: 0, outputTokens: 100 });
+    expect(u).toEqual({ model: "gpt-4.1-nano-2025-04-14", inputTokens: 1000, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 100 });
     // 1000 × 0,10 + 100 × 0,40 por milhão
     expect(costUsd(u)).toBe(0.00014);
   });

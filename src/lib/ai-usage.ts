@@ -5,25 +5,38 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * agência e nunca muda o que o bot faz. Gravar falhou? Fica no log e a resposta segue.
  */
 
-/** Preço de referência em US$ por 1 milhão de tokens (tabela pública dos provedores). */
-const PRICES: Record<string, { input: number; output?: number; cachedInput?: number }> = {
+/**
+ * Preço de referência em US$ por 1 milhão de tokens (tabela pública dos provedores, conferida em
+ * 14/10/2026). `cacheWrite`: do gpt-5.6 em diante, a parte da entrada gravada no cache custa
+ * 1,25x a entrada comum (antes não havia cobrança por gravar).
+ */
+const PRICES: Record<string, { input: number; output?: number; cachedInput?: number; cacheWrite?: number }> = {
+  // gpt-4o, gpt-4o-mini, gpt-4.1 e gpt-4.1-mini saem do ar em 14/01/2027 (substituto: gpt-6-luna)
   "gpt-4o-mini": { input: 0.15, cachedInput: 0.075, output: 0.6 },
   "gpt-4o": { input: 2.5, cachedInput: 1.25, output: 10 },
   "gpt-4.1-mini": { input: 0.4, cachedInput: 0.1, output: 1.6 },
   "gpt-4.1-nano": { input: 0.1, cachedInput: 0.025, output: 0.4 },
   "gpt-4.1": { input: 2, cachedInput: 0.5, output: 8 },
-  // gpt-5 em diante raciocinam: os tokens de raciocínio vêm na saída (tabela de 01/10/2026)
+  // gpt-5 em diante raciocinam: os tokens de raciocínio vêm na saída. gpt-5, gpt-5-mini e
+  // gpt-5-nano saem do ar em 11/12/2026; gpt-5.4-nano e gpt-5.1 em 01/04/2027
   "gpt-5": { input: 1.25, cachedInput: 0.125, output: 10 },
   "gpt-5-mini": { input: 0.25, cachedInput: 0.025, output: 2 },
   "gpt-5-nano": { input: 0.05, cachedInput: 0.005, output: 0.4 },
   "gpt-5.4-mini": { input: 0.75, cachedInput: 0.075, output: 4.5 },
   "gpt-5.4-nano": { input: 0.2, cachedInput: 0.02, output: 1.25 },
+  "gpt-5.6-luna": { input: 0.2, cachedInput: 0.02, cacheWrite: 0.25, output: 1.2 },
+  "gpt-5.6-terra": { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 12 },
+  "gpt-6-luna": { input: 0.1, cachedInput: 0.01, cacheWrite: 0.125, output: 0.5 },
+  "gpt-6-sol": { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 10 },
   "text-embedding-3-small": { input: 0.02 },
   "text-embedding-3-large": { input: 0.13 },
   "claude-haiku-4-5": { input: 1, cachedInput: 0.1, output: 5 },
 };
-/** Transcrição: US$ por minuto de áudio. */
-const AUDIO_PER_MINUTE: Record<string, number> = { "gpt-4o-mini-transcribe": 0.003, "gpt-4o-transcribe": 0.006, "whisper-1": 0.006 };
+/**
+ * Transcrição: US$ por minuto de áudio. whisper-1, gpt-4o-transcribe e gpt-4o-mini-transcribe
+ * saem do ar em 26/02/2027 (substituto: gpt-transcribe).
+ */
+const AUDIO_PER_MINUTE: Record<string, number> = { "gpt-4o-mini-transcribe": 0.003, "gpt-4o-transcribe": 0.006, "whisper-1": 0.006, "gpt-transcribe": 0.0045 };
 
 /** Preço do modelo; aceita o id com data (ex.: gpt-4o-mini-2024-07-18). */
 function priceOf<T>(table: Record<string, T>, model: string | null | undefined): T | null {
@@ -38,6 +51,8 @@ export interface UsageTokens {
   model?: string | null;
   inputTokens?: number;
   cachedInputTokens?: number;
+  /** Parte da entrada gravada no cache (gpt-5.6 em diante: 1,25x a entrada). */
+  cacheWriteTokens?: number;
   outputTokens?: number;
   embeddingModel?: string | null;
   embeddingTokens?: number;
@@ -54,7 +69,8 @@ export function costUsd(u: UsageTokens): number | null {
     const p = priceOf(PRICES, u.model);
     if (!p) return null;
     const cached = Math.min(u.cachedInputTokens ?? 0, input);
-    total += ((input - cached) * p.input + cached * (p.cachedInput ?? p.input) + (u.outputTokens ?? 0) * (p.output ?? 0)) / 1e6;
+    const written = Math.min(u.cacheWriteTokens ?? 0, input - cached);
+    total += ((input - cached - written) * p.input + cached * (p.cachedInput ?? p.input) + written * (p.cacheWrite ?? p.input) + (u.outputTokens ?? 0) * (p.output ?? 0)) / 1e6;
   }
   if (u.embeddingTokens) {
     const p = priceOf(PRICES, u.embeddingModel);
@@ -71,8 +87,8 @@ export function costUsd(u: UsageTokens): number | null {
 }
 
 /** Uso de uma chamada (todos os passos) no formato da tabela. */
-export function usageFrom(model: string | undefined, u: { inputTokens?: number; outputTokens?: number; inputTokenDetails?: { cacheReadTokens?: number } } | undefined): UsageTokens {
-  return { model, inputTokens: u?.inputTokens ?? 0, cachedInputTokens: u?.inputTokenDetails?.cacheReadTokens ?? 0, outputTokens: u?.outputTokens ?? 0 };
+export function usageFrom(model: string | undefined, u: { inputTokens?: number; outputTokens?: number; inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number } } | undefined): UsageTokens {
+  return { model, inputTokens: u?.inputTokens ?? 0, cachedInputTokens: u?.inputTokenDetails?.cacheReadTokens ?? 0, cacheWriteTokens: u?.inputTokenDetails?.cacheWriteTokens ?? 0, outputTokens: u?.outputTokens ?? 0 };
 }
 
 /** avaliacao: o conjunto de casos do backoffice (custo da plataforma, fora da margem da agência). */

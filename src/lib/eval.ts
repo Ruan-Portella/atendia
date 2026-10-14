@@ -1,6 +1,6 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildPrompt, chatModel, chatModelId, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
+import { buildPrompt, chatModel, chatModelId, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
 import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { isScopeRefusalText, isTextRefusal } from "./refusal-text";
@@ -51,6 +51,8 @@ export interface EvalRun {
   outputTokens: number;
   /** Parte da entrada que veio do cache da OpenAI (bem mais barata). */
   cachedInputTokens?: number;
+  /** Parte da entrada gravada no cache (gpt-5.6 em diante cobra 1,25x a entrada). */
+  cacheWriteTokens?: number;
   /** Custo da resposta em US$ (null: modelo sem preço na tabela). Texto fixo do portão: 0. */
   costUsd?: number | null;
 }
@@ -137,7 +139,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       });
       const r = await generateText({
         model: chatModel(opts.model),
-        system: prompt.fixed,
+        system: fixedInstructions(opts.model ?? chatModelId(), prompt.fixed),
         allowSystemInMessages: true,
         messages: [
           { role: "system" as const, content: prompt.variable },
@@ -209,8 +211,9 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       if (!tools.includes("registrar_recusa") && isTextRefusal(written, question, bot.client_name)) tools.push("recusa_do_texto");
       const inputTokens = r.totalUsage?.inputTokens ?? 0;
       const cachedInputTokens = r.totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0;
+      const cacheWriteTokens = r.totalUsage?.inputTokenDetails?.cacheWriteTokens ?? 0;
       const outputTokens = r.totalUsage?.outputTokens ?? 0;
-      const usage = { inputTokens, outputTokens, cachedInputTokens, costUsd: costUsd({ model: r.response?.modelId ?? opts.model ?? chatModelId(), inputTokens, cachedInputTokens, outputTokens }) };
+      const usage = { inputTokens, outputTokens, cachedInputTokens, cacheWriteTokens, costUsd: costUsd({ model: r.response?.modelId ?? opts.model ?? chatModelId(), inputTokens, cachedInputTokens, cacheWriteTokens, outputTokens }) };
       // no relatório: o que a IA respondeu no lugar da mensagem original
       if (entrance?.kind === "ia" && entrance.question) tools.unshift(`portao:reescrita="${entrance.question}"`);
       // o que o contato recebe no WhatsApp e no Instagram: a pergunta fixa de 18+ no lugar da

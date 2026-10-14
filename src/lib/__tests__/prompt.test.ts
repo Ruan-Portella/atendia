@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPrompt, buildSystemPrompt, modelCallOptions } from "../ai";
+import { buildPrompt, buildSystemPrompt, fixedInstructions, modelCallOptions } from "../ai";
 
 const base = { assistantName: "Lia", clientName: "Escola Inglês Já", persona: {}, context: "Aulas de inglês às terças.", leadCapture: true };
 
@@ -97,6 +97,23 @@ describe("opções de chamada por modelo", () => {
   it("gpt-5.1 em diante: sem raciocínio (none), e aí aceita temperatura", () => {
     expect(modelCallOptions("gpt-5.4-nano", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { reasoningEffort: "none" } } });
     expect(modelCallOptions("gpt-5.4-mini", { temperature: 0.3, effort: "low" })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
+  });
+
+  it("gpt-6-luna e gpt-6-sol: none com temperatura; astra e 6.1-sol não aceitam none (low)", () => {
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { reasoningEffort: "none" } } });
+    expect(modelCallOptions("gpt-6-sol", { temperature: 0 })).toEqual({ temperature: 0, providerOptions: { openai: { reasoningEffort: "none" } } });
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3, effort: "low" })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
+    expect(modelCallOptions("gpt-6-astra", { temperature: 0.3 })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
+    expect(modelCallOptions("gpt-6.1-sol", { temperature: 0.3 })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
+    expect(modelCallOptions("gpt-5.6-luna", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { reasoningEffort: "none" } } });
+  });
+
+  it("ponto de corte do cache no fim do prompt fixo só do gpt-5.6 em diante", () => {
+    expect(fixedInstructions("gpt-4.1-mini", "fixo")).toBe("fixo");
+    expect(fixedInstructions("gpt-5.4-mini", "fixo")).toBe("fixo");
+    for (const m of ["gpt-5.6-luna", "gpt-6-luna", "gpt-6.1-sol"]) {
+      expect(fixedInstructions(m, "fixo"), m).toEqual({ role: "system", content: "fixo", providerOptions: { openai: { promptCacheBreakpoint: { mode: "explicit" } } } });
+    }
   });
 
   it("esforço escolhido na avaliação vale", () => {

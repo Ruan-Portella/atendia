@@ -21,6 +21,14 @@ describe("custo de IA", () => {
     expect(costUsd({ model: "gpt-5", inputTokens: 1_000_000, outputTokens: 0 })).toBe(1.25);
   });
 
+  it("gpt-5.6 em diante: a parte gravada no cache custa 1,25x a entrada", () => {
+    // gpt-6-luna: 0,10 entrada, 0,01 em cache, 0,125 gravada, 0,50 saída
+    expect(costUsd({ model: "gpt-6-luna", inputTokens: 10_000, cachedInputTokens: 4000, cacheWriteTokens: 5000, outputTokens: 1000 })).toBe(0.001265);
+    // modelos sem cobrança de gravação: a parte gravada sai pelo preço da entrada
+    expect(costUsd({ model: "gpt-4.1-mini", inputTokens: 10_000, cachedInputTokens: 4000, cacheWriteTokens: 5000, outputTokens: 0 })).toBe(0.0028);
+    expect(costUsd({ audioModel: "gpt-transcribe", audioSeconds: 120 })).toBe(0.009);
+  });
+
   it("modelo sem preço conhecido fica sem custo (não chuta)", () => {
     expect(costUsd({ model: "modelo-novo", inputTokens: 10, outputTokens: 10 })).toBeNull();
     expect(costUsd({ model: "gpt-4.1", inputTokens: 10, outputTokens: 10 })).not.toBeNull();

@@ -1,7 +1,7 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type UIMessage, type UIMessageChunk } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildPrompt, chatModel, chatModelId, embedText, modelCallOptions, offTopicReminder, scopeReminder, type Persona } from "./ai";
+import { buildPrompt, chatModel, chatModelId, embedText, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type Persona } from "./ai";
 import { getPlan } from "./plans";
 import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
@@ -800,7 +800,7 @@ export async function runChat(opts: {
     : callOptions.providerOptions;
   const result = streamText({
     model: chatModel(),
-    system: prompt.fixed,
+    system: fixedInstructions(chatModelId(), prompt.fixed),
     // com a trava de escopo, o lembrete vai depois da última mensagem (pesa mais que o histórico);
     // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
     allowSystemInMessages: true,
@@ -902,6 +902,7 @@ export async function runChat(opts: {
         model: response?.modelId,
         inputTokens: totalUsage?.inputTokens ?? 0,
         cachedInputTokens: totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0,
+        cacheWriteTokens: totalUsage?.inputTokenDetails?.cacheWriteTokens ?? 0,
         outputTokens: totalUsage?.outputTokens ?? 0,
         embeddingModel: embeddingUsage?.model,
         embeddingTokens: embeddingUsage?.tokens ?? 0,
