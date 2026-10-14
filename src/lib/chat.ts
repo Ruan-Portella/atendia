@@ -1,7 +1,7 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type UIMessage, type UIMessageChunk } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildPrompt, chatModel, chatModelId, embedText, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type Persona } from "./ai";
+import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, embedText, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type Persona } from "./ai";
 import { getPlan } from "./plans";
 import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
@@ -809,7 +809,7 @@ export async function runChat(opts: {
   const hasActions = Object.keys(actionTools).length > 0;
   const maxSteps = hasActions ? 5 : 3;
   // com ação de Confirmar, uma chamada de ferramenta por vez (nunca duas confirmações no mesmo passo)
-  const callOptions = modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel) });
+  const callOptions = modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel), effort: chatReasoningEffort() });
   const serialTools = Object.values(actionTools).some((t) => typeof t.description === "string" && t.description.endsWith(CONFIRM_RULE));
   const providerOptions = serialTools
     ? { ...callOptions.providerOptions, openai: { ...(callOptions.providerOptions?.openai ?? {}), parallelToolCalls: false }, anthropic: { ...(callOptions.providerOptions?.anthropic ?? {}), disableParallelToolUse: true } }

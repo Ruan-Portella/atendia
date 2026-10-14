@@ -25,12 +25,13 @@ const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_API_KEY });
 
 /**
- * Modelo padrão do chat. gpt-4.1-mini desde 01/10/2026: na avaliação (/api/eval), respondeu 100%
- * de uma pergunta com várias partes contra 20% do gpt-4o-mini (que caía no "Não tenho" e chamava
- * atendente sem motivo), com o mesmo prompt e os mesmos trechos; custa ~2,7x por resposta.
+ * Modelo padrão do chat. gpt-6-luna desde 14/10/2026: a OpenAI tira o gpt-4.1-mini do ar em
+ * 14/01/2027 e indica o gpt-6-luna. Na avaliação local (73 casos), com esforço "low" no chat e
+ * a trava do pedir_confirmacao_18 (só menção), custou ~4,7x menos por resposta que o gpt-4.1-mini.
+ * Antes, gpt-4.1-mini (01/10/2026): 100% numa pergunta com várias partes contra 20% do gpt-4o-mini.
  */
 export function chatModelId(): string {
-  return provider === "anthropic" ? (process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5") : (process.env.OPENAI_CHAT_MODEL ?? "gpt-4.1-mini");
+  return provider === "anthropic" ? (process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5") : (process.env.OPENAI_CHAT_MODEL ?? "gpt-6-luna");
 }
 
 /**
@@ -56,9 +57,21 @@ export function chatModel(id?: string): LanguageModel {
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 /**
+ * Esforço de raciocínio da resposta do chat (e o padrão da avaliação). O classificador do portão e
+ * as outras chamadas ficam no mínimo de cada modelo (modelCallOptions). OPENAI_CHAT_REASONING_EFFORT
+ * troca; sem ela, "low" no gpt-6-luna: na avaliação de 14/10/2026, com "none" ele errou 2 casos a
+ * mais (pediu 18+ para uma pizza e não pediu o nome antes do pedido), pelo mesmo custo.
+ */
+export function chatReasoningEffort(modelId: string = chatModelId()): ReasoningEffort | undefined {
+  const fromEnv = process.env.OPENAI_CHAT_REASONING_EFFORT as ReasoningEffort | undefined;
+  if (fromEnv) return fromEnv;
+  return /^gpt-6-luna\b/.test(modelId) ? "low" : undefined;
+}
+
+/**
  * Opções de chamada por modelo. Os que raciocinam (gpt-5 em diante, série o) pensam antes de
- * responder e esses tokens são cobrados como saída: no atendimento, esforço mínimo ("minimal"
- * no gpt-5, "none" do gpt-5.1 em diante e no gpt-6-luna/sol; OPENAI_REASONING_EFFORT troca).
+ * responder e esses tokens são cobrados como saída: sem `effort`, o mínimo ("minimal" no gpt-5,
+ * "none" do gpt-5.1 em diante e no gpt-6-luna/sol); o chat passa o dele (chatReasoningEffort).
  * Eles não aceitam temperatura, a não ser com "none" nos que o aceitam. gpt-6-astra e gpt-6.1-sol
  * não aceitam "none" (vão com "low"). `cacheKey` manda as chamadas com o mesmo começo de prompt
  * para o mesmo servidor da OpenAI (mais acerto no cache).
@@ -71,7 +84,7 @@ export function modelCallOptions(modelId: string, o: { temperature?: number; cac
   const reasoning = /^o\d/.test(modelId) || (major >= 5 && gpt?.[3] !== "chat");
   const acceptsNone = (major === 5 && (minor ?? 0) >= 1) || (major === 6 && minor === null && (gpt?.[3] === "luna" || gpt?.[3] === "sol"));
   const effort: ReasoningEffort | undefined = reasoning
-    ? (o.effort ?? (process.env.OPENAI_REASONING_EFFORT as ReasoningEffort | undefined) ?? (major === 5 && minor === null ? "minimal" : acceptsNone ? "none" : "low"))
+    ? (o.effort ?? (major === 5 && minor === null ? "minimal" : acceptsNone ? "none" : "low"))
     : undefined;
   const keepsTemperature = !reasoning || (effort === "none" && acceptsNone);
   const openaiOptions = { ...(o.cacheKey ? { promptCacheKey: o.cacheKey } : {}), ...(effort ? { reasoningEffort: effort } : {}) };

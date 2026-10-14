@@ -1,6 +1,6 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildPrompt, chatModel, chatModelId, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
+import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
 import { CHAT_TEMPERATURE, ageAskRefusal, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { isScopeRefusalText, isTextRefusal } from "./refusal-text";
@@ -35,7 +35,7 @@ export interface EvalOptions {
   age?: AgeStatus;
   /** Contato de fora do Brasil (no WhatsApp, regulamentado vira proibido). */
   foreign?: boolean;
-  /** Esforço de raciocínio (só modelos que raciocinam: gpt-5 em diante). */
+  /** Esforço de raciocínio (só modelos que raciocinam: gpt-5 em diante; padrão: o do chat). */
   effort?: ReasoningEffort;
   /** Modelo do classificador do portão (padrão: classifierModelId()). */
   classifierModel?: string;
@@ -100,6 +100,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
   if (retrieval.embeddingUsage?.tokens) opts.onUsage?.({ embeddingModel: retrieval.embeddingUsage.model, embeddingTokens: retrieval.embeddingUsage.tokens });
   const { context, hits } = retrieval;
   const phone = opts.foreign ? "14155550123" : "5521999990000";
+  const effort = opts.effort ?? chatReasoningEffort(opts.model ?? chatModelId());
   const channelNote = opts.channel === "whatsapp" ? channelNoteFor({ whatsapp: { waId: phone } }) : opts.channel === "instagram" ? channelNoteFor({ instagram: { igsid: "teste" } }) : undefined;
   const scopeLock = opts.channel === "whatsapp" || opts.channel === "instagram";
   const age = opts.age ?? null;
@@ -150,7 +151,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, gated.reminder) }] : [{ role: "system" as const, content: offTopicReminder(bot.client_name) }]),
         ],
         // mesmas opções do chat (esforço de raciocínio, chave de cache)
-        ...modelCallOptions(opts.model ?? chatModelId(), { temperature: opts.temperature ?? CHAT_TEMPERATURE, cacheKey: chatCacheKey(opts.channel ?? "site"), effort: opts.effort }),
+        ...modelCallOptions(opts.model ?? chatModelId(), { temperature: opts.temperature ?? CHAT_TEMPERATURE, cacheKey: chatCacheKey(opts.channel ?? "site"), effort }),
         stopWhen: [stepCountIs(3), () => shown !== null],
         maxRetries: 6,
         // mesmas ferramentas do chat, sem efeito (nada é gravado nem avisado)
@@ -256,7 +257,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
   return {
     question,
     model: opts.model ?? `${chatModelId()} (padrão)`,
-    effort: opts.effort ?? null,
+    effort: effort ?? null,
     temperature: opts.temperature ?? CHAT_TEMPERATURE,
     channel: opts.channel ?? "widget",
     age,

@@ -8,7 +8,9 @@ https://dev.boavoz.com/api/eval?bot=ID_DO_BOT&casos=1
 ```
 
 Opcionais: `&n=3` (rodadas por caso, até 5), `&categoria=escopo_fixo` (só uma categoria),
-`&model=gpt-4.1-mini`, `&esforco=minimal` (modelos gpt-5), `&temp=0.3`. Só abre para quem está em
+`&model=gpt-5.6-luna` (padrão: o do chat, `gpt-6-luna`), `&esforco=none` (modelos que raciocinam;
+padrão: o do chat, `low` no gpt-6-luna), `&classificador=gpt-6-luna` (classificador do portão),
+`&temp=0.3`. Só abre para quem está em
 `PLATFORM_ADMIN_EMAILS`, logado. Os casos aparecem na tela à medida que terminam e o resumo (com o
 custo por resposta) vem no fim; o conjunto inteiro leva uns 2 a 4 minutos. Se o tempo acabar
 (5 minutos, limite da Vercel), o relatório diz quais casos ficaram de fora.

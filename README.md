@@ -42,7 +42,7 @@ Stack: **Next.js 16 (App Router)** na Vercel · **Supabase** (Auth, Postgres + p
 
 ### 2. IA: OpenAI ou Anthropic
 
-O chat pode responder com **OpenAI** (padrão, `gpt-4o-mini`) ou com **Anthropic** (`AI_PROVIDER=anthropic`, modelo em `ANTHROPIC_MODEL`, padrão `claude-haiku-4-5`; troque para `claude-sonnet-4-5` se quiser respostas melhores em português por um custo maior).
+O chat pode responder com **OpenAI** (padrão, `gpt-6-luna`; `OPENAI_CHAT_MODEL` troca o modelo e `OPENAI_CHAT_REASONING_EFFORT` o esforço de raciocínio do chat, `low` por padrão no gpt-6-luna; o classificador do portão fica em `none`, e `OPENAI_CLASSIFIER_MODEL` troca o modelo dele) ou com **Anthropic** (`AI_PROVIDER=anthropic`, modelo em `ANTHROPIC_MODEL`, padrão `claude-haiku-4-5`; troque para `claude-sonnet-4-5` se quiser respostas melhores em português por um custo maior).
 
 A busca na base de conhecimento usa **embeddings**, e a Anthropic não oferece esse modelo. Escolha um dos dois (`EMBEDDING_PROVIDER`, ou deixe vazio para usar a chave que existir):
 

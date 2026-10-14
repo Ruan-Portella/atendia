@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { evalReport, evaluateQuestion } from "@/lib/eval";
 import { caseLine, casesReport, casesSummary, loadCases, runCases } from "@/lib/eval-cases";
 import { requireAdminApi } from "@/lib/platform-admin";
-import { chatModelId, classifierModelId, type ReasoningEffort } from "@/lib/ai";
+import { chatModelId, chatReasoningEffort, classifierModelId, type ReasoningEffort } from "@/lib/ai";
 import { CHAT_TEMPERATURE, type BotRow } from "@/lib/chat";
 import { costUsd, recordAiUsageMany, type UsageTokens } from "@/lib/ai-usage";
 
@@ -34,7 +34,7 @@ const CASES_BUDGET_MS = 280_000;
 export const dynamic = "force-dynamic";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high"] as const;
-/** &esforco= (modelos que raciocinam, gpt-5 em diante); sem ele, o mínimo do modelo. */
+/** &esforco= (modelos que raciocinam, gpt-5 em diante); sem ele, o do chat (chatReasoningEffort). */
 const effortOf = (v: string | null): ReasoningEffort | undefined => (EFFORTS as readonly string[]).includes(v ?? "") ? (v as ReasoningEffort) : undefined;
 
 /**
@@ -77,7 +77,7 @@ export async function GET(req: Request) {
     const temperature = temp !== null && temp !== "" && Number.isFinite(Number(temp)) ? Math.min(Math.max(Number(temp), 0), 1.5) : undefined;
     const model = sp.get("model")?.trim() || undefined;
     const runs = Math.min(Math.max(Number(sp.get("n") ?? 3) || 3, 1), 5);
-    const effort = effortOf(sp.get("esforco"));
+    const effort = effortOf(sp.get("esforco")) ?? chatReasoningEffort(model ?? chatModelId());
     const classifierModel = sp.get("classificador")?.trim() || undefined;
     const label = `${model ?? `${chatModelId()} (padrão)`}${effort ? ` (raciocínio: ${effort})` : ""} · classificador do portão: ${classifierModel ?? `${classifierModelId()} (padrão)`}`;
     const stopAt = Date.now() + CASES_BUDGET_MS;

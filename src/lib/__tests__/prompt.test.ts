@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildPrompt, buildSystemPrompt, fixedInstructions, modelCallOptions } from "../ai";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildPrompt, buildSystemPrompt, chatModelId, chatReasoningEffort, classifierModelId, fixedInstructions, modelCallOptions } from "../ai";
 
 const base = { assistantName: "Lia", clientName: "Escola Inglês Já", persona: {}, context: "Aulas de inglês às terças.", leadCapture: true };
 
@@ -118,5 +118,40 @@ describe("opções de chamada por modelo", () => {
 
   it("esforço escolhido na avaliação vale", () => {
     expect(modelCallOptions("gpt-5-mini", { effort: "low" })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
+  });
+});
+
+describe("modelo e esforço do chat", () => {
+  afterEach(() => void vi.unstubAllEnvs());
+
+  it("padrão: gpt-6-luna no chat e no classificador do portão", () => {
+    vi.stubEnv("OPENAI_CHAT_MODEL", undefined);
+    vi.stubEnv("OPENAI_CLASSIFIER_MODEL", undefined);
+    expect(chatModelId()).toBe("gpt-6-luna");
+    expect(classifierModelId()).toBe("gpt-6-luna");
+    vi.stubEnv("OPENAI_CHAT_MODEL", "gpt-4.1-mini");
+    expect(chatModelId()).toBe("gpt-4.1-mini");
+  });
+
+  it("esforço do chat: low no gpt-6-luna; nos outros, o mínimo do modelo", () => {
+    vi.stubEnv("OPENAI_CHAT_REASONING_EFFORT", undefined);
+    expect(chatReasoningEffort("gpt-6-luna")).toBe("low");
+    expect(chatReasoningEffort("gpt-6-luna-2026-10-01")).toBe("low");
+    for (const m of ["gpt-4.1-mini", "gpt-5.4-mini", "gpt-6-sol", "gpt-6-lunar"]) expect(chatReasoningEffort(m), m).toBeUndefined();
+    vi.stubEnv("OPENAI_CHAT_MODEL", undefined);
+    expect(chatReasoningEffort()).toBe("low");
+  });
+
+  it("OPENAI_CHAT_REASONING_EFFORT troca só o chat: o classificador do portão continua none, com temperatura 0", () => {
+    vi.stubEnv("OPENAI_CHAT_REASONING_EFFORT", "medium");
+    expect(chatReasoningEffort("gpt-6-luna")).toBe("medium");
+    expect(chatReasoningEffort("gpt-5.4-mini")).toBe("medium");
+    // chamada do chat
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3, cacheKey: "k", effort: chatReasoningEffort("gpt-6-luna") })).toEqual({ providerOptions: { openai: { promptCacheKey: "k", reasoningEffort: "medium" } } });
+    // classificador do portão (gate/entrance.ts): sem effort
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0, cacheKey: "boavoz-portao" })).toEqual({ temperature: 0, providerOptions: { openai: { promptCacheKey: "boavoz-portao", reasoningEffort: "none" } } });
+    // a variável antiga (valia para as duas) não muda mais nada
+    vi.stubEnv("OPENAI_REASONING_EFFORT", "low");
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0 })).toEqual({ temperature: 0, providerOptions: { openai: { reasoningEffort: "none" } } });
   });
 });
