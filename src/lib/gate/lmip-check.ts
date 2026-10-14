@@ -5,7 +5,10 @@ import { LMIP_FITOTERAPICOS, LMIP_SINTETICOS } from "./lmip";
  * receita (proibido). A IA só lê o fármaco, a forma e a concentração no texto da empresa; quem
  * decide é esta conferência, contra a lista oficial da Anvisa (IN 285/2024). Fora da lista, forma
  * que a lista não traz ou concentração acima do máximo = receita. Sem forma ou concentração no
- * texto, vale o fármaco (o texto não diz nada que o tire da lista).
+ * texto, vale o fármaco (o texto não diz nada que o tire da lista). Forma genérica no texto
+ * ("comprimido", "cápsula") casa com as variações da lista que começam com ela (revestido,
+ * efervescente, dura…), menos as de liberação modificada ou de outra via (vaginal, nasal…): o
+ * teto de concentração continua valendo.
  */
 
 export interface LmipVerdict {
@@ -54,6 +57,13 @@ function singular(s: string) {
     .join(" ");
 }
 
+/** Variação que muda a liberação ou a via: não vale para a forma genérica do texto. */
+const NOT_GENERIC = /\b(liberacao|vaginal|retal|oftalmic|nasal|otologic|inalatori|capilar)/;
+
+/** A forma do texto casa com a da lista? "comprimido" casa com "comprimido revestido", não com "comprimido revestido de liberação prolongada". */
+const sameForm = (fromText: string, fromList: string) =>
+  fromText === fromList || (fromList.startsWith(`${fromText} `) && !NOT_GENERIC.test(fromList.slice(fromText.length)));
+
 export interface Concentration {
   values: number[];
   unit: string; // mg | mg/ml | mg/g | ui/g …
@@ -99,7 +109,10 @@ function exceeds(c: Concentration, max: Concentration): boolean | null {
 export function lmipCheck(farmaco: string, forma?: string | null, concentracao?: string | null): LmipVerdict {
   const names = components(farmaco);
   if (!names.length) return { status: "receita", reason: "remédio sem nome" };
-  const entries = LMIP_SINTETICOS.filter((e) => sameDrug(names, components(e.farmaco)));
+  const matching = LMIP_SINTETICOS.filter((e) => sameDrug(names, components(e.farmaco)));
+  // o nome exato vence o sal: "ibuprofeno" não usa o teto da "ibuprofeno arginina" (770 mg)
+  const exact = matching.filter((e) => components(e.farmaco).join("+") === names.join("+"));
+  const entries = exact.length ? exact : matching;
   if (!entries.length) {
     const plant = LMIP_FITOTERAPICOS.find((e) => sameDrug(names, components(e.especie)));
     return plant ? { status: "mip", reason: `fitoterápico isento (${plant.especie})` } : { status: "receita", reason: "fora da lista de isentos da Anvisa" };
@@ -107,7 +120,7 @@ export function lmipCheck(farmaco: string, forma?: string | null, concentracao?:
   let candidates = entries;
   if (forma?.trim()) {
     const f = singular(plain(forma));
-    candidates = entries.filter((e) => formsOf(e.forma).includes(f));
+    candidates = entries.filter((e) => formsOf(e.forma).some((l) => sameForm(f, l)));
     if (!candidates.length) return { status: "receita", reason: `forma "${forma}" fora da lista de isentos` };
   }
   if (concentracao?.trim()) {

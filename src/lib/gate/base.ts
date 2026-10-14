@@ -83,7 +83,7 @@ Marque só as frases que mostram, listam, oferecem ou dão preço de algum deste
 - bebida: bebida alcoólica (cerveja, chopp, vinho, destilado, drink com álcool), também pelo nome ou marca (ex.: "Moscow Mule", "Colorado Appia", "Aperol Spritz");
 - medicamento: qualquer remédio, com ou sem receita, pelo nome comercial ou pelo princípio ativo. Informe "farmaco" (princípio ativo em português; associação com " + "), "forma" (comprimido, cápsula, solução oral, creme…) e "concentracao" (ex.: "500 mg", "200 mg/5 mL"), quando o texto disser;
 ${cats}
-Não marque: menção sem oferta ("não vendemos bebida alcoólica"), prato feito com o item ("frango na cerveja"), bebida sem álcool, orientação geral de saúde.
+Não marque: menção sem oferta ("não vendemos bebida alcoólica"), prato feito com o item ("frango na cerveja"), bebida sem álcool, orientação geral de saúde, higiene, beleza e cosméticos (protetor solar, shampoo, escova de dentes, fralda), teste de gravidez e de ovulação.
 Responda só: {"itens": [{"n": 2, "categoria": "bebida"}, {"n": 5, "categoria": "medicamento", "farmaco": "ibuprofeno", "forma": "comprimido", "concentracao": "600 mg"}]} (lista vazia se nada).
 
 Frases:

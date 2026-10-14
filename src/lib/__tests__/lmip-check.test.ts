@@ -31,6 +31,23 @@ describe("remédio isento (MIP) ou com receita, pela lista da Anvisa", () => {
     expect(lmipCheck("Ibuprofeno", "injetável", "400 mg")).toEqual({ status: "receita", reason: 'forma "injetável" fora da lista de isentos' });
   });
 
+  it("forma genérica do texto casa com as variações da lista, com o mesmo teto", () => {
+    // a lista só tem paracetamol 750 mg como comprimido revestido
+    expect(lmipCheck("Paracetamol", "comprimidos", "750 mg").status).toBe("mip");
+    expect(lmipCheck("Paracetamol", "comprimido", "1 g").status).toBe("receita");
+    expect(lmipCheck("Loratadina", "cápsula", "10 mg").status).toBe("mip");
+    expect(lmipCheck("Omeprazol", "cápsula", "20 mg").status).toBe("mip");
+    // liberação modificada não vale para a forma genérica: ibuprofeno 600 mg comum segue com receita
+    expect(lmipCheck("Ibuprofeno", "comprimido", "600 mg").status).toBe("receita");
+    expect(lmipCheck("Omeprazol", "cápsula", "40 mg").status).toBe("receita");
+  });
+
+  it("forma genérica não casa com outra via", () => {
+    // clotrimazol só é isento como comprimido vaginal (e creme)
+    expect(lmipCheck("Clotrimazol", "comprimido", "500 mg").status).toBe("receita");
+    expect(lmipCheck("Clotrimazol", "comprimido vaginal", "500 mg").status).toBe("mip");
+  });
+
   it("fora da lista: com receita", () => {
     expect(lmipCheck("Amoxicilina", "cápsula", "500 mg")).toEqual({ status: "receita", reason: "fora da lista de isentos da Anvisa" });
     expect(lmipCheck("Clonazepam").status).toBe("receita");
