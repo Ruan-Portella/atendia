@@ -1,7 +1,7 @@
 import { generateText, stepCountIs } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
-import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
+import { CHAT_TEMPERATURE, ageAskRefusal, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { isScopeRefusalText, isTextRefusal } from "./refusal-text";
 import { joinShownText, normalizeLink, normalizeOptions, optionsFromText, type MessageComponent } from "./components";
@@ -122,7 +122,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       const remind = entrance?.kind === "ia" && (entrance.regulated.length > 0 || entrance.prohibited.length > 0);
       const gated = scopeLock
         ? gatePrompt(bot, retrieval, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, gate: { age, exempt, instruction: entrance?.kind === "ia" ? entrance.instruction : undefined, remind } })
-        : { context, gateNotes: [], reminder: [] };
+        : { context, gateNotes: [], reminder: [], hidden: [] };
       const prompt = buildPrompt({
         assistantName: bot.name,
         clientName: bot.client_name,
@@ -168,7 +168,11 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           },
           registrar_pergunta_sem_resposta: noop,
           registrar_recusa: async () => ({ ok: true, instrucao: refusalAck(bot.client_name) }),
-          pedir_confirmacao_18: noop,
+          // mesma recusa do chat (idade já respondida; só menção, sem item oculto na base)
+          pedir_confirmacao_18: async () => {
+            const refused = ageAskRefusal({ age, onlyMentioned: entrance?.kind === "ia" && entrance.onlyMentioned }, gated.hidden);
+            return refused ? { ok: false, instrucao: refused } : { ok: true };
+          },
           mostrar_opcoes: async ({ texto, opcoes }) => {
             const options = normalizeOptions(opcoes);
             if (!options) return { ok: false, instrucao: "Opções insuficientes: responda em texto." };
@@ -198,11 +202,12 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         }
       }
       opts.onUsage?.(usageFrom(r.response?.modelId ?? opts.model ?? chatModelId(), r.totalUsage));
-      // lead recusado pela conferência (sem nome ou contato): nada foi gravado; aparece à parte no relatório
+      // lead recusado pela conferência (sem nome ou contato) e pergunta de 18+ recusada: nada foi
+      // gravado nem perguntado; aparecem à parte no relatório
       const tools = r.steps.flatMap((s) =>
         s.toolCalls.map((c) => {
           const out = s.toolResults.find((t) => t.toolCallId === c.toolCallId)?.output as { ok?: unknown } | undefined;
-          return c.toolName === "registrar_lead" && out?.ok === false ? "registrar_lead_recusado" : c.toolName;
+          return (c.toolName === "registrar_lead" || c.toolName === "pedir_confirmacao_18") && out?.ok === false ? `${c.toolName}_recusado` : c.toolName;
         }),
       );
       // opções tiradas da lista do texto (rede de segurança): aparece no relatório

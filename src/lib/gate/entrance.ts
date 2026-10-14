@@ -49,8 +49,9 @@ export type EntranceDecision =
   /**
    * Segue para a IA, com instrução extra e/ou texto fixo antes da resposta. `question`: a
    * mensagem sem os itens barrados, que a IA responde no lugar da original (ela nem vê o item).
+   * `onlyMentioned`: o dicionário acusou e o classificador disse que tudo é só menção.
    */
-  | { kind: "ia"; prefix?: string; instruction?: string; question?: string; regulated: GateCategory[]; prohibited: GateCategory[] };
+  | { kind: "ia"; prefix?: string; instruction?: string; question?: string; regulated: GateCategory[]; prohibited: GateCategory[]; onlyMentioned?: boolean };
 
 /**
  * Etapa 2: IA barata, só quando o dicionário acusa. Cada categoria marcada conta como pedida, a
@@ -132,7 +133,8 @@ export async function decideEntrance(input: EntranceInput): Promise<EntranceDeci
   }
 
   const blockedAsked = [...prohibited, ...(input.age === "nao" ? regulated : [])];
-  if (!blockedAsked.length) return { kind: "ia", regulated, prohibited };
+  // "bebi cerveja ontem, posso tomar dipirona?": nada pedido, a IA não pergunta a idade (o gpt-6-luna perguntava)
+  if (!blockedAsked.length) return { kind: "ia", regulated, prohibited, ...(c.pedidas.length ? {} : { onlyMentioned: true }) };
   // a IA responde à mensagem sem os itens barrados (pedir no prompt para não citar não bastava:
   // ela dizia "sobre a Heineken, vou confirmar com a equipe"); a reescrita que ainda tem o item
   // não serve, e aí fica a mensagem original com a instrução

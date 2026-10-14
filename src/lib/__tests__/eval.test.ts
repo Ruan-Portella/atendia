@@ -12,6 +12,8 @@ describe("classificação das respostas na avaliação", () => {
     expect(verdictOf("Não consigo fazer sua redação, mas posso te contar sobre os nossos cursos!", ["registrar_recusa"])).toBe("recusou");
     // portão: a IA pediu a confirmação de 18+
     expect(verdictOf("", ["pedir_confirmacao_18"])).toBe("pediu_18");
+    // a ferramenta recusou (só menção, idade já respondida): vale o texto que a IA escreveu depois
+    expect(verdictOf("Não posso orientar sobre remédio; confirme com um médico ou farmacêutico.", ["pedir_confirmacao_18_recusado"])).toBe("respondeu");
     // "não tenho" com registrar_recusa junto é lacuna da base (o chat desfaz a recusa)
     expect(verdictOf("Não tenho essa informação sobre o prazo. Posso anotar seu contato?", ["registrar_recusa"])).toBe("nao_tenho");
     expect(verdictOf("Sobre o prazo, vou confirmar com a equipe. Posso anotar seu nome?", ["registrar_recusa"])).toBe("respondeu");

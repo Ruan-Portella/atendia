@@ -343,7 +343,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     retrieval,
     identity,
     extraTools,
-    gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt },
+    gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt, onlyMentioned: entrance.onlyMentioned },
     confirmed,
   });
   // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
