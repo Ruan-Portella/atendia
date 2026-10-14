@@ -1,24 +1,45 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { caseLine, checkRun, inventedValues, loadCases, runCases, type EvalCase } from "../eval-cases";
+import { botHint, caseLine, checkRun, inventedValues, loadCases, runCases, type EvalCase } from "../eval-cases";
 import type { EvalRun } from "../eval";
 
-describe.each([
-  ["evals/casos.jsonl", undefined, 20],
-  ["evals/casos-bar.jsonl", "bar", 5],
-] as const)("conjunto fixo de casos (%s)", (_file, name, min) => {
+/** Ferramentas do chat que um caso pode exigir (ferramenta) ou proibir (nao_usar). */
+const TOOLS = ["registrar_lead", "chamar_atendente", "registrar_pergunta_sem_resposta", "registrar_recusa", "pedir_confirmacao_18", "mostrar_opcoes", "mostrar_link"];
+
+// todos os arquivos de evals/: o geral e os dos bots de teste (bar e um por segmento)
+const caseFiles = readdirSync("evals")
+  .filter((f) => /^casos(-[a-z0-9_-]+)?\.jsonl$/.test(f))
+  .map((f) => [f, f === "casos.jsonl" ? undefined : f.slice("casos-".length, -".jsonl".length)] as const);
+
+it("os arquivos de casos dos segmentos estão em evals/", () => {
+  const names = caseFiles.map(([, name]) => name);
+  for (const s of ["bar", "clinica", "delivery", "financas", "iphone", "vendas", "limpeza", "shopping", "trafego", "farmacia", "petshop", "estetica", "academia"]) expect(names).toContain(s);
+});
+
+describe.each(caseFiles)("conjunto fixo de casos (evals/%s)", (file, name) => {
   const cases = loadCases(name);
 
   it("todas as linhas são casos válidos, com id único", () => {
-    expect(cases.length).toBeGreaterThan(min);
+    expect(cases.length).toBeGreaterThan(name ? 5 : 20);
     expect(new Set(cases.map((c) => c.id)).size).toBe(cases.length);
     for (const c of cases) {
       expect(["recusa", "nao_recusa", "atendente", "barra", "pede_18", "qualquer"], c.id).toContain(c.esperado);
       if (c.idade) expect(["sim", "nao"], c.id).toContain(c.idade);
       expect(c.pergunta.length, c.id).toBeGreaterThan(1);
       if (c.historico) expect(c.historico.length % 2, `${c.id}: histórico alterna contato e assistente`).toBe(0);
-      if (c.deve_conter) new RegExp(c.deve_conter, "i");
-      if (c.nao_deve_conter) new RegExp(c.nao_deve_conter, "i");
+      if (c.canal) expect(["whatsapp", "instagram", "widget"], c.id).toContain(c.canal);
+      for (const t of [c.ferramenta, c.nao_usar]) if (t) expect(TOOLS, c.id).toContain(t);
+      for (const re of [c.deve_conter, c.nao_deve_conter]) {
+        if (!re) continue;
+        new RegExp(re, "i");
+        // "\b" no JSON vira backspace: a expressão precisa de "\\b"
+        expect(/[\u0000-\u001f]/.test(re), `${c.id}: caractere de controle na expressão`).toBe(false);
+      }
     }
+  });
+
+  it.runIf(name)("diz no topo para qual bot de teste os casos foram escritos", () => {
+    expect(botHint(readFileSync(`evals/${file}`, "utf8"))).toBeTruthy();
   });
 });
 
