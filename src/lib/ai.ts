@@ -27,7 +27,7 @@ const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_API_KEY });
 /**
  * Modelo padrão do chat. gpt-6-luna desde 14/10/2026: a OpenAI tira o gpt-4.1-mini do ar em
  * 14/01/2027 e indica o gpt-6-luna. Na avaliação local (73 casos), com esforço "low" no chat e
- * a trava do pedir_confirmacao_18 (só menção), custou ~4,7x menos por resposta que o gpt-4.1-mini.
+ * a trava do pedir_confirmacao_18 (só menção): US$ 0,00025 por resposta, contra 0,00125 do gpt-4.1-mini.
  * Antes, gpt-4.1-mini (01/10/2026): 100% numa pergunta com várias partes contra 20% do gpt-4o-mini.
  */
 export function chatModelId(): string {

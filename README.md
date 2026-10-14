@@ -51,7 +51,7 @@ A busca na base de conhecimento usa **embeddings**, e a Anthropic não oferece e
 
 Os dois geram vetores de 1536 dimensões; não misture provedores depois de indexar (se trocar, reprocesse as fontes).
 
-Custo aproximado por conversa: R$ 0,01 a 0,03 com gpt-4o-mini ou Claude Haiku; 3 a 5 vezes isso com Claude Sonnet.
+Custo aproximado por resposta do chat: US$ 0,0002 a 0,0003 com gpt-6-luna (avaliação local de 14/10/2026, com o prompt fixo vindo do cache); com Claude, o Sonnet custa de 3 a 5 vezes o Haiku.
 
 ### 3. Local
 
