@@ -7,7 +7,7 @@ import { isChatLink, regulatedChannelNote, regulatedDestination } from "../gate/
 import { ageAnswer, historyUpTo, withLastUserText } from "../gate/flow";
 import { gatedContext, gatedHistory, hiddenNote } from "../gate/context";
 import { scopeReminder } from "../ai";
-import { ageAskRefusal, gateNotesFor, gatePrompt } from "../chat";
+import { ageAskRefusal, gateNotesFor } from "../chat";
 import type { GateCategory } from "../gate/rules";
 
 /* ------------------------------------------------------------------ canal de venda de regulamentados */
@@ -244,17 +244,12 @@ describe("pedir_confirmacao_18 recusado", () => {
     const refused = ageAskRefusal({ age: null, onlyMentioned: true });
     expect(refused).toContain("não pergunte a idade");
     expect(refused).toContain("regra de Saúde");
-    // item proibido oculto não muda nada (não há o que mostrar com o 18+)
-    expect(ageAskRefusal({ age: null, onlyMentioned: true }, ["tabaco"])).toBe(refused);
   });
 
-  it("pede o item ou ia mostrar bebida ou remédio ocultos na base: a pergunta de 18+ vai", () => {
+  it("pede o item, ou o dicionário não acusou (\"o que vocês têm?\" com cerveja oculta, hiddenNote): a pergunta de 18+ vai", () => {
     expect(ageAskRefusal({ age: null })).toBeNull();
+    expect(ageAskRefusal({ age: null, onlyMentioned: false })).toBeNull();
     expect(ageAskRefusal(undefined)).toBeNull();
-    expect(ageAskRefusal({ age: null }, ["bebida"])).toBeNull();
-    // só menção, mas a base desta pergunta tem bebida ou remédio ocultos (hiddenNote)
-    expect(ageAskRefusal({ age: null, onlyMentioned: true }, ["bebida"])).toBeNull();
-    expect(ageAskRefusal({ age: null, onlyMentioned: true }, ["medicamento", "tabaco"])).toBeNull();
   });
 
   it("idade já respondida: recusa como antes", () => {
@@ -263,16 +258,19 @@ describe("pedir_confirmacao_18 recusado", () => {
     expect(ageAskRefusal({ age: "nao" })).toContain("não tem 18 anos");
   });
 
-  it("caso portao-mencao: entrada lê menção, base sem o item, a ferramenta recusa", async () => {
-    const text = "bebi cerveja ontem, posso tomar dipirona agora?";
-    const context = "[1] Planos\nO plano básico custa R$ 29 por mês e inclui conta digital.";
-    const d = await entrance(text, { classify: classifyAs([], true), context, companyName: "Fintra" });
-    expect(d).toMatchObject({ kind: "ia", onlyMentioned: true });
-    if (d.kind !== "ia") return;
-    const gate = { age: null, onlyMentioned: d.onlyMentioned };
-    const g = gatePrompt({ regulated_channel: null, human_handoff: null }, { context, hits: [] }, { channel: "whatsapp", contactPhone: "5521999990000", gate });
-    expect(g.hidden).toEqual([]);
-    expect(ageAskRefusal(gate, g.hidden)).toContain("não pergunte a idade");
+  it("casos portao-mencao e bar-saude-sintoma: o dicionário acusa, a entrada lê menção e a ferramenta recusa", async () => {
+    const cases: Array<[string, Partial<Parameters<typeof decideEntrance>[0]>, GateCategory[]]> = [
+      ["bebi cerveja ontem, posso tomar dipirona agora?", { context: "[1] Planos\nO plano básico custa R$ 29 por mês.", companyName: "Fintra" }, ["bebida", "medicamento"]],
+      // a base do bar tem cerveja (oculta sem o Sim): a pergunta de saúde não vira pergunta de idade
+      ["tô com dor de cabeça forte, qual remédio eu tomo?", { channel: "instagram", contactPhone: null }, ["medicamento"]],
+    ];
+    for (const [text, o, accused] of cases) {
+      const classify = classifyAs([], true);
+      const d = await entrance(text, { ...o, classify });
+      expect(classify, text).toHaveBeenCalledWith(text, expect.arrayContaining(accused), expect.any(String), []);
+      expect(d, text).toEqual({ kind: "ia", regulated: [], prohibited: [], onlyMentioned: true });
+      if (d.kind === "ia") expect(ageAskRefusal({ age: null, onlyMentioned: d.onlyMentioned }), text).toContain("não pergunte a idade");
+    }
   });
 });
 

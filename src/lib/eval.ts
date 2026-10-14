@@ -123,7 +123,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
       const remind = entrance?.kind === "ia" && (entrance.regulated.length > 0 || entrance.prohibited.length > 0);
       const gated = scopeLock
         ? gatePrompt(bot, retrieval, { channel: opts.channel as "whatsapp" | "instagram", contactPhone: opts.channel === "whatsapp" ? phone : null, gate: { age, exempt, instruction: entrance?.kind === "ia" ? entrance.instruction : undefined, remind } })
-        : { context, gateNotes: [], reminder: [], hidden: [] };
+        : { context, gateNotes: [], reminder: [] };
       const prompt = buildPrompt({
         assistantName: bot.name,
         clientName: bot.client_name,
@@ -169,9 +169,9 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           },
           registrar_pergunta_sem_resposta: noop,
           registrar_recusa: async () => ({ ok: true, instrucao: refusalAck(bot.client_name) }),
-          // mesma recusa do chat (idade já respondida; só menção, sem item oculto na base)
+          // mesma recusa do chat (idade já respondida; só menção)
           pedir_confirmacao_18: async () => {
-            const refused = ageAskRefusal({ age, onlyMentioned: entrance?.kind === "ia" && entrance.onlyMentioned }, gated.hidden);
+            const refused = ageAskRefusal({ age, onlyMentioned: entrance?.kind === "ia" && entrance.onlyMentioned });
             return refused ? { ok: false, instrucao: refused } : { ok: true };
           },
           mostrar_opcoes: async ({ texto, opcoes }) => {

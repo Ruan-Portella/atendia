@@ -467,14 +467,15 @@ export interface GateState {
 /**
  * Por que o pedir_confirmacao_18 não vale desta vez (a instrução que a IA recebe), ou null quando a
  * pergunta de 18+ vai. Só menção ("bebi cerveja ontem, posso tomar dipirona?"): o gpt-6-luna chamava
- * a ferramenta mesmo com o classificador lendo menção certo. Com bebida ou remédio ocultos na base
- * desta pergunta (`hidden`), a IA ainda pode pedir a idade para mostrá-los (hiddenNote).
+ * a ferramenta mesmo com o classificador lendo menção certo. Vale também com bebida ou remédio ocultos
+ * na base ("tô com dor de cabeça, qual remédio eu tomo?" no bar): sem o Sim eles nem chegam à IA, e
+ * quem pedir o item depois cai na pergunta de 18+ da entrada.
  */
-export function ageAskRefusal(gate: Pick<GateState, "age" | "onlyMentioned"> | undefined, hidden: GateCategory[] = []): string | null {
+export function ageAskRefusal(gate?: Pick<GateState, "age" | "onlyMentioned">): string | null {
   // idade já respondida: não pergunta de novo (a IA ainda pode seguir um aviso velho do histórico)
   if (gate?.age === "sim") return "A pessoa já confirmou ter 18 anos ou mais: não pergunte de novo. Responda; se precisar dos itens de uma consulta, chame a ação de novo.";
   if (gate?.age === "nao") return "A pessoa disse que não tem 18 anos: não pergunte de novo e não fale desses itens; ofereça o resto.";
-  if (gate?.onlyMentioned && !hidden.some((c) => CATEGORIES[c].level === "regulamentado")) return "A pessoa só citou bebida alcoólica ou remédio, não pediu esses itens: não pergunte a idade. Responda à mensagem dela pelas outras regras (pergunta de saúde segue a regra de Saúde).";
+  if (gate?.onlyMentioned) return "A pessoa só citou bebida alcoólica ou remédio, não pediu esses itens: não pergunte a idade. Responda à mensagem dela pelas outras regras (pergunta de saúde segue a regra de Saúde).";
   return null;
 }
 
@@ -505,7 +506,7 @@ export function gatePrompt(bot: Pick<BotRow, "regulated_channel" | "human_handof
   const view = gatedContext(base, who);
   const hidden = [...new Set([...parts.flatMap((p) => p.hidden), ...view.hidden])];
   const gateNotes = gateNotesFor(bot, o.gate, hidden);
-  return { context: view.context, gateNotes, reminder: o.gate?.remind ? gateNotes : [], hidden };
+  return { context: view.context, gateNotes, reminder: o.gate?.remind ? gateNotes : [] };
 }
 
 /** Contatos e horário da equipe para o prompt (caminho para humano). */
@@ -737,7 +738,7 @@ export async function runChat(opts: {
   // no chat do site de um bot que também atende no WhatsApp: nunca mandar pedir item 18+ por lá
   const widgetWithWhatsapp = !scopeLock && Boolean((await db.from("whatsapp_channels").select("bot_id").eq("bot_id", bot.id).is("disconnected_at", null).maybeSingle()).data);
   // portão: a base sem os itens barrados para esta pessoa e as linhas do portão no prompt
-  const gated = scopeLock ? gatePrompt(bot, retrieval, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [], hidden: [] };
+  const gated = scopeLock ? gatePrompt(bot, retrieval, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [] };
   // regras primeiro (iguais em toda a plataforma: cache da OpenAI); o que é deste bot e desta conversa depois
   const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: gated.context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes });
   const convId = conversationId;
@@ -878,7 +879,7 @@ export async function runChat(opts: {
         return { ok: true, instrucao: refusalAck(bot.client_name) };
       },
       pedir_confirmacao_18: async () => {
-        const refused = ageAskRefusal(opts.gate, gated.hidden);
+        const refused = ageAskRefusal(opts.gate);
         if (refused) return { ok: false, instrucao: refused };
         // o canal troca a resposta pela pergunta fixa com botões
         askAgeCalled = true;
