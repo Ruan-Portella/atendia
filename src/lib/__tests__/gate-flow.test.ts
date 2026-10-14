@@ -91,6 +91,8 @@ describe("base sem os itens barrados", () => {
 
   it("nota dos itens ocultos só quando bebida ou remédio ficaram de fora", () => {
     expect(hiddenNote(["bebida"], null)).toContain("pedir_confirmacao_18");
+    // pedido só de comida ("Gostaria de uma calabresa"): o gpt-6-luna pedia a idade
+    expect(hiddenNote(["bebida"], null)).toContain("(comida, bebida sem álcool");
     expect(hiddenNote(["bebida"], "nao")).toContain("não tem 18 anos");
     expect(hiddenNote(["bebida"], "sim")).toBeNull();
     expect(hiddenNote(["tabaco"], null)).toBeNull();
