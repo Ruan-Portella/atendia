@@ -28,7 +28,7 @@ describe("exceção do portão por chatbot", () => {
     const input = { text: "tem vodka?", channel: "whatsapp" as const, age: null, context: "Vodka R$ 30.", companyName: "Loja", classify };
     expect((await decideEntrance(input)).kind).toBe("pede_18");
     classify.mockClear();
-    expect(await decideEntrance({ ...input, exempt: ["bebida"] })).toEqual({ kind: "ia", regulated: [], prohibited: [] });
+    expect(await decideEntrance({ ...input, exempt: ["bebida"] })).toEqual({ kind: "ia", regulated: [], prohibited: [], noHits: true });
     expect(classify).not.toHaveBeenCalled();
   });
 

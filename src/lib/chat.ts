@@ -10,6 +10,7 @@ import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } fro
 import { createLead } from "./leads";
 import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
+import { NOT_REGULATED_ASK_NOTE, asksRegulatedItem } from "./gate/entrance";
 import { contactLines, handoffNotice, hoursLines, renderAiNotice, renderBackNotice, type HumanHandoff } from "./handoff-hours";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { isTextRefusal, refusalLevelFor } from "./refusal-text";
@@ -462,6 +463,8 @@ export interface GateState {
   exempt?: GateCategory[];
   /** O dicionário acusou e o classificador disse que a pessoa só menciona os itens: sem pergunta de 18+. */
   onlyMentioned?: boolean;
+  /** O dicionário não achou nada na mensagem: o pedido de 18+ da IA passa pelo asksRegulatedItem. */
+  noHits?: boolean;
 }
 
 /**
@@ -881,6 +884,8 @@ export async function runChat(opts: {
       pedir_confirmacao_18: async () => {
         const refused = ageAskRefusal(opts.gate);
         if (refused) return { ok: false, instrucao: refused };
+        // nada de bebida ou remédio na mensagem pelo dicionário: só pergunta se o classificador confirmar o pedido
+        if (opts.gate?.noHits && question && !(await asksRegulatedItem(question, bot.client_name, { onUsage: (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId: convId, kind: "classificacao", channel, ...u }) }))) return { ok: false, instrucao: NOT_REGULATED_ASK_NOTE };
         // o canal troca a resposta pela pergunta fixa com botões
         askAgeCalled = true;
         return { ok: true };

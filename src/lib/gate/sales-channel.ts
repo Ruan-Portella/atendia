@@ -36,5 +36,5 @@ export function regulatedChannelNote(ch: RegulatedChannel | null | undefined, ad
   const d = regulatedDestination(ch, address);
   return d
     ? `Para comprar bebida alcoólica ou remédio, a pessoa finaliza fora do chat: ${d.destino}. Mande esse caminho; nunca anote o pedido desses itens, nunca confirme pedido e nunca mande pagamento aqui.`
-    : "Para comprar bebida alcoólica ou remédio, indique o site, o app de delivery, o telefone ou a loja que estiverem no CONTEXTO (nunca WhatsApp nem mensagem direta); se não houver nenhum, diga \"Esse item não conseguimos vender por aqui.\". Nunca anote o pedido desses itens nem mande pagamento.";
+    : "Para comprar bebida alcoólica ou remédio, indique o site, o app de delivery, o telefone ou a loja que estiverem no CONTEXTO, com o link ou o número escrito como está lá (nunca WhatsApp nem mensagem direta); se não houver nenhum, diga \"Esse item não conseguimos vender por aqui.\". Nunca anote o pedido desses itens nem mande pagamento.";
 }

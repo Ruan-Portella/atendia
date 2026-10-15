@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UIMessage } from "ai";
 import { AGE_NO, AGE_YES, AGE_NO_REASK_DAYS, ageNote, getAge, resetAge, setAge } from "../gate/age";
-import { decideEntrance, parseClassification, type Classification } from "../gate/entrance";
+import { decideEntrance, parseAsksRegulated, parseClassification, type Classification } from "../gate/entrance";
 import { isChatLink, regulatedChannelNote, regulatedDestination } from "../gate/sales-channel";
 import { ageAnswer, historyUpTo, withLastUserText } from "../gate/flow";
 import { gatedContext, gatedHistory, hiddenNote } from "../gate/context";
@@ -134,8 +134,15 @@ const entrance = (text: string, o: Partial<Parameters<typeof decideEntrance>[0]>
 describe("portão na entrada", () => {
   it("sem nada no dicionário: segue para a IA sem chamar o classificador", async () => {
     const classify = classifyAs([]);
-    expect(await entrance("quanto custa a pizza?", { classify })).toEqual({ kind: "ia", regulated: [], prohibited: [] });
+    expect(await entrance("quanto custa a pizza?", { classify })).toEqual({ kind: "ia", regulated: [], prohibited: [], noHits: true });
     expect(classify).not.toHaveBeenCalled();
+  });
+
+  it("pedido de 18+ da IA sem nada no dicionário: só um \"false\" claro do classificador recusa", () => {
+    expect(parseAsksRegulated('{"pede_item_18": false}')).toBe(false);
+    expect(parseAsksRegulated(["```json", '{"pede_item_18": false}', "```"].join("\n"))).toBe(false);
+    expect(parseAsksRegulated('{"pede_item_18": true}')).toBe(true);
+    expect(parseAsksRegulated("não sei")).toBe(true);
   });
 
   it("só pedido proibido: texto fixo, sem IA principal", async () => {

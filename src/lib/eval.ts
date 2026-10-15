@@ -9,7 +9,7 @@ import { gateComponent } from "./gate/components";
 import { handoffNotice } from "./handoff-hours";
 import { RISK_TEXT } from "./risk";
 import { isGapAnswer, isNoInfoAnswer } from "./unanswered";
-import { decideEntrance } from "./gate/entrance";
+import { NOT_REGULATED_ASK_NOTE, asksRegulatedItem, decideEntrance } from "./gate/entrance";
 import { GATE_TEXTS } from "./gate/rules";
 import { checkExit, exitDecision } from "./gate/exit";
 import { gatedHistory } from "./gate/context";
@@ -171,7 +171,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
           registrar_recusa: async () => ({ ok: true, instrucao: refusalAck(bot.client_name) }),
           // mesma recusa do chat (idade já respondida; só menção)
           pedir_confirmacao_18: async () => {
-            const refused = ageAskRefusal({ age, onlyMentioned: entrance?.kind === "ia" && entrance.onlyMentioned });
+            const refused = ageAskRefusal({ age, onlyMentioned: entrance?.kind === "ia" && entrance.onlyMentioned }) ?? (entrance?.kind === "ia" && entrance.noHits && !(await asksRegulatedItem(question, bot.client_name, { model: opts.classifierModel, onUsage: opts.onUsage })) ? NOT_REGULATED_ASK_NOTE : null);
             return refused ? { ok: false, instrucao: refused } : { ok: true };
           },
           mostrar_opcoes: async ({ texto, opcoes }) => {

@@ -28,7 +28,7 @@ describe.each(caseFiles)("conjunto fixo de casos (evals/%s)", (file, name) => {
       expect(c.pergunta.length, c.id).toBeGreaterThan(1);
       if (c.historico) expect(c.historico.length % 2, `${c.id}: histórico alterna contato e assistente`).toBe(0);
       if (c.canal) expect(["whatsapp", "instagram", "widget"], c.id).toContain(c.canal);
-      for (const t of [c.ferramenta, c.nao_usar]) if (t) expect(TOOLS, c.id).toContain(t);
+      for (const t of [...(c.ferramenta?.split("|") ?? []), c.nao_usar]) if (t) expect(TOOLS, c.id).toContain(t);
       for (const re of [c.deve_conter, c.nao_deve_conter]) {
         if (!re) continue;
         new RegExp(re, "i");
@@ -79,6 +79,9 @@ describe("checagem de cada rodada", () => {
     expect(checkRun(c({ nao_usar: "registrar_lead" }), run({ tools: ["registrar_lead"] }), "")).toMatch(/usou registrar_lead/);
     // opções tiradas da lista do texto contam como mostrar_opcoes
     expect(checkRun(c({ ferramenta: "mostrar_opcoes" }), run({ tools: ["opcoes_do_texto"] }), "")).toBeNull();
+    // "a|b": qualquer uma das duas serve
+    expect(checkRun(c({ ferramenta: "mostrar_opcoes|mostrar_link" }), run({ tools: ["mostrar_link"] }), "")).toBeNull();
+    expect(checkRun(c({ ferramenta: "mostrar_opcoes|mostrar_link" }), run({ tools: [] }), "")).toMatch(/não usou/);
     expect(checkRun(c({ sem_ferramenta: true }), run({ tools: ["registrar_lead"] }), "")).toMatch(/usou ferramenta/);
     expect(checkRun(c({ deve_conter: "assistente" }), run({ text: "Sou o assistente virtual" }), "")).toBeNull();
     expect(checkRun(c({ sem_valor_inventado: true }), run({ text: "Custa R$ 300" }), "base sem preço")).toMatch(/valor fora da base/);

@@ -50,8 +50,9 @@ export type EntranceDecision =
    * Segue para a IA, com instrução extra e/ou texto fixo antes da resposta. `question`: a
    * mensagem sem os itens barrados, que a IA responde no lugar da original (ela nem vê o item).
    * `onlyMentioned`: o dicionário acusou e o classificador disse que tudo é só menção.
+   * `noHits`: o dicionário não achou nada na mensagem (o pedido de 18+ da IA é conferido à parte).
    */
-  | { kind: "ia"; prefix?: string; instruction?: string; question?: string; regulated: GateCategory[]; prohibited: GateCategory[]; onlyMentioned?: boolean };
+  | { kind: "ia"; prefix?: string; instruction?: string; question?: string; regulated: GateCategory[]; prohibited: GateCategory[]; onlyMentioned?: boolean; noHits?: boolean };
 
 /**
  * Etapa 2: IA barata, só quando o dicionário acusa. Cada categoria marcada conta como pedida, a
@@ -81,7 +82,7 @@ Para cada categoria, diga se o cliente PEDE o item ou só o MENCIONA.
 - "pede": quer comprar, pede, pergunta se a empresa vende ou tem, pergunta o preço, pede o cardápio ou a lista desses itens. Vale mesmo quando é só uma parte de uma mensagem com outros assuntos (ex.: "que horas vocês abrem? e tem narguilé?": narguilé pede).
 - "menciona": cita sem pedir: conta o que fez, pergunta de saúde ou de uso (qual remédio tomar para um sintoma, dose, se pode misturar), receita, comparação (ex.: "tomei vinho no jantar, posso tomar paracetamol?": vinho e paracetamol mencionam; "estou com febre, que remédio eu tomo?": remédio menciona, é pergunta de saúde; "gastei 20 reais em cerveja": menciona).
 Na dúvida, "pede".${rest}
-Responda: {"categorias": {"categoria": "pede" | "menciona"}, "tem_outro_assunto": true|false${blocked.length ? ', "resto": "..."' : ""}}, onde tem_outro_assunto diz se a mensagem também pede ou pergunta outra coisa além desses itens.`,
+Responda: {"categorias": {"categoria": "pede" | "menciona"}, "tem_outro_assunto": true|false${blocked.length ? ', "resto": "..."' : ""}}, onde tem_outro_assunto diz se a mensagem também pede ou pergunta outra coisa além desses itens. Perguntar sobre o mesmo pedido não é outro assunto (ex.: "quero comprar bitcoin, vocês ajudam?", "tem cigarro? quanto é?": tem_outro_assunto false).`,
       ...modelCallOptions(modelId, { temperature: 0, cacheKey: "boavoz-portao" }),
       maxRetries: 3,
     });
@@ -111,10 +112,49 @@ export function parseClassification(raw: string, categories: GateCategory[]): Cl
   }
 }
 
+/**
+ * A IA chamou pedir_confirmacao_18, mas o dicionário não achou bebida nem remédio na mensagem: a
+ * pessoa pede mesmo um item 18+ (uma marca que o dicionário não conhece, "algo para animar a
+ * festa")? Com a base cheia de itens 18+ ocultos, o gpt-6-luna perguntava a idade para "uma
+ * calabresa", "teste de gravidez" e "protetor solar". Erro: pede (lado seguro, pergunta a idade).
+ */
+export async function asksRegulatedItem(text: string, companyName: string, opts: { model?: string; onUsage?: (u: UsageTokens) => void } = {}): Promise<boolean> {
+  const modelId = opts.model ?? classifierModelId();
+  try {
+    const r = await generateText({
+      model: chatModel(modelId),
+      system: "Você classifica mensagens de clientes de uma empresa. Responda só com JSON válido, sem texto antes ou depois.",
+      prompt: `Empresa: ${companyName}. Mensagem do cliente: """${text.slice(0, 1500)}"""
+O cliente PEDE bebida alcoólica ou remédio? Pedir é querer comprar, perguntar se a empresa vende ou tem, o preço, ou pedir o cardápio ou a lista desses itens, também pelo nome de uma marca (ex.: "tem Absolut?", "quanto é o Engov?").
+Não é pedido: comida, refrigerante, suco, higiene e beleza (protetor solar, shampoo), teste de gravidez, preservativo, aparelhos (termômetro), vitaminas e suplementos, serviços; e pergunta de saúde ou de uso (qual remédio tomar para um sintoma, dose, se pode misturar), que segue outra regra.
+Responda: {"pede_item_18": true|false}`,
+      ...modelCallOptions(modelId, { temperature: 0, cacheKey: "boavoz-portao" }),
+      maxRetries: 3,
+    });
+    opts.onUsage?.(usageFrom(r.response?.modelId ?? modelId, r.totalUsage));
+    return parseAsksRegulated(r.text);
+  } catch {
+    return true;
+  }
+}
+
+/** Lê a resposta do asksRegulatedItem: só um "false" claro libera. Pura. */
+export function parseAsksRegulated(raw: string): boolean {
+  try {
+    const j = JSON.parse(raw.replace(/^\s*```(?:json)?|```\s*$/g, "").trim()) as { pede_item_18?: unknown };
+    return j.pede_item_18 !== false;
+  } catch {
+    return true;
+  }
+}
+
+/** O que a IA recebe quando a pergunta de 18+ não vale (a pessoa não pediu item 18+). */
+export const NOT_REGULATED_ASK_NOTE = "A pessoa não pediu bebida alcoólica nem remédio: não pergunte a idade. Responda à mensagem dela normalmente, com a base.";
+
 export async function decideEntrance(input: EntranceInput): Promise<EntranceDecision> {
   const scan = (text: string) => dictionaryHits(text, { channel: input.channel, contactPhone: input.contactPhone, exempt: input.exempt });
   const hits = scan(input.text);
-  if (!hits.length) return { kind: "ia", regulated: [], prohibited: [] };
+  if (!hits.length) return { kind: "ia", regulated: [], prohibited: [], noHits: true };
   // o nível vem do dicionário (canal e país já aplicados); a IA só diz o que foi pedido
   const levelOf = new Map(hits.map((h) => [h.category, h.level]));
   const summary = hitSummary(hits);

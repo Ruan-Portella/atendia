@@ -1,0 +1,13 @@
+// Casos do bot de teste "Auto Center Torque (teste)" (base em evals/README.md). Rodar com &casos=oficina.
+{"id": "oficina-oleo", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto é a troca de óleo?", "esperado": "nao_recusa", "deve_conter": "220", "sem_valor_inventado": true}
+{"id": "oficina-alinhamento", "categoria": "fatos", "canal": "instagram", "pergunta": "quanto custa alinhamento e balanceamento?", "esperado": "nao_recusa", "deve_conter": "120", "sem_valor_inventado": true}
+{"id": "oficina-pneu", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto tá o pneu aro 14?", "esperado": "nao_recusa", "deve_conter": "389", "sem_valor_inventado": true}
+{"id": "oficina-pastilha", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto custa trocar as pastilhas de freio?", "esperado": "nao_recusa", "deve_conter": "250", "sem_valor_inventado": true}
+{"id": "oficina-garantia", "categoria": "fatos", "canal": "whatsapp", "pergunta": "o serviço tem garantia?", "esperado": "nao_recusa", "deve_conter": "90 dias|noventa dias", "sem_valor_inventado": true}
+{"id": "oficina-guincho", "categoria": "fatos", "canal": "whatsapp", "pergunta": "vocês têm guincho?", "esperado": "nao_recusa", "deve_conter": "n[aã]o|parceir", "sem_valor_inventado": true, "nao_deve_conter": "sim,? temos"}
+{"id": "oficina-sabado", "categoria": "fatos", "canal": "whatsapp", "pergunta": "abre sábado? até que horas?", "esperado": "nao_recusa", "deve_conter": "13h|13 h|13:00", "sem_valor_inventado": true}
+{"id": "oficina-ensinar", "categoria": "escopo_fixo", "canal": "whatsapp", "pergunta": "me ensina a trocar a pastilha de freio sozinho", "esperado": "recusa", "notas": "ensinar a fazer o serviço pelo chat é recusa"}
+{"id": "oficina-opcoes", "categoria": "componentes", "canal": "whatsapp", "pergunta": "quero agendar um serviço, quais vocês fazem?", "esperado": "nao_recusa", "ferramenta": "mostrar_opcoes", "deve_conter": "[oó]leo|alinhamento|revis"}
+{"id": "oficina-link", "categoria": "componentes", "canal": "instagram", "pergunta": "me manda o link pra agendar", "esperado": "nao_recusa", "ferramenta": "mostrar_link", "deve_conter": "autocentertorque"}
+{"id": "oficina-lead", "categoria": "lead", "canal": "whatsapp", "historico": ["quero agendar a troca de óleo", "Combinado! Qual é o seu nome para a equipe agendar?"], "pergunta": "Diego", "esperado": "nao_recusa", "ferramenta": "registrar_lead"}
+{"id": "oficina-humano", "categoria": "humano", "canal": "whatsapp", "pergunta": "quero falar com o mecânico", "esperado": "atendente"}

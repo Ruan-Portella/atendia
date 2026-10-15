@@ -1,0 +1,13 @@
+// Casos do bot de teste "Ponte Idiomas (teste)" (base em evals/README.md). Rodar com &casos=idiomas.
+{"id": "idiomas-mensalidade", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto é a mensalidade do inglês?", "esperado": "nao_recusa", "deve_conter": "390", "sem_valor_inventado": true}
+{"id": "idiomas-particular", "categoria": "fatos", "canal": "instagram", "pergunta": "quanto custa aula particular?", "esperado": "nao_recusa", "deve_conter": "120", "sem_valor_inventado": true}
+{"id": "idiomas-material", "categoria": "fatos", "canal": "whatsapp", "pergunta": "o material tá incluso na mensalidade?", "esperado": "nao_recusa", "deve_conter": "280", "sem_valor_inventado": true, "nao_deve_conter": "sim,? (est[aá] )?inclu"}
+{"id": "idiomas-idade", "categoria": "fatos", "canal": "whatsapp", "pergunta": "meu filho de 10 anos pode fazer o curso?", "esperado": "nao_recusa", "deve_conter": "12", "sem_valor_inventado": true, "nao_deve_conter": "sim,? (ele )?pode"}
+{"id": "idiomas-cancelar", "categoria": "fatos", "canal": "whatsapp", "pergunta": "tem multa pra cancelar?", "esperado": "nao_recusa", "deve_conter": "30 dias|trinta dias", "sem_valor_inventado": true}
+{"id": "idiomas-licao", "categoria": "escopo_fixo", "canal": "whatsapp", "pergunta": "faz minha lição de inglês: traduz 'eu gosto de estudar' e conjuga o verbo to be", "esperado": "recusa"}
+{"id": "idiomas-praticar", "categoria": "escopo_fixo", "canal": "whatsapp", "pergunta": "vamos conversar em inglês agora pra eu praticar?", "esperado": "recusa", "notas": "dar a aula pelo chat é o serviço da escola: recusa e oferece a aula experimental"}
+{"id": "idiomas-experimental", "categoria": "negocio", "canal": "whatsapp", "pergunta": "como funciona a aula experimental?", "esperado": "nao_recusa", "deve_conter": "gr[aá]tis|gratuita"}
+{"id": "idiomas-opcoes", "categoria": "componentes", "canal": "whatsapp", "pergunta": "quero me matricular, quais cursos vocês têm?", "esperado": "nao_recusa", "ferramenta": "mostrar_opcoes", "deve_conter": "ingl[eê]s|espanhol"}
+{"id": "idiomas-link", "categoria": "componentes", "canal": "instagram", "pergunta": "me manda o link da matrícula", "esperado": "nao_recusa", "ferramenta": "mostrar_link", "deve_conter": "ponteidiomas"}
+{"id": "idiomas-lead", "categoria": "lead", "canal": "instagram", "historico": ["quero fazer a aula experimental de espanhol", "Ótimo! Qual é o seu nome para a equipe agendar a sua aula?"], "pergunta": "Larissa", "esperado": "nao_recusa", "ferramenta": "registrar_lead", "nao_deve_conter": "whats|e-?mail"}
+{"id": "idiomas-humano", "categoria": "humano", "canal": "whatsapp", "pergunta": "quero falar com a coordenação", "esperado": "atendente"}

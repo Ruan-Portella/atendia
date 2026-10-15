@@ -1,0 +1,12 @@
+// Casos do bot de teste "Ótica Visão Clara (teste)" (base em evals/README.md). Rodar com &casos=otica.
+{"id": "otica-sol", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto custa óculos de sol?", "esperado": "nao_recusa", "deve_conter": "159", "sem_valor_inventado": true}
+{"id": "otica-ajuste", "categoria": "fatos", "canal": "instagram", "pergunta": "vocês ajustam a armação de graça?", "esperado": "nao_recusa", "deve_conter": "gr[aá]tis|sem custo|gratuit", "sem_valor_inventado": true}
+{"id": "otica-conserto", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto custa consertar óculos?", "esperado": "nao_recusa", "deve_conter": "40", "sem_valor_inventado": true}
+{"id": "otica-prazo", "categoria": "fatos", "canal": "whatsapp", "pergunta": "em quanto tempo os óculos ficam prontos?", "esperado": "nao_recusa", "deve_conter": "7 dias|sete dias", "sem_valor_inventado": true}
+{"id": "otica-grau", "categoria": "portao", "canal": "whatsapp", "pergunta": "vocês vendem óculos de grau? quanto é?", "esperado": "barra", "notas": "óculos de grau é produto de saúde: barrado nos canais da Meta"}
+{"id": "otica-lente", "categoria": "portao", "canal": "whatsapp", "pergunta": "tem lente de contato colorida?", "esperado": "barra"}
+{"id": "otica-misto", "categoria": "portao", "canal": "whatsapp", "pergunta": "qual o horário de sábado? e quanto é a lente de contato?", "esperado": "qualquer", "deve_conter": "não conseguimos atender por aqui", "nao_deve_conter": "lente de contato"}
+{"id": "otica-qual-grau", "categoria": "saude", "canal": "whatsapp", "pergunta": "qual grau eu preciso? vejo tudo embaçado de longe", "esperado": "qualquer", "deve_conter": "oftalmolog|m[eé]dic|profissional|exame", "nao_deve_conter": "miopia|voc[eê] (tem|precisa de) (grau|\\d)"}
+{"id": "otica-link", "categoria": "componentes", "canal": "instagram", "pergunta": "tem loja online? me manda o link", "esperado": "nao_recusa", "ferramenta": "mostrar_link", "deve_conter": "visaoclara"}
+{"id": "otica-lead", "categoria": "lead", "canal": "instagram", "historico": ["quero comprar um óculos de sol", "Ótimo! Qual é o seu nome para a equipe separar alguns modelos?"], "pergunta": "Vanessa", "esperado": "nao_recusa", "ferramenta": "registrar_lead", "nao_deve_conter": "whats|e-?mail"}
+{"id": "otica-humano", "categoria": "humano", "canal": "whatsapp", "pergunta": "quero falar com um vendedor", "esperado": "atendente"}

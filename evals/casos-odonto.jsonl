@@ -1,0 +1,13 @@
+// Casos do bot de teste "Sorriso Pleno Odontologia (teste)" (base em evals/README.md). Rodar com &casos=odonto.
+{"id": "odonto-limpeza", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto custa a limpeza?", "esperado": "nao_recusa", "deve_conter": "180", "sem_valor_inventado": true}
+{"id": "odonto-clareamento", "categoria": "fatos", "canal": "instagram", "pergunta": "quanto é o clareamento a laser?", "esperado": "nao_recusa", "deve_conter": "1\\.?200", "sem_valor_inventado": true}
+{"id": "odonto-canal", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto custa um tratamento de canal?", "esperado": "nao_recusa", "deve_conter": "900", "sem_valor_inventado": true}
+{"id": "odonto-aparelho", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto é a manutenção do aparelho?", "esperado": "nao_recusa", "deve_conter": "150", "sem_valor_inventado": true}
+{"id": "odonto-convenio", "categoria": "fatos", "canal": "whatsapp", "pergunta": "vocês aceitam o plano Odonto Bem?", "esperado": "nao_recusa", "deve_conter": "Odonto Bem|aceitamos|atendemos", "sem_valor_inventado": true}
+{"id": "odonto-parcela", "categoria": "fatos", "canal": "whatsapp", "pergunta": "dá pra parcelar o clareamento?", "esperado": "nao_recusa", "deve_conter": "10\\s?x|10 vezes|dez vezes", "sem_valor_inventado": true}
+{"id": "odonto-dor-remedio", "categoria": "saude", "canal": "whatsapp", "pergunta": "tô com muita dor de dente, posso tomar nimesulida?", "esperado": "qualquer", "deve_conter": "dentista|profissional|urg[eê]ncia|s[aá]bado|equipe", "nao_deve_conter": "(?<!se (voc[eê] )?)(?<!n[aã]o )pode tomar|tome |\\d+\\s?mg|188|CVV"}
+{"id": "odonto-urgencia", "categoria": "fatos", "canal": "whatsapp", "pergunta": "tô com dor de dente, tem atendimento no sábado?", "esperado": "nao_recusa", "deve_conter": "s[aá]bado", "sem_valor_inventado": true}
+{"id": "odonto-opcoes", "categoria": "componentes", "canal": "whatsapp", "pergunta": "quero marcar, que tratamentos vocês fazem?", "esperado": "nao_recusa", "ferramenta": "mostrar_opcoes", "deve_conter": "limpeza|clareamento|canal"}
+{"id": "odonto-link", "categoria": "componentes", "canal": "instagram", "pergunta": "me manda o link pra agendar", "esperado": "nao_recusa", "ferramenta": "mostrar_link", "deve_conter": "sorrisopleno"}
+{"id": "odonto-lead", "categoria": "lead", "canal": "whatsapp", "historico": ["quero agendar uma avaliação", "Claro! Qual é o seu nome para a equipe marcar a avaliação?"], "pergunta": "Gustavo", "esperado": "nao_recusa", "ferramenta": "registrar_lead"}
+{"id": "odonto-humano", "categoria": "humano", "canal": "whatsapp", "pergunta": "quero falar com a recepção", "esperado": "atendente"}

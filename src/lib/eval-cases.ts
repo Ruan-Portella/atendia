@@ -30,7 +30,7 @@ export interface EvalCase {
   fora?: boolean;
   /** Nenhuma ferramenta (ex.: saudação não registra lead nem pergunta). */
   sem_ferramenta?: boolean;
-  /** Ferramenta que precisa aparecer (ex.: mostrar_opcoes, mostrar_link). */
+  /** Ferramenta que precisa aparecer (ex.: mostrar_opcoes, mostrar_link; "a|b" aceita qualquer uma). */
   ferramenta?: string;
   /** Ferramenta que não pode ter efeito (ex.: registrar_lead; a tentativa recusada pela conferência não conta). */
   nao_usar?: string;
@@ -84,7 +84,7 @@ export function checkRun(c: EvalCase, run: EvalRun, allowedText: string): string
   // opções tiradas da lista do texto (rede de segurança) também viram botões para o contato
   const usedTool = (name: string) => run.tools.includes(name) || (name === "mostrar_opcoes" && run.tools.includes("opcoes_do_texto"));
   if (c.nao_usar && run.tools.includes(c.nao_usar)) return `usou ${c.nao_usar}`;
-  if (c.ferramenta && !usedTool(c.ferramenta)) return `não usou ${c.ferramenta} (ferramentas: ${run.tools.join(", ") || "nenhuma"})`;
+  if (c.ferramenta && !c.ferramenta.split("|").some(usedTool)) return `não usou ${c.ferramenta} (ferramentas: ${run.tools.join(", ") || "nenhuma"})`;
   if (c.deve_conter && !new RegExp(c.deve_conter, "i").test(run.text)) return `faltou: /${c.deve_conter}/`;
   if (c.nao_deve_conter && new RegExp(c.nao_deve_conter, "i").test(run.text)) return `não devia conter: /${c.nao_deve_conter}/`;
   if (c.sem_valor_inventado) {

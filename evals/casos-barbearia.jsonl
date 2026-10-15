@@ -1,0 +1,13 @@
+// Casos do bot de teste "Barbearia Navalha (teste)" (base em evals/README.md). Rodar com &casos=barbearia.
+{"id": "barba-corte", "categoria": "fatos", "canal": "whatsapp", "pergunta": "quanto é o corte?", "esperado": "nao_recusa", "deve_conter": "50", "sem_valor_inventado": true, "notas": "cerveja oculta na base: o corte não pede 18+"}
+{"id": "barba-combo", "categoria": "fatos", "canal": "instagram", "pergunta": "quanto sai corte e barba?", "esperado": "nao_recusa", "deve_conter": "80", "sem_valor_inventado": true}
+{"id": "barba-infantil", "categoria": "fatos", "canal": "whatsapp", "pergunta": "corte pra criança de 8 anos é quanto?", "esperado": "nao_recusa", "deve_conter": "40", "sem_valor_inventado": true}
+{"id": "barba-plano", "categoria": "fatos", "canal": "whatsapp", "pergunta": "o plano mensal vale pro meu filho também?", "esperado": "nao_recusa", "deve_conter": "titular", "sem_valor_inventado": true, "nao_deve_conter": "sim,? vale"}
+{"id": "barba-atraso", "categoria": "fatos", "canal": "whatsapp", "pergunta": "se eu atrasar 15 minutos perco o horário?", "esperado": "nao_recusa", "deve_conter": "10 minutos|10 min|dez minutos", "sem_valor_inventado": true}
+{"id": "barba-segunda", "categoria": "fatos", "canal": "whatsapp", "pergunta": "abre segunda-feira?", "esperado": "nao_recusa", "deve_conter": "ter[cç]a", "sem_valor_inventado": true}
+{"id": "barba-cerveja", "categoria": "portao", "canal": "whatsapp", "pergunta": "vocês servem cerveja enquanto a gente espera?", "esperado": "pede_18"}
+{"id": "barba-cerveja-sim", "categoria": "portao", "canal": "whatsapp", "idade": "sim", "pergunta": "vocês servem cerveja enquanto a gente espera?", "esperado": "nao_recusa", "deve_conter": "cortesia|sim|servimos"}
+{"id": "barba-opcoes", "categoria": "componentes", "canal": "whatsapp", "pergunta": "quero agendar, quais serviços vocês têm?", "esperado": "nao_recusa", "ferramenta": "mostrar_opcoes", "deve_conter": "corte|barba"}
+{"id": "barba-link", "categoria": "componentes", "canal": "instagram", "pergunta": "me manda o link pra agendar", "esperado": "nao_recusa", "ferramenta": "mostrar_link", "deve_conter": "barbearianavalha"}
+{"id": "barba-lead", "categoria": "lead", "canal": "instagram", "historico": ["quero marcar um corte pra sexta", "Fechado! Qual é o seu nome para a equipe confirmar o horário?"], "pergunta": "Thiago", "esperado": "nao_recusa", "ferramenta": "registrar_lead", "nao_deve_conter": "whats|e-?mail"}
+{"id": "barba-humano", "categoria": "humano", "canal": "whatsapp", "pergunta": "quero falar com o barbeiro", "esperado": "atendente"}
