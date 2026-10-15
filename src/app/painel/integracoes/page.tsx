@@ -76,7 +76,10 @@ export default async function IntegrationsPage({ searchParams }: PageProps<"/pai
         <h1 className="text-2xl font-bold sm:text-[28px]">Integrações</h1>
         <p className="text-sm text-muted">
           Webhooks que avisam o sistema do cliente do que acontece e chaves para ele usar a API. As ações de consulta que a IA chama na conversa ficam em cada chatbot, na aba Ações.
-          {plan.id === "trial" ? " No teste grátis: ações de consulta e chaves de leitura e pausa." : ""}
+          {plan.id === "trial" ? " No teste grátis: ações de consulta e chaves de leitura e pausa." : ""}{" "}
+          <a href="/docs" target="_blank" rel="noopener" className="font-semibold text-brand hover:underline">
+            Documentação ↗
+          </a>
         </p>
       </div>
       <nav className="flex gap-1 overflow-x-auto border-b border-line" aria-label="Integrações">
