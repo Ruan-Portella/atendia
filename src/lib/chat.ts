@@ -466,6 +466,12 @@ export interface GateState {
   onlyMentioned?: boolean;
   /** O dicionário não achou nada na mensagem: o pedido de 18+ da IA passa pelo asksRegulatedItem. */
   noHits?: boolean;
+  /**
+   * Logo depois do "Sim" de 18+: a consulta (acao_<nome>) que tinha tirado os itens 18+ é chamada no
+   * primeiro passo, sem depender da instrução (o gpt-6-luna respondia com o histórico e a lista
+   * saía sem os botões e sem o carrossel da ação).
+   */
+  refetchTool?: string;
 }
 
 /**
@@ -822,6 +828,9 @@ export async function runChat(opts: {
   });
   // até 5 passos com ações (o último sem ferramentas, para sempre sair texto); sem ações, 3 como antes
   const hasActions = Object.keys(actionTools).length > 0;
+  // a consulta que tinha tirado os itens 18+ (só se ela ainda está disponível nesta vez); acao_<nome>
+  // fica fora do tipo das ferramentas fixas, por isso o "as never" no toolChoice
+  const refetchTool = opts.gate?.refetchTool && opts.gate.refetchTool in actionTools ? opts.gate.refetchTool : null;
   const maxSteps = hasActions ? 5 : 3;
   // com ação de Confirmar, uma chamada de ferramenta por vez (nunca duas confirmações no mesmo passo)
   const callOptions = modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel), effort: chatReasoningEffort() });
@@ -846,7 +855,9 @@ export async function runChat(opts: {
     ...callOptions,
     ...(providerOptions ? { providerOptions } : {}),
     stopWhen: [stepCountIs(maxSteps), () => actionReply !== null, () => shown !== null],
-    prepareStep: hasActions ? ({ stepNumber }) => (stepNumber >= maxSteps - 1 ? { toolChoice: "none" as const } : undefined) : undefined,
+    prepareStep: hasActions
+      ? ({ stepNumber }) => (stepNumber >= maxSteps - 1 ? { toolChoice: "none" as const } : stepNumber === 0 && refetchTool ? { toolChoice: { type: "tool" as const, toolName: refetchTool as never } } : undefined)
+      : undefined,
     // limite de tokens por minuto da OpenAI (pico): o SDK tenta de novo com espera crescente
     maxRetries: 4,
     tools: {

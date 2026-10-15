@@ -324,6 +324,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
 
   // acabou de confirmar 18+ e uma ação tinha tirado bebida ou remédio dos dados: a IA consulta de novo
   const refetch = answered === "sim" && age === "sim" && idMapCategories(idMap).some((c) => CATEGORIES[c].level === "regulamentado") ? AGE_REFETCH_NOTE : null;
+  // qual consulta: a mais recente que devolveu itens fora por idade (a IA é obrigada a chamá-la primeiro)
+  const refetchTool = refetch ? await hiddenByAgeTool(db, convId) : null;
 
   // contato vinculado (pareamento): nível usuario e o contexto ativo; com 2 contas ou mais, a IA pode trocar
   const contactId = (pendingRow?.contact_id as string | null | undefined) ?? null;
@@ -345,7 +347,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     retrieval,
     identity,
     extraTools,
-    gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt, onlyMentioned: entrance.onlyMentioned, noHits: entrance.kind === "ia" && entrance.noHits },
+    gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt, onlyMentioned: entrance.onlyMentioned, noHits: entrance.kind === "ia" && entrance.noHits, ...(refetchTool ? { refetchTool } : {}) },
     confirmed,
   });
   // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
@@ -439,6 +441,17 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   if (adultButton) await db.from("conversations").update({ age_pending_question: await sealField("conversations.age_pending_question", question.slice(0, 2000), await scopeOfConversation(convId)), age_pending_reply_enc: null, age_asked_at: null, regulated_at: new Date().toISOString() }).eq("id", convId);
   else if (pending?.question) await clearAgePending(db, convId);
   return { leadSaved: leadSaved() };
+}
+
+/** A consulta mais recente (acao_<nome>) que tirou itens por idade, nas últimas respostas da IA, ou null. */
+async function hiddenByAgeTool(db: SupabaseClient, conversationId: string): Promise<string | null> {
+  const recent = await loadMessages(db, { conversationId, roles: ["assistant"], newestFirst: true, limit: 5 }, ["tool_results"] as const);
+  for (const m of recent) {
+    const results = Array.isArray(m.tool_results) ? (m.tool_results as Array<{ name?: string; output?: { ocultos_por_idade?: unknown } }>) : [];
+    const hit = results.find((t) => t.name?.startsWith("acao_") && Array.isArray(t.output?.ocultos_por_idade) && t.output.ocultos_por_idade.length > 0);
+    if (hit?.name) return hit.name;
+  }
+  return null;
 }
 
 /** Toque num botão de card do carrossel (das últimas mensagens): "Pedir esta: Pizza Calabresa", ou null. */
