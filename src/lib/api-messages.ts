@@ -7,7 +7,7 @@ import { deliver, type SendRecord } from "./send";
 import { sendBlockedReason } from "./conversation-mode";
 import { OUTSIDE_WINDOW_CODE, SendTimeoutError, WhatsAppError, sendMedia, sendPlan, sendText } from "./whatsapp";
 import { ComponentProblem, componentTexts, materializeComponent, parseComponentInput, type ComponentInput } from "./component-input";
-import { LIMITS, choicesOf, instagramCarouselText, instagramLinkText, instagramPlan, whatsappPlan, type MessageComponent } from "./components";
+import { LIMITS, instagramLinkText, instagramPlan, whatsappPlan, type MessageComponent } from "./components";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 import { InstagramError, isInstagramAccessError, isOutsideWindow, sendInstagramAttachment } from "./instagram";
 import { markOwnMessage } from "./inbound-queue";
@@ -15,7 +15,7 @@ import { queueMessageEvent } from "./message-events";
 import { storeAttachment } from "./attachments";
 import { OutboundFileError, fetchOutboundFile, type OutboundKind } from "./outbound-file";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
-import { send as sendInstagram } from "./instagram-inbound";
+import { send as sendInstagram, sendCarousel as sendInstagramCarousel } from "./instagram-inbound";
 import { listTemplates, loadTemplateChannel, renderTemplate, sendTemplate, templateBody, templateVariables, unsupportedReason, type TemplateChannel } from "./whatsapp-templates";
 import { activeSuppressions, blocks, suppressionScope } from "./suppression";
 import { consentHistory, consentStateOf } from "./marketing-consent";
@@ -463,8 +463,8 @@ async function sendChannelMessage(api: ApiContext, botId: string, p: Extract<Sen
       if (to.channel === "instagram" && component) {
         // link no texto; opções com o resumo numerado e as respostas rápidas numa DM própria
         if (component.type === "link") return sendInstagram(db, igCh, to.address, instagramLinkText(content, component), undefined, { timeoutMs: SEND_TIMEOUT_MS });
-        // carrossel de links (até a parte 5d-2): os links no texto
-        if (component.type === "carousel" && !choicesOf(component).length) return sendInstagram(db, igCh, to.address, instagramCarouselText(content, component), undefined, { timeoutMs: SEND_TIMEOUT_MS });
+        // carrossel (parte 5d-2): o texto, os cards e o resumo numerado
+        if (component.type === "carousel") return sendInstagramCarousel(db, igCh, to.address, content, component, { timeoutMs: SEND_TIMEOUT_MS });
         const plan = instagramPlan(component);
         await sendInstagram(db, igCh, to.address, content, undefined, { timeoutMs: SEND_TIMEOUT_MS });
         return sendInstagram(db, igCh, to.address, plan.summary, plan.quickReplies, { timeoutMs: SEND_TIMEOUT_MS });

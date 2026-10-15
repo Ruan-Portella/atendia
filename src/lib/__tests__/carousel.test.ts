@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import { ComponentProblem, componentTexts, materializeComponent, parseComponentInput } from "../component-input";
-import { carouselClickText, choicesOf, componentsNote, instagramCarouselText, instagramPlan, parseComponents, waCardText, whatsappPlan, type MessageComponent } from "../components";
+import { carouselClickText, choicesOf, componentsNote, instagramCarouselText, instagramPlan, instagramTemplate, parseComponents, waCardText, whatsappPlan, type MessageComponent } from "../components";
 import { gateComponent } from "../gate/components";
 import { componentNote, offeredMatch } from "../action-tools";
 import { shortcutTarget } from "../action-confirm";
@@ -111,7 +111,28 @@ describe("conversão por canal", () => {
     expect(long.split("\n").length).toBeLessThanOrEqual(3);
   });
 
-  it("Instagram (até a 5d-2): o resumo numerado com o nome do card; carrossel de links no texto", () => {
+  it("Instagram: cards no generic template (postback com o id; link; vídeo sem imagem)", () => {
+    expect(instagramTemplate(carousel(["Calabresa", "Marguerita"]))).toEqual([
+      { title: "Calabresa", subtitle: "Molho de tomate e queijo.", image_url: IMG, buttons: [{ type: "postback", title: "Pedir esta", payload: "op_1" }] },
+      { title: "Marguerita", subtitle: "Molho de tomate e queijo.", image_url: IMG, buttons: [{ type: "postback", title: "Pedir esta", payload: "op_2" }] },
+    ]);
+    const mixed: Extract<MessageComponent, { type: "carousel" }> = {
+      type: "carousel",
+      cards: [
+        { media: { type: "video", url: "https://loja.com/v.mp4" }, text: `${"Uma descrição bem comprida do produto ".repeat(4)}\ncom quebra`, link: { url: "https://loja.com/1", label: "Ver no site" } },
+        { media: { type: "image", url: IMG }, title: "Outro", link: { url: "https://loja.com/2", label: "Ver no site" } },
+      ],
+    };
+    const [video, image] = instagramTemplate(mixed);
+    expect(video.image_url).toBeUndefined();
+    expect(video.subtitle).toBeUndefined();
+    expect(video.title.length).toBeLessThanOrEqual(80);
+    expect(video.title).not.toContain("\n");
+    expect(video.buttons).toEqual([{ type: "web_url", title: "Ver no site", url: "https://loja.com/1" }]);
+    expect(image).toEqual({ title: "Outro", image_url: IMG, buttons: [{ type: "web_url", title: "Ver no site", url: "https://loja.com/2" }] });
+  });
+
+  it("Instagram pelo computador: o resumo numerado com o nome do card; carrossel de links no texto", () => {
     expect(instagramPlan(carousel(["Calabresa", "Marguerita"]))).toEqual({
       summary: "Responda com o número ou toque numa opção:\n1. Calabresa\n2. Marguerita",
       quickReplies: [{ title: "Calabresa", payload: "op_1" }, { title: "Marguerita", payload: "op_2" }],

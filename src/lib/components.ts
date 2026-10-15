@@ -15,8 +15,8 @@ import { isChatLink } from "./gate/sales-channel";
  * referência (bvc:<ref>:acao), resolvido sem IA (action-confirm.ts).
  * Carrossel (parte 5d, só ações e API): de 1 a 10 cards com imagem ou vídeo, título, texto e os
  * botões do card (de resposta, ou um de link). WhatsApp: carrossel de mídia (texto do card até 160
- * caracteres, com o título no começo); 1 card vira mensagem com imagem. Instagram: o resumo
- * numerado com as respostas rápidas (o generic template fica para a parte 5d-2). Site: os cards.
+ * caracteres, com o título no começo); 1 card vira mensagem com imagem. Instagram (parte 5d-2): os
+ * cards num generic template (só no app) e o resumo numerado numa DM própria. Site: os cards.
  */
 
 export interface OptionItem {
@@ -265,8 +265,9 @@ export const SHORT_BODY = { options: "Escolha uma opção:", link: "Toque para a
 
 /**
  * Instagram: respostas rápidas (até 13, título de até 20) e o resumo numerado numa mensagem
- * própria. Carrossel (até a parte 5d-2): os botões de resposta dos cards viram as opções, com o
- * nome do card; carrossel de links vai no texto (instagramCarouselText). Pura.
+ * própria. Carrossel: os botões de resposta dos cards viram as opções do resumo, com o nome do
+ * card (para quem está no instagram.com, onde o generic template não aparece); carrossel de links
+ * vai no texto (instagramCarouselText). Pura.
  */
 export function instagramPlan(c: Exclude<MessageComponent, { type: "link" }>): { summary: string; quickReplies: Array<{ title: string; payload: string }> } {
   const options = choicesOf(c);
@@ -274,6 +275,35 @@ export function instagramPlan(c: Exclude<MessageComponent, { type: "link" }>): {
     summary: `Responda com o número ou toque numa opção:\n${numberedSummary(options)}`,
     quickReplies: options.slice(0, 13).map((o) => ({ title: shortTitle(o.title, LIMITS.buttonTitle), payload: o.id })),
   };
+}
+
+export interface InstagramElement {
+  title: string;
+  subtitle?: string;
+  image_url?: string;
+  buttons: Array<{ type: "postback"; title: string; payload: string } | { type: "web_url"; title: string; url: string }>;
+}
+
+const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
+
+/**
+ * Instagram: o carrossel como generic template. Até 10 cards; título e subtítulo até 80 caracteres
+ * (sem título, o texto vira o título); imagem só de foto (vídeo não entra no template); até 3
+ * botões, de postback (o payload é o id, como nas respostas rápidas) ou de link. Pura.
+ */
+export function instagramTemplate(c: Extract<MessageComponent, { type: "carousel" }>): InstagramElement[] {
+  return c.cards.slice(0, LIMITS.cards).map((card) => {
+    const title = shortTitle(oneLine(card.title?.trim() || card.text?.trim() || cardName(card)), 80);
+    const subtitle = card.title?.trim() && card.text?.trim() ? shortTitle(oneLine(card.text), 80) : null;
+    return {
+      title,
+      ...(subtitle ? { subtitle } : {}),
+      ...(card.media.type === "image" ? { image_url: card.media.url } : {}),
+      buttons: card.link
+        ? [{ type: "web_url" as const, title: shortTitle(card.link.label, LIMITS.buttonTitle), url: card.link.url }]
+        : (card.buttons ?? []).slice(0, 3).map((b) => ({ type: "postback" as const, title: shortTitle(b.title, LIMITS.buttonTitle), payload: b.id })),
+    };
+  });
 }
 
 /** Instagram: carrossel de links (sem botões de resposta) vai no texto, um card por linha. Pura. */

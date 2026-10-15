@@ -14,11 +14,11 @@ import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, queueUndoEvents, revo
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
-import { instagramTyping, isInstagramAccessError, mediaPermalink, sendInstagramAttachment, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
+import { instagramTyping, isInstagramAccessError, mediaPermalink, sendInstagramAttachment, sendInstagramTemplate, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
 import { answerWithGate, gateButtons } from "./gate/flow";
-import { choicesOf, instagramCarouselText, instagramLinkText, instagramPlan } from "./components";
+import { choicesOf, instagramCarouselText, instagramLinkText, instagramPlan, instagramTemplate, type MessageComponent } from "./components";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de resposta do Instagram). */
 const RESUME_HOURS = 24;
@@ -136,6 +136,24 @@ export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, tex
     if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
   }
   return mid;
+}
+
+/**
+ * Carrossel no Instagram (parte 5d-2): o texto, os cards (generic template, só no app) e o resumo
+ * numerado numa DM própria, para quem está no instagram.com pelo computador (lá os cards não
+ * aparecem). Se o template falhar, o resumo ainda vai. Devolve o id da última DM.
+ */
+export async function sendCarousel(db: SupabaseClient, ch: IgChannelRow, to: string, text: string, c: Extract<MessageComponent, { type: "carousel" }>, opts: { timeoutMs?: number } = {}): Promise<string | null> {
+  if (text.trim()) await send(db, ch, to, text, undefined, opts);
+  try {
+    const mid = await sendInstagramTemplate(ch, to, instagramTemplate(c), opts);
+    if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
+  } catch (e) {
+    console.warn("instagram: cards do carrossel não foram", (e as Error).message);
+  }
+  if (!choicesOf(c).length) return send(db, ch, to, instagramCarouselText("", c), undefined, opts);
+  const plan = instagramPlan(c);
+  return send(db, ch, to, plan.summary, plan.quickReplies, opts);
 }
 
 async function transcribeFrom(url: string, onUsage?: Parameters<typeof transcribeAudio>[1]): Promise<string | null> {
@@ -431,10 +449,10 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         send: async (text, buttons, component) => {
           // link: no texto (o botão de link não aparece no instagram.com pelo computador)
           if (component?.type === "link") return send(db, ch, igsid, instagramLinkText(text, component));
-          // carrossel de links (até a parte 5d-2): os links no texto, um card por linha
-          if (component?.type === "carousel" && !choicesOf(component).length) return send(db, ch, igsid, instagramCarouselText(text, component));
-          // opções (leva B1') e carrossel com botões de resposta: o texto, e o resumo numerado numa DM própria com as respostas rápidas
-          if (component?.type === "options" || component?.type === "carousel") {
+          // carrossel (parte 5d-2): o texto, os cards e o resumo numerado
+          if (component?.type === "carousel") return sendCarousel(db, ch, igsid, text, component);
+          // opções (leva B1'): o texto, e o resumo numerado numa DM própria com as respostas rápidas
+          if (component?.type === "options") {
             const plan = instagramPlan(component);
             if (text.trim()) await send(db, ch, igsid, text);
             return send(db, ch, igsid, plan.summary, plan.quickReplies);

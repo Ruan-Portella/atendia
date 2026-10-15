@@ -2734,7 +2734,7 @@
                 "messages"
               ]
             },
-            "description": "Um botão de link por card. No Instagram (até a parte 5d-2), os links vão no texto.",
+            "description": "Um botão de link por card. No Instagram, os cards com o botão de link e, numa DM própria, os links no texto (para quem está no instagram.com pelo computador).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"text\",\n  \"text\": \"Veja no site:\",\n  \"components\": {\n    \"type\": \"carousel\",\n    \"cards\": [\n      {\n        \"image\": \"https://placehold.co/800x600.png?text=Calabresa\",\n        \"title\": \"Pizza Calabresa\",\n        \"link\": {\n          \"title\": \"Ver no site\",\n          \"url\": \"https://boavoz.com\"\n        }\n      },\n      {\n        \"image\": \"https://placehold.co/800x600.png?text=Marguerita\",\n        \"title\": \"Pizza Marguerita\",\n        \"link\": {\n          \"title\": \"Ver no site\",\n          \"url\": \"https://boavoz.com\"\n        }\n      }\n    ]\n  }\n}",
@@ -2804,6 +2804,58 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Carrossel no Instagram",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            },
+            "description": "No app, os cards com foto e o botão \"Pedir este\" (generic template; o toque volta pelo webhook messaging_postbacks). Numa DM própria, o resumo numerado com as respostas rápidas, que é o que aparece no instagram.com pelo computador.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"{{instagram_contact}}\",\n  \"type\": \"text\",\n  \"text\": \"Saíram do forno agora:\",\n  \"components\": {\n    \"type\": \"carousel\",\n    \"cards\": [\n      {\n        \"image\": \"https://placehold.co/800x600.png?text=Calabresa\",\n        \"title\": \"Pizza Calabresa\",\n        \"text\": \"R$ 49,90. Calabresa, cebola e azeitona.\",\n        \"buttons\": [\n          {\n            \"title\": \"Pedir este\",\n            \"action\": {\n              \"name\": \"adicionar_ao_carrinho\",\n              \"params\": {\n                \"item\": \"101\"\n              }\n            }\n          }\n        ]\n      },\n      {\n        \"image\": \"https://placehold.co/800x600.png?text=Marguerita\",\n        \"title\": \"Pizza Marguerita\",\n        \"text\": \"R$ 45,90. Tomate, muçarela e manjericão.\",\n        \"buttons\": [\n          {\n            \"title\": \"Pedir este\",\n            \"action\": {\n              \"name\": \"adicionar_ao_carrinho\",\n              \"params\": {\n                \"item\": \"102\"\n              }\n            }\n          }\n        ]\n      },\n      {\n        \"image\": \"https://placehold.co/800x600.png?text=Coca-Cola\",\n        \"title\": \"Coca-Cola 2L\",\n        \"text\": \"R$ 12,00.\",\n        \"buttons\": [\n          {\n            \"title\": \"Pedir este\",\n            \"id\": \"pedir_coca\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 202\", () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const r = pm.response.json();",
+                  "  pm.environment.set(\"message_id\", r.message_id);",
+                  "  pm.test(\"status da mensagem: \" + r.status, () => pm.expect([\"sent\", \"uncertain\"]).to.include(r.status));",
+                  "}"
                 ]
               }
             }

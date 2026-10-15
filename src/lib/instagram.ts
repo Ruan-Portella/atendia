@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { unseal } from "./secret-box";
 import { appUrl } from "./utils";
 import { fetchWithTimeout } from "./whatsapp";
+import type { InstagramElement } from "./components";
 
 /**
  * Instagram Direct pela API do Instagram com login do Instagram (sem Página do Facebook).
@@ -156,9 +157,12 @@ export async function instagramMe(token: string): Promise<{ igUserId: string; us
   return { igUserId: String(igUserId), username: me.username ?? null };
 }
 
-/** Inscreve o app nas mensagens da conta (sem isso o webhook não recebe as DMs dela). */
+/**
+ * Inscreve o app nas mensagens da conta (sem isso o webhook não recebe as DMs dela) e nos toques
+ * em botão de generic template (messaging_postbacks, parte 5d-2).
+ */
 export async function subscribeInstagram(token: string) {
-  await api("me/subscribed_apps?subscribed_fields=messages", token, { method: "POST" });
+  await api("me/subscribed_apps?subscribed_fields=messages,messaging_postbacks", token, { method: "POST" });
 }
 
 export async function unsubscribeInstagram(token: string) {
@@ -226,6 +230,16 @@ export async function sendInstagramText(ch: IgChannel, recipientId: string, text
   // depois das 24 h, só a resposta da equipe, com a tag human_agent (até 7 dias; revisão própria da Meta)
   const tag = opts.humanAgent ? { messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" } : {};
   const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message, ...tag }, timeoutMs: opts.timeoutMs });
+  return r.message_id ?? null;
+}
+
+/**
+ * Carrossel (generic template): foto, título, subtítulo e botões por card; o toque num botão de
+ * postback volta pelo webhook messaging_postbacks, com o payload. Não aparece no instagram.com
+ * pelo computador. Devolve o id da mensagem.
+ */
+export async function sendInstagramTemplate(ch: IgChannel, recipientId: string, elements: InstagramElement[], opts: { timeoutMs?: number } = {}): Promise<string | null> {
+  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message: { attachment: { type: "template", payload: { template_type: "generic", elements } } } }, timeoutMs: opts.timeoutMs });
   return r.message_id ?? null;
 }
 
