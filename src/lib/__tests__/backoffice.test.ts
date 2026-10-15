@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { agencyStatus, monthlyCents, rangeFor, summarizeAiCosts, summarizeSubscriptions, sumOpenAiCosts, type AiCostRow, type SubscriptionLike } from "../backoffice";
 import { isPlatformAdmin } from "../platform-admin";
 import { botHint, listCaseFiles } from "../eval-cases";
-import { matchesHint, pickBot } from "../../components/admin/eval-runner";
+import { matchesHint, parseResult, pickBot, planAll } from "../../components/admin/eval-runner";
 
 describe("períodos do backoffice (mês de Brasília)", () => {
   const now = new Date("2026-10-02T15:00:00Z");
@@ -109,8 +109,8 @@ describe("bot certo para cada arquivo de casos", () => {
     { id: "bar", name: "Bar do Zé", client: "BoaVoz", label: "Bar do Zé · BoaVoz" },
     { id: "ruan", name: "Ruan", client: "Portfólio", label: "Ruan · Portfólio" },
   ];
-  const bar = { value: "bar", label: "casos-bar.jsonl", categories: [], forBot: "Bar do Zé (teste)" };
-  const geral = { value: "1", label: "casos.jsonl (geral)", categories: [], forBot: null };
+  const bar = { value: "bar", label: "casos-bar.jsonl", categories: [], forBot: "Bar do Zé (teste)", count: 27 };
+  const geral = { value: "1", label: "casos.jsonl (geral)", categories: [], forBot: null, count: 46 };
 
   it("o comentário do arquivo diz o bot (casa pelo nome do bot ou do cliente, sem acento nem \"(teste)\")", () => {
     expect(botHint('// Casos do bot de teste "Bar do Zé (teste)" (cardápio em evals/README.md).\n{"id":"x"}')).toBe("Bar do Zé (teste)");
@@ -128,6 +128,22 @@ describe("bot certo para cada arquivo de casos", () => {
     expect(pickBot(geral, bots, { "1": "ruan" })).toBe("ruan");
     expect(pickBot(geral, bots, {})).toBe("dasd");
   });
+
+  it("todos os arquivos: cada um no seu bot de teste; sem ele, o arquivo fica de fora", () => {
+    const farmacia = { value: "farmacia", label: "casos-farmacia.jsonl", categories: [], forBot: "Drogaria Cuidar (teste)", count: 18 };
+    const plan = planAll([geral, bar, farmacia], bots, { "1": "ruan" });
+    expect(plan.map((p) => [p.file, p.bot])).toEqual([
+      ["1", "ruan"],
+      ["bar", "bar"],
+      ["farmacia", null],
+    ]);
+  });
+
+  it("o resumo lê o resultado do relatório", () => {
+    expect(parseResult(["CONJUNTO FIXO", "", "RESULTADO: 15/16 casos passaram em todas as rodadas · obrigatórios (escopo_fixo, portao): ✅ OK", ""].join("\n"))).toEqual({ passed: 15, total: 16, mustOk: true });
+    expect(parseResult("RESULTADO: 3/9 casos passaram em todas as rodadas · obrigatórios (portao): ❌ FALHOU")).toEqual({ passed: 3, total: 9, mustOk: false });
+    expect(parseResult("Erro 500")).toBeNull();
+  });
 });
 
 describe("arquivos de casos para a tela de avaliação", () => {
@@ -136,5 +152,6 @@ describe("arquivos de casos para a tela de avaliação", () => {
     expect(files[0]).toMatchObject({ value: "1", label: "casos.jsonl (geral)" });
     expect(files[0].categories).toContain("escopo_fixo");
     expect(files.find((f) => f.value === "bar")?.categories).toEqual(["portao_bar", "componentes_bar"]);
+    expect(files.find((f) => f.value === "bar")?.count).toBeGreaterThan(0);
   });
 });

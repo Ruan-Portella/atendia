@@ -159,7 +159,7 @@ export function casesSummary(results: CaseResult[]) {
 }
 
 /** Arquivos de casos em evals/: casos.jsonl é o geral ("1"); casos-NOME.jsonl é o de um bot de teste. */
-export function listCaseFiles(): Array<{ value: string; label: string; categories: string[]; forBot: string | null }> {
+export function listCaseFiles(): Array<{ value: string; label: string; categories: string[]; forBot: string | null; count: number }> {
   // o geral primeiro (em ordem alfabética, "casos-bar" viria antes de "casos")
   const dir = join(process.cwd(), "evals");
   const files = readdirSync(dir)
@@ -167,7 +167,8 @@ export function listCaseFiles(): Array<{ value: string; label: string; categorie
     .sort((a, b) => (a === "casos.jsonl" ? -1 : b === "casos.jsonl" ? 1 : a.localeCompare(b)));
   return files.map((f) => {
     const name = f === "casos.jsonl" ? undefined : f.slice("casos-".length, -".jsonl".length);
-    return { value: name ?? "1", label: name ? `casos-${name}.jsonl` : "casos.jsonl (geral)", categories: [...new Set(loadCases(name).map((c) => c.categoria))], forBot: botHint(readFileSync(join(dir, f), "utf8")) };
+    const cases = loadCases(name);
+    return { value: name ?? "1", label: name ? `casos-${name}.jsonl` : "casos.jsonl (geral)", categories: [...new Set(cases.map((c) => c.categoria))], forBot: botHint(readFileSync(join(dir, f), "utf8")), count: cases.length };
   });
 }
 

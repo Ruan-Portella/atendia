@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 interface Props {
   bots: Array<{ id: string; label: string; client: string; name: string }>;
-  files: Array<{ value: string; label: string; categories: string[]; forBot: string | null }>;
+  files: Array<{ value: string; label: string; categories: string[]; forBot: string | null; count: number }>;
   defaultModel: string;
   /** Bot da última rodada de cada arquivo de casos. */
   lastBotByFile: Record<string, string>;
@@ -28,6 +28,39 @@ export function pickBot(file: Props["files"][number] | undefined, bots: Props["b
   const last = file ? bots.find((b) => b.id === lastBotByFile[file.value]) : undefined;
   return (named ?? last ?? bots[0])?.id ?? "";
 }
+
+/** Valor do seletor de casos que roda todos os arquivos, um depois do outro. */
+export const ALL_FILES = "todos";
+
+export interface PlanItem {
+  file: string;
+  label: string;
+  count: number;
+  /** null: o bot de teste do arquivo não existe aqui (o arquivo é pulado). */
+  bot: string | null;
+  botLabel: string | null;
+}
+
+/**
+ * Todos os arquivos: cada um com o bot para o qual foi escrito; sem bot de teste no arquivo (o
+ * geral), o da última rodada dele. Arquivo de um bot de teste que não existe aqui é pulado (com
+ * outro bot, o resultado não vale). Pura.
+ */
+export function planAll(files: Props["files"], bots: Props["bots"], lastBotByFile: Props["lastBotByFile"]): PlanItem[] {
+  return files.map((f) => {
+    const named = f.forBot ? bots.find((b) => matchesHint(b, f.forBot!)) : undefined;
+    const id = f.forBot ? (named?.id ?? null) : pickBot(f, bots, lastBotByFile) || null;
+    return { file: f.value, label: f.label, count: f.count, bot: id, botLabel: bots.find((b) => b.id === id)?.label ?? null };
+  });
+}
+
+/** "RESULTADO: 15/16 casos passaram … obrigatórios (…): ✅ OK" do relatório da /api/eval. Pura. */
+export function parseResult(report: string): { passed: number; total: number; mustOk: boolean } | null {
+  const m = /RESULTADO: (\d+)\/(\d+) casos passaram[^\n]*?obrigatórios[^\n]*?: (✅ OK|❌ FALHOU)/.exec(report);
+  return m ? { passed: Number(m[1]), total: Number(m[2]), mustOk: m[3] === "✅ OK" } : null;
+}
+
+type Progress = PlanItem & { status: "fila" | "rodando" | "feito" | "erro" | "pulado" | "parado"; result: ReturnType<typeof parseResult> };
 
 const MODELS = ["gpt-4.1-mini", "gpt-5-mini", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1-nano", "gpt-4o-mini"];
 const EFFORTS = [
@@ -54,11 +87,15 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
   const [runs, setRuns] = useState(3);
   const [output, setOutput] = useState("");
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<Progress[]>([]);
   const abort = useRef<AbortController | null>(null);
   const pre = useRef<HTMLPreElement | null>(null);
 
+  const all = file === ALL_FILES;
+  const plan = all ? planAll(files, bots, lastBotByFile) : [];
+  const totalCases = plan.filter((p) => p.bot).reduce((t, p) => t + p.count, 0);
   const fileInfo = files.find((f) => f.value === file);
-  const available = fileInfo?.categories ?? [];
+  const available = all ? [] : (fileInfo?.categories ?? []);
   // casos escritos para um bot de teste rodando em outro bot: o resultado não vale
   const chosen = bots.find((b) => b.id === bot);
   const wrongBot = fileInfo?.forBot && !(chosen && matchesHint(chosen, fileInfo.forBot)) ? fileInfo.forBot : null;
@@ -68,39 +105,76 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
     if (pre.current) pre.current.scrollTop = pre.current.scrollHeight;
   }, [output]);
 
-  async function run(e: React.FormEvent) {
-    e.preventDefault();
-    if (!bot) return;
-    const q = new URLSearchParams({ bot, casos: file, n: String(runs) });
-    for (const c of categories) q.append("categoria", c);
+  /** Uma rodada da /api/eval, com o relatório entrando na tela à medida que chega. Devolve o texto inteiro. */
+  async function runOne(botId: string, casos: string, cats: string[], signal: AbortSignal): Promise<string> {
+    const q = new URLSearchParams({ bot: botId, casos, n: String(runs) });
+    for (const c of cats) q.append("categoria", c);
     if (chosenModel) q.set("model", chosenModel);
     if (effort) q.set("esforco", effort);
     if (classifier) q.set("classificador", classifier);
+    const res = await fetch(`/api/eval?${q}`, { signal, cache: "no-store" });
+    if (!res.ok || !res.body) {
+      const text = `Erro ${res.status}: ${await res.text()}`;
+      setOutput((o) => o + text);
+      throw new Error(text);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let text = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = dec.decode(value, { stream: true });
+      text += chunk;
+      setOutput((o) => o + chunk);
+    }
+    return text;
+  }
+
+  async function run(e: React.FormEvent) {
+    e.preventDefault();
+    if (!all && !bot) return;
     setOutput("");
     setRunning(true);
     abort.current = new AbortController();
+    const signal = abort.current.signal;
     try {
-      const res = await fetch(`/api/eval?${q}`, { signal: abort.current.signal, cache: "no-store" });
-      if (!res.ok || !res.body) {
-        setOutput(`Erro ${res.status}: ${await res.text()}`);
+      if (!all) {
+        setProgress([]);
+        await runOne(bot, file, categories, signal);
         return;
       }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        setOutput((o) => o + dec.decode(value, { stream: true }));
+      // todos os arquivos, um depois do outro (cada um fica salvo no histórico)
+      const items: Progress[] = plan.map((p) => ({ ...p, status: p.bot ? "fila" : "pulado", result: null }));
+      setProgress(items);
+      const update = (i: number, patch: Partial<Progress>) => setProgress((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+      for (const [i, p] of items.entries()) {
+        if (!p.bot) continue;
+        if (signal.aborted) {
+          update(i, { status: "parado" });
+          continue;
+        }
+        update(i, { status: "rodando" });
+        setOutput((o) => `${o}${o ? "\n\n" : ""}━━━━━━━━ ${p.label} · ${p.botLabel} ━━━━━━━━\n`);
+        try {
+          const text = await runOne(p.bot, p.file, [], signal);
+          update(i, { status: "feito", result: parseResult(text) });
+        } catch (err) {
+          update(i, { status: (err as Error).name === "AbortError" ? "parado" : "erro" });
+        }
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") setOutput((o) => `${o}\n\nERRO: ${(err as Error).message}`);
-      else setOutput((o) => `${o}\n\n(parado)`);
     } finally {
+      if (signal.aborted) setOutput((o) => `${o}\n\n(parado)`);
       setRunning(false);
       abort.current = null;
       router.refresh();
     }
   }
+
+  const done = progress.filter((p) => p.result);
+  const sum = done.reduce((t, p) => ({ passed: t.passed + p.result!.passed, total: t.total + p.result!.total }), { passed: 0, total: 0 });
 
   const toggle = (c: string) => setCategories((cs) => (cs.includes(c) ? cs.filter((x) => x !== c) : [...cs, c]));
 
@@ -110,14 +184,19 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="sm:col-span-2">
             <label htmlFor="ev-bot" className="label">Chatbot</label>
-            <select id="ev-bot" value={bot} onChange={(e) => setBot(e.target.value)} className="input">
-              {bots.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
-            </select>
+            {all ? (
+              <p className="input bg-panel text-muted">Cada arquivo roda no bot para o qual foi escrito</p>
+            ) : (
+              <select id="ev-bot" value={bot} onChange={(e) => setBot(e.target.value)} className="input">
+                {bots.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label htmlFor="ev-file" className="label">Casos</label>
-            <select id="ev-file" value={file} onChange={(e) => { setFile(e.target.value); setCategories([]); setBot(pickBot(files.find((f) => f.value === e.target.value), bots, lastBotByFile)); }} className="input">
-              {files.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            <select id="ev-file" value={file} onChange={(e) => { setFile(e.target.value); setCategories([]); setProgress([]); if (e.target.value !== ALL_FILES) setBot(pickBot(files.find((f) => f.value === e.target.value), bots, lastBotByFile)); }} className="input">
+              <option value={ALL_FILES}>Todos os arquivos ({files.reduce((t, f) => t + f.count, 0)} casos)</option>
+              {files.map((f) => <option key={f.value} value={f.value}>{f.label} ({f.count})</option>)}
             </select>
           </div>
           <div>
@@ -151,13 +230,26 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
           </div>
         </div>
 
-        {wrongBot && (
+        {all && (
+          <div className="rounded-lg border border-line bg-panel px-3 py-2 text-sm">
+            <p>
+              {totalCases} casos × {runs} {runs === 1 ? "rodada" : "rodadas"} = {totalCases * runs} respostas, um arquivo depois do outro (de {Math.max(1, Math.round((totalCases * runs) / 70))} a {Math.max(2, Math.round((totalCases * runs) / 35))} min; mantenha esta aba aberta). Cada arquivo fica salvo no histórico.
+            </p>
+            {plan.some((p) => !p.bot) && (
+              <p className="mt-1 text-amber-ink">
+                Sem o bot de teste, ficam de fora: {plan.filter((p) => !p.bot).map((p) => p.label).join(", ")}.
+              </p>
+            )}
+          </div>
+        )}
+
+        {!all && wrongBot && (
           <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
             Estes casos foram escritos para o bot <strong>{wrongBot}</strong> (eles conferem preços e itens do cardápio dele). Com outro bot, o resultado não vale.
           </p>
         )}
 
-        <fieldset className="flex flex-col gap-2">
+        {!all && <fieldset className="flex flex-col gap-2">
           <legend className="label">Categorias {categories.length ? `(${categories.length} escolhidas)` : "(todas)"}</legend>
           <div className="flex flex-wrap gap-2">
             {available.map((c) => (
@@ -167,14 +259,38 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
               </label>
             ))}
           </div>
-        </fieldset>
+        </fieldset>}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button type="submit" className="btn-primary" disabled={running || !bot}>{running ? "Rodando…" : "Rodar avaliação"}</button>
+          <button type="submit" className="btn-primary" disabled={running || (!all && !bot) || (all && !totalCases)}>{running ? "Rodando…" : all ? "Rodar todos" : "Rodar avaliação"}</button>
           {running && <button type="button" className="btn-ghost" onClick={() => abort.current?.abort()}>Parar</button>}
           <span className="text-xs text-muted">Gasta IA de verdade (uma resposta por rodada de cada caso). O conjunto inteiro leva de 2 a 4 minutos.</span>
         </div>
       </form>
+
+      {progress.length > 0 && (
+        <div className="overflow-x-auto rounded-lg border border-line">
+          <table className="w-full min-w-[560px] text-sm">
+            <tbody>
+              {progress.map((p) => (
+                <tr key={p.file} className="border-b border-line-2 last:border-0">
+                  <td className="px-3 py-1.5">{p.label}</td>
+                  <td className="px-3 py-1.5 text-xs text-muted">{p.botLabel ?? "bot de teste não encontrado"}</td>
+                  <td className={`px-3 py-1.5 text-right text-xs font-semibold ${p.result && (p.result.passed < p.result.total || !p.result.mustOk) ? "text-danger" : ""}`}>
+                    {p.result ? `${p.result.passed}/${p.result.total}${p.result.mustOk ? "" : " · obrigatório falhou"}` : { fila: "na fila", rodando: "rodando…", feito: "feito", erro: "erro", pulado: "pulado", parado: "parado" }[p.status]}
+                  </td>
+                </tr>
+              ))}
+              {done.length > 0 && (
+                <tr className="bg-panel font-semibold">
+                  <td className="px-3 py-1.5" colSpan={2}>Total ({done.length} de {progress.filter((p) => p.bot).length} arquivos)</td>
+                  <td className="px-3 py-1.5 text-right">{sum.passed}/{sum.total}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {output && (
         <pre ref={pre} className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-ground p-4 text-xs leading-relaxed text-ink">{output}</pre>
