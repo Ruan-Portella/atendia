@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { asButtons, parseComponents } from "@/lib/components";
+import { asButtons, cardName, parseComponents } from "@/lib/components";
 
 /** Por que o canal recusou, nos erros mais comuns da Meta. */
 const FAILURE_TEXT: Record<string, string> = {
@@ -81,10 +81,33 @@ function MessageText({ m }: { m: ThreadMessage }) {
   );
 }
 
-/** O que o contato viu junto da mensagem: as opções (botões ou lista) ou o botão de link. */
+/** O que o contato viu junto da mensagem: as opções (botões ou lista), o botão de link ou o carrossel. */
 function ShownComponent({ json }: { json?: string | null }) {
   const c = parseComponents(json);
   if (!c) return null;
+  if (c.type === "carousel") {
+    return (
+      <div className="mt-1.5 flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">carrossel · {c.cards.length} {c.cards.length === 1 ? "card" : "cards"}</span>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {c.cards.map((card, i) => (
+            <div key={i} className="flex w-[132px] shrink-0 flex-col overflow-hidden rounded-lg border border-line bg-white text-[11px]">
+              {card.media.type === "video" ? (
+                <div className="flex aspect-[4/3] items-center justify-center bg-ground text-muted">vídeo</div>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element -- imagem do sistema do cliente, de qualquer domínio
+                <img src={card.media.url} alt={cardName(card)} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+              )}
+              <div className="flex flex-col gap-0.5 p-1.5">
+                <span className="font-semibold">{cardName(card)}</span>
+                {card.link ? <a href={card.link.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand">{card.link.label} ↗</a> : (card.buttons ?? []).map((b) => <span key={b.id} className="rounded-full border border-line px-1.5 text-center">{b.title}</span>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (c.type === "link") {
     return (
       <a href={c.url} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-block rounded-full border border-line bg-white px-2.5 py-0.5 text-[12px] font-semibold text-brand">

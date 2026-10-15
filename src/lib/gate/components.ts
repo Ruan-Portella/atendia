@@ -11,9 +11,9 @@ import type { MessageComponent } from "../components";
 export type ComponentGateInput = Omit<ExitInput, "text" | "destination">;
 
 /**
- * Portão nos componentes (WhatsApp e Instagram), como no texto: opção ou link com item proibido
- * sai; com item 18+ sem o "Sim", sai e `offerAdult` pede o botão "Ver opções 18+"; dado de
- * pagamento numa conversa com esses itens sai. Pura.
+ * Portão nos componentes (WhatsApp e Instagram), como no texto: opção, card ou link com item
+ * proibido sai; com item 18+ sem o "Sim", sai e `offerAdult` pede o botão "Ver opções 18+"; dado
+ * de pagamento numa conversa com esses itens sai. Pura.
  */
 export function gateComponent(c: MessageComponent | null, input: ComponentGateInput): { component: MessageComponent | null; prohibited: GateCategory[]; regulated: GateCategory[]; offerAdult: boolean } {
   const prohibited = new Set<GateCategory>();
@@ -32,6 +32,11 @@ export function gateComponent(c: MessageComponent | null, input: ComponentGateIn
     component = kept.length ? { type: "options", options: kept.map((o, i) => ({ id: /^op_\d+$/.test(o.id) ? `op_${i + 1}` : o.id, title: o.title })) } : null;
   } else if (c?.type === "link") {
     component = passes(`${c.label} ${c.url}`) ? c : null;
+  } else if (c?.type === "carousel") {
+    // card a card (é estrutural): o card com item proibido ou 18+ sem o "Sim" sai inteiro, e os
+    // outros ficam como vieram (mesmo tipo e quantidade de botões); 1 card vira mensagem com imagem
+    const kept = c.cards.filter((card) => passes([card.title, card.text, ...(card.buttons ?? []).map((b) => b.title), card.link ? `${card.link.label} ${card.link.url}` : null].filter(Boolean).join("\n")));
+    component = kept.length ? { type: "carousel", cards: kept } : null;
   }
   return { component, prohibited: [...prohibited], regulated: [...regulated], offerAdult: regulated.size > 0 && input.age === null };
 }

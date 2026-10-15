@@ -5,7 +5,7 @@ import { gateActionData, idLabels, saveIdMap } from "./action-gate";
 import { openConfirmation, type Caller } from "./action-confirm";
 import { ComponentProblem, materializeComponent, parseComponentInput } from "./component-input";
 import { filesNote, prepareActionFiles, readAttachmentList, type ActionFile } from "./action-files";
-import type { MessageComponent } from "./components";
+import { cardName, type MessageComponent } from "./components";
 import { firstExceeded } from "./rate-limit";
 import { hiddenNote } from "./gate/context";
 import { ageSource, type AgeStatus } from "./gate/age";
@@ -148,6 +148,7 @@ export interface ShapeInput {
  */
 export function componentNote(c: MessageComponent): Record<string, unknown> {
   if (c.type === "link") return { link: c.label, url: c.url, instrucao_botoes: "Se a sua resposta é abrir esse link, chame mostrar_link com essa url (vira o botão desta ação; não escreva o endereço). Se você consultou para outra coisa, não fale dele." };
+  if (c.type === "carousel") return { carrossel: c.cards.map(cardName), instrucao_botoes: "Se a sua resposta mostra esses itens para a pessoa escolher, chame mostrar_opcoes com os nomes deles (viram o carrossel desta ação, com foto e botões; não repita a lista no texto). Se você consultou para outra coisa (achar o id de um item, conferir um preço ou um item que a pessoa já escolheu), não chame mostrar_opcoes nem fale do carrossel." };
   return { botoes: c.options.map((x) => x.title), instrucao_botoes: "Se a sua resposta pede para a pessoa escolher entre essas opções, chame mostrar_opcoes com elas (viram os botões desta ação). Se você consultou para outra coisa (achar o id de um item, conferir um preço ou um item que a pessoa já escolheu), não chame mostrar_opcoes nem fale de botões." };
 }
 
@@ -155,7 +156,8 @@ const foldTitle = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, 
 
 /**
  * A escolha que a IA quer mostrar é a que a consulta devolveu? Opções: algum título igual (ou um
- * contido no outro, como "Calabresa" e "Pizza Calabresa"); link: a mesma url. Então vai o
+ * contido no outro, como "Calabresa" e "Pizza Calabresa"); carrossel: o nome de algum card; link:
+ * a mesma url. Então vai o
  * componente da ação (com o que cada botão faz), senão null. Pura.
  */
 export function offeredMatch(offered: MessageComponent | null, choice: { opcoes?: string[]; url?: string }): MessageComponent | null {
@@ -165,7 +167,8 @@ export function offeredMatch(offered: MessageComponent | null, choice: { opcoes?
     return choice.url && bare(choice.url) === bare(offered.url) ? offered : null;
   }
   const mine = (choice.opcoes ?? []).map(foldTitle).filter((t) => t.length >= 3);
-  const theirs = offered.options.map((o) => foldTitle(o.title));
+  // carrossel: as opções da IA são os nomes dos cards
+  const theirs = offered.type === "carousel" ? offered.cards.map((c) => foldTitle(cardName(c))) : offered.options.map((o) => foldTitle(o.title));
   return mine.some((a) => theirs.some((b) => a === b || (b.length >= 3 && (a.includes(b) || b.includes(a))))) ? offered : null;
 }
 

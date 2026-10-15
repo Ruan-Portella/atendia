@@ -11,6 +11,9 @@ import { botActionSecrets } from "@/lib/actions";
  *   cardapio        consulta: itens com id e nome (inclui uma cerveja, para o portão de pedidos)
  *   cardapio-botoes consulta: os mesmos itens e uma lista com "adicionar" em cada um (botão com ação
  *                   adicionar_ao_carrinho, params {item})
+ *   carrossel       consulta: os mesmos itens em carrossel (foto, preço e o botão "Pedir este", com ação
+ *                   adicionar_ao_carrinho); a cerveja testa o portão card a card
+ *   carrossel-links consulta: o carrossel com um botão de link em cada card ("Ver no site")
  *   carrinho        consulta (adicionar_ao_carrinho): reply com o item e os botões "Finalizar pedido"
  *                   (botão com ação criar_pedido) e "Ver cardápio" (sem ação: volta para a IA)
  *   pdf             consulta: data e um anexo PDF (cardapio.pdf)
@@ -91,6 +94,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ cenario
     return json(200, {
       data: { itens: CARDAPIO },
       components: { type: "list", button: "Ver sabores", items: CARDAPIO.map((c) => ({ title: c.nome.slice(0, 24), description: c.preco, action: { name: "adicionar_ao_carrinho", params: { item: c.id } } })) },
+    });
+  if (cenario === "carrossel" || cenario === "carrossel-links")
+    return json(200, {
+      data: { itens: CARDAPIO },
+      components: {
+        type: "carousel",
+        cards: CARDAPIO.map((c) => ({
+          image: `https://placehold.co/800x600.png?text=${encodeURIComponent(c.nome)}`,
+          title: c.nome,
+          text: `${c.preco}. Item de teste do cardápio de exemplo.`,
+          ...(cenario === "carrossel" ? { buttons: [{ title: "Pedir este", action: { name: "adicionar_ao_carrinho", params: { item: c.id } } }] } : { link: { title: "Ver no site", url: `https://bardoze.com.br/cardapio#${c.id}` } }),
+        })),
+      },
     });
   if (cenario === "carrinho") {
     const item = String(body.params?.item ?? "");

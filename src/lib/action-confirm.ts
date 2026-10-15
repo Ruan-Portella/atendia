@@ -4,7 +4,7 @@ import { callAction, needsConfirmation, paramsHash, reaches, type ActionLevel, t
 import { cancelRef, claimRef, createRef, getRef, refCallId, reopenRef, setRefStatus, supersedeOpenRefs, uncertainRef, type ButtonRef, type RefStatus } from "./button-refs";
 import { conversationIdMap, paramsGateDecision, paramsGateFacts, type IdMap } from "./action-gate";
 import { findMessage } from "./messages";
-import { parseComponents, type MessageComponent } from "./components";
+import { choicesOf, parseComponents, type MessageComponent } from "./components";
 import { firstExceeded } from "./rate-limit";
 import { chatModel, classifierModelId, modelCallOptions } from "./ai";
 import { recordAiUsage, usageFrom } from "./ai-usage";
@@ -100,9 +100,10 @@ export function typedChoice(text: string | null | undefined): { pos: 1 | 2; numb
  * novo"); "não" = só Cancelar. Função pura.
  */
 export function shortcutTarget(choice: { pos: 1 | 2; number: boolean }, last: MessageComponent | null): { refId: string; verb: ConfirmVerb } | null {
-  if (last?.type !== "options") return null;
-  // a posição na mensagem inteira (no Instagram, o número do resumo numerado)
-  const option = last.options[choice.pos - 1];
+  const choices = choicesOf(last);
+  if (!choices.length) return null;
+  // a posição na mensagem inteira (no Instagram, o número do resumo numerado; no carrossel, os botões dos cards)
+  const option = choices[choice.pos - 1];
   const picked = option ? parseConfirmButton(option.id) : null;
   if (!picked) return null;
   if (choice.number) return picked;

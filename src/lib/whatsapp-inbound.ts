@@ -8,7 +8,7 @@ import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { canTranscribe, transcribeAudio } from "./ai";
 import { recordAiUsage } from "./ai-usage";
-import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendMedia, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck, sendList, sendCtaUrl } from "./whatsapp";
+import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendMedia, sendPlan, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, isPromoOptOutButton, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
 import { markCampaignContact } from "./campaigns";
 import { OPTIN_BUTTONS, OPTIN_NO, OPTIN_NO_TEXT, OPTIN_VERSION, OPTIN_YES, consentHistory, consentStateOf, isClosingMessage, offerDue, optInOfferText, optInYesText, recordConsent, restoreConsents, revokeConsents, typedOptInAnswer } from "./marketing-consent";
@@ -61,7 +61,7 @@ export interface InboundMessage {
   from_user_id?: string;
   type: string;
   text?: { body?: string };
-  button?: { text?: string };
+  button?: { text?: string; payload?: string };
   interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
   /** Foto, vídeo e documento podem vir com legenda (é uma mensagem só, no WhatsApp). */
@@ -510,9 +510,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
             const plan = whatsappPlan(component);
             const long = body.length > LIMITS.body || !body.trim();
             if (long && body.trim()) await reply(text);
-            const short = long ? SHORT_BODY[component.type === "link" ? "link" : "options"] : body;
-            const sent =
-              plan.kind === "buttons" ? await sendButtons(channel, waId, short, plan.buttons) : plan.kind === "list" ? await sendList(channel, waId, short, plan.button, plan.rows) : await sendCtaUrl(channel, waId, short, plan.label, plan.url);
+            const short = long ? SHORT_BODY[component.type] : body;
+            const sent = await sendPlan(channel, waId, short, plan);
             return sent.messages?.[0]?.id ?? null;
           }
           // mensagem com botão tem no máximo 1.024 caracteres: resposta longa vai inteira e o botão logo depois
@@ -525,7 +524,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         chat: { whatsapp: { waId, profileName } },
         historySize: HISTORY,
       },
-      { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id ?? q.msg.interactive?.list_reply?.id, alone: texts.filter((t, i) => t && !optOut.handled.has(i)).length === 1 },
+      { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id ?? q.msg.interactive?.list_reply?.id ?? q.msg.button?.payload, alone: texts.filter((t, i) => t && !optOut.handled.has(i)).length === 1 },
     );
     // saiu depois da recusa por pagamento: o cartão entrou, o número volta ao normal
     if (channel.payment_issue_at) await db.from("whatsapp_channels").update({ payment_issue_at: null }).eq("bot_id", bot.id);

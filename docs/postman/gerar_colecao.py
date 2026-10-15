@@ -364,10 +364,15 @@ campanhas = folder(
 
 BOTOES = [{"title": "Sim, quero", "id": "quero_cardapio"}, {"title": "Agora não", "id": "agora_nao"}]
 COM_ACAO = [{"title": "Pedir calabresa", "action": {"name": "adicionar_ao_carrinho", "params": {"item": "101"}}}, {"title": "Ver cardápio", "id": "ver_cardapio"}]
+CARDS = [
+    {"image": "https://placehold.co/800x600.png?text=Calabresa", "title": "Pizza Calabresa", "text": "R$ 49,90. Calabresa, cebola e azeitona.", "buttons": [{"title": "Pedir este", "action": {"name": "adicionar_ao_carrinho", "params": {"item": "101"}}}]},
+    {"image": "https://placehold.co/800x600.png?text=Marguerita", "title": "Pizza Marguerita", "text": "R$ 45,90. Tomate, muçarela e manjericão.", "buttons": [{"title": "Pedir este", "action": {"name": "adicionar_ao_carrinho", "params": {"item": "102"}}}]},
+    {"image": "https://placehold.co/800x600.png?text=Coca-Cola", "title": "Coca-Cola 2L", "text": "R$ 12,00.", "buttons": [{"title": "Pedir este", "id": "pedir_coca"}]},
+]
 
 componentes = folder(
-    "9. Botões, lista e link",
-    "POST /v1/messages com `components` (um por mensagem, junto de um texto): `buttons` (até 3, título até 20), `list` (até 10 itens, título até 24 e descrição até 72) e `link` (título até 20, HTTPS). Sem `action`, o clique volta para a IA como mensagem com o título, e o `id` volta no webhook message.received (`interactive.id`). Com `action`, o clique chama a ação direto, sem a IA, e vale como confirmação; os parâmetros ficam no BoaVoz. Ação que cria pedido só vai em `buttons`. No WhatsApp e no Instagram, a pessoa precisa ter escrito nas últimas 24 horas.",
+    "9. Botões, lista, link e carrossel",
+    "POST /v1/messages com `components` (um por mensagem, junto de um texto): `buttons` (até 3, título até 20), `list` (até 10 itens, título até 24 e descrição até 72), `link` (título até 20, HTTPS) e `carousel` (1 a 10 cards; cada card com `image` ou `video` HTTPS, `title` até 80 e/ou `text` até 300, e `buttons` com 1 ou 2 de resposta ou um `link`, do mesmo tipo e na mesma quantidade em todos os cards). Sem `action`, o clique volta para a IA como mensagem com o título, e o `id` volta no webhook message.received (`interactive.id`). Com `action`, o clique chama a ação direto, sem a IA, e vale como confirmação; os parâmetros ficam no BoaVoz. Ação que cria pedido só vai em `buttons`. No carrossel do WhatsApp, o texto do card leva o título no começo e é cortado em 160 caracteres; 1 card vira mensagem com imagem. No WhatsApp e no Instagram, a pessoa precisa ter escrito nas últimas 24 horas.",
     [
         req(
             "Botões no WhatsApp",
@@ -415,8 +420,33 @@ componentes = folder(
             desc="No WhatsApp, botão que abre o link. No Instagram, o link vai no texto.",
             tests=expect_status(201, 202) + SAVE_SENT,
         ),
+        req(
+            "Carrossel no WhatsApp",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "Saíram do forno agora:", "components": {"type": "carousel", "cards": CARDS}},
+            desc="Cards que rolam para o lado, com foto e o botão \"Pedir este\". Nas pizzas, o botão chama `adicionar_ao_carrinho` direto (precisa da ação no chatbot); na Coca-Cola, o toque volta para a IA como \"Pedir este: Coca-Cola 2L\" e o webhook traz `interactive.id` = `pedir_coca`. Item proibido ou 18+ num card: 422 `prohibited_content` (a API nunca edita).",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req(
+            "Carrossel de links",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "Veja no site:", "components": {"type": "carousel", "cards": [{"image": "https://placehold.co/800x600.png?text=Calabresa", "title": "Pizza Calabresa", "link": {"title": "Ver no site", "url": "https://boavoz.com"}}, {"image": "https://placehold.co/800x600.png?text=Marguerita", "title": "Pizza Marguerita", "link": {"title": "Ver no site", "url": "https://boavoz.com"}}]}},
+            desc="Um botão de link por card. No Instagram (até a parte 5d-2), os links vão no texto.",
+            tests=expect_status(201, 202) + SAVE_SENT,
+        ),
+        req(
+            "Erro: carrossel com botões diferentes",
+            "POST",
+            "messages",
+            body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "text", "text": "Teste", "components": {"type": "carousel", "cards": [CARDS[0], {"image": "https://placehold.co/800x600.png", "title": "Outro", "buttons": [{"title": "A", "id": "a"}, {"title": "B", "id": "b"}]}]}},
+            desc="400 `invalid_request` com `field` = `components.cards[1].buttons`: todos os cards precisam do mesmo tipo e da mesma quantidade de botões (regra do WhatsApp).",
+            tests=expect_status(400),
+        ),
         req("Botões no Instagram", "POST", "messages", body={"bot_id": BOT, "to": "{{instagram_contact}}", "type": "text", "text": "Quer receber o cardápio do dia?", "components": {"type": "buttons", "buttons": BOTOES}}, desc="O texto e, numa DM própria, o resumo numerado com as respostas rápidas (no instagram.com pelo computador, responda com o número).", tests=expect_status(201, 202) + SAVE_SENT),
         req("Botões no chat do site", "POST", "messages", body={"conversation_id": "{{widget_conversation_id}}", "type": "text", "text": "A calabresa saiu do forno agora!", "agent_name": "Ana", "components": {"type": "buttons", "buttons": COM_ACAO}}, desc="Os botões aparecem embaixo do balão da Ana; só a última mensagem da conversa aceita toque.", tests=expect_status(201) + SAVE_SENT),
+        req("Carrossel no chat do site", "POST", "messages", body={"conversation_id": "{{widget_conversation_id}}", "type": "text", "text": "Saíram do forno agora:", "agent_name": "Ana", "components": {"type": "carousel", "cards": CARDS}}, desc="Os cards aparecem embaixo do balão da Ana e rolam para o lado.", tests=expect_status(201) + SAVE_SENT),
     ],
 )
 

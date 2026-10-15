@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { adoptLegacyStorage, getOrCreateVisitorId } from "@/lib/utils";
-import { parseComponents, type MessageComponent } from "@/lib/components";
+import { cardName, parseComponents, type MessageComponent } from "@/lib/components";
 
 export interface ChatBotPublic {
   key: string;
@@ -137,10 +137,45 @@ function filesOf(m: UIMessage): AgentFile[] {
 
 /**
  * Opções viram botões (o toque manda o título como mensagem do visitante, e o id do botão junto:
- * o Confirmar de uma ação é resolvido pelo id); link vira botão que abre a página. Só a última
- * mensagem aceita toque (o primeiro toque já desabilita); as antigas ficam como lembrete.
+ * o Confirmar de uma ação é resolvido pelo id); link vira botão que abre a página; carrossel vira
+ * cards que rolam para o lado (o toque manda o botão e o nome do card: "Pedir esta: Pizza
+ * Calabresa"). Só a última mensagem aceita toque (o primeiro toque já desabilita); as antigas
+ * ficam como lembrete.
  */
 function ComponentView({ component, color, active, onPick }: { component: MessageComponent; color: string; active: boolean; onPick: (text: string, buttonId: string) => void }) {
+  if (component.type === "carousel") {
+    return (
+      <div className="-mx-1 flex max-w-full snap-x gap-2 self-stretch overflow-x-auto px-1 pb-1">
+        {component.cards.map((card, i) => (
+          <div key={i} className="flex w-[200px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border bg-white" style={{ borderColor: "#e5e7eb" }}>
+            {card.media.type === "video" ? (
+              <video src={card.media.url} controls muted playsInline preload="metadata" className="aspect-[4/3] w-full bg-black object-cover" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- imagem do sistema do cliente, de qualquer domínio
+              <img src={card.media.url} alt={cardName(card)} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+            )}
+            <div className="flex flex-1 flex-col gap-1 p-2.5">
+              {card.title && <p className="text-[13px] font-semibold leading-snug text-gray-900">{card.title}</p>}
+              {card.text && <p className="whitespace-pre-line text-[12px] leading-snug text-gray-600">{card.text}</p>}
+              <div className="mt-auto flex flex-col gap-1 pt-1">
+                {card.link ? (
+                  <a href={card.link.url} target="_blank" rel="noopener noreferrer" className="rounded-full border px-3 py-1 text-center text-[12px] font-semibold" style={{ borderColor: color, color }}>
+                    {card.link.label} ↗
+                  </a>
+                ) : (
+                  (card.buttons ?? []).map((b) => (
+                    <button key={b.id} type="button" disabled={!active} onClick={() => onPick(`${b.title}: ${cardName(card)}`, b.id)} className="rounded-full border px-3 py-1 text-[12px] font-medium disabled:opacity-50" style={{ borderColor: color, color }}>
+                      {b.title}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (component.type === "link") {
     return (
       <a href={component.url} target="_blank" rel="noopener noreferrer" className="self-start rounded-full border bg-white px-3.5 py-1.5 text-[13px] font-semibold" style={{ borderColor: color, color }}>

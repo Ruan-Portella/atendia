@@ -18,7 +18,7 @@ import { instagramTyping, isInstagramAccessError, mediaPermalink, sendInstagramA
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { MAX_MEDIA_BYTES } from "./whatsapp";
 import { answerWithGate, gateButtons } from "./gate/flow";
-import { instagramLinkText, instagramPlan } from "./components";
+import { choicesOf, instagramCarouselText, instagramLinkText, instagramPlan } from "./components";
 
 /** Até quando uma mensagem nova continua a conversa anterior (a janela de resposta do Instagram). */
 const RESUME_HOURS = 24;
@@ -431,8 +431,10 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         send: async (text, buttons, component) => {
           // link: no texto (o botão de link não aparece no instagram.com pelo computador)
           if (component?.type === "link") return send(db, ch, igsid, instagramLinkText(text, component));
-          // opções (leva B1'): o texto, e o resumo numerado numa DM própria com as respostas rápidas
-          if (component?.type === "options") {
+          // carrossel de links (até a parte 5d-2): os links no texto, um card por linha
+          if (component?.type === "carousel" && !choicesOf(component).length) return send(db, ch, igsid, instagramCarouselText(text, component));
+          // opções (leva B1') e carrossel com botões de resposta: o texto, e o resumo numerado numa DM própria com as respostas rápidas
+          if (component?.type === "options" || component?.type === "carousel") {
             const plan = instagramPlan(component);
             if (text.trim()) await send(db, ch, igsid, text);
             return send(db, ch, igsid, plan.summary, plan.quickReplies);

@@ -41,7 +41,7 @@ describe("formato dos components (C pública, parte 5b)", () => {
     expect(problem(() => parseComponentInput({ type: "link", title: "Zap", url: "https://wa.me/5521999999999" })).field).toBe("components.url");
     expect(problem(() => parseComponentInput({ type: "link", title: "Site", url: "http://loja.com" })).field).toBe("components.url");
     expect(problem(() => parseComponentInput([{ type: "link", title: "a", url: "https://a.com" }, { type: "link", title: "b", url: "https://b.com" }])).message).toMatch(/Um componente por mensagem/);
-    expect(problem(() => parseComponentInput({ type: "carousel" })).field).toBe("components.type");
+    expect(problem(() => parseComponentInput({ type: "galeria" })).field).toBe("components.type");
   });
 
   it("os títulos e descrições passam pelo portão de texto da API", () => {

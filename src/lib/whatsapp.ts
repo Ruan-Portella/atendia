@@ -1,6 +1,6 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { unseal } from "./secret-box";
-import type { WhatsAppPlan } from "./components";
+import type { WhatsAppCard, WhatsAppPlan } from "./components";
 
 /**
  * Cloud API do WhatsApp (Meta): envio de mensagens, cadastro incorporado e conferência do webhook.
@@ -143,9 +143,10 @@ export async function enableIdentityCheck(ch: WaChannel) {
   return graph<{ success?: boolean }>(`${ch.phone_number_id}/settings`, channelToken(ch), { body: { user_identity_change: { enable_identity_key_check: true } } });
 }
 
-/** callbackData (o status da Meta volta com ele) e prazo, como no texto. */
-type InteractiveOpts = { callbackData?: string; timeoutMs?: number };
+/** callbackData (o status da Meta volta com ele) e prazo, como no texto; header: imagem ou vídeo em cima (carrossel de 1 card). */
+type InteractiveOpts = { callbackData?: string; timeoutMs?: number; header?: { type: "image" | "video"; url: string } };
 const callbackOf = (o: InteractiveOpts) => (o.callbackData ? { biz_opaque_callback_data: o.callbackData } : {});
+const headerOf = (o: InteractiveOpts) => (o.header ? { header: { type: o.header.type, [o.header.type]: { link: o.header.url } } } : {});
 
 /** Texto com até 3 botões de resposta (título de até 20 caracteres; o id volta no clique). */
 export async function sendButtons(ch: WaChannel, to: string, body: string, buttons: Array<{ id: string; title: string }>, opts: InteractiveOpts = {}) {
@@ -155,7 +156,7 @@ export async function sendButtons(ch: WaChannel, to: string, body: string, butto
       recipient_type: "individual",
       ...recipientOf(to),
       type: "interactive",
-      interactive: { type: "button", body: { text: body.slice(0, 1024) }, action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) } },
+      interactive: { type: "button", ...headerOf(opts), body: { text: body.slice(0, 1024) }, action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) } },
       ...callbackOf(opts),
     },
     timeoutMs: opts.timeoutMs,
@@ -192,17 +193,58 @@ export async function sendCtaUrl(ch: WaChannel, to: string, body: string, label:
       recipient_type: "individual",
       ...recipientOf(to),
       type: "interactive",
-      interactive: { type: "cta_url", body: { text: body.slice(0, 1024) }, action: { name: "cta_url", parameters: { display_text: label.slice(0, 20), url } } },
+      interactive: { type: "cta_url", ...headerOf(opts), body: { text: body.slice(0, 1024) }, action: { name: "cta_url", parameters: { display_text: label.slice(0, 20), url } } },
       ...callbackOf(opts),
     },
     timeoutMs: opts.timeoutMs,
   });
 }
 
-/** Botões, lista ou link já convertidos para o WhatsApp (whatsappPlan), com o texto no corpo. */
+/**
+ * Carrossel de mídia (2 a 10 cards): o texto da mensagem é obrigatório; cada card tem imagem ou
+ * vídeo, texto de até 160 caracteres e os botões, todos do mesmo tipo e na mesma quantidade (de
+ * resposta, com o id que volta no clique, ou um de link).
+ */
+export async function sendCarousel(ch: WaChannel, to: string, body: string, cards: WhatsAppCard[], opts: InteractiveOpts = {}) {
+  return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      ...recipientOf(to),
+      type: "interactive",
+      interactive: {
+        type: "carousel",
+        body: { text: body.slice(0, 1024) },
+        action: {
+          cards: cards.slice(0, 10).map((c, i) => ({
+            card_index: i,
+            type: "cta_url",
+            header: { type: c.media.type, [c.media.type]: { link: c.media.url } },
+            ...(c.text ? { body: { text: c.text.slice(0, 160) } } : {}),
+            action: c.link
+              ? { name: "cta_url", parameters: { display_text: c.link.label.slice(0, 20), url: c.link.url } }
+              : { buttons: (c.buttons ?? []).map((b) => ({ type: "quick_reply", quick_reply: { id: b.id, title: b.title.slice(0, 20) } })) },
+          })),
+        },
+      },
+      ...callbackOf(opts),
+    },
+    timeoutMs: opts.timeoutMs,
+  });
+}
+
+/** Botões, lista, link ou carrossel já convertidos para o WhatsApp (whatsappPlan), com o texto no corpo. */
 export async function sendPlan(ch: WaChannel, to: string, body: string, plan: WhatsAppPlan, opts: InteractiveOpts = {}) {
   if (plan.kind === "buttons") return sendButtons(ch, to, body, plan.buttons, opts);
   if (plan.kind === "list") return sendList(ch, to, body, plan.button, plan.rows, opts);
+  if (plan.kind === "carousel") return sendCarousel(ch, to, body, plan.cards, opts);
+  if (plan.kind === "media") {
+    // carrossel de 1 card: a imagem em cima, o texto da mensagem e o do card, e os botões dele
+    const text = [body.trim(), plan.card.text].filter(Boolean).join("\n\n");
+    const o = { ...opts, header: plan.card.media };
+    if (plan.card.link) return sendCtaUrl(ch, to, text, plan.card.link.label, plan.card.link.url, o);
+    return sendButtons(ch, to, text, plan.card.buttons ?? [], o);
+  }
   return sendCtaUrl(ch, to, body, plan.label, plan.url, opts);
 }
 

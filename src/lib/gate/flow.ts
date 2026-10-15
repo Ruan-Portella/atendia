@@ -2,11 +2,11 @@ import type { UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, requestHandoff, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
 import { deliver } from "../send";
-import { deleteMessage } from "../messages";
+import { deleteMessage, loadMessages } from "../messages";
 import { storeOnce } from "../whatsapp-inbound";
 import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
-import { LIMITS, joinShownText, type MessageComponent } from "../components";
+import { LIMITS, carouselClickText, joinShownText, parseComponents, type MessageComponent } from "../components";
 import { gateComponent } from "./components";
 import { decideEntrance } from "./entrance";
 import { checkActionReply, checkExit, exitDecision, replyFallback } from "./exit";
@@ -267,8 +267,10 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     }
   } else {
     history = await conversationHistory(db, convId, io.historySize, undefined, since);
+    // botão de um card do carrossel: a IA recebe o nome do card junto ("Pedir esta: Pizza Calabresa")
+    if (q.button && !confirmed) question = (await carouselClick(db, convId, q.button)) ?? question;
     // no reprocesso a pergunta já está no banco, então já vem no histórico (o Confirmar foi gravado acima)
-    if (!q.stored && !confirmed) history.push({ id: q.msgId, role: "user", parts: [{ type: "text", text: q.text }] });
+    if (!q.stored && !confirmed) history.push({ id: q.msgId, role: "user", parts: [{ type: "text", text: question }] });
   }
 
   // 2. portão da entrada (o "Não" sempre vence: a idade é lida de novo depois do setAge)
@@ -425,6 +427,9 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     // o aviso de IA (ou o "Voltei!") no começo fica marcado como anúncio no painel
     const r = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: answerId ? { update: answerId, ...(out !== savedRaw || reply ? { content: out } : {}), ...(disclosure ? { announce_chars: disclosure.length + 2 } : {}), ...(shownComponent() || component ? { components: component } : {}) } : null, transport: () => io.send(out, adultButton && !component ? "adulto" : undefined, component) });
     if (r.status === "blocked") return;
+    // carrossel sem os cards 18+: o "Ver opções 18+" vai logo depois, numa mensagem própria (os
+    // cards levam botões de um tipo só)
+    if (adultButton && component?.type === "carousel") await sendFixed(GATE_TEXTS.showAdultPrompt, "adulto");
     // anexos devolvidos pelas ações: logo depois do texto
     await sendFiles(actionFiles());
   }
@@ -434,6 +439,16 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   if (adultButton) await db.from("conversations").update({ age_pending_question: await sealField("conversations.age_pending_question", question.slice(0, 2000), await scopeOfConversation(convId)), age_pending_reply_enc: null, age_asked_at: null, regulated_at: new Date().toISOString() }).eq("id", convId);
   else if (pending?.question) await clearAgePending(db, convId);
   return { leadSaved: leadSaved() };
+}
+
+/** Toque num botão de card do carrossel (das últimas mensagens): "Pedir esta: Pizza Calabresa", ou null. */
+async function carouselClick(db: SupabaseClient, conversationId: string, buttonId: string): Promise<string | null> {
+  const recent = await loadMessages(db, { conversationId, roles: ["assistant", "agent"], delivered: true, newestFirst: true, limit: 5 }, ["components_enc"] as const);
+  for (const m of recent) {
+    const named = carouselClickText(parseComponents(m.components_enc ?? null), buttonId);
+    if (named) return named;
+  }
+  return null;
 }
 
 /** Fecha a pergunta de 18+ guardada (e a resposta que esperava o "Sim"). A pergunta só é gravada aqui, cifrada. */
