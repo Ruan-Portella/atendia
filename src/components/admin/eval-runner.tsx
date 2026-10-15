@@ -60,7 +60,11 @@ export function parseResult(report: string): { passed: number; total: number; mu
   return m ? { passed: Number(m[1]), total: Number(m[2]), mustOk: m[3] === "✅ OK" } : null;
 }
 
-type Progress = PlanItem & { status: "fila" | "rodando" | "feito" | "erro" | "pulado" | "parado"; result: ReturnType<typeof parseResult> };
+type Progress = PlanItem & { status: "fila" | "rodando" | "feito" | "erro" | "pulado" | "parado" | "cortado"; result: ReturnType<typeof parseResult> };
+
+/** Sem nada chegando por esse tempo, a conexão do arquivo travou (cada caso leva bem menos). */
+const IDLE_MS = 90_000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const MODELS = ["gpt-4.1-mini", "gpt-5-mini", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1-nano", "gpt-4o-mini"];
 const EFFORTS = [
@@ -105,30 +109,58 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
     if (pre.current) pre.current.scrollTop = pre.current.scrollHeight;
   }, [output]);
 
-  /** Uma rodada da /api/eval, com o relatório entrando na tela à medida que chega. Devolve o texto inteiro. */
+  /**
+   * Uma rodada da /api/eval, com o relatório entrando na tela à medida que chega. Devolve o texto
+   * inteiro. A conexão muda por 90 s é dada como travada (a rodada pode ter terminado no servidor).
+   */
   async function runOne(botId: string, casos: string, cats: string[], signal: AbortSignal): Promise<string> {
     const q = new URLSearchParams({ bot: botId, casos, n: String(runs) });
     for (const c of cats) q.append("categoria", c);
     if (chosenModel) q.set("model", chosenModel);
     if (effort) q.set("esforco", effort);
     if (classifier) q.set("classificador", classifier);
-    const res = await fetch(`/api/eval?${q}`, { signal, cache: "no-store" });
-    if (!res.ok || !res.body) {
-      const text = `Erro ${res.status}: ${await res.text()}`;
-      setOutput((o) => o + text);
-      throw new Error(text);
-    }
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
+    const local = new AbortController();
+    const stop = () => local.abort();
+    signal.addEventListener("abort", stop);
+    let idle = setTimeout(stop, IDLE_MS);
     let text = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      const chunk = dec.decode(value, { stream: true });
-      text += chunk;
-      setOutput((o) => o + chunk);
+    try {
+      const res = await fetch(`/api/eval?${q}`, { signal: local.signal, cache: "no-store" });
+      if (!res.ok || !res.body) {
+        const err = `Erro ${res.status}: ${await res.text()}`;
+        setOutput((o) => o + err);
+        throw new Error(err);
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        clearTimeout(idle);
+        idle = setTimeout(stop, IDLE_MS);
+        const chunk = dec.decode(value, { stream: true });
+        text += chunk;
+        setOutput((o) => o + chunk);
+      }
+    } catch (err) {
+      // travou por silêncio (não foi o Parar): segue com o que chegou; o resumo vem do histórico
+      if (signal.aborted || (err as Error).name !== "AbortError") throw err;
+    } finally {
+      clearTimeout(idle);
+      signal.removeEventListener("abort", stop);
     }
     return text;
+  }
+
+  /** O relatório que ficou salvo desta rodada (o texto chegou cortado): espera até 2 minutos. */
+  async function savedReport(botId: string, casos: string, since: string, signal: AbortSignal): Promise<string | null> {
+    const q = new URLSearchParams({ relatorio: "1", bot: botId, casos, desde: since });
+    for (let i = 0; i < 12 && !signal.aborted; i++) {
+      const res = await fetch(`/api/eval?${q}`, { signal, cache: "no-store" }).catch(() => null);
+      if (res?.ok) return res.text();
+      await sleep(10_000);
+    }
+    return null;
   }
 
   async function run(e: React.FormEvent) {
@@ -141,7 +173,14 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
     try {
       if (!all) {
         setProgress([]);
-        await runOne(bot, file, categories, signal);
+        const since = new Date(Date.now() - 60_000).toISOString();
+        const text = await runOne(bot, file, categories, signal);
+        // a conexão cortou o relatório: mostra o que ficou salvo da rodada (sem filtro de categoria)
+        if (!parseResult(text) && !signal.aborted && !categories.length) {
+          setOutput((o) => `${o}\n\n(o relatório chegou cortado; buscando o que ficou salvo no histórico…)\n`);
+          const saved = await savedReport(bot, file, since, signal);
+          setOutput((o) => `${o}\n${saved ?? "Não ficou salvo: a rodada não terminou no servidor. Rode de novo."}\n`);
+        }
         return;
       }
       // todos os arquivos, um depois do outro (cada um fica salvo no histórico)
@@ -156,9 +195,21 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
         }
         update(i, { status: "rodando" });
         setOutput((o) => `${o}${o ? "\n\n" : ""}━━━━━━━━ ${p.label} · ${p.botLabel} ━━━━━━━━\n`);
+        // um minuto antes, por causa da diferença de relógio entre o navegador e o servidor
+        const since = new Date(Date.now() - 60_000).toISOString();
         try {
           const text = await runOne(p.bot, p.file, [], signal);
-          update(i, { status: "feito", result: parseResult(text) });
+          let result = parseResult(text);
+          if (!result && !signal.aborted) {
+            // a conexão cortou o relatório: a rodada pode ter terminado e ficado salva
+            setOutput((o) => `${o}\n\n(o relatório chegou cortado; buscando o que ficou salvo no histórico…)\n`);
+            const saved = await savedReport(p.bot, p.file, since, signal);
+            if (saved) {
+              setOutput((o) => `${o}\n${saved}\n`);
+              result = parseResult(saved);
+            }
+          }
+          update(i, { status: result ? "feito" : signal.aborted ? "parado" : "cortado", result });
         } catch (err) {
           update(i, { status: (err as Error).name === "AbortError" ? "parado" : "erro" });
         }
@@ -276,8 +327,8 @@ export function EvalRunner({ bots, files, defaultModel, lastBotByFile }: Props) 
                 <tr key={p.file} className="border-b border-line-2 last:border-0">
                   <td className="px-3 py-1.5">{p.label}</td>
                   <td className="px-3 py-1.5 text-xs text-muted">{p.botLabel ?? "bot de teste não encontrado"}</td>
-                  <td className={`px-3 py-1.5 text-right text-xs font-semibold ${p.result && (p.result.passed < p.result.total || !p.result.mustOk) ? "text-danger" : ""}`}>
-                    {p.result ? `${p.result.passed}/${p.result.total}${p.result.mustOk ? "" : " · obrigatório falhou"}` : { fila: "na fila", rodando: "rodando…", feito: "feito", erro: "erro", pulado: "pulado", parado: "parado" }[p.status]}
+                  <td className={`px-3 py-1.5 text-right text-xs font-semibold ${(p.result && (p.result.passed < p.result.total || !p.result.mustOk)) || p.status === "cortado" || p.status === "erro" ? "text-danger" : ""}`}>
+                    {p.result ? `${p.result.passed}/${p.result.total}${p.result.mustOk ? "" : " · obrigatório falhou"}` : { fila: "na fila", rodando: "rodando…", feito: "feito", erro: "erro", pulado: "pulado", parado: "parado", cortado: "cortado: rode só este arquivo" }[p.status]}
                   </td>
                 </tr>
               ))}

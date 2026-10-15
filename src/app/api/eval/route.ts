@@ -47,6 +47,8 @@ const effortOf = (v: string | null): ReasoningEffort | undefined => (EFFORTS as 
  * Cada rodada do conjunto fica salva (eval_runs) e aparece no histórico do backoffice (/admin/avaliacao).
  * Só admins da plataforma com a verificação em duas etapas feita (ver platform-admin.ts).
  * Casos de um bot de teste: &casos=bar (evals/casos-bar.jsonl)
+ * Relatório salvo: &relatorio=1&bot=ID&casos=bar&desde=ISO devolve o da rodada mais recente desde
+ * aquela hora (a tela usa quando a conexão corta o relatório antes do resumo; 404 se não há).
  * Comparar modelos: &model=gpt-5-mini (opcional &esforco=minimal|low|none); o relatório mostra o custo por resposta
  * Classificador do portão: &classificador=gpt-4.1-nano (padrão: OPENAI_CLASSIFIER_MODEL ou o modelo do chat)
  * Roda a pergunta N vezes pelo mesmo caminho do chat, sem gravar nada, e mostra os trechos que
@@ -59,6 +61,22 @@ export async function GET(req: Request) {
 
   const sp = url.searchParams;
   const botId = sp.get("bot") ?? "";
+  // o relatório que ficou salvo (a conexão cortou o texto, mas a rodada terminou no servidor)
+  if (sp.get("relatorio") && /^[0-9a-f-]{36}$/i.test(botId)) {
+    const file = sp.get("casos");
+    const since = Date.parse(sp.get("desde") ?? "");
+    const { data } = await createAdminClient()
+      .from("eval_runs")
+      .select("report")
+      .eq("bot_id", botId)
+      .eq("case_file", file && file !== "1" ? file : "casos")
+      .gte("created_at", new Date(Number.isFinite(since) ? since : Date.now() - 600_000).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data?.report) return new Response("ainda não salvo", { status: 404, headers: { "Cache-Control": "no-store" } });
+    return new Response(String(data.report), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  }
   // conjunto fixo (evals/casos.jsonl): &casos=1 roda tudo; &categoria=escopo_fixo filtra
   if ((sp.get("casos") || sp.get("categoria")) && /^[0-9a-f-]{36}$/i.test(botId)) {
     const db = createAdminClient();
