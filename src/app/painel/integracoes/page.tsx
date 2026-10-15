@@ -288,6 +288,7 @@ const EVENT_HINT: Partial<Record<WebhookEvent, string>> = {
   "message.failed": "a entrega falhou, com o código da Meta",
   "message.deleted": "o contato desfez a mensagem (Instagram)",
   "lead.created": "a IA registrou um lead",
+  "lead.updated": "o mesmo contato voltou com um pedido novo",
   "handoff.requested": "pediram atendente",
   "handoff.returned": "a conversa voltou para a IA",
   "contact.opted_in": "aceitou promoções ou lembretes (chat, painel ou “Foi engano”)",

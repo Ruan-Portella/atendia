@@ -27,6 +27,7 @@ export const WEBHOOK_EVENTS = [
   "message.failed",
   "message.deleted",
   "lead.created",
+  "lead.updated",
   "handoff.requested",
   "handoff.returned",
   "contact.linked",
@@ -48,7 +49,7 @@ export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 /** Grupos do editor de webhooks (spec Peça 2). */
 export const WEBHOOK_EVENT_GROUPS: Array<{ label: string; events: WebhookEvent[] }> = [
   { label: "Mensagens", events: ["message.received", "message.sent", "message.status", "message.failed", "message.deleted"] },
-  { label: "Atendimento", events: ["lead.created", "handoff.requested", "handoff.returned"] },
+  { label: "Atendimento", events: ["lead.created", "lead.updated", "handoff.requested", "handoff.returned"] },
   { label: "Contato", events: ["contact.linked", "contact.unlinked", "contact.opted_in", "contact.opted_out", "contact.deleted"] },
   { label: "Campanhas", events: ["campaign.finished"] },
   { label: "Canais", events: ["channel.connected", "channel.disconnected", "channel.issue", "template.status_changed", "bot.paused", "bot.resumed"] },

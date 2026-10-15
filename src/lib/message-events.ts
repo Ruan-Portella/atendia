@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { LeadRequest } from "./leads";
 
 /*
  * Eventos de mensagem nos webhooks (C pública, parte 2a; spec Peça 2): message.received e
@@ -186,16 +187,35 @@ export async function queueDeletedEvent(db: SupabaseClient, messageIds: number[]
 
 /* ------------------------------------------------------------------ lead e atendimento */
 
-/** lead.created: o lead que a IA registrou (nome, telefone, e-mail e o interesse). */
-export async function queueLeadEvent(db: SupabaseClient, lead: { id: string; conversationId: string | null; name: string; phone?: string | null; email?: string | null; notes?: string | null }): Promise<void> {
+/**
+ * lead.created: o lead novo (nome, telefone, e-mail e o interesse). lead.updated: o mesmo contato
+ * voltou com um pedido novo (request) ou mudou o contato (request null).
+ */
+export async function queueLeadEvent(
+  db: SupabaseClient,
+  lead: { id: string; name: string; phone?: string | null; email?: string | null; notes?: string | null },
+  o: { kind: "created" | "updated"; conversationId: string | null; request?: LeadRequest | null },
+): Promise<void> {
   try {
-    if (!lead.conversationId) return;
-    const ctx = await eventContext(db, lead.conversationId);
+    if (!o.conversationId) return;
+    const ctx = await eventContext(db, o.conversationId);
     if (!ctx) return;
     const { emitEvent } = await import("./webhooks");
+    const at = new Date().toISOString();
+    const leadObject = { id: `lead_${lead.id}`, name: lead.name, phone: lead.phone ?? null, email: lead.email ?? null, notes: lead.notes ?? null };
+    const r = o.request ?? null;
     await emitEvent(
       db,
-      { type: "lead.created", key: lead.id, bot: ctx.bot, createdAt: new Date().toISOString(), conversation: { id: lead.conversationId, channel: ctx.channel }, contact: await contactObject(db, ctx.contactId), contactId: ctx.contactId, data: { lead: { id: `lead_${lead.id}`, name: lead.name, phone: lead.phone ?? null, email: lead.email ?? null, notes: lead.notes ?? null } } },
+      {
+        type: o.kind === "created" ? "lead.created" : "lead.updated",
+        key: o.kind === "created" ? lead.id : `${lead.id}:${at}`,
+        bot: ctx.bot,
+        createdAt: at,
+        conversation: { id: o.conversationId, channel: ctx.channel },
+        contact: await contactObject(db, ctx.contactId),
+        contactId: ctx.contactId,
+        data: o.kind === "created" ? { lead: leadObject } : { lead: leadObject, request: r ? { created_at: r.at, channel: r.channel, conversation_id: r.conversation_id ? `conv_${r.conversation_id}` : null, text: r.text } : null },
+      },
       { background: true },
     );
   } catch (e) {
@@ -205,9 +225,10 @@ export async function queueLeadEvent(db: SupabaseClient, lead: { id: string; con
 
 /**
  * handoff.requested: a IA (ou o contato) pediu atendente. reason ai_unavailable no modo só humano,
- * sem dizer o motivo (não expõe o plano da agência); priority urgent no risco à vida.
+ * sem dizer o motivo (não expõe o plano da agência); lead quando a pessoa deixou um pedido para a
+ * equipe (lead novo ou pedido novo); priority urgent no risco à vida.
  */
-export async function queueHandoffRequested(db: SupabaseClient, conversationId: string, o: { urgent?: boolean; aiUnavailable?: boolean; outsideHours?: boolean }): Promise<void> {
+export async function queueHandoffRequested(db: SupabaseClient, conversationId: string, o: { urgent?: boolean; aiUnavailable?: boolean; outsideHours?: boolean; lead?: boolean }): Promise<void> {
   try {
     const ctx = await eventContext(db, conversationId);
     if (!ctx) return;
@@ -216,7 +237,7 @@ export async function queueHandoffRequested(db: SupabaseClient, conversationId: 
     const { emitEvent } = await import("./webhooks");
     await emitEvent(
       db,
-      { type: "handoff.requested", key: `${conversationId}:${at}`, bot: ctx.bot, createdAt: at, conversation: { id: conversationId, channel: ctx.channel }, contact: await contactObject(db, ctx.contactId), contactId: ctx.contactId, data: { reason: o.aiUnavailable ? "ai_unavailable" : "requested", priority: o.urgent ? "urgent" : "normal", outside_hours: Boolean(o.outsideHours) } },
+      { type: "handoff.requested", key: `${conversationId}:${at}`, bot: ctx.bot, createdAt: at, conversation: { id: conversationId, channel: ctx.channel }, contact: await contactObject(db, ctx.contactId), contactId: ctx.contactId, data: { reason: o.aiUnavailable ? "ai_unavailable" : o.lead ? "lead" : "requested", priority: o.urgent ? "urgent" : "normal", outside_hours: Boolean(o.outsideHours) } },
       { background: true },
     );
   } catch (e) {

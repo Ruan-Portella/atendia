@@ -11,11 +11,11 @@ const br = (iso: string) => new Date(`${iso}-03:00`);
 describe("horário de atendimento", () => {
   it("dentro do horário: sem aviso de volta", () => {
     expect(nextOpening(hours, br("2026-10-02T10:00:00"))).toBeNull();
-    expect(handoffNotice(hours, br("2026-10-02T10:00:00"))).toBe("Deixei seu pedido registrado e nossa equipe responde assim que possível.");
+    expect(handoffNotice(hours, br("2026-10-02T10:00:00"))).toBe("Já avisei a nossa equipe, que responde assim que possível.");
   });
 
   it("sexta à noite: volta segunda às 9h", () => {
-    expect(handoffNotice(hours, br("2026-10-02T21:30:00"))).toBe("Nossa equipe volta segunda, das 9h às 18h. Deixei seu pedido registrado e respondemos assim que possível.");
+    expect(handoffNotice(hours, br("2026-10-02T21:30:00"))).toBe("Nossa equipe volta segunda, das 9h às 18h. Já avisei e respondemos assim que possível.");
   });
 
   it("de madrugada: volta hoje; depois do expediente: amanhã", () => {
@@ -24,13 +24,13 @@ describe("horário de atendimento", () => {
   });
 
   it("sem horário configurado: texto padrão, sem data", () => {
-    expect(handoffNotice(null)).toBe("Deixei seu pedido registrado e nossa equipe responde assim que possível.");
-    expect(handoffNotice({})).toBe("Deixei seu pedido registrado e nossa equipe responde assim que possível.");
+    expect(handoffNotice(null)).toBe("Já avisei a nossa equipe, que responde assim que possível.");
+    expect(handoffNotice({})).toBe("Já avisei a nossa equipe, que responde assim que possível.");
   });
 
   it("mesmo dia da semana, já fechado hoje: \"na próxima quinta\" (só \"quinta\" pareceria hoje)", () => {
     // 2026-10-01 é quinta; aberto só quinta, das 7h47 às 9h47; agora são 10h47
-    expect(handoffNotice({ "4": ["07:47", "09:47"] }, br("2026-10-01T10:47:00"))).toBe("Nossa equipe volta na próxima quinta, das 7h47 às 9h47. Deixei seu pedido registrado e respondemos assim que possível.");
+    expect(handoffNotice({ "4": ["07:47", "09:47"] }, br("2026-10-01T10:47:00"))).toBe("Nossa equipe volta na próxima quinta, das 7h47 às 9h47. Já avisei e respondemos assim que possível.");
     // sábado é masculino: "no próximo sábado" (2026-10-03 é sábado)
     expect(handoffNotice({ "6": ["08:00", "12:00"] }, br("2026-10-03T13:00:00"))).toContain("volta no próximo sábado, das 8h às 12h");
   });

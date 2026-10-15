@@ -62,7 +62,11 @@ describe("contatos pela API (C pública, parte 4a)", () => {
   });
 
   it("lead no formato da API", () => {
-    expect(leadApiObject({ id: "l1", bot_id: "b1", conversation_id: "cv1", name: "Ana", phone: "5521", email: null, instagram: null, channel: "whatsapp", notes: "quer orçamento", created_at: "2026-10-01T00:00:00Z" })).toEqual({
+    const requests = [
+      { at: "2026-10-01T00:00:00Z", channel: "whatsapp", conversation_id: "cv0", text: "quer cardápio" },
+      { at: "2026-10-03T00:00:00Z", channel: "whatsapp", conversation_id: "cv1", text: "quer orçamento" },
+    ];
+    expect(leadApiObject({ id: "l1", bot_id: "b1", conversation_id: "cv1", name: "Ana", phone: "5521", email: null, instagram: null, channel: "whatsapp", notes: "quer orçamento", requests, created_at: "2026-10-01T00:00:00Z", last_request_at: "2026-10-03T00:00:00Z", updated_at: "2026-10-03T00:00:00Z" })).toEqual({
       id: "lead_l1",
       bot_id: "bot_b1",
       conversation_id: "conv_cv1",
@@ -72,7 +76,13 @@ describe("contatos pela API (C pública, parte 4a)", () => {
       email: null,
       instagram: null,
       notes: "quer orçamento",
+      requests: [
+        { created_at: "2026-10-01T00:00:00Z", channel: "whatsapp", conversation_id: "conv_cv0", text: "quer cardápio" },
+        { created_at: "2026-10-03T00:00:00Z", channel: "whatsapp", conversation_id: "conv_cv1", text: "quer orçamento" },
+      ],
       created_at: "2026-10-01T00:00:00Z",
+      last_request_at: "2026-10-03T00:00:00Z",
+      updated_at: "2026-10-03T00:00:00Z",
     });
   });
 });

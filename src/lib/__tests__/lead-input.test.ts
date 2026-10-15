@@ -55,6 +55,14 @@ describe("nome dito pela pessoa", () => {
     expect(nameWasGiven("Ana Souza", ["oi"])).toBe(false);
   });
 
+  it("palavra do pedido no lugar do nome não vale, mesmo aparecendo na mensagem", () => {
+    const said = ["quero orçamento pra 40 mantas de tricô"];
+    expect(checkLeadInput({ nome: "Cliente das mantas" }, { instagram: true, said }).ok).toBe(false);
+    expect(checkLeadInput({ nome: "Interessado no orçamento" }, { instagram: true, said }).ok).toBe(false);
+    expect(checkLeadInput({ nome: "Pedido de mantas" }, { instagram: true, said }).ok).toBe(false);
+    expect(checkLeadInput({ nome: "Clientela Souza" }, { instagram: true, said: [...said, "Clientela Souza"] }).ok).toBe(true);
+  });
+
   it("lead com nome inventado é recusado; com o nome do perfil do WhatsApp, aceito", () => {
     const said = ["quero pedir uma pizza", "Calabresa", "Não, só a calabresa"];
     expect(checkLeadInput({ nome: "Maria" }, { instagram: true, said }).ok).toBe(false);

@@ -4,7 +4,7 @@ import { SUSPENDED_NOTICE, isChannelSuspended } from "@/lib/conversation-mode";
 import { typedPhoneHash } from "@/lib/contacts";
 import { CORS_HEADERS, type BotRow } from "@/lib/chat";
 import { notifyLead } from "@/lib/notify";
-import { createLead } from "@/lib/leads";
+import { saveLead } from "@/lib/leads";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 
 /** Formulário de contato dentro do widget (quando o visitante prefere preencher em vez de conversar). */
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     const { data: conv } = await db.from("conversations").select("id").eq("id", conversationId).eq("bot_id", bot.id).maybeSingle();
     if (!conv) conversationId = null;
   }
-  const leadId = await createLead(db, { botId: bot.id, conversationId, name: d.name, phone: d.phone, phoneHash: typedPhoneHash(d.phone), email: d.email, notes: d.notes });
-  notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: d.name }, channel: "widget", conversationId }).catch(() => {});
+  const saved = await saveLead(db, { botId: bot.id, conversationId, name: d.name, phone: d.phone, phoneHash: typedPhoneHash(d.phone), email: d.email, channel: "widget", notes: d.notes });
+  if (saved) notifyLead({ db, bot, lead: { ...saved, nome: d.name }, channel: "widget", conversationId }).catch(() => {});
   return Response.json({ ok: true }, { headers: CORS_HEADERS });
 }

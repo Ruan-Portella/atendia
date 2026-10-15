@@ -45,6 +45,13 @@ export interface KnownContact {
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+// o que a IA põe no lugar do nome ("Cliente das mantas", "Interessado no orçamento"): uma palavra
+// do pedido aparece no que a pessoa escreveu, mas não é nome
+const NOT_A_NAME = new Set(["cliente", "clientes", "visitante", "interessado", "interessada", "usuario", "usuaria", "comprador", "compradora", "orcamento", "pedido", "contato", "lead", "nome", "informado", "informada"]);
+
+/** O "nome" tem palavra que não é nome (cliente, orçamento, pedido…)? Pura. */
+export const genericName = (nome: string): boolean => fold(nome).split(/[^\p{L}]+/u).some((w) => NOT_A_NAME.has(w));
+
 /** Alguma palavra do nome aparece no que a pessoa escreveu (ou num nome já conhecido)? A IA às vezes inventa um nome. Pura. */
 export function nameWasGiven(nome: string, said: string[]): boolean {
   const words = new Set(fold(said.join(" ")).split(/[^\p{L}]+/u).filter(Boolean));
@@ -83,7 +90,7 @@ export function checkLeadInput(input: LeadInput, known: KnownContact = {}): { ok
   const whatsapp = typed("whatsapp", validPhone(input.whatsapp));
   const email = typed("email", input.email && !isPlaceholder(input.email) && isEmail(input.email.trim()) ? input.email.trim().toLowerCase() : null);
   const instagram = typed("instagram", validInstagram(input.instagram));
-  const badName = nome.length < 2 || isPlaceholder(nome) || !/\p{L}{2}/u.test(nome) || (known.said !== undefined && !nameWasGiven(nome, known.said));
+  const badName = nome.length < 2 || isPlaceholder(nome) || genericName(nome) || !/\p{L}{2}/u.test(nome) || (known.said !== undefined && !nameWasGiven(nome, known.said));
   const noContact = !whatsapp && !email && !instagram && !known.phone && !known.instagram;
   if (badName || noContact) {
     const falta = [badName && "o nome", noContact && "um contato (WhatsApp com DDD, e-mail ou @ do Instagram)"].filter(Boolean).join(" e ");
@@ -92,8 +99,12 @@ export function checkLeadInput(input: LeadInput, known: KnownContact = {}): { ok
   return { ok: true, nome, whatsapp, email, instagram };
 }
 
-/** Depois de registrar: confirmar que a equipe retorna, sem pedir mais dados (no WhatsApp e no Instagram, pela conversa). Pura. */
+/**
+ * Depois de registrar: dizer que passou o pedido para a equipe, que retorna (no WhatsApp e no
+ * Instagram, pela conversa), sem pedir mais dados. O lead não é pedido feito: ninguém da equipe viu
+ * ainda, então nada de "anotado" ou "confirmado". Pura.
+ */
 export function leadSavedNote(channel: string): string {
   const here = channel === "whatsapp" ? " por aqui, pelo WhatsApp" : channel === "instagram" ? " por aqui, pelo Instagram" : "";
-  return `Contato registrado. Agradeça e confirme que a equipe vai entrar em contato${here}. Não peça mais nenhum dado (nem WhatsApp, nem e-mail).`;
+  return `Contato registrado e equipe avisada. Agradeça e diga que passou o pedido para a equipe, que vai entrar em contato${here} para confirmar. Não diga que o pedido, a reserva ou o horário está anotado, registrado ou confirmado (a equipe ainda não viu). Não peça mais nenhum dado (nem WhatsApp, nem e-mail).`;
 }

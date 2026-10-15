@@ -102,7 +102,7 @@ export function whenLabel(o: { inDays: number; day: number; time: string; until:
 /** Aviso de IA da primeira resposta (WhatsApp e Instagram). {nome} e {empresa} viram o nome do assistente e do negócio. */
 export const DEFAULT_AI_NOTICE = "Sou {nome}, assistente virtual de {empresa}.";
 /** Pedido de atendente fora do horário. {volta} vira "segunda, das 9h às 18h". */
-export const DEFAULT_AWAY_MESSAGE = "Nossa equipe volta {volta}. Deixei seu pedido registrado e respondemos assim que possível.";
+export const DEFAULT_AWAY_MESSAGE = "Nossa equipe volta {volta}. Já avisei e respondemos assim que possível.";
 /** A conversa voltou de um atendente (prefixo da próxima resposta da IA). {nome} e {empresa}. */
 export const DEFAULT_BACK_NOTICE = "Voltei! Sou {nome}, assistente virtual. Se precisar, é só pedir um atendente.";
 /** Alguém da equipe assumiu (prefixo da primeira mensagem dele). {atendente} e {empresa}. */
@@ -118,7 +118,8 @@ export function renderEntryNotice(template: string | null | undefined, o: { atte
   return (template?.trim() || DEFAULT_ENTRY_NOTICE).replaceAll("{atendente}", o.attendant).replaceAll("{empresa}", o.company);
 }
 /** No horário, ou sem horário configurado: texto fixo, sem data. */
-export const NO_DATE_NOTICE = "Deixei seu pedido registrado e nossa equipe responde assim que possível.";
+// sem "pedido registrado": num restaurante ou numa loja, soa como pedido de compra feito
+export const NO_DATE_NOTICE = "Já avisei a nossa equipe, que responde assim que possível.";
 
 /** Diz que é um assistente virtual (obrigatório no aviso de IA). */
 // sem \b depois de letra acentuada ("robô"): em JS, "ô" não conta como letra para o \b

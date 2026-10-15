@@ -168,7 +168,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
         <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-4 py-5 sm:px-5 md:px-7">
           <ConversationThread
             messages={allMessages}
-            leads={leads}
+            leads={leads.map((l) => ({ ...l, requests: l.requests.filter((r) => r.conversation_id === cid) }))}
             showSources
             contextChange={conv.context_since ? { at: conv.context_since as string, label: conv.context_display ? `contexto: ${conv.context_display as string}` : "sem conta conectada" } : null}
             agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}

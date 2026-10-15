@@ -7,7 +7,7 @@ import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
 import type { Interactive } from "./message-events";
 import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
-import { createLead } from "./leads";
+import { saveLead } from "./leads";
 import { deleteRefusals, recordRefusal } from "./scope-refusals";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
 import { NOT_REGULATED_ASK_NOTE, asksRegulatedItem } from "./gate/entrance";
@@ -848,8 +848,10 @@ export async function runChat(opts: {
         // pelo Direct: o @ da própria conta que escreveu (busca única, só quando vira lead); o que a
         // pessoa digitou só se a busca falhar
         const instagram = (opts.instagram ? await directUsername(db, bot.id, opts.instagram.igsid) : null) ?? lead.instagram;
-        const leadId = await createLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, instagram, channel, notes: input.interesse });
-        notifyLead({ db, bot, lead: { id: leadId ?? undefined, nome: lead.nome }, channel, conversationId: convId }).catch(() => {});
+        // o mesmo contato atualiza o lead que já existe (pedido novo no histórico), sem outro lead
+        const saved = await saveLead(db, { botId: bot.id, conversationId: convId, name: lead.nome, phone: lead.whatsapp ?? waPhone, phoneHash: lead.whatsapp ? typedPhoneHash(lead.whatsapp) : metaPhoneHash(waPhone), email: lead.email ?? undefined, instagram, channel, notes: input.interesse });
+        // como um pedido de atendente: a conversa espera a equipe e ela é avisada (uma vez por conversa)
+        if (saved) notifyLead({ db, bot, lead: { ...saved, nome: lead.nome }, channel, conversationId: convId }).catch(() => {});
         leadCreated = true;
         // novidades no site (leva B3): o WhatsApp digitado recebe a oferta no fim desta resposta
         if (channel === "widget" && bot.marketing_optin_offer && lead.whatsapp) {

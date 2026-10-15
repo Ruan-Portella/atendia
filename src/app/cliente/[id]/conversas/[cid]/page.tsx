@@ -65,7 +65,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
         <div className="flex flex-col gap-4 py-5">
           <ConversationThread
             messages={allMessages}
-            leads={leads}
+            leads={leads.map((l) => ({ ...l, requests: l.requests.filter((r) => r.conversation_id === cid) }))}
             agentLabel={(m) => authorLabel(m, { view: "client", meId: member.memberId, meLegacy: email, agencyName })}
           />
         </div>

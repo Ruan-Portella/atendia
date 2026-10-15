@@ -18,7 +18,8 @@ import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type
  *   alteração, para sincronizar; cada contato com etiquetas, consentimento e 18+
  * - PUT /v1/contacts/{contact}/tags {bot_id, tags} (contacts): ext: vale para todos os contatos do
  *   bot com aquele id; contato que não existe → 404 (registre o consentimento primeiro)
- * - GET /v1/leads ?bot_id, channel, since, cursor, limit (contacts)
+ * - GET /v1/leads ?bot_id, channel, since, updated_since, cursor, limit (contacts): um lead por
+ *   contato, com o histórico de pedidos (requests)
  * - POST /v1/contacts/{contact}/consent {bot_id, channel: whatsapp, granted, source, text,
  *   collected_at} (campaigns) → 201 {consent_id}; o sim pela API cria o contato do WhatsApp que não
  *   existe, mas não tira ninguém do descadastro (só um novo sim da própria pessoa, no chat)
@@ -28,9 +29,9 @@ import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type
 
 const CHANNELS = ["widget", "whatsapp", "instagram"] as const;
 
-function sinceParam(raw: string | null): string | null {
+function sinceParam(raw: string | null, field = "since"): string | null {
   if (!raw) return null;
-  if (Number.isNaN(Date.parse(raw))) throw invalidRequest("since deve ser uma data ISO 8601 (ex.: 2026-10-01T00:00:00Z).", { field: "since" });
+  if (Number.isNaN(Date.parse(raw))) throw invalidRequest(`${field} deve ser uma data ISO 8601 (ex.: 2026-10-01T00:00:00Z).`, { field });
   return new Date(raw).toISOString();
 }
 
@@ -156,7 +157,10 @@ export const leadApiObject = (l: Lead) => ({
   email: l.email,
   instagram: l.instagram,
   notes: l.notes,
+  requests: l.requests.map((r) => ({ created_at: r.at, channel: r.channel, conversation_id: r.conversation_id ? `conv_${r.conversation_id}` : null, text: r.text })),
   created_at: l.created_at,
+  last_request_at: l.last_request_at,
+  updated_at: l.updated_at,
 });
 
 export async function listLeadsApi(req: Request, api: ApiContext): Promise<Response> {
@@ -165,8 +169,9 @@ export async function listLeadsApi(req: Request, api: ApiContext): Promise<Respo
   const botIds = p.get("bot_id") ? [api.requireBot(p.get("bot_id"))] : api.botIds;
   const channel = channelParam(p.get("channel"));
   const since = sinceParam(p.get("since"));
+  const updatedSince = sinceParam(p.get("updated_since"), "updated_since");
   const cursor = decodeCursor(p.get("cursor"), 2) as [string, string] | null;
-  const rows = await apiLeadsPage(api.db, { botIds, channel, since, after: cursor, limit: limit + 1 });
+  const rows = await apiLeadsPage(api.db, { botIds, channel, since, updatedSince, after: cursor, limit: limit + 1 });
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];
   return Response.json({ data: page.map(leadApiObject), next_cursor: rows.length > limit && last ? encodeCursor([last.created_at, last.id]) : null });

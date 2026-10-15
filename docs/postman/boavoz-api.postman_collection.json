@@ -1402,13 +1402,18 @@
                   "disabled": true
                 },
                 {
+                  "key": "updated_since",
+                  "value": "2026-10-15T00:00:00Z",
+                  "disabled": true
+                },
+                {
                   "key": "bot_id",
                   "value": "{{bot_id}}",
                   "disabled": true
                 }
               ]
             },
-            "description": "Do mais antigo para o mais novo, com nome, telefone, e-mail e o interesse (notes). Paginação por `next_cursor`."
+            "description": "Um lead por contato em cada chatbot, do mais antigo para o mais novo: nome, telefone, e-mail, o pedido mais recente (`notes`) e o histórico (`requests`, com data, canal, conversa e o que a pessoa pediu). `updated_since` traz só os que mudaram (pedido novo ou contato) desde a data; o webhook lead.updated avisa na hora. Paginação por `next_cursor`."
           },
           "event": [
             {

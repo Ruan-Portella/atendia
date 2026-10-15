@@ -74,7 +74,7 @@ export async function* exportRows(db: SupabaseClient, bots: Array<{ id: string; 
   if (kind === "leads") {
     for (let after: string | null = null; ; ) {
       const page = await exportLeadsPage(db, botIds, after, PAGE);
-      for (const l of page) yield { data: l.created_at, assistente: botName.get(l.bot_id) ?? null, conversa: l.conversation_id, nome: l.name, telefone: l.phone, email: l.email, instagram: l.instagram, canal: l.channel ? (CHANNEL[l.channel] ?? l.channel) : null, interesse: l.notes };
+      for (const l of page) yield { data: l.created_at, assistente: botName.get(l.bot_id) ?? null, conversa: l.conversation_id, nome: l.name, telefone: l.phone, email: l.email, instagram: l.instagram, canal: l.channel ? (CHANNEL[l.channel] ?? l.channel) : null, interesse: l.notes, ultimo_pedido: l.last_request_at, pedidos: l.requests.map((r) => `${r.at}: ${r.text ?? "deixou o contato"}`).join(" | ") };
       if (page.length < PAGE) return;
       after = page[page.length - 1].id;
     }

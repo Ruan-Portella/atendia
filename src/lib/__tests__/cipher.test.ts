@@ -5,7 +5,7 @@ import { PLATFORM_SCOPE, UNREADABLE, openField, sealField, setCipherIdentityForT
 import { masterKey, setClientKeyStore, type ClientKeyStore } from "../keys";
 import { seal, unseal } from "../secret-box";
 import { reencryptMessages } from "../messages";
-import { createLead, listLeads, reencryptLeads } from "../leads";
+import { listLeads, reencryptLeads, saveLead } from "../leads";
 import { listUnanswered, recordUnanswered } from "../unanswered";
 import { listRefusals, recordRefusal } from "../scope-refusals";
 
@@ -165,11 +165,13 @@ function memoryDb(tables: Record<string, Array<Record<string, unknown>>>) {
         eq: (k: string, v: unknown) => (filters.push((r) => r[k] === v), b),
         in: (k: string, vs: unknown[]) => (filters.push((r) => vs.includes(r[k])), b),
         gte: (k: string, v: string) => (filters.push((r) => String(r[k]) >= v), b),
+        ilike: (k: string, v: string) => (filters.push((r) => String(r[k] ?? "").toLowerCase() === v.toLowerCase()), b),
         // só a forma "a.not.is.null,b.not.is.null"
         or: (expr: string) => (filters.push((r) => expr.split(",").some((p) => r[p.split(".")[0]] != null)), b),
         order: () => b,
         limit: (n: number) => ((lim = n), b),
         single: () => ((single = true), b),
+        maybeSingle: () => ((single = true), b),
         then(ok: (v: unknown) => unknown) {
           let data: unknown;
           if (op === "insert") {
@@ -180,7 +182,7 @@ function memoryDb(tables: Record<string, Array<Record<string, unknown>>>) {
           } else {
             const hit = rows.filter((r) => filters.every((f) => f(r))).slice(0, lim);
             if (op === "update") hit.forEach((r) => Object.assign(r, payload));
-            data = hit;
+            data = single ? (hit[0] ?? null) : hit;
           }
           return Promise.resolve({ data, error: null, count: Array.isArray(data) ? data.length : 1 }).then(ok);
         },
@@ -206,16 +208,20 @@ describe("cifra dos leads, perguntas sem resposta e pedidos fora do assunto (par
   it("lead: telefone e interesse vão cifrados; nome e e-mail não; a lista abre", async () => {
     const tables: Record<string, Array<Record<string, unknown>>> = {};
     const db = memoryDb(tables);
-    const id = await createLead(db, { botId: "bot", conversationId: "c1", name: "Ana", phone: "21 99999-1234", phoneHash: "h", email: "ana@x.com", notes: "quer orçamento de festa" });
-    expect(id).toBeTruthy();
+    const saved = await saveLead(db, { botId: "bot", conversationId: "c1", name: "Ana", phone: "21 99999-1234", phoneHash: "h", email: "ana@x.com", notes: "quer orçamento de festa" });
+    expect(saved).toMatchObject({ created: true, newRequest: true });
     const row = tables.leads[0];
     expect(row.phone_enc).toMatch(/^v2\.c\./);
     expect(String(row.phone_enc)).not.toContain("99999");
     expect(row.notes_enc).toMatch(/^v2\.c\./);
+    // o histórico de pedidos também vai cifrado
+    expect(row.requests_enc).toMatch(/^v2\.c\./);
+    expect(String(row.requests_enc)).not.toContain("orçamento");
     expect(row.phone).toBeUndefined();
     expect(row).toMatchObject({ name: "Ana", email: "ana@x.com" });
     const [lead] = await listLeads(db, { botIds: ["bot"], limit: 10 });
     expect(lead).toMatchObject({ name: "Ana", phone: "21 99999-1234", email: "ana@x.com", notes: "quer orçamento de festa" });
+    expect(lead.requests).toEqual([expect.objectContaining({ conversation_id: "c1", text: "quer orçamento de festa" })]);
   });
 
   it("lead de antes da cifra: a recifra move para as colunas cifradas e zera as antigas", async () => {

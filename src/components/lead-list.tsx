@@ -15,7 +15,10 @@ export interface LeadRow {
   instagram?: string | null;
   channel?: string | null;
   notes: string | null;
+  /** pedidos do contato (um lead por contato): a lista mostra quantos */
+  requests?: Array<{ at: string; text: string | null }>;
   created_at: string;
+  last_request_at?: string;
 }
 
 /** Contato do lead em texto: telefone, e-mail, @ do Instagram ou "pelo Instagram" (a própria conversa). */
@@ -43,12 +46,17 @@ export function LeadList({ leads, originLabel, originOf, empty }: Props) {
       {leads.length === 0 && <p className="p-5 text-sm text-muted">{empty}</p>}
       {leads.map((l) => (
         <div key={l.id} className="flex flex-col gap-1.5 border-b border-line-2 px-4 py-3 text-sm last:border-0 lg:grid lg:grid-cols-[1.1fr_1.3fr_1.3fr_2.2fr_auto] lg:items-center lg:gap-3">
-          <span className="order-2 text-xs text-muted lg:order-none lg:text-sm" title={new Date(l.created_at).toLocaleString("pt-BR")}>{relativeTime(l.created_at)}<span className="lg:hidden"> · {originOf(l.bot_id)}</span></span>
+          <span className="order-2 text-xs text-muted lg:order-none lg:text-sm" title={new Date(l.last_request_at ?? l.created_at).toLocaleString("pt-BR")}>{relativeTime(l.last_request_at ?? l.created_at)}<span className="lg:hidden"> · {originOf(l.bot_id)}</span></span>
           <span className="hidden truncate lg:inline">{originOf(l.bot_id)}</span>
           <span className="order-1 truncate font-semibold lg:order-none">{l.name ?? <span className="font-normal text-muted">sem nome</span>}</span>
           <span className="order-3 min-w-0 leading-tight lg:order-none">
             <span className="block truncate">{contactText(l) || <span className="text-muted">sem contato</span>}</span>
-            {l.notes && <span className="block truncate text-xs text-muted">{l.notes}</span>}
+            {(l.notes || (l.requests?.length ?? 0) > 1) && (
+              <span className="block truncate text-xs text-muted">
+                {l.notes}
+                {(l.requests?.length ?? 0) > 1 && <span title={l.requests!.map((r) => `${new Date(r.at).toLocaleDateString("pt-BR")}: ${r.text ?? "deixou o contato"}`).join("\n")}>{l.notes ? " · " : ""}{l.requests!.length} pedidos</span>}
+              </span>
+            )}
           </span>
           <span className="order-4 flex items-center gap-3 pt-1 text-[13px] font-semibold lg:order-none lg:w-[150px] lg:justify-end lg:pt-0">
             {validPhone(l.phone) && <a href={`https://wa.me/${l.phone!.replace(/\D/g, "")}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-brand hover:underline"><MessageCircle size={14} />WhatsApp</a>}

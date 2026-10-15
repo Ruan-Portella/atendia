@@ -102,7 +102,8 @@ function ShownComponent({ json }: { json?: string | null }) {
 
 interface Props {
   messages: ThreadMessage[];
-  leads?: Array<{ name: string | null; phone: string | null; email: string | null; notes: string | null }> | null;
+  /** Leads com pedido nesta conversa; requests: só os pedidos desta conversa (sem eles, o interesse). */
+  leads?: Array<{ name: string | null; phone: string | null; email: string | null; notes: string | null; requests?: Array<{ text: string | null }> }> | null;
   /** Nome mostrado nas mensagens de atendente (ex.: "Viviane (você)", "Pelo celular", "Cliente · Joana"). */
   agentLabel: (m: ThreadMessage) => string;
   showSources?: boolean;
@@ -119,7 +120,10 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
       {leads && leads.length > 0 && (
         <div className="rounded-xl bg-brand-soft p-4 text-sm">
           <div className="font-semibold text-brand">Contato capturado</div>
-          {leads.map((l, i) => <div key={i}>{l.name} · {l.phone ?? l.email}{l.notes ? ` · ${l.notes}` : ""}</div>)}
+          {leads.map((l, i) => {
+            const asked = l.requests ? l.requests.map((r) => r.text).filter(Boolean).join("; ") : l.notes;
+            return <div key={i}>{l.name} · {l.phone ?? l.email}{asked ? ` · ${asked}` : ""}</div>;
+          })}
         </div>
       )}
       <div className="flex flex-col gap-2.5">

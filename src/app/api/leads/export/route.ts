@@ -26,9 +26,11 @@ export async function GET(req: Request) {
     const s = v == null ? "" : String(v);
     return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const lines = [["Data", "Cliente", "Chatbot", "Nome", "Telefone", "E-mail", "Instagram", "Interesse"].join(";")];
+  const lines = [["Data", "Cliente", "Chatbot", "Nome", "Telefone", "E-mail", "Instagram", "Interesse", "Último pedido", "Pedidos"].join(";")];
+  const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
   for (const l of leads) {
-    lines.push([new Date(l.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }), byId.get(l.bot_id)?.client_name, byId.get(l.bot_id)?.name, l.name, l.phone, l.email, l.instagram, l.notes].map(esc).join(";"));
+    const history = l.requests.map((r) => `${when(r.at)}: ${r.text ?? "deixou o contato"}`).join(" | ");
+    lines.push([when(l.created_at), byId.get(l.bot_id)?.client_name, byId.get(l.bot_id)?.name, l.name, l.phone, l.email, l.instagram, l.notes, when(l.last_request_at), history].map(esc).join(";"));
   }
   // BOM para o Excel reconhecer UTF-8; ponto e vírgula porque o Excel pt-BR usa vírgula decimal.
   const body = "﻿" + lines.join("\r\n");

@@ -9,41 +9,47 @@ import { markLeadNotified } from "./leads";
 const CHANNEL_NAME: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site", demo: "chat de demonstração", painel: "teste no painel" };
 
 /**
- * Avisa a agência (e opcionalmente o cliente final) de um lead novo. Leva só o nome, o canal e o
- * link (leva S): telefone, e-mail e o que a pessoa pediu ficam no painel, não no e-mail.
+ * Pedido deixado para a equipe (lead novo, ou pedido novo de um lead que já existia), tratado como
+ * um pedido de atendente: a conversa entra em "esperando atendente" (a IA segue respondendo; o
+ * webhook handoff.requested sai com reason lead) e a equipe recebe o e-mail uma vez por conversa,
+ * com as mesmas pessoas do pedido de atendente. O e-mail leva só o nome, o canal e o link (leva S):
+ * telefone, e-mail e o que a pessoa pediu ficam no painel.
  */
 export async function notifyLead(opts: {
   db: SupabaseClient;
   bot: BotRow;
-  lead: { id?: string; nome: string };
+  lead: { id: string; nome: string; created: boolean; newRequest: boolean; newConversation: boolean };
   channel: string;
   conversationId: string | null;
 }) {
-  const { db, bot, lead } = opts;
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return;
-
-  const { data: agency } = await db.from("agencies").select("name, owner_id").eq("id", bot.agency_id).single();
-  const { data: owner } = agency ? await db.auth.admin.getUserById(agency.owner_id) : { data: null };
-  const to = [bot.lead_capture?.notify_email, owner?.user?.email].filter((x): x is string => Boolean(x));
-  if (!to.length) return;
-
-  const { Resend } = await import("resend");
-  const resend = new Resend(apiKey);
-  await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? "Boavoz <onboarding@resend.dev>",
-    to,
-    subject: `Novo lead no chatbot de ${bot.client_name}: ${lead.nome}`,
-    text: [
-      `O assistente ${bot.name} (${bot.client_name}) capturou um contato pelo ${CHANNEL_NAME[opts.channel] ?? "chat"}.`,
+  const { db, bot, lead, conversationId } = opts;
+  if (!lead.newRequest) return;
+  if (conversationId) await markLeadWaiting(db, bot, conversationId);
+  if (!lead.newConversation) return;
+  const where = CHANNEL_NAME[opts.channel] ?? "chat";
+  const sent = await emailTeam(db, bot, {
+    subject: lead.created ? `Novo pedido no chatbot de ${bot.client_name}: ${lead.nome}` : `${lead.nome} voltou com um pedido novo · ${bot.client_name}`,
+    conversationId,
+    lines: (link) => [
+      lead.created ? `${lead.nome} deixou um pedido para a equipe pelo ${where} (assistente ${bot.name}, ${bot.client_name}).` : `${lead.nome}, que já tinha deixado contato, fez um pedido novo pelo ${where} (assistente ${bot.name}, ${bot.client_name}).`,
       ``,
-      `Nome: ${lead.nome}`,
-      ``,
-      `Telefone, e-mail e o que a pessoa pediu estão no painel (por segurança, não vão por e-mail):`,
-      opts.conversationId ? appUrl(`/painel/bots/${bot.id}/conversas/${opts.conversationId}`) : appUrl(bot.client_id ? `/painel/clientes/${bot.client_id}?tab=leads` : `/painel/bots/${bot.id}?tab=leads`),
-    ].join("\n"),
+      `O que a pessoa pediu, o telefone e o e-mail estão no painel (por segurança, não vão por e-mail):`,
+      link,
+    ],
   });
-  if (lead.id) await markLeadNotified(db, lead.id);
+  if (sent) await markLeadNotified(db, lead.id);
+}
+
+/** A conversa com pedido novo de lead entra em "esperando atendente", sem pausar a IA (como requestHandoff). */
+async function markLeadWaiting(db: SupabaseClient, bot: BotRow, conversationId: string): Promise<void> {
+  const { data: updated } = await db
+    .from("conversations")
+    .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
+    .eq("id", conversationId)
+    .or("handoff_requested_at.is.null,handled_at.not.is.null")
+    .select("id");
+  // já esperando: nada muda (nem webhook de novo)
+  if (updated?.length) await queueHandoffRequested(db, conversationId, { lead: true, outsideHours: nextOpening(bot.human_handoff?.hours) !== null });
 }
 
 /**
@@ -78,15 +84,37 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
   await queueHandoffRequested(db, conversationId, { urgent, aiUnavailable: opts.aiUnavailable, outsideHours: nextOpening(bot.human_handoff?.hours) !== null });
   // risco à vida: assunto destacado e a agência sempre avisada (mesmo com o atendimento delegado)
   const urgentTag = urgent ? "URGENTE (possível risco à vida) · " : "";
+  await emailTeam(db, bot, {
+    subject: `${urgentTag}Um visitante quer falar com alguém · ${bot.client_name}`,
+    conversationId,
+    urgent,
+    lines: (link) => [`Um visitante do chatbot ${bot.name} (${bot.client_name}) pediu para falar com uma pessoa.`, `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`],
+    clientLines: (link) => [`Um visitante do site de ${bot.client_name} pediu para falar com uma pessoa.`, `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`],
+  });
+}
+
+/**
+ * E-mail para quem atende o chatbot (pedido de atendente e pedido de lead): as pessoas do cliente,
+ * se ele pode atender, com a marca da agência e o link da área do cliente; a agência (equipe no
+ * escopo e o e-mail de aviso do bot), com o link do painel, a não ser que ela tenha delegado o
+ * atendimento ao cliente e o e-mail dele tenha saído (urgente: a agência sempre). Sem conversa
+ * (formulário do site), só a agência, com o link dos leads. Devolve se algum e-mail saiu.
+ */
+async function emailTeam(
+  db: SupabaseClient,
+  bot: BotRow,
+  o: { subject: string; conversationId: string | null; urgent?: boolean; lines: (link: string) => string[]; clientLines?: (link: string) => string[] },
+): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return;
+  if (!apiKey) return false;
   const { Resend } = await import("resend");
   const resend = new Resend(apiKey);
+  let sent = false;
 
   // pessoas do cliente com permissão de atender
   let memberEmails: string[] = [];
   let delegated = false; // a agência escolheu: só as pessoas do cliente recebem
-  if (bot.client_id) {
+  if (bot.client_id && o.conversationId) {
     const { data: client } = await db.from("clients").select("id, allow_handoff, handoff_notify, agencies(name, custom_domain, custom_domain_verified_at)").eq("id", bot.client_id).maybeSingle();
     if (client?.allow_handoff) {
       const { data: members } = await db.from("client_members").select("email").eq("client_id", client.id);
@@ -94,36 +122,32 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
       const agency = (Array.isArray(client.agencies) ? client.agencies[0] : client.agencies) as { name: string; custom_domain: string | null; custom_domain_verified_at: string | null } | null;
       if (memberEmails.length && agency) {
         const fromAddress = process.env.EMAIL_FROM?.match(/<([^>]+)>/)?.[1] ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev";
+        const link = `${agencyBaseUrl(agency)}/cliente/${bot.client_id}/conversas/${o.conversationId}`;
         const { error } = await resend.emails.send({
           from: `${agency.name.replace(/["<>]/g, "")} <${fromAddress}>`,
           to: memberEmails,
-          subject: `${urgentTag}Um visitante quer falar com alguém · ${bot.client_name}`,
-          text: [
-            `Um visitante do site de ${bot.client_name} pediu para falar com uma pessoa.`,
-            `\nResponda por aqui (o assistente pausa enquanto você atende):\n${agencyBaseUrl(agency)}/cliente/${bot.client_id}/conversas/${conversationId}`,
-            `\n${agency.name}`,
-          ].join("\n"),
+          subject: o.subject,
+          text: [...(o.clientLines ?? o.lines)(link), `\n${agency.name}`].join("\n"),
         });
+        sent = !error;
         // só deixa de avisar a agência se o e-mail para o cliente saiu mesmo
         delegated = client.handoff_notify === "client" && !error;
       }
     }
   }
-  if (delegated && !urgent) return;
+  if (delegated && !o.urgent) return sent;
 
-  const to = (await recipients(db, bot)).filter((e) => !memberEmails.includes(e.toLowerCase()));
-  if (!to.length) return;
-  const link = appUrl(`/painel/bots/${bot.id}/conversas/${conversationId}`);
-  await resend.emails.send({
+  const clientPeople = memberEmails.map((m) => m.toLowerCase());
+  const to = (await recipients(db, bot)).filter((e) => !clientPeople.includes(e));
+  if (!to.length) return sent;
+  const link = o.conversationId ? appUrl(`/painel/bots/${bot.id}/conversas/${o.conversationId}`) : appUrl(bot.client_id ? `/painel/clientes/${bot.client_id}?tab=leads` : `/painel/bots/${bot.id}?tab=leads`);
+  const { error } = await resend.emails.send({
     from: process.env.EMAIL_FROM ?? "Boavoz <onboarding@resend.dev>",
     to,
-    subject: `${urgentTag}Um visitante quer falar com alguém · ${bot.client_name}`,
-    text: [
-      `Um visitante do chatbot ${bot.name} (${bot.client_name}) pediu para falar com uma pessoa.`,
-      `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`,
-      memberEmails.length ? `\nAs pessoas do cliente também foram avisadas e podem responder pela área do cliente.` : "",
-    ].join("\n"),
+    subject: o.subject,
+    text: [...o.lines(link), memberEmails.length ? `\nAs pessoas do cliente também foram avisadas e podem responder pela área do cliente.` : ""].filter(Boolean).join("\n"),
   });
+  return sent || !error;
 }
 
 /** E-mail simples para o dono da agência (avisos de plano, cota, teste). */

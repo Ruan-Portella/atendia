@@ -37,7 +37,7 @@ describe("mensagem de fora do horário editável", () => {
 
   it("fora do horário usa o texto editado; sem horário, o texto fixo sem data", () => {
     expect(handoffNotice(hours, sunday, "Voltamos {volta}. Pedido anotado!")).toBe("Voltamos amanhã, das 9h às 18h. Pedido anotado!");
-    expect(handoffNotice(hours, sunday)).toBe("Nossa equipe volta amanhã, das 9h às 18h. Deixei seu pedido registrado e respondemos assim que possível.");
+    expect(handoffNotice(hours, sunday)).toBe("Nossa equipe volta amanhã, das 9h às 18h. Já avisei e respondemos assim que possível.");
     expect(handoffNotice(null, sunday, "Voltamos {volta}.")).toBe(NO_DATE_NOTICE);
   });
 });
