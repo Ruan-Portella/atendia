@@ -43,12 +43,14 @@ export type GateCategory =
   | "fraude"
   | "votacao"; // só no WhatsApp
 
-export const CATEGORIES: Record<GateCategory, { level: Exclude<GateLevel, "permitido">; label: string; onlyWhatsapp?: boolean; note?: string }> = {
+export const CATEGORIES: Record<GateCategory, { level: Exclude<GateLevel, "permitido">; label: string; onlyWhatsapp?: boolean; note?: string; prompt?: string }> = {
   bebida: { level: "regulamentado", label: "bebida alcoólica" },
   medicamento: { level: "regulamentado", label: "remédio", note: "MIP pela LMIP (lmip.ts); fármaco, forma ou concentração fora da lista = proibido" },
   remedio_receita: { level: "proibido", label: "remédio com receita" },
   tabaco: { level: "proibido", label: "tabaco e cigarro eletrônico", note: "vape proibido pela Anvisa (RDC 855/2024); cigarro comum é legal, a proibição é prudência da BoaVoz" },
-  produto_saude: { level: "proibido", label: "produto médico ou de saúde" },
+  // prompt: a lista de proibidos da IA diz o que fica de fora (com só o rótulo, o gpt-6-luna às
+  // vezes barrava teste de gravidez, que o dicionário e o classificador liberam)
+  produto_saude: { level: "proibido", label: "produto médico ou de saúde", prompt: "produto médico ou de saúde (aparelhos como termômetro e medidor de pressão, lente de contato, óculos de grau, fórmula infantil, teste de covid; higiene, beleza, protetor solar e teste de gravidez ou de ovulação não entram)" },
   suplemento: { level: "proibido", label: "suplemento", note: "vitaminas e whey no chat: a confirmar com a Meta" },
   estetica_injetavel: { level: "proibido", label: "procedimento estético injetável", note: "oferecer, dar preço ou cobrar; agendar avaliação é permitido" },
   drogas: { level: "proibido", label: "drogas" },
