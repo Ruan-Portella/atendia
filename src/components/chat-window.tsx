@@ -145,7 +145,8 @@ function filesOf(m: UIMessage): AgentFile[] {
 function ComponentView({ component, color, active, onPick }: { component: MessageComponent; color: string; active: boolean; onPick: (text: string, buttonId: string) => void }) {
   if (component.type === "carousel") {
     return (
-      <div className="-mx-1 flex max-w-full snap-x gap-2 self-stretch overflow-x-auto px-1 pb-1">
+      // shrink-0: na coluna de mensagens (flex com rolagem), a caixa com rolagem lateral encolheria na altura
+      <div className="-mx-1 flex max-w-full shrink-0 snap-x gap-2 self-stretch overflow-x-auto px-1 pb-1">
         {component.cards.map((card, i) => (
           <div key={i} className="flex w-[200px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border bg-white" style={{ borderColor: "#e5e7eb" }}>
             {card.media.type === "video" ? (
