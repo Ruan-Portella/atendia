@@ -150,6 +150,24 @@ describe("portão card a card e ações", () => {
     expect(adult.component?.type === "carousel" ? adult.component.cards.map((x) => x.title) : []).toEqual(["Pizza Calabresa", "Cerveja Heineken 600ml"]);
   });
 
+  it("a lista continua lista depois do portão: rótulo do botão e descrições ficam", () => {
+    const list: MessageComponent = {
+      type: "options",
+      list: true,
+      button: "Ver sabores",
+      options: [
+        { id: "bvc:0b6d5c1e-2f4a-4c3b-9d8e-7f6a5b4c3d2e:acao", title: "Pizza Calabresa", description: "R$ 49,90" },
+        { id: "u:marg", title: "Pizza Marguerita", description: "R$ 45,90" },
+        { id: "u:coca", title: "Coca-Cola 2L", description: "R$ 12,00" },
+        { id: "u:heine", title: "Cerveja Heineken 600ml", description: "R$ 14,00" },
+      ],
+    };
+    const r = gateComponent(list, { ...gate, age: null });
+    expect(r.component).toEqual({ ...list, options: list.options.slice(0, 3) });
+    // 3 itens que vieram como lista não viram 3 botões
+    expect(whatsappPlan(r.component!)).toMatchObject({ kind: "list", button: "Ver sabores", rows: [{ title: "Pizza Calabresa", description: "R$ 49,90" }, {}, {}] });
+  });
+
   it("a IA vê os nomes dos cards e o carrossel só vai se ela mostra esses itens", () => {
     const c = carousel(["Pizza Calabresa", "Pizza Marguerita"]);
     expect(componentNote(c)).toMatchObject({ carrossel: ["Pizza Calabresa", "Pizza Marguerita"] });

@@ -261,8 +261,8 @@ export interface ActionToolsInput extends CallerInput {
   exempt?: GateCategory[];
   /** Chave da mensagem: forma o call_id (o mesmo no reprocesso). */
   messageKey: string;
-  /** A ação devolveu reply: o texto exato vai para o contato e a vez acaba. */
-  onReply: (reply: string) => void;
+  /** A ação devolveu reply: o texto exato vai para o contato, com os botões desta mesma chamada, e a vez acaba. */
+  onReply: (reply: string, component: MessageComponent | null) => void;
   /** A ação devolveu internal: os valores que a resposta não pode conter. */
   onInternal?: (terms: string[]) => void;
   /** Resumo com Confirmar e Cancelar desta vez (a vez acaba; o canal manda os botões). */
@@ -330,9 +330,10 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
 
         const r = await callAction(db, a, { params, messageKey: i.messageKey, conversation: { id: i.conversationId, channel: caller.gateChannel }, contact: caller.contact, context: caller.context });
         const shaped = await shapeActionResult(db, shape, r);
-        if (shaped.reply) i.onReply(shaped.reply);
+        // com reply, os botões vão com ele (os de uma consulta anterior na mesma vez não)
+        if (shaped.reply) i.onReply(shaped.reply, shaped.component);
+        else if (shaped.component) i.onComponent?.(shaped.component);
         if (shaped.internal.length) i.onInternal?.(shaped.internal);
-        if (shaped.component) i.onComponent?.(shaped.component);
         if (shaped.files.length) i.onFiles?.(shaped.files);
         return shaped.output;
       },

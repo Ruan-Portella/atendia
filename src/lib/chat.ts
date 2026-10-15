@@ -784,8 +784,10 @@ export async function runChat(opts: {
   let offeredComponent: MessageComponent | null = null;
   // anexos devolvidos pelas ações desta vez (já preparados): o canal manda logo depois do texto
   const actionFiles: ActionFile[] = [...(opts.confirmed?.files ?? [])];
-  /** O componente desta vez: o resumo do Confirmar, senão o da ação (com reply, o da consulta), senão o da IA. */
-  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (actionComponent ?? offeredComponent) : (actionComponent ?? shown));
+  // botões da mesma chamada que devolveu o reply (a IA pode ter consultado outra ação antes, na mesma vez)
+  let replyComponent: MessageComponent | null = null;
+  /** O componente desta vez: o resumo do Confirmar, senão o da ação (com reply, o dela), senão o da IA. */
+  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (replyComponent ?? actionComponent) : (actionComponent ?? shown));
   const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [...(opts.confirmed?.internal ?? [])];
@@ -801,7 +803,11 @@ export async function runChat(opts: {
     exempt: opts.gate?.exempt,
     // WhatsApp e Instagram: o id do evento (o reprocesso reaproveita a resposta); widget: uma por mensagem
     messageKey: opts.questionKey ?? `${convId}|${crypto.randomUUID()}`,
-    onReply: (r) => void (actionReply ??= r),
+    onReply: (r, c) => {
+      if (actionReply !== null) return;
+      actionReply = r;
+      replyComponent = c;
+    },
     onInternal: (terms) => void internal.push(...terms),
     // ação "executa": o resumo com Confirmar e Cancelar sai como os botões do mostrar_opcoes
     onConfirm: (c) => {

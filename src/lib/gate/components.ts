@@ -29,7 +29,8 @@ export function gateComponent(c: MessageComponent | null, input: ComponentGateIn
     const kept = c.options.filter((o) => passes(o.title));
     // as opções da IA (op_N) são renumeradas; os outros ids (Confirmar de uma ação, botões do
     // portão) seguem como vieram: o clique é resolvido por eles
-    component = kept.length ? { type: "options", options: kept.map((o, i) => ({ id: /^op_\d+$/.test(o.id) ? `op_${i + 1}` : o.id, title: o.title })) } : null;
+    // a lista continua lista (o rótulo do botão e as descrições ficam), só sem os itens barrados
+    component = kept.length ? { ...c, options: kept.map((o, i) => ({ ...o, id: /^op_\d+$/.test(o.id) ? `op_${i + 1}` : o.id })) } : null;
   } else if (c?.type === "link") {
     component = passes(`${c.label} ${c.url}`) ? c : null;
   } else if (c?.type === "carousel") {
