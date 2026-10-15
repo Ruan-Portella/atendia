@@ -5,7 +5,7 @@ import { confirmButtonId, confirmComponent, confirmedNote, isConfirmComponent, p
 import { whatsappPlan, type MessageComponent } from "../components";
 import { gateComponent } from "../gate/components";
 import { devButtonId, waInboundExtra } from "../message-events";
-import { componentNote } from "../action-tools";
+import { componentNote, offeredMatch } from "../action-tools";
 import { appendActionComponent } from "../chat";
 import { parseSendBody } from "../api-messages";
 import { readResponse } from "../actions";
@@ -115,7 +115,22 @@ describe("clique no botão com ação", () => {
   it("a IA sabe que foi um botão e que os botões da ação vão junto", () => {
     expect(confirmedNote("adicionar_ao_carrinho", { ok: true, data: {} }, "botao")).toMatch(/^A pessoa tocou num botão e a ação acao_adicionar_ao_carrinho foi chamada agora/);
     expect(componentNote({ type: "options", options: [{ id: "op_1", title: "Finalizar pedido" }] })).toMatchObject({ botoes: ["Finalizar pedido"] });
-    expect(componentNote({ type: "link", url: "https://a.com", label: "Ver pedido" })).toMatchObject({ link: "Ver pedido" });
+    expect(componentNote({ type: "link", url: "https://a.com", label: "Ver pedido" })).toMatchObject({ link: "Ver pedido", url: "https://a.com" });
+  });
+
+  it("os botões de uma consulta só vão se a resposta pede a escolha entre eles", () => {
+    const menu: MessageComponent = { type: "options", options: [{ id: "bvc:x:acao", title: "Pizza Calabresa" }, { id: "bvc:y:acao", title: "Pizza Marguerita" }, { id: "bvc:z:acao", title: "Coca-Cola 2L" }] };
+    // a IA mostra as mesmas opções (ou com outro jeito de escrever): vão os botões da ação
+    expect(offeredMatch(menu, { opcoes: ["Pizza Calabresa", "Pizza Marguerita"] })).toBe(menu);
+    expect(offeredMatch(menu, { opcoes: ["calabresa", "marguerita"] })).toBe(menu);
+    // outra escolha (ou consulta só para achar um id): nada da ação
+    expect(offeredMatch(menu, { opcoes: ["Entrega", "Retirada"] })).toBeNull();
+    expect(offeredMatch(menu, {})).toBeNull();
+    expect(offeredMatch(null, { opcoes: ["Pizza Calabresa"] })).toBeNull();
+    const link: MessageComponent = { type: "link", url: "https://loja.com/pedido/9", label: "Ver pedido" };
+    expect(offeredMatch(link, { url: "https://loja.com/pedido/9/" })).toBe(link);
+    expect(offeredMatch(link, { url: "https://loja.com/cardapio" })).toBeNull();
+    expect(componentNote(menu).instrucao_botoes).toMatch(/Se a sua resposta pede para a pessoa escolher/);
   });
 });
 

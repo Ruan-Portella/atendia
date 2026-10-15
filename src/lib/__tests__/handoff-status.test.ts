@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handoffOrder, handoffStatus } from "../handoff-status";
+import { handoffOrder, handoffStatus, leadWaiting } from "../handoff-status";
 import { isPaymentData, mentionsPayment, regulatedConversation } from "../gate/payment";
 
 const now = Date.parse("2026-10-02T15:00:00Z");
@@ -53,5 +53,16 @@ describe("pagamento numa conversa com bebida ou remédio", () => {
   it("a saída da IA continua exigindo o dado (chave ou código), não só a palavra", () => {
     expect(isPaymentData("Pague no pix")).toBe(false);
     expect(isPaymentData("Chave pix: loja@exemplo.com")).toBe(true);
+  });
+});
+
+describe("espera por um pedido deixado (lead)", () => {
+  it("só enquanto o pedido de atendente for o do lead", () => {
+    const t = "2026-10-15T16:01:13.159+00:00";
+    expect(leadWaiting({ handoff_requested_at: t, lead_waiting_at: "2026-10-15T16:01:13.159Z" })).toBe(true);
+    // pediu atendente depois: outro instante (ou a coluna zerada)
+    expect(leadWaiting({ handoff_requested_at: "2026-10-15T16:05:00Z", lead_waiting_at: t })).toBe(false);
+    expect(leadWaiting({ handoff_requested_at: t, lead_waiting_at: null })).toBe(false);
+    expect(leadWaiting({ handoff_requested_at: null, lead_waiting_at: t })).toBe(false);
   });
 });

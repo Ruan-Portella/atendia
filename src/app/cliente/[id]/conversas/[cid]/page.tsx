@@ -23,7 +23,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, bots(sensitive_mode)")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, bots(sensitive_mode)")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();

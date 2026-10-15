@@ -40,11 +40,15 @@ export async function notifyLead(opts: {
   if (sent) await markLeadNotified(db, lead.id);
 }
 
-/** A conversa com pedido novo de lead entra em "esperando atendente", sem pausar a IA (como requestHandoff). */
+/**
+ * A conversa com pedido novo de lead entra em "esperando atendente", sem pausar a IA (como
+ * requestHandoff); lead_waiting_at com o mesmo instante diz ao painel que foi um pedido deixado.
+ */
 async function markLeadWaiting(db: SupabaseClient, bot: BotRow, conversationId: string): Promise<void> {
+  const now = new Date().toISOString();
   const { data: updated } = await db
     .from("conversations")
-    .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
+    .update({ needs_human: true, handoff_requested_at: now, lead_waiting_at: now, handled_at: null })
     .eq("id", conversationId)
     .or("handoff_requested_at.is.null,handled_at.not.is.null")
     .select("id");

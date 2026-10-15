@@ -27,7 +27,7 @@ import { visibleText, type Segment } from "./gate/base";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
 import { deliver } from "./send";
 import { metaPhoneHash, typedPhoneHash } from "./contacts";
-import { ACTIONS_PROMPT_NOTE, CONFIRM_RULE, actionToolsFor } from "./action-tools";
+import { ACTIONS_PROMPT_NOTE, CONFIRM_RULE, actionToolsFor, offeredMatch } from "./action-tools";
 import { confirmedNote } from "./action-confirm";
 import { widgetFiles, widgetFilesNotice, type ActionFile } from "./action-files";
 import { identityPromptNote, type ChatIdentity } from "./widget-identity";
@@ -405,11 +405,12 @@ export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" 
  * Devolve o aviso ao contato: fora do horário, diz quando a equipe volta; nunca promete resposta imediata.
  */
 export async function requestHandoff(db: SupabaseClient, bot: BotRow, conversationId: string, reason: string): Promise<string> {
+  // esperando só por um lead (pedido deixado): o pedido de atendente vale como novo e avisa a equipe
   const { data: updated } = await db
     .from("conversations")
-    .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
+    .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), lead_waiting_at: null, handled_at: null })
     .eq("id", conversationId)
-    .or("handoff_requested_at.is.null,handled_at.not.is.null")
+    .or("handoff_requested_at.is.null,handled_at.not.is.null,lead_waiting_at.not.is.null")
     .select("id");
   if (updated?.length) notifyHandoff({ db, bot, conversationId, reason }).catch(() => {});
   else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", conversationId);
@@ -775,12 +776,16 @@ export async function runChat(opts: {
   let listText: string | null = null;
   // resumo com Confirmar e Cancelar desta vez (ação "executa"): a mensagem é só o que o BoaVoz montou
   let confirmShown = false;
-  // botões, lista ou link devolvidos por uma ação (ou pela ação do clique): vão junto do texto, sem encerrar a vez
-  let actionComponent: MessageComponent | null = opts.confirmed?.component ?? null;
+  // botões, lista ou link da ação do clique ou do Confirmar: vão junto do texto, sem encerrar a vez
+  const actionComponent: MessageComponent | null = opts.confirmed?.component ?? null;
+  // os de uma consulta que a IA fez: só vão se a resposta pede a escolha entre eles (mostrar_opcoes
+  // ou mostrar_link com eles) ou com a resposta exata da ação; a IA também consulta para achar o id
+  // de um item ou conferir algo, e aí os botões não têm a ver com a resposta
+  let offeredComponent: MessageComponent | null = null;
   // anexos devolvidos pelas ações desta vez (já preparados): o canal manda logo depois do texto
   const actionFiles: ActionFile[] = [...(opts.confirmed?.files ?? [])];
-  /** O componente desta vez: o resumo do Confirmar, senão o da ação (também com reply), senão o da IA. */
-  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? actionComponent : (actionComponent ?? shown));
+  /** O componente desta vez: o resumo do Confirmar, senão o da ação (com reply, o da consulta), senão o da IA. */
+  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (actionComponent ?? offeredComponent) : (actionComponent ?? shown));
   const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [...(opts.confirmed?.internal ?? [])];
@@ -804,7 +809,7 @@ export async function runChat(opts: {
       shownText ??= c.text;
       confirmShown = true;
     },
-    onComponent: (c) => void (actionComponent ??= c),
+    onComponent: (c) => void (offeredComponent ??= c),
     onFiles: (files) => void actionFiles.push(...files),
     confirmRound: Boolean(opts.confirmed),
     agencyId: bot.agency_id,
@@ -895,6 +900,13 @@ export async function runChat(opts: {
       mostrar_opcoes: async ({ texto, opcoes }) => {
         // um componente por mensagem: o da ação já vai junto
         if (actionComponent) return { ok: false, instrucao: "As opções da ação já vão como botões nesta resposta: responda em texto." };
+        // as opções que a consulta devolveu: vão os botões da ação (com o que cada um faz)
+        const fromAction = offeredMatch(offeredComponent, { opcoes });
+        if (fromAction) {
+          shown ??= fromAction;
+          shownText ??= texto;
+          return { ok: true, componente: shown, texto };
+        }
         const options = normalizeOptions(opcoes);
         if (!options) return { ok: false, instrucao: "Opções insuficientes: responda em texto." };
         shown ??= { type: "options", options };
@@ -903,6 +915,12 @@ export async function runChat(opts: {
       },
       mostrar_link: async ({ texto, url, rotulo }) => {
         if (actionComponent) return { ok: false, instrucao: "Os botões da ação já vão nesta resposta: responda em texto, sem o link." };
+        const fromAction = offeredMatch(offeredComponent, { url });
+        if (fromAction) {
+          shown ??= fromAction;
+          shownText ??= texto;
+          return { ok: true, componente: shown, texto };
+        }
         const link = normalizeLink(url, rotulo, linkHosts);
         if (!link) return { ok: false, instrucao: "Esse endereço não está na base: responda em texto, sem o link." };
         shown ??= link;
@@ -957,7 +975,8 @@ export async function runChat(opts: {
         if (!shown && !actionReply && !actionComponent) {
           const fromList = optionsFromText(content);
           if (fromList) {
-            shown = fromList.component;
+            // a lista é a que a consulta devolveu: vão os botões da ação
+            shown = (fromList.component.type === "options" ? offeredMatch(offeredComponent, { opcoes: fromList.component.options.map((x) => x.title) }) : null) ?? fromList.component;
             listText = fromList.text;
           }
         }

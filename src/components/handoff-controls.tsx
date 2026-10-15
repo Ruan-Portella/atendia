@@ -1,6 +1,7 @@
 import { Headset, PauseCircle } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import { relativeTime } from "@/lib/utils";
+import { leadWaiting } from "@/lib/handoff-status";
 import { WHATSAPP_WINDOW_HOURS, apiPauseActive, canTakeOver, conversationState, lastSeen } from "@/lib/presence";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -11,6 +12,8 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 export interface HandoffConversation {
   last_message_at: string;
   handoff_requested_at: string | null;
+  /** igual a handoff_requested_at: a espera é de um pedido deixado (lead), não de um pedido de atendente */
+  lead_waiting_at?: string | null;
   takeover_at: string | null;
   handled_at: string | null;
   visitor_seen_at?: string | null;
@@ -74,7 +77,7 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
       ) : waiting ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-sm">
           <Headset size={16} className="shrink-0 text-amber-ink" />
-          <span className="min-w-0 flex-1 text-amber-ink"><strong>{who} pediu para falar com alguém</strong> {relativeTime(conv.handoff_requested_at!)}. Assuma para responder por aqui.</span>
+          <span className="min-w-0 flex-1 text-amber-ink"><strong>{who} {leadWaiting(conv) ? "deixou um pedido para a equipe" : "pediu para falar com alguém"}</strong> {relativeTime(conv.handoff_requested_at!)}. Assuma para responder por aqui.</span>
           <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir conversa</SubmitButton></ActionForm>
         </div>
       ) : (

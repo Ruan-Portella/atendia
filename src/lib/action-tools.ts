@@ -141,10 +141,32 @@ export interface ShapeInput {
   regulatedAt: string | null;
 }
 
-/** O que a IA lê sobre os botões que a ação mandou junto (a mensagem dela vai com eles). Pura. */
+/**
+ * O que a IA lê sobre os botões que uma consulta devolveu. Eles só vão se a resposta pede a escolha
+ * entre eles (mostrar_opcoes ou mostrar_link com eles, ver offeredMatch): a IA também consulta para
+ * achar o id de um item ou conferir algo, e aí os botões não têm a ver com a resposta. Pura.
+ */
 export function componentNote(c: MessageComponent): Record<string, unknown> {
-  if (c.type === "link") return { link: c.label, instrucao_botoes: "Um botão com esse link vai junto da sua resposta: não escreva o endereço." };
-  return { botoes: c.options.map((x) => x.title), instrucao_botoes: "Essas opções vão como botões junto da sua resposta: não repita a lista inteira; diga para a pessoa tocar numa delas." };
+  if (c.type === "link") return { link: c.label, url: c.url, instrucao_botoes: "Se a sua resposta é abrir esse link, chame mostrar_link com essa url (vira o botão desta ação; não escreva o endereço). Se você consultou para outra coisa, não fale dele." };
+  return { botoes: c.options.map((x) => x.title), instrucao_botoes: "Se a sua resposta pede para a pessoa escolher entre essas opções, chame mostrar_opcoes com elas (viram os botões desta ação). Se você consultou para outra coisa (achar o id de um item, conferir um preço ou um item que a pessoa já escolheu), não chame mostrar_opcoes nem fale de botões." };
+}
+
+const foldTitle = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * A escolha que a IA quer mostrar é a que a consulta devolveu? Opções: algum título igual (ou um
+ * contido no outro, como "Calabresa" e "Pizza Calabresa"); link: a mesma url. Então vai o
+ * componente da ação (com o que cada botão faz), senão null. Pura.
+ */
+export function offeredMatch(offered: MessageComponent | null, choice: { opcoes?: string[]; url?: string }): MessageComponent | null {
+  if (!offered) return null;
+  if (offered.type === "link") {
+    const bare = (u: string) => u.trim().replace(/\/+$/, "").toLowerCase();
+    return choice.url && bare(choice.url) === bare(offered.url) ? offered : null;
+  }
+  const mine = (choice.opcoes ?? []).map(foldTitle).filter((t) => t.length >= 3);
+  const theirs = offered.options.map((o) => foldTitle(o.title));
+  return mine.some((a) => theirs.some((b) => a === b || (b.length >= 3 && (a.includes(b) || b.includes(a))))) ? offered : null;
 }
 
 /** components do retorno de uma ação: conferido e convertido (botão com ação vira referência). Fora do formato: aviso no log e nada vai. */

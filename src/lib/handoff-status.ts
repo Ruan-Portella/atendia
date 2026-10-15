@@ -38,6 +38,15 @@ export function handoffStatus(c: HandoffFields, now = Date.now()): HandoffStatus
   return stale ? { state: "sem_resposta", urgent, waiting: true } : { state: "em_atendimento", urgent, waiting: false };
 }
 
+/**
+ * A espera é de um pedido deixado (lead), não de um pedido de atendente: o lead grava o mesmo
+ * instante em lead_waiting_at e handoff_requested_at; um pedido de atendente depois troca o segundo.
+ * Pura.
+ */
+export function leadWaiting(c: { handoff_requested_at?: string | null; lead_waiting_at?: string | null }): boolean {
+  return Boolean(c.lead_waiting_at && c.handoff_requested_at && Date.parse(c.lead_waiting_at) === Date.parse(c.handoff_requested_at));
+}
+
 export const HANDOFF_LABEL: Record<HandoffState, string> = {
   aguardando: "esperando atendente",
   sem_resposta: "assumida, sem resposta",
