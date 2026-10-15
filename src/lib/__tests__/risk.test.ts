@@ -37,6 +37,8 @@ describe("prompt: saúde, risco e portão", () => {
     const p = buildSystemPrompt(base);
     expect(p).toContain("Saúde (vale para qualquer empresa)");
     expect(p).toContain("urgente=true");
+    // febre, vômito e animal doente colavam o texto de emergência (SAMU, CVV) numa pergunta de saúde comum
+    expect(p).toMatch(/Sintoma comum \(febre.*animal doente não são risco à vida/);
   });
 
   it("instrução fixa do portão só nos canais da Meta, com os proibidos do arquivo de regras", () => {
@@ -48,6 +50,8 @@ describe("prompt: saúde, risco e portão", () => {
     const ig = buildSystemPrompt({ ...base, gateChannel: "instagram" });
     expect(ig).not.toContain("sistemas de votação");
     expect(ig).toContain("não faça atendimento clínico");
+    expect(ig).toContain("preço de consulta, vacina ou exame"); // o pet shop recusava o preço da vacina
+    expect(wa).not.toContain("preço de consulta, vacina ou exame");
     expect(buildSystemPrompt(base)).not.toContain("ITENS PROIBIDOS E REGULAMENTADOS");
   });
 

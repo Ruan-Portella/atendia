@@ -547,7 +547,7 @@ export function chatTools(exec: {
       description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano ou alguém da equipe, ou com urgente=true quando houver risco à vida ou à integridade.",
       inputSchema: z.object({
         motivo: z.string().optional().describe("resumo curto do que a pessoa precisa"),
-        urgente: z.boolean().optional().describe("true só se a pessoa indicar risco à vida ou à integridade (suicídio, autolesão, emergência médica, violência)"),
+        urgente: z.boolean().optional().describe("true só se a pessoa indicar risco à vida ou à integridade (suicídio, autolesão, emergência médica, violência); febre, dor, vômito, pergunta de remédio ou de dose e animal doente não contam"),
       }),
       execute: exec.chamar_atendente,
     }),

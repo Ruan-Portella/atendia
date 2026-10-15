@@ -92,13 +92,17 @@ Responda: {"categorias": {"categoria": "pede" | "menciona"}, "tem_outro_assunto"
   }
 }
 
-/** Lê a resposta do classificador. Categoria sem resposta clara de "menciona" conta como pedida. */
+/**
+ * Lê a resposta do classificador. Categoria sem resposta clara de "menciona" conta como pedida. A
+ * chave vale com o rótulo da pergunta junto: o gpt-6-luna às vezes devolve "medicamento (remédio)"
+ * no lugar de "medicamento", e a menção virava pedido (pergunta de dose virava pergunta de 18+).
+ */
 export function parseClassification(raw: string, categories: GateCategory[]): Classification {
   try {
     const json = JSON.parse(raw.replace(/^\s*```(?:json)?|```\s*$/g, "").trim()) as { categorias?: Record<string, string>; tem_outro_assunto?: boolean; resto?: unknown };
-    const said = json.categorias ?? {};
+    const said = new Map(Object.entries(json.categorias ?? {}).map(([k, v]) => [k.replace(/\s*\(.*$/, "").trim().toLowerCase(), String(v ?? "").trim().toLowerCase()]));
     return {
-      pedidas: categories.filter((c) => String(said[c] ?? "").trim().toLowerCase() !== "menciona"),
+      pedidas: categories.filter((c) => said.get(c) !== "menciona"),
       tem_outro_assunto: json.tem_outro_assunto === true,
       ...(typeof json.resto === "string" && json.resto.trim() ? { resto: json.resto.trim().slice(0, 1500) } : {}),
     };

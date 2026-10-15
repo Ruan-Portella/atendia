@@ -199,6 +199,9 @@ describe("portão na entrada", () => {
   it("resposta do classificador: só \"menciona\" tira a categoria; o resto conta como pedido", () => {
     expect(parseClassification('{"categorias": {"tabaco": "pede"}, "tem_outro_assunto": true}', ["tabaco"])).toEqual({ pedidas: ["tabaco"], tem_outro_assunto: true });
     expect(parseClassification('{"categorias": {"bebida": "menciona", "medicamento": "Menciona"}, "tem_outro_assunto": true}', ["bebida", "medicamento"])).toEqual({ pedidas: [], tem_outro_assunto: true });
+    // chave com o rótulo da pergunta junto (o gpt-6-luna faz isso às vezes): vale a categoria
+    expect(parseClassification('{"categorias": {"medicamento (remédio)": "menciona"}, "tem_outro_assunto": false}', ["medicamento"])).toEqual({ pedidas: [], tem_outro_assunto: false });
+    expect(parseClassification('{"categorias": {"Bebida (bebida alcoólica)": "pede", "medicamento (remédio)": "menciona"}}', ["bebida", "medicamento"]).pedidas).toEqual(["bebida"]);
     // categoria esquecida ou valor estranho: pedida
     expect(parseClassification('{"categorias": {"bebida": "menciona"}}', ["bebida", "tabaco"])).toEqual({ pedidas: ["tabaco"], tem_outro_assunto: false });
     expect(parseClassification('```json\n{"categorias": {"tabaco": "talvez"}}\n```', ["tabaco"]).pedidas).toEqual(["tabaco"]);
