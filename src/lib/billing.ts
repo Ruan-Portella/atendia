@@ -130,3 +130,69 @@ export function appliedBotRow(c: BotChoice, now = new Date()) {
   if (!c.size) return { id: c.id, size: null, volume_packs: null, prorated_month: null, prorated_quota: null };
   return { id: c.id, size: c.size, volume_packs: c.size === "volume" ? c.volumePacks : null, prorated_month: monthBoundsBR(now).firstDay, prorated_quota: firstMonthQuota(c, now) };
 }
+
+/** Valor mínimo para cobrar na hora; abaixo disso, a diferença vai para a fatura do dia 1º. */
+export const MIN_CHARGE_CENTS = 100;
+
+export interface CurrentSize extends SizeChoice {
+  /** Cota do mês que o chatbot já tem (a proporcional, se ganhou ou subiu neste mês). */
+  monthQuota: number;
+  /** Troca agendada para o dia 1º. */
+  pendingSize: BotSize | "none" | null;
+  pendingVolumePacks: number | null;
+}
+
+/** O que o chatbot vai ter no mês que vem: a troca agendada ou o tamanho de agora. */
+export function nextChoice(b: SizeChoice & { pendingSize: BotSize | "none" | null; pendingVolumePacks: number | null }): SizeChoice {
+  if (!b.pendingSize) return { size: b.size, volumePacks: b.size === "volume" ? b.volumePacks : null };
+  if (b.pendingSize === "none") return { size: null, volumePacks: null };
+  return { size: b.pendingSize, volumePacks: b.pendingSize === "volume" ? b.pendingVolumePacks : null };
+}
+
+const sameSize = (a: SizeChoice, b: SizeChoice) => a.size === b.size && (a.size !== "volume" || a.volumePacks === b.volumePacks);
+
+export type SizeChange =
+  | { kind: "same" }
+  | { kind: "already_scheduled" }
+  | { kind: "cancel_pending" }
+  | { kind: "upgrade"; amountCents: number; monthQuota: number }
+  | { kind: "downgrade" };
+
+/**
+ * Troca de tamanho de um chatbot numa conta com assinatura. Subir (preço maior, inclusive de
+ * "sem tamanho"): paga agora a diferença proporcional ao resto do mês e a cota do mês sobe na
+ * mesma proporção. Descer ou tirar: agendado para o dia 1º. Voltar ao tamanho atual cancela a
+ * troca agendada.
+ */
+export function planSizeChange(current: CurrentSize, next: SizeChoice, now = new Date()): SizeChange {
+  if (sameSize(current, next)) return current.pendingSize ? { kind: "cancel_pending" } : { kind: "same" };
+  if (current.pendingSize && sameSize(nextChoice(current), next)) return { kind: "already_scheduled" };
+  const cur = sizeMonthlyCents(current);
+  const nxt = sizeMonthlyCents(next);
+  if (nxt <= cur) return { kind: "downgrade" };
+  const f = remainingFraction(now);
+  const gain = Math.max(0, botQuota({ size: next.size, volume_packs: next.volumePacks }) - botQuota({ size: current.size, volume_packs: current.volumePacks }));
+  return { kind: "upgrade", amountCents: Math.round((nxt - cur) * f), monthQuota: current.monthQuota + Math.ceil(gain * f) };
+}
+
+/** Pacote novo no meio do mês: o preço proporcional ao resto do mês, em centavos. */
+export function packChargeCents(pack: PackId, now = new Date()): number {
+  return Math.round(PACKS[pack].priceBrl * 100 * remainingFraction(now));
+}
+
+/** Pacotes que saem junto (tirar o Integrações tira a Plataforma, que precisa dele). */
+export function packsRemovedWith(pack: PackId): PackId[] {
+  return [pack, ...Object.values(PACKS).filter((p) => p.requires === pack).map((p) => p.id)];
+}
+
+/** "sem tamanho", "M", "Volume (2 pacotes)". */
+export function choiceLabel(c: SizeChoice): string {
+  if (!c.size) return "sem tamanho";
+  if (c.size === "volume") return `Volume (${c.volumePacks ?? 0} pacote${c.volumePacks === 1 ? "" : "s"})`;
+  return BOT_SIZES[c.size].name;
+}
+
+/** "1º de novembro": o dia 1º seguinte, quando vem a próxima fatura e vale o que foi agendado. */
+export function renewalLabel(now = new Date()): string {
+  return `1º de ${monthBoundsBR(now).end.toLocaleDateString("pt-BR", { month: "long", timeZone: "America/Sao_Paulo" })}`;
+}

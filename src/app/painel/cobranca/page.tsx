@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { requirePermission } from "@/lib/agency";
-import { BOT_SIZES, PACKS, brlCents, isPackId, num } from "@/lib/plans";
+import { PACKS, brlCents, isPackId, num } from "@/lib/plans";
 import { billingEnabled } from "@/lib/stripe";
-import { monthBoundsBR, remainingFraction, sizeMonthlyCents } from "@/lib/billing";
+import { choiceLabel, nextChoice, packChargeCents, remainingFraction, renewalLabel, sizeMonthlyCents } from "@/lib/billing";
 import { sizeLabel } from "@/lib/atendimentos";
 import { BillingTabs } from "@/components/billing-tabs";
 import { SubscribeForm } from "@/components/subscribe-form";
+import { PackButton, SizeChangeForm } from "@/components/billing-controls";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { openBillingPortal } from "./actions";
@@ -13,12 +14,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const metadata = { title: "Cobrança" };
 
-const longDay = (d: Date) => `1º de ${d.toLocaleDateString("pt-BR", { month: "long", timeZone: "America/Sao_Paulo" })}`;
-
 /**
  * Cobrança → Assinatura (revisão de preços, parte 4a): sem assinatura, escolhe o tamanho de cada
- * chatbot e os pacotes e paga no Checkout da Stripe; com assinatura, mostra o que está assinado,
- * a troca agendada para o dia 1º e o portal (cartão, faturas e cancelar).
+ * chatbot e os pacotes e paga no Checkout da Stripe; com assinatura, troca o tamanho de cada
+ * chatbot (subir cobra o proporcional agora, descer vale no dia 1º), assina ou tira pacotes e abre
+ * o portal (cartão, faturas e cancelar).
  */
 export default async function CobrancaPage({ searchParams }: PageProps<"/painel/cobranca">) {
   const sp = await searchParams;
@@ -26,11 +26,11 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
   const { data: packRows } = await createAdminClient().from("agency_packs").select("pack, ends_at").eq("agency_id", agency.id);
   const packs = (packRows ?? []).filter((p) => isPackId(p.pack)).map((p) => ({ id: p.pack as keyof typeof PACKS, endsAt: (p.ends_at as string | null) ?? null }));
   const subscribed = agency.billing_status !== "none";
-  const renewal = longDay(monthBoundsBR().end);
+  const renewal = renewalLabel();
   const billable = bots.filter((b) => b.override === null);
   const custom = bots.filter((b) => b.override !== null);
   const monthlyCents =
-    billable.reduce((t, b) => t + sizeMonthlyCents(b.pendingSize ? { size: b.pendingSize === "none" ? null : b.pendingSize, volumePacks: b.pendingVolumePacks } : b), 0) +
+    billable.reduce((t, b) => t + sizeMonthlyCents(nextChoice(b)), 0) +
     packs.filter((p) => !p.endsAt).reduce((t, p) => t + PACKS[p.id].priceBrl * 100, 0);
 
   return (
@@ -70,9 +70,9 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
               <thead>
                 <tr className="border-b border-line-2 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted">
                   <th className="px-4 py-2 font-semibold">Chatbot</th>
-                  <th className="px-3 py-2 font-semibold">Tamanho</th>
+                  <th className="px-3 py-2 font-semibold">Agora</th>
                   <th className="px-3 py-2 text-right font-semibold">Cota do mês</th>
-                  <th className="px-4 py-2 text-right font-semibold">Por mês</th>
+                  <th className="px-4 py-2 font-semibold">Trocar o tamanho</th>
                 </tr>
               </thead>
               <tbody>
@@ -84,14 +84,13 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
                     </td>
                     <td className="px-3 py-2">
                       {sizeLabel(b)}
-                      {b.pendingSize && (
-                        <span className="block text-xs text-amber-ink">
-                          {b.pendingSize === "none" ? "sem tamanho" : b.pendingSize === "volume" ? `Volume (${b.pendingVolumePacks} pacotes)` : BOT_SIZES[b.pendingSize].name} a partir de {renewal}
-                        </span>
-                      )}
+                      {b.size && <span className="block text-xs text-muted tabular">{brlCents(sizeMonthlyCents(b) / 100)}/mês</span>}
+                      {b.pendingSize && <span className="block text-xs text-amber-ink">{choiceLabel(nextChoice(b))} a partir de {renewal}</span>}
                     </td>
                     <td className="px-3 py-2 text-right tabular">{num(b.quota)}</td>
-                    <td className="px-4 py-2 text-right tabular">{b.size ? brlCents(sizeMonthlyCents(b) / 100) : "—"}</td>
+                    <td className="px-4 py-2">
+                      <SizeChangeForm botId={b.botId} botName={b.name} current={{ size: b.size, volumePacks: b.volumePacks }} pendingSize={b.pendingSize} pendingVolumePacks={b.pendingVolumePacks} monthQuota={b.quota} renewal={renewal} />
+                    </td>
                   </tr>
                 ))}
                 {custom.map((b) => (
@@ -99,7 +98,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
                     <td className="px-4 py-2">{b.name}</td>
                     <td className="px-3 py-2">sob medida</td>
                     <td className="px-3 py-2 text-right tabular">{num(b.quota)}</td>
-                    <td className="px-4 py-2 text-right">combinado</td>
+                    <td className="px-4 py-2">combinado com a BoaVoz</td>
                   </tr>
                 ))}
               </tbody>
@@ -110,16 +109,19 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
           <ul className="mt-3 grid gap-3 sm:grid-cols-3">
             {Object.values(PACKS).map((p) => {
               const on = packs.find((x) => x.id === p.id);
+              const need = p.requires ? packs.find((x) => x.id === p.requires && !x.endsAt) : true;
               return (
                 <li key={p.id} className="card p-4 text-sm">
                   <span className="font-semibold">{p.name}</span> · {brlCents(p.priceBrl)}/mês
                   <span className="block text-muted">{p.description}</span>
-                  <span className={on ? "mt-2 block font-semibold text-brand" : "mt-2 block text-muted"}>{on ? (on.endsAt ? `Ativo até ${renewal}` : "Ativo") : "Não assinado"}</span>
+                  <PackButton pack={p.id} name={p.name} state={on ? (on.endsAt ? "ending" : "on") : "off"} chargeCents={packChargeCents(p.id)} blockedBy={need ? null : PACKS[p.requires!].name} renewal={renewal} />
                 </li>
               );
             })}
           </ul>
-          <p className="mt-6 text-sm text-muted">Trocar o tamanho de um chatbot e os pacotes pelo painel chega na próxima atualização. Subir vale na hora (com a diferença proporcional); descer, no dia 1º.</p>
+          <p className="mt-6 text-sm text-muted">
+            Subir um tamanho ou assinar um pacote vale na hora: cobramos agora a diferença proporcional ao resto do mês, e a cota do mês sobe na mesma proporção. Descer, tirar o tamanho ou tirar um pacote vale no dia 1º (o mês já foi pago). Chatbot novo começa sem tamanho.
+          </p>
         </>
       )}
     </div>

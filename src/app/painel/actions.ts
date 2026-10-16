@@ -29,6 +29,7 @@ import { clearAgePending } from "@/lib/gate/flow";
 import { isGateCategory } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { syncSubscriptionSafe } from "@/lib/billing-sync";
 import { brlCents, num } from "@/lib/plans";
 import { OVERAGE_CAP_MAX_BRL, OVERAGE_CAP_MIN_BRL, overageMax, parseCapBrl } from "@/lib/quota";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
@@ -462,6 +463,8 @@ export async function deleteBot(botId: string, redirectTo?: string): Promise<Act
   if (error) return fail("Não foi possível excluir. Tente de novo.");
   if (!count) return fail("Chatbot não encontrado.");
   await auditPanel("bot.excluir", { type: "bot", id: botId });
+  // o tamanho dele sai da próxima fatura (o mês corrente já foi pago)
+  await syncSubscriptionSafe(createAdminClient(), (await requireAgency()).agency.id);
   revalidatePath("/painel", "layout");
   if (redirectTo) redirect(redirectTo);
   return ok("Chatbot excluído.");

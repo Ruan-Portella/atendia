@@ -2,11 +2,13 @@ import type Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { appliedBotRow, type BillingTarget } from "./billing";
 import { audit } from "./audit";
+import { applyUpgrade, syncSubscriptionSafe } from "./billing-sync";
 
 /*
- * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), a situação da
- * assinatura acompanha (pagamento atrasado suspende o excedente) e o fim da assinatura tira o
- * tamanho dos chatbots (a configuração fica guardada). Erro do banco vira exceção: o webhook
+ * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), inclusive a
+ * subida paga numa fatura avulsa; a situação da assinatura acompanha (pagamento atrasado suspende
+ * o excedente); item mexido fora do BoaVoz volta ao que o BoaVoz guarda; e o fim da assinatura
+ * tira o tamanho dos chatbots (a configuração fica guardada). Erro do banco vira exceção: o webhook
  * devolve 500 e a Stripe entrega de novo (tudo aqui pode rodar mais de uma vez).
  */
 
@@ -81,6 +83,15 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
       const { data: agencies } = must(await db.from("agencies").update({ billing_status: status, stripe_subscription_id: sub.id }).eq("stripe_customer_id", customer).select("id"));
       // virada do mês: as trocas agendadas para o dia 1º valem
       for (const a of agencies ?? []) must(await db.rpc("apply_due_bot_changes", { p_agency_id: a.id }));
+      // itens mudados (por nós ou no painel da Stripe): a assinatura fica igual ao que o BoaVoz guarda
+      const changedItems = event.type === "customer.subscription.updated" && "items" in ((event.data.previous_attributes ?? {}) as Record<string, unknown>);
+      if (changedItems) for (const a of agencies ?? []) await syncSubscriptionSafe(db, a.id as string);
+      break;
+    }
+    case "invoice.paid": {
+      // subida paga na fatura avulsa (cartão recusado na hora e pago depois na página da Stripe)
+      const changeId = event.data.object.metadata?.changeId;
+      if (changeId) await applyUpgrade(db, changeId);
       break;
     }
     case "customer.subscription.deleted":

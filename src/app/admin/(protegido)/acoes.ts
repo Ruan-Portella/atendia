@@ -20,6 +20,7 @@ import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey } from "@/li
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
 import { createWebhook, sendWebhookTest } from "@/lib/webhooks";
 import { applyPlanLimits, manualPlanSwitch } from "@/lib/plan-limits";
+import { syncSubscriptionSafe } from "@/lib/billing-sync";
 import { isBotSize } from "@/lib/plans";
 import { SIGNAL_KINDS, TEST_THRESHOLDS, THRESHOLDS, runContinuousChecks } from "@/lib/continuous-check";
 import { refreshReportDaily } from "@/lib/report-daily";
@@ -147,9 +148,12 @@ export async function setBotSize(agencyId: string, botId: string, fd: FormData):
   const db = createAdminClient();
   const { data: before } = await db.from("bots").select("size, volume_packs, quota_override").eq("id", botId).eq("agency_id", agencyId).maybeSingle();
   if (!before) return fail("Chatbot não encontrado.");
-  const { error } = await db.from("bots").update({ size, volume_packs: packs, quota_override: override }).eq("id", botId);
+  // decisão da BoaVoz: vale na hora, com a cota cheia do mês, e a troca agendada sai
+  const { error } = await db.from("bots").update({ size, volume_packs: packs, quota_override: override, pending_size: null, pending_volume_packs: null, pending_from: null, prorated_month: null, prorated_quota: null }).eq("id", botId);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   await auditAdmin(s.email, "chatbot.tamanho", { agencyId, targetType: "bot", targetId: botId, after: { de: before, para: { size, volume_packs: packs, quota_override: override } } });
+  // conta com assinatura: a próxima fatura acompanha (sem cobrança proporcional; sob medida fica fora)
+  await syncSubscriptionSafe(db, agencyId);
   revalidatePath("/admin", "layout");
   return ok(override !== null ? `Cota sob medida: ${override.toLocaleString("pt-BR")} atendimentos por mês.` : size ? "Tamanho salvo." : "Chatbot sem tamanho: ele fica sem cota.");
 }
