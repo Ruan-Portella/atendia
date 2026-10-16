@@ -13,10 +13,14 @@ export const DOCS_PAGES = [
   { href: "/docs/api", title: "Referência da API" },
   { href: "/docs/conceitos", title: "Conceitos" },
   { href: "/docs/seguranca", title: "Segurança" },
+  { href: "/docs/identificar-usuarios", title: "Identificar usuários" },
+  { href: "/docs/campanhas", title: "Campanhas e consentimento" },
+  { href: "/docs/exemplos", title: "Exemplos" },
 ] as const;
 
 /** O que ainda vai entrar (sem link até a página existir). */
-export const DOCS_SOON = ["Identificar usuários", "Campanhas e consentimento", "Exemplos"] as const;
+// Plataformas (bot modelo, provisionamento, webview): leva D'
+export const DOCS_SOON = ["Plataformas"] as const;
 
 /** Menu da documentação: coluna no computador, faixa que rola para o lado no celular. */
 export function DocsNav() {
