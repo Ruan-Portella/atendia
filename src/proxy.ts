@@ -85,12 +85,6 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
       response.cookies.set(ACCESS_MARK, mark, { httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 60 * 60 * 24 });
     }
   }
-
-  // Guarda o código de afiliado por 30 dias
-  const ref = request.nextUrl.searchParams.get("ref");
-  if (ref && /^[a-z0-9]{4,16}$/i.test(ref)) {
-    response.cookies.set("boavoz_ref", ref, { maxAge: 60 * 60 * 24 * 30, path: "/", sameSite: "lax" });
-  }
   return response;
 }
 

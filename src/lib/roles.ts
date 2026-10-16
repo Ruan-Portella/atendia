@@ -10,7 +10,7 @@ export type MemberScope = "all" | "selected";
 export const ROLE_LABELS: Record<AgencyRole, string> = { owner: "Dono", admin: "Administrador", editor: "Editor", agent: "Atendente" };
 
 export const ROLE_HINTS: Record<InvitableRole, string> = {
-  admin: "Tudo, menos cobrança e afiliados: clientes, chatbots, equipe, marca e Segurança.",
+  admin: "Tudo, menos cobrança: clientes, chatbots, equipe, marca e Segurança.",
   editor: "Configura os clientes e chatbots do escopo e atende as conversas deles.",
   agent: "Só as conversas dos clientes e chatbots do escopo.",
 };
@@ -24,7 +24,7 @@ export const isInvitableRole = (v: unknown): v is InvitableRole => INVITABLE_ROL
  *  - config: clientes, chatbots, base, canais e demos, dentro do escopo
  *  - team: equipe; security: Segurança, retenção e pedidos do titular; brand: marca e domínio;
  *    export: exportar conversas, contatos e leads
- *  - billing: cobrança, uso e custo, afiliados
+ *  - billing: cobrança, uso e custo
  *  - integrations: Integrações (ações, webhooks, chaves de API); o editor só vê as ações (C pública)
  */
 export type Permission = "attend" | "config" | "team" | "security" | "brand" | "export" | "billing" | "integrations";

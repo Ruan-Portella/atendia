@@ -1,18 +1,14 @@
 import Link from "next/link";
 import { Kpi } from "@/components/kpi";
 import { requireAdmin } from "@/lib/platform-admin";
-import { getAgencies, getRevenue, monthStartBR } from "@/lib/backoffice";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getAgencies, getRevenue } from "@/lib/backoffice";
 import { brl, num } from "@/lib/plans";
-import { currentPeriodBR } from "@/lib/utils";
 
 export const metadata = { title: "Receita" };
 
 export default async function AdminRevenue() {
   await requireAdmin("/admin/receita");
   const [revenue, agencies] = await Promise.all([getRevenue(), getAgencies()]);
-  const { data: commissions } = await createAdminClient().from("referral_commissions").select("commission_cents").gte("created_at", monthStartBR(currentPeriodBR()).toISOString());
-  const commissionCents = (commissions ?? []).reduce((t, c) => t + (Number(c.commission_cents) || 0), 0);
   const byCustomer = new Map(agencies.filter((a) => a.stripeCustomerId).map((a) => [a.stripeCustomerId!, a]));
 
   if (!revenue) {
@@ -45,7 +41,7 @@ export default async function AdminRevenue() {
         <Kpi label="Receita mensal (MRR)" value={brl(revenue.mrrCents / 100)} sub={`${revenue.active} assinaturas ativas`} />
         <Kpi label="Recebido em 30 dias" value={brl(revenue.paid30dCents / 100)} sub="faturas pagas" />
         <Kpi label="Pagamento atrasado" value={num(revenue.pastDue)} sub={`${revenue.failed.length} faturas com tentativa falha`} />
-        <Kpi label="Cancelamentos (30 dias)" value={num(revenue.canceled30d)} sub={`comissões de indicação no mês: ${brl(commissionCents / 100)}`} />
+        <Kpi label="Cancelamentos (30 dias)" value={num(revenue.canceled30d)} sub="assinaturas encerradas" />
       </section>
 
       <section className="card flex flex-col gap-3 p-5">

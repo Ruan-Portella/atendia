@@ -18,7 +18,6 @@ export default function LandingPage() {
           <a href="#como">Como funciona</a>
           <a href="#precos">Preços</a>
           <a href="#nichos">Por nicho</a>
-          <a href="#afiliados">Afiliados</a>
           <Link href="/login">Entrar</Link>
           <Link href="/cadastro" className="btn-primary">Começar grátis</Link>
         </nav>
@@ -144,7 +143,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="grid gap-8 px-6 pb-20 md:grid-cols-2 lg:px-16 xl:px-24">
+      <section className="px-6 pb-20 lg:px-16 xl:px-24">
         <div id="nichos" className="card flex flex-col gap-4 p-7">
           <div className="display text-2xl font-bold">Material de venda pronto, por nicho</div>
           <p className="text-[15px] leading-relaxed text-ink-2">Uma página para cada tipo de cliente, com exemplos de conversa e argumentos. Use para vender.</p>
@@ -153,11 +152,6 @@ export default function LandingPage() {
               <span key={n} className="rounded-full border border-line bg-ground px-3 py-1.5 text-sm font-medium">{n}</span>
             ))}
           </div>
-        </div>
-        <div id="afiliados" className="card flex flex-col gap-4 p-7">
-          <div className="display text-2xl font-bold">Indique e ganhe 30% em crédito, para sempre</div>
-          <p className="text-[15px] leading-relaxed text-ink-2">Cada agência que assinar pelo seu link gera 30% do que ela paga, todo mês, como crédito na sua assinatura. Com três ou quatro indicações, seu plano sai de graça. Sem teto.</p>
-          <Link href="/cadastro" className="btn-dark mt-auto self-start">Quero meu link</Link>
         </div>
       </section>
 

@@ -124,7 +124,7 @@ export default async function TeamPage() {
 
       <div className="card flex flex-col gap-2 p-5 text-sm text-ink-2">
         <h2 className="text-base font-bold text-ink">O que cada papel faz</h2>
-        <p><strong>Dono:</strong> tudo, inclusive cobrança, afiliados e o papel de administrador.</p>
+        <p><strong>Dono:</strong> tudo, inclusive cobrança e o papel de administrador.</p>
         <p><strong>Administrador:</strong> clientes, chatbots, equipe, marca e domínio, Segurança e exportações. Não vê a cobrança.</p>
         <p><strong>Editor:</strong> configura os clientes e chatbots do escopo (base, personalidade, canais, área do cliente) e atende as conversas.</p>
         <p><strong>Atendente:</strong> só as conversas dos clientes e chatbots do escopo: assumir, responder e devolver para a IA.</p>

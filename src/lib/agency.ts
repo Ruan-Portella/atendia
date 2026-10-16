@@ -1,5 +1,4 @@
 import { cache } from "react";
-import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
 import { createAdminClient } from "./supabase/admin";
@@ -33,7 +32,6 @@ export interface Agency {
   features: string[];
   trial_ends_at: string;
   stripe_customer_id: string | null;
-  referral_code: string;
   created_at: string;
 }
 
@@ -103,7 +101,6 @@ export const requireAgency = cache(async (): Promise<AgencyContext> => {
 
 /**
  * Cria a agência de quem chegou pelo cadastro (o gatilho da 0073 cria a linha do dono).
- * Afiliado: cookie gravado pelo proxy quando a pessoa chegou por ?ref=.
  */
 export async function createAgencyFor(userId: string, email: string, meta: Record<string, unknown>): Promise<AgencyMember> {
   const admin = createAdminClient();
@@ -111,17 +108,8 @@ export async function createAgencyFor(userId: string, email: string, meta: Recor
   const base = slugify(name);
   const slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
 
-  // atendia_ref é o nome de antes da Boavoz; pode ser lido até 30 dias depois da troca
-  const jar = await cookies();
-  const ref = (jar.get("boavoz_ref") ?? jar.get("atendia_ref"))?.value;
-  let referredBy: string | null = null;
-  if (ref) {
-    const { data: r } = await admin.from("agencies").select("id").eq("referral_code", ref).maybeSingle();
-    referredBy = r?.id ?? null;
-  }
-  const { data: created, error } = await admin.from("agencies").insert({ owner_id: userId, name, slug, referred_by: referredBy }).select("id").single();
+  const { data: created, error } = await admin.from("agencies").insert({ owner_id: userId, name, slug }).select("id").single();
   if (error || !created) throw new Error(error?.message ?? "Não foi possível criar a agência");
-  if (referredBy) await admin.from("referrals").insert({ referrer_id: referredBy, referred_id: created.id });
   let member = await activeMembership(admin, userId);
   if (!member) {
     const { error: memberError } = await admin.from("agency_members").insert({ agency_id: created.id, user_id: userId, email, role: "owner", scope: "all", accepted_at: new Date().toISOString() });

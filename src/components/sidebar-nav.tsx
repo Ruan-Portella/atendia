@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Sparkles, Palette, Share2, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug } from "lucide-react";
+import { Users, Sparkles, Palette, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type AgencyRole, type Permission } from "@/lib/roles";
 
@@ -14,7 +14,6 @@ const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Perm
   { href: "/painel/marca", label: "Marca e domínio", icon: Palette, perm: "brand" },
   { href: "/painel/equipe", label: "Equipe", icon: UsersRound, perm: "team" },
   { href: "/painel/seguranca", label: "Segurança", icon: ShieldCheck, perm: "security" },
-  { href: "/painel/afiliados", label: "Afiliados", icon: Share2, perm: "billing" },
   { href: "/painel/cobranca", label: "Cobrança", icon: CreditCard, perm: "billing" },
   { href: "/painel/perfil", label: "Meu perfil", icon: CircleUser, perm: "attend" },
 ];
