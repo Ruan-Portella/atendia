@@ -63,6 +63,21 @@ describe("receita (Stripe)", () => {
     expect(monthlyCents({ price: { unit_amount: 120_000, recurring: { interval: "year", interval_count: 1 } } })).toBe(10_000);
     expect(monthlyCents({ price: { unit_amount: 2000, recurring: { interval: "month", interval_count: 1 } }, quantity: 3 })).toBe(6000);
     expect(monthlyCents({ price: { unit_amount: 5000, recurring: null } })).toBe(0);
+    expect(monthlyCents({ price: { unit_amount: 35, recurring: { interval: "month", interval_count: 1, usage_type: "metered" } } })).toBe(0);
+  });
+
+  it("o que está assinado: por item (chatbots de cada tamanho, pacotes), sem o excedente", () => {
+    const item = (lookup_key: string, unit_amount: number, quantity?: number, usage_type = "licensed") => ({ price: { id: `price_${lookup_key}`, lookup_key, unit_amount, recurring: { interval: "month", interval_count: 1, usage_type } }, quantity });
+    const s = summarizeSubscriptions([
+      { id: "s1", status: "active", customer: "cus_1", items: { data: [item("boavoz_bot_p", 4900, 3), item("boavoz_integracoes", 4900, 1), item("boavoz_excedente", 35, undefined, "metered")] } },
+      { id: "s2", status: "active", customer: "cus_2", items: { data: [item("boavoz_bot_p", 4900, 1), item("boavoz_bot_volume", 29_900, 2)] } },
+    ]);
+    expect(s.mrrCents).toBe(4900 * 4 + 4900 + 29_900 * 2);
+    expect(s.byPlan).toEqual([
+      { plan: "Chatbot Volume (pacotes)", count: 2, mrrCents: 59_800 },
+      { plan: "Chatbot P", count: 4, mrrCents: 19_600 },
+      { plan: "Integrações", count: 1, mrrCents: 4900 },
+    ]);
   });
 
   it("MRR só de ativas e atrasadas; cancelamentos dos últimos 30 dias", () => {

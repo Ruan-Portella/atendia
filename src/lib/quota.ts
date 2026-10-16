@@ -1,4 +1,5 @@
 import { ANSWERS_PER_ATENDIMENTO, BOT_SIZES, OVERAGE_PRICE_BRL, isBotSize, type BotSize } from "./plans";
+import { currentPeriodBR } from "./utils";
 
 /* Cota por atendimento, por chatbot: definições puras (servem ao painel, ao site e ao servidor). */
 
@@ -8,12 +9,19 @@ export interface BotQuotaFields {
   size?: string | null;
   volume_packs?: number | null;
   quota_override?: number | null;
+  /** Mês ('AAAA-MM-01') em que o chatbot ganhou ou subiu de tamanho, e a cota proporcional dele. */
+  prorated_month?: string | null;
+  prorated_quota?: number | null;
 }
 
-/** Cota do mês do chatbot: a combinada fora da tabela (sob medida), senão a do tamanho; sem tamanho, zero. */
-export function botQuota(bot: BotQuotaFields): number {
+/**
+ * Cota do mês do chatbot: a combinada fora da tabela (sob medida); no mês em que ganhou ou subiu
+ * de tamanho, a proporcional; senão a do tamanho. Sem tamanho, zero. (Como open_atendimento.)
+ */
+export function botQuota(bot: BotQuotaFields, period = currentPeriodBR()): number {
   if (bot.quota_override !== null && bot.quota_override !== undefined) return bot.quota_override;
   if (!isBotSize(bot.size)) return 0;
+  if (bot.prorated_month && bot.prorated_quota !== null && bot.prorated_quota !== undefined && bot.prorated_month.slice(0, 7) === period) return bot.prorated_quota;
   if (bot.size === "volume") return (bot.volume_packs ?? 0) * BOT_SIZES.volume.atendimentos;
   return BOT_SIZES[bot.size].atendimentos;
 }

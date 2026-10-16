@@ -2,7 +2,8 @@ import { openNullable } from "./field-cipher";
 import { cache } from "react";
 import type Stripe from "stripe";
 import { createAdminClient } from "./supabase/admin";
-import { planFromPrice, stripe } from "./stripe";
+import { stripe } from "./stripe";
+import { LOOKUP_LABELS, type LookupKey } from "./billing";
 import { PLANS, getPlan, type PlanId } from "./plans";
 import { currentPeriodBR, monthStartBR } from "./utils";
 import { botQuota } from "./quota";
@@ -185,9 +186,10 @@ export async function getOpenAiCosts(since: Date, until: Date): Promise<ReturnTy
 /* ------------------------------------------------------------------ receita (Stripe) */
 
 /** Valor mensal de um item de assinatura em centavos (anual ÷ 12, etc.). Descontos não entram. */
-export function monthlyCents(item: { price?: { unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number } | null } | null; quantity?: number | null }): number {
+export function monthlyCents(item: { price?: { unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number; usage_type?: string } | null } | null; quantity?: number | null }): number {
   const r = item.price?.recurring;
-  if (!r) return 0;
+  // sem recorrência (avulso) ou por uso (o excedente entra na fatura, não no MRR)
+  if (!r || r.usage_type === "metered") return 0;
   const amount = (item.price?.unit_amount ?? 0) * (item.quantity ?? 1);
   const count = r.interval_count || 1;
   const months = r.interval === "year" ? 12 * count : r.interval === "month" ? count : r.interval === "week" ? (count * 7) / 30.44 : count / 30.44;
@@ -199,23 +201,28 @@ export interface SubscriptionLike {
   status: string;
   customer: string | { id: string };
   canceled_at?: number | null;
-  items: { data: Array<{ price?: { id?: string; unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number } | null } | null; quantity?: number | null }> };
+  items: { data: Array<{ price?: { id?: string; lookup_key?: string | null; unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number; usage_type?: string } | null } | null; quantity?: number | null }> };
 }
 
-/** MRR (ativas e com pagamento atrasado), assinaturas por plano e cancelamentos recentes. */
+/**
+ * MRR (ativas e com pagamento atrasado), o que está assinado por item (chatbots de cada tamanho,
+ * pacotes do Volume, pacotes da conta) e cancelamentos recentes. O excedente é por uso: fora do MRR.
+ */
 export function summarizeSubscriptions(subs: SubscriptionLike[], now = Date.now()) {
   const live = subs.filter((s) => s.status === "active" || s.status === "past_due");
   const byPlan = new Map<string, { plan: string; count: number; mrrCents: number }>();
   let mrrCents = 0;
   for (const s of live) {
-    const cents = s.items.data.reduce((t, i) => t + monthlyCents(i), 0);
-    mrrCents += cents;
-    const planId = s.items.data.map((i) => planFromPrice(i.price?.id)).find(Boolean) ?? null;
-    const label = planId ? getPlan(planId).name : "outro preço";
-    const b = byPlan.get(label) ?? { plan: label, count: 0, mrrCents: 0 };
-    b.count += 1;
-    b.mrrCents += cents;
-    byPlan.set(label, b);
+    for (const i of s.items.data) {
+      const cents = monthlyCents(i);
+      if (!cents) continue;
+      mrrCents += cents;
+      const label = LOOKUP_LABELS[i.price?.lookup_key as LookupKey] ?? "outro preço";
+      const b = byPlan.get(label) ?? { plan: label, count: 0, mrrCents: 0 };
+      b.count += i.quantity ?? 1;
+      b.mrrCents += cents;
+      byPlan.set(label, b);
+    }
   }
   return {
     mrrCents: Math.round(mrrCents),

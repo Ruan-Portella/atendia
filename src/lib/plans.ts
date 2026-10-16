@@ -44,6 +44,26 @@ export const BOT_SIZES: Record<BotSize, SizeInfo> = {
 
 export const isBotSize = (v: unknown): v is BotSize => typeof v === "string" && v in BOT_SIZES;
 
+/* Pacotes da conta (um de cada, por mês): liberam recursos da agência toda. Canal nunca é pago. */
+export type PackId = "dominio" | "integracoes" | "plataforma";
+
+export interface PackInfo {
+  id: PackId;
+  name: string;
+  priceBrl: number;
+  description: string;
+  /** Pacote que precisa vir junto. */
+  requires?: PackId;
+}
+
+export const PACKS: Record<PackId, PackInfo> = {
+  dominio: { id: "dominio", name: "Domínio próprio", priceBrl: 29, description: "painel e chat com o domínio da agência" },
+  integracoes: { id: "integracoes", name: "Integrações", priceBrl: 49, description: "ações, webhooks, API e identificação de usuários" },
+  plataforma: { id: "plataforma", name: "Plataforma", priceBrl: 199, description: "lojas pela API, chatbot modelo e identificação em todas as lojas", requires: "integracoes" },
+};
+
+export const isPackId = (v: unknown): v is PackId => typeof v === "string" && v in PACKS;
+
 /** Respostas da IA que cabem num atendimento: a seguinte abre outro. */
 export const ANSWERS_PER_ATENDIMENTO = 40;
 

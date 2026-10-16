@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PlanId } from "./plans";
+import { LOOKUP_KEYS, monthBoundsBR, targetQuantities, type BillingTarget, type LookupKey } from "./billing";
 
 export const billingEnabled = Boolean(process.env.STRIPE_SECRET_KEY);
 export const stripe = billingEnabled ? new Stripe(process.env.STRIPE_SECRET_KEY!) : null;
@@ -17,18 +17,39 @@ export async function ensureStripeCustomer(admin: SupabaseClient, agency: { id: 
   return c.id;
 }
 
-const PRICES: Record<string, string | undefined> = {
-  freelancer: process.env.STRIPE_PRICE_FREELANCER,
-  agencia: process.env.STRIPE_PRICE_AGENCIA,
-  escala: process.env.STRIPE_PRICE_ESCALA,
-};
+let catalog: { at: number; ids: Record<LookupKey, string> } | null = null;
 
-export function priceFor(plan: string): string | undefined {
-  return PRICES[plan];
+/**
+ * Id de cada preço pela chave de pesquisa (o mesmo código no teste e na produção; sem variável
+ * por preço). Guardado por 10 minutos. Falta um preço: erro com o nome dele.
+ */
+export async function catalogPrices(): Promise<Record<LookupKey, string>> {
+  if (catalog && Date.now() - catalog.at < 10 * 60_000) return catalog.ids;
+  if (!stripe) throw new Error("Stripe não configurado.");
+  const keys = Object.values(LOOKUP_KEYS);
+  const { data } = await stripe.prices.list({ lookup_keys: keys, active: true, limit: keys.length });
+  const ids = Object.fromEntries(data.map((p) => [p.lookup_key, p.id])) as Record<LookupKey, string>;
+  const missing = keys.filter((k) => !ids[k]);
+  if (missing.length) throw new Error(`Preço sem cadastro na Stripe: ${missing.join(", ")}`);
+  catalog = { at: Date.now(), ids };
+  return ids;
 }
 
-export function planFromPrice(priceId: string | undefined): PlanId | null {
-  if (!priceId) return null;
-  const hit = Object.entries(PRICES).find(([, v]) => v === priceId);
-  return (hit?.[0] as PlanId | undefined) ?? null;
+/** Itens da assinatura para a escolha: quantidade por preço, mais o excedente (por uso, sem quantidade). */
+export function subscriptionItems(target: BillingTarget, ids: Record<LookupKey, string>): Array<{ price: string; quantity?: number }> {
+  const q = targetQuantities(target);
+  const items: Array<{ price: string; quantity?: number }> = Object.entries(q).map(([k, n]) => ({ price: ids[k as LookupKey], quantity: n }));
+  items.push({ price: ids[LOOKUP_KEYS.excedente] });
+  return items;
+}
+
+/**
+ * Âncora da fatura (dia 1º seguinte, 00:00 em São Paulo, em segundos) e o prazo do Checkout, que
+ * precisa terminar antes dela. Nas últimas 2 horas do mês, a âncora vai para o dia 1º depois.
+ */
+export function checkoutTiming(now = new Date()): { anchor: number; expiresAt: number } {
+  const nowS = Math.floor(now.getTime() / 1000);
+  let anchor = Math.floor(monthBoundsBR(now).end.getTime() / 1000);
+  if (anchor - nowS < 2 * 3600) anchor = Math.floor(monthBoundsBR(new Date(anchor * 1000 + 3600_000)).end.getTime() / 1000);
+  return { anchor, expiresAt: Math.min(nowS + 24 * 3600, anchor - 600) };
 }

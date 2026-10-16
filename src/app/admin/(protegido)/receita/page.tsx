@@ -45,10 +45,10 @@ export default async function AdminRevenue() {
       </section>
 
       <section className="card flex flex-col gap-3 p-5">
-        <h2 className="text-lg font-bold">Assinaturas por plano</h2>
+        <h2 className="text-lg font-bold">O que está assinado</h2>
         {revenue.byPlan.length ? (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Plano</th><th className="py-1.5 text-right font-semibold">Assinaturas</th><th className="py-1.5 text-right font-semibold">MRR</th></tr></thead>
+            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Item</th><th className="py-1.5 text-right font-semibold">Quantidade</th><th className="py-1.5 text-right font-semibold">MRR</th></tr></thead>
             <tbody>
               {revenue.byPlan.map((p) => (
                 <tr key={p.plan} className="border-t border-line-2"><td className="py-2">{p.plan}</td><td className="py-2 text-right tabular">{num(p.count)}</td><td className="py-2 text-right tabular">{brl(p.mrrCents / 100)}</td></tr>

@@ -1,47 +1,127 @@
-import { requirePermission } from "@/lib/agency";
-import { PLANS, brl, num } from "@/lib/plans";
-import { billingEnabled } from "@/lib/stripe";
-import { PlanButtons } from "@/components/plan-buttons";
-import { daysUntil } from "@/lib/utils";
-import { BillingTabs } from "@/components/billing-tabs";
 import Link from "next/link";
+import { requirePermission } from "@/lib/agency";
+import { BOT_SIZES, PACKS, brlCents, isPackId, num } from "@/lib/plans";
+import { billingEnabled } from "@/lib/stripe";
+import { monthBoundsBR, remainingFraction, sizeMonthlyCents } from "@/lib/billing";
+import { sizeLabel } from "@/lib/atendimentos";
+import { BillingTabs } from "@/components/billing-tabs";
+import { SubscribeForm } from "@/components/subscribe-form";
+import { ActionForm } from "@/components/ui/action-form";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { openBillingPortal } from "./actions";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { pausedByPlanCount } from "@/lib/plan-limits";
 
 export const metadata = { title: "Cobrança" };
 
+const longDay = (d: Date) => `1º de ${d.toLocaleDateString("pt-BR", { month: "long", timeZone: "America/Sao_Paulo" })}`;
+
+/**
+ * Cobrança → Assinatura (revisão de preços, parte 4a): sem assinatura, escolhe o tamanho de cada
+ * chatbot e os pacotes e paga no Checkout da Stripe; com assinatura, mostra o que está assinado,
+ * a troca agendada para o dia 1º e o portal (cartão, faturas e cancelar).
+ */
 export default async function CobrancaPage({ searchParams }: PageProps<"/painel/cobranca">) {
   const sp = await searchParams;
-  const { agency, plan, usage, quota } = await requirePermission("billing");
-  const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
-  const paused = await pausedByPlanCount(createAdminClient(), agency.id);
+  const { agency, bots } = await requirePermission("billing");
+  const { data: packRows } = await createAdminClient().from("agency_packs").select("pack, ends_at").eq("agency_id", agency.id);
+  const packs = (packRows ?? []).filter((p) => isPackId(p.pack)).map((p) => ({ id: p.pack as keyof typeof PACKS, endsAt: (p.ends_at as string | null) ?? null }));
+  const subscribed = agency.billing_status !== "none";
+  const renewal = longDay(monthBoundsBR().end);
+  const billable = bots.filter((b) => b.override === null);
+  const custom = bots.filter((b) => b.override !== null);
+  const monthlyCents =
+    billable.reduce((t, b) => t + sizeMonthlyCents(b.pendingSize ? { size: b.pendingSize === "none" ? null : b.pendingSize, volumePacks: b.pendingVolumePacks } : b), 0) +
+    packs.filter((p) => !p.endsAt).reduce((t, p) => t + PACKS[p.id].priceBrl * 100, 0);
+
   return (
-    <div className="max-w-[900px]">
+    <div className="max-w-[960px]">
       <h1 className="text-2xl font-bold sm:text-[28px]">Cobrança</h1>
       <BillingTabs active="/painel/cobranca" />
-      <p className="mt-5 text-sm text-muted">Plano atual: <strong>{plan.name}</strong>{trialDays !== null ? ` · ${trialDays} dias de teste restantes` : ""} · {num(usage)} de {num(quota)} atendimentos usados este mês.</p>
-      {sp.ok && <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Assinatura ativada. Obrigado!</p>}
-      {paused > 0 && (
-        <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
-          {paused === 1 ? "1 item está pausado" : `${paused} itens estão pausados`} pelo plano {plan.name}. <Link href="/painel/cobranca/limites" className="font-semibold underline">Escolher o que fica ativo</Link>
+
+      {sp.ok && !subscribed && <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Pagamento recebido. Estamos confirmando com a Stripe: recarregue a página em alguns segundos.</p>}
+      {sp.ok && subscribed && <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Assinatura ativada. Obrigado!</p>}
+      {!billingEnabled && <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Cobrança ainda não configurada neste servidor (STRIPE_SECRET_KEY).</p>}
+      {agency.billing_status === "past_due" && (
+        <p className="mt-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+          O último pagamento falhou: o excedente está suspenso até a fatura ser paga. Atualize o cartão em Pagamento e faturas. Sem pagamento em 2 semanas, a assinatura é cancelada e os chatbots ficam sem tamanho (a configuração fica guardada).
         </p>
       )}
-      {sp.limite === "bots" && <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Você chegou ao limite de chatbots do plano {plan.name}. Faça upgrade para adicionar mais clientes.</p>}
-      {!billingEnabled && <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Cobrança ainda não configurada neste servidor (STRIPE_SECRET_KEY). Todas as contas ficam em teste.</p>}
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        {(["freelancer", "agencia", "escala"] as const).map((id) => {
-          const p = PLANS[id];
-          const current = plan.id === id;
-          return (
-            <div key={id} className={current ? "flex flex-col gap-3 rounded-2xl bg-brand p-6 text-ground" : "card flex flex-col gap-3 p-6"}>
-              <div className="display text-xl font-bold">{p.name}</div>
-              <div className="display text-4xl font-bold">{brl(p.priceBrl)}<span className="text-sm font-normal opacity-70">/mês</span></div>
-              <div className={current ? "text-sm text-[#dfe9e4]" : "text-sm text-ink-2"}>{p.description}</div>
-              <div className="mt-auto pt-2"><PlanButtons plan={id} current={current} enabled={billingEnabled} hasSubscription={Boolean(agency.stripe_customer_id) && plan.id !== "trial"} /></div>
-            </div>
-          );
-        })}
-      </div>
+
+      {!subscribed ? (
+        <>
+          <p className="mt-5 text-sm text-muted">
+            Escolha o tamanho de cada chatbot e os pacotes da conta. A fatura fecha todo dia 1º; o primeiro mês é proporcional, e a cota do primeiro mês também. Canais (WhatsApp, Instagram e chat do site) não são cobrados.
+          </p>
+          <SubscribeForm bots={billable.map((b) => ({ id: b.botId, name: b.name, clientName: b.clientName, size: b.size, volumePacks: b.volumePacks }))} fraction={remainingFraction()} renewal={renewal} enabled={billingEnabled} />
+        </>
+      ) : (
+        <>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted">
+              Próxima fatura em <strong className="text-ink">{renewal}</strong>: <strong className="text-ink tabular">{brlCents(monthlyCents / 100)}</strong> mais o excedente do mês, por uso.
+            </p>
+            <ActionForm action={openBillingPortal}>
+              <SubmitButton className="btn-ghost" pendingLabel="Abrindo…" disabled={!billingEnabled}>Pagamento e faturas</SubmitButton>
+            </ActionForm>
+          </div>
+
+          <div className="card mt-4 overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="border-b border-line-2 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+                  <th className="px-4 py-2 font-semibold">Chatbot</th>
+                  <th className="px-3 py-2 font-semibold">Tamanho</th>
+                  <th className="px-3 py-2 text-right font-semibold">Cota do mês</th>
+                  <th className="px-4 py-2 text-right font-semibold">Por mês</th>
+                </tr>
+              </thead>
+              <tbody>
+                {billable.map((b) => (
+                  <tr key={b.botId} className="border-b border-line-2 last:border-0">
+                    <td className="px-4 py-2">
+                      <Link href={`/painel/bots/${b.botId}`} className="hover:underline">{b.name}</Link>
+                      {b.clientName && <span className="block text-xs text-muted">{b.clientName}</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      {sizeLabel(b)}
+                      {b.pendingSize && (
+                        <span className="block text-xs text-amber-ink">
+                          {b.pendingSize === "none" ? "sem tamanho" : b.pendingSize === "volume" ? `Volume (${b.pendingVolumePacks} pacotes)` : BOT_SIZES[b.pendingSize].name} a partir de {renewal}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular">{num(b.quota)}</td>
+                    <td className="px-4 py-2 text-right tabular">{b.size ? brlCents(sizeMonthlyCents(b) / 100) : "—"}</td>
+                  </tr>
+                ))}
+                {custom.map((b) => (
+                  <tr key={b.botId} className="border-b border-line-2 last:border-0 text-muted">
+                    <td className="px-4 py-2">{b.name}</td>
+                    <td className="px-3 py-2">sob medida</td>
+                    <td className="px-3 py-2 text-right tabular">{num(b.quota)}</td>
+                    <td className="px-4 py-2 text-right">combinado</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h2 className="mt-8 text-lg font-bold">Pacotes da conta</h2>
+          <ul className="mt-3 grid gap-3 sm:grid-cols-3">
+            {Object.values(PACKS).map((p) => {
+              const on = packs.find((x) => x.id === p.id);
+              return (
+                <li key={p.id} className="card p-4 text-sm">
+                  <span className="font-semibold">{p.name}</span> · {brlCents(p.priceBrl)}/mês
+                  <span className="block text-muted">{p.description}</span>
+                  <span className={on ? "mt-2 block font-semibold text-brand" : "mt-2 block text-muted"}>{on ? (on.endsAt ? `Ativo até ${renewal}` : "Ativo") : "Não assinado"}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-6 text-sm text-muted">Trocar o tamanho de um chatbot e os pacotes pelo painel chega na próxima atualização. Subir vale na hora (com a diferença proporcional); descer, no dia 1º.</p>
+        </>
+      )}
     </div>
   );
 }

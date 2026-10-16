@@ -222,18 +222,27 @@ export interface BotQuotaStatus {
   /** Atendimentos a mais (excedente) no mês e quantos cabem no teto. */
   overageUsed: number;
   overageMax: number;
+  /** Troca agendada para o dia 1º (descer ou tirar o tamanho): "none" = fica sem tamanho. */
+  pendingSize: BotSize | "none" | null;
+  pendingVolumePacks: number | null;
 }
 
-/** Tamanho, cota e uso do mês de cada chatbot da agência (sem as demos). Service role. */
+/**
+ * Tamanho, cota e uso do mês de cada chatbot da agência (sem as demos). Service role. A troca
+ * agendada que já venceu aparece aplicada (o banco aplica na próxima abertura de atendimento).
+ */
 export async function botQuotaStatus(db: SupabaseClient, agencyId: string, period = currentPeriodBR()): Promise<BotQuotaStatus[]> {
   const [{ data: bots, error }, { data: counts, error: countError }] = await Promise.all([
-    db.from("bots").select("id, name, client_id, client_name, size, volume_packs, quota_override, overage_enabled, overage_cap_brl").eq("agency_id", agencyId).eq("is_demo", false).order("created_at"),
+    db.from("bots").select("id, name, client_id, client_name, size, volume_packs, quota_override, overage_enabled, overage_cap_brl, pending_size, pending_volume_packs, pending_from, prorated_month, prorated_quota").eq("agency_id", agencyId).eq("is_demo", false).order("created_at"),
     db.rpc("bot_month_atendimentos", { p_agency_id: agencyId, p_month_start: monthStartBR(period).toISOString() }),
   ]);
   if (error) throw new Error(`cota dos chatbots: ${error.message}`);
   if (countError) throw new Error(`atendimentos por chatbot: ${countError.message}`);
   const counted = new Map(((counts ?? []) as Array<{ bot_id: string; total: number | string; overage: number | string }>).map((r) => [r.bot_id, { total: Number(r.total) || 0, overage: Number(r.overage) || 0 }]));
-  return (bots ?? []).map((b) => ({
+  return (bots ?? []).map((raw) => {
+    const due = raw.pending_from && new Date(raw.pending_from as string).getTime() <= Date.now();
+    const b = due ? { ...raw, size: raw.pending_size === "none" ? null : raw.pending_size, volume_packs: raw.pending_size === "volume" ? raw.pending_volume_packs : null, pending_size: null, pending_volume_packs: null, prorated_month: null, prorated_quota: null } : raw;
+    return {
     botId: b.id as string,
     name: b.name as string,
     clientId: (b.client_id as string | null) ?? null,
@@ -241,13 +250,16 @@ export async function botQuotaStatus(db: SupabaseClient, agencyId: string, perio
     size: isBotSize(b.size) ? b.size : null,
     volumePacks: (b.volume_packs as number | null) ?? null,
     override: (b.quota_override as number | null) ?? null,
-    quota: botQuota(b as { size: string | null; volume_packs: number | null; quota_override: number | null }),
+    quota: botQuota(b as { size: string | null; volume_packs: number | null; quota_override: number | null; prorated_month: string | null; prorated_quota: number | null }, period),
     used: (counted.get(b.id as string)?.total ?? 0) - (counted.get(b.id as string)?.overage ?? 0),
     overageEnabled: Boolean(b.overage_enabled),
     overageCapBrl: b.overage_cap_brl === null || b.overage_cap_brl === undefined ? null : Number(b.overage_cap_brl),
     overageUsed: counted.get(b.id as string)?.overage ?? 0,
     overageMax: b.overage_enabled ? overageMax(Number(b.overage_cap_brl)) : 0,
-  }));
+    pendingSize: b.pending_size === "none" ? "none" : isBotSize(b.pending_size) ? b.pending_size : null,
+    pendingVolumePacks: (b.pending_volume_packs as number | null) ?? null,
+    };
+  });
 }
 
 /** Atendimentos de cada chatbot no mês passado (com o excedente), para a sugestão de tamanho. */

@@ -30,6 +30,9 @@ export interface Agency {
   features: string[];
   trial_ends_at: string;
   stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  /** Assinatura: sem, em dia ou com pagamento atrasado (excedente suspenso). */
+  billing_status: "none" | "active" | "past_due";
   created_at: string;
 }
 
