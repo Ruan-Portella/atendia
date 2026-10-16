@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InstagramError, authorizeUrl, fitDm, isInstagramAccessError, isOutsideWindow, readState, signState, toInstagramText } from "../instagram";
-import { igMediaLabel, igText } from "../instagram-inbound";
+import { igButtonId, igMediaLabel, igText } from "../instagram-inbound";
 
 describe("state do login", () => {
   beforeEach(() => vi.stubEnv("INSTAGRAM_APP_SECRET", "segredo-do-instagram"));
@@ -63,6 +63,12 @@ describe("erros do Instagram", () => {
 });
 
 describe("mensagens recebidas", () => {
+  it("o id do botão vem da resposta rápida ou do botão do card (postback do carrossel)", () => {
+    expect(igButtonId({ message: { mid: "m", text: "Calabresa", quick_reply: { payload: "op_1" } } })).toBe("op_1");
+    expect(igButtonId({ postback: { mid: "p", title: "Pedir este", payload: "bvc:0b6d5c1e-2f4a-4c3b-9d8e-7f6a5b4c3d2e:acao" } })).toBe("bvc:0b6d5c1e-2f4a-4c3b-9d8e-7f6a5b4c3d2e:acao");
+    expect(igButtonId({ message: { mid: "m", text: "oi" } })).toBeNull();
+  });
+
   it("lê texto e botão; mídia vira rótulo", () => {
     expect(igText({ message: { mid: "m", text: "  oi  " } })).toBe("oi");
     expect(igText({ postback: { title: "Quero agendar" } })).toBe("Quero agendar");

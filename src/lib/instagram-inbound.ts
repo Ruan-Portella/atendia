@@ -83,6 +83,12 @@ export const igRef = (ev: IgMessagingEvent): string | null => {
   return r && /^[A-Za-z0-9]{4,32}$/.test(r) ? r : null;
 };
 
+/**
+ * Id do botão tocado: resposta rápida (quick_reply.payload) ou botão de card do carrossel
+ * (postback.payload, generic template). null se não foi botão.
+ */
+export const igButtonId = (ev: IgMessagingEvent): string | null => ev.message?.quick_reply?.payload ?? ev.postback?.payload ?? null;
+
 /** Texto da mensagem (texto ou botão tocado); null para mídia. */
 export function igText(ev: IgMessagingEvent): string | null {
   const t = ev.message?.text ?? ev.postback?.title;
@@ -331,7 +337,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     burst.map((q, i) => {
       if (handled.has(i)) return { text: null, buttonId: null };
       const ref = igRef(q.ev);
-      return { text: ref ? `Conectar ${ref}` : texts[i], buttonId: q.ev.message?.quick_reply?.payload ?? q.ev.postback?.payload ?? null };
+      return { text: ref ? `Conectar ${ref}` : texts[i], buttonId: igButtonId(q.ev) };
     }),
   );
   for (const i of paired) handled.add(i);
@@ -352,7 +358,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       },
       reply: (convId, text, buttons) => systemReply(convId, text, buttons?.map((b) => ({ title: b.title, payload: b.id }))),
     },
-    burst.map((q, i) => (handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.ev.message?.quick_reply?.payload ?? q.ev.postback?.payload ?? null })),
+    burst.map((q, i) => (handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: igButtonId(q.ev) })),
   );
   for (const i of erasure) handled.add(i);
   if (handled.size === burst.length) return;
@@ -468,7 +474,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         chat: { instagram: { igsid } },
         historySize: HISTORY,
       },
-      { text: texts[qi]!, key: q.key, msgId: q.key, stored: before.state === "unanswered", button: q.ev.message?.quick_reply?.payload, alone: texts.filter((t, i) => t && !handled.has(i)).length === 1 },
+      { text: texts[qi]!, key: q.key, msgId: q.key, stored: before.state === "unanswered", button: igButtonId(q.ev), alone: texts.filter((t, i) => t && !handled.has(i)).length === 1 },
     );
     await afterStore();
   } catch (e) {

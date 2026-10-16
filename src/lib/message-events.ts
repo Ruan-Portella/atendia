@@ -296,7 +296,7 @@ export function waInboundExtra(m: { type: string; button?: { text?: string; payl
     : l
       ? { type: "list_reply", id: devButtonId(l.id), title: l.title ?? null }
       : m.button
-        ? { type: "button", id: m.button.payload ?? null, title: m.button.text ?? null }
+        ? { type: "button", id: devButtonId(m.button.payload), title: m.button.text ?? null }
         : null;
   return { media, interactive };
 }
@@ -307,7 +307,7 @@ export function igInboundExtra(ev: { message?: { text?: string; quick_reply?: { 
   const interactive: Interactive | null = ev.message?.quick_reply
     ? { type: "quick_reply", id: devButtonId(ev.message.quick_reply.payload), title: ev.message.text ?? null }
     : ev.postback
-      ? { type: "postback", id: ev.postback.payload ?? null, title: ev.postback.title ?? null }
+      ? { type: "postback", id: devButtonId(ev.postback.payload), title: ev.postback.title ?? null }
       : null;
   return { media, interactive };
 }

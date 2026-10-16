@@ -23,6 +23,8 @@ describe("o que a mensagem recebida traz além do texto (C pública, parte 3d)",
     expect(igInboundExtra({ message: { attachments: [{ type: "share", payload: { url: "https://ig/p/1" } }] } }).media).toBe(false);
     expect(igInboundExtra({ message: { text: "Sim", quick_reply: { payload: "age_yes" } } }).interactive).toEqual({ type: "quick_reply", id: "age_yes", title: "Sim" });
     expect(igInboundExtra({ postback: { title: "Ver cardápio", payload: "menu" } }).interactive).toEqual({ type: "postback", id: "menu", title: "Ver cardápio" });
+    // botão do card do carrossel com o id do dev: volta sem o prefixo u: do BoaVoz
+    expect(igInboundExtra({ postback: { title: "Pedir este", payload: "u:pedir_coca" } }).interactive).toEqual({ type: "postback", id: "pedir_coca", title: "Pedir este" });
   });
 });
 
