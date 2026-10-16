@@ -109,7 +109,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
                   <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}{b.paused_by_plan_at && <span className="text-amber-ink"> · pausado pelo plano</span>}</td>
                   <td className="px-3 py-2.5">{(() => {
                     const q = quotaBy.get(b.id as string);
-                    return q ? <BotSizeForm agencyId={id} botId={q.botId} size={q.size} volumePacks={q.volumePacks} override={q.override} used={q.used} quota={q.quota} /> : <span className="text-xs text-muted">demo</span>;
+                    return q ? <BotSizeForm agencyId={id} botId={q.botId} size={q.size} volumePacks={q.volumePacks} override={q.override} used={q.used} quota={q.quota} overageEnabled={q.overageEnabled} overageCapBrl={q.overageCapBrl} overageUsed={q.overageUsed} /> : <span className="text-xs text-muted">demo</span>;
                   })()}</td>
                   <td className="px-3 py-2.5 text-xs">{w ? (w.disconnected_at ? <span className="text-danger">desconectado</span> : ((w.display_phone as string | null) ?? "conectado")) : <span className="text-muted">—</span>}</td>
                   <td className="px-3 py-2.5 text-xs">{i ? (i.disconnected_at ? <span className="text-danger">desconectado</span> : `@${(i.username as string | null) ?? "conectado"}`) : <span className="text-muted">—</span>}</td>

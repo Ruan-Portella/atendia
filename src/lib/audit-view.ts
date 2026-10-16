@@ -14,6 +14,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "agencia.estender_teste": "Teste estendido pela BoaVoz",
   "agencia.plano_manual": "Plano trocado pela BoaVoz (sem Stripe)",
   "chatbot.tamanho": "Tamanho do chatbot trocado pela BoaVoz",
+  "chatbot.excedente": "Excedente do chatbot alterado",
   "agencia.liberacao": "Recurso liberado pela BoaVoz",
   "agencia.pausar_ia": "IA da conta pausada pela BoaVoz",
   "agencia.religar_ia": "IA da conta religada pela BoaVoz",

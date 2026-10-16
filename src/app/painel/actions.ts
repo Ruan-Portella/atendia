@@ -29,6 +29,8 @@ import { clearAgePending } from "@/lib/gate/flow";
 import { isGateCategory } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { brlCents, num } from "@/lib/plans";
+import { OVERAGE_CAP_MAX_BRL, OVERAGE_CAP_MIN_BRL, overageMax, parseCapBrl } from "@/lib/quota";
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
@@ -341,6 +343,34 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   if ("persona" in patch || "business_topics" in patch) await markAnalysisDue(createAdminClient(), botId);
   revalidatePath("/painel", "layout");
   return ok("Alterações salvas.");
+}
+
+/**
+ * Excedente de um chatbot (revisão de preços, parte 3b): ligado, a cota cheia não para o chatbot;
+ * cada atendimento a mais é cobrado no fim do mês, até o teto. Desligar guarda o teto. O tamanho e
+ * o excedente só mudam pela service role (gatilho da 0095); a sessão confere o chatbot e o escopo.
+ */
+export async function setBotOverage(botId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await allowed("billing");
+  if (!ctx) return fail(DENIED);
+  const enabled = formData.get("enabled") === "on";
+  const typed = text(formData.get("cap"));
+  const cap = typed ? parseCapBrl(typed) : null;
+  if ((enabled || typed) && cap === null) return fail(`Informe o teto do mês, de ${brlCents(OVERAGE_CAP_MIN_BRL)} a ${brlCents(OVERAGE_CAP_MAX_BRL)}.`);
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id, overage_enabled, overage_cap_brl").eq("id", botId).eq("is_demo", false).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  const before = { overage_enabled: Boolean(bot.overage_enabled), overage_cap_brl: bot.overage_cap_brl === null ? null : Number(bot.overage_cap_brl) };
+  const after = { overage_enabled: enabled, overage_cap_brl: cap ?? before.overage_cap_brl };
+  const { error } = await createAdminClient().from("bots").update(after).eq("id", botId).eq("agency_id", ctx.agency.id);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditPanel("chatbot.excedente", { type: "bot", id: botId }, { before, after });
+  revalidatePath("/painel", "layout");
+  return ok(
+    enabled && after.overage_cap_brl
+      ? `Excedente ligado: até ${num(overageMax(after.overage_cap_brl))} atendimentos a mais por mês, ${brlCents(after.overage_cap_brl)} no máximo.`
+      : "Excedente desligado: com a cota cheia, o chatbot entra no modo só humano.",
+  );
 }
 
 export async function setBotStatus(botId: string, status: "live" | "draft"): Promise<ActionResult> {

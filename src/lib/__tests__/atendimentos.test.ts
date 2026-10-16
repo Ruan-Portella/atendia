@@ -84,12 +84,13 @@ describe("abertura do atendimento", () => {
   it("a chave do contato vai em hash, diferente por canal, e a cota de cada tamanho e o limite de respostas vão junto", async () => {
     const { db, calls } = fake({ status: "aberto", atendimento_id: 7 });
     const r = await openAtendimento(db, bot, { channel: "whatsapp", contactKey: "contato-1", conversationId: "c1" });
-    expect(r).toEqual({ blocked: null, isNew: false, id: 7 });
+    expect(r).toEqual({ blocked: null, isNew: false, id: 7, overage: false });
     expect(calls[0].p_contact_key_hash).toBe(contactKeyHash("whatsapp", "contato-1"));
     expect(calls[0].p_contact_key_hash).not.toContain("contato-1");
     expect(contactKeyHash("widget", "contato-1")).not.toBe(contactKeyHash("whatsapp", "contato-1"));
     expect(calls[0].p_size_quotas).toEqual(SIZE_QUOTAS);
     expect(calls[0].p_answer_limit).toBe(40);
+    expect(calls[0].p_overage_price).toBe(0.35);
   });
 
   it("sem vaga: a cota do chatbot acabou", async () => {
@@ -98,7 +99,7 @@ describe("abertura do atendimento", () => {
 
   it("novo: conta 1", async () => {
     const r = await openAtendimento(fake({ status: "novo", atendimento_id: 9, used: 10, quota: 160 }).db, bot, { channel: "whatsapp", contactKey: "k", conversationId: "c" });
-    expect(r).toEqual({ blocked: null, isNew: true, id: 9 });
+    expect(r).toEqual({ blocked: null, isNew: true, id: 9, overage: false });
   });
 
   it("erro do banco não para o bot", async () => {

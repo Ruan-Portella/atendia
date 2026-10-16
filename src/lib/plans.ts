@@ -47,9 +47,18 @@ export const isBotSize = (v: unknown): v is BotSize => typeof v === "string" && 
 /** Respostas da IA que cabem num atendimento: a seguinte abre outro. */
 export const ANSWERS_PER_ATENDIMENTO = 40;
 
+/**
+ * Excedente (opção de cada chatbot, desligada por padrão): preço de cada atendimento além da
+ * cota, até o teto de gasto do mês. Mais caro que o dos tamanhos (R$ 0,29 a 0,31), com 36% de
+ * margem no pior caso.
+ */
+export const OVERAGE_PRICE_BRL = 0.35;
+
 export function getPlan(id: string): Plan {
   return (PLANS as Record<string, Plan>)[id] ?? { ...PLANS.trial, id: "cancelado" as PlanId, name: "Cancelado", bots: 0, atendimentos: 0 };
 }
 
 export const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(v);
 export const num = (v: number) => new Intl.NumberFormat("pt-BR").format(v);
+/** Reais com centavos (excedente e teto). */
+export const brlCents = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 }).format(v);
