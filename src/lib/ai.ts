@@ -23,6 +23,8 @@ const embeddingProvider = (process.env.EMBEDDING_PROVIDER ?? (process.env.OPENAI
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_API_KEY });
+// a Groq fala a mesma API de transcrição da OpenAI; só transcreve (Whisper)
+const groq = createOpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: "https://api.groq.com/openai/v1", name: "groq" });
 
 /**
  * Modelo padrão do chat. gpt-6-luna desde 14/10/2026: a OpenAI tira o gpt-4.1-mini do ar em
@@ -130,15 +132,32 @@ function embeddingModel(): { model: EmbeddingModel; options: (task: "query" | "d
 }
 
 /**
- * Transcrição de áudio (mensagens de voz do WhatsApp): OpenAI se houver OPENAI_API_KEY, senão
- * Google (GOOGLE_API_KEY). A Anthropic não transcreve. Sem nenhuma das duas, não há transcrição.
+ * Transcrição de áudio (mensagens de voz): Groq se houver GROQ_API_KEY, com a OpenAI
+ * (OPENAI_API_KEY) e depois o Google (GOOGLE_API_KEY) de reserva. A Anthropic não transcreve.
+ * Sem nenhuma das três, não há transcrição.
  */
 export function canTranscribe(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY);
+  return Boolean(process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY);
 }
+
+/** Prazo da Groq antes da reserva (ela costuma responder em menos de 1 segundo). */
+const GROQ_TRANSCRIBE_TIMEOUT_MS = 15_000;
 
 /** `onUsage` recebe o modelo e a duração do áudio (custo em ai_usage). */
 export async function transcribeAudio(audio: Uint8Array, onUsage?: (u: { audioModel: string; audioSeconds: number | null }) => void): Promise<string> {
+  // Groq primeiro (Whisper turbo, US$ 0,04 por hora; decisão de 16/10/2026). Recusa, limite do
+  // plano ou demora vão direto para a reserva, sem novas tentativas na Groq.
+  if (process.env.GROQ_API_KEY) {
+    const model = process.env.GROQ_TRANSCRIBE_MODEL ?? "whisper-large-v3-turbo";
+    try {
+      const { text, durationInSeconds } = await transcribe({ model: groq.transcription(model), audio, providerOptions: { openai: { language: "pt" } }, maxRetries: 0, abortSignal: AbortSignal.timeout(GROQ_TRANSCRIBE_TIMEOUT_MS) });
+      onUsage?.({ audioModel: model, audioSeconds: durationInSeconds ?? audioDurationSeconds(audio) });
+      return text.trim();
+    } catch (e) {
+      if (!process.env.OPENAI_API_KEY && !process.env.GOOGLE_API_KEY) throw e;
+      console.warn("transcrição: Groq falhou, usando a reserva:", e instanceof Error ? e.message : e);
+    }
+  }
   // o gpt-4o-mini-transcribe não devolve a duração (o custo é por minuto): lida do próprio arquivo
   if (process.env.OPENAI_API_KEY) {
     const model = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe";
@@ -152,7 +171,7 @@ export async function transcribeAudio(audio: Uint8Array, onUsage?: (u: { audioMo
     onUsage?.({ audioModel: model, audioSeconds: durationInSeconds ?? audioDurationSeconds(audio) });
     return text.trim();
   }
-  throw new Error("Nenhuma chave para transcrever áudio: defina OPENAI_API_KEY ou GOOGLE_API_KEY.");
+  throw new Error("Nenhuma chave para transcrever áudio: defina GROQ_API_KEY, OPENAI_API_KEY ou GOOGLE_API_KEY.");
 }
 
 /** Modelo e tokens gastos num embedding (para o custo em ai_usage). */

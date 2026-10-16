@@ -29,6 +29,14 @@ describe("custo de IA", () => {
     expect(costUsd({ audioModel: "gpt-transcribe", audioSeconds: 120 })).toBe(0.009);
   });
 
+  it("áudio na Groq: US$ 0,04 por hora, com no mínimo 10 segundos por áudio", () => {
+    expect(costUsd({ audioModel: "whisper-large-v3-turbo", audioSeconds: 90 })).toBe(0.001);
+    // áudio de 3 segundos é cobrado como 10
+    expect(costUsd({ audioModel: "whisper-large-v3-turbo", audioSeconds: 3 })).toBe(costUsd({ audioModel: "whisper-large-v3-turbo", audioSeconds: 10 }));
+    // o modelo grande não é cobrado como o turbo
+    expect(costUsd({ audioModel: "whisper-large-v3", audioSeconds: 60 })).toBe(0.00185);
+  });
+
   it("modelo sem preço conhecido fica sem custo (não chuta)", () => {
     expect(costUsd({ model: "modelo-novo", inputTokens: 10, outputTokens: 10 })).toBeNull();
     expect(costUsd({ model: "gpt-4.1", inputTokens: 10, outputTokens: 10 })).not.toBeNull();

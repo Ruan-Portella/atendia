@@ -17,7 +17,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Política de Privacidade"
-      updatedAt="6 de outubro de 2026"
+      updatedAt="16 de outubro de 2026"
       intro={`Esta política explica quais dados pessoais a ${brand} trata, para quê, com quem compartilha, por quanto tempo guarda e como você exerce seus direitos, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).`}
     >
       <Section title="1. Quem somos">
@@ -99,7 +99,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Supabase</strong>: banco de dados, autenticação, fila e arquivos (Brasil, região de São Paulo).</li>
           <li><strong>Vercel</strong>: hospedagem da aplicação (funções na região de São Paulo).</li>
-          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic e Google): geram as respostas, processam a base de conhecimento e transcrevem áudios. Pelos termos de uso das APIs, não usam os dados para treinar modelos.</li>
+          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento e transcrevem áudios. Pelos termos de uso das APIs, não usam os dados para treinar modelos.</li>
           <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp e no Instagram, quando a empresa conecta esses canais.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>

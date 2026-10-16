@@ -34,9 +34,18 @@ const PRICES: Record<string, { input: number; output?: number; cachedInput?: num
 };
 /**
  * Transcrição: US$ por minuto de áudio. whisper-1, gpt-4o-transcribe e gpt-4o-mini-transcribe
- * saem do ar em 26/02/2027 (substituto: gpt-transcribe).
+ * saem do ar em 26/02/2027 (substituto: gpt-transcribe). whisper-large-v3 e o turbo são da Groq
+ * (US$ 0,111 e 0,04 por hora), que cobra no mínimo 10 segundos por áudio.
  */
-const AUDIO_PER_MINUTE: Record<string, number> = { "gpt-4o-mini-transcribe": 0.003, "gpt-4o-transcribe": 0.006, "whisper-1": 0.006, "gpt-transcribe": 0.0045 };
+const AUDIO_PER_MINUTE: Record<string, number> = {
+  "gpt-4o-mini-transcribe": 0.003,
+  "gpt-4o-transcribe": 0.006,
+  "whisper-1": 0.006,
+  "gpt-transcribe": 0.0045,
+  "whisper-large-v3-turbo": 0.04 / 60,
+  "whisper-large-v3": 0.111 / 60,
+};
+const AUDIO_MIN_SECONDS: Record<string, number> = { "whisper-large-v3-turbo": 10, "whisper-large-v3": 10 };
 
 /** Preço do modelo; aceita o id com data (ex.: gpt-4o-mini-2024-07-18). */
 function priceOf<T>(table: Record<string, T>, model: string | null | undefined): T | null {
@@ -81,7 +90,8 @@ export function costUsd(u: UsageTokens): number | null {
   if (u.audioSeconds) {
     const perMin = priceOf(AUDIO_PER_MINUTE, u.audioModel);
     if (perMin === null) return null;
-    total += (u.audioSeconds / 60) * perMin;
+    const billed = Math.max(u.audioSeconds, priceOf(AUDIO_MIN_SECONDS, u.audioModel) ?? 0);
+    total += (billed / 60) * perMin;
   }
   return Math.round(total * 1e6) / 1e6;
 }
