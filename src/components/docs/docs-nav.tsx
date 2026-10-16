@@ -9,10 +9,14 @@ export const DOCS_PAGES = [
   { href: "/docs/comeco-rapido", title: "Começo rápido" },
   { href: "/docs/acoes", title: "Ações" },
   { href: "/docs/mensagens-ricas", title: "Mensagens ricas" },
+  { href: "/docs/webhooks", title: "Webhooks" },
+  { href: "/docs/api", title: "Referência da API" },
+  { href: "/docs/conceitos", title: "Conceitos" },
+  { href: "/docs/seguranca", title: "Segurança" },
 ] as const;
 
 /** O que ainda vai entrar (sem link até a página existir). */
-export const DOCS_SOON = ["Webhooks", "Referência da API", "Conceitos", "Segurança", "Identificar usuários", "Campanhas e consentimento", "Exemplos"] as const;
+export const DOCS_SOON = ["Identificar usuários", "Campanhas e consentimento", "Exemplos"] as const;
 
 /** Menu da documentação: coluna no computador, faixa que rola para o lado no celular. */
 export function DocsNav() {

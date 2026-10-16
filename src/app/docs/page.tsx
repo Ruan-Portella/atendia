@@ -17,8 +17,8 @@ export default function DocsHome() {
         rows={[
           [<Link key="a" href="/docs/acoes">Ações</Link>, "Um endpoint seu que a IA chama na conversa: consultar pedido, agenda ou saldo; criar pedido ou agendar, com o Confirmar do contato."],
           [<Link key="m" href="/docs/mensagens-ricas">Mensagens ricas</Link>, "Botões, lista, link e carrossel, num formato só, convertidos para cada canal. Um botão pode chamar uma ação direto, sem a IA."],
-          ["Webhooks", "Seu sistema fica sabendo na hora: mensagem recebida ou enviada, lead, pedido de atendente, aceite de novidades e mais."],
-          ["API", "Enviar mensagens e campanhas, ler conversas, leads e contatos, pausar a IA numa conversa."],
+          [<Link key="w" href="/docs/webhooks">Webhooks</Link>, "Seu sistema fica sabendo na hora: mensagem recebida ou enviada, lead, pedido de atendente, aceite de novidades e mais."],
+          [<Link key="api" href="/docs/api">API</Link>, "Enviar mensagens e campanhas, ler conversas, leads e contatos, pausar a IA numa conversa."],
         ]}
       />
 
@@ -46,6 +46,9 @@ export default function DocsHome() {
           { href: "/docs/comeco-rapido", title: "Começo rápido", text: "Sua primeira ação funcionando em 5 minutos: consultar um pedido." },
           { href: "/docs/acoes", title: "Ações", text: "O que o BoaVoz manda, o que ele aceita de volta, assinatura, prazos e o Confirmar." },
           { href: "/docs/mensagens-ricas", title: "Mensagens ricas", text: "Botões, lista, link e carrossel, e como ficam em cada canal." },
+          { href: "/docs/webhooks", title: "Webhooks", text: "Os eventos, o envelope, a assinatura e as novas tentativas." },
+          { href: "/docs/api", title: "Referência da API", text: "Rotas, permissões, erros, paginação e idempotência." },
+          { href: "/docs/seguranca", title: "Segurança", text: "Autorizar pelo contato verificado, segredos e LGPD." },
         ]}
       />
     </DocPage>
