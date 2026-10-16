@@ -1,63 +1,69 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { agencyQuotaEmail, clientAlertLevel, clientCapEmail, contactKeyHash, openAtendimento, quotaAlertLevel } from "../atendimentos";
-import { hardLimitOf, quotaOf } from "../quota";
-import { PLANS } from "../plans";
+import { botQuotaEmail, contactKeyHash, openAtendimento, quotaAlertLevel, sizeLabel } from "../atendimentos";
+import { SIZE_QUOTAS, botQuota } from "../quota";
+import { ANSWERS_PER_ATENDIMENTO, BOT_SIZES } from "../plans";
 
 process.env.CONTACT_HASH_KEY ??= "chave-de-teste-com-mais-de-16-caracteres";
 
-describe("cota do mês", () => {
-  it("a cota combinada fora do plano vale no lugar da do plano", () => {
-    expect(quotaOf({ plan: "agencia" })).toBe(PLANS.agencia.atendimentos);
-    expect(quotaOf({ plan: "agencia", quota_override: 15000 })).toBe(15000);
-    expect(quotaOf({ plan: "freelancer", quota_override: 0 })).toBe(0);
-    expect(quotaOf({ plan: "cancelado" })).toBe(0);
+describe("cota do mês, por chatbot", () => {
+  it("a cota vem do tamanho; o Volume é por pacote; sem tamanho, zero", () => {
+    expect(botQuota({ size: "P" })).toBe(160);
+    expect(botQuota({ size: "M" })).toBe(340);
+    expect(botQuota({ size: "G" })).toBe(680);
+    expect(botQuota({ size: "volume", volume_packs: 3 })).toBe(3000);
+    expect(botQuota({ size: "volume", volume_packs: null })).toBe(0);
+    expect(botQuota({ size: null })).toBe(0);
+    expect(botQuota({ size: "XL" })).toBe(0);
   });
 
-  it("tolerância de 10% sobre a cota (cota pequena não tem)", () => {
-    expect(hardLimitOf(2000)).toBe(2200);
-    expect(hardLimitOf(200)).toBe(220);
-    expect(hardLimitOf(5)).toBe(5);
-    expect(hardLimitOf(0)).toBe(0);
+  it("a cota combinada fora da tabela (sob medida) vale no lugar da do tamanho", () => {
+    expect(botQuota({ size: "P", quota_override: 5000 })).toBe(5000);
+    expect(botQuota({ size: "G", quota_override: 0 })).toBe(0);
+  });
+
+  it("a tabela que vai para o banco bate com os tamanhos", () => {
+    expect(SIZE_QUOTAS).toEqual({ P: 160, M: 340, G: 680, volume: 1000 });
+    expect(ANSWERS_PER_ATENDIMENTO).toBe(40);
+    expect(Object.values(BOT_SIZES).map((s) => s.priceBrl)).toEqual([49, 99, 199, 299]);
+  });
+
+  it("nome do tamanho nas telas", () => {
+    expect(sizeLabel({ size: "M", volumePacks: null, override: null })).toBe("M");
+    expect(sizeLabel({ size: "volume", volumePacks: 1, override: null })).toBe("Volume (1 pacote)");
+    expect(sizeLabel({ size: "volume", volumePacks: 3, override: null })).toBe("Volume (3 pacotes)");
+    expect(sizeLabel({ size: "P", volumePacks: null, override: 900 })).toBe("sob medida");
+    expect(sizeLabel({ size: null, volumePacks: null, override: null })).toBe("sem tamanho");
   });
 });
 
-describe("avisos de cota (cada um sai uma vez: o contador sobe de 1 em 1)", () => {
-  it("agência: 80%, 100% e o fim da tolerância", () => {
-    expect(quotaAlertLevel(1600, 2000)).toBe(80);
-    expect(quotaAlertLevel(1599, 2000)).toBeNull();
-    expect(quotaAlertLevel(1601, 2000)).toBeNull();
-    expect(quotaAlertLevel(2000, 2000)).toBe(100);
-    expect(quotaAlertLevel(2001, 2000)).toBeNull();
-    expect(quotaAlertLevel(2200, 2000)).toBe("fim");
+describe("avisos de cota do chatbot (cada um sai uma vez: o contador sobe de 1 em 1)", () => {
+  it("80%, 95% e 100%, sem tolerância", () => {
+    expect(quotaAlertLevel(128, 160)).toBe(80);
+    expect(quotaAlertLevel(127, 160)).toBeNull();
+    expect(quotaAlertLevel(129, 160)).toBeNull();
+    expect(quotaAlertLevel(152, 160)).toBe(95);
+    expect(quotaAlertLevel(160, 160)).toBe(100);
+    expect(quotaAlertLevel(161, 160)).toBeNull();
     expect(quotaAlertLevel(1, 0)).toBeNull();
   });
 
-  it("cota pequena: o aviso de 100% já é o do modo só humano", () => {
+  it("cota pequena: 95% cai no 100% e não repete", () => {
     expect(quotaAlertLevel(4, 5)).toBe(80);
-    expect(quotaAlertLevel(5, 5)).toBe("fim");
+    expect(quotaAlertLevel(5, 5)).toBe(100);
   });
 
-  it("sublimite do cliente: 80% e 100%", () => {
-    expect(clientAlertLevel(80, 100)).toBe(80);
-    expect(clientAlertLevel(100, 100)).toBe(100);
-    expect(clientAlertLevel(101, 100)).toBeNull();
-    expect(clientAlertLevel(1, 1)).toBe(100);
-    expect(clientAlertLevel(3, 0)).toBeNull();
-  });
-
-  it("os e-mails dizem os números e o que acontece depois", () => {
-    const [s80, l80] = agencyQuotaEmail(80, 1600, 2000, "outubro de 2026", "https://x/uso");
-    expect(s80).toContain("80%");
-    expect(l80.join("\n")).toContain("1.600 de 2.000");
-    expect(l80.join("\n")).toContain("até 2.200");
-    const [, l100] = agencyQuotaEmail(100, 2000, 2000, "outubro de 2026", "https://x/uso");
-    expect(l100.join("\n")).toContain("mais 200 atendimentos");
-    const [sFim] = agencyQuotaEmail("fim", 2200, 2000, "outubro de 2026", "https://x/uso");
-    expect(sFim).toContain("modo só humano");
-    const [sc, lc] = clientCapEmail(100, "Bar do Zé", 300, "outubro de 2026", "https://x/uso");
-    expect(sc).toContain("Bar do Zé");
-    expect(lc.join("\n")).toContain("limite de 300");
+  it("os e-mails dizem o chatbot, os números e que só ele para", () => {
+    const bot = { name: "Zé", clientName: "Bar do Zé" };
+    const [s80, l80] = botQuotaEmail(80, bot, 128, 160, "outubro de 2026", "https://x/uso");
+    expect(s80).toBe("Zé (Bar do Zé): 80% dos atendimentos do mês");
+    expect(l80.join(" ")).toContain("128 de 160");
+    expect(l80.join(" ")).toContain("só este chatbot");
+    const [s100, l100] = botQuotaEmail(100, { name: "Zé", clientName: null }, 160, 160, "outubro de 2026", "https://x/uso");
+    expect(s100).toBe("Zé: a cota de atendimentos do mês acabou");
+    expect(l100.join(" ")).toContain("modo só humano");
+    expect(l100.join(" ")).toContain("40 respostas");
+    expect(l100.join(" ")).not.toContain("tolerância");
   });
 });
 
@@ -75,23 +81,23 @@ describe("abertura do atendimento", () => {
   }
   const bot = { id: "b1", agency_id: "a1" };
 
-  it("a chave do contato vai em hash, diferente por canal, e a cota de cada plano vai junto", async () => {
+  it("a chave do contato vai em hash, diferente por canal, e a cota de cada tamanho e o limite de respostas vão junto", async () => {
     const { db, calls } = fake({ status: "aberto", atendimento_id: 7 });
     const r = await openAtendimento(db, bot, { channel: "whatsapp", contactKey: "contato-1", conversationId: "c1" });
     expect(r).toEqual({ blocked: null, isNew: false, id: 7 });
     expect(calls[0].p_contact_key_hash).toBe(contactKeyHash("whatsapp", "contato-1"));
     expect(calls[0].p_contact_key_hash).not.toContain("contato-1");
     expect(contactKeyHash("widget", "contato-1")).not.toBe(contactKeyHash("whatsapp", "contato-1"));
-    expect(calls[0].p_plan_quotas).toMatchObject({ trial: PLANS.trial.atendimentos, agencia: PLANS.agencia.atendimentos });
+    expect(calls[0].p_size_quotas).toEqual(SIZE_QUOTAS);
+    expect(calls[0].p_answer_limit).toBe(40);
   });
 
-  it("sem vaga: devolve o motivo (agência ou cliente)", async () => {
+  it("sem vaga: a cota do chatbot acabou", async () => {
     expect((await openAtendimento(fake({ status: "cota" }).db, bot, { channel: "widget", contactKey: "v1", conversationId: null })).blocked).toBe("quota_exceeded");
-    expect((await openAtendimento(fake({ status: "sublimite" }).db, bot, { channel: "instagram", contactKey: "k", conversationId: "c" })).blocked).toBe("client_quota_exceeded");
   });
 
   it("novo: conta 1", async () => {
-    const r = await openAtendimento(fake({ status: "novo", atendimento_id: 9, used: 10, quota: 2000, client_used: null, client_cap: null }).db, bot, { channel: "whatsapp", contactKey: "k", conversationId: "c" });
+    const r = await openAtendimento(fake({ status: "novo", atendimento_id: 9, used: 10, quota: 160 }).db, bot, { channel: "whatsapp", contactKey: "k", conversationId: "c" });
     expect(r).toEqual({ blocked: null, isNew: true, id: 9 });
   });
 

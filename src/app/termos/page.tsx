@@ -8,7 +8,7 @@ export default function TermsPage() {
   const { brand, email } = company;
   const operator = companyIdentity();
   return (
-    <LegalPage title="Termos de Uso" updatedAt="5 de outubro de 2026" intro={`Estes termos regem o uso da plataforma ${brand}. Ao criar uma conta, você concorda com eles.`}>
+    <LegalPage title="Termos de Uso" updatedAt="16 de outubro de 2026" intro={`Estes termos regem o uso da plataforma ${brand}. Ao criar uma conta, você concorda com eles.`}>
       <Section title="1. O serviço">
         <p>
           A {brand}{operator && `, operada por ${operator},`} é uma plataforma para criar, personalizar e publicar assistentes virtuais de atendimento, treinados no conteúdo de cada empresa, em sites e canais de mensagem como o WhatsApp. O assistente atende os clientes da própria empresa: responde dúvidas, registra contatos e passa a conversa para um atendente humano quando preciso.
@@ -29,10 +29,10 @@ export default function TermsPage() {
           <li>Os planos são cobrados por mês, antecipadamente, pela Stripe. Você pode cancelar quando quiser; o acesso continua até o fim do período já pago.</li>
           <li>Os limites de cada plano (assistentes e atendimentos por mês) estão na página de preços e no painel.</li>
           <li>
-            <strong>Atendimento</strong>, a unidade da cota, igual no site, no WhatsApp e no Instagram: 1 atendimento = cada período de 24 horas em que a IA respondeu a um contato, contado a partir da primeira resposta da IA, por contato, assistente e canal. Conversa nova, troca de contexto ou logout dentro das 24 horas não abrem outro. Não contam: respostas da equipe (painel ou celular), mensagens pela API, campanhas e lembretes, textos fixos da {brand} e períodos com a IA ou o assistente pausados. O mês é o mês civil, no horário de Brasília.
+            <strong>Atendimento</strong>, a unidade da cota, igual no site, no WhatsApp e no Instagram: 1 atendimento = cada período de 24 horas em que a IA respondeu a um contato, contado a partir da primeira resposta da IA, por contato, assistente e canal, com até 40 respostas da IA; a seguinte abre outro atendimento. Conversa nova, troca de contexto ou logout dentro das 24 horas não abrem outro. Não contam: respostas da equipe (painel ou celular), mensagens pela API, campanhas e lembretes, textos fixos da {brand} e períodos com a IA ou o assistente pausados. O mês é o mês civil, no horário de Brasília.
           </li>
           <li>
-            Passando da cota do mês, vale uma tolerância de 10% da cota, uma vez por mês. Depois dela, e também quando acaba o limite que você definiu para um cliente, quando o teste vence ou quando falta pagamento, a conta (ou só aquele cliente) entra no <strong>modo só humano</strong>: a IA para de responder, as conversas continuam gravadas e a sua equipe segue respondendo pelo painel. Atendimento já aberto vai até o fim das 24 horas.
+            A cota é de cada assistente, pelo tamanho dele, sem tolerância. Quando a cota de um assistente acaba, só ele entra no <strong>modo só humano</strong> até o mês virar; o mesmo vale para a conta toda quando o teste vence ou quando falta pagamento. No modo só humano, a IA para de responder, as conversas continuam gravadas e a sua equipe segue respondendo pelo painel. Atendimento já aberto vai até completar 24 horas ou 40 respostas.
           </li>
           <li>
             <strong>Custos do WhatsApp:</strong> mensagens no WhatsApp podem ser cobradas pela Meta diretamente da empresa dona do número, conforme a tabela da Meta. Esses valores não fazem parte do plano da {brand}.

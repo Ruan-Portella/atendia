@@ -20,6 +20,7 @@ import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey } from "@/li
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
 import { createWebhook, sendWebhookTest } from "@/lib/webhooks";
 import { applyPlanLimits, manualPlanSwitch } from "@/lib/plan-limits";
+import { isBotSize } from "@/lib/plans";
 import { SIGNAL_KINDS, TEST_THRESHOLDS, THRESHOLDS, runContinuousChecks } from "@/lib/continuous-check";
 import { refreshReportDaily } from "@/lib/report-daily";
 import { cronsScheduledHere } from "@/lib/backoffice-ops";
@@ -127,6 +128,30 @@ export async function setAgencyPlanManually(agencyId: string, fd: FormData): Pro
   const paused = changes ? changes.bots.pause.length + changes.members.pause.length + changes.webhooks.pause.length : 0;
   const resumed = changes ? changes.bots.resume.length + changes.members.resume.length + changes.webhooks.resume.length : 0;
   return ok(`Plano trocado.${paused ? ` ${paused} pausado(s) pelo plano.` : ""}${resumed ? ` ${resumed} reativado(s).` : ""}${changes?.actions === "pause" ? " Ações pausadas." : changes?.actions === "resume" ? " Ações reativadas." : ""}`);
+}
+
+/**
+ * Tamanho do chatbot pelo backoffice: testes antes da cobrança por tamanho e o plano sob medida
+ * (cota combinada no lugar da do tamanho). Vazio = sem tamanho (o chatbot fica sem cota).
+ */
+export async function setBotSize(agencyId: string, botId: string, fd: FormData): Promise<ActionResult> {
+  const raw = text(fd.get("size"));
+  const size = raw === "" ? null : raw;
+  if (size !== null && !isBotSize(size)) return fail("Escolha o tamanho.");
+  const packs = size === "volume" ? Number(text(fd.get("packs")).replace(/\D/g, "") || "0") : null;
+  if (packs !== null && (!Number.isSafeInteger(packs) || packs < 1 || packs > 1000)) return fail("No Volume, informe de 1 a 1.000 pacotes.");
+  const overrideRaw = text(fd.get("override")).replace(/\D/g, "");
+  const override = overrideRaw ? Number(overrideRaw) : null;
+  if (override !== null && (!Number.isSafeInteger(override) || override > 10_000_000)) return fail("Cota sob medida inválida.");
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (tamanho do chatbot ${botId})`);
+  const db = createAdminClient();
+  const { data: before } = await db.from("bots").select("size, volume_packs, quota_override").eq("id", botId).eq("agency_id", agencyId).maybeSingle();
+  if (!before) return fail("Chatbot não encontrado.");
+  const { error } = await db.from("bots").update({ size, volume_packs: packs, quota_override: override }).eq("id", botId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditAdmin(s.email, "chatbot.tamanho", { agencyId, targetType: "bot", targetId: botId, after: { de: before, para: { size, volume_packs: packs, quota_override: override } } });
+  revalidatePath("/admin", "layout");
+  return ok(override !== null ? `Cota sob medida: ${override.toLocaleString("pt-BR")} atendimentos por mês.` : size ? "Tamanho salvo." : "Chatbot sem tamanho: ele fica sem cota.");
 }
 
 /* ------------------------------------------------------------------ envio (regra de estado, degraus 1 e 2) */

@@ -1,22 +1,34 @@
 import Link from "next/link";
 import { num } from "@/lib/plans";
-import { hardLimitOf } from "@/lib/quota";
 import { NoticeStrip } from "@/components/notice-strip";
+
+interface BotQuota {
+  name: string;
+  clientName: string | null;
+  quota: number;
+  used: number;
+}
 
 interface Props {
   planId: string;
   trialDays: number | null; // dias restantes do teste (null fora do teste)
-  usage: number;
-  limit: number;
+  bots: BotQuota[];
+}
+
+/** "Bar do Zé, Clínica e mais 2": os primeiros nomes e quantos sobram. */
+function names(list: BotQuota[]): string {
+  const shown = list.slice(0, 2).map((b) => b.name);
+  return list.length > 2 ? `${shown.join(", ")} e mais ${list.length - 2}` : shown.join(" e ");
 }
 
 /**
- * Faixa no topo do painel antes que a IA pare: teste acabando/acabado, assinatura cancelada, 80% e
- * 100% dos atendimentos do mês e o fim da tolerância. Nada aparece quando está tudo bem.
+ * Faixa no topo do painel antes que a IA pare: teste acabando/acabado, assinatura cancelada e a
+ * cota de cada chatbot (80% e cheia; cheia, só aquele chatbot para). Nada aparece quando está tudo bem.
  */
-export function PlanAlert({ planId, trialDays, usage, limit }: Props) {
+export function PlanAlert({ planId, trialDays, bots }: Props) {
   const stopped = "a IA para de responder: as mensagens do WhatsApp e do Instagram chegam em Conversas para a sua equipe, e o chat do site mostra um formulário de contato";
-  const hard = hardLimitOf(limit);
+  const full = bots.filter((b) => b.quota > 0 && b.used >= b.quota);
+  const near = bots.filter((b) => b.quota > 0 && b.used < b.quota && b.used >= Math.ceil(b.quota * 0.8));
   let tone: "danger" | "warn" | null = null;
   let text = "";
   if (planId === "cancelado") {
@@ -25,22 +37,26 @@ export function PlanAlert({ planId, trialDays, usage, limit }: Props) {
   } else if (trialDays !== null && trialDays <= 0) {
     tone = "danger";
     text = `Seu teste grátis acabou: ${stopped}. Escolha um plano para o assistente voltar a responder.`;
-  } else if (limit > 0 && usage >= hard) {
+  } else if (full.length) {
     tone = "danger";
-    text = `Modo só humano: a cota de ${num(limit)} atendimentos do mês e a tolerância acabaram. Para quem começa um atendimento novo, ${stopped}. Atendimentos já abertos seguem até completar 24 horas.`;
-  } else if (limit > 0 && usage >= limit) {
-    tone = "danger";
-    text = `Cota de ${num(limit)} atendimentos do mês atingida. Vale a tolerância de 10% (até ${num(hard)}); depois, ${stopped}.`;
+    text =
+      full.length === 1
+        ? `Modo só humano em ${full[0].name}: a cota de ${num(full[0].quota)} atendimentos do mês acabou. Para quem começa um atendimento novo nesse chatbot, ${stopped}. Os outros chatbots seguem normais.`
+        : `Modo só humano em ${full.length} chatbots (${names(full)}): a cota do mês de cada um acabou. Para quem começa um atendimento novo neles, ${stopped}. Os outros chatbots seguem normais.`;
   } else if (trialDays !== null && trialDays <= 3) {
     tone = "warn";
     text = `Seu teste grátis acaba em ${trialDays} dia${trialDays === 1 ? "" : "s"}. Depois disso, ${stopped}.`;
-  } else if (limit > 0 && usage >= Math.ceil(limit * 0.8)) {
+  } else if (near.length) {
     tone = "warn";
-    text = `Você já usou ${num(usage)} de ${num(limit)} atendimentos do mês (${Math.round((usage / limit) * 100)}%). Passando da cota e da tolerância de 10%, ${stopped}.`;
+    const b = near[0];
+    text =
+      near.length === 1
+        ? `${b.name} já usou ${num(b.used)} de ${num(b.quota)} atendimentos do mês (${Math.round((b.used / b.quota) * 100)}%). Na cota cheia, só esse chatbot para até o mês virar.`
+        : `${near.length} chatbots passaram de 80% da cota do mês (${names(near)}). Na cota cheia, só o chatbot que encheu para até o mês virar.`;
   }
   if (!tone) return null;
   return (
-    <NoticeStrip tone={tone} action={<Link href="/painel/cobranca/uso" className={tone === "danger" ? "btn-danger-solid py-1" : "btn-dark py-1"}>Uso e planos</Link>}>
+    <NoticeStrip tone={tone} action={<Link href="/painel/cobranca/uso" className={tone === "danger" ? "btn-danger-solid py-1" : "btn-dark py-1"}>Uso por chatbot</Link>}>
       {text}
     </NoticeStrip>
   );

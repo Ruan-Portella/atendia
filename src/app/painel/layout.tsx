@@ -14,7 +14,7 @@ import { SecurityAlertStrip } from "@/components/security-alert-strip";
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {
-  const { agency, plan, usage, quota, role } = await requireAgency();
+  const { agency, plan, usage, quota, bots, role } = await requireAgency();
   const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
   // pausa, desligamento e suspensão pelo backoffice, ordem da Meta: a agência precisa saber por que parou
   const notices = await panelNotices(createAdminClient(), agency.id);
@@ -42,7 +42,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
-          {can(role, "config") && <PlanAlert planId={plan.id} trialDays={trialDays} usage={usage} limit={quota} />}
+          {can(role, "config") && <PlanAlert planId={plan.id} trialDays={trialDays} bots={bots} />}
         </>
       }
     >

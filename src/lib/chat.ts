@@ -621,12 +621,12 @@ export function linkHostsFor(bot: Pick<BotRow, "client_site" | "human_handoff" |
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
-export type AiBlockReason = "trial_expired" | "quota_exceeded" | "client_quota_exceeded" | "cancelled" | "paused" | "bot_paused" | "plan_paused";
+export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled" | "paused" | "bot_paused" | "plan_paused";
 
 /**
  * Conferido em TODA mensagem (não só na conversa nova): IA pausada pelo backoffice, plano
- * cancelado ou teste vencido param a IA também nas conversas abertas. A cota é por atendimento,
- * conferida antes de chamar a IA (openAtendimento): o atendimento aberto segue até o fim.
+ * cancelado ou teste vencido param a IA também nas conversas abertas. A cota é de cada chatbot,
+ * conferida antes de cada resposta da IA (openAtendimento): o atendimento aberto segue até 40 respostas.
  */
 export async function aiBlockedReason(db: SupabaseClient, agencyId: string): Promise<AiBlockReason | null> {
   if (await isAiPaused(db, agencyId)) return "paused";
@@ -639,8 +639,7 @@ export async function aiBlockedReason(db: SupabaseClient, agencyId: string): Pro
 
 /** Motivo do pedido de atendente automático, para a equipe. */
 export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
-  quota_exceeded: "Assistente parado: a cota de atendimentos do mês acabou.",
-  client_quota_exceeded: "Assistente parado: este cliente chegou ao limite de atendimentos do mês que a agência definiu.",
+  quota_exceeded: "Assistente parado: este chatbot usou todos os atendimentos do mês. Ele volta no dia 1º, ou na hora se subir de tamanho.",
   trial_expired: "Assistente parado: o teste grátis venceu.",
   cancelled: "Assistente parado: a assinatura foi cancelada.",
   paused: "Assistente pausado pela equipe BoaVoz: as mensagens ficam aqui para a sua equipe responder.",

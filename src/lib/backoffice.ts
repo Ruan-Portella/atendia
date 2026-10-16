@@ -5,7 +5,7 @@ import { createAdminClient } from "./supabase/admin";
 import { planFromPrice, stripe } from "./stripe";
 import { PLANS, getPlan, type PlanId } from "./plans";
 import { currentPeriodBR, monthStartBR } from "./utils";
-import { quotaOf } from "./quota";
+import { botQuota } from "./quota";
 import { estimateCost, referencePrices, type UsageLine } from "./whatsapp-usage";
 import type { ClientExportRow } from "./client-export";
 
@@ -355,12 +355,18 @@ async function ownerEmails(): Promise<Map<string, string>> {
 export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
   const db = createAdminClient();
   const period = currentPeriodBR();
-  const [{ data: agencies, error }, { data: stats }, emails] = await Promise.all([
-    db.from("agencies").select("id, owner_id, name, plan, quota_override, features, trial_ends_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
+  const [{ data: agencies, error }, { data: stats }, emails, { data: bots }] = await Promise.all([
+    db.from("agencies").select("id, owner_id, name, plan, features, trial_ends_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
     db.rpc("admin_agency_stats", { p_period: period, p_month_start: monthStartBR(period).toISOString() }),
     ownerEmails(),
+    // a cota é de cada chatbot: a da agência é a soma
+    db.from("bots").select("agency_id, size, volume_packs, quota_override").eq("is_demo", false),
   ]);
   if (error) throw new Error(`agências: ${error.message}`);
+  const quotaByAgency = new Map<string, number>();
+  for (const b of (bots ?? []) as Array<{ agency_id: string; size: string | null; volume_packs: number | null; quota_override: number | null }>) {
+    quotaByAgency.set(b.agency_id, (quotaByAgency.get(b.agency_id) ?? 0) + botQuota(b));
+  }
   const byId = new Map(((stats ?? []) as Array<Record<string, unknown>>).map((s) => [s.agency_id as string, s]));
   return (agencies ?? []).map((a) => {
     const s = byId.get(a.id as string) ?? {};
@@ -381,7 +387,7 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
       instagram: Number(s.instagram) || 0,
       features: (a.features as string[] | null) ?? [],
       atendimentosMonth: Number(s.atendimentos_month) || 0,
-      quota: quotaOf({ plan: a.plan as string, quota_override: a.quota_override as number | null }),
+      quota: quotaByAgency.get(a.id as string) ?? 0,
       aiCostMonthUsd: Number(s.ai_cost_month) || 0,
       lastActivity: (s.last_activity as string | null) ?? null,
       aiPausedAt: (a.ai_paused_at as string | null) ?? null,

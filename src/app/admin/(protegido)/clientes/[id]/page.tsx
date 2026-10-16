@@ -5,6 +5,8 @@ import { AgencyActions, ChannelSuspension } from "@/components/admin/pause-contr
 import { AgencyFeatures } from "@/components/admin/release-controls";
 import { SupportConversations } from "@/components/admin/support-conversations";
 import { ContinuousChecks } from "@/components/admin/continuous-checks";
+import { BotSizeForm } from "@/components/admin/bot-size-form";
+import { botQuotaStatus } from "@/lib/atendimentos";
 import { continuousView } from "@/lib/continuous-check";
 import { requireAdmin } from "@/lib/platform-admin";
 import { agencyStatus, botChunkCounts, daysAgoIso, getAgencies, getMeasures, kindLabel, usd, usdBrl } from "@/lib/backoffice";
@@ -26,12 +28,14 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
 
   const db = createAdminClient();
   const since30 = daysAgoIso(30);
-  const [{ data: bots }, measures, continuous] = await Promise.all([
+  const [{ data: bots }, measures, continuous, quotas] = await Promise.all([
     db.from("bots").select("id, name, client_name, status, is_demo, paused_at, paused_by_plan_at, created_at").eq("agency_id", id).order("created_at"),
     getMeasures({ agencyId: id, active: true }),
     continuousView(db, { agencyId: id }),
+    botQuotaStatus(db, id),
   ]);
   const botIds = (bots ?? []).map((b) => b.id as string);
+  const quotaBy = new Map(quotas.map((q) => [q.botId, q]));
   const [{ data: wa }, { data: ig }, { data: usage }, { data: monthly }, convCounts, chunkCounts] = await Promise.all([
     botIds.length ? db.from("whatsapp_channels").select("bot_id, display_phone, disconnected_at").in("bot_id", botIds) : Promise.resolve({ data: [] }),
     botIds.length ? db.from("instagram_channels").select("bot_id, username, disconnected_at").in("bot_id", botIds) : Promise.resolve({ data: [] }),
@@ -91,9 +95,9 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
 
       <section className="card overflow-x-auto">
         <h2 className="px-5 pt-4 text-lg font-bold">Chatbots</h2>
-        <table className="mt-2 w-full min-w-[640px] text-sm">
+        <table className="mt-2 w-full min-w-[880px] text-sm">
           <thead className="border-b border-line text-left text-xs text-muted">
-            <tr><th className="px-5 py-2 font-semibold">Chatbot · cliente da agência</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-3 py-2 text-right font-semibold">Trechos da base</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
+            <tr><th className="px-5 py-2 font-semibold">Chatbot · cliente da agência</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">Tamanho e cota</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-3 py-2 text-right font-semibold">Trechos da base</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
           </thead>
           <tbody>
             {(bots ?? []).map((b) => {
@@ -103,6 +107,10 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
                 <tr key={b.id as string} className="border-b border-line-2 last:border-0">
                   <td className="px-5 py-2.5"><span className="font-semibold">{b.name as string}</span><div className="text-xs text-muted">{b.client_name as string}{b.is_demo ? " · demo" : ""}</div></td>
                   <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}{b.paused_by_plan_at && <span className="text-amber-ink"> · pausado pelo plano</span>}</td>
+                  <td className="px-3 py-2.5">{(() => {
+                    const q = quotaBy.get(b.id as string);
+                    return q ? <BotSizeForm agencyId={id} botId={q.botId} size={q.size} volumePacks={q.volumePacks} override={q.override} used={q.used} quota={q.quota} /> : <span className="text-xs text-muted">demo</span>;
+                  })()}</td>
                   <td className="px-3 py-2.5 text-xs">{w ? (w.disconnected_at ? <span className="text-danger">desconectado</span> : ((w.display_phone as string | null) ?? "conectado")) : <span className="text-muted">—</span>}</td>
                   <td className="px-3 py-2.5 text-xs">{i ? (i.disconnected_at ? <span className="text-danger">desconectado</span> : `@${(i.username as string | null) ?? "conectado"}`) : <span className="text-muted">—</span>}</td>
                   <td className="px-3 py-2.5 text-right tabular">{num(chunkCounts.get(b.id as string) ?? 0)}</td>
@@ -110,7 +118,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
                 </tr>
               );
             })}
-            {!bots?.length && <tr><td colSpan={6} className="px-5 py-5 text-center text-muted">Nenhum chatbot.</td></tr>}
+            {!bots?.length && <tr><td colSpan={7} className="px-5 py-5 text-center text-muted">Nenhum chatbot.</td></tr>}
           </tbody>
         </table>
       </section>

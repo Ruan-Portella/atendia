@@ -4,7 +4,7 @@ import { createClient } from "./supabase/server";
 import { createAdminClient } from "./supabase/admin";
 import { getPlan, type Plan } from "./plans";
 import { slugify } from "./utils";
-import { monthAtendimentos, quotaOf } from "./atendimentos";
+import { botQuotaStatus, type BotQuotaStatus } from "./atendimentos";
 import { activeMembership, can, hadMembership, openInvitesFor, type AgencyMember, type AgencyRole, type Permission } from "./team";
 import { firstName, personName } from "./authors";
 
@@ -26,8 +26,6 @@ export interface Agency {
   /** Até quando os alertas de segurança já foram vistos (faixa do topo do painel). */
   security_alerts_seen_at: string | null;
   plan: string;
-  /** Cota combinada fora do plano (assinantes de antes da cota nova); nula = a do plano. */
-  quota_override: number | null;
   /** Recursos liberados pelo BoaVoz para esta conta (ver features.ts). */
   features: string[];
   trial_ends_at: string;
@@ -39,8 +37,11 @@ export interface AgencyContext {
   agency: Agency;
   email: string;
   plan: Plan;
+  /** Atendimentos do mês e cota somados dos chatbots (a cota é de cada chatbot). */
   usage: number;
   quota: number;
+  /** Tamanho, cota e uso do mês de cada chatbot. */
+  bots: BotQuotaStatus[];
   /** id do usuário logado (quem fez, na auditoria) */
   userId: string;
   /** vínculo do usuário com a agência: papel e escopo (equipe, leva B1') */
@@ -94,9 +95,11 @@ export const requireAgency = cache(async (): Promise<AgencyContext> => {
 
   const { data: agency, error } = await admin.from("agencies").select("*").eq("id", member.agency_id).single<Agency>();
   if (error || !agency) throw new Error(error?.message ?? "Agência não encontrada");
-  // atendimentos do mês (São Paulo), a unidade da cota
-  const usage = await monthAtendimentos(supabase, agency.id);
-  return { agency, email, plan: getPlan(agency.plan), usage, quota: quotaOf(agency), userId, member, role: member.role };
+  // atendimentos do mês (São Paulo) contra a cota de cada chatbot
+  const bots = await botQuotaStatus(admin, agency.id);
+  const usage = bots.reduce((t, b) => t + b.used, 0);
+  const quota = bots.reduce((t, b) => t + b.quota, 0);
+  return { agency, email, plan: getPlan(agency.plan), usage, quota, bots, userId, member, role: member.role };
 });
 
 /**
