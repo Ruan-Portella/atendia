@@ -23,6 +23,8 @@ interface Props {
   planId: string;
   trialDays: number | null; // dias restantes do teste (null fora do teste)
   bots: BotQuota[];
+  /** Assinatura: pagamento atrasado e cancelamento agendado (data em que termina). */
+  billing?: { status: string; cancelAt: string | null };
 }
 
 /** "Bar do Zé, Clínica e mais 2": os primeiros nomes e quantos sobram. */
@@ -37,7 +39,7 @@ function names(list: BotQuota[]): string {
  * cheia não para: o aviso passa a ser o teto (80% e atingido). Chatbot sem tamanho também avisa
  * (fica no modo só humano até ganhar um). Nada aparece quando está tudo bem.
  */
-export function PlanAlert({ planId, trialDays, bots }: Props) {
+export function PlanAlert({ planId, trialDays, bots, billing }: Props) {
   const stopped = "a IA para de responder: as mensagens do WhatsApp e do Instagram chegam em Conversas para a sua equipe, e o chat do site mostra um formulário de contato";
   const full = bots.filter((b) => b.quota > 0 && quotaPhase(b) === "parado");
   const near = bots.filter((b) => b.quota > 0 && !b.overageEnabled && b.used < b.quota && b.used >= Math.ceil(b.quota * 0.8));
@@ -53,6 +55,11 @@ export function PlanAlert({ planId, trialDays, bots }: Props) {
   if (planId === "cancelado") {
     tone = "danger";
     text = `Sua assinatura está cancelada: ${stopped}.`;
+  } else if (billing?.status === "past_due") {
+    tone = "danger";
+    href = "/painel/cobranca";
+    label = "Pagamento e faturas";
+    text = "O último pagamento da assinatura falhou. Os chatbots seguem dentro da cota e o crédito comprado continua valendo, mas a recarga automática parou. Atualize o cartão: sem pagamento em 2 semanas, a assinatura é cancelada.";
   } else if (trialDays !== null && trialDays <= 0) {
     tone = "danger";
     text = `Seu teste grátis acabou: ${stopped}. Escolha um plano para o assistente voltar a responder.`;
@@ -89,6 +96,11 @@ export function PlanAlert({ planId, trialDays, bots }: Props) {
       nearCap.length === 1
         ? `${b.name} já usou ${num(b.overageUsed)} de ${num(b.overageMax)} atendimentos a mais do excedente. No teto, só esse chatbot para até o mês virar: aumente o teto ou suba o tamanho.`
         : `${nearCap.length} chatbots passaram de 80% do teto do excedente (${names(nearCap)}). No teto, só o chatbot que chegou nele para até o mês virar.`;
+  } else if (billing?.cancelAt) {
+    tone = "warn";
+    href = "/painel/cobranca";
+    label = "Reativar";
+    text = `A assinatura termina em ${new Date(billing.cancelAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}: depois disso, os chatbots ficam sem tamanho (modo só humano, com a configuração guardada).`;
   } else if (unsized.length) {
     tone = "warn";
     href = "/painel/cobranca";

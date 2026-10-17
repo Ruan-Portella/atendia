@@ -188,7 +188,7 @@ export async function getOpenAiCosts(since: Date, until: Date): Promise<ReturnTy
 /** Valor mensal de um item de assinatura em centavos (anual ÷ 12, etc.). Descontos não entram. */
 export function monthlyCents(item: { price?: { unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number; usage_type?: string } | null } | null; quantity?: number | null }): number {
   const r = item.price?.recurring;
-  // sem recorrência (avulso) ou por uso (o excedente entra na fatura, não no MRR)
+  // sem recorrência (avulso, como o crédito do excedente) ou por uso: fora do MRR
   if (!r || r.usage_type === "metered") return 0;
   const amount = (item.price?.unit_amount ?? 0) * (item.quantity ?? 1);
   const count = r.interval_count || 1;
@@ -206,7 +206,7 @@ export interface SubscriptionLike {
 
 /**
  * MRR (ativas e com pagamento atrasado), o que está assinado por item (chatbots de cada tamanho,
- * pacotes do Volume, pacotes da conta) e cancelamentos recentes. O excedente é por uso: fora do MRR.
+ * pacotes do Volume, pacotes da conta) e cancelamentos recentes. O crédito do excedente é avulso: fora do MRR.
  */
 export function summarizeSubscriptions(subs: SubscriptionLike[], now = Date.now()) {
   const live = subs.filter((s) => s.status === "active" || s.status === "past_due");

@@ -52,7 +52,7 @@ export async function applyCheckout(db: SupabaseClient, changeId: string, subscr
 
 /** Fim da assinatura: os chatbots ficam sem tamanho (sem cota) e os pacotes saem. */
 export async function endSubscription(db: SupabaseClient, customer: string): Promise<void> {
-  const { data: agencies } = must(await db.from("agencies").update({ billing_status: "none", stripe_subscription_id: null }).eq("stripe_customer_id", customer).select("id"));
+  const { data: agencies } = must(await db.from("agencies").update({ billing_status: "none", stripe_subscription_id: null, billing_cancel_at: null }).eq("stripe_customer_id", customer).select("id"));
   for (const a of agencies ?? []) {
     const id = a.id as string;
     must(await db.from("bots").update({ size: null, volume_packs: null, pending_size: null, pending_volume_packs: null, pending_from: null, prorated_month: null, prorated_quota: null }).eq("agency_id", id));
@@ -81,7 +81,9 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
         await endSubscription(db, customer);
         break;
       }
-      const { data: agencies } = must(await db.from("agencies").update({ billing_status: status, stripe_subscription_id: sub.id }).eq("stripe_customer_id", customer).select("id"));
+      // cancelada no portal: vale no fim do período (cancel_at); até lá, tudo segue
+      const cancelAt = sub.cancel_at ? new Date(sub.cancel_at * 1000).toISOString() : null;
+      const { data: agencies } = must(await db.from("agencies").update({ billing_status: status, stripe_subscription_id: sub.id, billing_cancel_at: cancelAt }).eq("stripe_customer_id", customer).select("id"));
       // virada do mês: as trocas agendadas para o dia 1º valem
       for (const a of agencies ?? []) must(await db.rpc("apply_due_bot_changes", { p_agency_id: a.id }));
       // itens mudados (por nós ou no painel da Stripe): a assinatura fica igual ao que o BoaVoz guarda

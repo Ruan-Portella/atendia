@@ -294,3 +294,19 @@ export async function resolveSpike(botId: string, verdict: "real" | "ataque"): P
   revalidatePath("/painel", "layout");
   return ok(verdict === "real" ? "Excedente de volta. Nos próximos 7 dias, um pico não suspende de novo." : `Marcado como ataque: o excedente desse chatbot fica suspenso até ${renewalLabel()}.`);
 }
+
+/** Desfaz o cancelamento agendado no portal: a assinatura segue no dia 1º. */
+export async function reactivateSubscription(): Promise<ActionResult> {
+  const s = await subscribed();
+  if ("error" in s) return fail(s.error);
+  try {
+    await stripe!.subscriptions.update(s.subscription, { cancel_at_period_end: false });
+  } catch (e) {
+    console.error("cobrança: reativar", e);
+    return fail("Não foi possível reativar agora. Tente de novo em instantes.");
+  }
+  await createAdminClient().from("agencies").update({ billing_cancel_at: null }).eq("id", s.ctx.agency.id);
+  await auditBilling(s.ctx, "assinatura.reativar", { type: "agency", id: s.ctx.agency.id }, {});
+  revalidatePath("/painel", "layout");
+  return ok("Assinatura reativada: ela segue normalmente no dia 1º.");
+}

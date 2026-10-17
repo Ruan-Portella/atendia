@@ -6,6 +6,10 @@ import { AgencyFeatures } from "@/components/admin/release-controls";
 import { SupportConversations } from "@/components/admin/support-conversations";
 import { ContinuousChecks } from "@/components/admin/continuous-checks";
 import { BotSizeForm } from "@/components/admin/bot-size-form";
+import { BillingCard } from "@/components/admin/billing-card";
+import { nextMonthTarget } from "@/lib/billing-sync";
+import { creditBalance } from "@/lib/billing-credit";
+import { targetMonthlyCents } from "@/lib/billing";
 import { botQuotaStatus } from "@/lib/atendimentos";
 import { continuousView } from "@/lib/continuous-check";
 import { requireAdmin } from "@/lib/platform-admin";
@@ -28,12 +32,16 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
 
   const db = createAdminClient();
   const since30 = daysAgoIso(30);
-  const [{ data: bots }, measures, continuous, quotas] = await Promise.all([
+  const [{ data: bots }, measures, continuous, quotas, { data: billing }, target, credit] = await Promise.all([
     db.from("bots").select("id, name, client_name, status, is_demo, paused_at, paused_by_plan_at, created_at").eq("agency_id", id).order("created_at"),
     getMeasures({ agencyId: id, active: true }),
     continuousView(db, { agencyId: id }),
     botQuotaStatus(db, id),
+    db.from("agencies").select("billing_status, billing_cancel_at, stripe_subscription_id, credit_auto_enabled").eq("id", id).maybeSingle(),
+    nextMonthTarget(db, id),
+    creditBalance(db, id),
   ]);
+  const monthlyCents = targetMonthlyCents(target);
   const botIds = (bots ?? []).map((b) => b.id as string);
   const quotaBy = new Map(quotas.map((q) => [q.botId, q]));
   const [{ data: wa }, { data: ig }, { data: usage }, { data: monthly }, convCounts, chunkCounts] = await Promise.all([
@@ -84,10 +92,21 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Atendimentos no mês" value={`${num(agency.atendimentosMonth)} / ${num(agency.quota)}`} sub={`${agency.quota ? Math.round((agency.atendimentosMonth / agency.quota) * 100) : 0}% da cota`} />
         <Kpi label="IA no mês" value={usd(agency.aiCostMonthUsd)} sub={`≈ ${brl(agency.aiCostMonthUsd * fx)}`} />
-        <Kpi label="Mensalidade" value={agency.priceBrl ? brl(agency.priceBrl) : "—"} sub={agency.priceBrl ? `margem ${brl(agency.priceBrl - agency.aiCostMonthUsd * fx)}` : "sem plano pago"} />
+        <Kpi label="Assinatura (próximo mês)" value={monthlyCents ? brl(monthlyCents / 100) : "—"} sub={monthlyCents ? `margem ${brl(monthlyCents / 100 - agency.aiCostMonthUsd * fx)} sobre a IA do mês` : "sem tamanho assinado"} />
         <Kpi label="Chatbots" value={`${agency.liveBots}/${agency.bots}`} sub={`publicados · WhatsApp ${agency.whatsapp} · Instagram ${agency.instagram}`} />
       </section>
 
+      <BillingCard
+        agencyId={id}
+        status={(billing?.billing_status as string | undefined) ?? "none"}
+        cancelAt={(billing?.billing_cancel_at as string | null | undefined) ?? null}
+        subscriptionId={(billing?.stripe_subscription_id as string | null | undefined) ?? null}
+        testMode={testMode}
+        monthlyCents={monthlyCents}
+        packs={target.packs}
+        creditCents={credit}
+        autoRecharge={Boolean(billing?.credit_auto_enabled)}
+      />
       <AgencyActions agency={agency} />
       <AgencyFeatures agencyId={id} plan={agency.plan} features={agency.features} />
       <ChannelSuspension agencyId={id} bots={(bots ?? []).filter((b) => !b.is_demo).map((b) => ({ id: b.id as string, label: `${b.name} · ${b.client_name}` }))} measures={measures} />

@@ -42,7 +42,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
-          {can(role, "config") && <PlanAlert planId={plan.id} trialDays={trialDays} bots={bots} />}
+          {can(role, "config") && <PlanAlert planId={plan.id} trialDays={trialDays} bots={bots} billing={{ status: agency.billing_status, cancelAt: agency.billing_cancel_at }} />}
         </>
       }
     >

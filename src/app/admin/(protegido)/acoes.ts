@@ -919,3 +919,23 @@ export async function changeCampaignStatus(agencyId: string, campaignId: string,
   revalidatePath(`/admin/clientes/${agencyId}/campanhas`);
   return ok({ paused: "Campanha pausada.", sending: "Campanha retomada: sai no próximo tique.", canceled: "Campanha cancelada: o que faltava não sai mais." }[status]);
 }
+
+/**
+ * Crédito do excedente dado pela BoaVoz (cortesia, compensação de falha): um lote de "ajuste"
+ * válido por 12 meses, com o motivo na auditoria. Não passa pela Stripe.
+ */
+export async function grantCredit(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const reais = Number(text(fd.get("amount")).replace(/\D/g, "") || "0");
+  const reason = text(fd.get("reason"));
+  if (!Number.isSafeInteger(reais) || reais < 1 || reais > 10_000) return fail("Informe de R$ 1 a R$ 10.000, em reais inteiros.");
+  if (reason.length < 3) return fail("Escreva o motivo (fica na auditoria).");
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (crédito do excedente)`);
+  const db = createAdminClient();
+  const expires = new Date();
+  expires.setMonth(expires.getMonth() + 12);
+  const { error } = await db.from("credit_lots").insert({ agency_id: agencyId, amount_cents: reais * 100, remaining_cents: reais * 100, source: "ajuste", expires_at: expires.toISOString() });
+  if (error) return fail("Não foi possível dar o crédito. Tente de novo.");
+  await auditAdmin(s.email, "credito.ajuste", { agencyId, targetType: "agency", targetId: agencyId, after: { valor_reais: reais, motivo: reason.slice(0, 200) } });
+  revalidatePath("/admin", "layout");
+  return ok(`Crédito de R$ ${reais.toLocaleString("pt-BR")} dado à agência (vale 12 meses).`);
+}

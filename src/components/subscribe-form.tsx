@@ -122,7 +122,7 @@ export function SubscribeForm({ bots, fraction, renewal, enabled }: Props) {
             Total do mês: <strong className="text-lg tabular">{brlCents(total)}</strong> <span className="text-muted">({num(sized)} chatbot{sized === 1 ? "" : "s"} com tamanho)</span>
           </div>
           <div className="mt-1 text-muted">
-            Hoje: cerca de <strong className="text-ink tabular">{brlCents(Math.round(total * fraction * 100) / 100)}</strong>, proporcional até {renewal}. Depois, a fatura vem todo dia 1º, com o excedente do mês por uso.
+            Hoje: cerca de <strong className="text-ink tabular">{brlCents(Math.round(total * fraction * 100) / 100)}</strong>, proporcional até {renewal}. Depois, a fatura vem todo dia 1º. O excedente (opcional) é pago à parte, com crédito pré-pago.
           </div>
         </div>
         <SubmitButton className="btn-primary" pendingLabel="Abrindo o pagamento…" disabled={!enabled || sized === 0}>
