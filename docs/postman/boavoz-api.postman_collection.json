@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "550613ba-6863-52fd-81eb-9e687798e482",
     "name": "BoaVoz API v1",
-    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.",
+    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -2236,7 +2236,7 @@
     },
     {
       "name": "8. Campanhas e lembretes",
-      "description": "POST /v1/campaigns (permissão **campaigns**, só nos planos pagos), sempre com Idempotency-Key (a coleção gera uma por envio). Campanha de marketing só vai para quem aceitou novidades; lembrete usa modelo de utilidade. Os envios saem pelo mesmo motor do painel e aparecem na aba Campanhas do cliente.",
+      "description": "POST /v1/campaigns (permissão **campaigns**), sempre com Idempotency-Key (a coleção gera uma por envio). Campanha de marketing só vai para quem aceitou novidades; lembrete usa modelo de utilidade. Os envios saem pelo mesmo motor do painel e aparecem na aba Campanhas do cliente.",
       "item": [
         {
           "name": "Campanha de marketing (por etiqueta)",

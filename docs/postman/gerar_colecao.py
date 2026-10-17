@@ -324,7 +324,7 @@ SAVE_CAMPAIGN = [
 
 campanhas = folder(
     "8. Campanhas e lembretes",
-    "POST /v1/campaigns (permissão **campaigns**, só nos planos pagos), sempre com Idempotency-Key (a coleção gera uma por envio). Campanha de marketing só vai para quem aceitou novidades; lembrete usa modelo de utilidade. Os envios saem pelo mesmo motor do painel e aparecem na aba Campanhas do cliente.",
+    "POST /v1/campaigns (permissão **campaigns**), sempre com Idempotency-Key (a coleção gera uma por envio). Campanha de marketing só vai para quem aceitou novidades; lembrete usa modelo de utilidade. Os envios saem pelo mesmo motor do painel e aparecem na aba Campanhas do cliente.",
     [
         req(
             "Campanha de marketing (por etiqueta)",
@@ -513,6 +513,7 @@ collection = {
                 "- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.",
                 "- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.",
                 "- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.",
+                "- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).",
             ]
         ),
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
