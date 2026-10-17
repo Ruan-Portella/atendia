@@ -34,6 +34,8 @@ export interface Agency {
   billing_status: "none" | "active" | "past_due";
   /** Cancelamento agendado no portal: a assinatura termina nessa data (o dia 1º). */
   billing_cancel_at: string | null;
+  /** Respostas de teste da IA já usadas na conta grátis (teste ao vivo e demos). */
+  test_answers_used: number;
   /** Recarga automática do crédito do excedente (centavos). */
   credit_auto_enabled: boolean;
   credit_auto_below_cents: number | null;

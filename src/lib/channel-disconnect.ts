@@ -11,8 +11,11 @@ import { unseal } from "./secret-box";
  */
 
 /** "Desconectar de vez" no channel.disconnected: quem desconectou. */
-const disconnectedBy = (via: Via) => ({ code: "disconnected", message: via === "cliente" ? "desconectado pela área do cliente" : "desconectado pelo painel da agência" });
-type Via = "painel" | "cliente";
+const disconnectedBy = (via: Via) => ({
+  code: "disconnected",
+  message: via === "cliente" ? "desconectado pela área do cliente" : via === "sem_tamanho" ? "desconectado: o chatbot ficou 30 dias sem tamanho" : "desconectado pelo painel da agência",
+});
+type Via = "painel" | "cliente" | "sem_tamanho";
 
 /** WhatsApp: tira a inscrição do app na conta (o número de teste fica como está) e apaga a ligação. */
 export async function disconnectWhatsAppChannel(admin: SupabaseClient, botId: string, via: Via = "painel"): Promise<{ ok: boolean; wabaId: string | null; phone: string | null }> {

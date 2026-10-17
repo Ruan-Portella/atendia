@@ -125,7 +125,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
                       {b.size && <span className="block text-xs text-muted tabular">{brlCents(sizeMonthlyCents(b) / 100)}/mês</span>}
                       {b.pendingSize && <span className="block text-xs text-amber-ink">{choiceLabel(nextChoice(b))} a partir de {renewal}</span>}
                     </td>
-                    <td className="px-3 py-2 text-right tabular">{num(b.quota)}</td>
+                    <td className="px-3 py-2 text-right tabular">{b.size === "atendimento" ? "sem IA" : num(b.quota)}</td>
                     <td className="px-4 py-2">
                       <SizeChangeForm botId={b.botId} botName={b.name} current={{ size: b.size, volumePacks: b.volumePacks }} pendingSize={b.pendingSize} pendingVolumePacks={b.pendingVolumePacks} monthQuota={b.quota} renewal={renewal} />
                     </td>

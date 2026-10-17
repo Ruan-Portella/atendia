@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { retireUnsizedChannels } from "@/lib/free-inbox";
 import { clientsOfScope, trackCompliance } from "@/lib/platform-events";
 import { requireAdmin } from "@/lib/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -894,4 +895,13 @@ export async function grantCredit(agencyId: string, fd: FormData): Promise<Actio
   await auditAdmin(s.email, "credito.ajuste", { agencyId, targetType: "agency", targetId: agencyId, after: { valor_reais: reais, motivo: reason.slice(0, 200) } });
   revalidatePath("/admin", "layout");
   return ok(`Crédito de R$ ${reais.toLocaleString("pt-BR")} dado à agência (vale 12 meses).`);
+}
+
+/** Confere agora a caixa de entrada grátis da agência (a tarefa diária faz para todas). */
+export async function checkFreeInbox(agencyId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (caixa de entrada grátis)`);
+  const r = await retireUnsizedChannels(createAdminClient(), { agencyId });
+  await auditAdmin(s.email, "caixa_gratis.conferir", { agencyId, targetType: "agency", targetId: agencyId, after: r });
+  revalidatePath("/admin", "layout");
+  return ok(r.warned || r.disconnected ? `${r.warned} chatbot(s) entraram no prazo de 30 dias; ${r.disconnected} desconectado(s).` : "Nada a fazer: só a caixa de entrada grátis está sem tamanho com canal.");
 }

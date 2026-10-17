@@ -25,6 +25,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "credito.comprar": "Crédito do excedente comprado",
   "credito.ajuste": "Crédito do excedente dado pela BoaVoz",
   "assinatura.reativar": "Assinatura reativada (cancelamento desfeito)",
+  "canal.desconectar_sem_tamanho": "Canal desconectado: chatbot 30 dias sem tamanho",
+  "caixa_gratis.conferir": "Caixa de entrada grátis conferida pela BoaVoz",
   "credito.recarga": "Recarga automática do crédito",
   "credito.recarga_automatica": "Recarga automática do crédito ajustada",
   "excedente.trafego_real": "Pico no chat do site confirmado como tráfego real",

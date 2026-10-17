@@ -1,6 +1,6 @@
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { grantCredit } from "@/app/admin/(protegido)/acoes";
+import { checkFreeInbox, grantCredit } from "@/app/admin/(protegido)/acoes";
 import { PACKS, brlCents, isPackId } from "@/lib/plans";
 
 interface Props {
@@ -60,6 +60,10 @@ export function BillingCard({ agencyId, status, cancelAt, subscriptionId, testMo
           <input name="reason" placeholder="ex.: compensação da falha de 16/10" className="input py-1" />
         </label>
         <SubmitButton className="btn-ghost py-1" pendingLabel="Dando…">Dar crédito</SubmitButton>
+      </ActionForm>
+      <ActionForm action={checkFreeInbox.bind(null, agencyId)} className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-xs text-muted">Chatbots sem tamanho com canal, fora da caixa de entrada grátis: prazo de 30 dias e depois desconecta (a tarefa diária confere todas as contas).</span>
+        <SubmitButton className="btn-ghost py-1" pendingLabel="Conferindo…">Conferir agora</SubmitButton>
       </ActionForm>
     </section>
   );

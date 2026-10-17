@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { inboxSlotBlock } from "@/lib/free-inbox";
 import { queueBotPauseEvent, queueChannelEvent, queueConsentEvent, trackCompliance } from "@/lib/platform-events";
 import { resumeConversationAi } from "@/lib/api-pause";
 import { redirect } from "next/navigation";
@@ -700,6 +701,9 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
   if (bot.is_demo) return fail("Converta a demo em chatbot antes de ligar o WhatsApp.");
+  // sem tamanho, só a caixa de entrada grátis da conta (um chatbot)
+  const slot = await inboxSlotBlock(createAdminClient(), agency.id, botId);
+  if (slot) return fail(slot);
   if (!whatsappConfigured()) return fail("O WhatsApp ainda não está configurado no servidor (WHATSAPP_TOKEN).");
   // tela única de aceite: o negócio aceita antes de conectar (e não pode estar bloqueado ou aguardando revisão)
   const blocked = await connectBlockFor(createAdminClient(), { clientId: bot.client_id as string | null, channel: "whatsapp" });
@@ -820,6 +824,9 @@ export async function createWhatsAppConnectLink(botId: string, channel: "whatsap
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
   if (!bot) return { ok: false, message: "Chatbot não encontrado." };
+  // sem tamanho, só a caixa de entrada grátis da conta (um chatbot)
+  const slot = await inboxSlotBlock(createAdminClient(), agency.id, botId);
+  if (slot) return { ok: false, message: slot };
   if (bot.is_demo) return { ok: false, message: "Converta a demo em chatbot antes de ligar o WhatsApp." };
   try {
     const { url } = await createConnectLink(createAdminClient(), botId, channel);

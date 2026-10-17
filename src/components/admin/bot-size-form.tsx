@@ -27,7 +27,7 @@ export function BotSizeForm({ agencyId, botId, size, volumePacks, override, used
       <div className="flex flex-wrap items-center gap-1.5">
         <select name="size" defaultValue={size ?? ""} aria-label="Tamanho" className="input w-auto py-1 text-xs">
           {Object.values(BOT_SIZES).map((s) => (
-            <option key={s.id} value={s.id}>{s.name}{s.id === "volume" ? "" : ` · ${num(s.atendimentos)}`}</option>
+            <option key={s.id} value={s.id}>{s.name}{s.id === "volume" ? "" : s.atendimentos ? ` · ${num(s.atendimentos)}` : " · sem IA"}</option>
           ))}
           <option value="">sem tamanho</option>
         </select>

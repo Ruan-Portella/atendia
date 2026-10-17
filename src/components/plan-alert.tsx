@@ -17,6 +17,7 @@ interface BotQuota {
   overageCapMax: number | null;
   overageSuspended: "pico" | "ataque" | null;
   creditShort: boolean;
+  graceUntil: string | null;
 }
 
 interface Props {
@@ -46,6 +47,7 @@ export function PlanAlert({ bots, billing }: Props) {
   // parados por falta de crédito (o excedente ligado, sem teto atingido nem suspensão)
   const noCredit = full.filter((b) => b.overageEnabled && b.creditShort && !b.overageSuspended && (b.overageCapMax === null || b.overageUsed < b.overageCapMax));
   const spike = bots.filter((b) => b.overageSuspended === "pico");
+  const grace = bots.filter((b) => b.graceUntil && !b.size && b.override === null);
   let tone: "danger" | "warn" | null = null;
   let text = "";
   let href = "/painel/cobranca/uso";
@@ -68,6 +70,15 @@ export function PlanAlert({ bots, billing }: Props) {
       full.length === 1
         ? `Modo só humano em ${full[0].name}: ${why(full[0])}. Para quem começa um atendimento novo nesse chatbot, ${stopped}. Os outros chatbots seguem normais.`
         : `Modo só humano em ${full.length} chatbots (${names(full)}): a cota do mês de cada um acabou (sem excedente, no teto ou com o excedente suspenso). Para quem começa um atendimento novo neles, ${stopped}. Os outros chatbots seguem normais.`;
+  } else if (grace.length) {
+    tone = "warn";
+    href = "/painel/cobranca";
+    label = "Escolher o tamanho";
+    const day = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    text =
+      grace.length === 1
+        ? `${grace[0].name} está sem tamanho e a caixa de entrada grátis da conta é de outro chatbot: o WhatsApp e o Instagram dele desconectam em ${day(grace[0].graceUntil!)}. Para manter, escolha um tamanho (o Atendimento é sem IA).`
+        : `${grace.length} chatbots estão sem tamanho fora da caixa de entrada grátis (${names(grace)}): os canais deles desconectam a partir de ${day(grace.map((b) => b.graceUntil!).sort()[0])}. Para manter, escolha um tamanho.`;
   } else if (spike.length) {
     tone = "warn";
     text = `Pico no chat do site de ${names(spike)}: o excedente ficou suspenso até você confirmar se é tráfego real ou ataque.`;
@@ -96,8 +107,8 @@ export function PlanAlert({ bots, billing }: Props) {
     label = "Escolher o tamanho";
     text =
       unsized.length === 1
-        ? `${unsized[0].name} está sem tamanho: a IA não responde nele (modo só humano) até você escolher um.`
-        : `${unsized.length} chatbots estão sem tamanho (${names(unsized)}): a IA não responde neles (modo só humano) até você escolher um.`;
+        ? `${unsized[0].name} está sem tamanho: a IA não responde nele. Para a IA responder, escolha um tamanho.`
+        : `${unsized.length} chatbots estão sem tamanho (${names(unsized)}): a IA não responde neles. Para a IA responder, escolha um tamanho.`;
   }
   if (!tone) return null;
   return (

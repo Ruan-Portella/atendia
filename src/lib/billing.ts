@@ -10,6 +10,7 @@ import { currentPeriodBR, monthStartBR } from "./utils";
 
 /** Chave de pesquisa de cada preço na Stripe (a mesma no teste e na produção). */
 export const LOOKUP_KEYS = {
+  atendimento: "boavoz_bot_atendimento",
   P: "boavoz_bot_p",
   M: "boavoz_bot_m",
   G: "boavoz_bot_g",
@@ -22,6 +23,7 @@ export type LookupKey = (typeof LOOKUP_KEYS)[keyof typeof LOOKUP_KEYS];
 
 /** Nome de cada item da assinatura (backoffice e telas). */
 export const LOOKUP_LABELS: Record<LookupKey, string> = {
+  boavoz_bot_atendimento: "Chatbot Atendimento (sem IA)",
   boavoz_bot_p: "Chatbot P",
   boavoz_bot_m: "Chatbot M",
   boavoz_bot_g: "Chatbot G",

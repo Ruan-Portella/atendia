@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { inboxSlotBlock } from "./free-inbox";
 import { queueChannelEvent } from "./platform-events";
 import { fail, ok, type ActionResult } from "./action-result";
 import { notifyAgencyOwner, notifyPlatform } from "./notify";
@@ -60,6 +61,9 @@ export async function connectFromSignup(admin: SupabaseClient, opts: { botId: st
   // liberação da agência (backoffice) ou a abertura geral do canal
   const locked = await channelBlock(admin, opts.agencyId, "whatsapp");
   if (locked) return fail(via === "link" ? "A conexão do WhatsApp ainda não está liberada para este assistente. Fale com a agência." : locked);
+  // sem tamanho, só a caixa de entrada grátis da conta (um chatbot)
+  const slot = await inboxSlotBlock(admin, opts.agencyId, botId);
+  if (slot) return fail(via === "link" ? "A conexão deste assistente precisa de um plano ativo. Fale com a agência." : slot);
   const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "");
   const coexistence = Boolean(input.coexistence);
   const wabaId = digits(input.wabaId);

@@ -118,7 +118,7 @@ export default function LandingPage() {
           <p className="mt-2 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente. As mensagens do Instagram não são cobradas pela Meta.</p>
         </div>
         <div className="grid gap-5 md:grid-cols-4">
-          {Object.values(BOT_SIZES).map((s) => {
+          {Object.values(BOT_SIZES).filter((s) => s.atendimentos > 0).map((s) => {
             const featured = s.id === "M";
             return (
               <div key={s.id} className={featured ? "relative flex flex-col gap-4 rounded-2xl bg-brand p-7 text-ground" : "card flex flex-col gap-4 p-7"}>
@@ -139,7 +139,7 @@ export default function LandingPage() {
           })}
         </div>
         <p className="text-[15px] text-ink-2">
-          Pacotes da conta: {Object.values(PACKS).map((p) => `${p.name} ${brl(p.priceBrl)}/mês`).join(" · ")}. Passou da cota? Ligue o excedente, pago com crédito: {brlCents(OVERAGE_PRICE_BRL)} por atendimento a mais.
+          Só a caixa de entrada, sem IA: a primeira é grátis, e as outras são o tamanho Atendimento ({brl(BOT_SIZES.atendimento.priceBrl)}/mês por chatbot). Pacotes da conta: {Object.values(PACKS).map((p) => `${p.name} ${brl(p.priceBrl)}/mês`).join(" · ")}. Passou da cota? Ligue o excedente, pago com crédito: {brlCents(OVERAGE_PRICE_BRL)} por atendimento a mais.
         </p>
       </section>
 

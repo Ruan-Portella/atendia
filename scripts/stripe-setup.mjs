@@ -23,6 +23,7 @@ if (!/^https:\/\//.test(base)) throw new Error("informe --base=https://…");
 const stripe = new Stripe(key);
 
 const CATALOG = [
+  { lookup: "boavoz_bot_atendimento", name: "BoaVoz · Chatbot Atendimento (sem IA)", amount: 2900, meta: { kind: "size", size: "atendimento" }, desc: "WhatsApp, Instagram e a equipe respondendo, sem IA" },
   { lookup: "boavoz_bot_p", name: "BoaVoz · Chatbot P", amount: 4900, meta: { kind: "size", size: "P" }, desc: "160 atendimentos por mês" },
   { lookup: "boavoz_bot_m", name: "BoaVoz · Chatbot M", amount: 9900, meta: { kind: "size", size: "M" }, desc: "340 atendimentos por mês" },
   { lookup: "boavoz_bot_g", name: "BoaVoz · Chatbot G", amount: 19900, meta: { kind: "size", size: "G" }, desc: "680 atendimentos por mês" },

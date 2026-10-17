@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { startCheckout } from "@/app/painel/cobranca/actions";
-import { BOT_SIZES, PACKS, brlCents, num, type BotSize, type PackId } from "@/lib/plans";
+import { BOT_SIZES, PACKS, brlCents, num, sizeOption, type BotSize, type PackId } from "@/lib/plans";
 
 interface BotRow {
   id: string;
@@ -53,7 +53,7 @@ export function SubscribeForm({ bots, fraction, renewal, enabled }: Props) {
     <ActionForm action={startCheckout} className="mt-6 flex flex-col gap-6">
       <section>
         <h2 className="text-lg font-bold">Tamanho de cada chatbot</h2>
-        <p className="mt-1 text-sm text-muted">A cota do mês é de cada chatbot. Chatbot sem tamanho fica no modo só humano: as mensagens chegam em Conversas para a sua equipe.</p>
+        <p className="mt-1 text-sm text-muted">A cota do mês é de cada chatbot. O Atendimento não tem IA: é a caixa de entrada do WhatsApp e do Instagram com a sua equipe respondendo. A conta tem uma caixa de entrada grátis: um chatbot sem tamanho pode ficar com WhatsApp e Instagram, sem IA.</p>
         <div className="card mt-3 overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead>
@@ -76,7 +76,7 @@ export function SubscribeForm({ bots, fraction, renewal, enabled }: Props) {
                         <option value="">sem tamanho</option>
                         {Object.values(BOT_SIZES).map((s) => (
                           <option key={s.id} value={s.id}>
-                            {s.id === "volume" ? `Volume · ${brlCents(s.priceBrl)} por 1.000` : `${s.name} · ${brlCents(s.priceBrl)} · ${num(s.atendimentos)} atendimentos`}
+                            {sizeOption(s)}
                           </option>
                         ))}
                       </select>

@@ -2,9 +2,10 @@
  * Tamanho de cada chatbot no ar (revisão de preços, 16/10/2026): a cota do mês é do chatbot.
  * Preço com pelo menos 25% de margem no pior caso (cota toda em atendimentos de 40 respostas e
  * 5 minutos de áudio). Volume: por pacote de 1.000, para um chatbot que atende todos os usuários
- * de um app.
+ * de um app. Atendimento (17/10/2026): sem IA, para quem só quer a caixa de entrada (WhatsApp,
+ * Instagram e a equipe respondendo); a primeira caixa de entrada da conta é grátis.
  */
-export type BotSize = "P" | "M" | "G" | "volume";
+export type BotSize = "atendimento" | "P" | "M" | "G" | "volume";
 
 export interface SizeInfo {
   id: BotSize;
@@ -16,6 +17,7 @@ export interface SizeInfo {
 }
 
 export const BOT_SIZES: Record<BotSize, SizeInfo> = {
+  atendimento: { id: "atendimento", name: "Atendimento", priceBrl: 29, atendimentos: 0, description: "WhatsApp, Instagram e a equipe, sem IA" },
   P: { id: "P", name: "P", priceBrl: 49, atendimentos: 160, description: "umas 5 conversas por dia" },
   M: { id: "M", name: "M", priceBrl: 99, atendimentos: 340, description: "umas 11 conversas por dia" },
   G: { id: "G", name: "G", priceBrl: 199, atendimentos: 680, description: "umas 22 conversas por dia" },
@@ -23,6 +25,14 @@ export const BOT_SIZES: Record<BotSize, SizeInfo> = {
 };
 
 export const isBotSize = (v: unknown): v is BotSize => typeof v === "string" && v in BOT_SIZES;
+
+/** Opção de tamanho nas listas: "P · R$ 49,00 · 160 atendimentos", "Atendimento · R$ 29,00 · sem IA". */
+export function sizeOption(s: SizeInfo, long = true): string {
+  const price = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 }).format(s.priceBrl);
+  if (s.id === "volume") return `Volume · ${price} por 1.000`;
+  if (!s.atendimentos) return `${s.name} · ${price} · sem IA`;
+  return `${s.name} · ${price} · ${new Intl.NumberFormat("pt-BR").format(s.atendimentos)}${long ? " atendimentos" : ""}`;
+}
 
 /* Pacotes da conta (um de cada, por mês): liberam recursos da agência toda. Canal nunca é pago. */
 export type PackId = "dominio" | "integracoes" | "plataforma";
@@ -43,6 +53,16 @@ export const PACKS: Record<PackId, PackInfo> = {
 };
 
 export const isPackId = (v: unknown): v is PackId => typeof v === "string" && v in PACKS;
+
+/** Tamanhos com IA (o Atendimento não tem IA). */
+export const AI_SIZES: readonly BotSize[] = ["P", "M", "G", "volume"];
+
+/** Conta grátis: respostas de teste da IA (teste ao vivo do painel e demos) enquanto não há assinatura. */
+export const TEST_ANSWERS_FREE = 50;
+/** Caixa de entrada grátis (um chatbot sem tamanho por conta): envios de campanha e lembrete por mês. */
+export const FREE_INBOX_CAMPAIGN_SENDS = 100;
+/** Chatbot sem tamanho fora da caixa grátis: dias até os canais desconectarem. */
+export const UNSIZED_GRACE_DAYS = 30;
 
 /** Respostas da IA que cabem num atendimento: a seguinte abre outro. */
 export const ANSWERS_PER_ATENDIMENTO = 40;

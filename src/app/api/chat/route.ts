@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TEST_ANSWERS_DONE, takeTestAnswer } from "@/lib/free-inbox";
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -263,6 +264,13 @@ export async function POST(req: Request) {
       }
       confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal, component: shaped.component, files: shaped.files, via: click.via };
     }
+  }
+
+  // conta grátis (sem assinatura): o teste ao vivo do painel e as demos usam as respostas de teste da
+  // IA (a vitrine do site fica de fora); acabaram, o painel avisa e a demo mostra o formulário
+  if ((channel === "painel" || bot.is_demo) && !(await takeTestAnswer(db, bot.agency_id))) {
+    if (channel === "painel") return fixedStream("teste", TEST_ANSWERS_DONE, CORS_HEADERS);
+    return contactFallback("test_answers_done", 402);
   }
 
   // cota do mês: o atendimento deste visitante (24 horas) abre antes de chamar a IA; o teste ao

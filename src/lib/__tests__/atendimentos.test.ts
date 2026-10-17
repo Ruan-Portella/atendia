@@ -15,6 +15,8 @@ describe("cota do mês, por chatbot", () => {
     expect(botQuota({ size: "volume", volume_packs: null })).toBe(0);
     expect(botQuota({ size: null })).toBe(0);
     expect(botQuota({ size: "XL" })).toBe(0);
+    // Atendimento: no ar, sem IA (cota zero, sem excedente)
+    expect(botQuota({ size: "atendimento" })).toBe(0);
   });
 
   it("a cota combinada fora da tabela (sob medida) vale no lugar da do tamanho", () => {
@@ -23,9 +25,9 @@ describe("cota do mês, por chatbot", () => {
   });
 
   it("a tabela que vai para o banco bate com os tamanhos", () => {
-    expect(SIZE_QUOTAS).toEqual({ P: 160, M: 340, G: 680, volume: 1000 });
+    expect(SIZE_QUOTAS).toEqual({ atendimento: 0, P: 160, M: 340, G: 680, volume: 1000 });
     expect(ANSWERS_PER_ATENDIMENTO).toBe(40);
-    expect(Object.values(BOT_SIZES).map((s) => s.priceBrl)).toEqual([49, 99, 199, 299]);
+    expect(Object.values(BOT_SIZES).map((s) => s.priceBrl)).toEqual([29, 49, 99, 199, 299]);
   });
 
   it("nome do tamanho nas telas", () => {
@@ -34,6 +36,7 @@ describe("cota do mês, por chatbot", () => {
     expect(sizeLabel({ size: "volume", volumePacks: 3, override: null })).toBe("Volume (3 pacotes)");
     expect(sizeLabel({ size: "P", volumePacks: null, override: 900 })).toBe("sob medida");
     expect(sizeLabel({ size: null, volumePacks: null, override: null })).toBe("sem tamanho");
+    expect(sizeLabel({ size: "atendimento", volumePacks: null, override: null })).toBe("Atendimento");
   });
 });
 

@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { retireUnsizedChannels } from "@/lib/free-inbox";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
 import { applyRetention, refreshSources } from "@/lib/jobs";
@@ -91,6 +92,8 @@ async function daily() {
   const base = await run("classificação da base", () => classifyPending(db, { budgetMs: 180_000 }));
   // análise do bot: as agendadas (gatilhos agrupados) e os clientes antigos
   // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
+  // chatbots sem tamanho fora da caixa de entrada grátis: prazo de 30 dias e, vencido, desconecta
+  const inbox = await run("caixa de entrada grátis", () => retireUnsizedChannels(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

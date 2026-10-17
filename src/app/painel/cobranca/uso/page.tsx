@@ -181,7 +181,9 @@ function BotLine({ bot, usage, cost, lastMonth, suffix = "" }: { bot: BotQuotaSt
         {state === "excedente" && <span className="block text-xs font-normal">no excedente</span>}
       </td>
       <td className="px-3 py-2 text-right">
-        {bot.quota > 0 ? (
+        {bot.size === "atendimento" && bot.override === null ? (
+          <span className="text-xs text-muted">sem IA</span>
+        ) : bot.quota > 0 ? (
           <>
             <OverageForm botId={bot.botId} enabled={bot.overageEnabled} capBrl={bot.overageCapBrl} used={bot.overageUsed} capMax={bot.overageCapMax} creditShort={bot.creditShort} />
             {bot.overageSuspended && <SpikeButtons botId={bot.botId} reason={bot.overageSuspended} until={renewalLabel()} />}

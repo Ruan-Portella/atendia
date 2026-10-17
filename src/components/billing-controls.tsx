@@ -5,7 +5,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { changeBotSize, changePack } from "@/app/painel/cobranca/actions";
 import { choiceLabel, nextChoice, planSizeChange, type SizeChoice } from "@/lib/billing";
-import { BOT_SIZES, brlCents, num, type BotSize, type PackId } from "@/lib/plans";
+import { BOT_SIZES, brlCents, num, sizeOption, type BotSize, type PackId } from "@/lib/plans";
 
 interface SizeProps {
   botId: string;
@@ -49,7 +49,7 @@ export function SizeChangeForm({ botId, botName, current, pendingSize, pendingVo
           <option value="">sem tamanho</option>
           {Object.values(BOT_SIZES).map((s) => (
             <option key={s.id} value={s.id}>
-              {s.id === "volume" ? `Volume · ${brlCents(s.priceBrl)} por 1.000` : `${s.name} · ${brlCents(s.priceBrl)} · ${num(s.atendimentos)}`}
+              {sizeOption(s, false)}
             </option>
           ))}
         </select>

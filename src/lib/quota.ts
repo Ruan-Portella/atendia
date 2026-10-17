@@ -85,7 +85,8 @@ function monthCost(price: number, quota: number, total: number): number {
  * subir). Compara o mês como foi (tamanho atual + excedente) com cada tamanho maior.
  */
 export function suggestSize(current: { size: BotSize | null; volumePacks: number | null }, total: number): SizeSuggestion | null {
-  if (!current.size) return null;
+  // sem tamanho ou no Atendimento (sem IA): não há excedente para comparar
+  if (!current.size || current.size === "atendimento") return null;
   const nowQuota = botQuota({ size: current.size, volume_packs: current.volumePacks });
   if (total <= nowQuota) return null;
   const nowPrice = current.size === "volume" ? (current.volumePacks ?? 0) * BOT_SIZES.volume.priceBrl : BOT_SIZES[current.size].priceBrl;

@@ -66,7 +66,7 @@ describe("pacotes com assinatura", () => {
 });
 
 describe("assinatura igual ao que vale no mês que vem", () => {
-  const ids = { boavoz_bot_p: "price_p", boavoz_bot_m: "price_m", boavoz_bot_g: "price_g", boavoz_bot_volume: "price_v", boavoz_dominio: "price_dom", boavoz_integracoes: "price_int", boavoz_plataforma: "price_plat" };
+  const ids = { boavoz_bot_atendimento: "price_at", boavoz_bot_p: "price_p", boavoz_bot_m: "price_m", boavoz_bot_g: "price_g", boavoz_bot_volume: "price_v", boavoz_dominio: "price_dom", boavoz_integracoes: "price_int", boavoz_plataforma: "price_plat" };
 
   it("muda a quantidade, põe o que falta e tira o que zerou", () => {
     const current = [

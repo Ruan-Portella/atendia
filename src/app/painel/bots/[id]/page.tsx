@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TEST_ANSWERS_FREE, num } from "@/lib/plans";
 import { BotActions } from "@/components/integrations/bot-actions";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
 import { notFound } from "next/navigation";
@@ -649,7 +650,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         <aside className="hidden border-l border-line bg-[#ecebe4] p-5 lg:block">
           {/* o fundo ocupa a coluna inteira; o chat de teste acompanha a rolagem */}
           <div className="sticky top-5 flex flex-col gap-3">
-            <div className="flex items-center justify-between text-xs"><span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span><span className="text-muted">como o visitante vê</span></div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span>
+              <span className="text-muted">{owner.billing_status === "none" ? `conta grátis: ${num(Math.max(0, TEST_ANSWERS_FREE - (owner.test_answers_used ?? 0)))} de ${TEST_ANSWERS_FREE} respostas` : "como o visitante vê"}</span>
+            </div>
             <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
               {readySources ? (
                 <ChatWindow
