@@ -71,7 +71,7 @@ function fakeDb(actions: Array<Record<string, unknown>>) {
   return { db, refs };
 }
 
-const action = (name: string, extra: Record<string, unknown> = {}) => ({ id: randomUUID(), name, active: true, paused_by_plan_at: null, creates_order: false, type: "query", params_schema: { type: "object", properties: { item: { type: "string" } }, required: ["item"] }, ...extra });
+const action = (name: string, extra: Record<string, unknown> = {}) => ({ id: randomUUID(), name, active: true, creates_order: false, type: "query", params_schema: { type: "object", properties: { item: { type: "string" } }, required: ["item"] }, ...extra });
 
 describe("carrossel pronto para os canais", () => {
   it("botão com ação vira referência; sem ação, op_N pela mensagem inteira", async () => {

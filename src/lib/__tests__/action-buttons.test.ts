@@ -107,7 +107,7 @@ describe("clique no botão com ação", () => {
   });
 
   it("botão com ação aceita consulta; o Confirmar só ação que pede confirmação", () => {
-    const query = { active: true, paused_by_plan_at: null, min_level: "anonimo" as const, context_required: "none" as const, type: "query" as const, creates_order: false };
+    const query = { active: true, min_level: "anonimo" as const, context_required: "none" as const, type: "query" as const, creates_order: false };
     expect(stillCallable(query, { level: "anonimo", hasContext: false }, "action")).toBe(true);
     expect(stillCallable(query, { level: "anonimo", hasContext: false }, "confirm")).toBe(false);
   });

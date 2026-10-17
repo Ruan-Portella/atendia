@@ -205,11 +205,11 @@ export interface Caller {
 }
 
 /**
- * A ação ainda pode ser chamada por este contato? (ativa, não pausada pelo plano, nível e
+ * A ação ainda pode ser chamada por este contato? (ativa, nível e
  * contexto; no Confirmar, ainda pede confirmação; o botão com ação vale para qualquer tipo). Pura.
  */
-export function stillCallable(a: Pick<ActionRow, "active" | "paused_by_plan_at" | "min_level" | "context_required" | "type" | "creates_order">, c: Pick<Caller, "level" | "hasContext">, kind: "confirm" | "action" = "confirm"): boolean {
-  return a.active && !a.paused_by_plan_at && (kind === "action" || needsConfirmation(a)) && reaches(c.level, a.min_level) && (a.context_required === "none" || c.hasContext);
+export function stillCallable(a: Pick<ActionRow, "active" | "min_level" | "context_required" | "type" | "creates_order">, c: Pick<Caller, "level" | "hasContext">, kind: "confirm" | "action" = "confirm"): boolean {
+  return a.active && (kind === "action" || needsConfirmation(a)) && reaches(c.level, a.min_level) && (a.context_required === "none" || c.hasContext);
 }
 
 /* ------------------------------------------------------------------ abrir a confirmação (ferramenta da IA) */

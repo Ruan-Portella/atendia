@@ -103,18 +103,18 @@ export async function expireApiPauses(db: SupabaseClient, o: { hasTime?: () => b
 }
 
 /**
- * Downgrade sem Integrações ou fim do teste: todas as pausas da integração na conta acabam num
- * passo só, com registro na auditoria (sem evento: os webhooks também param, e sem responder as
- * pendentes: a regra de estado decide o que a IA faz dali em diante).
+ * A conta ficou sem o pacote Integrações (fim da assinatura): todas as pausas da integração na
+ * conta acabam num passo só, com registro na auditoria (sem evento: os webhooks também param, e
+ * sem responder as pendentes: a regra de estado decide o que a IA faz dali em diante).
  */
-export async function endApiPauses(db: SupabaseClient, agencyId: string, why: "plano" | "teste"): Promise<number> {
+export async function endApiPauses(db: SupabaseClient, agencyId: string): Promise<number> {
   const { data: bots } = await db.from("bots").select("id").eq("agency_id", agencyId);
   const botIds = (bots ?? []).map((b) => b.id as string);
   if (!botIds.length) return 0;
   const { data, error } = await db.from("conversations").update(API_PAUSE_CLEAR).in("bot_id", botIds).not("ai_paused_until", "is", null).select("id");
   if (error) throw new Error(`pausas da integração: ${error.message}`);
   const n = data?.length ?? 0;
-  if (n) await audit(db, { agencyId, actorType: "system", actorId: null, action: "conversa.pausas_api_encerradas", targetType: "agency", targetId: agencyId, after: { conversas: n, motivo: why === "plano" ? "plano sem Integrações" : "fim do teste grátis" } });
+  if (n) await audit(db, { agencyId, actorType: "system", actorId: null, action: "conversa.pausas_api_encerradas", targetType: "agency", targetId: agencyId, after: { conversas: n, motivo: "sem o pacote Integrações" } });
   return n;
 }
 

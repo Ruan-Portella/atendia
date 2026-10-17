@@ -2,7 +2,6 @@ import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type 
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, embedText, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type Persona } from "./ai";
-import { getPlan } from "./plans";
 import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
 import type { Interactive } from "./message-events";
@@ -59,7 +58,6 @@ export interface BotRow {
   /** Oferecer novidades no WhatsApp, uma vez por contato (leva B3). */
   marketing_optin_offer?: boolean | null;
   /** Excedente do plano (leva B1'): modo só humano. */
-  paused_by_plan_at?: string | null;
 }
 
 export const CORS_HEADERS = {
@@ -621,30 +619,23 @@ export function linkHostsFor(bot: Pick<BotRow, "client_site" | "human_handoff" |
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
-export type AiBlockReason = "trial_expired" | "quota_exceeded" | "cancelled" | "paused" | "bot_paused" | "plan_paused";
+export type AiBlockReason = "quota_exceeded" | "paused" | "bot_paused";
 
 /**
- * Conferido em TODA mensagem (não só na conversa nova): IA pausada pelo backoffice, plano
- * cancelado ou teste vencido param a IA também nas conversas abertas. A cota é de cada chatbot,
- * conferida antes de cada resposta da IA (openAtendimento): o atendimento aberto segue até 40 respostas.
+ * Conferido em TODA mensagem (não só na conversa nova): a IA pausada pelo backoffice para também
+ * as conversas abertas. A cota é de cada chatbot (sem tamanho, zero), conferida antes de cada
+ * resposta da IA (openAtendimento): o atendimento aberto segue até 40 respostas.
  */
 export async function aiBlockedReason(db: SupabaseClient, agencyId: string): Promise<AiBlockReason | null> {
   if (await isAiPaused(db, agencyId)) return "paused";
-  const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", agencyId).maybeSingle();
-  const plan = getPlan(agency?.plan ?? "trial");
-  if (plan.id === "cancelado") return "cancelled";
-  if (plan.id === "trial" && agency?.trial_ends_at && new Date(agency.trial_ends_at) < new Date()) return "trial_expired";
   return null;
 }
 
 /** Motivo do pedido de atendente automático, para a equipe. */
 export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
-  quota_exceeded: "Assistente parado: este chatbot usou todos os atendimentos do mês. Ele volta no dia 1º, ou na hora se subir de tamanho.",
-  trial_expired: "Assistente parado: o teste grátis venceu.",
-  cancelled: "Assistente parado: a assinatura foi cancelada.",
+  quota_exceeded: "Assistente parado: este chatbot está sem tamanho, usou todos os atendimentos do mês ou o crédito do excedente acabou. Ele volta ao ganhar um tamanho, ao subir de tamanho, com crédito ou no dia 1º.",
   paused: "Assistente pausado pela equipe BoaVoz: as mensagens ficam aqui para a sua equipe responder.",
   bot_paused: "Assistente pausado por vocês (botão de emergência): as mensagens ficam aqui para a sua equipe responder.",
-  plan_paused: "Assistente pausado pelo plano: este chatbot passou do limite do plano atual (Cobrança > Limites do plano). As mensagens ficam aqui para a sua equipe responder.",
 };
 
 /** Texto fixo do modo só humano (Textos legais, seção 6): uma vez por conversa, sem prometer prazo. */
@@ -666,18 +657,13 @@ export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversati
 
 /**
  * Abre uma conversa nova. Não conta na cota: quem conta é o atendimento (openAtendimento, antes
- * de chamar a IA). Lança "trial_expired" quando o teste venceu.
+ * de chamar a IA).
  */
 export async function openConversation(
   db: SupabaseClient,
   bot: Pick<BotRow, "id" | "agency_id">,
   opts: { channel: string; visitorId?: string | null; waId?: string; igsid?: string; contactId?: string | null; identity?: Record<string, unknown> },
 ): Promise<string> {
-  const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", bot.agency_id).single();
-  const plan = getPlan(agency?.plan ?? "trial");
-  if (plan.id === "trial" && agency?.trial_ends_at && new Date(agency.trial_ends_at) < new Date()) {
-    throw new Error("trial_expired");
-  }
   const { data: conv, error } = await db
     .from("conversations")
     // contato vinculado (pareamento): a conversa nova já nasce no contexto ativo dele

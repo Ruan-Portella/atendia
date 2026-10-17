@@ -18,7 +18,7 @@ async function canEdit(supabase: Db): Promise<boolean> {
   const sub = data?.claims?.sub;
   if (!sub) return false;
   const member = await activeMembership(createAdminClient(), sub);
-  return Boolean(member && !member.paused_by_plan_at && can(member.role, "config"));
+  return Boolean(member && can(member.role, "config"));
 }
 
 const FORBIDDEN = { error: "forbidden", message: "O seu papel na equipe não altera a base de conhecimento." };

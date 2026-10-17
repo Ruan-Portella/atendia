@@ -3,7 +3,7 @@ import { Logo } from "@/components/logo";
 import { LegalFooter } from "@/components/legal-page";
 import { DemoGenerator } from "@/components/demo-generator";
 import { RoiCalculator } from "@/components/roi-calculator";
-import { PLANS, brl, num } from "@/lib/plans";
+import { BOT_SIZES, OVERAGE_PRICE_BRL, PACKS, brl, brlCents, num } from "@/lib/plans";
 
 const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz";
 
@@ -83,7 +83,7 @@ export default function LandingPage() {
       <section className="grid items-center gap-12 bg-ink px-6 py-16 text-ground md:grid-cols-2 lg:px-16 xl:px-24">
         <div className="flex flex-col gap-4">
           <span className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-tint">Faça a conta</span>
-          <h2 className="text-3xl font-bold leading-[1.08] md:text-[44px]">Você paga {brl(PLANS.agencia.priceBrl)}. Seus clientes pagam você.</h2>
+          <h2 className="text-3xl font-bold leading-[1.08] md:text-[44px]">Você paga a partir de {brl(BOT_SIZES.P.priceBrl)} por chatbot. Seus clientes pagam você.</h2>
           <p className="max-w-[520px] text-[17px] leading-relaxed text-[#b9c2bd]">Um atendimento que responde 24 horas, agenda e qualifica leads tem valor para qualquer negócio local. Você define o preço do seu serviço. Seu cliente vê a sua marca no painel, no widget e no chat; só na conexão do WhatsApp e do Instagram as telas da Meta mostram a {brand} como fornecedora da tecnologia.</p>
         </div>
         <RoiCalculator />
@@ -113,34 +113,34 @@ export default function LandingPage() {
       <section id="precos" className="flex flex-col gap-9 px-6 pb-20 lg:px-16 xl:px-24">
         <div className="max-w-[640px]">
           <span className="eyebrow">Preços</span>
-          <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Um plano por tamanho de agência.</h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">1 atendimento = 24 horas de conversa da IA com um contato, no site, no WhatsApp ou no Instagram. Respostas da sua equipe não contam.</p>
-          <p className="mt-2 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente, à parte do plano. As mensagens do Instagram não são cobradas pela Meta.</p>
+          <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Conta grátis. Cada chatbot no ar com um tamanho.</h2>
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">1 atendimento = 24 horas de conversa da IA com um contato, no site, no WhatsApp ou no Instagram, com até 40 respostas. Respostas da sua equipe não contam. Conectar canais não custa nada.</p>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente. As mensagens do Instagram não são cobradas pela Meta.</p>
         </div>
-        <div className="grid gap-5 md:grid-cols-3">
-          {(["freelancer", "agencia", "escala"] as const).map((id) => {
-            const p = PLANS[id];
-            const featured = id === "agencia";
+        <div className="grid gap-5 md:grid-cols-4">
+          {Object.values(BOT_SIZES).map((s) => {
+            const featured = s.id === "M";
             return (
-              <div key={id} className={featured ? "relative flex flex-col gap-4 rounded-2xl bg-brand p-7 text-ground" : "card flex flex-col gap-4 p-7"}>
+              <div key={s.id} className={featured ? "relative flex flex-col gap-4 rounded-2xl bg-brand p-7 text-ground" : "card flex flex-col gap-4 p-7"}>
                 {featured && <span className="absolute -top-3 left-7 rounded-full bg-amber px-2.5 py-1 text-xs font-bold uppercase tracking-[0.06em] text-ink">Mais escolhido</span>}
-                <div className="display text-xl font-bold">{p.name}</div>
+                <div className="display text-xl font-bold">{s.id === "volume" ? "Volume" : `Chatbot ${s.name}`}</div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="display text-[44px] font-bold leading-none">{brl(p.priceBrl)}</span>
-                  <span className={featured ? "text-sm text-[#c7d9d1]" : "text-sm text-muted"}>/mês</span>
+                  <span className="display text-[40px] font-bold leading-none">{brl(s.priceBrl)}</span>
+                  <span className={featured ? "text-sm text-[#c7d9d1]" : "text-sm text-muted"}>{s.id === "volume" ? "/pacote/mês" : "/mês"}</span>
                 </div>
                 <div className={featured ? "flex flex-col gap-2 text-[15px] text-[#dfe9e4]" : "flex flex-col gap-2 text-[15px] text-ink-2"}>
-                  <span>{p.bots} chatbots</span>
-                  <span>{num(p.atendimentos)} atendimentos/mês</span>
-                  <span>Sua marca no widget</span>
-                  <span>Gerador de demos ilimitado</span>
-                  {p.customDomain && <span>Painel com o seu domínio</span>}
+                  <span>{num(s.atendimentos)} atendimentos/mês{s.id === "volume" ? " por pacote" : ""}</span>
+                  <span>{s.description}</span>
+                  <span>Sua marca no widget e no painel</span>
                 </div>
                 <Link href="/cadastro" className={featured ? "btn mt-auto bg-ground text-brand hover:bg-white" : "btn-ghost mt-auto"}>Começar grátis</Link>
               </div>
             );
           })}
         </div>
+        <p className="text-[15px] text-ink-2">
+          Pacotes da conta: {Object.values(PACKS).map((p) => `${p.name} ${brl(p.priceBrl)}/mês`).join(" · ")}. Passou da cota? Ligue o excedente, pago com crédito: {brlCents(OVERAGE_PRICE_BRL)} por atendimento a mais.
+        </p>
       </section>
 
       <section className="px-6 pb-20 lg:px-16 xl:px-24">

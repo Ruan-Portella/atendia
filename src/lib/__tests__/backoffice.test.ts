@@ -97,12 +97,11 @@ describe("receita (Stripe)", () => {
 });
 
 describe("situação da agência", () => {
-  const now = Date.parse("2026-10-02T12:00:00Z");
-  it("teste, teste vencido, pagante e cancelada", () => {
-    expect(agencyStatus({ plan: "trial", trialEndsAt: "2026-10-10T00:00:00Z" }, now)).toBe("teste");
-    expect(agencyStatus({ plan: "trial", trialEndsAt: "2026-09-10T00:00:00Z" }, now)).toBe("teste_vencido");
-    expect(agencyStatus({ plan: "agencia", trialEndsAt: "2026-09-10T00:00:00Z" }, now)).toBe("pagante");
-    expect(agencyStatus({ plan: "cancelado", trialEndsAt: "2026-09-10T00:00:00Z" }, now)).toBe("cancelada");
+  it("pela assinatura: conta grátis, assinante, cancelando e atrasada", () => {
+    expect(agencyStatus({ billingStatus: "none", billingCancelAt: null })).toBe("gratis");
+    expect(agencyStatus({ billingStatus: "active", billingCancelAt: null })).toBe("assinante");
+    expect(agencyStatus({ billingStatus: "active", billingCancelAt: "2026-11-01T03:00:00Z" })).toBe("cancelando");
+    expect(agencyStatus({ billingStatus: "past_due", billingCancelAt: null })).toBe("atrasada");
   });
 });
 

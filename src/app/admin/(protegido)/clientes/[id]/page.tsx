@@ -13,7 +13,7 @@ import { targetMonthlyCents } from "@/lib/billing";
 import { botQuotaStatus } from "@/lib/atendimentos";
 import { continuousView } from "@/lib/continuous-check";
 import { requireAdmin } from "@/lib/platform-admin";
-import { agencyStatus, botChunkCounts, daysAgoIso, getAgencies, getMeasures, kindLabel, usd, usdBrl } from "@/lib/backoffice";
+import { AGENCY_STATUS_LABEL, agencyStatus, botChunkCounts, daysAgoIso, getAgencies, getMeasures, kindLabel, usd, usdBrl } from "@/lib/backoffice";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { stripe } from "@/lib/stripe";
 import { brl, num } from "@/lib/plans";
@@ -21,7 +21,6 @@ import { relativeTime } from "@/lib/utils";
 
 export const metadata = { title: "Agência" };
 
-const STATUS_LABEL = { pagante: "Pagante", teste: "Em teste", teste_vencido: "Teste vencido", cancelada: "Cancelada" } as const;
 const BOT_STATUS: Record<string, string> = { live: "publicado", draft: "rascunho", training: "lendo fontes", error: "com erro" };
 
 export default async function AdminClient({ params }: { params: Promise<{ id: string }> }) {
@@ -33,7 +32,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
   const db = createAdminClient();
   const since30 = daysAgoIso(30);
   const [{ data: bots }, measures, continuous, quotas, { data: billing }, target, credit] = await Promise.all([
-    db.from("bots").select("id, name, client_name, status, is_demo, paused_at, paused_by_plan_at, created_at").eq("agency_id", id).order("created_at"),
+    db.from("bots").select("id, name, client_name, status, is_demo, paused_at, created_at").eq("agency_id", id).order("created_at"),
     getMeasures({ agencyId: id, active: true }),
     continuousView(db, { agencyId: id }),
     botQuotaStatus(db, id),
@@ -78,7 +77,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         <div>
           <Link href="/admin/clientes" className="text-xs font-semibold text-muted">← Agências</Link>
           <h1 className="text-[26px] font-bold">{agency.name}</h1>
-          <p className="text-sm text-muted">{agency.email ?? "sem e-mail"} · desde {new Date(agency.createdAt).toLocaleDateString("pt-BR")} · {agency.planName} ({STATUS_LABEL[st]}{st === "teste" ? `, até ${new Date(agency.trialEndsAt).toLocaleDateString("pt-BR")}` : ""})</p>
+          <p className="text-sm text-muted">{agency.email ?? "sem e-mail"} · desde {new Date(agency.createdAt).toLocaleDateString("pt-BR")} · {AGENCY_STATUS_LABEL[st]}</p>
         </div>
         {agency.stripeCustomerId && (
           <a href={`https://dashboard.stripe.com/${testMode ? "test/" : ""}customers/${agency.stripeCustomerId}`} target="_blank" rel="noreferrer" className="btn-ghost">Abrir no Stripe ↗</a>
@@ -108,7 +107,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         autoRecharge={Boolean(billing?.credit_auto_enabled)}
       />
       <AgencyActions agency={agency} />
-      <AgencyFeatures agencyId={id} plan={agency.plan} features={agency.features} />
+      <AgencyFeatures agencyId={id} features={agency.features} />
       <ChannelSuspension agencyId={id} bots={(bots ?? []).filter((b) => !b.is_demo).map((b) => ({ id: b.id as string, label: `${b.name} · ${b.client_name}` }))} measures={measures} />
       <ContinuousChecks {...continuous} testAllowed={false} agencyView />
 
@@ -125,7 +124,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
               return (
                 <tr key={b.id as string} className="border-b border-line-2 last:border-0">
                   <td className="px-5 py-2.5"><span className="font-semibold">{b.name as string}</span><div className="text-xs text-muted">{b.client_name as string}{b.is_demo ? " · demo" : ""}</div></td>
-                  <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}{b.paused_by_plan_at && <span className="text-amber-ink"> · pausado pelo plano</span>}</td>
+                  <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}</td>
                   <td className="px-3 py-2.5">{(() => {
                     const q = quotaBy.get(b.id as string);
                     return q ? <BotSizeForm agencyId={id} botId={q.botId} size={q.size} volumePacks={q.volumePacks} override={q.override} used={q.used} quota={q.quota} overageEnabled={q.overageEnabled} overageCapBrl={q.overageCapBrl} overageUsed={q.overageUsed} /> : <span className="text-xs text-muted">demo</span>;

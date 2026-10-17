@@ -73,6 +73,7 @@ function setup(hook: Row = {}) {
     webhooks: [{ id: "w1", agency_id: BOT.agency_id, url: "https://saas.example.com/hook", secret_enc: seal(SECRET), events: ["contact.linked", "contact.unlinked"], scope_type: "all", scope_bot_ids: [], scope_client_id: null, active: true, failing_since: null, ...hook }],
     webhook_deliveries: [],
     bots: [BOT],
+    agency_packs: [{ agency_id: BOT.agency_id, pack: "integracoes", ends_at: null }],
     contacts: [{ id: "ctc1", phone_enc: "5521999991234", wa_user_enc: "BR.abc", ig_enc: null, last_inbound_at: null }],
     contact_links: [],
   };
@@ -124,6 +125,16 @@ describe("entrega", () => {
     expect(tables.webhook_deliveries[0]).toMatchObject({ status: "delivered", attempts: 1, last_status: 200 });
     await fire(db);
     expect(posted.calls).toHaveLength(1);
+  });
+
+  it("sem o pacote Integrações (ou com ele já fora): nada sai e nada fica na fila", async () => {
+    const { db, tables } = setup();
+    tables.agency_packs = [];
+    await fire(db);
+    tables.agency_packs = [{ agency_id: BOT.agency_id, pack: "integracoes", ends_at: "2026-10-01T03:00:00Z" }];
+    await fire(db, "lnk1:linked:p2");
+    expect(posted.calls).toHaveLength(0);
+    expect(tables.webhook_deliveries).toHaveLength(0);
   });
 
   it("falha: nova tentativa em 1 min com o mesmo id; webhook marcado como falhando", async () => {

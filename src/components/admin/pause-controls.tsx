@@ -1,9 +1,7 @@
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { disableWhatsAppAll, enableWhatsAppAll, extendTrial, liftMeasure, pauseAgencyAi, pauseAllAi, resumeAgencyAi, resumeAllAi, setAgencyPlanManually, suspendChannel } from "@/app/admin/(protegido)/acoes";
-import { manualPlanSwitch } from "@/lib/plan-limits";
-import { PLANS } from "@/lib/plans";
+import { disableWhatsAppAll, enableWhatsAppAll, liftMeasure, pauseAgencyAi, pauseAllAi, resumeAgencyAi, resumeAllAi, suspendChannel } from "@/app/admin/(protegido)/acoes";
 import type { AgencyRow, MeasureRow, PlatformFlags } from "@/lib/backoffice";
 import { relativeTime } from "@/lib/utils";
 
@@ -56,30 +54,6 @@ export function AgencyActions({ agency }: { agency: AgencyRow }) {
           <div className="flex flex-col gap-2 sm:flex-row">
             <input name="reason" required minLength={3} maxLength={200} placeholder="Motivo (fica registrado)" className="input" />
             <SubmitButton className="btn-danger shrink-0" pendingLabel="Pausando…">Pausar a IA</SubmitButton>
-          </div>
-        </ActionForm>
-      )}
-      {agency.plan === "trial" && (
-        <ActionForm action={extendTrial.bind(null, agency.id)} className="flex flex-col gap-2 border-t border-line-2 pt-4">
-          <span className="text-sm font-semibold">Estender o teste</span>
-          <p className="text-xs text-muted">Hoje vai até {new Date(agency.trialEndsAt).toLocaleDateString("pt-BR")}. Conta a partir de hoje ou do fim atual, o que vier depois; os e-mails de fim de teste voltam a valer.</p>
-          <div className="flex gap-2">
-            <select name="days" defaultValue="7" className="input w-auto">
-              {[3, 7, 14, 30].map((d) => <option key={d} value={d}>{d} dias</option>)}
-            </select>
-            <SubmitButton className="btn-ghost" pendingLabel="Estendendo…">Estender</SubmitButton>
-          </div>
-        </ActionForm>
-      )}
-      {manualPlanSwitch && (
-        <ActionForm action={setAgencyPlanManually.bind(null, agency.id)} className="flex flex-col gap-2 border-t border-line-2 pt-4">
-          <span className="text-sm font-semibold">Trocar o plano (sem Stripe)</span>
-          <p className="text-xs text-muted">Só aparece fora da produção (staging). Aplica os limites do plano novo como o Stripe faria: o excedente fica pausado e a agência escolhe o que fica ativo em Cobrança &gt; Limites do plano.</p>
-          <div className="flex gap-2">
-            <select name="plan" defaultValue={agency.plan} className="input w-auto">
-              {Object.values(PLANS).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <SubmitButton className="btn-ghost" pendingLabel="Trocando…">Trocar</SubmitButton>
           </div>
         </ActionForm>
       )}

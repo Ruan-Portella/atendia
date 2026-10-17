@@ -1,4 +1,5 @@
 import { jsonSchema, tool, type Tool } from "ai";
+import { hasPack } from "./entitlements";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callAction, needsConfirmation, paramsProblems, reaches, type ActionLevel, type ActionRow, type CallContact, type CallResult } from "./actions";
 import { gateActionData, idLabels, saveIdMap } from "./action-gate";
@@ -78,14 +79,25 @@ export function contactLevel(channel: string, waPhone: string | null): ActionLev
   return "anonimo";
 }
 
-/** Ações que a IA deste bot pode receber agora (ativas, sem pausa do plano). */
+/**
+ * Ações que a IA deste bot pode receber agora: ativas, com o pacote Integrações na conta (sem ele,
+ * ficam guardadas e o botão Testar do painel continua funcionando).
+ */
 export async function loadBotActions(db: SupabaseClient, botId: string): Promise<ActionRow[]> {
-  const { data, error } = await db.from("actions").select("*").eq("bot_id", botId).eq("active", true).is("paused_by_plan_at", null).order("name");
+  const { data, error } = await db.from("actions").select("*, bots!inner(agency_id)").eq("bot_id", botId).eq("active", true).order("name");
   if (error) {
     console.error("ações: não carregaram", error.message);
     return [];
   }
-  return (data ?? []) as ActionRow[];
+  const rows = (data ?? []) as Array<ActionRow & { bots: { agency_id: string } | Array<{ agency_id: string }> }>;
+  if (!rows.length) return [];
+  const owner = Array.isArray(rows[0].bots) ? rows[0].bots[0]?.agency_id : rows[0].bots?.agency_id;
+  if (!owner || !(await hasPack(db, owner, "integracoes"))) return [];
+  return rows.map((r) => {
+    const a: Record<string, unknown> = { ...r };
+    delete a.bots;
+    return a as unknown as ActionRow;
+  });
 }
 
 export interface CallerInput {

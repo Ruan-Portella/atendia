@@ -5,8 +5,7 @@ const row = (o: Partial<ClientExportRow> = {}): ClientExportRow => ({
   agencyId: "a1",
   agencyName: "Ruan Marketing",
   ownerEmail: "dono@agencia.com",
-  planName: "Escala",
-  agencySituation: "Pagante",
+  agencySituation: "Assinante",
   clientId: "c1",
   clientName: "Fintra",
   botId: "b1",
@@ -34,7 +33,7 @@ describe("lista de clientes em CSV", () => {
     const [head, line] = csv.slice(1).split("\r\n");
     expect(head.split(";")).toHaveLength(EXPORT_COLUMNS.length);
     expect(head).toContain("Portfólio da Meta (business_id)");
-    expect(line).toContain("Ruan Marketing;dono@agencia.com;Escala;Pagante;Fintra;ativo;Assistente;publicado;42");
+    expect(line).toContain("Ruan Marketing;dono@agencia.com;Assinante;Fintra;ativo;Assistente;publicado;42");
     expect(line).toContain("@fintra");
   });
 

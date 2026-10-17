@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { apiContacts, parseContactAddress, whatsappContactsByPhone, whatsappPhonesOf } from "./contacts";
 import { canonicalPhone } from "./phone";
-import { campaignsInPlan } from "./plan-limits";
 import { campaignDetail, campaignReport, createCampaign, estimateFor, reportNumbers, templateProblem, type CampaignKind } from "./campaigns";
 import { buildMarketingAudience, buildReminderAudience, renderVariables, templateGate, variablesProblem, type VariableSpec } from "./campaign-audience";
 import { REMINDER_MAX_DAYS, REMINDER_MAX_ROWS, type ReminderRow } from "./reminder-sheet";
@@ -139,8 +138,6 @@ export async function postCampaign(req: Request, api: ApiContext): Promise<Respo
   const c = parseCampaignBody(body);
   return withIdempotency(api, req, raw, async () => {
     const db = api.db;
-    const { data: agency } = await db.from("agencies").select("plan").eq("id", api.key.agency_id).maybeSingle();
-    if (!campaignsInPlan(String(agency?.plan ?? ""))) throw new ApiError(403, "plan_not_allowed", "Campanhas fazem parte dos planos pagos (Freelancer, Agência e Escala).");
     const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name, paused_at").eq("id", botId).maybeSingle();
     if (!bot) throw notFound();
     if (bot.paused_at) throw new ApiError(422, "bot_paused", "O bot está pausado pelo dono: campanhas e lembretes não saem até ele ser retomado.");

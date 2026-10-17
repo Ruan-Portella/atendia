@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { hasPack } from "./entitlements";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "./supabase/admin";
 import { isCustomHost } from "./domain";
@@ -150,6 +151,8 @@ export function withApiKey<P extends Record<string, string> = Record<string, nev
       const limited = await firstExceeded(db, [{ key: `api:${key.id}`, ...RATE, message: "rate_limited" }]);
       if (limited) return apiErrorResponse(429, "rate_limited", "Muitas requisições com esta chave. Tente de novo em instantes.", undefined, { "Retry-After": String(RATE.windowSeconds) });
       if (!key.permissions.includes(permission)) return apiErrorResponse(403, "forbidden_scope", `A chave não tem a permissão ${permission}.`, { permission });
+      // a API é do pacote Integrações: sem ele, as chaves ficam guardadas e a API recusa
+      if (!(await hasPack(db, key.agency_id, "integracoes"))) return apiErrorResponse(403, "plan_not_allowed", "A API faz parte do pacote Integrações. Assine em Cobrança → Assinatura.", { pack: "integracoes" });
       if (!key.last_used_at || Date.now() - Date.parse(key.last_used_at) > TOUCH_MS) {
         void db.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", key.id).then(({ error }) => error && console.error("api: last_used_at", error.message));
       }

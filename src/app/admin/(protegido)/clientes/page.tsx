@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/platform-admin";
-import { agencyStatus, getAgencies, getClientExport, usd, usdBrl, type AgencyRow } from "@/lib/backoffice";
+import { AGENCY_STATUS_LABEL as STATUS_LABEL, agencyStatus, getAgencies, getClientExport, usd, usdBrl, type AgencyRow, type AgencyStatus } from "@/lib/backoffice";
 import { sharedPortfolios } from "@/lib/client-export";
 import { brl, num } from "@/lib/plans";
 import { cn, relativeTime } from "@/lib/utils";
 
 export const metadata = { title: "Agências" };
 
-const STATUS_LABEL = { pagante: "Pagante", teste: "Em teste", teste_vencido: "Teste vencido", cancelada: "Cancelada" } as const;
-type Status = keyof typeof STATUS_LABEL;
+type Status = AgencyStatus;
 const SORTS = { recentes: "Mais recentes", custo: "Maior custo de IA", uso: "Maior uso da cota", atividade: "Atividade recente" } as const;
 type Sort = keyof typeof SORTS;
 
@@ -78,7 +77,7 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
           <thead className="border-b border-line text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2.5 font-semibold">Agência</th>
-              <th className="px-3 py-2.5 font-semibold">Plano</th>
+              <th className="px-3 py-2.5 font-semibold">Assinatura</th>
               <th className="px-3 py-2.5 font-semibold">Bots</th>
               <th className="px-3 py-2.5 font-semibold">Canais</th>
               <th className="px-3 py-2.5 text-right font-semibold">Atendimentos no mês</th>
@@ -90,7 +89,7 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
           <tbody>
             {rows.map((a) => {
               const st = agencyStatus(a);
-              const margin = a.priceBrl - a.aiCostMonthUsd * fx;
+              const margin = a.monthlyBrl - a.aiCostMonthUsd * fx;
               return (
                 <tr key={a.id} className="border-b border-line-2 last:border-0 hover:bg-ground">
                   <td className="px-4 py-2.5">
@@ -98,8 +97,8 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
                     <div className="text-xs text-muted">{a.email ?? "sem e-mail"}</div>
                   </td>
                   <td className="px-3 py-2.5">
-                    {a.planName}
-                    <div className={cn("text-xs", st === "teste_vencido" || st === "cancelada" ? "text-danger" : "text-muted")}>{STATUS_LABEL[st]}</div>
+                    {a.monthlyBrl ? `${brl(a.monthlyBrl)}/mês` : "—"}
+                    <div className={cn("text-xs", st === "atrasada" || st === "cancelando" ? "text-danger" : "text-muted")}>{STATUS_LABEL[st]}</div>
                     {a.aiPausedAt && <div className="text-xs font-semibold text-danger">IA pausada</div>}
                   </td>
                   <td className="px-3 py-2.5 tabular">{a.liveBots}/{a.bots}</td>
@@ -109,7 +108,7 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
                     <div className={cn("text-xs", quotaShare(a) >= 0.9 ? "text-danger" : "text-muted")}>{Math.round(quotaShare(a) * 100)}% da cota</div>
                   </td>
                   <td className="px-3 py-2.5 text-right tabular">{usd(a.aiCostMonthUsd)}</td>
-                  <td className={cn("px-3 py-2.5 text-right tabular", a.priceBrl && margin < 0 ? "font-semibold text-danger" : "")}>{a.priceBrl ? brl(margin) : "—"}</td>
+                  <td className={cn("px-3 py-2.5 text-right tabular", a.monthlyBrl && margin < 0 ? "font-semibold text-danger" : "")}>{a.monthlyBrl ? brl(margin) : "—"}</td>
                   <td className="px-4 py-2.5 text-xs text-muted">{a.lastActivity ? relativeTime(a.lastActivity) : "nunca"}</td>
                 </tr>
               );

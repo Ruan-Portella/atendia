@@ -98,6 +98,11 @@ function world() {
     ],
     contact_ages: [],
     audit_log: [],
+    // a API é do pacote Integrações
+    agency_packs: [
+      { agency_id: A, pack: "integracoes", ends_at: null },
+      { agency_id: B, pack: "integracoes", ends_at: null },
+    ],
   };
   return { tables, keys };
 }
@@ -148,6 +153,14 @@ describe("ponto único de acesso (isolamento)", () => {
 
   it("domínio de agência: a API não responde", async () => {
     expect((await call(w.keys.all.key, "chat.agencia.com.br")).status).toBe(404);
+    expect(seen).toBeNull();
+  });
+
+  it("conta sem o pacote Integrações (ou com ele já fora): 403 plan_not_allowed, sem chegar à rota", async () => {
+    w.tables.agency_packs = [{ agency_id: A, pack: "integracoes", ends_at: "2026-10-01T03:00:00Z" }];
+    const r = await call(w.keys.all.key);
+    expect(r.status).toBe(403);
+    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("plan_not_allowed");
     expect(seen).toBeNull();
   });
 

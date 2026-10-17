@@ -38,7 +38,7 @@ export async function acceptTeamInvite(token: string): Promise<ActionResult> {
   redirect("/painel/clientes");
 }
 
-/** Recusa os convites em aberto e cria a agência da pessoa (teste grátis). */
+/** Recusa os convites em aberto e cria a agência da pessoa (conta grátis). */
 export async function createOwnAgency(): Promise<ActionResult> {
   const me = await session();
   if (!me) redirect("/login");

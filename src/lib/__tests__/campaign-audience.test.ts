@@ -3,7 +3,6 @@ import { exclusionOf, templateGate } from "../campaign-audience";
 import { renderVariables, variablesProblem } from "../campaign-text";
 import { isQuietHour, localHour, localInputToIso, nextEightAm } from "../timezone";
 import { isOptOutKeyword } from "../suppression";
-import { campaignsInPlan } from "../plan-limits";
 import { decideSend } from "../campaigns";
 
 const ok = { phone: "5521999990000", suppressed: [], consent: "granted", regulated: false, age: null } as Parameters<typeof exclusionOf>[0];
@@ -90,8 +89,4 @@ describe("regras da tela", () => {
     expect(isOptOutKeyword("parar de receber")).toBe(false);
   });
 
-  it("campanhas só nos planos pagos", () => {
-    expect(["freelancer", "agencia", "escala"].map(campaignsInPlan)).toEqual([true, true, true]);
-    expect(["trial", "cancelado", "qualquer"].map(campaignsInPlan)).toEqual([false, false, false]);
-  });
 });

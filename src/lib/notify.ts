@@ -61,7 +61,7 @@ async function markLeadWaiting(db: SupabaseClient, bot: BotRow, conversationId: 
  * escopo) e do aviso configurado no bot, sem duplicar.
  */
 async function recipients(db: SupabaseClient, bot: BotRow): Promise<string[]> {
-  const { data: members } = await db.from("agency_members").select("id, email, scope").eq("agency_id", bot.agency_id).is("removed_at", null).not("accepted_at", "is", null).is("paused_by_plan_at", null);
+  const { data: members } = await db.from("agency_members").select("id, email, scope").eq("agency_id", bot.agency_id).is("removed_at", null).not("accepted_at", "is", null);
   const rows = (members ?? []) as Array<{ id: string; email: string; scope: string }>;
   const selected = rows.filter((m) => m.scope === "selected").map((m) => m.id);
   const inScope = new Set<string>();

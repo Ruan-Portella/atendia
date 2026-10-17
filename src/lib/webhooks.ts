@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { NEEDS_INTEGRATIONS, hasPack } from "./entitlements";
 import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { seal, unseal } from "./secret-box";
@@ -103,12 +104,10 @@ export interface WebhookRow {
   scope_client_id: string | null;
   active: boolean;
   failing_since: string | null;
-  /** Excedente do plano (downgrade): não gera entregas nem acumula. */
-  paused_by_plan_at?: string | null;
   /** Cabeçalhos personalizados, cifrados (C pública). */
   headers_enc?: string | null;
 }
-const WEBHOOK_COLS = "id, agency_id, url, secret_enc, events, scope_type, scope_bot_ids, scope_client_id, active, failing_since, paused_by_plan_at, headers_enc";
+const WEBHOOK_COLS = "id, agency_id, url, secret_enc, events, scope_type, scope_bot_ids, scope_client_id, active, failing_since, headers_enc";
 
 /** O webhook recebe eventos deste chatbot? Função pura. */
 export const webhookCovers = (w: Pick<WebhookRow, "scope_type" | "scope_bot_ids" | "scope_client_id">, bot: { id: string; client_id: string | null }) =>
@@ -205,9 +204,10 @@ async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = 
   return next ? "pending" : "failed";
 }
 
-/** Webhooks ativos da agência que querem este evento deste chatbot. */
+/** Webhooks ativos da agência que querem este evento deste chatbot (só com o pacote Integrações). */
 export async function webhookTargets(db: SupabaseClient, agencyId: string, type: WebhookEvent, bot: { id: string; client_id: string | null }): Promise<WebhookRow[]> {
-  const { data: hooks } = await db.from("webhooks").select(WEBHOOK_COLS).eq("agency_id", agencyId).eq("active", true).is("paused_by_plan_at", null);
+  if (!(await hasPack(db, agencyId, "integracoes"))) return [];
+  const { data: hooks } = await db.from("webhooks").select(WEBHOOK_COLS).eq("agency_id", agencyId).eq("active", true);
   return ((hooks ?? []) as WebhookRow[]).filter((w) => w.events.includes(type) && webhookCovers(w, bot));
 }
 
@@ -304,9 +304,10 @@ export async function retryDueDeliveries(db: SupabaseClient, o: { limit?: number
   for (const d of (data ?? []) as DeliveryRow[]) {
     if (o.hasTime && !o.hasTime()) break;
     const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", d.webhook_id).maybeSingle<WebhookRow>();
-    // webhook desativado ou pausado não entrega nem acumula
-    if (!w?.active || w.paused_by_plan_at) {
-      await db.from("webhook_deliveries").update({ status: "failed", last_error: w?.paused_by_plan_at ? "webhook pausado pelo plano" : "webhook desativado" }).eq("id", d.id);
+    // webhook desativado, ou a conta sem o pacote Integrações: não entrega nem acumula
+    const noPack = w?.active ? !(await hasPack(db, w.agency_id, "integracoes")) : false;
+    if (!w?.active || noPack) {
+      await db.from("webhook_deliveries").update({ status: "failed", last_error: noPack ? "sem o pacote Integrações" : "webhook desativado" }).eq("id", d.id);
       continue;
     }
     await attempt(db, d, w);
@@ -324,15 +325,17 @@ export async function redeliver(db: SupabaseClient, agencyId: string, deliveryId
   if (!d) return { error: "Entrega não encontrada (pode ter sido apagada por um pedido de exclusão)." };
   const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", d.webhook_id).eq("agency_id", agencyId).maybeSingle<WebhookRow>();
   if (!w) return { error: "Entrega não encontrada." };
-  if (!w.active || w.paused_by_plan_at) return { error: "Reative o webhook antes de reenviar." };
+  if (!w.active) return { error: "Reative o webhook antes de reenviar." };
+  if (!(await hasPack(db, agencyId, "integracoes"))) return { error: NEEDS_INTEGRATIONS };
   return { result: await attempt(db, d, w) };
 }
 
 /** Falhas do webhook desde a data voltam para a fila; as primeiras já saem agora. */
 export async function requeueFailed(db: SupabaseClient, agencyId: string, webhookId: string, since: string, hasTime: () => boolean): Promise<{ requeued: number; sent: number } | { error: string }> {
-  const { data: w } = await db.from("webhooks").select("id, active, paused_by_plan_at").eq("id", webhookId).eq("agency_id", agencyId).maybeSingle();
+  const { data: w } = await db.from("webhooks").select("id, active").eq("id", webhookId).eq("agency_id", agencyId).maybeSingle();
   if (!w) return { error: "Webhook não encontrado." };
-  if (!w.active || w.paused_by_plan_at) return { error: "Reative o webhook antes de reenviar as falhas." };
+  if (!w.active) return { error: "Reative o webhook antes de reenviar as falhas." };
+  if (!(await hasPack(db, agencyId, "integracoes"))) return { error: NEEDS_INTEGRATIONS };
   const { data } = await db.from("webhook_deliveries").update({ status: "pending", next_attempt_at: new Date().toISOString() }).eq("webhook_id", webhookId).eq("status", "failed").gte("created_at", since).select("id");
   const requeued = data?.length ?? 0;
   const sent = requeued ? await retryDueDeliveries(db, { webhookId, hasTime, limit: 200 }) : 0;

@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
-import { applyRetention, refreshSources, trialReminders } from "@/lib/jobs";
+import { applyRetention, refreshSources } from "@/lib/jobs";
 import { unlinkInactive } from "@/lib/pairing";
 import { reencryptHistory } from "@/lib/reencrypt";
 import { refreshReportDaily } from "@/lib/report-daily";
@@ -51,7 +51,6 @@ async function daily() {
   };
   // fila da Meta primeiro: evento esquecido é contato sem resposta
   const inbound = await run("fila da Meta", () => sweepInbound(db, inboundHandlers, hasTime));
-  const trial = await run("avisos de teste", () => trialReminders(db));
   // totais diários antes da retenção: o que ela apagar já está somado nos relatórios
   const reports = await run("totais diários", () => refreshReportDaily(db, () => hasTime()));
   // verificação contínua por cliente (B1'): depois dos totais diários, que dão o volume da semana
@@ -93,5 +92,5 @@ async function daily() {
   // análise do bot: as agendadas (gatilhos agrupados) e os clientes antigos
   // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, trial, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

@@ -5,10 +5,9 @@ const TABS = [
   { href: "/painel/cobranca", label: "Assinatura" },
   { href: "/painel/cobranca/uso", label: "Uso e custo" },
   { href: "/painel/cobranca/credito", label: "Crédito" },
-  { href: "/painel/cobranca/limites", label: "Limites do plano" },
 ] as const;
 
-/** Abas de Cobrança: assinatura (tamanhos e pacotes), uso e custo do mês, o que fica ativo dentro do plano. */
+/** Abas de Cobrança: assinatura (tamanhos e pacotes), uso e custo do mês e o crédito do excedente. */
 export function BillingTabs({ active }: { active: (typeof TABS)[number]["href"] }) {
   return (
     <nav className="mt-4 flex gap-1 border-b border-line">

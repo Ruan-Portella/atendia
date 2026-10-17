@@ -15,9 +15,8 @@ import { apiPauseActive } from "./presence";
  *   3. Humano na conversa: "Assumir", resposta pelo celular/app há menos de 1 hora, ou IA pausada
  *      pela integração (API, com prazo; sem avisar a equipe)
  *   4. Bot pausado pelo dono (botão de emergência): aviso só se ele pediu
- *   5. Modo só humano: teste vencido, assinatura cancelada, IA pausada pela BoaVoz, chatbot pausado
- *      pelo plano (excedente do downgrade); a cota (do
- *      atendimento) entra aqui quando openAtendimento não abre, antes de chamar a IA
+ *   5. Modo só humano: IA pausada pela BoaVoz; a cota do chatbot (sem tamanho, cota cheia, sem
+ *      crédito ou no teto do excedente) entra aqui quando openAtendimento não abre, antes de chamar a IA
  *   6. Normal
  * O opt-out (SAIR, PARAR, STOP) roda antes de todos; a confirmação só sai se dá para enviar.
  * Risco à vida nunca roda nos degraus 1 e 2; nos 3 a 5, dispara o texto fixo de emergência.
@@ -101,7 +100,7 @@ export function decideMode(f: ModeFacts): Mode {
 export const PAYMENT_RETRY_MS = 60 * 60_000;
 
 export interface ModeInput {
-  bot: { id: string; agency_id: string; paused_at?: string | null; pause_notify?: boolean | null; paused_by_plan_at?: string | null };
+  bot: { id: string; agency_id: string; paused_at?: string | null; pause_notify?: boolean | null };
   channel: ModeChannel;
   conversation: { id: string; takeover_at?: string | null; handled_at?: string | null; ai_paused_until?: string | null } | null;
   /** Número do WhatsApp ligado ao bot (as colunas que importam aqui). */
@@ -164,7 +163,7 @@ export async function resolveMode(db: SupabaseClient, input: ModeInput, now = Da
     apiPaused: apiPauseActive(conversation?.ai_paused_until, now),
     botPaused: Boolean(bot.paused_at),
     botPauseNotify: Boolean(bot.pause_notify),
-    humanOnly: humanOnly ?? (bot.paused_by_plan_at ? "plan_paused" : null),
+    humanOnly: humanOnly ?? null,
     coexistence: channel === "whatsapp" && Boolean(input.wa?.coexistence),
   };
   return { ...decideMode(facts), facts };
@@ -208,7 +207,7 @@ const CHANNEL_NAME: Record<ModeChannel, string> = { whatsapp: "WhatsApp", instag
  * bloqueia aqui: o envio pela equipe é a nova tentativa (se o cartão entrou, sai).
  */
 export async function sendBlockedReason(db: SupabaseClient, botId: string, channel: ModeChannel): Promise<string | null> {
-  const { data: bot } = await db.from("bots").select("id, agency_id, paused_at, pause_notify, paused_by_plan_at").eq("id", botId).maybeSingle();
+  const { data: bot } = await db.from("bots").select("id, agency_id, paused_at, pause_notify").eq("id", botId).maybeSingle();
   if (!bot) return "Chatbot não encontrado.";
   const [{ data: wa }, { data: ig }] = await Promise.all([
     channel === "whatsapp" ? db.from("whatsapp_channels").select("disconnected_at, payment_issue_at, waba_id, coexistence").eq("bot_id", botId).maybeSingle() : Promise.resolve({ data: null }),

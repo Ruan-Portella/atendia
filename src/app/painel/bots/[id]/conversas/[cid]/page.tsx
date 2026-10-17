@@ -32,7 +32,6 @@ import { botGateExemptions, conversationGateCategories } from "@/lib/gate/except
 import { CATEGORIES } from "@/lib/gate/rules";
 import { GateReviewButton } from "@/components/gate-review-button";
 import { ageRecord } from "@/lib/gate/age";
-import { campaignsInPlan } from "@/lib/plan-limits";
 import { CONSENT_LABEL, SOURCE_LABEL, consentHistory, consentStateOf } from "@/lib/marketing-consent";
 import { suppressionScope } from "@/lib/suppression";
 
@@ -74,10 +73,10 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   // modelos aprovados, para retomar a conversa (só com o WhatsApp liberado para a agência)
   let templates: SendableTemplate[] | null = null;
   let resume: ResumeStatus | null = null;
-  if (isWhatsApp && !(await channelBlock(createAdminClient(), agency.id, "whatsapp", undefined, { botId: id }))) {
+  if (isWhatsApp && !(await channelBlock(createAdminClient(), agency.id, "whatsapp"))) {
     const ch = await loadTemplateChannel(createAdminClient(), id);
     // o modelo de retomada vem primeiro; conta antiga sem ele: o BoaVoz cria agora (análise da Meta)
-    const loaded = ch ? await conversationTemplates(ch, { marketing: campaignsInPlan(agency.plan) }).catch(() => ({ templates: [] as SendableTemplate[], resume: null })) : null;
+    const loaded = ch ? await conversationTemplates(ch, { marketing: true }).catch(() => ({ templates: [] as SendableTemplate[], resume: null })) : null;
     templates = loaded?.templates ?? null;
     resume = loaded?.resume ?? null;
     // (uma tentativa por dia por chatbot: se a Meta recusar a criação, não insiste a cada página)

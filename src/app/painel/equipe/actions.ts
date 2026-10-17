@@ -39,7 +39,7 @@ export async function inviteTeamMember(formData: FormData): Promise<InviteResult
   if (role === "admin" && ctx.role !== "owner") return fail("Só o dono da agência convida um administrador.");
   const access = scopeFromForm(formData);
   const db = createAdminClient();
-  const r = await inviteMember(db, { agencyId: ctx.agency.id, planId: ctx.agency.plan, by: ctx.userId, email: String(formData.get("email") ?? ""), role, access });
+  const r = await inviteMember(db, { agencyId: ctx.agency.id, by: ctx.userId, email: String(formData.get("email") ?? ""), role, access });
   if (!r.ok) return fail(r.message);
   const email = String(formData.get("email")).trim().toLowerCase();
   await auditTeam(ctx, "equipe.convidar", r.memberId, { after: { email, papel: role, escopo: scopeText(access) } });

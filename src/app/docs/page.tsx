@@ -4,7 +4,7 @@ import { DocPage, H2, Note, NextSteps, Table } from "@/components/docs/doc";
 // o modelo de título do layout vale para as páginas filhas, não para esta (mesmo segmento)
 export const metadata = { title: { absolute: "Documentação · BoaVoz" } };
 
-/** Entrada da documentação: o que dá para integrar, em que plano, e por onde começar. */
+/** Entrada da documentação: o que dá para integrar, em que pacote, e por onde começar. */
 export default function DocsHome() {
   return (
     <DocPage
@@ -22,9 +22,9 @@ export default function DocsHome() {
         ]}
       />
 
-      <H2 id="planos">Em que plano</H2>
+      <H2 id="pacotes">Em que pacote</H2>
       <p>
-        As Integrações estão nos planos <strong>Agência</strong> e <strong>Escala</strong>. O Freelancer não tem. No teste grátis, dá para cadastrar ações de consulta e criar chaves de API com as permissões de conversas, contatos e pareamento; enviar mensagens e campanhas pela API e as ações que criam, alteram ou cancelam ficam para depois da assinatura.
+        Ações na conversa, webhooks, a API e a identificação de usuários são o pacote <strong>Integrações</strong> (R$ 49 por mês, por conta). Sem ele, dá para cadastrar ações e webhooks e conferir cada um pelo botão Testar; a IA não usa as ações, os webhooks não entregam e a API responde <code>403 plan_not_allowed</code>. O pacote <strong>Plataforma</strong> (R$ 199 por mês, exige o Integrações) libera o segredo de identidade para todas as lojas, o chatbot modelo e as lojas pela API.
       </p>
 
       <H2 id="onde-configurar">Onde configurar</H2>

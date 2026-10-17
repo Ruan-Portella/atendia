@@ -81,11 +81,6 @@ describe("modo só humano", () => {
     return { from: (t: string) => (t === "agencies" ? q(agency) : q(null)) } as unknown as SupabaseClient;
   }
 
-  it("plano cancelado e teste vencido param a IA também em conversa aberta", async () => {
-    expect(await aiBlockedReason(db({ plan: "cancelado" }), "a1")).toBe("cancelled");
-    expect(await aiBlockedReason(db({ plan: "trial", trial_ends_at: "2020-01-01T00:00:00Z" }), "a1")).toBe("trial_expired");
-  });
-
   it("a cota não é conferida aqui: é do atendimento, antes de chamar a IA", async () => {
     expect(await aiBlockedReason(db({ plan: "agencia" }), "a1")).toBeNull();
   });

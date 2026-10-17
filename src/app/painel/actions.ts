@@ -37,7 +37,8 @@ import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { WhatsAppError, waIdVariants, getPhoneNumber, hasPaymentMethod, subscribeApp, whatsappConfigured } from "@/lib/whatsapp";
-import { channelBlock, trialContentProblem } from "@/lib/features";
+import { channelBlock } from "@/lib/features";
+import { NEEDS_DOMAIN } from "@/lib/entitlements";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
 import { createConnectLink } from "@/lib/whatsapp-connect-link";
 import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "@/lib/channel-disconnect";
@@ -58,7 +59,6 @@ import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
-import { campaignsInPlan, setPlanPause, type PlanItemKind } from "@/lib/plan-limits";
 import { firstExceeded } from "@/lib/rate-limit";
 import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -111,9 +111,11 @@ async function resolveClient(supabase: Db, agencyId: string, fd: FormData): Prom
   return data;
 }
 
-async function botLimitReached(supabase: Db, agencyId: string, limit: number) {
-  const { count } = await supabase.from("bots").select("id", { count: "exact", head: true }).eq("agency_id", agencyId).eq("is_demo", false).is("paused_by_plan_at", null);
-  return (count ?? 0) >= limit;
+/** A análise do bot precisa de conteúdo: pelo menos 1 fonte pronta e as instruções escritas. Pura; null = pode. */
+function analysisContentProblem(readySources: number, instructions: string | null | undefined): string | null {
+  if (readySources < 1) return "A análise precisa de pelo menos 1 fonte pronta na base de conhecimento (aba Base de conhecimento).";
+  if (!instructions?.trim()) return "A análise precisa das instruções do assistente escritas (aba Personalidade).";
+  return null;
 }
 
 /* ------------------------------------------------------------------ clientes */
@@ -166,9 +168,8 @@ export async function deleteClientRecord(clientId: string): Promise<ActionResult
 /** Cria um chatbot (não demo) para um cliente e vai para o editor. */
 export async function createBot(formData: FormData): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);
-  const { agency, plan } = await requireAgency();
+  const { agency } = await requireAgency();
   const supabase = await createClient();
-  if (await botLimitReached(supabase, agency.id, plan.bots)) redirect("/painel/cobranca?limite=bots");
 
   const n = assistantName(formData.get("name"));
   if ("error" in n) return fail(n.error);
@@ -434,9 +435,8 @@ export async function resumeBot(botId: string): Promise<ActionResult> {
 /** Converte uma demo em chatbot de verdade (mantém a base de conhecimento), ligado a um cliente. */
 export async function convertDemo(botId: string, formData: FormData): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);
-  const { agency, plan } = await requireAgency();
+  const { agency } = await requireAgency();
   const supabase = await createClient();
-  if (await botLimitReached(supabase, agency.id, plan.bots)) redirect("/painel/cobranca?limite=bots");
   const n = text(formData.get("name")) ? assistantName(formData.get("name")) : null;
   if (n && "error" in n) return fail(n.error);
   const client = await resolveClient(supabase, agency.id, formData);
@@ -693,8 +693,8 @@ export async function setAutoRefresh(botId: string, formData: FormData): Promise
 export async function connectWhatsApp(botId: string, formData: FormData): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);
   const { agency } = await requireAgency();
-  // liberação da agência (backoffice) e, no teste grátis, o conteúdo mínimo do chatbot
-  const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp", botId);
+  // liberação da agência (backoffice) ou a abertura geral do canal
+  const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp");
   if (locked) return fail(locked);
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();
@@ -815,8 +815,7 @@ async function notifyReview(clientName: string, agencyName: string, status: stri
 export async function createWhatsAppConnectLink(botId: string, channel: "whatsapp" | "instagram" = "whatsapp"): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
   if (!(await allowed("config"))) return { ok: false, message: DENIED };
   const { agency } = await requireAgency();
-  // WhatsApp no teste grátis: o conteúdo mínimo já vale para gerar o link
-  const locked = await channelBlock(createAdminClient(), agency.id, channel, channel === "whatsapp" ? botId : undefined);
+  const locked = await channelBlock(createAdminClient(), agency.id, channel);
   if (locked) return { ok: false, message: locked };
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
@@ -867,7 +866,7 @@ export async function analyzeBotNow(botId: string): Promise<ActionResult> {
   const { data: bot } = await supabase.from("bots").select("id, persona, is_demo").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) return fail("Chatbot não encontrado.");
   const { count } = await supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("status", "ready");
-  const problem = trialContentProblem(count ?? 0, (bot.persona as { instructions?: string } | null)?.instructions);
+  const problem = analysisContentProblem(count ?? 0, (bot.persona as { instructions?: string } | null)?.instructions);
   if (problem) return fail(problem);
   const admin = createAdminClient();
   const exceeded = await firstExceeded(admin, [{ key: `analise:${botId}`, max: 3, windowSeconds: 3600, message: "Muitas análises seguidas. Tente de novo daqui a pouco." }]);
@@ -950,7 +949,7 @@ export async function disconnectInstagram(botId: string): Promise<ActionResult> 
 /** Número do WhatsApp do chatbot, conferindo a liberação da agência e o dono do chatbot. */
 async function ownedTemplateChannel(botId: string): Promise<TemplateChannel | { error: string }> {
   const { agency } = await requireAgency();
-  const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp", undefined, { botId });
+  const locked = await channelBlock(createAdminClient(), agency.id, "whatsapp");
   if (locked) return { error: locked };
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
@@ -973,10 +972,9 @@ async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: stri
   // regra de estado: ordem da Meta, desligamento geral ou suspensão pela BoaVoz
   const blocked = await sendBlockedReason(createAdminClient(), botId, "whatsapp");
   if (blocked) return { error: `${blocked} O modelo não foi enviado.` };
-  const { plan } = await requireAgency();
   let templates;
   try {
-    templates = await listSendable(ch, { marketing: campaignsInPlan(plan.id) });
+    templates = await listSendable(ch, { marketing: true });
   } catch (e) {
     return { error: `Não deu para ler os modelos: ${await metaError(botId, e)}` };
   }
@@ -1115,8 +1113,8 @@ export async function startWhatsAppConversation(botId: string, formData: FormDat
 /** Salva (ou remove) o domínio próprio. Trocar de domínio exige verificar de novo. */
 export async function saveCustomDomain(formData: FormData): Promise<ActionResult> {
   if (!(await allowed("brand"))) return fail(DENIED);
-  const { agency, plan } = await requireAgency();
-  if (!plan.customDomain) return fail("Domínio próprio está disponível a partir do plano Agência.");
+  const { agency, packs } = await requireAgency();
+  if (!packs.includes("dominio")) return fail(NEEDS_DOMAIN);
   const parsed = parseDomain(text(formData.get("custom_domain")));
   if ("error" in parsed) return fail(parsed.error);
   const domain = parsed.domain;
@@ -1483,19 +1481,6 @@ export async function hideOnboarding(): Promise<ActionResult> {
 }
 
 /* ------------------------------------------------------------------ limites do plano (leva B1', parte 4b) */
-
-const PLAN_ITEM_KINDS: readonly PlanItemKind[] = ["bot", "member", "webhook"];
-
-/** Cobrança > Limites do plano: pausar libera uma vaga; ativar só com vaga no plano. */
-export async function setPlanItemPaused(kind: PlanItemKind, id: string, pause: boolean): Promise<ActionResult> {
-  if (!(await allowed("billing"))) return fail(DENIED);
-  if (!PLAN_ITEM_KINDS.includes(kind)) return fail("Item inválido.");
-  const { agency, userId } = await requireAgency();
-  const r = await setPlanPause(createAdminClient(), agency.id, kind, id, pause, { type: "user", id: userId });
-  if ("error" in r) return fail(r.error);
-  revalidatePath("/painel/cobranca/limites");
-  return ok(pause ? "Pausado. A vaga ficou livre para outro item." : "Ativado.");
-}
 
 /* ------------------------------------------------------------------ novidades no WhatsApp (leva B3) */
 

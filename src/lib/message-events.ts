@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { activeOf } from "./entitlements";
 import type { LeadRequest } from "./leads";
 
 /*
@@ -18,11 +19,14 @@ import type { LeadRequest } from "./leads";
 
 let cache: { at: number; agencies: Set<string> } | null = null;
 
-/** Agências com webhook ativo (cache de 1 minuto: a maioria das mensagens não tem para quem ir). */
+/** Agências com webhook ativo e o pacote Integrações (cache de 1 minuto: a maioria das mensagens não tem para quem ir). */
 export async function agenciesWithWebhooks(db: SupabaseClient): Promise<Set<string>> {
   if (!cache || Date.now() - cache.at > 60_000) {
-    const { data } = await db.from("webhooks").select("agency_id").eq("active", true).is("paused_by_plan_at", null);
-    cache = { at: Date.now(), agencies: new Set((data ?? []).map((w) => w.agency_id as string)) };
+    const { data } = await db.from("webhooks").select("agency_id").eq("active", true);
+    const withHooks = [...new Set((data ?? []).map((w) => w.agency_id as string))];
+    // o pacote só é lido quando há webhook ativo (o caso comum é não ter nenhum)
+    const { data: packs } = withHooks.length ? await db.from("agency_packs").select("agency_id, pack, ends_at").eq("pack", "integracoes").in("agency_id", withHooks) : { data: [] };
+    cache = { at: Date.now(), agencies: new Set((packs ?? []).filter((p) => activeOf([p]).length > 0).map((p) => p.agency_id as string)) };
   }
   return cache.agencies;
 }

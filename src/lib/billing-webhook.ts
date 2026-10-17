@@ -4,6 +4,7 @@ import { appliedBotRow, type BillingTarget } from "./billing";
 import { audit } from "./audit";
 import { applyUpgrade, syncSubscriptionSafe } from "./billing-sync";
 import { applyCredit } from "./billing-credit";
+import { endApiPauses } from "./api-pause";
 
 /*
  * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), inclusive a
@@ -57,6 +58,8 @@ export async function endSubscription(db: SupabaseClient, customer: string): Pro
     const id = a.id as string;
     must(await db.from("bots").update({ size: null, volume_packs: null, pending_size: null, pending_volume_packs: null, pending_from: null, prorated_month: null, prorated_quota: null }).eq("agency_id", id));
     must(await db.from("agency_packs").delete().eq("agency_id", id));
+    // sem o Integrações, as pausas que a API fez nas conversas acabam
+    await endApiPauses(db, id).catch((e) => console.error("assinatura: pausas da API", (e as Error).message));
     await audit(db, { agencyId: id, actorType: "system", actorId: null, action: "assinatura.encerrar", targetType: "agency", targetId: id });
   }
 }

@@ -1,8 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { endApiPauses } from "./api-pause";
 import { ingestSource, type SourceRow } from "./ingest";
-import { notifyAgencyOwner } from "./notify";
-import { appUrl, daysAgoIso } from "./utils";
+import { daysAgoIso } from "./utils";
 import { applyRetentionTerms } from "./retention";
 import { purgeCampaignData } from "./campaigns";
 import { deleteExpiredRefs } from "./button-refs";
@@ -11,44 +9,6 @@ import { deleteExpiredRefs } from "./button-refs";
  * Tarefas diárias (rodam juntas em /api/cron/daily: o plano Hobby da Vercel só permite 2 crons).
  * Cada uma é idempotente: rodar duas vezes no mesmo dia não duplica e-mail nem apaga a mais.
  */
-
-/** "Seu teste acaba em 3 dias" e "seu teste acabou", uma vez cada por agência. */
-export async function trialReminders(db: SupabaseClient) {
-  const now = new Date();
-  const in3days = new Date(now.getTime() + 3 * 86_400_000).toISOString();
-  const billing = appUrl("/painel/cobranca");
-  let sent = 0;
-
-  const { data: ending } = await db.from("agencies").select("id, trial_ends_at").eq("plan", "trial").is("trial_reminder_sent_at", null).gt("trial_ends_at", now.toISOString()).lte("trial_ends_at", in3days).limit(200);
-  for (const a of ending ?? []) {
-    const days = Math.max(1, Math.ceil((new Date(a.trial_ends_at).getTime() - now.getTime()) / 86_400_000));
-    await notifyAgencyOwner(db, a.id, `Seu teste grátis acaba em ${days} dia${days === 1 ? "" : "s"}`, [
-      `Seu teste grátis termina em ${days} dia${days === 1 ? "" : "s"}.`,
-      "",
-      "Depois disso, o chat nos sites dos seus clientes passa a mostrar só um formulário de contato, e o assistente para de responder.",
-      "",
-      `Escolha um plano para não parar: ${billing}`,
-    ]);
-    await db.from("agencies").update({ trial_reminder_sent_at: now.toISOString() }).eq("id", a.id);
-    sent++;
-  }
-
-  const { data: expired } = await db.from("agencies").select("id").eq("plan", "trial").is("trial_expired_notified_at", null).lte("trial_ends_at", now.toISOString()).not("owner_id", "is", null).limit(200);
-  for (const a of expired ?? []) {
-    await notifyAgencyOwner(db, a.id, "Seu teste grátis acabou", [
-      "Seu teste grátis terminou.",
-      "",
-      "Os chats nos sites dos seus clientes estão mostrando um formulário de contato no lugar do assistente. Os contatos continuam chegando no painel.",
-      "",
-      `Assine um plano para o assistente voltar a responder na hora: ${billing}`,
-    ]);
-    await db.from("agencies").update({ trial_expired_notified_at: now.toISOString() }).eq("id", a.id);
-    // fim do teste: as pausas da IA feitas pela API acabam de uma vez (com auditoria)
-    await endApiPauses(db, a.id, "teste").catch((e) => console.error("teste: pausas da integração", (e as Error).message));
-    sent++;
-  }
-  return { sent };
-}
 
 /**
  * LGPD: registros técnicos com prazo fixo e, depois, o prazo de cada chatbot (retention.ts: modo

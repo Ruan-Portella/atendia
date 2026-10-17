@@ -9,30 +9,27 @@ import { audit, requestMeta } from "@/lib/audit";
 import { can } from "@/lib/team";
 import { text } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { planLimits } from "@/lib/plan-limits";
+import { webhookLimit } from "@/lib/entitlements";
 import { actionInputProblem, callAction, classifyCreatesOrder, needsConfirmation, rotateActionSecret, type ActionRow } from "@/lib/actions";
 import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey, type ApiPermission } from "@/lib/api-keys";
 import { createWebhook, redeliver, requeueFailed, sendWebhookTest, updateWebhook } from "@/lib/webhooks";
 import { deadline } from "@/lib/cron";
 import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
-import { TRIAL_KEY_PERMISSIONS } from "@/lib/integrations-plan";
 
 /*
  * Integrações no painel da agência (C pública, parte 1a): dono e administrador, com o segundo
- * fator, nos planos com Integrações (Agência, Escala e o teste grátis). As ações ficam na aba Ações
+ * fator. Cadastrar e testar não precisa de pacote; funcionar, sim (pacote Integrações). As ações ficam na aba Ações
  * de cada chatbot; webhooks e chaves, na área Integrações da conta. Cada mudança vai para a
  * auditoria; chave, segredo, URL nova e webhook novo viram alerta de segurança ao dono.
  */
 
 const DENIED = "Só o dono ou um administrador da agência mexe nas Integrações.";
-const NOT_IN_PLAN = "Integrações fazem parte dos planos Agência e Escala.";
 const NEED_MFA = "Confirme o segundo fator (app autenticador) para mexer nas Integrações: recarregue a página.";
 
 async function integrationsContext() {
   const ctx = await requireAgency();
   if (!can(ctx.role, "integrations")) return { error: DENIED };
-  if (!planLimits(ctx.plan.id).integrations) return { error: NOT_IN_PLAN };
   if (!(await hasMfa())) return { error: NEED_MFA };
   return { ctx, db: createAdminClient() };
 }
@@ -146,14 +143,11 @@ export async function testBotAction(actionId: string, fd: FormData): Promise<Act
 
 /* ------------------------------------------------------------------ chaves de API */
 
-/** Chave da API pública: aparece uma vez; o banco guarda o hash. No teste grátis, só leitura e pausa. */
+/** Chave da API pública: aparece uma vez; o banco guarda o hash. A API responde com o pacote Integrações. */
 export async function createAgencyApiKey(fd: FormData): Promise<ActionResult> {
   const c = await integrationsContext();
   if ("error" in c) return fail(c.error!);
   const permissions = fd.getAll("permission").map(String);
-  if (c.ctx.plan.id === "trial" && permissions.some((p) => !(TRIAL_KEY_PERMISSIONS as readonly string[]).includes(p))) {
-    return fail("No teste grátis, as chaves só leem e pausam a IA (conversas, contatos e pareamento). Enviar mensagens e campanhas pela API fica nos planos pagos.");
-  }
   const scope = await scopeFromForm(c.db, c.ctx.agency.id, fd);
   if ("error" in scope) return fail(scope.error);
   const name = text(fd.get("name"));
@@ -177,13 +171,13 @@ export async function revokeAgencyApiKey(keyId: string): Promise<ActionResult> {
 
 /* ------------------------------------------------------------------ webhooks */
 
-/** Webhook novo: o segredo (whsec_) aparece uma vez. Limite igual ao de chatbots do plano. */
+/** Webhook novo: o segredo (whsec_) aparece uma vez. Um por chatbot no ar, no mínimo 2. */
 export async function createAgencyWebhook(fd: FormData): Promise<ActionResult> {
   const c = await integrationsContext();
   if ("error" in c) return fail(c.error!);
-  const limit = planLimits(c.ctx.plan.id).webhooks;
+  const limit = webhookLimit(c.ctx.bots.filter((b) => b.size || b.override !== null).length);
   const { count } = await c.db.from("webhooks").select("id", { count: "exact", head: true }).eq("agency_id", c.ctx.agency.id);
-  if ((count ?? 0) >= limit) return fail(`O plano ${c.ctx.plan.name} permite ${limit} webhook${limit === 1 ? "" : "s"} (um por chatbot do plano).`);
+  if ((count ?? 0) >= limit) return fail(`A conta tem ${limit} webhooks: um por chatbot no ar, no mínimo 2. Para cadastrar mais, dê um tamanho a mais um chatbot ou apague um webhook.`);
   const w = webhookInputFromForm(fd);
   if ("error" in w) return fail(w.error);
   const scope = await scopeFromForm(c.db, c.ctx.agency.id, fd);

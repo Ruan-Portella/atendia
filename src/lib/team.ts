@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PlanId } from "./plans";
 import { isEmail } from "./validation";
 import { firstName, type Attendant } from "./authors";
 import type { AgencyRole, InvitableRole, MemberScope } from "./roles";
@@ -12,10 +11,6 @@ export * from "./roles";
  * acesso da RLS (migração 0073); aqui ficam as regras que o servidor confere antes de gravar com
  * a service role. Uma agência ativa por usuário no MVP: quem precisa de duas usa outro e-mail.
  */
-
-/** Membros por plano, contando o dono e os convites pendentes (revistos na revisão de preços). */
-export const MEMBER_LIMITS: Record<PlanId, number> = { trial: 2, freelancer: 2, agencia: 5, escala: 15, cancelado: 1 };
-export const memberLimit = (planId: string): number => MEMBER_LIMITS[planId as PlanId] ?? 1;
 
 /** Dias que o link do convite vale. */
 export const INVITE_DAYS = 7;
@@ -34,10 +29,9 @@ export interface AgencyMember {
   invite_expires_at: string | null;
   accepted_at: string | null;
   removed_at: string | null;
-  paused_by_plan_at: string | null;
 }
 
-export const MEMBER_COLS = "id, agency_id, user_id, email, role, scope, display_name, avatar_url, invited_by, invited_at, invite_expires_at, accepted_at, removed_at, paused_by_plan_at";
+export const MEMBER_COLS = "id, agency_id, user_id, email, role, scope, display_name, avatar_url, invited_by, invited_at, invite_expires_at, accepted_at, removed_at";
 
 export const inviteTokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 export const newInviteToken = () => randomBytes(24).toString("base64url");
@@ -48,7 +42,7 @@ export function inviteOpen(m: Pick<AgencyMember, "accepted_at" | "removed_at" | 
 }
 
 /**
- * Vínculo vivo do usuário (aceito e não removido; pausado pelo plano também volta, para a tela
+ * Vínculo vivo do usuário (aceito e não removido; volta também para a tela
  * avisar). Erro de banco derruba: quem chama nunca pode concluir "sem agência" por engano.
  */
 export async function activeMembership(db: SupabaseClient, userId: string): Promise<AgencyMember | null> {
@@ -68,13 +62,6 @@ export async function openInvitesFor(db: SupabaseClient, email: string): Promise
 export async function hadMembership(db: SupabaseClient, userId: string): Promise<boolean> {
   const { count } = await db.from("agency_members").select("id", { count: "exact", head: true }).eq("user_id", userId);
   return Boolean(count);
-}
-
-/** Lugares ocupados no plano: membros aceitos e convites em aberto, com o dono. */
-export async function seatsUsed(db: SupabaseClient, agencyId: string): Promise<number> {
-  // pausado pelo plano não ocupa vaga
-  const { data } = await db.from("agency_members").select("accepted_at, removed_at, invite_expires_at").eq("agency_id", agencyId).is("removed_at", null).is("paused_by_plan_at", null);
-  return ((data ?? []) as Array<Pick<AgencyMember, "accepted_at" | "removed_at" | "invite_expires_at">>).filter((m) => m.accepted_at || inviteOpen(m)).length;
 }
 
 /** O e-mail já está numa agência do BoaVoz (dono ou membro aceito)? */
@@ -129,7 +116,7 @@ export const ONE_AGENCY_MESSAGE = "Este e-mail já está numa agência do BoaVoz
 /** Convida (ou convida de novo, com link novo) um e-mail para a equipe. */
 export async function inviteMember(
   db: SupabaseClient,
-  o: { agencyId: string; planId: string; by: string; email: string; role: InvitableRole; access: ScopeInput },
+  o: { agencyId: string; by: string; email: string; role: InvitableRole; access: ScopeInput },
 ): Promise<{ ok: true; memberId: string; token: string } | { ok: false; message: string }> {
   const email = o.email.trim().toLowerCase();
   if (!isEmail(email)) return { ok: false, message: "E-mail inválido." };
@@ -141,9 +128,6 @@ export async function inviteMember(
   const { data: existing } = await db.from("agency_members").select(MEMBER_COLS).eq("agency_id", o.agencyId).eq("email", email).is("removed_at", null).maybeSingle<AgencyMember>();
   if (existing?.accepted_at) return { ok: false, message: "Essa pessoa já está na equipe." };
   if (await emailHasAgency(db, email)) return { ok: false, message: ONE_AGENCY_MESSAGE };
-  // convidar de novo o mesmo e-mail não ocupa outro lugar
-  const seats = (await seatsUsed(db, o.agencyId)) - (existing && inviteOpen(existing) ? 1 : 0);
-  if (seats >= memberLimit(o.planId)) return { ok: false, message: `O seu plano permite ${memberLimit(o.planId)} pessoas na equipe, contando você e os convites pendentes. Remova alguém ou mude de plano.` };
   // convite vencido ou pendente do mesmo e-mail: sai e dá lugar ao novo (o link antigo para de valer)
   if (existing) await db.from("agency_members").update({ removed_at: new Date().toISOString(), invite_token_hash: null }).eq("id", existing.id);
 

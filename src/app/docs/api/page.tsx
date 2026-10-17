@@ -152,7 +152,7 @@ export default function ApiDocs() {
           ["400", <code key="1">invalid_request</code>, <>Campo com problema; <code>details.field</code> aponta qual.</>],
           ["401", <code key="2">invalid_api_key</code>, "Chave ausente, inválida ou revogada."],
           ["403", <code key="3">forbidden_scope</code>, "A chave não tem a permissão da rota."],
-          ["403", <><code>plan_not_allowed</code>, <code>feature_suspended</code></>, "O plano não inclui o recurso, ou ele está suspenso na conta."],
+          ["403", <><code>plan_not_allowed</code>, <code>feature_suspended</code></>, "A conta não tem o pacote do recurso (a API e a identificação são do pacote Integrações), ou ele está suspenso na conta."],
           ["404", <code key="5">not_found</code>, "Não existe ou está fora do escopo da chave."],
           ["409", <code key="6">idempotency_conflict</code>, "Idempotency-Key repetida com outro corpo (ou a primeira ainda está em andamento)."],
           ["410", <code key="7">media_gone</code>, "O arquivo passou do prazo de guarda ou foi apagado."],

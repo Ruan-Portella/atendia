@@ -8,10 +8,10 @@ import { relativeTime } from "@/lib/utils";
 
 const OPENING: Record<Feature, { who: string; effect: string }> = {
   whatsapp: {
-    who: "os planos pagos",
-    effect: "Toda agência paga passa a conectar números do WhatsApp sem liberação. O teste grátis continua na liberação manual, agência por agência.",
+    who: "todos",
+    effect: "Toda agência passa a conectar números do WhatsApp sem liberação. O chatbot só atende com um tamanho assinado.",
   },
-  instagram: { who: "todos", effect: "Toda agência, inclusive no teste grátis, passa a conectar contas do Instagram sem liberação." },
+  instagram: { who: "todos", effect: "Toda agência passa a conectar contas do Instagram sem liberação. O chatbot só atende com um tamanho assinado." },
 };
 
 /** Liberação geral dos canais da Meta (a abertura da L1, quando a Meta aprovar). */
@@ -58,15 +58,14 @@ export function ChannelOpeningControls({ flags }: { flags: PlatformFlags }) {
   );
 }
 
-/** Recursos liberados para uma agência, sem deploy (WhatsApp no beta e no teste grátis, Instagram). */
-export function AgencyFeatures({ agencyId, plan, features }: { agencyId: string; plan: string; features: string[] }) {
+/** Recursos liberados para uma agência, sem deploy (WhatsApp e Instagram antes da abertura geral). */
+export function AgencyFeatures({ agencyId, features }: { agencyId: string; features: string[] }) {
   return (
     <section className="card flex flex-col gap-3 p-5">
       <div>
         <h2 className="text-lg font-bold">Liberação</h2>
         <p className="text-sm text-muted">
           Recursos ligados só para esta agência, sem deploy. Liberar avisa o dono por e-mail; tirar não desconecta o que já está ligado.
-          {plan === "trial" && " No teste grátis, o WhatsApp só conecta com pelo menos 1 fonte pronta e as instruções escritas."}
         </p>
       </div>
       <ActionForm action={setAgencyFeatures.bind(null, agencyId)} className="flex flex-col gap-2 text-sm">

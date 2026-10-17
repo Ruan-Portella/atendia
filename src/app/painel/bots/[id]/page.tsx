@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { BotActions } from "@/components/integrations/bot-actions";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
-import { planLimits } from "@/lib/plan-limits";
-import { campaignsInPlan } from "@/lib/plan-limits";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { attendantOf, can } from "@/lib/team";
@@ -11,7 +9,7 @@ import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { getClientOptions } from "@/lib/panel";
 import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig } from "@/lib/whatsapp";
-import { TRIAL_VERDICT_TEXT, TRIAL_WHATSAPP_LOCKED, channelAccessOf, trialAnalysisVerdict, trialContentProblem } from "@/lib/features";
+import { channelAccessOf } from "@/lib/features";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
 import { CoexistenceConnect } from "@/components/coexistence-connect";
 import { esVariantOf } from "@/lib/embedded-signup";
@@ -40,7 +38,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { MarketingOptInForm } from "@/components/marketing-optin-form";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { analyzeBotNow, answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
+import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
 import { UnansweredItem } from "@/components/unanswered-item";
@@ -71,23 +69,20 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
-  const [{ id }, sp, { agency: owner, role, member }] = await Promise.all([params, searchParams, requireAgency()]);
+  const [{ id }, sp, { agency: owner, role, member, packs }] = await Promise.all([params, searchParams, requireAgency()]);
   // equipe (leva B1'): o atendente vê só as conversas do chatbot
   const canConfig = can(role, "config");
-  // canais da Meta: liberação da agência no backoffice, ou abertura geral; no teste grátis, a aba
-  // do WhatsApp aparece com o aviso de liberação manual
+  // canais da Meta: liberação da agência no backoffice, ou abertura geral
   const access = await channelAccessOf(createAdminClient(), owner);
-  // teste grátis depois da abertura: a análise do bot libera este chatbot
-  const trialVerdict = access.whatsapp === "aguardando" ? await trialAnalysisVerdict(createAdminClient(), id) : null;
-  const waAllowed = access.whatsapp === "liberado" || trialVerdict === "liberado";
-  const waWaiting = access.whatsapp === "aguardando" && trialVerdict !== "liberado";
+  const waAllowed = access.whatsapp === "liberado";
   const igAllowed = access.instagram === "liberado";
-  const tabs = TABS.filter(([t]) => (canConfig || t === "conversas") && (t === "whatsapp" ? waAllowed || waWaiting : t === "instagram" ? igAllowed : true));
+  const tabs = TABS.filter(([t]) => (canConfig || t === "conversas") && (t === "whatsapp" ? waAllowed : t === "instagram" ? igAllowed : true));
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : canConfig ? "fontes" : "conversas") as Tab;
-  // Ações (C pública): dono e administrador mexem com o segundo fator; o editor só vê
+  // Ações (C pública): dono e administrador mexem com o segundo fator; o editor só vê. Cadastrar e
+  // testar não precisa do pacote; a IA só usa as ações com o Integrações
   const manageActions = can(role, "integrations");
-  const actionsInPlan = planLimits(owner.plan).integrations;
-  if (tab === "acoes" && manageActions && actionsInPlan) await requireAgencyMfa(`/painel/bots/${id}?tab=acoes`);
+  const integrations = packs.includes("integracoes");
+  if (tab === "acoes" && manageActions) await requireAgencyMfa(`/painel/bots/${id}?tab=acoes`);
   const supabase = await createClient();
 
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
@@ -128,13 +123,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const base = agencyBaseUrl(agency);
   const demoUrl = bot.is_demo && bot.demo_slug ? `${base}/demo/${bot.demo_slug}` : null;
   const signup = embeddedSignupConfig();
-  // teste grátis: o número real só conecta com 1 fonte pronta e as instruções escritas
-  const trialProblem = owner.plan === "trial" ? trialContentProblem(readySources ?? 0, (bot.persona as { instructions?: string } | null)?.instructions) : null;
   // "+ Nova conversa" pelo WhatsApp: precisa do número conectado e de modelos aprovados
   let newChatTemplates: SendableTemplate[] | null = null;
   if (tab === "conversas" && waAllowed && !bot.is_demo) {
     const ch = await loadTemplateChannel(createAdminClient(), id);
-    newChatTemplates = ch ? await listSendable(ch, { marketing: campaignsInPlan(owner.plan) }).catch(() => []) : null;
+    newChatTemplates = ch ? await listSendable(ch, { marketing: true }).catch(() => []) : null;
   }
   const embedSnippet = `<script src="${base}/widget.js" data-key="${bot.public_key}" async></script>`;
 
@@ -178,22 +171,6 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <SubmitButton pendingLabel="Retomando…" className="btn-primary w-full sm:w-auto">Retomar a IA</SubmitButton>
             </ActionForm>
           </div>}
-        </div>
-      )}
-
-      {bot.paused_by_plan_at && (
-        <div className="border-b border-line bg-amber-soft px-4 py-3 text-sm sm:px-5 md:px-7">
-          <strong className="text-amber-ink">Este chatbot está pausado pelo plano</strong>: a conta passou do limite de chatbots do plano atual.
-          <span className="block text-ink-2">
-            A IA não responde: as mensagens ficam em Conversas para a sua equipe e, no site, aparece o formulário de contato.{" "}
-            {role === "owner" ? (
-              <>
-                Escolha o que fica ativo em <Link href="/painel/cobranca/limites" className="underline">Cobrança &gt; Limites do plano</Link>.
-              </>
-            ) : (
-              "O dono da conta escolhe o que fica ativo em Cobrança."
-            )}
-          </span>
         </div>
       )}
 
@@ -469,17 +446,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <h2 className="text-[22px] font-bold">WhatsApp</h2>
                 <p className="text-sm text-muted">{bot.name} responde no WhatsApp do cliente com a mesma base de conhecimento. Pedidos de atendente aparecem em Conversas, e a sua resposta sai pelo WhatsApp.</p>
               </div>
-              {!waWaiting && !bot.is_demo && !whatsapp && trialProblem && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">{trialProblem}</p>}
-              {waWaiting ? (
-                <div className="flex flex-col gap-2 rounded-lg bg-amber-soft px-3 py-2.5 text-sm text-amber-ink">
-                  <p>{trialVerdict ? TRIAL_VERDICT_TEXT[trialVerdict] : TRIAL_WHATSAPP_LOCKED}</p>
-                  {trialVerdict === "sem_analise" && !bot.is_demo && (
-                    <ActionForm action={analyzeBotNow.bind(null, id)}>
-                      <SubmitButton className="btn-dark self-start py-1 text-xs" pendingLabel="Analisando…">Analisar agora</SubmitButton>
-                    </ActionForm>
-                  )}
-                </div>
-              ) : bot.is_demo ? (
+              {bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
               ) : whatsapp?.disconnected_at ? (
                 <div className="flex flex-col gap-4 rounded-xl border border-[#efd9a9] bg-amber-soft p-5">
@@ -649,13 +616,15 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "acoes" &&
             (bot.is_demo ? (
               <p className="card p-5 text-sm text-muted">Demonstrações não têm ações: converta a demo em chatbot de um cliente para ligar o sistema dele.</p>
-            ) : actionsInPlan ? (
-              <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
             ) : (
-              <div className="card flex max-w-[860px] flex-col gap-2 p-5 text-sm">
-                <p className="font-semibold">Ações fazem parte das Integrações, nos planos Agência e Escala.</p>
-                <p className="text-ink-2">Com elas, o assistente consulta o sistema do cliente na conversa: status do pedido, agenda, saldo.</p>
-              </div>
+              <>
+                {!integrations && (
+                  <p className="mb-4 max-w-[860px] rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+                    Você pode cadastrar as ações e conferir cada uma pelo botão Testar. A IA só usa as ações na conversa com o pacote Integrações (<Link href="/painel/cobranca" className="underline">Cobrança → Assinatura</Link>).
+                  </p>
+                )}
+                <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
+              </>
             ))}
 
           {tab === "instalacao" && (

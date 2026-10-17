@@ -174,7 +174,7 @@ describe("chamada confirmada", () => {
   });
 
   it("no clique, confere de novo: ativa, sem pausa do plano, nível e contexto", () => {
-    const a = { active: true, paused_by_plan_at: null, min_level: "canal" as const, context_required: "none" as const, type: "execute" as const, creates_order: false };
+    const a = { active: true, min_level: "canal" as const, context_required: "none" as const, type: "execute" as const, creates_order: false };
     expect(stillCallable(a, { level: "canal", hasContext: false })).toBe(true);
     expect(stillCallable(a, { level: "anonimo", hasContext: false })).toBe(false);
     expect(stillCallable({ ...a, active: false }, { level: "canal", hasContext: false })).toBe(false);

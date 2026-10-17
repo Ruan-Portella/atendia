@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { hasPack } from "./entitlements";
 import { contextHashOf, verifyIdentityToken, type IdentityBot, type IdentityClaims, type TokenProblem } from "./identity";
 import { externalIdHash, widgetUserContact } from "./contacts";
 import { sealField, scopeOfBot } from "./field-cipher";
@@ -30,6 +31,8 @@ export const bearerOf = (req: Request) => {
 export async function widgetWho(db: SupabaseClient, bot: IdentityBot, req: Request): Promise<WidgetWho> {
   const token = bearerOf(req);
   if (!token) return { kind: "anon" };
+  // identificação de usuários é do pacote Integrações: sem ele, o token é ignorado (visitante anônimo)
+  if (!(await hasPack(db, bot.agency_id, "integracoes"))) return { kind: "anon" };
   const v = await verifyIdentityToken(db, bot, token);
   if (!v.ok) return { kind: "invalid", problem: v.problem };
   const { claims } = v;

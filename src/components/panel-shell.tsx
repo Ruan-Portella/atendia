@@ -11,8 +11,8 @@ interface Props {
   agency: { name: string; logo_url: string | null; brand_color: string; initials: string };
   /** papel de quem está logado: o menu e o bloco de uso seguem o que ele pode ver */
   role: AgencyRole;
-  planName: string;
-  trialDays: number | null;
+  /** "Conta grátis", "Assinatura" ou "Pagamento atrasado". */
+  accountLabel: string;
   usage: number;
   limit: number;
   usageLabel: string; // "1.240 / 2.000"
@@ -26,7 +26,7 @@ interface Props {
  *  - celular e tablet (< lg): barra no topo com botão hambúrguer + menu lateral deslizante;
  *  - desktop (lg+): sidebar completa.
  */
-export function PanelShell({ agency, role, planName, trialDays, usage, limit, usageLabel, children, notices }: Props) {
+export function PanelShell({ agency, role, accountLabel, usage, limit, usageLabel, children, notices }: Props) {
   const [open, setOpen] = useState(false);
   const pct = Math.min(100, Math.round((usage / Math.max(1, limit)) * 100));
 
@@ -40,7 +40,7 @@ export function PanelShell({ agency, role, planName, trialDays, usage, limit, us
       )}
       <span className="min-w-0 leading-tight">
         <span className="block truncate text-sm font-semibold">{agency.name}</span>
-        <span className="block text-[11px] text-[#9aa39e]">Plano {planName}{trialDays !== null ? ` · ${trialDays} dias` : ""}</span>
+        <span className="block text-[11px] text-[#9aa39e]">{accountLabel}</span>
       </span>
     </Link>
   );

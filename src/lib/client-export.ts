@@ -9,7 +9,6 @@ export interface ClientExportRow {
   agencyId: string;
   agencyName: string;
   ownerEmail: string | null;
-  planName: string;
   agencySituation: string;
   clientId: string | null;
   clientName: string;
@@ -45,7 +44,6 @@ export function whatsappSituation(r: Pick<ClientExportRow, "waPhone" | "wabaId" 
 export const EXPORT_COLUMNS: Array<[string, (r: ClientExportRow) => string | number]> = [
   ["Agência", (r) => r.agencyName],
   ["E-mail do dono", (r) => r.ownerEmail ?? ""],
-  ["Plano", (r) => r.planName],
   ["Situação da agência", (r) => r.agencySituation],
   ["Negócio (cliente)", (r) => r.clientName],
   ["Conformidade", (r) => (r.complianceStatus ? (COMPLIANCE_LABEL[r.complianceStatus] ?? r.complianceStatus) : "sem resposta")],

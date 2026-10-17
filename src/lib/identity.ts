@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { hasPack } from "./entitlements";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { seal, unseal } from "./secret-box";
 import { hmacHex, stableJson } from "./hash";
@@ -113,6 +114,8 @@ export async function verifyIdentityToken(db: SupabaseClient, bot: IdentityBot, 
   if (!s) return { ok: false, problem: "kid" };
   // um token feito com o segredo de um cliente nunca vale no chatbot de outro cliente da agência
   if ((s.scope_type === "bot" && s.scope_bot_id !== bot.id) || (s.scope_type === "client" && (!bot.client_id || s.scope_client_id !== bot.client_id))) return { ok: false, problem: "scope" };
+  // segredo para todos os clientes da agência (lojas de uma plataforma): só com o pacote Plataforma
+  if (s.scope_type === "all" && !(await hasPack(db, bot.agency_id, "plataforma"))) return { ok: false, problem: "scope" };
   if (!signatureOk(jwt.signingInput, jwt.signature, unseal(String(s.secret_enc)))) return { ok: false, problem: "signature" };
   const claims = checkClaims(jwt.payload, { aud: bot.public_key, now });
   if (typeof claims === "string") return { ok: false, problem: claims };

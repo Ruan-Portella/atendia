@@ -26,7 +26,7 @@ export async function loadTemplateChannel(admin: SupabaseClient, botId: string):
  * prova de consentimento de marketing, nenhum modelo de marketing sai). Se a Meta reclassificar
  * um modelo para marketing, ele some daqui sozinho.
  */
-/** Categorias que o painel envia: utilidade; marketing também nos planos pagos (só para quem aceitou novidades). */
+/** Categorias que o painel envia: utilidade e marketing (só para quem aceitou novidades). */
 const panelCategory = (category: string, marketing: boolean) => category === "UTILITY" || (marketing && category === "MARKETING");
 
 export async function listSendable(ch: TemplateChannel, o: { marketing?: boolean } = {}): Promise<SendableTemplate[]> {

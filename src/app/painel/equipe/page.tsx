@@ -3,10 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { EditMemberButton, InviteMemberButton, ReinviteButton, type ScopeClient } from "@/components/team-forms";
-import { MEMBER_COLS, ROLE_LABELS, inviteOpen, lastAccessOf, memberLimit, memberName, scopesOf, type AgencyMember, type InvitableRole } from "@/lib/team";
+import { MEMBER_COLS, ROLE_LABELS, inviteOpen, lastAccessOf, memberName, scopesOf, type AgencyMember, type InvitableRole } from "@/lib/team";
 import { initials, relativeTime } from "@/lib/utils";
 import { inviteTeamMember, reinviteTeamMember, removeTeamMember, updateTeamMember } from "./actions";
-import { PlanPausedBadge } from "@/components/plan-paused-badge";
 
 export const metadata = { title: "Equipe" };
 
@@ -17,7 +16,7 @@ const dateBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { time
  * dar ou tirar o papel de administrador é só do dono. Uma agência ativa por usuário.
  */
 export default async function TeamPage() {
-  const { agency, plan, role, member: me } = await requirePermission("team");
+  const { agency, role, member: me } = await requirePermission("team");
   const db = createAdminClient();
   const supabase = await createClient();
   const [{ data: rows }, { data: clientRows }] = await Promise.all([
@@ -30,9 +29,7 @@ export default async function TeamPage() {
   const clientName = new Map(clients.map((c) => [c.id, c.name]));
   const botName = new Map(clients.flatMap((c) => c.bots.map((b) => [b.id, `${b.name} (${c.name})`] as const)));
 
-  const limit = memberLimit(plan.id);
   const used = members.filter((m) => m.accepted_at || inviteOpen(m)).length;
-  const full = used >= limit ? `O plano ${plan.name} permite ${limit} pessoas, contando você e os convites pendentes.` : null;
   const isOwner = role === "owner";
 
   const scopeText = (m: AgencyMember) => {
@@ -48,10 +45,10 @@ export default async function TeamPage() {
         <div>
           <h1 className="text-2xl font-bold sm:text-[28px]">Equipe</h1>
           <p className="text-sm text-muted">
-            {used} de {limit} membros do plano {plan.name}. Cada pessoa entra com o próprio e-mail e vê só o que o papel e o escopo dela permitem.
+            {used} {used === 1 ? "pessoa" : "pessoas"} na equipe, sem limite. Cada pessoa entra com o próprio e-mail e vê só o que o papel e o escopo dela permitem.
           </p>
         </div>
-        <InviteMemberButton action={inviteTeamMember} clients={clients} allowAdmin={isOwner} full={full} />
+        <InviteMemberButton action={inviteTeamMember} clients={clients} allowAdmin={isOwner} full={null} />
       </div>
 
       <div className="card overflow-hidden">
@@ -84,9 +81,7 @@ export default async function TeamPage() {
               </span>
               <span className="pl-[40px] text-xs text-ink-2 lg:pl-0 lg:text-sm">{scopeText(m)}</span>
               <span className="pl-[40px] text-xs text-muted lg:pl-0">
-                {m.paused_by_plan_at
-                  ? <PlanPausedBadge link={isOwner} />
-                  : pending
+                {pending
                   ? open
                     ? `Convite pendente · vale até ${dateBR(m.invite_expires_at!)}`
                     : "Convite vencido"

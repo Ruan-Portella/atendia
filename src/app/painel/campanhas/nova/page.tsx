@@ -1,9 +1,7 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { campaignsInPlan } from "@/lib/plan-limits";
 import { cn } from "@/lib/utils";
 import { CampaignWizard } from "@/components/campaign-wizard";
 import { ReminderWizard } from "@/components/reminder-wizard";
@@ -19,8 +17,7 @@ const KINDS = [
 
 /** Nova campanha (leva B3, partes 4a e 5): os chatbots do escopo com o WhatsApp conectado. */
 export default async function NewCampaignPage({ searchParams }: PageProps<"/painel/campanhas/nova">) {
-  const [{ plan }, sp] = await Promise.all([requirePermission("config"), searchParams]);
-  if (!campaignsInPlan(plan.id)) notFound();
+  const [, sp] = await Promise.all([requirePermission("config"), searchParams]);
   const kind = sp.tipo === "lembrete" ? "lembrete" : "marketing";
   const supabase = await createClient();
   // vindo da aba Campanhas do cliente: só os chatbots dele, e a volta é para lá

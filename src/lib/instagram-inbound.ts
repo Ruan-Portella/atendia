@@ -480,8 +480,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   } catch (e) {
     if (isInstagramAccessError(e)) throw e;
     const code = (e as Error).message;
-    // sem vaga na cota do chatbot ou teste vencido: modo só humano, sem perder a mensagem
-    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
+    // sem vaga na cota do chatbot (ou sem tamanho): modo só humano, sem perder a mensagem
+    if (code === "quota_exceeded") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("instagram: falha ao responder", e);
     await say("ia", FALLBACK, conv ? fixedRecord(FALLBACK) : null).catch(() => {});
   }

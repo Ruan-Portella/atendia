@@ -18,10 +18,9 @@ export async function GET(req: Request) {
   const period = shiftPeriod(currentPeriodBR(), -1);
   const { data: clients } = await db
     .from("clients")
-    .select("id, report_email, portal_token, agencies!inner(plan)")
+    .select("id, report_email, portal_token")
     .not("report_email", "is", null)
     .or(`report_last_period.is.null,report_last_period.lt.${period}`)
-    .neq("agencies.plan", "cancelado")
     .limit(500);
 
   const hasTime = deadline(50_000);

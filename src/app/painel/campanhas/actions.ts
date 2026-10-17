@@ -7,7 +7,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { audit, requestMeta } from "@/lib/audit";
 import { can } from "@/lib/team";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { campaignsInPlan } from "@/lib/plan-limits";
 import { clientContactTags, normalizeTags } from "@/lib/contacts";
 import { listTemplates, loadTemplateChannel, renderTemplate, templateBody, templateVariables, type Template } from "@/lib/whatsapp-templates";
 import { WhatsAppError } from "@/lib/whatsapp";
@@ -20,19 +19,17 @@ import { text } from "@/lib/validation";
 
 /*
  * Campanhas pelo painel (leva B3, parte 4a): dono, administrador e editor, nos chatbots do escopo
- * (RLS) e só nos planos pagos. A prévia e a criação montam o público de novo no servidor (nunca
+ * (RLS). A prévia e a criação montam o público de novo no servidor (nunca
  * confiam no navegador); o motor confere tudo outra vez em cada envio.
  */
 
 const DENIED = "O seu papel na equipe não permite mexer em campanhas. Fale com o dono ou com um administrador da agência.";
-const NOT_IN_PLAN = "Campanhas fazem parte dos planos pagos (Freelancer, Agência e Escala). No teste grátis, dá para preparar os contatos e os modelos.";
 /** Telefones colados numa lista, no máximo. */
 const LIST_MAX = 10_000;
 
 async function campaignContext() {
   const ctx = await requireAgency();
   if (!can(ctx.role, "config")) return { error: DENIED };
-  if (!campaignsInPlan(ctx.plan.id)) return { error: NOT_IN_PLAN };
   return { ctx };
 }
 

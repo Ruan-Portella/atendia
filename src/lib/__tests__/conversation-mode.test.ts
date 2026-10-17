@@ -60,8 +60,8 @@ describe("regra única de estado (decideMode)", () => {
   });
 
   it("degrau 5: modo só humano sempre avisa uma vez (menos na coexistência)", () => {
-    expect(decideMode({ ...normal, humanOnly: "trial_expired" })).toMatchObject({ handoff: true, notice: { reason: "so_humano", text: HUMAN_ONLY_NOTICE } });
-    expect(decideMode({ ...normal, humanOnly: "trial_expired", coexistence: true }).notice).toBeNull();
+    expect(decideMode({ ...normal, humanOnly: "quota_exceeded" })).toMatchObject({ handoff: true, notice: { reason: "so_humano", text: HUMAN_ONLY_NOTICE } });
+    expect(decideMode({ ...normal, humanOnly: "quota_exceeded", coexistence: true }).notice).toBeNull();
   });
 });
 

@@ -13,7 +13,6 @@ import { ConversationStateBadge } from "@/components/conversation-state";
 import { daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { agencyBaseUrl } from "@/lib/domain";
 import { Status } from "@/components/status";
-import { PlanPausedBadge } from "@/components/plan-paused-badge";
 import { Kpi } from "@/components/kpi";
 import { BotRowActions } from "@/components/bot-row-actions";
 import { LeadList, type LeadRow } from "@/components/lead-list";
@@ -31,7 +30,6 @@ import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePo
 import { ClientContacts } from "@/components/client-contacts";
 import { ClientCampaigns } from "@/components/client-campaigns";
 import { ClientIntegrationsSummary } from "@/components/integrations/client-integrations-summary";
-import { campaignsInPlan } from "@/lib/plan-limits";
 
 export const metadata = { title: "Cliente" };
 
@@ -55,7 +53,6 @@ interface BotRow {
   client_site: string | null;
   status: string;
   public_key: string;
-  paused_by_plan_at: string | null;
   appearance: { color?: string; avatar_text?: string } | null;
 }
 
@@ -67,10 +64,10 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : "chatbots") as Tab;
   const supabase = await createClient();
   // a RLS limita os dados à agência logada
-  const [{ agency, plan }, { data: client }, { data: botData }, stats] = await Promise.all([
+  const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
     supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months").eq("id", id).maybeSingle(),
-    supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance, paused_by_plan_at").eq("client_id", id).eq("is_demo", false).order("created_at"),
+    supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
   if (!client) notFound();
@@ -148,7 +145,6 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
                   <span className="block truncate text-xs text-muted">{b.client_site?.replace(/^https?:\/\//, "") ?? "sem site"}</span>
                 </span>
                 <Status status={b.status} />
-                {b.paused_by_plan_at && <PlanPausedBadge link={role === "owner"} />}
                 <span className="tabular text-muted">{num(s.conversations)} conversas</span>
                 <span className="tabular text-muted">{num(s.leads)} leads</span>
                 <Link href={`/painel/bots/${b.id}`} className="text-[13px] font-semibold text-brand">Editar</Link>
@@ -186,7 +182,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
 
       {tab === "contatos" && <ClientContacts clientId={client.id} botIds={botIds} botName={botName} searchParams={sp} />}
 
-      {tab === "campanhas" && <ClientCampaigns clientId={client.id} clientName={client.name} bots={bots.map((b) => ({ id: b.id, name: b.name, client_name: b.client_name, client_id: client.id }))} inPlan={campaignsInPlan(plan.id)} isOwner={role === "owner"} />}
+      {tab === "campanhas" && <ClientCampaigns clientId={client.id} clientName={client.name} bots={bots.map((b) => ({ id: b.id, name: b.name, client_name: b.client_name, client_id: client.id }))} />}
 
       {tab === "conversas" && (
         <div className="card overflow-hidden">

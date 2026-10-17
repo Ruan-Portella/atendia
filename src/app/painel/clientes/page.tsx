@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { nextChoice, sizeMonthlyCents } from "@/lib/billing";
+import { PACKS } from "@/lib/plans";
 import { cookies } from "next/headers";
 import { ChevronRight, Plus, UserPlus } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
@@ -24,7 +26,9 @@ interface ClientRow {
 }
 
 export default async function ClientesPage() {
-  const { agency, plan, role, member } = await requireAgency();
+  const { agency, packs, bots: sized, role, member } = await requireAgency();
+  // a assinatura do mês que vem: tamanhos (sem os sob medida) e pacotes
+  const subscriptionBrl = (sized.filter((b) => b.override === null).reduce((t, b) => t + sizeMonthlyCents(nextChoice(b)), 0) + packs.reduce((t, p) => t + PACKS[p].priceBrl * 100, 0)) / 100;
   // equipe (leva B1'): quem configura cria clientes e chatbots; o faturamento é do dono
   const canConfig = can(role, "config");
   const seesBilling = can(role, "billing");
@@ -51,7 +55,7 @@ export default async function ClientesPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold sm:text-[28px]">Clientes</h1>
-          <p className="text-sm text-muted">{clients.length} cliente{clients.length === 1 ? "" : "s"} · {botCount} de {plan.bots} chatbots do plano. Abra um cliente para ver os chatbots, leads e conversas dele.</p>
+          <p className="text-sm text-muted">{clients.length} cliente{clients.length === 1 ? "" : "s"} · {botCount} chatbot{botCount === 1 ? "" : "s"}. Abra um cliente para ver os chatbots, leads e conversas dele.</p>
         </div>
         {canConfig && (
           <div className="flex w-full gap-2.5 sm:w-auto">
@@ -73,7 +77,7 @@ export default async function ClientesPage() {
           <div className="flex flex-col gap-1.5 rounded-xl bg-brand px-4 py-3.5 text-ground sm:px-[18px] sm:py-4">
             <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#c7d9d1]">Você fatura dos clientes</span>
             <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{brl(total)}</span>
-            <span className="text-[13px] text-[#c7d9d1]">por mês · plano {brl(plan.priceBrl)}</span>
+            <span className="text-[13px] text-[#c7d9d1]">por mês · {subscriptionBrl ? `sua assinatura ${brl(subscriptionBrl)}` : "conta grátis"}</span>
           </div>
         )}
       </div>

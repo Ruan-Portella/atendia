@@ -24,7 +24,7 @@ const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whol
 export async function BotActions({ bot, manage }: { bot: { id: string; action_secret_enc: string | null; action_secret_prev_until: string | null }; manage: boolean }) {
   const db = createAdminClient();
   const { data: rows } = await db.from("actions").select("*").eq("bot_id", bot.id).order("name");
-  const actions = (rows ?? []) as unknown as Array<ActionRow & { creates_order: boolean; paused_by_plan_at: string | null }>;
+  const actions = (rows ?? []) as unknown as Array<ActionRow & { creates_order: boolean }>;
   const weight = actionsTokenWeight(actions);
   // última chamada e taxa de erro de cada ação nos últimos 7 dias
   const { data: calls } = actions.length ? await db.from("action_calls").select("action_id, status, created_at").in("action_id", actions.map((a) => a.id)).gte("created_at", daysAgoIso(7)).neq("mode", "test").order("created_at", { ascending: false }).limit(2000) : { data: [] };
@@ -90,7 +90,6 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
                     {a.supports_preview ? " · aceita prévia" : ""} · {LEVEL_LABEL[a.min_level] ?? a.min_level}
                   </span>
                   {a.creates_order && a.type === "query" && <span className="text-xs text-amber-ink">parece criar pedido, reserva ou cobrança: pede o Confirmar do contato</span>}
-                  {a.paused_by_plan_at && <span className="text-xs text-amber-ink">pausada pelo plano</span>}
                   <span className="ml-auto text-xs text-muted">{s ? `última chamada ${relativeTime(s.last!)} · erros ${pct(s.errors, s.total)} em 7 dias` : "sem chamadas em 7 dias"}</span>
                 </summary>
                 <div className="flex flex-col gap-4 border-t border-line-2 px-4 py-4">

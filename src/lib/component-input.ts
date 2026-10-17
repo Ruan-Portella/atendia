@@ -210,7 +210,7 @@ export async function materializeComponent(db: SupabaseClient, c: ComponentInput
           problem(`A ação ${b.action.name} não existe neste chatbot.`, `${f}.name`);
           continue;
         }
-        if (!a.active || a.paused_by_plan_at) {
+        if (!a.active) {
           problem(`A ação ${a.name} está desativada.`, `${f}.name`);
           continue;
         }

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { actionInputFromForm, webhookInputFromForm } from "../integrations-input";
-import { TRIAL_KEY_PERMISSIONS } from "../integrations-plan";
 import { can } from "../roles";
 
 const form = (fields: Record<string, string | string[]>) => {
@@ -26,10 +25,8 @@ describe("formulários das Integrações", () => {
     expect(webhookInputFromForm(form({ name: "", url: "https://hooks.loja.com", event: "contact.linked" }))).toMatchObject({ error: expect.stringMatching(/nome/) });
   });
 
-  it("quem mexe nas Integrações e o que o teste grátis libera", () => {
+  it("quem mexe nas Integrações", () => {
     expect(["owner", "admin", "editor", "agent"].map((r) => can(r as never, "integrations"))).toEqual([true, true, false, false]);
-    expect(TRIAL_KEY_PERMISSIONS).not.toContain("messages");
-    expect(TRIAL_KEY_PERMISSIONS).not.toContain("campaigns");
   });
 });
 

@@ -557,8 +557,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     // sem acesso ao número ou sem pagamento: quem chamou marca (e não adianta tentar o aviso)
     if (isAccessError(e) || isPaymentError(e)) throw e;
     const code = (e as Error).message;
-    // sem vaga na cota do chatbot ou teste vencido: modo só humano, sem perder a mensagem
-    if (code === "quota_exceeded" || code === "trial_expired") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
+    // sem vaga na cota do chatbot (ou sem tamanho): modo só humano, sem perder a mensagem
+    if (code === "quota_exceeded") return humanOnly(decideMode({ ...mode.facts, humanOnly: code }));
     console.error("whatsapp: falha ao responder", e);
     // o canal recusou a resposta (ex.: 131037): o texto de erro seria recusado do mesmo jeito
     if (e instanceof WhatsAppError && e.code) return;

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { accessProblem, can, inviteOpen, inviteTokenHash, memberLimit, memberName, newInviteToken, scopeFromForm, type AgencyRole, type Permission } from "../team";
+import { accessProblem, can, inviteOpen, inviteTokenHash, memberName, newInviteToken, scopeFromForm, type AgencyRole, type Permission } from "../team";
 import { safeLocalPath } from "../utils";
 
 const UUID_A = "11111111-1111-4111-8111-111111111111";
@@ -19,14 +19,6 @@ describe("papéis da equipe", () => {
     for (const [role, allowed] of Object.entries(matrix) as Array<[AgencyRole, Permission[]]>) {
       for (const p of perms) expect(can(role, p), `${role} ${p}`).toBe(allowed.includes(p));
     }
-  });
-
-  it("limite de pessoas por plano, com o dono", () => {
-    expect(memberLimit("trial")).toBe(2);
-    expect(memberLimit("freelancer")).toBe(2);
-    expect(memberLimit("agencia")).toBe(5);
-    expect(memberLimit("escala")).toBe(15);
-    expect(memberLimit("plano-que-nao-existe")).toBe(1);
   });
 
   it("convite vale até vencer, ser aceito ou cancelado", () => {

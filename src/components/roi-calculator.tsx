@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { brl } from "@/lib/plans";
+import { BOT_SIZES, brl } from "@/lib/plans";
 
 export function RoiCalculator() {
   const [clients, setClients] = useState(10);
   const [price, setPrice] = useState(400);
-  const plan = clients <= 3 ? 99 : clients <= 15 ? 249 : 599;
+  // conta grátis: o custo é o tamanho de cada chatbot no ar (aqui, o P de cada cliente)
+  const cost = clients * BOT_SIZES.P.priceBrl;
   const revenue = clients * price;
   return (
     <div className="flex flex-col gap-5 rounded-2xl border border-[#3a423e] bg-[#262c29] p-6">
@@ -26,8 +27,8 @@ export function RoiCalculator() {
       </div>
       <div className="grid grid-cols-3 gap-3 border-t border-[#3a423e] pt-4">
         <div><div className="text-xs text-[#b9c2bd]">Você fatura</div><div className="display text-2xl font-bold tabular">{brl(revenue)}</div></div>
-        <div><div className="text-xs text-[#b9c2bd]">Plano {plan === 99 ? "Freelancer" : plan === 249 ? "Agência" : "Escala"}</div><div className="display text-2xl font-bold tabular">{brl(plan)}</div></div>
-        <div><div className="text-xs text-[#9fd3bf]">Sobra por mês</div><div className="display text-2xl font-bold tabular text-[#9fd3bf]">{brl(revenue - plan)}</div></div>
+        <div><div className="text-xs text-[#b9c2bd]">{clients} chatbot{clients === 1 ? "" : "s"} P</div><div className="display text-2xl font-bold tabular">{brl(cost)}</div></div>
+        <div><div className="text-xs text-[#9fd3bf]">Sobra por mês</div><div className="display text-2xl font-bold tabular text-[#9fd3bf]">{brl(revenue - cost)}</div></div>
       </div>
       <p className="text-xs text-[#8f9994]">Simulação com os números que você escolher. Não é promessa de faturamento: o resultado depende do seu preço e dos clientes que você fechar.</p>
     </div>

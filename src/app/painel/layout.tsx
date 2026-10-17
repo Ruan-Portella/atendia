@@ -1,7 +1,7 @@
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { num } from "@/lib/plans";
-import { daysUntil, initials } from "@/lib/utils";
+import { initials } from "@/lib/utils";
 import { PanelShell } from "@/components/panel-shell";
 import { PlanAlert } from "@/components/plan-alert";
 import { HandoffWatcher } from "@/components/handoff-watcher";
@@ -14,8 +14,8 @@ import { SecurityAlertStrip } from "@/components/security-alert-strip";
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {
-  const { agency, plan, usage, quota, bots, role } = await requireAgency();
-  const trialDays = plan.id === "trial" ? daysUntil(agency.trial_ends_at) : null;
+  const { agency, usage, quota, bots, role } = await requireAgency();
+  const accountLabel = agency.billing_status === "past_due" ? "Pagamento atrasado" : agency.billing_status === "active" ? "Assinatura" : "Conta grátis";
   // pausa, desligamento e suspensão pelo backoffice, ordem da Meta: a agência precisa saber por que parou
   const notices = await panelNotices(createAdminClient(), agency.id);
   // eventos graves da auditoria ainda não vistos (chave nova, URL trocada, acesso do suporte…),
@@ -33,8 +33,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     <PanelShell
       agency={{ name: agency.name, logo_url: agency.logo_url, brand_color: agency.brand_color, initials: initials(agency.name) }}
       role={role}
-      planName={plan.name}
-      trialDays={trialDays}
+      accountLabel={accountLabel}
       usage={usage}
       limit={quota}
       usageLabel={`${num(usage)} / ${num(quota)}`}
@@ -42,7 +41,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
-          {can(role, "config") && <PlanAlert planId={plan.id} trialDays={trialDays} bots={bots} billing={{ status: agency.billing_status, cancelAt: agency.billing_cancel_at }} />}
+          {can(role, "config") && <PlanAlert bots={bots} billing={{ status: agency.billing_status, cancelAt: agency.billing_cancel_at }} />}
         </>
       }
     >

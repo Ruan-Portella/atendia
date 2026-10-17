@@ -28,7 +28,6 @@ import { lastContactMessageAt } from "./whatsapp-inbound";
 import { renderEntryNotice, type HumanHandoff } from "./handoff-hours";
 import { linkColumnsForContact } from "./pairing";
 import { firstExceeded } from "./rate-limit";
-import { campaignsInPlan } from "./plan-limits";
 import { API_PAUSE_DEFAULT_MINUTES } from "./api-pause";
 import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type ApiContext } from "./api-v1";
 
@@ -530,8 +529,6 @@ async function sendTemplateMessage(api: ApiContext, botId: string, p: Extract<Se
   }
   const age = await getAge(db, { botId, channel: "whatsapp", contact: to.address });
   if (category === "MARKETING") {
-    const { data: agency } = await db.from("agencies").select("plan").eq("id", bot.agency_id).maybeSingle();
-    if (!campaignsInPlan(String(agency?.plan ?? ""))) throw new ApiError(403, "plan_not_allowed", "Modelo de marketing fica nos planos pagos.");
     if (consentStateOf(await consentHistory(db, target, 1)) !== "granted") throw new ApiError(422, "no_marketing_consent", "O contato não aceitou receber novidades deste número.");
     if (age === "nao") throw new ApiError(422, "no_marketing_consent", "O contato disse que não tem 18 anos: marketing não vai para ele.", { reason: "under_18" });
   }

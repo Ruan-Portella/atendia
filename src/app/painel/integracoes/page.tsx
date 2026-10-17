@@ -1,13 +1,12 @@
 import Link from "next/link";
+import { webhookLimit } from "@/lib/entitlements";
 import { requirePermission } from "@/lib/agency";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { planLimits } from "@/lib/plan-limits";
 import { daysAgoIso, relativeTime } from "@/lib/utils";
 import { HIGH_VOLUME_EVENTS, WEBHOOK_EVENT_GROUPS, type WebhookEvent } from "@/lib/webhooks";
 import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from "@/lib/api-keys";
-import { TRIAL_KEY_PERMISSIONS } from "@/lib/integrations-plan";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
@@ -40,28 +39,13 @@ const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whol
  * administrador, com o segundo fator. As ações de consulta ficam em cada chatbot (aba Ações).
  */
 export default async function IntegrationsPage({ searchParams }: PageProps<"/painel/integracoes">) {
-  const [{ agency, plan, role }, sp] = await Promise.all([requirePermission("integrations"), searchParams]);
-  const limits = planLimits(plan.id);
+  const [{ agency, packs, bots: quotas }, sp] = await Promise.all([requirePermission("integrations"), searchParams]);
+  const integrations = packs.includes("integracoes");
+  // chatbots no ar (com tamanho ou cota sob medida): um webhook por chatbot, no mínimo 2
+  const liveCount = quotas.filter((b) => b.size || b.override !== null).length;
   const query = new URLSearchParams(Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : []))).toString();
-  if (limits.integrations) await requireAgencyMfa(`/painel/integracoes${query ? `?${query}` : ""}`);
+  await requireAgencyMfa(`/painel/integracoes${query ? `?${query}` : ""}`);
   const tab = (TABS.some(([t]) => t === sp.aba) ? sp.aba : "webhooks") as Tab;
-
-  if (!limits.integrations) {
-    return (
-      <div className="flex max-w-[860px] flex-col gap-5">
-        <h1 className="text-2xl font-bold sm:text-[28px]">Integrações</h1>
-        <div className="card flex flex-col gap-2 p-5 text-sm">
-          <p className="font-semibold">Integrações fazem parte dos planos Agência e Escala.</p>
-          <p className="text-ink-2">Com elas, o assistente consulta o sistema do cliente na conversa (pedido, agenda, saldo), o sistema recebe os eventos por webhook e envia mensagens pela API.</p>
-          {role === "owner" && (
-            <Link href="/painel/cobranca" className="btn-ghost self-start">
-              Ver planos
-            </Link>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   const supabase = await createClient();
   // a RLS limita os chatbots ao escopo de quem está logado
@@ -75,13 +59,17 @@ export default async function IntegrationsPage({ searchParams }: PageProps<"/pai
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold sm:text-[28px]">Integrações</h1>
         <p className="text-sm text-muted">
-          Webhooks que avisam o sistema do cliente do que acontece e chaves para ele usar a API. As ações de consulta que a IA chama na conversa ficam em cada chatbot, na aba Ações.
-          {plan.id === "trial" ? " No teste grátis: ações de consulta e chaves de leitura e pausa." : ""}{" "}
+          Webhooks que avisam o sistema do cliente do que acontece e chaves para ele usar a API. As ações de consulta que a IA chama na conversa ficam em cada chatbot, na aba Ações.{" "}
           <a href="/docs" target="_blank" rel="noopener" className="font-semibold text-brand hover:underline">
             Documentação ↗
           </a>
         </p>
       </div>
+      {!integrations && (
+        <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+          Você pode cadastrar webhooks e chaves e conferir pelo botão Testar. Os webhooks entregam, a API responde e as ações entram na conversa com o pacote Integrações (<Link href="/painel/cobranca" className="underline">Cobrança → Assinatura</Link>).
+        </p>
+      )}
       <nav className="flex gap-1 overflow-x-auto border-b border-line" aria-label="Integrações">
         {TABS.map(([key, label]) => (
           <Link key={key} href={`/painel/integracoes?aba=${key}`} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm ${tab === key ? "border-brand font-semibold text-brand" : "border-transparent font-medium text-ink-2 hover:text-ink"}`}>
@@ -90,8 +78,8 @@ export default async function IntegrationsPage({ searchParams }: PageProps<"/pai
         ))}
       </nav>
 
-      {tab === "webhooks" && <WebhooksTab agencyId={agency.id} webhookLimit={limits.webhooks} bots={bots} botName={botName} />}
-      {tab === "chaves" && <KeysTab agencyId={agency.id} trial={plan.id === "trial"} bots={bots} botName={botName} />}
+      {tab === "webhooks" && <WebhooksTab agencyId={agency.id} webhookLimit={webhookLimit(liveCount)} bots={bots} botName={botName} />}
+      {tab === "chaves" && <KeysTab agencyId={agency.id} bots={bots} botName={botName} />}
       {tab === "logs" && <LogsTab agencyId={agency.id} botIds={bots.map((b) => b.id as string)} botName={botName} db={db} />}
     </div>
   );
@@ -102,7 +90,7 @@ type BotRow = { id: unknown; name: unknown; client_name: unknown };
 async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId: string; webhookLimit: number; bots: BotRow[]; botName: Map<string, string> }) {
   const db = createAdminClient();
   const [{ data: hookRows }, { data: clients }] = await Promise.all([
-    db.from("webhooks").select("id, name, url, events, scope_type, scope_bot_ids, scope_client_id, active, disabled_at, disabled_reason, failing_since, created_at, paused_by_plan_at, headers_enc").eq("agency_id", agencyId).order("created_at"),
+    db.from("webhooks").select("id, name, url, events, scope_type, scope_bot_ids, scope_client_id, active, disabled_at, disabled_reason, failing_since, created_at, headers_enc").eq("agency_id", agencyId).order("created_at"),
     db.from("clients").select("id, name").eq("agency_id", agencyId).order("name"),
   ]);
   const hooks = hookRows ?? [];
@@ -143,7 +131,7 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
           <div key={h.id as string} className="card flex flex-col gap-2 p-4 text-sm">
             <div>
               <strong>{h.name as string}</strong> <span className={h.active ? "text-brand" : "text-danger"}>{h.active ? "ativo" : `desativado${h.disabled_reason ? ` (${h.disabled_reason as string})` : ""}`}</span>
-              {Boolean(h.paused_by_plan_at) && <span className="text-amber-ink"> · pausado pelo plano</span>}
+              
               <span className="block truncate text-xs text-muted">{h.url as string}</span>
               <span className="block text-xs text-muted">
                 Eventos: {(h.events as string[]).join(", ")} · escopo: {scopeText(h)}
@@ -224,7 +212,7 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
   );
 }
 
-async function KeysTab({ agencyId, trial, bots, botName }: { agencyId: string; trial: boolean; bots: BotRow[]; botName: Map<string, string> }) {
+async function KeysTab({ agencyId, bots, botName }: { agencyId: string; bots: BotRow[]; botName: Map<string, string> }) {
   const db = createAdminClient();
   const [{ data: keyRows }, { data: clients }] = await Promise.all([
     db.from("api_keys").select(`${API_KEY_COLS}, created_at, created_by`).eq("agency_id", agencyId).order("created_at", { ascending: false }),
@@ -233,7 +221,7 @@ async function KeysTab({ agencyId, trial, bots, botName }: { agencyId: string; t
   const keys = (keyRows ?? []) as unknown as Array<ApiKeyRow & { created_at: string; created_by: string | null }>;
   const clientName = new Map((clients ?? []).map((c) => [c.id as string, c.name as string]));
   const scopeText = (k: ApiKeyRow) => (k.scope_type === "all" ? "todos os chatbots (inclusive os futuros)" : k.scope_type === "client" ? `cliente ${clientName.get(k.scope_client_id ?? "") ?? "?"} (inclusive os futuros)` : k.scope_bot_ids.map((b) => botName.get(b) ?? "?").join(", "));
-  const allowed = trial ? TRIAL_KEY_PERMISSIONS : API_PERMISSIONS;
+  const allowed = API_PERMISSIONS;
 
   return (
     <>
@@ -275,7 +263,6 @@ async function KeysTab({ agencyId, trial, bots, botName }: { agencyId: string; t
                 <input type="checkbox" name="permission" value={perm} defaultChecked={perm === "contacts"} /> <span className="font-mono">{perm}</span> <span className="text-muted">· {PERMISSION_LABEL[perm]}</span>
               </label>
             ))}
-            {trial && <span className="text-xs text-muted">No teste grátis, as chaves só leem e pausam a IA. Enviar mensagens e campanhas pela API fica nos planos pagos.</span>}
           </fieldset>
           <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar chave</SubmitButton>
         </ResultForm>

@@ -19,7 +19,7 @@ export default async function AdminHome() {
   const alerts = operationAlerts(ops);
   const fixedBrl = fixedMonthlyBrl(fixed);
 
-  const status = { pagante: 0, teste: 0, teste_vencido: 0, cancelada: 0 };
+  const status = { assinante: 0, atrasada: 0, cancelando: 0, gratis: 0 };
   for (const a of agencies) status[agencyStatus(a)] += 1;
   const messages = (d: (typeof activity.daily)[number]) => d.contact + d.bot + d.team;
   const today = activity.daily.at(-1);
@@ -52,7 +52,7 @@ export default async function AdminHome() {
       )}
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Agências pagantes" value={num(status.pagante)} sub={`${status.teste} em teste · ${status.teste_vencido} teste vencido · ${status.cancelada} canceladas`} />
+        <Kpi label="Agências assinantes" value={num(status.assinante + status.atrasada + status.cancelando)} sub={`${status.gratis} na conta grátis · ${status.atrasada} com pagamento atrasado · ${status.cancelando} cancelando`} />
         <Kpi label="Chatbots" value={num(bots.bots)} sub={`${bots.live} publicados · ${bots.demos} demos`} />
         <Kpi label="Canais conectados" value={num(bots.whatsapp + bots.instagram)} sub={`${bots.whatsapp} WhatsApp · ${bots.instagram} Instagram`} />
         <Kpi label="Mensagens por dia" value={num(Math.round(total30 / 30))} sub={`média de 30 dias · hoje ${num(today ? messages(today) : 0)}`} />

@@ -218,7 +218,7 @@ export async function POST(req: Request) {
   // formulário de contato (o lead não se perde)
   if (mode.handoff) {
     const reason = mode.blockReason ?? "paused";
-    return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" || reason === "plan_paused" ? 503 : 402);
+    return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" ? 503 : 402);
   }
 
   // Confirmar, Cancelar ou "Tentar de novo" de uma ação "executa" (C pública, parte 5a): o clique é
@@ -303,10 +303,9 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     const msg = (e as Error).message;
-    // Sem cota, teste vencido ou falha do provedor de IA: o visitante nunca vê erro técnico nem
-    // assunto de plano. O widget troca o chat por um formulário de contato (o lead não se perde).
-    if (msg === "trial_expired") return contactFallback(msg, 402);
-    console.error(e);
+    // Falha do provedor de IA: o visitante nunca vê erro técnico. O widget troca o chat por um
+    // formulário de contato (o lead não se perde).
+    console.error(e, msg);
     return contactFallback("chat_failed", 503);
   }
 }

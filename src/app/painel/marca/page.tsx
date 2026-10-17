@@ -13,7 +13,7 @@ import { CopyButton } from "@/components/copy-button";
 export const metadata = { title: "Marca e domínio" };
 
 export default async function MarcaPage() {
-  const { agency, plan } = await requirePermission("brand");
+  const { agency, packs } = await requirePermission("brand");
   const domain = agency.custom_domain;
   const verified = Boolean(domain && agency.custom_domain_verified_at);
   const apex = domain ? isApexDomain(domain) : false;
@@ -48,8 +48,8 @@ export default async function MarcaPage() {
             <strong className="text-ink">{appUrl("").replace(/^https?:\/\//, "")}</strong>. Abrir o painel pelo seu domínio mostra só uma página com a sua marca.
           </p>
         </div>
-        {!plan.customDomain ? (
-          <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Disponível a partir do plano Agência. <Link href="/painel/cobranca" className="font-semibold underline">Ver planos</Link></p>
+        {!packs.includes("dominio") ? (
+          <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O domínio próprio é um pacote (R$ 29 por mês). <Link href="/painel/cobranca" className="font-semibold underline">Assinar em Cobrança</Link></p>
         ) : (
           <>
             <ActionForm key={domain ?? ""} action={saveCustomDomain} className="flex flex-wrap items-end gap-2">

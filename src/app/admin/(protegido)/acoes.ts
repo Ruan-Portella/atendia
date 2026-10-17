@@ -5,7 +5,6 @@ import { clientsOfScope, trackCompliance } from "@/lib/platform-events";
 import { requireAdmin } from "@/lib/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { text } from "@/lib/validation";
-import { extendedTrialEnd } from "@/lib/backoffice";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { reviewDecisionEmail, type ComplianceStatus } from "@/lib/acceptance";
 import { notifyAgencyOwner, notifyPlatform } from "@/lib/notify";
@@ -19,7 +18,6 @@ import { actionInputProblem, callAction, classifyCreatesOrder, needsConfirmation
 import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey } from "@/lib/api-keys";
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
 import { createWebhook, sendWebhookTest } from "@/lib/webhooks";
-import { applyPlanLimits, manualPlanSwitch } from "@/lib/plan-limits";
 import { syncSubscriptionSafe } from "@/lib/billing-sync";
 import { isBotSize } from "@/lib/plans";
 import { SIGNAL_KINDS, TEST_THRESHOLDS, THRESHOLDS, runContinuousChecks } from "@/lib/continuous-check";
@@ -39,11 +37,8 @@ async function auditAdmin(email: string, action: string, o: { agencyId?: string 
 
 /*
  * Ações do backoffice que mudam o funcionamento: pausar a IA (de uma agência ou de todas, a
- * chave geral) e estender o teste. Cada uma fica no registro de acesso, com o que foi feito.
+ * chave geral). Cada uma fica no registro de acesso, com o que foi feito.
  */
-
-/** Dias que dá para estender o teste de uma vez. */
-const TRIAL_DAYS = new Set([3, 7, 14, 30]);
 
 function reasonOf(fd: FormData): string | { error: string } {
   const reason = text(fd.get("reason"));
@@ -90,45 +85,6 @@ export async function resumeAgencyAi(agencyId: string): Promise<ActionResult> {
   await auditAdmin(s.email, "agencia.religar_ia", { agencyId, targetType: "agency", targetId: agencyId });
   revalidatePath("/admin", "layout");
   return ok("IA da agência religada.");
-}
-
-/** Estende o teste a partir de hoje ou do fim atual (o que vier depois); os avisos de fim voltam a valer. */
-export async function extendTrial(agencyId: string, fd: FormData): Promise<ActionResult> {
-  const days = Number(fd.get("days"));
-  if (!TRIAL_DAYS.has(days)) return fail("Escolha quantos dias.");
-  const s = await requireAdmin(`/admin/clientes/${agencyId} (estendeu o teste em ${days} dias)`);
-  const db = createAdminClient();
-  const { data: agency } = await db.from("agencies").select("plan, trial_ends_at").eq("id", agencyId).maybeSingle();
-  if (!agency) return fail("Agência não encontrada.");
-  if (agency.plan !== "trial") return fail("Só dá para estender o teste de quem ainda está no plano de teste.");
-  const until = extendedTrialEnd(agency.trial_ends_at as string, days);
-  const { error } = await db.from("agencies").update({ trial_ends_at: until, trial_reminder_sent_at: null, trial_expired_notified_at: null }).eq("id", agencyId);
-  if (error) return fail("Não foi possível estender. Tente de novo.");
-  await auditAdmin(s.email, "agencia.estender_teste", { agencyId, targetType: "agency", targetId: agencyId, after: { days, until } });
-  revalidatePath("/admin", "layout");
-  return ok(`Teste estendido até ${new Date(until).toLocaleDateString("pt-BR")}.`);
-}
-
-/** Planos que dá para escolher sem o Stripe (staging e testes). */
-const MANUAL_PLANS = new Set(["trial", "freelancer", "agencia", "escala"]);
-
-/** Troca de plano sem o Stripe (só fora da produção): grava o plano e aplica os limites, como faria o webhook do Stripe. */
-export async function setAgencyPlanManually(agencyId: string, fd: FormData): Promise<ActionResult> {
-  if (!manualPlanSwitch) return fail("Em produção, o plano vem da assinatura no Stripe.");
-  const plan = text(fd.get("plan"));
-  if (!MANUAL_PLANS.has(plan)) return fail("Escolha o plano.");
-  const s = await requireAdmin(`/admin/clientes/${agencyId} (trocou o plano para ${plan}, sem Stripe)`);
-  const db = createAdminClient();
-  const { data: before } = await db.from("agencies").select("plan").eq("id", agencyId).maybeSingle();
-  if (!before) return fail("Agência não encontrada.");
-  const { error } = await db.from("agencies").update({ plan }).eq("id", agencyId);
-  if (error) return fail("Não foi possível trocar o plano. Tente de novo.");
-  await auditAdmin(s.email, "agencia.plano_manual", { agencyId, targetType: "agency", targetId: agencyId, after: { de: before.plan, para: plan } });
-  const changes = await applyPlanLimits(db, agencyId, { type: "support", id: s.email });
-  revalidatePath("/admin", "layout");
-  const paused = changes ? changes.bots.pause.length + changes.members.pause.length + changes.webhooks.pause.length : 0;
-  const resumed = changes ? changes.bots.resume.length + changes.members.resume.length + changes.webhooks.resume.length : 0;
-  return ok(`Plano trocado.${paused ? ` ${paused} pausado(s) pelo plano.` : ""}${resumed ? ` ${resumed} reativado(s).` : ""}${changes?.actions === "pause" ? " Ações pausadas." : changes?.actions === "resume" ? " Ações reativadas." : ""}`);
 }
 
 /**
@@ -356,7 +312,7 @@ export async function updateIncident(id: number, fd: FormData): Promise<ActionRe
 /* ------------------------------------------------------------------ liberação (recursos por agência e abertura dos canais) */
 
 /**
- * Recursos liberados para uma agência (WhatsApp no beta e no teste grátis, Instagram no beta).
+ * Recursos liberados para uma agência (WhatsApp e Instagram antes da abertura geral).
  * Liberar avisa o dono por e-mail; tirar não desconecta o que já está ligado (só impede conectar
  * de novo e os modelos do WhatsApp).
  */
@@ -387,7 +343,7 @@ export async function setAgencyFeatures(agencyId: string, fd: FormData): Promise
 
 const OPEN_COLUMN: Record<Feature, "whatsapp_open_at" | "instagram_open_at"> = { whatsapp: "whatsapp_open_at", instagram: "instagram_open_at" };
 
-/** Abertura geral de um canal: o WhatsApp para os planos pagos (teste grátis segue manual), o Instagram para todos. */
+/** Abertura geral de um canal: toda agência conecta sem liberação (o chatbot atende com um tamanho). */
 export async function openChannel(channel: Feature, fd: FormData): Promise<ActionResult> {
   if (fd.get("confirm") !== "on") return fail("Marque a confirmação.");
   const s = await requireAdmin(`/admin (ABRIU o ${FEATURES[channel].label} para todos)`);

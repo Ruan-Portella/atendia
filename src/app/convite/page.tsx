@@ -10,18 +10,17 @@ import { createOwnAgency } from "./actions";
 export const metadata = { title: "Sua agência", robots: { index: false, follow: false } };
 
 /**
- * Para quem entrou e não tem agência ativa (leva B1'): tem convite em aberto, saiu de uma equipe
- * ou está com o acesso pausado pelo plano. O painel não cria agência sozinho para essas pessoas.
+ * Para quem entrou e não tem agência ativa (leva B1'): tem convite em aberto ou saiu de uma
+ * equipe. O painel não cria agência sozinho para essas pessoas.
  */
-export default async function NoAgencyPage({ searchParams }: PageProps<"/convite">) {
-  const sp = await searchParams;
+export default async function NoAgencyPage() {
   const { data } = await (await createClient()).auth.getClaims();
   const claims = data?.claims;
   if (!claims?.sub) redirect("/login");
   const email = String(claims.email ?? "").toLowerCase();
   const db = createAdminClient();
   const member = await activeMembership(db, claims.sub);
-  if (member && !member.paused_by_plan_at) redirect("/painel/clientes");
+  if (member) redirect("/painel/clientes");
   const invites = email ? await openInvitesFor(db, email) : [];
   const removed = !member && (await hadMembership(db, claims.sub));
   const names = [...new Set(invites.map((i) => i.agency_name))].join(", ");
@@ -30,12 +29,7 @@ export default async function NoAgencyPage({ searchParams }: PageProps<"/convite
     <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-16">
       <Logo />
       <div className="card flex w-full max-w-[460px] flex-col gap-4 p-7">
-        {member?.paused_by_plan_at || sp.pausado === "1" ? (
-          <>
-            <h1 className="text-xl font-bold">Seu acesso está pausado</h1>
-            <p className="text-sm text-muted">O plano da agência mudou e passou do limite de pessoas na equipe. Nada foi apagado: fale com o dono da agência para liberar o seu acesso de novo.</p>
-          </>
-        ) : (
+        {(
           <>
             <h1 className="text-xl font-bold">{invites.length ? "Você tem um convite" : "Você não está em nenhuma equipe"}</h1>
             {invites.length > 0 ? (
@@ -48,7 +42,7 @@ export default async function NoAgencyPage({ searchParams }: PageProps<"/convite
             <div className="flex flex-col gap-2 border-t border-line-2 pt-4">
               <p className="text-sm text-muted">Prefere usar o BoaVoz na sua própria agência?{invites.length ? " Os convites em aberto deixam de valer: cada usuário fica em uma agência só." : ""}</p>
               <ActionForm action={createOwnAgency}>
-                <SubmitButton pendingLabel="Criando…" className="btn-ghost">Criar minha agência (teste grátis)</SubmitButton>
+                <SubmitButton pendingLabel="Criando…" className="btn-ghost">Criar minha agência (conta grátis)</SubmitButton>
               </ActionForm>
             </div>
           </>

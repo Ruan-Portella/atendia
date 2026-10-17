@@ -93,14 +93,10 @@ export function estimateCampaign(o: { contacts: number; price: number; limit: nu
 
 /**
  * Conta ou chatbot em que as campanhas param (regra de estado, degraus 4 e 5): chatbot pausado pelo
- * dono ou pelo limite do plano, teste grátis vencido, assinatura cancelada. Cota de atendimentos
- * esgotada não para (campanha não consome cota). Pura.
+ * dono. Cota de atendimentos esgotada não para (campanha não consome cota). Pura.
  */
-export function accountStopReason(o: { botPaused: boolean; planPaused: boolean; block: AiBlockReason | null }): string | null {
+export function accountStopReason(o: { botPaused: boolean; block: AiBlockReason | null }): string | null {
   if (o.botPaused) return "o chatbot está pausado (botão de emergência)";
-  if (o.planPaused) return "o chatbot está pausado pelo limite do plano";
-  if (o.block === "trial_expired") return "o teste grátis da agência venceu";
-  if (o.block === "cancelled") return "a assinatura da agência foi cancelada";
   return null;
 }
 
@@ -385,8 +381,8 @@ async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: ()
     return { ...out, paused: true };
   }
   const bot = await botInfo(db, c.bot_id);
-  // chatbot pausado, conta sem plano válido ou canal bloqueado: nada sai por ele (nem campanha)
-  const stop = accountStopReason({ botPaused: Boolean(bot.paused_at), planPaused: Boolean(bot.paused_by_plan_at), block: await aiBlockedReason(db, c.agency_id) });
+  // chatbot pausado ou canal bloqueado: nada sai por ele (nem campanha)
+  const stop = accountStopReason({ botPaused: Boolean(bot.paused_at), block: await aiBlockedReason(db, c.agency_id) });
   const blocked = stop ?? (await sendBlockedReason(db, c.bot_id, "whatsapp"));
   if (blocked) {
     await pause(db, c, blocked.replace(/[.\s]+$/, ""));
@@ -452,9 +448,9 @@ async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: ()
   return out;
 }
 
-async function botInfo(db: SupabaseClient, botId: string): Promise<{ id: string; agency_id: string; paused_at: string | null; paused_by_plan_at: string | null }> {
-  const { data } = await db.from("bots").select("id, agency_id, paused_at, paused_by_plan_at").eq("id", botId).single();
-  return data as { id: string; agency_id: string; paused_at: string | null; paused_by_plan_at: string | null };
+async function botInfo(db: SupabaseClient, botId: string): Promise<{ id: string; agency_id: string; paused_at: string | null }> {
+  const { data } = await db.from("bots").select("id, agency_id, paused_at").eq("id", botId).single();
+  return data as { id: string; agency_id: string; paused_at: string | null };
 }
 
 type RowOutcome = SendStatus | SendDecision | "retry" | "stop" | "unknown";

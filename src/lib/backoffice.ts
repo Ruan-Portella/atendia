@@ -4,7 +4,8 @@ import type Stripe from "stripe";
 import { createAdminClient } from "./supabase/admin";
 import { stripe } from "./stripe";
 import { LOOKUP_LABELS, type LookupKey } from "./billing";
-import { PLANS, getPlan, type PlanId } from "./plans";
+import { PACKS, isBotSize, isPackId } from "./plans";
+import { sizeMonthlyCents } from "./billing";
 import { currentPeriodBR, monthStartBR } from "./utils";
 import { botQuota } from "./quota";
 import { estimateCost, referencePrices, type UsageLine } from "./whatsapp-usage";
@@ -324,10 +325,11 @@ export interface AgencyRow {
   id: string;
   name: string;
   email: string | null;
-  plan: PlanId | string;
-  planName: string;
-  priceBrl: number;
-  trialEndsAt: string;
+  /** Assinatura: sem (conta grátis), em dia ou atrasada; e o cancelamento agendado. */
+  billingStatus: string;
+  billingCancelAt: string | null;
+  /** Tamanhos e pacotes de agora, por mês (sem o excedente, que é do crédito). */
+  monthlyBrl: number;
   createdAt: string;
   stripeCustomerId: string | null;
   bots: number;
@@ -363,29 +365,34 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
   const db = createAdminClient();
   const period = currentPeriodBR();
   const [{ data: agencies, error }, { data: stats }, emails, { data: bots }] = await Promise.all([
-    db.from("agencies").select("id, owner_id, name, plan, features, trial_ends_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
+    db.from("agencies").select("id, owner_id, name, features, billing_status, billing_cancel_at, created_at, stripe_customer_id, ai_paused_at, ai_paused_reason").not("owner_id", "is", null).order("created_at", { ascending: false }),
     db.rpc("admin_agency_stats", { p_period: period, p_month_start: monthStartBR(period).toISOString() }),
     ownerEmails(),
     // a cota é de cada chatbot: a da agência é a soma
     db.from("bots").select("agency_id, size, volume_packs, quota_override").eq("is_demo", false),
   ]);
+  const { data: packRows } = await db.from("agency_packs").select("agency_id, pack, ends_at");
   if (error) throw new Error(`agências: ${error.message}`);
   const quotaByAgency = new Map<string, number>();
+  const centsByAgency = new Map<string, number>();
   for (const b of (bots ?? []) as Array<{ agency_id: string; size: string | null; volume_packs: number | null; quota_override: number | null }>) {
     quotaByAgency.set(b.agency_id, (quotaByAgency.get(b.agency_id) ?? 0) + botQuota(b));
+    // sob medida: o preço é combinado à parte
+    if (b.quota_override === null) centsByAgency.set(b.agency_id, (centsByAgency.get(b.agency_id) ?? 0) + sizeMonthlyCents({ size: isBotSize(b.size) ? b.size : null, volumePacks: b.volume_packs }));
+  }
+  for (const p of (packRows ?? []) as Array<{ agency_id: string; pack: string; ends_at: string | null }>) {
+    if (isPackId(p.pack) && !p.ends_at) centsByAgency.set(p.agency_id, (centsByAgency.get(p.agency_id) ?? 0) + PACKS[p.pack].priceBrl * 100);
   }
   const byId = new Map(((stats ?? []) as Array<Record<string, unknown>>).map((s) => [s.agency_id as string, s]));
   return (agencies ?? []).map((a) => {
     const s = byId.get(a.id as string) ?? {};
-    const plan = getPlan(a.plan as string);
     return {
       id: a.id as string,
       name: a.name as string,
       email: emails.get(a.owner_id as string) ?? null,
-      plan: a.plan as string,
-      planName: plan.name,
-      priceBrl: plan.priceBrl,
-      trialEndsAt: a.trial_ends_at as string,
+      billingStatus: (a.billing_status as string | null) ?? "none",
+      billingCancelAt: (a.billing_cancel_at as string | null) ?? null,
+      monthlyBrl: (centsByAgency.get(a.id as string) ?? 0) / 100,
       createdAt: a.created_at as string,
       stripeCustomerId: (a.stripe_customer_id as string | null) ?? null,
       bots: Number(s.bots) || 0,
@@ -403,11 +410,13 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
   });
 });
 
-/** Situação da agência para os filtros: em teste, teste vencido, pagante, cancelada. */
-export function agencyStatus(a: Pick<AgencyRow, "plan" | "trialEndsAt">, now = Date.now()): "teste" | "teste_vencido" | "pagante" | "cancelada" {
-  if (a.plan === "trial") return new Date(a.trialEndsAt).getTime() > now ? "teste" : "teste_vencido";
-  if (a.plan in PLANS) return "pagante";
-  return "cancelada";
+export type AgencyStatus = "assinante" | "atrasada" | "cancelando" | "gratis";
+
+/** Situação da agência para os filtros: assinante, pagamento atrasado, cancelando no dia 1º ou conta grátis. */
+export function agencyStatus(a: Pick<AgencyRow, "billingStatus" | "billingCancelAt">): AgencyStatus {
+  if (a.billingStatus === "past_due") return "atrasada";
+  if (a.billingStatus === "active") return a.billingCancelAt ? "cancelando" : "assinante";
+  return "gratis";
 }
 
 export async function getActivity(days: number) {
@@ -436,12 +445,6 @@ export async function getBotCounts() {
     db.from("instagram_channels").select("bot_id", { count: "exact", head: true }).is("disconnected_at", null),
   ]);
   return { bots: all.count ?? 0, live: live.count ?? 0, demos: demos.count ?? 0, whatsapp: wa.count ?? 0, instagram: ig.count ?? 0 };
-}
-
-/** Novo fim do teste: a partir de hoje ou do fim atual, o que vier depois. */
-export function extendedTrialEnd(currentEnd: string | null | undefined, days: number, now = Date.now()): string {
-  const base = Math.max(now, (currentEnd && Date.parse(currentEnd)) || 0);
-  return new Date(base + days * 86_400_000).toISOString();
 }
 
 /** Chave geral da IA (todas as agências). */
@@ -642,7 +645,7 @@ export async function getIncidents(limit = 30): Promise<IncidentRow[]> {
 
 /* ------------------------------------------------------------------ lista de clientes exportável */
 
-export const AGENCY_STATUS_LABEL = { pagante: "Pagante", teste: "Em teste", teste_vencido: "Teste vencido", cancelada: "Cancelada" } as const;
+export const AGENCY_STATUS_LABEL: Record<AgencyStatus, string> = { assinante: "Assinante", atrasada: "Pagamento atrasado", cancelando: "Cancelando no dia 1º", gratis: "Conta grátis" };
 
 /** Trechos da base por chatbot. */
 export async function botChunkCounts(botIds: string[]): Promise<Map<string, number>> {
@@ -666,8 +669,7 @@ export async function getClientExport(): Promise<ClientExportRow[]> {
       agencyId: r.agency_id as string,
       agencyName: r.agency_name as string,
       ownerEmail: a?.email ?? null,
-      planName: a?.planName ?? getPlan(r.plan as string).name,
-      agencySituation: a ? AGENCY_STATUS_LABEL[agencyStatus(a)] : "",
+      agencySituation: a ? AGENCY_STATUS_LABEL[agencyStatus(a)] : r.billing_status === "none" ? AGENCY_STATUS_LABEL.gratis : String(r.billing_status ?? ""),
       clientId: s(r.client_id),
       clientName: (r.client_name as string | null) ?? "",
       botId: r.bot_id as string,

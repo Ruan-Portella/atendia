@@ -136,14 +136,11 @@ describe("campanhas: proteções da parte 3b", () => {
     expect(billedAsMarketing("utility_reminder", undefined)).toBe(false);
   });
 
-  it("chatbot pausado, teste vencido e assinatura cancelada param; cota esgotada não", () => {
-    expect(accountStopReason({ botPaused: true, planPaused: false, block: null })).toMatch(/pausado/);
-    expect(accountStopReason({ botPaused: false, planPaused: true, block: null })).toMatch(/limite do plano/);
-    expect(accountStopReason({ botPaused: false, planPaused: false, block: "trial_expired" })).toMatch(/teste grátis/);
-    expect(accountStopReason({ botPaused: false, planPaused: false, block: "cancelled" })).toMatch(/cancelada/);
-    expect(accountStopReason({ botPaused: false, planPaused: false, block: "quota_exceeded" })).toBeNull();
-    expect(accountStopReason({ botPaused: false, planPaused: false, block: "paused" })).toBeNull();
-    expect(accountStopReason({ botPaused: false, planPaused: false, block: null })).toBeNull();
+  it("chatbot pausado para; cota esgotada (ou sem tamanho) não", () => {
+    expect(accountStopReason({ botPaused: true, block: null })).toMatch(/pausado/);
+    expect(accountStopReason({ botPaused: false, block: "quota_exceeded" })).toBeNull();
+    expect(accountStopReason({ botPaused: false, block: "paused" })).toBeNull();
+    expect(accountStopReason({ botPaused: false, block: null })).toBeNull();
   });
 });
 

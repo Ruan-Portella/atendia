@@ -2,7 +2,8 @@ import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
 import { createAdminClient } from "./supabase/admin";
-import { getPlan, type Plan } from "./plans";
+import type { PackId } from "./plans";
+import { activePacks } from "./entitlements";
 import { slugify } from "./utils";
 import { botQuotaStatus, type BotQuotaStatus } from "./atendimentos";
 import { activeMembership, can, hadMembership, openInvitesFor, type AgencyMember, type AgencyRole, type Permission } from "./team";
@@ -25,10 +26,8 @@ export interface Agency {
   retention_effective_at: string | null;
   /** Até quando os alertas de segurança já foram vistos (faixa do topo do painel). */
   security_alerts_seen_at: string | null;
-  plan: string;
   /** Recursos liberados pelo BoaVoz para esta conta (ver features.ts). */
   features: string[];
-  trial_ends_at: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   /** Assinatura: sem, em dia ou com pagamento atrasado (excedente suspenso). */
@@ -46,7 +45,8 @@ export interface Agency {
 export interface AgencyContext {
   agency: Agency;
   email: string;
-  plan: Plan;
+  /** Pacotes ativos da conta (entitlements.ts): domínio próprio, integrações, plataforma. */
+  packs: PackId[];
   /** Atendimentos do mês e cota somados dos chatbots (a cota é de cada chatbot). */
   usage: number;
   quota: number;
@@ -99,17 +99,16 @@ export const requireAgency = cache(async (): Promise<AgencyContext> => {
     }
     member = await createAgencyFor(userId, email, meta);
   }
-  if (member.paused_by_plan_at) redirect("/convite?pausado=1");
   // e-mail trocado na conta: o vínculo acompanha (o convite e a equipe mostram o e-mail atual)
   if (email && member.email !== email) await admin.from("agency_members").update({ email }).eq("id", member.id);
 
   const { data: agency, error } = await admin.from("agencies").select("*").eq("id", member.agency_id).single<Agency>();
   if (error || !agency) throw new Error(error?.message ?? "Agência não encontrada");
   // atendimentos do mês (São Paulo) contra a cota de cada chatbot
-  const bots = await botQuotaStatus(admin, agency.id);
+  const [bots, packs] = await Promise.all([botQuotaStatus(admin, agency.id), activePacks(admin, agency.id)]);
   const usage = bots.reduce((t, b) => t + b.used, 0);
   const quota = bots.reduce((t, b) => t + b.quota, 0);
-  return { agency, email, plan: getPlan(agency.plan), usage, quota, bots, userId, member, role: member.role };
+  return { agency, email, packs, usage, quota, bots, userId, member, role: member.role };
 });
 
 /**
