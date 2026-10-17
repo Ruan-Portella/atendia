@@ -33,6 +33,11 @@ export interface Agency {
   stripe_subscription_id: string | null;
   /** Assinatura: sem, em dia ou com pagamento atrasado (excedente suspenso). */
   billing_status: "none" | "active" | "past_due";
+  /** Recarga automática do crédito do excedente (centavos). */
+  credit_auto_enabled: boolean;
+  credit_auto_below_cents: number | null;
+  credit_auto_amount_cents: number | null;
+  credit_auto_month_limit_cents: number | null;
   created_at: string;
 }
 

@@ -1,6 +1,7 @@
 // Configura a Stripe do BoaVoz (revisão de preços, parte 4): produtos e preços com chave de
-// pesquisa, o medidor do excedente, o webhook e o portal do cliente. Idempotente: o que já existe
-// fica (o webhook só tem os eventos atualizados, e o segredo de assinatura não muda).
+// pesquisa, o webhook e o portal do cliente. Idempotente: o que já existe fica (o webhook só tem
+// os eventos atualizados, e o segredo de assinatura não muda). O excedente não passa pela
+// assinatura: é pago com crédito pré-pago (faturas avulsas), então não há preço por uso.
 //
 //   node --env-file=.env scripts/stripe-setup.mjs check  --base=https://dev.boavoz.com
 //   node --env-file=.env scripts/stripe-setup.mjs apply  --base=https://dev.boavoz.com
@@ -30,19 +31,16 @@ const CATALOG = [
   { lookup: "boavoz_integracoes", name: "BoaVoz · Integrações", amount: 4900, meta: { kind: "pack", pack: "integracoes" }, desc: "Ações, webhooks, API e identificação de usuários" },
   { lookup: "boavoz_plataforma", name: "BoaVoz · Plataforma", amount: 19900, meta: { kind: "pack", pack: "plataforma" }, desc: "Lojas pela API, chatbot modelo e identificação em todas as lojas" },
 ];
-const OVERAGE = { lookup: "boavoz_excedente", amount: 35, meter: "boavoz_excedente" };
 const WEBHOOK_URL = `${base}/api/stripe/webhook`;
 const WEBHOOK_EVENTS = ["checkout.session.completed", "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted", "invoice.paid", "invoice.payment_failed"];
 
 const account = await stripe.accounts.retrieve();
 console.log("conta:", account.settings?.dashboard?.display_name ?? "(sem nome)", "·", account.country, account.default_currency, "·", key.includes("_live_") ? "LIVE" : "teste");
 
-const lookups = [...CATALOG.map((c) => c.lookup), OVERAGE.lookup];
+const lookups = CATALOG.map((c) => c.lookup);
 const existing = await stripe.prices.list({ lookup_keys: lookups, limit: 20 });
 const byLookup = new Map(existing.data.map((p) => [p.lookup_key, p]));
 console.log("preços:", lookups.map((l) => `${l}=${byLookup.get(l)?.id ?? "falta"}`).join(", "));
-let meter = (await stripe.billing.meters.list({ limit: 100 })).data.find((m) => m.event_name === OVERAGE.meter && m.status === "active");
-console.log("medidor:", meter?.id ?? "falta");
 const hooks = await stripe.webhookEndpoints.list({ limit: 100 });
 const hook = hooks.data.find((h) => h.url.split("?")[0] === WEBHOOK_URL);
 console.log("webhook:", hook ? `${hook.id} [${hook.enabled_events.length} eventos]` : "falta");
@@ -56,21 +54,6 @@ for (const c of CATALOG) {
   const product = await stripe.products.create({ name: c.name, description: c.desc, metadata: c.meta });
   const price = await stripe.prices.create({ product: product.id, currency: "brl", unit_amount: c.amount, recurring: { interval: "month" }, lookup_key: c.lookup, metadata: c.meta });
   console.log("criado", c.lookup, price.id);
-}
-if (!meter) {
-  meter = await stripe.billing.meters.create({
-    display_name: "Atendimentos a mais (excedente)",
-    event_name: OVERAGE.meter,
-    default_aggregation: { formula: "sum" },
-    customer_mapping: { type: "by_id", event_payload_key: "stripe_customer_id" },
-    value_settings: { event_payload_key: "value" },
-  });
-  console.log("medidor criado", meter.id);
-}
-if (!byLookup.has(OVERAGE.lookup)) {
-  const product = await stripe.products.create({ name: "BoaVoz · Excedente", description: "Atendimento além da cota do chatbot, até o teto do mês", metadata: { kind: "overage" } });
-  const price = await stripe.prices.create({ product: product.id, currency: "brl", unit_amount: OVERAGE.amount, recurring: { interval: "month", usage_type: "metered", meter: meter.id }, lookup_key: OVERAGE.lookup, metadata: { kind: "overage" } });
-  console.log("criado", OVERAGE.lookup, price.id);
 }
 if (hook) {
   await stripe.webhookEndpoints.update(hook.id, { enabled_events: WEBHOOK_EVENTS });

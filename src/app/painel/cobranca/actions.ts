@@ -9,6 +9,7 @@ import { can } from "@/lib/team";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { choiceLabel, monthBoundsBR, packChargeCents, packsRemovedWith, parseTarget, planSizeChange, renewalLabel, targetMonthlyCents, type BillingTarget } from "@/lib/billing";
 import { applyUpgrade, chargeNow, syncSubscriptionSafe, voidPendingUpgrades } from "@/lib/billing-sync";
+import { parseAutoRecharge, parseCreditBrl, purchaseCredit } from "@/lib/billing-credit";
 import { billingEnabled, catalogPrices, checkoutTiming, ensureStripeCustomer, stripe, subscriptionItems } from "@/lib/stripe";
 import { PACKS, brlCents, isBotSize, isPackId, type BotSize } from "@/lib/plans";
 import { botQuota } from "@/lib/quota";
@@ -231,4 +232,65 @@ export async function changePack(pack: string, on: boolean): Promise<ActionResul
   if (ctx.agency.billing_status === "past_due") return fail(PAST_DUE);
   if (await voidPendingUpgrades(db, ctx.agency.id, (t) => t.packs.includes(pack))) return ok(PAID_MEANWHILE);
   return chargeAndApply(ctx, s, { bots: [], packs: [pack] }, packChargeCents(pack), `Pacote ${info.name}, proporcional até ${renewal}`, `${info.name} já está ativo`);
+}
+
+/* ------------------------------------------------------------------ crédito do excedente (parte 4c) */
+
+/** Compra crédito no cartão da assinatura (R$ 50 a R$ 50.000, válido por 12 meses, sem reembolso). */
+export async function buyCredit(fd: FormData): Promise<ActionResult> {
+  const s = await subscribed();
+  if ("error" in s) return fail(s.error);
+  const { ctx } = s;
+  const raw = String(fd.get("amount") ?? "") === "outro" ? String(fd.get("other") ?? "") : String(fd.get("amount") ?? "");
+  const cents = parseCreditBrl(raw);
+  if (cents === null) return fail(`Escolha um valor de ${brlCents(50)} a ${brlCents(50_000)}, em reais inteiros.`);
+  let url: string | null = null;
+  try {
+    const r = await purchaseCredit(createAdminClient(), { id: ctx.agency.id, stripe_customer_id: s.customer, stripe_subscription_id: s.subscription }, cents, "compra", ctx.userId);
+    if (r.status === "paid") {
+      revalidatePath("/painel", "layout");
+      return ok(`Crédito de ${brlCents(cents / 100)} comprado. Saldo: ${brlCents(r.balanceCents / 100)}.`);
+    }
+    url = r.url;
+  } catch (e) {
+    console.error("crédito: compra", e);
+    return fail("Não foi possível cobrar agora. Tente de novo em instantes.");
+  }
+  if (!url) return fail("O cartão não foi cobrado. Atualize o cartão em Pagamento e faturas e tente de novo.");
+  // cartão recusado ou pedindo autenticação: paga na página da Stripe; o crédito entra quando ela confirmar
+  redirect(url);
+}
+
+/** Liga, desliga ou ajusta a recarga automática do crédito. */
+export async function saveAutoRecharge(fd: FormData): Promise<ActionResult> {
+  const ctx = await requireAgency();
+  if (!can(ctx.role, "billing")) return fail(DENIED);
+  const a = parseAutoRecharge(fd);
+  if ("error" in a) return fail(a.error);
+  if (a.enabled && ctx.agency.billing_status === "none") return fail("A recarga automática usa o cartão da assinatura: assine um tamanho antes.");
+  const db = createAdminClient();
+  const after = { credit_auto_enabled: a.enabled, credit_auto_below_cents: a.belowCents, credit_auto_amount_cents: a.amountCents, credit_auto_month_limit_cents: a.monthLimitCents };
+  const { error } = await db.from("agencies").update(after).eq("id", ctx.agency.id);
+  if (error) return fail("Não foi possível salvar. Confira os valores e tente de novo.");
+  await auditBilling(ctx, "credito.recarga_automatica", { type: "agency", id: ctx.agency.id }, { after });
+  revalidatePath("/painel/cobranca/credito");
+  return ok(a.enabled ? `Recarga automática ligada: abaixo de ${brlCents(a.belowCents! / 100)}, compra ${brlCents(a.amountCents! / 100)}, até ${brlCents(a.monthLimitCents! / 100)} por mês.` : "Recarga automática desligada.");
+}
+
+/** Resposta ao pico no chat do site: "tráfego real" (o excedente volta, sem nova suspensão por 7 dias) ou "ataque" (suspenso até o mês virar). */
+export async function resolveSpike(botId: string, verdict: "real" | "ataque"): Promise<ActionResult> {
+  const ctx = await requireAgency();
+  if (!can(ctx.role, "billing")) return fail(DENIED);
+  const { data: visible } = await (await createClient()).from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!visible) return fail("Chatbot não encontrado.");
+  const db = createAdminClient();
+  const change =
+    verdict === "real"
+      ? { overage_suspended_at: null, overage_suspended_reason: null, overage_suspended_until: null, overage_spike_ok_until: new Date(Date.now() + 7 * 86_400_000).toISOString() }
+      : { overage_suspended_at: new Date().toISOString(), overage_suspended_reason: "ataque", overage_suspended_until: monthBoundsBR().end.toISOString() };
+  const { error } = await db.from("bots").update(change).eq("id", botId).eq("agency_id", ctx.agency.id).not("overage_suspended_reason", "is", null);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditBilling(ctx, verdict === "real" ? "excedente.trafego_real" : "excedente.ataque", { type: "bot", id: botId }, { after: change });
+  revalidatePath("/painel", "layout");
+  return ok(verdict === "real" ? "Excedente de volta. Nos próximos 7 dias, um pico não suspende de novo." : `Marcado como ataque: o excedente desse chatbot fica suspenso até ${renewalLabel()}.`);
 }

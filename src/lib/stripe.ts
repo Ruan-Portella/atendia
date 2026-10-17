@@ -35,12 +35,9 @@ export async function catalogPrices(): Promise<Record<LookupKey, string>> {
   return ids;
 }
 
-/** Itens da assinatura para a escolha: quantidade por preço, mais o excedente (por uso, sem quantidade). */
-export function subscriptionItems(target: BillingTarget, ids: Record<LookupKey, string>): Array<{ price: string; quantity?: number }> {
-  const q = targetQuantities(target);
-  const items: Array<{ price: string; quantity?: number }> = Object.entries(q).map(([k, n]) => ({ price: ids[k as LookupKey], quantity: n }));
-  items.push({ price: ids[LOOKUP_KEYS.excedente] });
-  return items;
+/** Itens da assinatura para a escolha: quantidade por preço (o excedente é do crédito, fora daqui). */
+export function subscriptionItems(target: BillingTarget, ids: Record<LookupKey, string>): Array<{ price: string; quantity: number }> {
+  return Object.entries(targetQuantities(target)).map(([k, n]) => ({ price: ids[k as LookupKey], quantity: n }));
 }
 
 /**

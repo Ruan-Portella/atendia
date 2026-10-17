@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { botOverageEmail, botQuotaEmail, openAtendimento } from "../atendimentos";
+import { botOverageEmail, botQuotaEmail, openAtendimento, spikeEmail } from "../atendimentos";
+import { creditAlert, creditEmail, parseAutoRecharge, parseCreditBrl, rechargeDecision } from "../billing-credit";
 import { overageAlertLevel, overageMax, parseCapBrl, quotaPhase, suggestSize } from "../quota";
 import { OVERAGE_PRICE_BRL } from "../plans";
 
@@ -89,18 +90,30 @@ describe("sugestão de tamanho (o excedente pagou mais que o tamanho de cima)", 
 
 describe("e-mails do excedente", () => {
   const bot = { name: "Zé", clientName: null };
-  it("cota cheia com o excedente ligado: avisa que o excedente começou, o preço e o teto", () => {
-    const [s, l] = botQuotaEmail(100, bot, 160, 160, "outubro de 2026", "https://x/uso", 100);
+  it("cota cheia com o excedente ligado: avisa que o excedente começou, o preço, o saldo e o teto", () => {
+    const [s, l] = botQuotaEmail(100, bot, 160, 160, "outubro de 2026", "https://x/uso", { capBrl: 100, creditCents: 5000 });
     expect(s).toBe("Zé: a cota do mês acabou e o excedente começou");
     const body = l.join(" ");
-    expect(body).toMatch(/R\$\s0,35/);
+    expect(body).toMatch(/R\$\s0,35 do crédito da conta \(saldo: R\$\s50,00\)/);
     expect(body).toMatch(/R\$\s100,00/);
     expect(body).toContain("285 atendimentos a mais");
     expect(body).not.toContain("entrou no modo só humano");
+    expect(body).not.toContain("fim do mês");
+  });
+  it("cota cheia, excedente sem teto e sem crédito: pede para comprar", () => {
+    const [, l] = botQuotaEmail(100, bot, 160, 160, "outubro de 2026", "https://x/uso", { capBrl: null, creditCents: 20 });
+    expect(l.join(" ")).toContain("compre crédito");
+    expect(l.join(" ")).not.toContain("teto do mês deste chatbot");
   });
   it("80% da cota com o excedente ligado: não diz que vai parar na cota", () => {
-    const [, l] = botQuotaEmail(80, bot, 128, 160, "outubro de 2026", "https://x/uso", 100);
+    const [, l] = botQuotaEmail(80, bot, 128, 160, "outubro de 2026", "https://x/uso", { capBrl: 100, creditCents: 5000 });
     expect(l.join(" ")).toContain("O excedente está ligado");
+  });
+  it("pico no chat do site: suspenso e os dois caminhos", () => {
+    const [s, l] = spikeEmail({ name: "Zé", clientName: "Bar" }, "https://x/uso");
+    expect(s).toBe("Zé (Bar): pico no chat do site, excedente suspenso");
+    expect(l.join(" ")).toContain("tráfego real");
+    expect(l.join(" ")).toContain("ataque");
   });
   it("teto: modo só humano e como voltar", () => {
     const [s, l] = botOverageEmail("teto", bot, 285, 100, "outubro de 2026", "https://x/uso");
@@ -126,11 +139,66 @@ describe("abertura com o excedente", () => {
   const o = { channel: "whatsapp" as const, contactKey: "k", conversationId: "c" };
 
   it("excedente: abre e conta, marcado como atendimento a mais", async () => {
-    const r = await openAtendimento(fake({ status: "excedente", atendimento_id: 11, used: 160, quota: 160, overage_on: true, overage_used: 1, overage_max: 285 }), bot, o);
+    const r = await openAtendimento(fake({ status: "excedente", atendimento_id: 11, used: 160, quota: 160, overage_on: true, overage_used: 1, overage_max: 285, credit_left: 4965 }), bot, o);
     expect(r).toEqual({ blocked: null, isNew: true, id: 11, overage: true });
   });
-  it("teto: modo só humano, como a cota cheia", async () => {
-    const r = await openAtendimento(fake({ status: "teto", atendimento_id: null, used: 160, quota: 160, overage_on: true, overage_used: 285, overage_max: 285 }), bot, o);
-    expect(r).toEqual({ blocked: "quota_exceeded", isNew: false, id: null, overage: false });
+  it("teto, sem crédito, suspenso e pico: modo só humano, como a cota cheia", async () => {
+    for (const status of ["teto", "sem_credito", "suspenso", "pico"]) {
+      const r = await openAtendimento(fake({ status, atendimento_id: null, used: 160, quota: 160, overage_on: true, overage_used: 3, overage_max: null, credit_left: 10 }), bot, o);
+      expect(r).toEqual({ blocked: "quota_exceeded", isNew: false, id: null, overage: false });
+    }
+  });
+});
+
+describe("crédito pré-pago do excedente", () => {
+  it("valor da compra: reais inteiros, de R$ 50 a R$ 50.000", () => {
+    expect(parseCreditBrl("100")).toBe(10_000);
+    expect(parseCreditBrl("R$ 1.000")).toBe(100_000);
+    expect(parseCreditBrl("250,00")).toBe(25_000);
+    expect(parseCreditBrl("49")).toBeNull();
+    expect(parseCreditBrl("50.001")).toBeNull();
+    expect(parseCreditBrl("99,90")).toBeNull();
+    expect(parseCreditBrl("abc")).toBeNull();
+  });
+
+  it("aviso de saldo: acabou quando não paga o próximo; baixo ao cruzar 20% da última compra", () => {
+    // última compra R$ 100: baixo abaixo de R$ 20
+    expect(creditAlert(1990, 10_000)).toBe("baixo"); // 20,25 → 19,90
+    expect(creditAlert(1955, 10_000)).toBeNull(); // já estava abaixo
+    expect(creditAlert(2025, 10_000)).toBeNull();
+    expect(creditAlert(20, 10_000)).toBe("acabou"); // 0,55 → 0,20
+    expect(creditAlert(0, 10_000)).toBe("acabou"); // 0,35 → 0
+    expect(creditAlert(5000, 0)).toBeNull();
+  });
+
+  const auto = { enabled: true, belowCents: 2000, amountCents: 10_000, monthLimitCents: 30_000 };
+  it("recarga automática: abaixo do gatilho e dentro do limite do mês; atrasada não recarrega", () => {
+    expect(rechargeDecision(auto, "active", 1990, 0)).toBe("charge");
+    expect(rechargeDecision(auto, "active", 2000, 0)).toBe("skip");
+    expect(rechargeDecision(auto, "active", 1990, 20_000)).toBe("charge");
+    expect(rechargeDecision(auto, "active", 1990, 20_001)).toBe("limit");
+    expect(rechargeDecision(auto, "past_due", 0, 0)).toBe("skip");
+    expect(rechargeDecision({ ...auto, enabled: false }, "active", 0, 0)).toBe("skip");
+  });
+
+  it("formulário da recarga: valor mínimo e limite do mês pelo menos uma recarga", () => {
+    const fd = (o: Record<string, string>) => {
+      const f = new FormData();
+      for (const [k, v] of Object.entries(o)) f.set(k, v);
+      return f;
+    };
+    expect(parseAutoRecharge(fd({ auto: "on", below: "20", amount: "100", limit: "300" }))).toEqual({ enabled: true, belowCents: 2000, amountCents: 10_000, monthLimitCents: 30_000 });
+    expect("error" in parseAutoRecharge(fd({ auto: "on", below: "20", amount: "40", limit: "300" }))).toBe(true);
+    expect("error" in parseAutoRecharge(fd({ auto: "on", below: "20", amount: "100", limit: "50" }))).toBe(true);
+    expect(parseAutoRecharge(fd({ below: "", amount: "", limit: "" }))).toEqual({ enabled: false, belowCents: null, amountCents: null, monthLimitCents: null });
+  });
+
+  it("e-mails do crédito", () => {
+    const o = { balanceCents: 1990, autoOn: false, creditUrl: "https://x/credito" };
+    expect(creditEmail("baixo", o)[0]).toMatch(/Crédito do excedente baixo: R\$\s19,90/);
+    expect(creditEmail("acabou", o)[1].join(" ")).toContain("modo só humano");
+    expect(creditEmail("recarga", { ...o, amountCents: 10_000, autoOn: true })[0]).toMatch(/Recarga automática de R\$\s100,00 feita/);
+    expect(creditEmail("recarga_falhou", { ...o, amountCents: 10_000, payUrl: "https://pay", autoOn: true })[1].join(" ")).toContain("https://pay");
+    expect(creditEmail("limite", { ...o, autoOn: true })[0]).toBe("Recarga automática parada pelo limite do mês");
   });
 });

@@ -61,14 +61,13 @@ describe("o que a conta assina", () => {
     expect(targetQuantities(target)).toEqual({ boavoz_bot_p: 2, boavoz_bot_m: 1, boavoz_bot_volume: 3, boavoz_integracoes: 1 });
   });
 
-  it("itens da assinatura: com quantidade, mais o excedente por uso", () => {
-    const ids = Object.fromEntries(["boavoz_bot_p", "boavoz_bot_m", "boavoz_bot_g", "boavoz_bot_volume", "boavoz_dominio", "boavoz_integracoes", "boavoz_plataforma", "boavoz_excedente"].map((k) => [k, `price_${k}`]));
+  it("itens da assinatura: com quantidade (o excedente sai do crédito, fora da assinatura)", () => {
+    const ids = Object.fromEntries(["boavoz_bot_p", "boavoz_bot_m", "boavoz_bot_g", "boavoz_bot_volume", "boavoz_dominio", "boavoz_integracoes", "boavoz_plataforma"].map((k) => [k, `price_${k}`]));
     expect(subscriptionItems(target, ids as never)).toEqual([
       { price: "price_boavoz_bot_p", quantity: 2 },
       { price: "price_boavoz_bot_m", quantity: 1 },
       { price: "price_boavoz_bot_volume", quantity: 3 },
       { price: "price_boavoz_integracoes", quantity: 1 },
-      { price: "price_boavoz_excedente" },
     ]);
   });
 

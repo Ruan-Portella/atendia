@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { appliedBotRow, type BillingTarget } from "./billing";
 import { audit } from "./audit";
 import { applyUpgrade, syncSubscriptionSafe } from "./billing-sync";
+import { applyCredit } from "./billing-credit";
 
 /*
  * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), inclusive a
@@ -89,9 +90,12 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
       break;
     }
     case "invoice.paid": {
-      // subida paga na fatura avulsa (cartão recusado na hora e pago depois na página da Stripe)
+      // fatura avulsa paga depois na página da Stripe (cartão recusado na hora): subida ou crédito
       const changeId = event.data.object.metadata?.changeId;
-      if (changeId) await applyUpgrade(db, changeId);
+      if (!changeId) break;
+      const { data: change } = must(await db.from("billing_changes").select("kind").eq("id", changeId).maybeSingle());
+      if (change?.kind === "upgrade") await applyUpgrade(db, changeId);
+      else if (change?.kind === "credit" || change?.kind === "recarga") await applyCredit(db, changeId, change.kind === "recarga" ? "recarga" : "compra");
       break;
     }
     case "customer.subscription.deleted":

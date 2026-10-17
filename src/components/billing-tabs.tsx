@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/painel/cobranca", label: "Assinatura" },
   { href: "/painel/cobranca/uso", label: "Uso e custo" },
+  { href: "/painel/cobranca/credito", label: "Crédito" },
   { href: "/painel/cobranca/limites", label: "Limites do plano" },
 ] as const;
 

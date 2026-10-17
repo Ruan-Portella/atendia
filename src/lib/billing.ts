@@ -17,7 +17,6 @@ export const LOOKUP_KEYS = {
   dominio: "boavoz_dominio",
   integracoes: "boavoz_integracoes",
   plataforma: "boavoz_plataforma",
-  excedente: "boavoz_excedente",
 } as const;
 export type LookupKey = (typeof LOOKUP_KEYS)[keyof typeof LOOKUP_KEYS];
 
@@ -30,7 +29,6 @@ export const LOOKUP_LABELS: Record<LookupKey, string> = {
   boavoz_dominio: "Domínio próprio",
   boavoz_integracoes: "Integrações",
   boavoz_plataforma: "Plataforma",
-  boavoz_excedente: "Excedente",
 };
 
 const nextPeriod = (period: string) => {
@@ -72,7 +70,7 @@ export interface BillingTarget {
   packs: PackId[];
 }
 
-/** Total do mês, em centavos (sem o excedente, que é por uso). */
+/** Total do mês, em centavos (o excedente sai do crédito pré-pago, fora da assinatura). */
 export function targetMonthlyCents(t: BillingTarget): number {
   return t.bots.reduce((s, b) => s + sizeMonthlyCents(b), 0) + t.packs.reduce((s, p) => s + PACKS[p].priceBrl * 100, 0);
 }

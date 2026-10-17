@@ -14,6 +14,9 @@ interface BotQuota {
   overageEnabled: boolean;
   overageUsed: number;
   overageMax: number;
+  overageCapMax: number | null;
+  overageSuspended: "pico" | "ataque" | null;
+  creditShort: boolean;
 }
 
 interface Props {
@@ -40,6 +43,9 @@ export function PlanAlert({ planId, trialDays, bots }: Props) {
   const near = bots.filter((b) => b.quota > 0 && !b.overageEnabled && b.used < b.quota && b.used >= Math.ceil(b.quota * 0.8));
   const nearCap = bots.filter((b) => quotaPhase(b) === "excedente" && b.overageUsed >= Math.ceil(b.overageMax * 0.8));
   const unsized = bots.filter((b) => !b.size && b.override === null);
+  // parados por falta de crédito (o excedente ligado, sem teto atingido nem suspensão)
+  const noCredit = full.filter((b) => b.overageEnabled && b.creditShort && !b.overageSuspended && (b.overageCapMax === null || b.overageUsed < b.overageCapMax));
+  const spike = bots.filter((b) => b.overageSuspended === "pico");
   let tone: "danger" | "warn" | null = null;
   let text = "";
   let href = "/painel/cobranca/uso";
@@ -50,12 +56,22 @@ export function PlanAlert({ planId, trialDays, bots }: Props) {
   } else if (trialDays !== null && trialDays <= 0) {
     tone = "danger";
     text = `Seu teste grátis acabou: ${stopped}. Escolha um plano para o assistente voltar a responder.`;
+  } else if (noCredit.length) {
+    tone = "danger";
+    href = "/painel/cobranca/credito";
+    label = "Comprar crédito";
+    text = `O crédito do excedente acabou: modo só humano em ${noCredit.length === 1 ? noCredit[0].name : `${noCredit.length} chatbots (${names(noCredit)})`}, que já passaram da cota do mês. Para quem começa um atendimento novo, ${stopped}. Compre crédito para a IA voltar na hora.`;
   } else if (full.length) {
     tone = "danger";
+    const why = (b: BotQuota) =>
+      b.overageSuspended ? "o excedente está suspenso por um pico no chat do site" : b.overageEnabled ? `o excedente chegou ao teto (${num(b.overageCapMax ?? b.overageMax)} atendimentos a mais)` : `a cota de ${num(b.quota)} atendimentos do mês acabou`;
     text =
       full.length === 1
-        ? `Modo só humano em ${full[0].name}: ${full[0].overageEnabled ? `o excedente chegou ao teto (${num(full[0].overageMax)} atendimentos a mais)` : `a cota de ${num(full[0].quota)} atendimentos do mês acabou`}. Para quem começa um atendimento novo nesse chatbot, ${stopped}. Os outros chatbots seguem normais.`
-        : `Modo só humano em ${full.length} chatbots (${names(full)}): a cota do mês (ou o teto do excedente) de cada um acabou. Para quem começa um atendimento novo neles, ${stopped}. Os outros chatbots seguem normais.`;
+        ? `Modo só humano em ${full[0].name}: ${why(full[0])}. Para quem começa um atendimento novo nesse chatbot, ${stopped}. Os outros chatbots seguem normais.`
+        : `Modo só humano em ${full.length} chatbots (${names(full)}): a cota do mês de cada um acabou (sem excedente, no teto ou com o excedente suspenso). Para quem começa um atendimento novo neles, ${stopped}. Os outros chatbots seguem normais.`;
+  } else if (spike.length) {
+    tone = "warn";
+    text = `Pico no chat do site de ${names(spike)}: o excedente ficou suspenso até você confirmar se é tráfego real ou ataque.`;
   } else if (trialDays !== null && trialDays <= 3) {
     tone = "warn";
     text = `Seu teste grátis acaba em ${trialDays} dia${trialDays === 1 ? "" : "s"}. Depois disso, ${stopped}.`;

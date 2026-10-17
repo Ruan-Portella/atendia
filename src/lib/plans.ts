@@ -69,10 +69,18 @@ export const ANSWERS_PER_ATENDIMENTO = 40;
 
 /**
  * Excedente (opção de cada chatbot, desligada por padrão): preço de cada atendimento além da
- * cota, até o teto de gasto do mês. Mais caro que o dos tamanhos (R$ 0,29 a 0,31), com 36% de
- * margem no pior caso.
+ * cota, descontado do crédito pré-pago da conta (teto do mês por chatbot opcional). Mais caro
+ * que o dos tamanhos (R$ 0,29 a 0,31), com 36% de margem no pior caso.
  */
 export const OVERAGE_PRICE_BRL = 0.35;
+
+/** Crédito do excedente: compra em reais inteiros, válida por 12 meses, sem reembolso. */
+export const CREDIT_MIN_BRL = 50;
+export const CREDIT_MAX_BRL = 50_000;
+export const CREDIT_SHORTCUTS_BRL = [50, 100, 250, 500] as const;
+export const CREDIT_VALID_MONTHS = 12;
+/** Aviso de saldo baixo: abaixo de 20% da última compra. */
+export const CREDIT_LOW_SHARE = 0.2;
 
 export function getPlan(id: string): Plan {
   return (PLANS as Record<string, Plan>)[id] ?? { ...PLANS.trial, id: "cancelado" as PlanId, name: "Cancelado", bots: 0, atendimentos: 0 };

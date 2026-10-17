@@ -1,10 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 import { hmacHex } from "./hash";
 import { ANSWERS_PER_ATENDIMENTO, BOT_SIZES, OVERAGE_PRICE_BRL, brlCents as brl2, isBotSize, type BotSize } from "./plans";
 import { SIZE_QUOTAS, botQuota, overageAlertLevel, overageMax, quotaAlertLevel, type QuotaLevel } from "./quota";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl, currentPeriodBR, monthStartBR } from "./utils";
 import { periodLabel, shiftPeriod } from "./report";
+import { OVERAGE_PRICE_CENTS, afterCreditUse, creditBalance } from "./billing-credit";
 
 export { ATENDIMENTO_DEFINITION, botQuota, overageAlertLevel, overageMax, quotaAlertLevel, quotaPhase, suggestSize } from "./quota";
 
@@ -12,27 +14,42 @@ export { ATENDIMENTO_DEFINITION, botQuota, overageAlertLevel, overageMax, quotaA
  * Cota por atendimento, por chatbot (spec "Limites por plano"). A abertura (open_atendimento,
  * migração 0094) acontece antes de cada resposta da IA, sob a trava do contato: o atendimento
  * aberto há menos de 24 horas soma uma resposta, até 40; depois disso (ou sem atendimento aberto),
- * confere a cota do mês do chatbot e abre outro. Sem vaga na cota, com o excedente ligado (migração
- * 0095), abre um atendimento a mais até o teto de gasto. Sem vaga, o chamador entra no modo só
- * humano, e só aquele chatbot para. Não contam: o teste ao vivo do painel, as demos e as avaliações.
+ * confere a cota do mês do chatbot e abre outro. Sem vaga na cota, com o excedente ligado, abre um
+ * atendimento a mais pago com o crédito pré-pago da conta (migração 0098), até o teto opcional do
+ * chatbot. Sem vaga (ou sem crédito, ou com o excedente suspenso por pico no widget), o chamador
+ * entra no modo só humano, e só aquele chatbot para. Não contam: o teste ao vivo do painel, as demos e as avaliações.
  */
 
 export type AtendimentoChannel = "widget" | "whatsapp" | "instagram";
 
-/** Por que não abriu: a cota do mês do chatbot acabou (sem excedente, ou com o teto atingido). */
+/** Por que não abriu: a cota do mês do chatbot acabou (sem excedente, no teto, sem crédito ou com o excedente suspenso). */
 export type AtendimentoBlock = "quota_exceeded";
 
 /** Chave do contato em hash (HMAC): ficha do contato no WhatsApp e no Instagram, visitor_id no widget. */
 export const contactKeyHash = (channel: AtendimentoChannel, key: string) => hmacHex(`atendimento:${channel}:${key}`);
 
 interface OpenRow {
-  status: "aberto" | "novo" | "excedente" | "cota" | "teto";
+  status: "aberto" | "novo" | "excedente" | "cota" | "teto" | "sem_credito" | "suspenso" | "pico";
   atendimento_id: number | null;
   used: number | null;
   quota: number | null;
   overage_on: boolean | null;
   overage_used: number | null;
+  /** Atendimentos a mais que cabem no teto do chatbot (sem teto, null). */
   overage_max: number | null;
+  /** Saldo do crédito depois do desconto (só no excedente e sem crédito). */
+  credit_left: number | null;
+}
+
+const STOPPED = new Set(["cota", "teto", "sem_credito", "suspenso", "pico"]);
+
+/** Depois da resposta (after do Next); fora de uma requisição, roda solto. */
+function inBackground(fn: () => Promise<unknown>) {
+  try {
+    after(fn);
+  } catch {
+    void fn().catch(() => undefined);
+  }
 }
 
 export interface OpenResult {
@@ -67,12 +84,17 @@ export async function openAtendimento(
     console.error("atendimento: não foi possível conferir a cota", error?.message);
     return { blocked: null, isNew: false, id: null, overage: false };
   }
-  if (row.status === "cota" || row.status === "teto") return { blocked: "quota_exceeded", isNew: false, id: null, overage: false };
+  if (STOPPED.has(row.status)) {
+    if (row.status === "pico") inBackground(() => notifySpike(db, bot).catch((e) => console.error("atendimento: aviso de pico", e)));
+    return { blocked: "quota_exceeded", isNew: false, id: null, overage: false };
+  }
   if (row.status === "novo" || row.status === "excedente") {
     // avisos da cota (80%, 95%, 100%) e do teto do excedente (80%, 95%, teto): o contador sobe de
     // 1 em 1 sob a trava, então cada um sai uma vez por mês
-    notifyQuotaLevel(db, bot, row).catch((e) => console.error("atendimento: aviso de cota", e));
+    inBackground(() => notifyQuotaLevel(db, bot, row).catch((e) => console.error("atendimento: aviso de cota", e)));
   }
+  // crédito: saldo baixo, acabou e a recarga automática
+  if (row.status === "excedente" && row.credit_left !== null) inBackground(() => afterCreditUse(db, bot.agency_id, row.credit_left!));
   return { blocked: null, isNew: row.status === "novo" || row.status === "excedente", id: row.atendimento_id, overage: row.status === "excedente" };
 }
 
@@ -99,7 +121,7 @@ async function notifyQuotaLevel(db: SupabaseClient, bot: { id: string; agency_id
     const level = quotaAlertLevel(row.used, row.quota);
     if (level) {
       const b = await who();
-      email = botQuotaEmail(level, b, row.used, row.quota, month, usage, row.overage_on ? b.cap : null);
+      email = botQuotaEmail(level, b, row.used, row.quota, month, usage, row.overage_on ? { capBrl: b.cap || null, creditCents: await creditBalance(db, bot.agency_id) } : null);
     }
   } else if (row.status === "excedente" && row.overage_used !== null && row.overage_max !== null) {
     const level = overageAlertLevel(row.overage_used, row.overage_max);
@@ -111,23 +133,48 @@ async function notifyQuotaLevel(db: SupabaseClient, bot: { id: string; agency_id
   if (email) await notifyAgencyOwner(db, bot.agency_id, email[0], email[1]);
 }
 
+/** Pico no chat do site: o excedente do chatbot ficou suspenso até o dono confirmar. */
+async function notifySpike(db: SupabaseClient, bot: { id: string; agency_id: string }) {
+  const { data: b } = await db.from("bots").select("name, client_name").eq("id", bot.id).maybeSingle();
+  const [subject, lines] = spikeEmail({ name: (b?.name as string | undefined) ?? "Chatbot", clientName: (b?.client_name as string | undefined) ?? null }, appUrl("/painel/cobranca/uso"));
+  await notifyAgencyOwner(db, bot.agency_id, subject, lines);
+}
+
+/** Assunto e texto do aviso de pico no chat do site. Função pura. */
+export function spikeEmail(bot: { name: string; clientName: string | null }, usageUrl: string): [string, string[]] {
+  const who = bot.clientName ? `${bot.name} (${bot.clientName})` : bot.name;
+  return [
+    `${who}: pico no chat do site, excedente suspenso`,
+    [
+      `O chat do site de ${who} recebeu muito mais conversas novas que o normal nas últimas 24 horas (mais de 5 vezes a média da semana). Para um robô não gastar o crédito da conta, o excedente desse chatbot ficou suspenso: com a cota do mês cheia, ele entra no modo só humano.`,
+      "",
+      `Se for tráfego de verdade (uma campanha, por exemplo), marque "tráfego real" e o excedente volta na hora. Se for ataque, marque "ataque": o excedente fica suspenso até o mês virar. Os dois botões ficam em Uso e custo: ${usageUrl}`,
+    ],
+  ];
+}
+
 const HUMAN_ONLY =
   "No modo só humano, a IA desse chatbot não responde a quem começa um atendimento novo: as mensagens do WhatsApp e do Instagram chegam em Conversas para a sua equipe responder, e o chat do site mostra um formulário de contato. Quem já estava sendo atendido segue até completar 24 horas ou 40 respostas. Os outros chatbots continuam normais.";
 
 /**
- * Assunto e texto do aviso de cota de um chatbot. `overageCap`: o teto do excedente, quando ele
- * está ligado (a cota cheia não para o chatbot). Função pura.
+ * Assunto e texto do aviso de cota de um chatbot. `overage`: o excedente ligado (a cota cheia não
+ * para o chatbot), com o teto opcional e o saldo do crédito da conta. Função pura.
  */
-export function botQuotaEmail(level: QuotaLevel, bot: { name: string; clientName: string | null }, used: number, quota: number, month: string, usageUrl: string, overageCap: number | null = null): [string, string[]] {
+export function botQuotaEmail(level: QuotaLevel, bot: { name: string; clientName: string | null }, used: number, quota: number, month: string, usageUrl: string, overage: { capBrl: number | null; creditCents: number } | null = null): [string, string[]] {
   const who = bot.clientName ? `${bot.name} (${bot.clientName})` : bot.name;
-  if (overageCap) {
+  if (overage) {
+    const credit = brl2(overage.creditCents / 100);
+    const cap = overage.capBrl ? ` O teto do mês deste chatbot é ${brl2(overage.capBrl)} (${fmt(overageMax(overage.capBrl))} atendimentos a mais).` : "";
+    const each = `cada atendimento a mais usa ${brl2(OVERAGE_PRICE_BRL)} do crédito da conta (saldo: ${credit})`;
     if (level === 100) {
       return [
         `${who}: a cota do mês acabou e o excedente começou`,
         [
-          `O chatbot ${who} chegou aos ${fmt(quota)} atendimentos de ${month}. O excedente está ligado: os próximos atendimentos custam ${brl2(OVERAGE_PRICE_BRL)} cada, cobrados no fim do mês, até o teto de ${brl2(overageCap)} (${fmt(overageMax(overageCap))} atendimentos a mais).`,
+          `O chatbot ${who} chegou aos ${fmt(quota)} atendimentos de ${month}. O excedente está ligado: ${each}.${cap}`,
           "",
-          "No teto, o chatbot entra no modo só humano até o mês virar.",
+          overage.creditCents < OVERAGE_PRICE_CENTS
+            ? "O crédito da conta não paga o próximo atendimento a mais: compre crédito, senão o chatbot entra no modo só humano."
+            : "Sem crédito (ou no teto), o chatbot entra no modo só humano até o mês virar.",
           "",
           `Uso, excedente e tamanho: ${usageUrl}`,
         ],
@@ -135,13 +182,7 @@ export function botQuotaEmail(level: QuotaLevel, bot: { name: string; clientName
     }
     return [
       `${who}: ${level}% dos atendimentos do mês`,
-      [
-        `O chatbot ${who} já fez ${fmt(used)} de ${fmt(quota)} atendimentos em ${month}.`,
-        "",
-        `O excedente está ligado: passando da cota, cada atendimento a mais custa ${brl2(OVERAGE_PRICE_BRL)}, até o teto de ${brl2(overageCap)}.`,
-        "",
-        `Uso do mês por chatbot: ${usageUrl}`,
-      ],
+      [`O chatbot ${who} já fez ${fmt(used)} de ${fmt(quota)} atendimentos em ${month}.`, "", `O excedente está ligado: passando da cota, ${each}.${cap}`, "", `Uso do mês por chatbot: ${usageUrl}`],
     ];
   }
   if (level === 100) {
@@ -219,9 +260,15 @@ export interface BotQuotaStatus {
   used: number;
   overageEnabled: boolean;
   overageCapBrl: number | null;
-  /** Atendimentos a mais (excedente) no mês e quantos cabem no teto. */
+  /** Atendimentos a mais (excedente) no mês e até quantos dá para chegar (teto e crédito). */
   overageUsed: number;
   overageMax: number;
+  /** Atendimentos a mais que o teto do chatbot permite (sem teto, null). */
+  overageCapMax: number | null;
+  /** Excedente suspenso: pico no widget (até o dono confirmar) ou ataque (até o mês virar). */
+  overageSuspended: "pico" | "ataque" | null;
+  /** O crédito da conta não paga o próximo atendimento a mais. */
+  creditShort: boolean;
   /** Troca agendada para o dia 1º (descer ou tirar o tamanho): "none" = fica sem tamanho. */
   pendingSize: BotSize | "none" | null;
   pendingVolumePacks: number | null;
@@ -232,16 +279,23 @@ export interface BotQuotaStatus {
  * agendada que já venceu aparece aplicada (o banco aplica na próxima abertura de atendimento).
  */
 export async function botQuotaStatus(db: SupabaseClient, agencyId: string, period = currentPeriodBR()): Promise<BotQuotaStatus[]> {
-  const [{ data: bots, error }, { data: counts, error: countError }] = await Promise.all([
-    db.from("bots").select("id, name, client_id, client_name, size, volume_packs, quota_override, overage_enabled, overage_cap_brl, pending_size, pending_volume_packs, pending_from, prorated_month, prorated_quota").eq("agency_id", agencyId).eq("is_demo", false).order("created_at"),
+  const [{ data: bots, error }, { data: counts, error: countError }, credit] = await Promise.all([
+    db.from("bots").select("id, name, client_id, client_name, size, volume_packs, quota_override, overage_enabled, overage_cap_brl, overage_suspended_reason, overage_suspended_until, pending_size, pending_volume_packs, pending_from, prorated_month, prorated_quota").eq("agency_id", agencyId).eq("is_demo", false).order("created_at"),
     db.rpc("bot_month_atendimentos", { p_agency_id: agencyId, p_month_start: monthStartBR(period).toISOString() }),
+    creditBalance(db, agencyId),
   ]);
+  const creditFits = Math.floor(credit / OVERAGE_PRICE_CENTS);
   if (error) throw new Error(`cota dos chatbots: ${error.message}`);
   if (countError) throw new Error(`atendimentos por chatbot: ${countError.message}`);
   const counted = new Map(((counts ?? []) as Array<{ bot_id: string; total: number | string; overage: number | string }>).map((r) => [r.bot_id, { total: Number(r.total) || 0, overage: Number(r.overage) || 0 }]));
   return (bots ?? []).map((raw) => {
     const due = raw.pending_from && new Date(raw.pending_from as string).getTime() <= Date.now();
     const b = due ? { ...raw, size: raw.pending_size === "none" ? null : raw.pending_size, volume_packs: raw.pending_size === "volume" ? raw.pending_volume_packs : null, pending_size: null, pending_volume_packs: null, prorated_month: null, prorated_quota: null } : raw;
+    const extra = counted.get(b.id as string)?.overage ?? 0;
+    const capMax = b.overage_cap_brl === null || b.overage_cap_brl === undefined ? null : overageMax(Number(b.overage_cap_brl));
+    // "ataque" vencido (o mês virou) já não vale; o banco limpa na próxima abertura
+    const attackOver = b.overage_suspended_reason === "ataque" && b.overage_suspended_until && new Date(b.overage_suspended_until as string).getTime() <= Date.now();
+    const suspended = !attackOver && (b.overage_suspended_reason === "pico" || b.overage_suspended_reason === "ataque") ? (b.overage_suspended_reason as "pico" | "ataque") : null;
     return {
     botId: b.id as string,
     name: b.name as string,
@@ -254,8 +308,11 @@ export async function botQuotaStatus(db: SupabaseClient, agencyId: string, perio
     used: (counted.get(b.id as string)?.total ?? 0) - (counted.get(b.id as string)?.overage ?? 0),
     overageEnabled: Boolean(b.overage_enabled),
     overageCapBrl: b.overage_cap_brl === null || b.overage_cap_brl === undefined ? null : Number(b.overage_cap_brl),
-    overageUsed: counted.get(b.id as string)?.overage ?? 0,
-    overageMax: b.overage_enabled ? overageMax(Number(b.overage_cap_brl)) : 0,
+    overageUsed: extra,
+    overageMax: b.overage_enabled && !suspended ? Math.min(capMax ?? Number.MAX_SAFE_INTEGER, extra + creditFits) : extra,
+    overageCapMax: capMax,
+    overageSuspended: suspended,
+    creditShort: Boolean(b.overage_enabled) && creditFits === 0,
     pendingSize: b.pending_size === "none" ? "none" : isBotSize(b.pending_size) ? b.pending_size : null,
     pendingVolumePacks: (b.pending_volume_packs as number | null) ?? null,
     };

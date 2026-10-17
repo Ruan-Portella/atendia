@@ -4,13 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agencyMonthUsage, lastMonthTotals, monthAtendimentos, sizeLabel, type BotMonthUsage, type BotQuotaStatus } from "@/lib/atendimentos";
 import { ATENDIMENTO_DEFINITION, quotaPhase, suggestSize, type SizeSuggestion } from "@/lib/quota";
-import { BOT_SIZES, OVERAGE_PRICE_BRL, brlCents, num } from "@/lib/plans";
+import { OVERAGE_PRICE_BRL, brlCents, num } from "@/lib/plans";
 import { currentPeriodBR, periodLabel } from "@/lib/report";
 import { CATEGORY_LABEL, referencePrices } from "@/lib/whatsapp-usage";
 import { cn } from "@/lib/utils";
 import { Kpi } from "@/components/kpi";
 import { BillingTabs } from "@/components/billing-tabs";
 import { OverageForm } from "@/components/overage-form";
+import { SpikeButtons } from "@/components/credit-forms";
+import { renewalLabel } from "@/lib/billing";
 
 export const metadata = { title: "Uso e custo" };
 
@@ -22,12 +24,6 @@ function quotaState(b: BotQuotaStatus): "cheia" | "excedente" | "perto" | "ok" {
   if (phase === "parado" && b.quota > 0) return "cheia";
   if (phase === "excedente") return "excedente";
   return b.quota > 0 && b.used >= Math.ceil(b.quota * 0.8) ? "perto" : "ok";
-}
-
-/** Teto sugerido para quem liga o excedente: o preço do tamanho (o mês sai no máximo pelo dobro). */
-function defaultCap(b: BotQuotaStatus): number {
-  if (b.size === "volume") return Math.max(1, b.volumePacks ?? 1) * BOT_SIZES.volume.priceBrl;
-  return b.size ? BOT_SIZES[b.size].priceBrl : BOT_SIZES.P.priceBrl;
 }
 
 const suggestionText = (s: SizeSuggestion) => (s.size === "volume" ? `o Volume com ${s.volumePacks} pacote${s.volumePacks === 1 ? "" : "s"}` : `o ${s.size}`);
@@ -76,11 +72,11 @@ export default async function UsoPage() {
       <BillingTabs active="/painel/cobranca/uso" />
 
       <p className="mt-5 text-sm text-muted">
-        Uso de <strong className="text-ink">{periodLabel(period)}</strong> (mês civil, horário de Brasília). Cada chatbot tem a própria cota, pelo tamanho dele. Você recebe e-mail quando um chatbot chega a 80%, 95% e 100% da cota. Com o excedente ligado, a cota cheia não para o chatbot: cada atendimento a mais custa {brlCents(OVERAGE_PRICE_BRL)}, cobrado no fim do mês, até o teto que você escolher.
+        Uso de <strong className="text-ink">{periodLabel(period)}</strong> (mês civil, horário de Brasília). Cada chatbot tem a própria cota, pelo tamanho dele. Você recebe e-mail quando um chatbot chega a 80%, 95% e 100% da cota. Com o excedente ligado, a cota cheia não para o chatbot: cada atendimento a mais usa {brlCents(OVERAGE_PRICE_BRL)} do <Link href="/painel/cobranca/credito" className="underline">crédito da conta</Link>, até o teto do mês, se você escolher um.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Atendimentos do mês" value={`${num(usage)} / ${num(quota)}`} sub={extra > 0 ? `mais ${num(extra)} no excedente (${brlCents(extra * OVERAGE_PRICE_BRL)})` : `somando a cota dos ${num(bots.length)} chatbots`} />
+        <Kpi label="Atendimentos do mês" value={`${num(usage)} / ${num(quota)}`} sub={extra > 0 ? `mais ${num(extra)} no excedente (${brlCents(extra * OVERAGE_PRICE_BRL)} do crédito)` : `somando a cota dos ${num(bots.length)} chatbots`} />
         <Kpi label="Mensagens no mês" value={num(messages)} sub="enviadas e recebidas, em todos os canais" />
         <Kpi label="Custo estimado da Meta" value={money(metaTotal)} sub="WhatsApp; a Meta cobra direto do cliente" />
         <Kpi label="Contatos em campanhas" value={num(Number(usageRow?.campaign_contacts) || 0)} sub="campanhas e lembretes; não contam na cota" />
@@ -88,7 +84,7 @@ export default async function UsoPage() {
 
       {full.length > 0 && (
         <div className="mt-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
-          {full.length === 1 ? `${full[0].name} está` : `${full.length} chatbots estão`} no modo só humano até o mês virar: a cota acabou (ou o teto do excedente). Quem começa um atendimento novo {full.length === 1 ? "nele" : "neles"} não recebe resposta da IA (as mensagens chegam em Conversas). Os outros chatbots seguem normais.
+          {full.length === 1 ? `${full[0].name} está` : `${full.length} chatbots estão`} no modo só humano: a cota acabou (sem excedente, no teto, sem crédito ou com o excedente suspenso). Quem começa um atendimento novo {full.length === 1 ? "nele" : "neles"} não recebe resposta da IA (as mensagens chegam em Conversas). Os outros chatbots seguem normais.
         </div>
       )}
 
@@ -99,7 +95,7 @@ export default async function UsoPage() {
           Cota cheia: só aquele chatbot entra no modo só humano até o mês virar. A conversa continua gravada, a IA não é chamada e a sua equipe responde pelo painel. Quem já estava sendo atendido segue até completar 24 horas ou 40 respostas. Para o chatbot voltar na hora, suba o tamanho dele ou ligue o excedente.
         </p>
         <p className="mt-2 text-ink-2">
-          Excedente: vem desligado. Ligado, cada atendimento além da cota custa {brlCents(OVERAGE_PRICE_BRL)} e é cobrado no fim do mês, até o teto de gasto que você escolher para aquele chatbot. No teto, ele entra no modo só humano. Quando o excedente sai mais caro que o tamanho de cima, mostramos aqui a sugestão.
+          Excedente: vem desligado. Ligado, cada atendimento além da cota usa {brlCents(OVERAGE_PRICE_BRL)} do crédito pré-pago da conta, na hora. O teto do mês de cada chatbot é opcional, para um chatbot não gastar o crédito todo. Sem crédito, no teto, ou com o excedente suspenso por um pico no chat do site, ele entra no modo só humano. Quando o excedente sai mais caro que o tamanho de cima, mostramos aqui a sugestão.
         </p>
       </details>
 
@@ -186,7 +182,10 @@ function BotLine({ bot, usage, cost, lastMonth, suffix = "" }: { bot: BotQuotaSt
       </td>
       <td className="px-3 py-2 text-right">
         {bot.quota > 0 ? (
-          <OverageForm botId={bot.botId} enabled={bot.overageEnabled} capBrl={bot.overageCapBrl} defaultCap={defaultCap(bot)} used={bot.overageUsed} max={bot.overageMax} />
+          <>
+            <OverageForm botId={bot.botId} enabled={bot.overageEnabled} capBrl={bot.overageCapBrl} used={bot.overageUsed} capMax={bot.overageCapMax} creditShort={bot.creditShort} />
+            {bot.overageSuspended && <SpikeButtons botId={bot.botId} reason={bot.overageSuspended} until={renewalLabel()} />}
+          </>
         ) : (
           <span className="text-xs text-muted">escolha um tamanho</span>
         )}

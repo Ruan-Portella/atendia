@@ -66,9 +66,9 @@ describe("pacotes com assinatura", () => {
 });
 
 describe("assinatura igual ao que vale no mês que vem", () => {
-  const ids = { boavoz_bot_p: "price_p", boavoz_bot_m: "price_m", boavoz_bot_g: "price_g", boavoz_bot_volume: "price_v", boavoz_dominio: "price_dom", boavoz_integracoes: "price_int", boavoz_plataforma: "price_plat", boavoz_excedente: "price_exc" };
+  const ids = { boavoz_bot_p: "price_p", boavoz_bot_m: "price_m", boavoz_bot_g: "price_g", boavoz_bot_volume: "price_v", boavoz_dominio: "price_dom", boavoz_integracoes: "price_int", boavoz_plataforma: "price_plat" };
 
-  it("muda a quantidade, põe o que falta, tira o que zerou e garante o excedente", () => {
+  it("muda a quantidade, põe o que falta e tira o que zerou", () => {
     const current = [
       { id: "si_p", priceId: "price_p", quantity: 2 },
       { id: "si_dom", priceId: "price_dom", quantity: 1 },
@@ -77,14 +77,13 @@ describe("assinatura igual ao que vale no mês que vem", () => {
       { id: "si_p", quantity: 3 },
       { price: "price_m", quantity: 1 },
       { id: "si_dom", deleted: true },
-      { price: "price_exc" },
     ]);
   });
 
-  it("já igual: nada a mudar", () => {
+  it("já igual: nada a mudar; item fora do catálogo fica", () => {
     const current = [
       { id: "si_p", priceId: "price_p", quantity: 2 },
-      { id: "si_exc", priceId: "price_exc", quantity: null },
+      { id: "si_antigo", priceId: "price_combinado", quantity: 1 },
     ];
     expect(subscriptionDiff(current, { boavoz_bot_p: 2 }, ids)).toEqual([]);
   });

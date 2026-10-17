@@ -26,8 +26,8 @@ export interface SubscriptionItemLike {
 }
 
 /**
- * Itens para a atualização da assinatura: muda a quantidade, tira o que zerou, põe o que falta
- * e garante o excedente (por uso). Vazio = já está igual. Função pura.
+ * Itens para a atualização da assinatura: muda a quantidade, tira o que zerou e põe o que falta.
+ * Vazio = já está igual. Item com preço fora do catálogo (combinado à parte) fica. Função pura.
  */
 export function subscriptionDiff(current: SubscriptionItemLike[], want: Partial<Record<LookupKey, number>>, ids: Record<LookupKey, string>): Stripe.SubscriptionUpdateParams.Item[] {
   const byPrice = new Map(current.map((i) => [i.priceId, i]));
@@ -35,10 +35,6 @@ export function subscriptionDiff(current: SubscriptionItemLike[], want: Partial<
   for (const key of Object.values(LOOKUP_KEYS)) {
     const price = ids[key];
     const cur = byPrice.get(price);
-    if (key === LOOKUP_KEYS.excedente) {
-      if (!cur) items.push({ price });
-      continue;
-    }
     const n = want[key] ?? 0;
     if (cur && n === 0) items.push({ id: cur.id, deleted: true });
     else if (cur && cur.quantity !== n) items.push({ id: cur.id, quantity: n });
