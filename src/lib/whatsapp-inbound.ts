@@ -47,6 +47,7 @@ import { findMessage, saveMessage } from "./messages";
 import { maskCardNumbers } from "./routine-run";
 import { endActiveRoutine } from "./routine-engine";
 import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
+import { handleTeamNotices } from "./team-whatsapp";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
 const MEDIA_LABEL: Record<string, string> = {
@@ -371,6 +372,33 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     burst.map((q, i) => (optOut.handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.msg.interactive?.button_reply?.id ?? null })),
   );
   for (const i of paired) optOut.handled.add(i);
+  if (optOut.handled.size === burst.length) return;
+
+  // avisos da equipe: no chatbot da BoaVoz, o "Confirmar" ou o "Não fui eu" do modelo que pede a
+  // confirmação do número (o toque no botão de modelo chega em button.payload)
+  const notices = await handleTeamNotices(
+    {
+      db,
+      bot,
+      channel,
+      waId,
+      conversation: plainConversation,
+      store: (i, convId) => storeOnce(db, convId, shown(i), burst[i].key),
+      reply: async (convId, text) => {
+        if (!mode.canSend) return;
+        await deliver(db, {
+          botId: bot.id,
+          channel: "whatsapp",
+          conversationId: convId,
+          kind: "sistema",
+          record: convId ? { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR } } : null,
+          transport: async () => (await reply(text)).messages?.[0]?.id ?? null,
+        });
+      },
+    },
+    burst.map((q, i) => (optOut.handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.msg.button?.payload ?? q.msg.interactive?.button_reply?.id ?? null })),
+  );
+  for (const i of notices) optOut.handled.add(i);
   if (optOut.handled.size === burst.length) return;
 
   // pedido do titular (LGPD): "apaga meus dados", a pergunta de confirmação e a resposta (botões

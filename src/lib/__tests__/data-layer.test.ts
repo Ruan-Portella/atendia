@@ -34,6 +34,8 @@ const OWNER: Record<string, string> = {
   campaign_sends: "lib/campaigns.ts",
   // Confirmar / Cancelar das ações (C pública): parâmetros cifrados
   button_refs: "lib/button-refs.ts",
+  // número da equipe para os avisos no WhatsApp: cifrado
+  team_whatsapp: "lib/team-whatsapp.ts",
 };
 
 describe("camada única de mensagens e contatos", () => {

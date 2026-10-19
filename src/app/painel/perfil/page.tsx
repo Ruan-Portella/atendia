@@ -6,6 +6,8 @@ import { DEFAULT_ENTRY_NOTICE } from "@/lib/handoff-hours";
 import { isOurAvatarUrl } from "@/lib/attendants";
 import { ProfileForm } from "@/components/profile-form";
 import { MfaSection } from "../seguranca/mfa-section";
+import { TeamWhatsAppCard } from "@/components/team-whatsapp-card";
+import { noticeStatus } from "@/lib/team-whatsapp";
 import { updateMyProfile } from "./actions";
 
 export const metadata = { title: "Meu perfil" };
@@ -54,6 +56,7 @@ export default async function ProfilePage() {
         <div className="grid gap-1 sm:grid-cols-[140px_1fr]"><span className="text-muted">Escopo</span><span>{scope}</span></div>
         {role !== "owner" && <p className="text-xs text-muted">Para mudar o papel ou o escopo, fale com o dono ou um administrador da agência.</p>}
       </section>
+      <TeamWhatsAppCard status={await noticeStatus(createAdminClient(), member.id)} variant="profile" />
       <MfaSection enrollHref={`/painel/verificar?next=${encodeURIComponent("/painel/perfil")}`} />
     </div>
   );

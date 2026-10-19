@@ -10,17 +10,21 @@ import { panelNotices } from "@/lib/ai-pause";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pendingAlerts } from "@/lib/security-alerts";
 import { SecurityAlertStrip } from "@/components/security-alert-strip";
+import { TeamWhatsAppCard } from "@/components/team-whatsapp-card";
+import { noticeStatus } from "@/lib/team-whatsapp";
 
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {
-  const { agency, usage, quota, bots, role } = await requireAgency();
+  const { agency, usage, quota, bots, role, member } = await requireAgency();
   const accountLabel = agency.billing_status === "past_due" ? "Pagamento atrasado" : agency.billing_status === "active" ? "Assinatura" : "Conta grátis";
   // pausa, desligamento e suspensão pelo backoffice, ordem da Meta: a agência precisa saber por que parou
   const notices = await panelNotices(createAdminClient(), agency.id);
   // eventos graves da auditoria ainda não vistos (chave nova, URL trocada, acesso do suporte…),
   // para quem cuida da Segurança (dono e administrador)
   const alerts = can(role, "security") ? await pendingAlerts(createAdminClient(), agency.id, agency.security_alerts_seen_at ?? null).catch(() => []) : [];
+  // avisos e ajuda no WhatsApp: o cartão do número fica no topo até a pessoa confirmar ou fechar
+  const whatsappNotice = await noticeStatus(createAdminClient(), member.id).catch(() => null);
   const channelNames = notices.suspended.map((c) => SUSPENDED_LABEL[c] ?? c).join(", ");
   const banners = [
     notices.aiPaused && "A IA da sua conta está pausada pela equipe BoaVoz. As mensagens continuam chegando em Conversas para a sua equipe responder; no site, os visitantes veem o formulário de contato. Dúvidas: fale com o suporte.",
@@ -41,6 +45,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
+          {whatsappNotice && <TeamWhatsAppCard status={whatsappNotice} variant="top" />}
           {can(role, "config") && <PlanAlert bots={bots} billing={{ status: agency.billing_status, cancelAt: agency.billing_cancel_at }} />}
         </>
       }

@@ -2,11 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /*
- * Banco em memória com o pedaço do PostgREST que o roteiro, a identificação e as ações usam (filtros
- * simples, or com eq/neq/is, upsert por coluna, contagem, o embed routines(*) do routine_runs, um
- * roteiro ativo por conversa e o rpc do limite de chamadas, sempre liberado). Serve à avaliação de
- * roteiros (eval-routines.ts), que roda o motor de verdade sem gravar nada no banco.
+ * Banco em memória com o pedaço do PostgREST que o roteiro, a identificação, as ações e os avisos
+ * usam (filtros simples, or com eq/neq/is, upsert por coluna, contagem, os embeds pela chave
+ * estrangeira, um roteiro ativo por conversa e o rpc do limite de chamadas, sempre liberado). Serve
+ * à avaliação de roteiros (eval-routines.ts), que roda o motor de verdade sem gravar nada no banco,
+ * e aos testes.
  */
+
+/** Embed do PostgREST: a tabela citada no select e a coluna que aponta para ela. */
+const EMBED_FK: Record<string, string> = { routines: "routine_id", agency_members: "member_id", agencies: "agency_id", bots: "bot_id" };
 
 export type MemRow = Record<string, unknown>;
 
@@ -30,12 +34,12 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
     conflict = "id";
     orderBy: { col: string; asc: boolean } | null = null;
     lim = 0;
-    embed = false;
+    embeds: string[] = [];
     head = false;
     constructor(public table: string) {}
     select(cols?: string, o?: { count?: string; head?: boolean }) {
       if (this.op === "select") {
-        this.embed = Boolean(cols?.includes("routines("));
+        this.embeds = [...(cols ?? "").matchAll(/\b([a-z_]+)\s*\(/g)].map((m) => m[1]).filter((n) => n in EMBED_FK);
         this.head = Boolean(o?.head);
       }
       return this;
@@ -163,7 +167,8 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       const count = rows.length;
       if (this.lim) rows = rows.slice(0, this.lim);
       if (this.head) return { data: null, error: null, count };
-      return { data: rows.map((r) => (this.embed ? { ...r, routines: (tables.routines ?? []).find((x) => x.id === r.routine_id) ?? null } : { ...r })), error: null, count };
+      const joined = (r: MemRow) => Object.fromEntries(this.embeds.map((n) => [n, (tables[n] ?? []).find((x) => x.id === r[EMBED_FK[n]]) ?? null]));
+      return { data: rows.map((r) => ({ ...r, ...joined(r) })), error: null, count };
     }
   }
   return {

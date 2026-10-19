@@ -32,6 +32,7 @@ import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm
 import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
 import { classifyGainedAi } from "@/lib/gate/base";
 import { emitSizeChanged } from "@/lib/billing-events";
+import { assistantChannel, ensureNoticeTemplate, forgetAssistantCache } from "@/lib/team-whatsapp";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -912,3 +913,50 @@ export async function checkUnsizedChannels(agencyId: string): Promise<ActionResu
   if (r.failed) return fail(`${r.disconnected} chatbot(s) desconectado(s); ${r.failed} falharam (veja o log e tente de novo).`);
   return ok(r.disconnected ? `${r.disconnected} chatbot(s) sem tamanho com o WhatsApp e o Instagram desconectados.` : "Nada a fazer: nenhum chatbot sem tamanho com canal.");
 }
+
+/* ------------------------------------------------------------------ assistente da BoaVoz (avisos no WhatsApp) */
+
+/**
+ * O chatbot da BoaVoz que manda os avisos para a equipe das agências e responde sobre o app: um
+ * chatbot normal (na agência da BoaVoz), com número próprio de WhatsApp. Sem ele, o painel não
+ * mostra o cartão dos avisos.
+ */
+export async function setAssistantBot(fd: FormData): Promise<ActionResult> {
+  const botId = text(fd.get("bot_id")).trim();
+  if (!/^[0-9a-f-]{36}$/i.test(botId)) return fail("Cole o id do chatbot (está na URL do chatbot no painel).");
+  const s = await requireAdmin(`/admin/operacao (assistente da BoaVoz: ${botId})`);
+  const db = createAdminClient();
+  const { data: bot } = await db.from("bots").select("id, name").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  const { error } = await db.from("platform_flags").update({ assistant_bot_id: botId, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  forgetAssistantCache();
+  await auditAdmin(s.email, "plataforma.assistente", { targetType: "bot", targetId: botId, after: { bot: bot.name } });
+  revalidatePath("/admin", "layout");
+  return ok(`Assistente: ${bot.name as string}. Agora crie o modelo de confirmação (botão abaixo) e espere a Meta aprovar.`);
+}
+
+export async function clearAssistantBot(): Promise<ActionResult> {
+  const s = await requireAdmin("/admin/operacao (tirou o assistente da BoaVoz)");
+  const { error } = await createAdminClient().from("platform_flags").update({ assistant_bot_id: null, updated_by: s.email, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  forgetAssistantCache();
+  await auditAdmin(s.email, "plataforma.assistente", { after: { bot: null } });
+  revalidatePath("/admin", "layout");
+  return ok("Assistente tirado: o cartão dos avisos sumiu do painel das agências.");
+}
+
+/** Cria na conta do WhatsApp do assistente o modelo que pede a confirmação do número (se faltar). */
+export async function createAssistantTemplates(): Promise<ActionResult> {
+  await requireAdmin("/admin/operacao (criou os modelos do assistente)");
+  const a = await assistantChannel(createAdminClient());
+  if (!a) return fail("Escolha o chatbot do assistente e conecte o WhatsApp dele primeiro.");
+  try {
+    const status = await ensureNoticeTemplate(a.ch);
+    revalidatePath("/admin/operacao");
+    return ok(status === "aprovado" ? "O modelo já está aprovado." : status === "em_analise" ? "Modelo enviado para a Meta: costuma ser aprovado em minutos." : `O modelo está ${status.replace("_", " ")}: confira no Gerenciador do WhatsApp.`);
+  } catch (e) {
+    return fail(`A Meta recusou a criação: ${(e as Error).message}`);
+  }
+}
+

@@ -8,6 +8,7 @@ import { sendAsAgency } from "@/lib/notify";
 import { appUrl } from "@/lib/utils";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { INVITE_DAYS, ROLE_LABELS, can, inviteMember, isInvitableRole, memberName, memberOf, removeMember, scopeFromForm, scopesOf, updateMemberAccess, type ScopeInput } from "@/lib/team";
+import { forgetTeamWhatsApp } from "@/lib/team-whatsapp";
 
 /*
  * Equipe (leva B1'): convidar, mudar papel e escopo, remover. Só dono e administrador; dar ou
@@ -78,6 +79,8 @@ export async function removeTeamMember(memberId: string): Promise<ActionResult> 
   if (!ctx) return fail(DENIED);
   const r = await removeMember(createAdminClient(), { agencyId: ctx.agency.id, memberId, actorRole: ctx.role, actorMemberId: ctx.member.id });
   if (!r.ok) return fail(r.message);
+  // quem sai da equipe deixa de receber os avisos no WhatsApp (o número sai)
+  await forgetTeamWhatsApp(createAdminClient(), memberId);
   await auditTeam(ctx, "equipe.remover", memberId, { before: { email: r.member.email, papel: r.member.role, aceito: Boolean(r.member.accepted_at) } });
   revalidatePath("/painel/equipe");
   return ok(r.member.accepted_at ? `${memberName(r.member)} saiu da equipe. O acesso acaba na próxima página que a pessoa abrir.` : "Convite cancelado. O link deixou de valer.");

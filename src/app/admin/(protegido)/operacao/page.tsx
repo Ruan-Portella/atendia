@@ -8,9 +8,12 @@ import { masterKeys } from "@/lib/keys";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { runReencryptNow, runReportDailyNow, runRetentionNow } from "../acoes";
+import { clearAssistantBot, createAssistantTemplates, runReencryptNow, runReportDailyNow, runRetentionNow, setAssistantBot } from "../acoes";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { reportedThrough } from "@/lib/report-daily";
+import { assistantOverview, NOTICE_TEMPLATE } from "@/lib/team-whatsapp";
+
+const TEMPLATE_LABEL: Record<string, string> = { aprovado: "aprovado", em_analise: "em análise na Meta", recusado: "recusado pela Meta", reclassificado: "reclassificado pela Meta (não é mais de utilidade)", ausente: "ainda não criado", erro: "não deu para ler agora" };
 
 export const metadata = { title: "Operação" };
 
@@ -30,6 +33,8 @@ export default async function AdminOperations() {
   const versions = [...masterKeys().keys()].sort((a, b) => a - b);
   // totais diários (relatórios): até que dia já estão somados
   const through = await reportedThrough(createAdminClient()).catch(() => null);
+  // o assistente da BoaVoz: o chatbot que manda os avisos da conta e responde sobre o app
+  const assistant = await assistantOverview(createAdminClient()).catch(() => null);
   const h = ops.health;
   const ch = ops.channels;
 
@@ -47,6 +52,51 @@ export default async function AdminOperations() {
         </section>
       ) : (
         <p className="rounded-xl border border-line bg-panel px-4 py-3 text-sm">✓ Tudo em dia.</p>
+      )}
+
+      {assistant && (
+        <section className="card flex flex-col gap-3 p-5">
+          <h2 className="text-base font-bold">Assistente da BoaVoz (avisos no WhatsApp)</h2>
+          <p className="text-xs text-muted">
+            Um chatbot normal, com número próprio de WhatsApp, que manda os avisos da conta para a equipe das agências (cada pessoa confirma o número pelo botão do modelo) e responde sobre o app com a base dele. Sem ele, o painel não mostra o cartão dos avisos. A área do cliente nunca recebe.
+          </p>
+          {assistant.botId ? (
+            <div className="flex flex-col gap-1 text-sm">
+              <p>
+                Chatbot: <span className="font-semibold">{assistant.label ?? "não encontrado"}</span>
+                <span className="text-muted"> · WhatsApp {assistant.connected ? "conectado" : "não conectado"}</span>
+              </p>
+              <p>
+                Modelo <code>{NOTICE_TEMPLATE}</code>: {assistant.template ? TEMPLATE_LABEL[assistant.template] : "—"} · números confirmados: {num(assistant.confirmed)} · esperando o Confirmar: {num(assistant.pending)}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">Nenhum chatbot escolhido.</p>
+          )}
+          <ResultForm action={setAssistantBot} className="max-w-xl">
+            <label htmlFor="assistant_bot" className="label">
+              Id do chatbot do assistente
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <input id="assistant_bot" name="bot_id" className="input min-w-0 flex-1 font-mono text-xs" placeholder="00000000-0000-0000-0000-000000000000" defaultValue={assistant.botId ?? ""} />
+              <SubmitButton className="btn-ghost py-1.5 text-xs">Salvar</SubmitButton>
+            </div>
+          </ResultForm>
+          <div className="flex flex-wrap items-start gap-4">
+            {assistant.connected && assistant.template !== "aprovado" && (
+              <ResultForm action={createAssistantTemplates}>
+                <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Criando…">
+                  Criar o modelo de confirmação
+                </SubmitButton>
+              </ResultForm>
+            )}
+            {assistant.botId && (
+              <ConfirmAction action={clearAssistantBot} title="Tirar o assistente?" description="O cartão dos avisos some do painel das agências. Os números já confirmados continuam guardados para quando voltar." confirmLabel="Tirar" className="text-xs font-semibold text-danger hover:underline">
+                Tirar o assistente
+              </ConfirmAction>
+            )}
+          </div>
+        </section>
       )}
 
       <section className="card flex flex-col gap-2 p-5">
