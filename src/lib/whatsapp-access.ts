@@ -82,10 +82,10 @@ export async function markDisconnected(db: SupabaseClient, where: { column: "bot
     .update({ disconnected_at: at, disconnect_reason: reason, access_token_enc: null })
     .eq(where.column, where.value)
     .is("disconnected_at", null)
-    .select("bot_id, display_phone, phone_number_id, bots(name, client_name, agency_id)");
+    .select("bot_id, display_phone, phone_number_id, bots(name, client_name, agency_id, client_id)");
 
   for (const r of rows ?? []) {
-    const bot = (Array.isArray(r.bots) ? r.bots[0] : r.bots) as { name: string; client_name: string; agency_id: string } | null;
+    const bot = (Array.isArray(r.bots) ? r.bots[0] : r.bots) as { name: string; client_name: string; agency_id: string; client_id?: string | null } | null;
     console.warn("whatsapp: número desconectado", r.phone_number_id, reason);
     if (!bot) continue;
     // webhooks: channel.disconnected com o motivo
@@ -97,6 +97,9 @@ export async function markDisconnected(db: SupabaseClient, where: { column: "bot
       "",
       `Para voltar, conecte o WhatsApp de novo: ${appUrl(`/painel/bots/${r.bot_id}?tab=whatsapp`)}`,
     ]).catch(() => false);
+    // aviso no WhatsApp de quem configura o chatbot, pelo assistente da BoaVoz
+    const { botTitle, sendTeamNotice } = await import("./team-notices");
+    await sendTeamNotice(db, { kind: "canal", agencyId: bot.agency_id, botId: r.bot_id, clientId: bot.client_id ?? null, vars: [botTitle(bot)], path: `painel/bots/${r.bot_id}?tab=whatsapp`, ref: r.bot_id });
   }
   return rows?.length ?? 0;
 }

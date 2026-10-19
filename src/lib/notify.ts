@@ -26,6 +26,10 @@ export async function notifyLead(opts: {
   if (!lead.newRequest) return;
   if (conversationId) await markLeadWaiting(db, bot, conversationId);
   if (!lead.newConversation) return;
+  // aviso no WhatsApp da equipe, pelo assistente da BoaVoz (uma vez por conversa, como o e-mail)
+  const { botTitle, sendTeamNotice } = await import("./team-notices");
+  const leadPath = conversationId ? `painel/bots/${bot.id}/conversas/${conversationId}` : bot.client_id ? `painel/clientes/${bot.client_id}?tab=leads` : `painel/bots/${bot.id}?tab=leads`;
+  await sendTeamNotice(db, { kind: "lead", agencyId: bot.agency_id, botId: bot.id, clientId: bot.client_id ?? null, vars: [botTitle(bot)], path: leadPath, ref: conversationId ?? lead.id });
   const where = CHANNEL_NAME[opts.channel] ?? "chat";
   const sent = await emailTeam(db, bot, {
     subject: lead.created ? `Novo pedido no chatbot de ${bot.client_name}: ${lead.nome}` : `${lead.nome} voltou com um pedido novo · ${bot.client_name}`,
@@ -95,6 +99,9 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
     lines: (link) => [`Um visitante do chatbot ${bot.name} (${bot.client_name}) pediu para falar com uma pessoa.`, `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`],
     clientLines: (link) => [`Um visitante do site de ${bot.client_name} pediu para falar com uma pessoa.`, `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`],
   });
+  // avisos no WhatsApp da equipe, pelo assistente da BoaVoz (o import na hora evita o ciclo chat → notify → avisos)
+  const { botTitle, sendTeamNotice } = await import("./team-notices");
+  await sendTeamNotice(db, { kind: urgent ? "urgente" : "atendente", agencyId: bot.agency_id, botId: bot.id, clientId: bot.client_id ?? null, vars: [botTitle(bot)], path: `painel/bots/${bot.id}/conversas/${conversationId}`, ref: conversationId });
 }
 
 /**

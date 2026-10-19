@@ -6,7 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { profileProblem } from "@/lib/attendants";
 import { audit, requestMeta } from "@/lib/audit";
-import { dismissNoticeCard, forgetTeamWhatsApp, loadTeamWhatsApp, requestTeamWhatsApp } from "@/lib/team-whatsapp";
+import { dismissNoticeCard, forgetTeamWhatsApp, loadTeamWhatsApp, requestTeamWhatsApp, saveNoticePrefs } from "@/lib/team-whatsapp";
+import { kindsForRole } from "@/lib/team-notices";
 
 /** Meu perfil: nome de exibição e foto de quem está logado (qualquer papel). */
 export async function updateMyProfile(formData: FormData): Promise<ActionResult> {
@@ -68,3 +69,13 @@ export async function dismissNoticeWhatsAppCard(): Promise<ActionResult> {
   revalidatePath("/painel", "layout");
   return ok("Tudo bem. Quando quiser, está em Meu perfil.");
 }
+
+/** Quais avisos chegam no WhatsApp (só os que o papel recebe; os outros nem aparecem). */
+export async function saveMyNoticePrefs(formData: FormData): Promise<ActionResult> {
+  const { member, role } = await requireAgency();
+  const prefs = Object.fromEntries(kindsForRole(role).map((k) => [k, formData.get(`aviso_${k}`) === "on"]));
+  if (!(await saveNoticePrefs(createAdminClient(), member.id, prefs))) return fail("Confirme o número primeiro.");
+  revalidatePath("/painel/perfil");
+  return ok("Avisos salvos.");
+}
+

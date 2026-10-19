@@ -145,6 +145,11 @@ async function notifyQuotaLevel(db: SupabaseClient, bot: { id: string; agency_id
       // cota cheia: sem o excedente, o chatbot parou; com ele, o webhook sai no primeiro atendimento a mais
       if (level !== 100) await emitQuotaWarning(db, bot.id, level, u);
       else if (!row.overage_on) await emitQuotaReached(db, bot.id, "cota", u);
+      // aviso no WhatsApp do dono (95% e a cota cheia que para o chatbot), pelo assistente da BoaVoz
+      if (level === 95 || (level === 100 && !row.overage_on)) {
+        const { botTitle, sendTeamNotice } = await import("./team-notices");
+        await sendTeamNotice(db, { kind: "cota", agencyId: bot.agency_id, botId: bot.id, vars: [botTitle({ name: b.name, client_name: b.clientName }), `${level}%`], path: "painel/cobranca/uso", ref: `${bot.id}:${currentPeriodBR()}:${level}` });
+      }
     }
   } else if (row.status === "excedente" && row.overage_used !== null) {
     const level = row.overage_max !== null ? overageAlertLevel(row.overage_used, row.overage_max) : null;

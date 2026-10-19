@@ -190,15 +190,17 @@ export interface NoticeStatus {
   identityChanged: boolean;
   /** "Agora não" no cartão do topo. */
   dismissed: boolean;
+  /** Os avisos que a pessoa desligou (sem a chave: ligado). */
+  prefs: Record<string, boolean>;
 }
 
 /** O que o painel mostra para a pessoa: os avisos existem nesta plataforma? O número dela e o estado. */
 export async function noticeStatus(db: SupabaseClient, memberId: string): Promise<NoticeStatus> {
   const assistant = await assistantChannel(db);
-  if (!assistant) return { available: false, status: null, masked: null, confirmedAt: null, stopped: false, identityChanged: false, dismissed: false };
+  if (!assistant) return { available: false, status: null, masked: null, confirmedAt: null, stopped: false, identityChanged: false, dismissed: false, prefs: {} };
   const [row, { data: m }] = await Promise.all([loadTeamWhatsApp(db, memberId), db.from("agency_members").select("whatsapp_card_dismissed_at").eq("id", memberId).maybeSingle()]);
   const stopped = Boolean(row?.status === "confirmed" && row.phone && blocks((await activeSuppressions(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: assistant.ch.waba_id, botId: assistant.botId }), contact: row.phone })).map((s) => s.kind), "UTILITY"));
-  return { available: true, status: row?.status ?? null, masked: row?.phone ? maskPhone(row.phone) : null, confirmedAt: row?.confirmedAt ?? null, stopped, identityChanged: Boolean(row?.identityChangedAt), dismissed: Boolean(m?.whatsapp_card_dismissed_at) };
+  return { available: true, status: row?.status ?? null, masked: row?.phone ? maskPhone(row.phone) : null, confirmedAt: row?.confirmedAt ?? null, stopped, identityChanged: Boolean(row?.identityChangedAt), dismissed: Boolean(m?.whatsapp_card_dismissed_at), prefs: row?.prefs ?? {} };
 }
 
 /** A pessoa saiu da equipe (ou pediu para parar): o número sai. */
@@ -212,8 +214,8 @@ export async function dismissNoticeCard(db: SupabaseClient, memberId: string): P
   await db.from("agency_members").update({ whatsapp_card_dismissed_at: new Date().toISOString() }).eq("id", memberId);
 }
 
-/** A conversa do número com o assistente (a recente, senão uma nova): o modelo e as respostas ficam nela. */
-async function assistantConversation(db: SupabaseClient, a: { botId: string; agencyId: string }, phone: string): Promise<string | null> {
+/** A conversa do número com o assistente (a recente, senão uma nova): o modelo, os avisos e as respostas ficam nela. */
+export async function assistantConversationFor(db: SupabaseClient, a: { botId: string; agencyId: string }, phone: string): Promise<string | null> {
   const contact = await whatsappContact(db, { id: a.botId, agency_id: a.agencyId }, { phone });
   const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
   let q = db.from("conversations").select("id").eq("bot_id", a.botId).eq("channel", "whatsapp").gt("last_message_at", since);
@@ -268,7 +270,7 @@ export async function requestTeamWhatsApp(
   if (error) return { ok: false, message: error.code === "23505" ? "Este número já recebe os avisos de outra pessoa." : "Não foi possível salvar. Tente de novo." };
 
   const variables = [firstNameOf(i.member), templateValue(i.agency.name, "sua agência")];
-  const convId = await assistantConversation(db, a, phone);
+  const convId = await assistantConversationFor(db, a, phone);
   try {
     const r = await deliver(db, {
       botId: a.botId,
@@ -374,6 +376,8 @@ export interface AssistantOverview {
   /** O WhatsApp do chatbot está conectado (com a conta do WhatsApp Business). */
   connected: boolean;
   template: NoticeTemplateStatus | "erro" | null;
+  /** Os modelos da conta do assistente (para o estado dos modelos de aviso), ou null. */
+  templates: Template[] | null;
   confirmed: number;
   pending: number;
 }
@@ -384,19 +388,21 @@ export async function assistantOverview(db: SupabaseClient): Promise<AssistantOv
   const botId = ((flags as { assistant_bot_id?: string | null } | null)?.assistant_bot_id as string | null) ?? null;
   const count = async (status: TeamWhatsAppStatus) => (await db.from("team_whatsapp").select("member_id", { count: "exact", head: true }).eq("status", status)).count ?? 0;
   const [confirmed, pending] = await Promise.all([count("confirmed"), count("pending")]);
-  if (!botId) return { botId: null, label: null, connected: false, template: null, confirmed, pending };
+  if (!botId) return { botId: null, label: null, connected: false, template: null, templates: null, confirmed, pending };
   const [{ data: bot }, ch] = await Promise.all([db.from("bots").select("name, client_name, agencies(name)").eq("id", botId).maybeSingle(), loadTemplateChannel(db, botId)]);
   const agency = bot ? ((Array.isArray(bot.agencies) ? bot.agencies[0] : bot.agencies) as { name?: string } | null)?.name : null;
   let template: AssistantOverview["template"] = null;
+  let templates: Template[] | null = null;
   if (ch) {
     try {
-      template = noticeTemplateStatus(await listTemplates(ch));
+      templates = await listTemplates(ch);
+      template = noticeTemplateStatus(templates);
     } catch (e) {
       console.error("avisos: modelos do assistente não leram", (e as Error).message);
       template = "erro";
     }
   }
-  return { botId, label: bot ? `${bot.name} · ${bot.client_name}${agency ? ` (${agency})` : ""}` : null, connected: Boolean(ch), template, confirmed, pending };
+  return { botId, label: bot ? `${bot.name} · ${bot.client_name}${agency ? ` (${agency})` : ""}` : null, connected: Boolean(ch), template, templates, confirmed, pending };
 }
 
 /* ------------------------------------------------------------------ o assistente reconhece a pessoa (parte 2) */
@@ -511,5 +517,27 @@ export async function refreshAssistantGuides(db: SupabaseClient, author: string)
     lines.push(`${g.title}: ${r.message ?? (r.ok ? "ok" : "falhou")}`);
   }
   return { ok, lines };
+}
+
+/* ------------------------------------------------------------------ os avisos (parte 3) */
+
+/** Os números confirmados destas pessoas, abertos, com a escolha dos avisos (para mandar os avisos). */
+export async function confirmedTeamNumbers(db: SupabaseClient, memberIds: string[]): Promise<Array<{ memberId: string; phone: string; prefs: Record<string, boolean>; identityChanged: boolean }>> {
+  if (!memberIds.length) return [];
+  const { data } = await db.from("team_whatsapp").select("member_id, phone_enc, prefs, identity_changed_at").in("member_id", memberIds).eq("status", "confirmed");
+  return Promise.all(
+    ((data ?? []) as Array<{ member_id: string; phone_enc: string; prefs: Record<string, boolean> | null; identity_changed_at: string | null }>).map(async (r) => ({
+      memberId: r.member_id,
+      phone: (await openNullable("team_whatsapp.phone_enc", r.phone_enc)) ?? "",
+      prefs: r.prefs ?? {},
+      identityChanged: Boolean(r.identity_changed_at),
+    })),
+  );
+}
+
+/** A escolha dos avisos em Meu perfil (só os que o papel recebe vêm do formulário). */
+export async function saveNoticePrefs(db: SupabaseClient, memberId: string, prefs: Record<string, boolean>): Promise<boolean> {
+  const { data, error } = await db.from("team_whatsapp").update({ prefs, updated_at: new Date().toISOString() }).eq("member_id", memberId).select("member_id");
+  return !error && Boolean(data?.length);
 }
 

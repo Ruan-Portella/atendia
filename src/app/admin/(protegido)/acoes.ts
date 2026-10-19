@@ -33,6 +33,7 @@ import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
 import { classifyGainedAi } from "@/lib/gate/base";
 import { emitSizeChanged } from "@/lib/billing-events";
 import { assistantChannel, ensureNoticeTemplate, forgetAssistantCache, refreshAssistantGuides } from "@/lib/team-whatsapp";
+import { NOTICE_KINDS, NOTICE_KIND_ORDER, ensureNoticeKindTemplates, forgetNoticeTemplates } from "@/lib/team-notices";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -946,15 +947,21 @@ export async function clearAssistantBot(): Promise<ActionResult> {
   return ok("Assistente tirado: o cartão dos avisos sumiu do painel das agências.");
 }
 
-/** Cria na conta do WhatsApp do assistente o modelo que pede a confirmação do número (se faltar). */
+/**
+ * Cria na conta do WhatsApp do assistente os modelos que faltam: o que pede a confirmação do número
+ * e os seis avisos da equipe (de utilidade, com o botão para a página do painel deste ambiente).
+ */
 export async function createAssistantTemplates(): Promise<ActionResult> {
   await requireAdmin("/admin/operacao (criou os modelos do assistente)");
   const a = await assistantChannel(createAdminClient());
   if (!a) return fail("Escolha o chatbot do assistente e conecte o WhatsApp dele primeiro.");
   try {
-    const status = await ensureNoticeTemplate(a.ch);
+    const confirm = await ensureNoticeTemplate(a.ch);
+    const kinds = await ensureNoticeKindTemplates(a.ch);
+    forgetNoticeTemplates();
     revalidatePath("/admin/operacao");
-    return ok(status === "aprovado" ? "O modelo já está aprovado." : status === "em_analise" ? "Modelo enviado para a Meta: costuma ser aprovado em minutos." : `O modelo está ${status.replace("_", " ")}: confira no Gerenciador do WhatsApp.`);
+    const label = (s: string) => (s === "aprovado" ? "aprovado" : s === "em_analise" ? "em análise (costuma sair em minutos)" : s);
+    return ok([`Confirmação: ${label(confirm)}`, ...NOTICE_KIND_ORDER.map((k) => `${NOTICE_KINDS[k].label}: ${label(kinds[k])}`)].join("\n"));
   } catch (e) {
     return fail(`A Meta recusou a criação: ${(e as Error).message}`);
   }

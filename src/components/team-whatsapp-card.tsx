@@ -2,8 +2,10 @@ import { MessageCircle } from "lucide-react";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { NOTICE_CONSENT_TEXT, NOTICE_NO, NOTICE_YES, type NoticeStatus } from "@/lib/team-whatsapp";
+import { NOTICE_KINDS, kindsForRole, noticeOn } from "@/lib/team-notices";
+import type { AgencyRole } from "@/lib/roles";
 import { company } from "@/lib/company";
-import { dismissNoticeWhatsAppCard, requestNoticeWhatsApp, resendNoticeWhatsApp, stopNoticeWhatsApp } from "@/app/painel/perfil/actions";
+import { dismissNoticeWhatsAppCard, requestNoticeWhatsApp, resendNoticeWhatsApp, saveMyNoticePrefs, stopNoticeWhatsApp } from "@/app/painel/perfil/actions";
 
 const dateBr = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));
 
@@ -32,7 +34,7 @@ function RequestForm({ label = "Receber no WhatsApp" }: { label?: string }) {
  * botão que chega no WhatsApp. "top": o cartão no topo do painel até ela confirmar (com "Agora
  * não"); "profile": Meu perfil, com todos os estados. Sem o assistente da BoaVoz, nada aparece.
  */
-export function TeamWhatsAppCard({ status, variant }: { status: NoticeStatus; variant: "top" | "profile" }) {
+export function TeamWhatsAppCard({ status, variant, role }: { status: NoticeStatus; variant: "top" | "profile"; role?: AgencyRole }) {
   if (!status.available) return null;
   const top = variant === "top";
   // no topo: até confirmar, e de novo quando o WhatsApp do número mudou (precisa confirmar outra vez)
@@ -76,6 +78,19 @@ export function TeamWhatsAppCard({ status, variant }: { status: NoticeStatus; va
             <span className="font-semibold">{status.masked}</span>
             <span className="text-muted"> · confirmado{status.confirmedAt ? ` em ${dateBr(status.confirmedAt)}` : ""}</span>
           </p>
+          {!top && role && (
+            <ActionForm action={saveMyNoticePrefs} success="Avisos salvos." className="flex flex-col gap-2 rounded-lg border border-line-2 p-3">
+              <p className="text-xs font-semibold">Quais avisos chegam no WhatsApp</p>
+              {kindsForRole(role).map((k) => (
+                <label key={k} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name={`aviso_${k}`} defaultChecked={noticeOn(status.prefs, k)} className="h-4 w-4 accent-brand" />
+                  {NOTICE_KINDS[k].label}
+                </label>
+              ))}
+              <p className="text-[11px] text-muted">Só o que aconteceu e o botão para a página do painel: o conteúdo das conversas nunca vai no aviso.</p>
+              <SubmitButton className="btn-ghost self-start py-1.5 text-xs">Salvar os avisos</SubmitButton>
+            </ActionForm>
+          )}
           <ActionForm action={stopNoticeWhatsApp}>
             <SubmitButton className="text-xs font-semibold text-danger hover:underline" pendingLabel="Parando…">
               Parar os avisos e esquecer o número

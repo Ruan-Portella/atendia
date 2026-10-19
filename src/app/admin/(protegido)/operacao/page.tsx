@@ -12,6 +12,7 @@ import { clearAssistantBot, createAssistantTemplates, refreshAssistantBase, runR
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { reportedThrough } from "@/lib/report-daily";
 import { assistantOverview, NOTICE_TEMPLATE } from "@/lib/team-whatsapp";
+import { NOTICE_KINDS, NOTICE_KIND_ORDER, noticeKindStatuses } from "@/lib/team-notices";
 
 const TEMPLATE_LABEL: Record<string, string> = { aprovado: "aprovado", em_analise: "em análise na Meta", recusado: "recusado pela Meta", reclassificado: "reclassificado pela Meta (não é mais de utilidade)", ausente: "ainda não criado", erro: "não deu para ler agora" };
 
@@ -35,6 +36,8 @@ export default async function AdminOperations() {
   const through = await reportedThrough(createAdminClient()).catch(() => null);
   // o assistente da BoaVoz: o chatbot que manda os avisos da conta e responde sobre o app
   const assistant = await assistantOverview(createAdminClient()).catch(() => null);
+  const kindStatus = assistant?.templates ? noticeKindStatuses(assistant.templates) : null;
+  const kindsReady = kindStatus ? NOTICE_KIND_ORDER.filter((k) => kindStatus[k] === "aprovado").length : 0;
   const h = ops.health;
   const ch = ops.channels;
 
@@ -69,6 +72,12 @@ export default async function AdminOperations() {
               <p>
                 Modelo <code>{NOTICE_TEMPLATE}</code>: {assistant.template ? TEMPLATE_LABEL[assistant.template] : "—"} · números confirmados: {num(assistant.confirmed)} · esperando o Confirmar: {num(assistant.pending)}
               </p>
+              {kindStatus && (
+                <p className="text-xs text-muted">
+                  Modelos de aviso aprovados: {kindsReady} de {NOTICE_KIND_ORDER.length}
+                  {kindsReady < NOTICE_KIND_ORDER.length ? ` (${NOTICE_KIND_ORDER.filter((k) => kindStatus[k] !== "aprovado").map((k) => `${NOTICE_KINDS[k].label}: ${TEMPLATE_LABEL[kindStatus[k]]}`).join("; ")})` : ""}
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted">Nenhum chatbot escolhido.</p>
@@ -83,10 +92,10 @@ export default async function AdminOperations() {
             </div>
           </ResultForm>
           <div className="flex flex-wrap items-start gap-4">
-            {assistant.connected && assistant.template !== "aprovado" && (
+            {assistant.connected && (assistant.template !== "aprovado" || kindsReady < NOTICE_KIND_ORDER.length) && (
               <ResultForm action={createAssistantTemplates}>
                 <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Criando…">
-                  Criar o modelo de confirmação
+                  Criar os modelos que faltam
                 </SubmitButton>
               </ResultForm>
             )}

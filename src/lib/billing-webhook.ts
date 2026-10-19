@@ -137,6 +137,10 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
         for (const a of (before ?? []).filter((a) => a.billing_status !== "past_due")) {
           const [subject, lines] = pastDueEmail(appUrl("/painel/cobranca"));
           await notifyAgencyOwner(db, a.id as string, subject, lines).catch(() => false);
+          // aviso no WhatsApp do dono, pelo assistente da BoaVoz
+          const { sendTeamNotice } = await import("./team-notices");
+          const { data: ag } = await db.from("agencies").select("name").eq("id", a.id).maybeSingle();
+          await sendTeamNotice(db, { kind: "pagamento", agencyId: a.id as string, vars: [(ag?.name as string | undefined) ?? "sua agência"], path: "painel/cobranca", ref: a.id as string });
         }
       }
       // virada do mês: as trocas agendadas para o dia 1º valem; quem ficou sem tamanho perde os canais

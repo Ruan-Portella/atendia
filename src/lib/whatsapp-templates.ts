@@ -40,16 +40,23 @@ export async function listTemplates(ch: TemplateChannel): Promise<Template[]> {
 
 /**
  * Cria o modelo. quickReplies: botões de resposta rápida (o modelo da BoaVoz que confirma os avisos
- * da equipe); no marketing, o botão de descadastro vai sempre.
+ * da equipe); urlButton: um botão de link com o fim da URL variável (os avisos da equipe abrem a
+ * página certa do painel); no marketing, o botão de descadastro vai sempre.
  */
-export async function createTemplate(ch: TemplateChannel, input: { name: string; category: TemplateCategory; body: string; examples: string[]; quickReplies?: string[] }) {
+export async function createTemplate(
+  ch: TemplateChannel,
+  input: { name: string; category: TemplateCategory; body: string; examples: string[]; quickReplies?: string[]; urlButton?: { text: string; baseUrl: string; example: string } },
+) {
   const vars = templateVariables(input.body);
   const bodyComponent: Record<string, unknown> = { type: "BODY", text: input.body.trim() };
   if (vars.length) bodyComponent.example = { body_text: [input.examples.slice(0, vars.length)] };
   const components: Array<Record<string, unknown>> = [bodyComponent];
   // marketing: botão de descadastro (resposta rápida); o toque vale como SAIR das promoções
   const replies = [...(input.quickReplies ?? []), ...(input.category === "MARKETING" ? [OPTOUT_BUTTON_TEXT] : [])];
-  if (replies.length) components.push({ type: "BUTTONS", buttons: replies.map((text) => ({ type: "QUICK_REPLY", text })) });
+  const buttons: Array<Record<string, unknown>> = replies.map((text) => ({ type: "QUICK_REPLY", text }));
+  // a variável do link fica no fim da URL (regra da Meta)
+  if (input.urlButton) buttons.push({ type: "URL", text: input.urlButton.text, url: `${input.urlButton.baseUrl}{{1}}`, example: [input.urlButton.example] });
+  if (buttons.length) components.push({ type: "BUTTONS", buttons });
   return graphFor<{ id: string; status: string }>(ch, `${ch.waba_id}/message_templates`, {
     body: { name: input.name, language: TEMPLATE_LANGUAGE, category: input.category, components },
   });
@@ -61,11 +68,12 @@ export async function deleteTemplate(ch: TemplateChannel, name: string) {
 
 /**
  * Manda o modelo. buttonPayloads: o que volta no toque de cada botão de resposta rápida, na ordem
- * (sem ele, volta o texto do botão).
+ * (sem ele, volta o texto do botão). urlSuffix: o fim da URL do botão de link (o primeiro botão).
  */
-export async function sendTemplate(ch: WaChannel, to: string, t: { name: string; language: string }, params: string[], opts: { callbackData?: string; timeoutMs?: number; buttonPayloads?: string[] } = {}) {
+export async function sendTemplate(ch: WaChannel, to: string, t: { name: string; language: string }, params: string[], opts: { callbackData?: string; timeoutMs?: number; buttonPayloads?: string[]; urlSuffix?: string } = {}) {
   const components: Array<Record<string, unknown>> = params.length ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }] : [];
   for (const [i, payload] of (opts.buttonPayloads ?? []).entries()) components.push({ type: "button", sub_type: "quick_reply", index: String(i), parameters: [{ type: "payload", payload }] });
+  if (opts.urlSuffix !== undefined) components.push({ type: "button", sub_type: "url", index: String(opts.buttonPayloads?.length ?? 0), parameters: [{ type: "text", text: opts.urlSuffix }] });
   return graphFor<{ messages?: Array<{ id: string }> }>(ch, `${ch.phone_number_id}/messages`, {
     // biz_opaque_callback_data volta nos status da Meta: as campanhas conciliam o envio por ele
     body: { messaging_product: "whatsapp", ...recipientOf(to), type: "template", template: { name: t.name, language: { code: t.language }, components }, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
