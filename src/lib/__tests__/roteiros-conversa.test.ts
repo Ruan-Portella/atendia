@@ -627,3 +627,75 @@ describe("roteiro na conversa: passo de ação (motor)", () => {
     expect(runs(tables)[1]).toMatchObject({ status: "abandoned", end_reason: "cancelled" });
   });
 });
+
+/* ------------------------------------------------------------------ o roteiro aberto não prende a conversa */
+
+describe("roteiro na conversa: outro roteiro e o roteiro parado", () => {
+  const troca = routine({
+    id: "rot-9",
+    name: "Troca",
+    when_to_use: "O cliente quer trocar um produto",
+    keywords: ["troca"],
+    steps: [
+      { id: "troc0001", type: "instrucao", text: "Peça o número do pedido", next: { to: "proximo" } },
+      { id: "troc0002", type: "instrucao", text: "Diga que a equipe segue com a troca", next: { to: "atendente" } },
+    ],
+  });
+  const exec = async (s: NonNullable<ReturnType<typeof routineSession>>, name: string, input: Record<string, unknown> = {}) =>
+    (s.tools[name] as unknown as { execute: (i: unknown, o: unknown) => Promise<Record<string, unknown>> }).execute(input, { toolCallId: "t", messages: [] });
+
+  it("a palavra-chave de outro roteiro troca o aberto (replaced), mesmo no passo que espera o CPF; a do próprio roteiro não recomeça", async () => {
+    const tables: Record<string, Row[]> = { routines: [routine(), troca], conversations: [{ id: CONV }], messages: [] };
+    const db = fakeDb(tables);
+    await pre(db, ["2via"]);
+    const t = await pre(db, ["troca"]);
+    expect(t.run?.routine.name).toBe("Troca");
+    expect(t.note).toContain('palavra-chave "troca"');
+    expect(runs(tables)[0]).toMatchObject({ routine_id: "rot-1", status: "abandoned", end_reason: "replaced", variables_enc: null });
+    expect(runs(tables)[1]).toMatchObject({ routine_id: "rot-9", status: "active", started_by: "palavra" });
+    const again = await pre(db, ["troca"]);
+    expect(again.run?.id).toBe(t.run!.id);
+    expect(runs(tables)).toHaveLength(2);
+  });
+
+  it("a IA começa outro roteiro com um aberto: o aberto acaba (replaced); o mesmo roteiro, não", async () => {
+    const tables: Record<string, Row[]> = { routines: [routine(), troca], conversations: [{ id: CONV }], messages: [] };
+    const db = fakeDb(tables);
+    await pre(db, ["2via"]);
+    const turn = await pre(db, ["na verdade quero trocar um produto"]);
+    const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn, texts: [], requestHandoff: async () => "aviso" })!;
+    expect(await exec(s, "iniciar_roteiro", { nome: "Segunda via" })).toMatchObject({ ok: false, instrucao: "Esse roteiro já está em andamento: siga o passo atual." });
+    expect(await exec(s, "iniciar_roteiro", { nome: "Troca" })).toMatchObject({ ok: true, passo: "1 de 2" });
+    expect(runs(tables)[0]).toMatchObject({ status: "abandoned", end_reason: "replaced" });
+    expect(runs(tables)[1]).toMatchObject({ routine_id: "rot-9", status: "active", started_by: "ia" });
+    expect(s.prompt()).toContain('"Troca", passo 1 de 2');
+  });
+
+  it("4 mensagens seguidas sem o roteiro andar: na próxima, ele acaba (idle); quando anda, o contador zera", async () => {
+    const tables: Record<string, Row[]> = { routines: [troca, routine()], conversations: [{ id: CONV }], messages: [] };
+    const db = fakeDb(tables);
+    const first = await pre(db, ["troca"]);
+    const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: first, texts: [], requestHandoff: async () => "aviso" })!;
+    for (const msg of ["oi", "vocês abrem sábado?", "e o horário?"]) await pre(db, [msg]);
+    expect(runs(tables)[0].idle_turns).toBe(3);
+    // o passo andou na vez da IA: o contador zera
+    await exec(s, "concluir_passo");
+    expect(runs(tables)[0]).toMatchObject({ step_id: "troc0002", idle_turns: 0 });
+    for (const msg of ["a", "b", "c", "d"]) expect((await pre(db, [msg])).run?.id).toBe(first.run!.id);
+    expect(runs(tables)[0].idle_turns).toBe(4);
+    const after = await pre(db, ["e a fatura?"]);
+    expect(after.run).toBeNull();
+    expect(runs(tables)[0]).toMatchObject({ status: "abandoned", end_reason: "idle", variables_enc: null });
+    // a IA ainda pode começar um roteiro nesta mesma vez
+    expect(after.available.map((r) => r.name)).toEqual(["Segunda via", "Troca"]);
+  });
+
+  it("no passo que espera o CPF, a mensagem sem CPF também conta como parada", async () => {
+    const tables: Record<string, Row[]> = { routines: [routine()], conversations: [{ id: CONV }], messages: [] };
+    const db = fakeDb(tables);
+    await pre(db, ["2via"]);
+    for (const msg of ["oi", "qual o horário?", "e o endereço?", "tem estacionamento?"]) await pre(db, [msg]);
+    expect((await pre(db, ["obrigado"])).run).toBeNull();
+    expect(runs(tables)[0]).toMatchObject({ status: "abandoned", end_reason: "idle" });
+  });
+});

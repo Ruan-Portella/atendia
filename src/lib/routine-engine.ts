@@ -11,6 +11,7 @@ import type { ActionIdentity } from "./actions";
 import {
   FIXED_KINDS,
   MAX_ATTEMPTS,
+  MAX_IDLE_TURNS,
   ROUTINE_TIMEOUT_MS,
   failButtons,
   findValue,
@@ -69,9 +70,11 @@ export interface ActiveRun {
   routineVersion: string;
   /** Esperando a pessoa escolher a conta: o resultado da ação que vale depois da escolha. */
   heldResult: string | null;
+  /** Mensagens seguidas do contato sem o roteiro andar (zera quando anda). */
+  idleTurns: number;
 }
 
-const RUN_COLS = "id, conversation_id, bot_id, step_id, variables_enc, attempts, failing, last_contact_at, updated_at, routine_version, held_result, routines(*)";
+const RUN_COLS = "id, conversation_id, bot_id, step_id, variables_enc, attempts, failing, last_contact_at, updated_at, routine_version, held_result, idle_turns, routines(*)";
 
 type RunRow = {
   id: string;
@@ -85,6 +88,7 @@ type RunRow = {
   updated_at: string;
   routine_version: string;
   held_result?: string | null;
+  idle_turns?: number | null;
   routines: RoutineRow | RoutineRow[] | null;
 };
 
@@ -116,7 +120,7 @@ export async function loadActiveRun(db: SupabaseClient, conversationId: string):
     await finishRun(db, r.id, "abandoned", "routine_changed");
     return null;
   }
-  return { id: r.id, conversationId: r.conversation_id, botId: r.bot_id, routine, stepId: r.step_id, variables: await openVariables(r.variables_enc), attempts: r.attempts, failing: r.failing, lastContactAt: r.last_contact_at, updatedAt: r.updated_at, routineVersion: r.routine_version, heldResult: r.held_result ?? null };
+  return { id: r.id, conversationId: r.conversation_id, botId: r.bot_id, routine, stepId: r.step_id, variables: await openVariables(r.variables_enc), attempts: r.attempts, failing: r.failing, lastContactAt: r.last_contact_at, updatedAt: r.updated_at, routineVersion: r.routine_version, heldResult: r.held_result ?? null, idleTurns: r.idle_turns ?? 0 };
 }
 
 /** Fim do roteiro: concluído ou abandonado (com o motivo). As variáveis saem na hora. */
@@ -199,7 +203,7 @@ export async function deleteRoutineRunsOfConversations(db: SupabaseClient, conve
   return count ?? 0;
 }
 
-async function saveRun(db: SupabaseClient, run: ActiveRun, patch: { stepId?: string; variables?: RoutineVariables; attempts?: number; failing?: boolean; contact?: boolean; heldResult?: string | null }): Promise<void> {
+async function saveRun(db: SupabaseClient, run: ActiveRun, patch: { stepId?: string; variables?: RoutineVariables; attempts?: number; failing?: boolean; contact?: boolean; heldResult?: string | null; idle?: number }): Promise<void> {
   const now = new Date().toISOString();
   const stepId = patch.stepId ?? run.stepId;
   const attempts = patch.attempts ?? run.attempts;
@@ -207,6 +211,7 @@ async function saveRun(db: SupabaseClient, run: ActiveRun, patch: { stepId?: str
   const update: Record<string, unknown> = { step_id: stepId, step_index: run.routine.steps.findIndex((s) => s.id === stepId) + 1, attempts, failing, updated_at: now, ...(patch.contact ? { last_contact_at: now } : {}) };
   if (patch.variables) update.variables_enc = await sealVariables(run.conversationId, patch.variables);
   if (patch.heldResult !== undefined) update.held_result = patch.heldResult;
+  if (patch.idle !== undefined) update.idle_turns = patch.idle;
   await db.from("routine_runs").update(update).eq("id", run.id).eq("status", "active");
   run.stepId = stepId;
   run.attempts = attempts;
@@ -215,6 +220,7 @@ async function saveRun(db: SupabaseClient, run: ActiveRun, patch: { stepId?: str
   if (patch.variables) run.variables = patch.variables;
   if (patch.contact) run.lastContactAt = now;
   if (patch.heldResult !== undefined) run.heldResult = patch.heldResult;
+  if (patch.idle !== undefined) run.idleTurns = patch.idle;
 }
 
 export type Moved = { kind: "step" } | { kind: "completed" } | { kind: "handoff"; reason: string };
@@ -253,11 +259,11 @@ async function moveTo(db: SupabaseClient, run: ActiveRun, next: NextStep, ctx: {
         continue;
       }
     }
-    await saveRun(db, run, { stepId: step.id, variables: vars, attempts: 0, failing: false, contact: ctx.contact });
+    await saveRun(db, run, { stepId: step.id, variables: vars, attempts: 0, failing: false, contact: ctx.contact, idle: 0 });
     return { kind: "step" };
   }
   // destinos em volta só de passos preenchidos sozinhos: para no passo atual
-  await saveRun(db, run, { variables: vars, contact: ctx.contact });
+  await saveRun(db, run, { variables: vars, contact: ctx.contact, idle: 0 });
   return { kind: "step" };
 }
 
@@ -273,7 +279,7 @@ async function startRun(db: SupabaseClient, i: { botId: string; conversationId: 
     // outro roteiro começou ao mesmo tempo nesta conversa (um por vez): segue o que está valendo
     return { run: await loadActiveRun(db, i.conversationId), moved: { kind: "step" } };
   }
-  const run: ActiveRun = { id: data.id as string, conversationId: i.conversationId, botId: i.botId, routine: i.routine, stepId: first.id, variables: {}, attempts: 0, failing: false, lastContactAt: now, updatedAt: now, routineVersion: i.routine.updated_at, heldResult: null };
+  const run: ActiveRun = { id: data.id as string, conversationId: i.conversationId, botId: i.botId, routine: i.routine, stepId: first.id, variables: {}, attempts: 0, failing: false, lastContactAt: now, updatedAt: now, routineVersion: i.routine.updated_at, heldResult: null, idleTurns: 0 };
   const moved = await moveTo(db, run, { kind: "step", step: first }, { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${i.routine.name}"`, identified: i.identified });
   return { run: moved.kind === "step" ? run : null, moved };
 }
@@ -342,11 +348,20 @@ export async function routinePreTurn(
   const text = i.texts.at(-1) ?? "";
   const identified = Boolean(i.identity?.identified);
 
-  // 1. o roteiro em andamento ainda vale?
+  // 1. o roteiro em andamento ainda vale? (roteiro alterado, 24 horas sem mensagem, a equipe entrou,
+  // ou 4 mensagens seguidas sem andar: a conversa seguiu outro assunto)
   if (run) {
     const current = available.find((r) => r.id === run!.routine.id);
     const changed = !current || Date.parse(current.updated_at) > Date.parse(run.routineVersion);
-    const reason: EndReason | null = changed ? "routine_changed" : Date.now() - Date.parse(run.lastContactAt) > ROUTINE_TIMEOUT_MS ? "timeout" : (await pausedSince(db, run)) ? "handoff" : null;
+    const reason: EndReason | null = changed
+      ? "routine_changed"
+      : Date.now() - Date.parse(run.lastContactAt) > ROUTINE_TIMEOUT_MS
+        ? "timeout"
+        : (await pausedSince(db, run))
+          ? "handoff"
+          : run.idleTurns >= MAX_IDLE_TURNS
+            ? "idle"
+            : null;
     if (reason) {
       await finishRun(db, run.id, "abandoned", reason);
       run = null;
@@ -360,7 +375,7 @@ export async function routinePreTurn(
       await finishRun(db, run.id, "abandoned", "context_changed");
       run = null;
     } else if (i.identity?.choosing) {
-      if (consume) await saveRun(db, run, { contact: true });
+      if (consume) await saveRun(db, run, { contact: true, idle: run.idleTurns + 1 });
       return { ...turn, run };
     } else {
       const step = currentStep(run);
@@ -413,6 +428,14 @@ export async function routinePreTurn(
     }
   }
 
+  // 2b. a palavra-chave de outro roteiro troca o aberto (a pessoa pediu outra coisa com todas as
+  // letras); a do próprio roteiro aberto não recomeça nada
+  const keyword = consume && !i.buttonId ? keywordRoutine(text, available) : null;
+  if (keyword && run && keyword.id !== run.routine.id) {
+    await finishRun(db, run.id, "abandoned", "replaced");
+    run = null;
+  }
+
   // 3. passo que pede um dado de formato fixo: o BoaVoz confere nas mensagens desta vez
   if (consume && run) {
     const step = currentStep(run);
@@ -433,26 +456,24 @@ export async function routinePreTurn(
         const why = step.kind === "cpf" || step.kind === "cnpj" || step.kind === "cpf_cnpj" ? " (o dígito verificador não bate)" : "";
         return { ...turn, run, note: failing ? null : `O ${label(step.kind)} que a pessoa mandou não confere${why}. Peça para conferir e mandar de novo (tentativa ${attempts} de ${MAX_ATTEMPTS}), sem repetir o número.` };
       }
-      await saveRun(db, run, { contact: true });
-      return { ...turn, run, note: run.failing ? null : `A pessoa ainda não mandou o ${label(step.kind)}. Se ela perguntou outra coisa, responda e peça o ${label(step.kind)} de novo.` };
+      await saveRun(db, run, { contact: true, idle: run.idleTurns + 1 });
+      return { ...turn, run, note: run.failing ? null : `A pessoa ainda não mandou o ${label(step.kind)}. Se ela perguntou outra coisa, responda e peça o ${label(step.kind)} de novo (se ela não quiser mais, chame cancelar_roteiro).` };
     }
   }
 
-  // 4. sem roteiro: a mensagem que é só a palavra-chave começa um
-  if (consume && !run && !i.buttonId) {
-    const routine = keywordRoutine(text, available);
-    if (routine) {
-      conversationId ??= i.openConversation ? await i.openConversation() : null;
-      if (conversationId) {
-        const started = await startRun(db, { botId: i.bot.id, conversationId, routine, by: "palavra", texts: [], waPhone: i.waPhone, identified });
-        const begun = `A pessoa mandou a palavra-chave "${text.trim()}": o roteiro "${routine.name}" começou.`;
-        if (started.moved.kind === "handoff") return { ...turn, conversationId, fixed: { kind: "handoff", reason: started.moved.reason } };
-        return { ...turn, conversationId, run: started.run, note: started.moved.kind === "completed" ? `${begun} Ele já terminou: siga a conversa normalmente.` : begun };
-      }
+  // 4. sem roteiro (ou depois da troca): a mensagem que é só a palavra-chave começa um
+  if (!run && keyword) {
+    conversationId ??= i.openConversation ? await i.openConversation() : null;
+    if (conversationId) {
+      const started = await startRun(db, { botId: i.bot.id, conversationId, routine: keyword, by: "palavra", texts: [], waPhone: i.waPhone, identified });
+      const begun = `A pessoa mandou a palavra-chave "${text.trim()}": o roteiro "${keyword.name}" começou.`;
+      if (started.moved.kind === "handoff") return { ...turn, conversationId, fixed: { kind: "handoff", reason: started.moved.reason } };
+      return { ...turn, conversationId, run: started.run, note: started.moved.kind === "completed" ? `${begun} Ele já terminou: siga a conversa normalmente.` : begun };
     }
   }
 
-  if (run && consume) await saveRun(db, run, { contact: true });
+  // a mensagem não andou o roteiro (a vez da IA ainda pode andar, e aí o contador zera)
+  if (run && consume) await saveRun(db, run, { contact: true, idle: run.idleTurns + 1 });
   return { ...turn, run };
 }
 
@@ -534,12 +555,17 @@ export function routineSession(
 
   const tools: Record<string, Tool> = {
     iniciar_roteiro: tool({
-      description: `Começa um roteiro (os passos que a empresa definiu) quando a conversa entra no assunto dele. Roteiros: ${list}. Chame assim que reconhecer o assunto, antes de responder, e siga o passo que a ferramenta devolver. Não chame com um roteiro já em andamento.`,
+      description: `Começa um roteiro (os passos que a empresa definiu) quando a conversa entra no assunto dele. Roteiros: ${list}. Chame assim que reconhecer o assunto, antes de responder, e siga o passo que a ferramenta devolver. Com outro roteiro em andamento, chame só se a pessoa mudou para o assunto deste (o outro acaba).`,
       inputSchema: z.object({ nome: z.enum(names).describe("o nome exato do roteiro") }),
       execute: async ({ nome }) => {
-        if (run) return { ok: false, instrucao: "Já há um roteiro em andamento: siga o passo atual." };
         const routine = available.find((r) => r.name === nome);
         if (!routine) return noRun;
+        if (run?.routine.id === routine.id) return { ok: false, instrucao: "Esse roteiro já está em andamento: siga o passo atual." };
+        // a conversa mudou para o assunto de outro roteiro: o aberto acaba (replaced)
+        if (run) {
+          await finishRun(db, run.id, "abandoned", "replaced");
+          run = null;
+        }
         const started = await startRun(db, { botId: i.bot.id, conversationId: i.conversationId, routine, by: "ia", texts: i.texts, waPhone: i.waPhone, identified: identified() });
         run = started.run;
         return after(started.moved, `Roteiro "${routine.name}" começou.`);

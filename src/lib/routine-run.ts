@@ -14,8 +14,10 @@ import type { MessageComponent, OptionItem } from "./components";
 export const ROUTINE_TIMEOUT_MS = 24 * 3_600_000;
 /** Tentativas de um dado antes de oferecer equipe ou cancelar. */
 export const MAX_ATTEMPTS = 3;
+/** Mensagens seguidas do contato sem o roteiro andar: na próxima, o roteiro acaba (idle). */
+export const MAX_IDLE_TURNS = 4;
 
-export const END_REASONS = ["handoff", "timeout", "routine_changed", "step_unavailable", "context_changed", "cancelled"] as const;
+export const END_REASONS = ["handoff", "timeout", "routine_changed", "step_unavailable", "context_changed", "cancelled", "replaced", "idle"] as const;
 export type EndReason = (typeof END_REASONS)[number];
 /** Para a faixa da conversa: "Roteiro encerrado no passo 3 (assumido)". */
 export const END_REASON_LABEL: Record<EndReason, string> = {
@@ -25,6 +27,8 @@ export const END_REASON_LABEL: Record<EndReason, string> = {
   step_unavailable: "ação indisponível",
   context_changed: "conta trocada",
   cancelled: "cancelado pelo contato",
+  replaced: "trocado por outro roteiro",
+  idle: "parado (a conversa seguiu outro assunto)",
 };
 
 /** Valor guardado de uma variável do roteiro (o tipo decide a máscara). */
@@ -445,7 +449,7 @@ export function routinePrompt(v: RunView, note: string | null): string {
     `Passo atual (siga só este): ${stepInstruction(step, { failing: v.failing })}`,
     variablesLine(v.variables),
     note ? `Nesta mensagem: ${note}` : "",
-    'Regras: siga o passo atual com naturalidade, sem pular nem inventar passos. Se a pessoa perguntar outra coisa, responda e volte ao passo. Se ela quiser parar, chame cancelar_roteiro (ofereça "cancelar", nunca "sair"). Se pedir uma pessoa da equipe, chame chamar_atendente.',
+    'Regras: siga o passo atual com naturalidade, sem pular nem inventar passos. Se a pessoa perguntar outra coisa, responda e retome o passo só se ela ainda quiser isso. Se ela mudou de assunto e não quer mais, ou quiser parar, chame cancelar_roteiro (ofereça "cancelar", nunca "sair"). Se o assunto novo é de outro roteiro, chame iniciar_roteiro com ele. Se pedir uma pessoa da equipe, chame chamar_atendente.',
   ]
     .filter(Boolean)
     .join("\n");
