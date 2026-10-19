@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   photoValue,
+  runBandText,
+  runStats,
+  runStatsLine,
   actionValue,
   boundParams,
   resultDestination,
@@ -848,5 +851,32 @@ describe("passo de foto", () => {
     const t = await prePhoto(db, ["internet"], null, { can: false });
     expect(t.run?.stepId).toBe("inte0002");
     expect(runs(tables)[0].variables_enc).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ painel (parte 3b) */
+
+describe("roteiro no painel", () => {
+  it("a faixa da conversa: em andamento, concluído e encerrado com o motivo", () => {
+    expect(runBandText({ routine_name: "Fatura", status: "active", end_reason: null, step_index: 2, steps_total: 3 })).toBe("Fatura: em andamento, passo 2 de 3");
+    expect(runBandText({ routine_name: "Fatura", status: "completed", end_reason: null, step_index: 3, steps_total: 3 })).toBe("Fatura: concluído");
+    expect(runBandText({ routine_name: "Troca", status: "abandoned", end_reason: "replaced", step_index: 1, steps_total: 4 })).toBe("Troca: encerrado no passo 1 de 4 (trocado por outro roteiro)");
+    expect(runBandText({ routine_name: "Troca", status: "abandoned", end_reason: "handoff", step_index: 4, steps_total: 4 })).toBe("Troca: encerrado no passo 4 de 4 (foi para a equipe)");
+  });
+
+  it("os números de 30 dias: só cancelado, sem resposta e parado contam como desistência", () => {
+    const s = runStats([
+      { status: "completed", end_reason: null },
+      { status: "completed", end_reason: null },
+      { status: "abandoned", end_reason: "handoff" },
+      { status: "abandoned", end_reason: "cancelled" },
+      { status: "abandoned", end_reason: "idle" },
+      { status: "abandoned", end_reason: "routine_changed" },
+      { status: "active", end_reason: null },
+    ]);
+    expect(s).toEqual({ started: 7, completed: 2, team: 1, gaveUp: 2, active: 1, other: 1 });
+    expect(runStatsLine(s)).toBe("30 dias: 7 começaram · 2 concluídos (33%) · 1 para a equipe · 2 desistiram · 1 encerrado por outro motivo · 1 em andamento.");
+    expect(runStatsLine(runStats([]))).toBe("Nenhum uso nos últimos 30 dias.");
+    expect(runStatsLine(runStats([{ status: "completed", end_reason: null }]))).toBe("30 dias: 1 começou · 1 concluído (100%).");
   });
 });

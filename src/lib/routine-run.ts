@@ -20,9 +20,9 @@ export const MAX_IDLE_TURNS = 4;
 
 export const END_REASONS = ["handoff", "timeout", "routine_changed", "step_unavailable", "context_changed", "cancelled", "replaced", "idle"] as const;
 export type EndReason = (typeof END_REASONS)[number];
-/** Para a faixa da conversa: "Roteiro encerrado no passo 3 (assumido)". */
+/** Para a faixa da conversa: "Fatura: encerrado no passo 3 de 4 (foi para a equipe)". */
 export const END_REASON_LABEL: Record<EndReason, string> = {
-  handoff: "assumido",
+  handoff: "foi para a equipe",
   timeout: "sem resposta em 24 horas",
   routine_changed: "roteiro alterado",
   step_unavailable: "ação indisponível",
@@ -31,6 +31,54 @@ export const END_REASON_LABEL: Record<EndReason, string> = {
   replaced: "trocado por outro roteiro",
   idle: "parado (a conversa seguiu outro assunto)",
 };
+
+/** Uma execução do roteiro, como a faixa da conversa e os números da aba Roteiros leem. */
+export interface RunSummary {
+  routine_name: string;
+  status: "active" | "completed" | "abandoned";
+  end_reason: EndReason | null;
+  step_index: number;
+  steps_total: number;
+}
+
+/** A faixa da conversa: em andamento, concluído ou encerrado (com o passo e o motivo). Pura. */
+export function runBandText(r: RunSummary): string {
+  if (r.status === "active") return `${r.routine_name}: em andamento, passo ${r.step_index} de ${r.steps_total}`;
+  if (r.status === "completed") return `${r.routine_name}: concluído`;
+  return `${r.routine_name}: encerrado no passo ${r.step_index} de ${r.steps_total} (${r.end_reason ? END_REASON_LABEL[r.end_reason] : "encerrado"})`;
+}
+
+/**
+ * Os números de um roteiro: começaram, concluídos, foram para a equipe, desistências (só cancelado,
+ * sem resposta em 24 horas e parado contam como abandono do contato) e em andamento. Pura.
+ */
+export function runStats(rows: Array<Pick<RunSummary, "status" | "end_reason">>) {
+  const s = { started: rows.length, completed: 0, team: 0, gaveUp: 0, active: 0, other: 0 };
+  for (const r of rows) {
+    if (r.status === "active") s.active++;
+    else if (r.status === "completed") s.completed++;
+    else if (r.end_reason === "handoff") s.team++;
+    else if (r.end_reason === "cancelled" || r.end_reason === "timeout" || r.end_reason === "idle") s.gaveUp++;
+    else s.other++;
+  }
+  return s;
+}
+
+/** A linha dos números (30 dias) na aba Roteiros. Pura. */
+export function runStatsLine(s: ReturnType<typeof runStats>): string {
+  if (!s.started) return "Nenhum uso nos últimos 30 dias.";
+  const finished = s.started - s.active;
+  const pct = finished ? ` (${Math.round((s.completed / finished) * 100)}%)` : "";
+  const parts = [
+    `${s.started} ${s.started === 1 ? "começou" : "começaram"}`,
+    `${s.completed} ${s.completed === 1 ? "concluído" : "concluídos"}${pct}`,
+    ...(s.team ? [`${s.team} para a equipe`] : []),
+    ...(s.gaveUp ? [`${s.gaveUp} ${s.gaveUp === 1 ? "desistiu" : "desistiram"}`] : []),
+    ...(s.other ? [`${s.other} ${s.other === 1 ? "encerrado" : "encerrados"} por outro motivo`] : []),
+    ...(s.active ? [`${s.active} em andamento`] : []),
+  ];
+  return `30 dias: ${parts.join(" · ")}.`;
+}
 
 /** Valor guardado de uma variável do roteiro (o tipo decide a máscara). */
 export interface RoutineValue {

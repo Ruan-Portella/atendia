@@ -35,6 +35,7 @@ import { ageRecord } from "@/lib/gate/age";
 import { CONSENT_LABEL, SOURCE_LABEL, consentHistory, consentStateOf } from "@/lib/marketing-consent";
 import { suppressionScope } from "@/lib/suppression";
 import { accountLabel, loadConversationIdentity } from "@/lib/routine-identity";
+import { runBandText, type RunSummary } from "@/lib/routine-run";
 
 export const metadata = { title: "Conversa" };
 
@@ -89,6 +90,9 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   // pessoa identificada pelo roteiro (B2', parte 2c; tabela interna: service role), com a conta escolhida
   const routineId = conv.identity_hash ? null : (await loadConversationIdentity(createAdminClient(), cid)).state;
   const routineAccount = routineId && routineId.active !== null ? accountLabel(routineId.accounts[routineId.active], routineId.active) : null;
+  // roteiros desta conversa (tabela interna: service role): o aberto e os últimos que acabaram
+  const { data: runRows } = await createAdminClient().from("routine_runs").select("routine_name, status, end_reason, step_index, steps_total").eq("conversation_id", cid).order("started_at", { ascending: false }).limit(5);
+  const runs = (runRows ?? []) as RunSummary[];
   const routineIdentity = routineId ? ` · identificado pelo roteiro${routineId.name ? `: ${routineId.name}` : ""}${routineAccount ? ` · conta: ${routineAccount}` : routineId.accounts.length > 1 ? " · escolhendo a conta" : ""}${routineId.remembered ? " · número lembrado" : ""}` : "";
   // resposta de 18+ do contato neste bot (tabela interna: lida com a service role)
   const age = isWhatsApp || isInstagram ? await ageRecord(createAdminClient(), { botId: id, channel: isWhatsApp ? "whatsapp" : "instagram", contact: (isWhatsApp ? conv.wa_id : conv.ig_id)! }) : null;
@@ -127,6 +131,16 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
                 <span key={c} className="inline-flex items-center gap-1.5 rounded-full bg-ground px-2 py-0.5">
                   {CATEGORIES[c].label} ·{" "}
                   {reviewing.has(c) ? <span className="font-semibold">revisão pedida</span> : <GateReviewButton label={CATEGORIES[c].label} action={requestGateReview.bind(null, cid, c)} />}
+                </span>
+              ))}
+            </p>
+          )}
+          {runs.length > 0 && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+              <span>Roteiros:</span>
+              {runs.map((r, k) => (
+                <span key={k} className={`rounded-full px-2 py-0.5 ${r.status === "active" ? "bg-brand-soft font-semibold text-brand" : "bg-ground"}`}>
+                  {runBandText(r)}
                 </span>
               ))}
             </p>

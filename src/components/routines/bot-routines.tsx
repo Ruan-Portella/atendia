@@ -4,6 +4,8 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { RoutineEditor } from "@/components/routines/routine-editor";
 import { ROUTINES_PER_BOT, routineUsesActions, type RoutineRow } from "@/lib/routines";
+import { runStats, runStatsLine, type RunSummary } from "@/lib/routine-run";
+import { daysAgoIso } from "@/lib/utils";
 import { deleteRoutine, saveRoutine, setRememberNumber, setRoutineActive } from "@/app/painel/roteiros/actions";
 
 /**
@@ -32,12 +34,20 @@ const TONE = { ok: "text-brand", muted: "text-muted", warn: "text-amber-ink" };
  */
 export async function BotRoutines({ botId, integrations }: { botId: string; integrations: boolean }) {
   const db = createAdminClient();
-  const [{ data: rows }, { data: acts }, { data: bot }, { count: remembered }] = await Promise.all([
+  const since = daysAgoIso(30);
+  const [{ data: rows }, { data: acts }, { data: bot }, { count: remembered }, { data: runRows }] = await Promise.all([
     db.from("routines").select("*").eq("bot_id", botId).order("name"),
     db.from("actions").select("name, outcomes, active").eq("bot_id", botId).order("name"),
     db.from("bots").select("offer_remember_number, sensitive_mode").eq("id", botId).maybeSingle(),
     db.from("contact_links").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("source", "routine").is("unlinked_at", null),
+    // números de cada roteiro nos últimos 30 dias
+    db.from("routine_runs").select("routine_id, status, end_reason").eq("bot_id", botId).gte("started_at", since).limit(20_000),
   ]);
+  const runsOf = new Map<string, Array<Pick<RunSummary, "status" | "end_reason">>>();
+  for (const r of (runRows ?? []) as Array<Pick<RunSummary, "status" | "end_reason"> & { routine_id: string | null }>) {
+    if (!r.routine_id) continue;
+    runsOf.set(r.routine_id, [...(runsOf.get(r.routine_id) ?? []), r]);
+  }
   const offerRemember = (bot?.offer_remember_number as boolean | null | undefined) !== false;
   // leitura de fotos: desligada no modo dados sensíveis (o passo de foto é pulado)
   const photos = !bot?.sensitive_mode;
@@ -74,6 +84,7 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
                   </span>
                 </summary>
                 <div className="flex flex-col gap-4 border-t border-line-2 px-4 py-4">
+                  <p className="text-xs text-muted">{runStatsLine(runStats(runsOf.get(r.id) ?? []))} Desistiram: cancelaram, ficaram 24 horas sem responder ou mudaram de assunto.</p>
                   <RoutineEditor action={saveRoutine.bind(null, botId, r.id)} initial={r} actions={actions} integrations={integrations} label="Salvar roteiro" />
                   <div className="flex flex-wrap items-center gap-4 border-t border-line-2 pt-3">
                     <ActionForm action={setRoutineActive.bind(null, r.id, !r.active)}>
