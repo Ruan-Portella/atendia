@@ -10,10 +10,6 @@ alter table public.agencies add column if not exists deletion_requested_by uuid;
 alter table public.agencies add column if not exists deletion_billing_paused boolean not null default false;
 create index if not exists agencies_deletion_due_idx on public.agencies (deletion_scheduled_for) where deletion_scheduled_for is not null;
 
--- a agência que indicou outra pode ser excluída: a indicação vira null
-alter table public.agencies drop constraint if exists agencies_referred_by_fkey;
-alter table public.agencies add constraint agencies_referred_by_fkey foreign key (referred_by) references public.agencies(id) on delete set null;
-
 -- restaurar um backup apaga de novo a agência (o resto vai em cascata) e as contas da equipe
 create or replace function public.reapply_deletions()
 returns int language plpgsql security definer set search_path = public as $$
