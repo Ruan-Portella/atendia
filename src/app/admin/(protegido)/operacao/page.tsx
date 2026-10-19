@@ -67,10 +67,18 @@ export default async function AdminOperations() {
             <div className="flex flex-col gap-1 text-sm">
               <p>
                 Chatbot: <span className="font-semibold">{assistant.label ?? "não encontrado"}</span>
-                <span className="text-muted"> · WhatsApp {assistant.connected ? "conectado" : "não conectado"}</span>
               </p>
-              <p>
-                Modelo <code>{NOTICE_TEMPLATE}</code>: {assistant.template ? TEMPLATE_LABEL[assistant.template] : "—"} · números confirmados: {num(assistant.confirmed)} · esperando o Confirmar: {num(assistant.pending)}
+              <p className="text-xs font-semibold">O painel das agências convida para os avisos quando tudo abaixo está ok:</p>
+              <ul className="flex flex-col gap-0.5 text-xs">
+                <li>{assistant.connected ? "✓" : "✗"} WhatsApp conectado{assistant.phone ? ` (${assistant.phone})` : " (aba WhatsApp do chatbot: um número só dele)"}</li>
+                <li>{assistant.live ? "✓" : "✗"} Chatbot no ar{assistant.live ? "" : ' (clique em "Publicar" no chatbot: em rascunho, o "Confirmar" que chega no WhatsApp é ignorado)'}</li>
+                <li>
+                  {assistant.template === "aprovado" ? "✓" : "✗"} Modelo <code>{NOTICE_TEMPLATE}</code>: {assistant.template ? TEMPLATE_LABEL[assistant.template] : "precisa do WhatsApp conectado"}
+                </li>
+                <li>{assistant.guideChunks ? "✓" : "✗"} Base com o guia do painel{assistant.guideChunks ? ` (${num(assistant.guideChunks)} trechos)` : " (botão abaixo)"}</li>
+              </ul>
+              <p className="text-xs text-muted">
+                Números confirmados: {num(assistant.confirmed)} · esperando o Confirmar: {num(assistant.pending)}. Depois de publicar ou de a Meta aprovar, a faixa aparece no painel em até 2 minutos.
               </p>
               {kindStatus && (
                 <p className="text-xs text-muted">

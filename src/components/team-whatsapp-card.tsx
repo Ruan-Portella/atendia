@@ -5,7 +5,7 @@ import { NOTICE_CONSENT_TEXT, NOTICE_NO, NOTICE_YES, type NoticeStatus } from "@
 import { NOTICE_KINDS, kindsForRole, noticeOn } from "@/lib/team-notices";
 import type { AgencyRole } from "@/lib/roles";
 import { company } from "@/lib/company";
-import { dismissNoticeWhatsAppCard, requestNoticeWhatsApp, resendNoticeWhatsApp, saveMyNoticePrefs, stopNoticeWhatsApp } from "@/app/painel/perfil/actions";
+import { requestNoticeWhatsApp, resendNoticeWhatsApp, saveMyNoticePrefs, stopNoticeWhatsApp } from "@/app/painel/perfil/actions";
 
 const dateBr = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));
 
@@ -30,18 +30,15 @@ function RequestForm({ label = "Receber no WhatsApp" }: { label?: string }) {
 }
 
 /**
- * Avisos e ajuda no WhatsApp (leva de 19/10/2026): o número da pessoa, com o aceite confirmado pelo
- * botão que chega no WhatsApp. "top": o cartão no topo do painel até ela confirmar (com "Agora
- * não"); "profile": Meu perfil, com todos os estados. Sem o assistente da BoaVoz, nada aparece.
+ * Avisos e ajuda no WhatsApp em Meu perfil (leva de 19/10/2026): o número da pessoa, com o aceite
+ * confirmado pelo botão que chega no WhatsApp, todos os estados e a escolha dos avisos. No topo do
+ * painel, o convite é a faixa (team-whatsapp-strip.tsx). Sem o assistente da BoaVoz, nada aparece.
  */
-export function TeamWhatsAppCard({ status, variant, role }: { status: NoticeStatus; variant: "top" | "profile"; role?: AgencyRole }) {
+export function TeamWhatsAppCard({ status, role }: { status: NoticeStatus; role?: AgencyRole }) {
   if (!status.available) return null;
-  const top = variant === "top";
-  // no topo: até confirmar, e de novo quando o WhatsApp do número mudou (precisa confirmar outra vez)
-  if (top && (status.dismissed || (status.status === "confirmed" && !status.identityChanged))) return null;
 
   return (
-    <section className={`card flex flex-col gap-3 ${top ? "border-brand/30 p-4" : "p-6"}`}>
+    <section id="avisos" className="card flex scroll-mt-6 flex-col gap-3 p-6">
       <div className="flex items-start gap-3">
         <MessageCircle size={18} className="mt-0.5 shrink-0 text-brand" aria-hidden />
         <div className="min-w-0">
@@ -78,7 +75,7 @@ export function TeamWhatsAppCard({ status, variant, role }: { status: NoticeStat
             <span className="font-semibold">{status.masked}</span>
             <span className="text-muted"> · confirmado{status.confirmedAt ? ` em ${dateBr(status.confirmedAt)}` : ""}</span>
           </p>
-          {!top && role && (
+          {role && (
             <ActionForm action={saveMyNoticePrefs} success="Avisos salvos." className="flex flex-col gap-2 rounded-lg border border-line-2 p-3">
               <p className="text-xs font-semibold">Quais avisos chegam no WhatsApp</p>
               {kindsForRole(role).map((k) => (
@@ -149,13 +146,6 @@ export function TeamWhatsAppCard({ status, variant, role }: { status: NoticeStat
 
       {status.status === null && <RequestForm />}
 
-      {top && (
-        <ActionForm action={dismissNoticeWhatsAppCard}>
-          <SubmitButton className="text-xs text-muted hover:underline" pendingLabel="…">
-            Agora não
-          </SubmitButton>
-        </ActionForm>
-      )}
     </section>
   );
 }

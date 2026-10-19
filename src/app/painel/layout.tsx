@@ -10,8 +10,9 @@ import { panelNotices } from "@/lib/ai-pause";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pendingAlerts } from "@/lib/security-alerts";
 import { SecurityAlertStrip } from "@/components/security-alert-strip";
-import { TeamWhatsAppCard } from "@/components/team-whatsapp-card";
-import { noticeStatus } from "@/lib/team-whatsapp";
+import { TeamWhatsAppStrip } from "@/components/team-whatsapp-strip";
+import { NOTICE_CONSENT_SHORT, noticeStatus } from "@/lib/team-whatsapp";
+import { company } from "@/lib/company";
 
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
@@ -23,7 +24,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
   // eventos graves da auditoria ainda não vistos (chave nova, URL trocada, acesso do suporte…),
   // para quem cuida da Segurança (dono e administrador)
   const alerts = can(role, "security") ? await pendingAlerts(createAdminClient(), agency.id, agency.security_alerts_seen_at ?? null).catch(() => []) : [];
-  // avisos e ajuda no WhatsApp: o cartão do número fica no topo até a pessoa confirmar ou fechar
+  // avisos e ajuda no WhatsApp: a faixa do convite fica no topo até a pessoa confirmar ou fechar
   const whatsappNotice = await noticeStatus(createAdminClient(), member.id).catch(() => null);
   const channelNames = notices.suspended.map((c) => SUSPENDED_LABEL[c] ?? c).join(", ");
   const banners = [
@@ -45,7 +46,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
-          {whatsappNotice && <TeamWhatsAppCard status={whatsappNotice} variant="top" />}
+          {whatsappNotice && <TeamWhatsAppStrip status={whatsappNotice} brand={company.brand} consent={NOTICE_CONSENT_SHORT} />}
           {can(role, "config") && <PlanAlert bots={bots} billing={{ status: agency.billing_status, cancelAt: agency.billing_cancel_at }} />}
         </>
       }

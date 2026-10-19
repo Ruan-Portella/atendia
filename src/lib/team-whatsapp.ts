@@ -38,6 +38,9 @@ export const NOTICE_CONSENT_VERSION = "2026-10-19";
 /** O que a pessoa lê no painel antes de pedir (o aceite). */
 export const NOTICE_CONSENT_TEXT = `Ao tocar em "Receber no WhatsApp", você aceita receber do número da ${company.brand} os avisos da sua conta (como atendimento urgente, lead novo e cobrança; você escolhe quais em Meu perfil) e pode conversar com o assistente da ${company.brand} por lá. A confirmação é pelo botão que chega no WhatsApp. Para parar, mande SAIR por lá ou desligue aqui.`;
 
+/** O aceite em uma frase, ao lado do campo na faixa do topo do painel (o texto completo fica em Meu perfil). */
+export const NOTICE_CONSENT_SHORT = `Ao tocar em "Receber no WhatsApp", você aceita receber do número da ${company.brand} os avisos da conta e conversar com o assistente de lá. A confirmação é pelo botão que chega no WhatsApp; para parar, mande SAIR por lá ou desligue em Meu perfil.`;
+
 /** Pedidos por dia: por pessoa e por agência (ninguém usa o painel para mandar mensagem a números de outros). */
 const REQUESTS_PER_MEMBER = 3;
 const REQUESTS_PER_AGENCY = 10;
@@ -122,6 +125,32 @@ export async function assistantBotId(db: SupabaseClient): Promise<string | null>
 export function forgetAssistantCache(): void {
   cachedBot = null;
   cachedChannel = null;
+  cachedReady = null;
+}
+
+let cachedReady: { at: number; botId: string; ready: boolean } | null = null;
+
+/**
+ * O assistente pronto de ponta a ponta: o WhatsApp conectado, o chatbot no ar (em rascunho, o
+ * "Confirmar" que chega seria ignorado) e o modelo de confirmação aprovado pela Meta. Só assim o
+ * painel convida para os avisos. Guardado por 2 minutos (a lista de modelos vem da Meta).
+ */
+export async function assistantReady(db: SupabaseClient): Promise<AssistantChannel | null> {
+  const a = await assistantChannel(db);
+  if (!a) return null;
+  if (cachedReady && cachedReady.botId === a.botId && Date.now() - cachedReady.at < 2 * 60_000) return cachedReady.ready ? a : null;
+  const { data: bot } = await db.from("bots").select("status").eq("id", a.botId).maybeSingle();
+  let ready = bot?.status === "live";
+  if (ready) {
+    try {
+      ready = noticeTemplateStatus(await listTemplates(a.ch)) === "aprovado";
+    } catch (e) {
+      console.error("avisos: modelos do assistente não leram", (e as Error).message);
+      ready = false;
+    }
+  }
+  cachedReady = { at: Date.now(), botId: a.botId, ready };
+  return ready ? a : null;
 }
 
 type AssistantChannel = { botId: string; agencyId: string; ch: TemplateChannel };
@@ -196,9 +225,12 @@ export interface NoticeStatus {
 
 /** O que o painel mostra para a pessoa: os avisos existem nesta plataforma? O número dela e o estado. */
 export async function noticeStatus(db: SupabaseClient, memberId: string): Promise<NoticeStatus> {
+  const none: NoticeStatus = { available: false, status: null, masked: null, confirmedAt: null, stopped: false, identityChanged: false, dismissed: false, prefs: {} };
   const assistant = await assistantChannel(db);
-  if (!assistant) return { available: false, status: null, masked: null, confirmedAt: null, stopped: false, identityChanged: false, dismissed: false, prefs: {} };
-  const [row, { data: m }] = await Promise.all([loadTeamWhatsApp(db, memberId), db.from("agency_members").select("whatsapp_card_dismissed_at").eq("id", memberId).maybeSingle()]);
+  if (!assistant) return none;
+  const [row, { data: m }, ready] = await Promise.all([loadTeamWhatsApp(db, memberId), db.from("agency_members").select("whatsapp_card_dismissed_at").eq("id", memberId).maybeSingle(), assistantReady(db)]);
+  // sem o assistente pronto, ninguém é convidado; quem já pôs o número continua vendo (e pode parar)
+  if (!ready && !row) return none;
   const stopped = Boolean(row?.status === "confirmed" && row.phone && blocks((await activeSuppressions(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: assistant.ch.waba_id, botId: assistant.botId }), contact: row.phone })).map((s) => s.kind), "UTILITY"));
   return { available: true, status: row?.status ?? null, masked: row?.phone ? maskPhone(row.phone) : null, confirmedAt: row?.confirmedAt ?? null, stopped, identityChanged: Boolean(row?.identityChangedAt), dismissed: Boolean(m?.whatsapp_card_dismissed_at), prefs: row?.prefs ?? {} };
 }
@@ -375,6 +407,12 @@ export interface AssistantOverview {
   label: string | null;
   /** O WhatsApp do chatbot está conectado (com a conta do WhatsApp Business). */
   connected: boolean;
+  /** O número conectado, como a Meta mostra. */
+  phone: string | null;
+  /** O chatbot está no ar (em rascunho, o "Confirmar" que chega no WhatsApp é ignorado). */
+  live: boolean;
+  /** Trechos do guia do painel na base do assistente (0: a base ainda não foi carregada). */
+  guideChunks: number;
   template: NoticeTemplateStatus | "erro" | null;
   /** Os modelos da conta do assistente (para o estado dos modelos de aviso), ou null. */
   templates: Template[] | null;
@@ -388,8 +426,13 @@ export async function assistantOverview(db: SupabaseClient): Promise<AssistantOv
   const botId = ((flags as { assistant_bot_id?: string | null } | null)?.assistant_bot_id as string | null) ?? null;
   const count = async (status: TeamWhatsAppStatus) => (await db.from("team_whatsapp").select("member_id", { count: "exact", head: true }).eq("status", status)).count ?? 0;
   const [confirmed, pending] = await Promise.all([count("confirmed"), count("pending")]);
-  if (!botId) return { botId: null, label: null, connected: false, template: null, templates: null, confirmed, pending };
-  const [{ data: bot }, ch] = await Promise.all([db.from("bots").select("name, client_name, agencies(name)").eq("id", botId).maybeSingle(), loadTemplateChannel(db, botId)]);
+  if (!botId) return { botId: null, label: null, connected: false, phone: null, live: false, guideChunks: 0, template: null, templates: null, confirmed, pending };
+  const [{ data: bot }, ch, { data: wa }, { data: guides }] = await Promise.all([
+    db.from("bots").select("name, client_name, status, agencies(name)").eq("id", botId).maybeSingle(),
+    loadTemplateChannel(db, botId),
+    db.from("whatsapp_channels").select("display_phone").eq("bot_id", botId).is("disconnected_at", null).maybeSingle(),
+    db.from("sources").select("chunk_count").eq("bot_id", botId).eq("kind", "text").in("title", assistantGuides().map((g) => g.title)),
+  ]);
   const agency = bot ? ((Array.isArray(bot.agencies) ? bot.agencies[0] : bot.agencies) as { name?: string } | null)?.name : null;
   let template: AssistantOverview["template"] = null;
   let templates: Template[] | null = null;
@@ -402,7 +445,8 @@ export async function assistantOverview(db: SupabaseClient): Promise<AssistantOv
       template = "erro";
     }
   }
-  return { botId, label: bot ? `${bot.name} · ${bot.client_name}${agency ? ` (${agency})` : ""}` : null, connected: Boolean(ch), template, templates, confirmed, pending };
+  const guideChunks = (guides ?? []).reduce((t, g) => t + (Number(g.chunk_count) || 0), 0);
+  return { botId, label: bot ? `${bot.name} · ${bot.client_name}${agency ? ` (${agency})` : ""}` : null, connected: Boolean(ch), phone: (wa?.display_phone as string | null | undefined) ?? null, live: bot?.status === "live", guideChunks, template, templates, confirmed, pending };
 }
 
 /* ------------------------------------------------------------------ o assistente reconhece a pessoa (parte 2) */

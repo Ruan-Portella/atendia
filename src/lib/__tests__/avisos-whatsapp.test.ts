@@ -18,7 +18,7 @@ vi.mock("../platform-events", () => ({ consentSource: () => "chat", queueConsent
 vi.mock("../atendimentos", () => ({ botQuotaStatus: vi.fn(async () => []) }));
 
 import { memoryDb, type MemRow } from "../memory-db";
-import { assistantContext, assistantGuides, assistantNote, firstNameOf, forgetAssistantCache, handleTeamNotices, maskPhone, noticeButtons, noticeTemplateStatus, parseNoticeButton, requestTeamWhatsApp, templateValue, typedNoticeAnswer, NOTICE_TEXTS } from "../team-whatsapp";
+import { assistantContext, assistantGuides, assistantNote, assistantReady, noticeStatus, firstNameOf, forgetAssistantCache, handleTeamNotices, maskPhone, noticeButtons, noticeTemplateStatus, parseNoticeButton, requestTeamWhatsApp, templateValue, typedNoticeAnswer, NOTICE_TEXTS } from "../team-whatsapp";
 import { phoneHash } from "../contacts";
 
 const ASSISTANT = "11111111-1111-4111-8111-111111111111";
@@ -288,5 +288,29 @@ describe("assistente da BoaVoz: o escopo do papel", () => {
     expect(n).toContain("Pet Shop (cliente Patas)");
     expect(n).not.toContain("Clínica Vale");
     expect(n).not.toContain("pagamento atrasado");
+  });
+});
+
+describe("assistente pronto: o painel só convida assim", () => {
+  it("em rascunho ou sem o modelo aprovado, não convida; no ar e com o modelo aprovado, convida", async () => {
+    const t = tables();
+    t.bots[0].status = "draft";
+    expect(await assistantReady(memoryDb(t))).toBeNull();
+    forgetAssistantCache();
+    t.bots[0].status = "live";
+    approved = false;
+    expect(await assistantReady(memoryDb(t))).toBeNull();
+    forgetAssistantCache();
+    approved = true;
+    expect(await assistantReady(memoryDb(t))).toMatchObject({ botId: ASSISTANT });
+  });
+
+  it("sem o assistente pronto, ninguém é convidado; quem já pôs o número continua vendo (e pode parar)", async () => {
+    const t = tables();
+    t.bots[0].status = "draft";
+    expect((await noticeStatus(memoryDb(t), MEMBER.id)).available).toBe(false);
+    forgetAssistantCache();
+    t.team_whatsapp.push({ member_id: MEMBER.id, agency_id: AGENCY.id, phone_enc: PHONE, phone_hash: phoneHash(PHONE), status: "pending", nonce: "0123456789ab", prefs: {} });
+    expect(await noticeStatus(memoryDb(t), MEMBER.id)).toMatchObject({ available: true, status: "pending", masked: "+55 41 9•••• 0000" });
   });
 });
