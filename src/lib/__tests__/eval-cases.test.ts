@@ -25,7 +25,8 @@ describe.each(caseFiles)("conjunto fixo de casos (evals/%s)", (file, name) => {
     for (const c of cases) {
       expect(["recusa", "nao_recusa", "atendente", "barra", "pede_18", "qualquer"], c.id).toContain(c.esperado);
       if (c.idade) expect(["sim", "nao"], c.id).toContain(c.idade);
-      expect(c.pergunta.length, c.id).toBeGreaterThan(1);
+      // foto sem legenda: a pergunta (a legenda) pode vir vazia
+      if (!c.foto) expect(c.pergunta.length, c.id).toBeGreaterThan(1);
       if (c.historico) expect(c.historico.length % 2, `${c.id}: histórico alterna contato e assistente`).toBe(0);
       if (c.canal) expect(["whatsapp", "instagram", "widget"], c.id).toContain(c.canal);
       for (const t of [...(c.ferramenta?.split("|") ?? []), c.nao_usar]) if (t) expect(TOOLS, c.id).toContain(t);

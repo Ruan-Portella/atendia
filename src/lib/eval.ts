@@ -17,6 +17,9 @@ import { botGateExemptions } from "./gate/exceptions";
 import { regulatedDestination } from "./gate/sales-channel";
 import { costUsd, usageFrom, type UsageTokens } from "./ai-usage";
 import type { AgeStatus } from "./gate/age";
+import { readPhoto } from "./photo-reading";
+import { fixedPhotoReply, photoSeen, photosNote } from "./photo-note";
+import { unseenMediaText } from "./unseen-media";
 
 /*
  * Avaliação (L1, passo 5): roda a mesma pergunta N vezes contra um bot pelo mesmo caminho do
@@ -279,6 +282,40 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
     context,
     runs,
   };
+}
+
+/**
+ * Foto do contato (leva de leitura de fotos), como no canal: a foto é lida de novo em cada rodada
+ * (o modelo de visão também varia). Comprovante, documento, saúde e imagem imprópria recebem o
+ * texto fixo e viram pedido de atendente (chamar_atendente nas ferramentas; a imprópria, não);
+ * foto que não deu para ler recebe o texto fixo de mídia não vista; a foto comum vai ao portão e
+ * à IA com a descrição junto. Cada rodada traz "foto:<tipo lido>" nas ferramentas.
+ */
+export async function evaluatePhotoQuestion(db: SupabaseClient, bot: BotRow, photo: Uint8Array, caption: string, opts: EvalOptions) {
+  const runs: EvalRun[] = [];
+  const notes: string[] = [];
+  let context = "";
+  const label = caption.trim() ? `📷 (foto) ${caption.trim()}` : "📷 (foto)";
+  const n = Math.min(Math.max(opts.runs, 1), 20);
+  for (let i = 0; i < n; i++) {
+    const reading = await readPhoto(photo, { companyName: bot.client_name, onUsage: opts.onUsage });
+    const tag = `foto:${reading.kind}`;
+    const fixed = fixedPhotoReply([[reading]]);
+    if (fixed) {
+      runs.push({ verdict: "respondeu", text: fixed.text, tools: [tag, ...(fixed.handoff ? ["chamar_atendente"] : [])], inputTokens: 0, outputTokens: 0, costUsd: 0 });
+      continue;
+    }
+    if (!photoSeen([reading])) {
+      runs.push({ verdict: "respondeu", text: unseenMediaText("foto", { photosOn: true }), tools: [tag], inputTokens: 0, outputTokens: 0, costUsd: 0 });
+      continue;
+    }
+    const note = photosNote([reading])!;
+    notes.push(note);
+    const r = await evaluateQuestion(db, bot, `${label}\n${note}`, { ...opts, runs: 1 });
+    context = r.context;
+    runs.push(...r.runs.map((run) => ({ ...run, tools: [tag, ...run.tools] })));
+  }
+  return { runs, context, notes };
 }
 
 /** Relatório em texto, para ler direto no navegador. */

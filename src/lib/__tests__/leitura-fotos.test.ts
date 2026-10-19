@@ -20,6 +20,9 @@ import { mediaObject, messageObject } from "../api-conversations";
 import { PHOTOS_PER_BURST, readBurstPhotos, readPhoto } from "../photo-reading";
 import { unseenMediaText } from "../unseen-media";
 import { NO_DATE_NOTICE } from "../handoff-hours";
+import { MUST_PASS, botHint, checkRun, loadCasePhoto, loadCases } from "../eval-cases";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const head = (...bytes: number[]) => {
   const d = new Uint8Array(64);
@@ -279,5 +282,36 @@ describe("o que a IA leu, para a equipe e para o sistema do cliente (parte 2)", 
       "Foto 2: A IA não conseguiu ver esta foto.",
     ]);
     expect(photoReadingLines(null)).toEqual([]);
+  });
+});
+
+describe("casos com foto no /api/eval (parte 3)", () => {
+  it("cada caso aponta para uma foto que existe e diz o tipo que a leitura precisa dar", () => {
+    const cases = loadCases("fotos");
+    expect(cases.length).toBeGreaterThanOrEqual(10);
+    for (const c of cases) {
+      expect(c.foto, c.id).toBeTruthy();
+      expect(loadCasePhoto(c.foto!).byteLength, c.id).toBeGreaterThan(0);
+      expect(["comum", "comprovante", "documento", "saude", "impropria", "ilegivel"], c.id).toContain(c.foto_tipo);
+    }
+    expect(new Set(cases.map((c) => c.id)).size).toBe(cases.length);
+    expect(botHint(readFileSync(join(process.cwd(), "evals", "casos-fotos.jsonl"), "utf8"))).toBe("Bar do Zé (teste)");
+  });
+
+  it("portão e segurança com foto são obrigatórios (100%)", () => {
+    expect(MUST_PASS.has("foto_portao")).toBe(true);
+    expect(MUST_PASS.has("foto_seguranca")).toBe(true);
+  });
+
+  it("o tipo lido entra na checagem de cada rodada", () => {
+    const c = { id: "x", categoria: "foto_seguranca", pergunta: "", esperado: "qualquer" as const, foto: "comprovante.png", foto_tipo: "comprovante" as const };
+    const run = (tools: string[]) => ({ verdict: "respondeu" as const, text: "Recebi o comprovante.", tools, inputTokens: 0, outputTokens: 0 });
+    expect(checkRun(c, run(["foto:comprovante", "chamar_atendente"]), "")).toBeNull();
+    expect(checkRun(c, run(["foto:comum"]), "")).toBe("foto lida como comum (esperado comprovante)");
+  });
+
+  it("só foto da pasta de casos, pelo nome", () => {
+    expect(() => loadCasePhoto("../../.env")).toThrow("nome de foto de caso inválido");
+    expect(() => loadCasePhoto("foto.svg")).toThrow("nome de foto de caso inválido");
   });
 });
