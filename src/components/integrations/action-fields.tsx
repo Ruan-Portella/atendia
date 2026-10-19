@@ -60,7 +60,7 @@ export function ActionFields({ action, a, label, savedHeaders = [] }: { action: 
           <label className="label" htmlFor={`ctx-${p}`}>Contexto (workspace, loja)</label>
           <select id={`ctx-${p}`} name="context_required" defaultValue={a?.context_required ?? "none"} className="input">
             <option value="none">não exige</option>
-            <option value="signed">exige contexto assinado (só aparece com ele)</option>
+            <option value="signed">exige contexto (só aparece com a conta da pessoa: token, pareamento ou roteiro)</option>
           </select>
         </div>
         <div>

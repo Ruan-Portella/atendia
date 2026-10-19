@@ -519,6 +519,19 @@ describe("identificação pelo roteiro: lembrar o número", () => {
     expect(await idPre(db, "conv-2", "oi", { channel: "widget" })).toEqual({ kind: "none", note: null, consumed: false });
   });
 
+  it("'desconectar' com o número lembrado: sai a pessoa com todas as contas, e a conversa perde a identidade", async () => {
+    const { tables, db } = world();
+    await rememberedNumber(db);
+    expect(tables.contact_links.filter((l) => !l.unlinked_at)).toHaveLength(2);
+    const replies: string[] = [];
+    const io = { db, bot: BOT, channel: "whatsapp" as const, contactId: CONTACT, phone: null, conversation: async () => "conv-1", store: async () => {}, reply: async (_c: string | null, text: string) => void replies.push(text) };
+    await handlePairing(io, [{ text: "desconectar", buttonId: null }]);
+    expect(replies).toEqual([PAIRING_TEXTS.forgotten("whatsapp", [])]);
+    expect(tables.contact_links.every((l) => l.unlinked_at && l.unlink_reason === "chat")).toBe(true);
+    expect(tables.contacts[0].active_link_id).toBeNull();
+    expect((await loadConversationIdentity(db, "conv-1")).state).toBeNull();
+  });
+
   it("'desconectar' tira a identificação desta conversa, mesmo sem número lembrado", async () => {
     const { tables, db } = world();
     const p = await portOf(db, "conv-1");

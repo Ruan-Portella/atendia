@@ -126,6 +126,9 @@ export const PAIRING_TEXTS = {
     `Pronto, este ${channelName(channel)} foi desconectado ${fromLink(where)}.${remaining.length ? ` Continua conectado ${remaining.map(toLink).join(", ")}: para desconectar também, mande "desconectar" de novo.` : ""}`,
   notLinked: (channel: PairingChannel) => `Este ${channel === "whatsapp" ? "WhatsApp" : "Instagram"} não está conectado a nenhuma conta.`,
   leftConversation: "Pronto, esta conversa não está mais ligada à sua conta. Para ver dados da conta de novo, é só se identificar.",
+  /** Número lembrado pelo roteiro: sai a pessoa, com todas as contas dela (parte 2c). */
+  forgotten: (channel: PairingChannel, remaining: string[]) =>
+    `Pronto, esqueci este ${channel === "whatsapp" ? "número" : "perfil"}: na próxima conversa, a identificação começa do zero.${remaining.length ? ` Continua conectado ${remaining.map(toLink).join(", ")}: para desconectar também, mande "desconectar" de novo.` : ""}`,
 } as const;
 
 /**
@@ -395,6 +398,13 @@ export async function handlePairing(io: PairingIO, items: PairingMessage[]): Pro
       const dropped = convId ? await dropConversationIdentity(io.db, convId) : false;
       if (!active) {
         await io.reply(convId, dropped ? PAIRING_TEXTS.leftConversation : PAIRING_TEXTS.notLinked(io.channel));
+        continue;
+      }
+      // número lembrado pelo roteiro: o que estava lembrado é o número, então sai a pessoa com todas as contas
+      if (!isPairingLink(active)) {
+        const same = (l: LinkRow) => !isPairingLink(l) && l.external_id_hash === active.external_id_hash;
+        for (const l of all.filter(same)) await unlinkLink(io.db, l, "chat");
+        await io.reply(convId, PAIRING_TEXTS.forgotten(io.channel, all.filter((l) => !same(l)).map((l) => linkLabel(l.display))));
         continue;
       }
       await unlinkLink(io.db, active, "chat");
