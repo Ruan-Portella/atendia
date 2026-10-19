@@ -298,10 +298,19 @@ export interface ActionToolsInput extends CallerInput {
     onResult(action: string, r: { status: string; outcome?: string | null; identity?: ActionIdentity | null }, declared: string[]): Promise<Record<string, unknown> | null>;
     /** As ações dos próximos passos (entram já: a ação do passo atual pode identificar a pessoa nesta vez). */
     upcoming?(): string[];
+    /** As ações dos passos dos roteiros ligados (as "Só no roteiro" só vão entre elas). */
+    stepActions?(): string[];
   };
   /** A identidade agora (parte 2c): a ação do roteiro identificou no meio da vez e as próximas chamadas saem com ela. */
   identityNow?: () => ChatIdentity | null;
 }
+
+/**
+ * A ação vai para a IA nesta vez? A marcada "Só no roteiro" só vai quando algum roteiro ligado tem
+ * um passo com ela (o roteiro pode começar ou andar até ela nesta vez); a chamada só vale com ela
+ * no passo atual. Roteiro desligado: a ação sai junto. Pura.
+ */
+export const offeredByRoutine = (a: Pick<ActionRow, "name" | "routine_only">, routineActions: Set<string>): boolean => !a.routine_only || routineActions.has(a.name);
 
 /** Ferramentas acao_<nome> para esta resposta (vazio se o bot não tem ações). */
 export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): Promise<Record<string, Tool>> {
@@ -323,9 +332,14 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
   const allowed = (a: ActionRow, c: typeof caller) => (a.context_required === "none" || c.hasContext) && reaches(c.level, a.min_level);
   // as dos próximos passos do roteiro entram mesmo antes da identificação: a chamada confere de novo
   const upcoming = new Set(i.routine?.upcoming?.() ?? []);
-  const actions = all.filter((a) => !(i.confirmRound && needsConfirmation(a)) && (allowed(a, caller) || upcoming.has(a.name)));
+  // as "Só no roteiro" só vão se um roteiro ligado tem um passo com elas
+  const routineActions = new Set(i.routine?.stepActions?.() ?? []);
+  const actions = all.filter((a) => !(i.confirmRound && needsConfirmation(a)) && offeredByRoutine(a, routineActions) && (allowed(a, caller) || upcoming.has(a.name)));
   if (!actions.length) return {};
   const NOT_YET = { ok: false, motivo: "precisa_identificar", instrucao: "Esta consulta precisa da pessoa identificada: siga o passo atual do roteiro." };
+  const ROUTINE_ONLY = { ok: false, motivo: "so_no_roteiro", instrucao: "Esta ação só vale no passo dela no roteiro: siga o passo atual." };
+  /** "Só no roteiro": na hora da chamada, ela tem que ser a do passo atual. */
+  const outOfStep = (a: ActionRow) => Boolean(a.routine_only) && i.routine?.step()?.action !== a.name;
   const shape: ShapeInput = { bot: i.bot, conversationId: i.conversationId, gateChannel: caller.gateChannel, waPhone: i.waPhone, age: i.age, exempt: i.exempt, destination: i.destination, regulatedAt: caller.regulatedAt };
   const gate = caller.gateChannel === "widget" ? null : { channel: caller.gateChannel, contactPhone: i.waPhone, exempt: i.exempt, destination: i.destination ?? null };
   const limits = () =>
@@ -353,6 +367,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         execute: async (input: Record<string, unknown>) => {
           const params = { ...input, ...boundOf(a) };
           if (confirmOpened || !i.onConfirm) return { ok: false, motivo: "uma_por_vez", instrucao: "Já há uma confirmação nesta resposta: espere a pessoa responder a ela." };
+          if (outOfStep(a)) return ROUTINE_ONLY;
           const c = await callerNow();
           if (!allowed(a, c)) return NOT_YET;
           const missing = paramsProblems(a.params_schema, params);
@@ -374,6 +389,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
       execute: async (input: Record<string, unknown>) => {
         // roteiro: o que o roteiro já conferiu vence o que a IA escreveu
         const params = { ...input, ...boundOf(a) };
+        if (outOfStep(a)) return ROUTINE_ONLY;
         const c = await callerNow();
         if (!allowed(a, c)) return NOT_YET;
         // obrigatório ausente ou vazio: o endpoint não é chamado; a IA pede o dado à pessoa

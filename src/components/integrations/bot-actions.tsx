@@ -88,6 +88,7 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
                   <span className="text-xs text-muted">
                     {needsConfirmation(a) ? "executa (com Confirmar)" : "consulta"}
                     {a.supports_preview ? " · aceita prévia" : ""} · {LEVEL_LABEL[a.min_level] ?? a.min_level}
+                    {a.routine_only ? " · só no roteiro" : ""}
                   </span>
                   {a.creates_order && a.type === "query" && <span className="text-xs text-amber-ink">parece criar pedido, reserva ou cobrança: pede o Confirmar do contato</span>}
                   <span className="ml-auto text-xs text-muted">{s ? `última chamada ${relativeTime(s.last!)} · erros ${pct(s.errors, s.total)} em 7 dias` : "sem chamadas em 7 dias"}</span>

@@ -85,7 +85,7 @@ export async function saveBotAction(botId: string, actionId: string | null, fd: 
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : "Não foi possível salvar. Tente de novo.");
   if (!data?.length) return fail("Ação não encontrada.");
   // os logs guardam só os nomes dos cabeçalhos, nunca os valores
-  await auditIntegration(c.ctx, actionId ? "acoes.editar" : "acoes.criar", { type: "bot", id: bot.id as string }, { name: input.name, url: input.url, tipo: input.type, previa: input.supports_preview, creates_order: createsOrder, ...(h.headers === undefined ? {} : { cabecalhos: h.headers ? Object.keys(h.headers) : [] }) });
+  await auditIntegration(c.ctx, actionId ? "acoes.editar" : "acoes.criar", { type: "bot", id: bot.id as string }, { name: input.name, url: input.url, tipo: input.type, previa: input.supports_preview, so_no_roteiro: input.routine_only, creates_order: createsOrder, ...(h.headers === undefined ? {} : { cabecalhos: h.headers ? Object.keys(h.headers) : [] }) });
   done(bot.id as string);
   return ok(actionSavedMessage(input.name, input, createsOrder));
 }

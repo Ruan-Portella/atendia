@@ -90,6 +90,7 @@ export default function ActionsDocs() {
           ["Contexto", "não exige, ou exige contexto assinado (a ação só aparece para a IA em conversas com ele)."],
           ["Cabeçalhos personalizados", <>Opcional, até 10, um por linha (<code key="h">Nome: valor</code>), por exemplo a chave que o seu gateway pede. Vão em toda chamada, guardados cifrados, e não aparecem de novo nem nos logs. Os de assinatura (<code key="w">webhook-*</code>), de transporte e o Content-Type são reservados.</>],
           ["Aceita prévia", <>Só para executa: marque se o endpoint, ao receber <code key="m">{`"mode": "preview"`}</code>, não cria nada e devolve o resumo (veja o Confirmar).</>],
+          ["Só no roteiro", "Marcada, a IA só usa a ação no passo de um roteiro ligado (desligar o roteiro tira a ação junto). Desmarcada, a IA usa a ação sempre que a conversa precisar."],
         ]}
       />
       <Note>

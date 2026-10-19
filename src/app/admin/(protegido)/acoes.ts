@@ -559,7 +559,7 @@ export async function saveAction(agencyId: string, botId: string, actionId: stri
   const row = { bot_id: botId, ...input, ...headersColumn(h.headers), creates_order: createsOrder, updated_at: new Date().toISOString() };
   const { error } = actionId ? await db.from("actions").update(row).eq("id", actionId).eq("bot_id", botId) : await db.from("actions").insert(row);
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe uma ação com esse nome neste chatbot." : `Não foi possível salvar: ${error.message}`);
-  await auditAdmin(s.email, actionId ? "acoes.editar" : "acoes.criar", { agencyId, targetType: "bot", targetId: botId, after: { name: input.name, url: input.url, tipo: input.type, previa: input.supports_preview, creates_order: createsOrder } });
+  await auditAdmin(s.email, actionId ? "acoes.editar" : "acoes.criar", { agencyId, targetType: "bot", targetId: botId, after: { name: input.name, url: input.url, tipo: input.type, previa: input.supports_preview, so_no_roteiro: input.routine_only, creates_order: createsOrder } });
   revalidatePath("/admin", "layout");
   return ok(actionSavedMessage(input.name, input, createsOrder));
 }

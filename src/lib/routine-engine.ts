@@ -502,6 +502,8 @@ export interface RoutineSession {
    * pessoa no meio da vez, e a próxima ação já sai com a conta).
    */
   upcoming(): string[];
+  /** As ações dos passos dos roteiros ligados e do aberto (as "Só no roteiro" só vão entre elas). */
+  stepActions(): string[];
   /** chamar_atendente: o roteiro acabou (o pedido de atendente encerra no banco). */
   stop(): void;
 }
@@ -673,6 +675,7 @@ export function routineSession(
       return step.type === "botoes" ? stepButtons(run.id, step) : null;
     },
     blocksOptions: () => Boolean(run && (run.heldResult || run.failing || currentStep(run).type === "botoes")),
+    stepActions: () => [...new Set([...available, ...(run ? [run.routine] : [])].flatMap((r) => r.steps.flatMap((x) => (x.type === "acao" ? [x.action] : []))))],
     upcoming: () => {
       if (!run || run.heldResult) return [];
       const step = currentStep(run);

@@ -855,7 +855,7 @@ export async function runChat(opts: {
     onFiles: (files) => void actionFiles.push(...files),
     confirmRound: Boolean(opts.confirmed),
     agencyId: bot.agency_id,
-    ...(routine ? { routine: { step: () => routine.actionStep(), onResult: (a, r, d) => routine.onActionResult(a, r, d), upcoming: () => routine.upcoming() } } : {}),
+    ...(routine ? { routine: { step: () => routine.actionStep(), onResult: (a, r, d) => routine.onActionResult(a, r, d), upcoming: () => routine.upcoming(), stepActions: () => routine.stepActions() } } : {}),
     ...(opts.identityPort ? { identityNow: () => opts.identityPort!.current() } : {}),
   });
   // roteiro: a ação do passo que não veio entre as ferramentas segue o destino de erro (antes do prompt)

@@ -28,6 +28,7 @@ import {
 } from "../routine-run";
 import { ROUTINE_CANCELLED_TEXT, applyConfirmedAction, cancelRoutineAction, deleteRoutineRunsOfConversations, endActiveRoutine, endRoutineRuns, routinePreTurn, routineSession, sweepRoutineTimeouts } from "../routine-engine";
 import type { RoutineRow, RoutineStep } from "../routines";
+import { offeredByRoutine } from "../action-tools";
 
 /* ------------------------------------------------------------------ validação e máscaras (puras) */
 
@@ -697,5 +698,28 @@ describe("roteiro na conversa: outro roteiro e o roteiro parado", () => {
     for (const msg of ["oi", "qual o horário?", "e o endereço?", "tem estacionamento?"]) await pre(db, [msg]);
     expect((await pre(db, ["obrigado"])).run).toBeNull();
     expect(runs(tables)[0]).toMatchObject({ status: "abandoned", end_reason: "idle" });
+  });
+});
+
+/* ------------------------------------------------------------------ ações "Só no roteiro" */
+
+describe("ação só no roteiro", () => {
+  it("vai para a IA só se um roteiro ligado tem um passo com ela; a ação comum vai sempre", () => {
+    const steps = new Set(["buscar_segunda_via"]);
+    expect(offeredByRoutine({ name: "buscar_segunda_via", routine_only: true }, steps)).toBe(true);
+    expect(offeredByRoutine({ name: "identificar_cliente", routine_only: true }, steps)).toBe(false);
+    expect(offeredByRoutine({ name: "identificar_cliente", routine_only: true }, new Set())).toBe(false);
+    expect(offeredByRoutine({ name: "ver_pizzas", routine_only: false }, new Set())).toBe(true);
+    expect(offeredByRoutine({ name: "ver_pizzas" }, new Set())).toBe(true);
+  });
+
+  it("as ações dos passos: dos roteiros ligados e do aberto; roteiro desligado fica de fora", async () => {
+    const segundaVia = routine({ id: "rot-3", name: "Segunda via", steps: [{ id: "segv0001", type: "acao", text: "Busque", action: "buscar_segunda_via", results: { ok: { to: "encerrar" }, nao_encontrado: { to: "atendente" }, erro: { to: "atendente" } } }] });
+    const desligado = routine({ id: "rot-4", name: "Fatura", active: false, keywords: ["fatura"], steps: [{ id: "fatu0001", type: "acao", text: "Busque", action: "buscar_fatura", results: { ok: { to: "encerrar" }, nao_encontrado: { to: "atendente" }, erro: { to: "atendente" } } }] });
+    const tables: Record<string, Row[]> = { routines: [routine(), segundaVia, desligado], conversations: [{ id: CONV }], messages: [], agency_packs: [{ agency_id: BOT.agency_id, pack: "integracoes", ends_at: null }] };
+    const db = fakeDb(tables);
+    const turn = await pre(db, ["oi"]);
+    const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn, texts: [], requestHandoff: async () => "" })!;
+    expect(s.stepActions()).toEqual(["buscar_segunda_via"]);
   });
 });

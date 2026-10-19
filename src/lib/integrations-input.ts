@@ -21,6 +21,7 @@ export interface ActionForm extends ActionInput {
   active: boolean;
   type: ActionType;
   supports_preview: boolean;
+  routine_only: boolean;
 }
 
 export function actionInputFromForm(fd: FormData): ActionForm | { error: string } {
@@ -45,6 +46,7 @@ export function actionInputFromForm(fd: FormData): ActionForm | { error: string 
     active: fd.get("active") === "on",
     type: fd.get("type") === "execute" ? "execute" : "query",
     supports_preview: fd.get("supports_preview") === "on",
+    routine_only: fd.get("routine_only") === "on",
   };
 }
 

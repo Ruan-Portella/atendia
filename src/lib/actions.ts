@@ -38,6 +38,8 @@ export interface ActionRow {
   outcomes: string[];
   params_schema: ParamsSchema;
   supports_preview: boolean;
+  /** Só no roteiro: a IA só recebe a ação no passo de um roteiro ligado (B2'). */
+  routine_only?: boolean;
   url: string;
   secret_enc: string | null;
   headers_enc: string | null;
@@ -89,6 +91,7 @@ export interface ActionInput {
   active?: boolean;
   type?: ActionType;
   supports_preview?: boolean;
+  routine_only?: boolean;
 }
 
 const SIMPLE = new Set(["string", "number", "integer", "boolean"]);

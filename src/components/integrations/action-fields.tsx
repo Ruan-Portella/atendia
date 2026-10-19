@@ -69,6 +69,13 @@ export function ActionFields({ action, a, label, savedHeaders = [] }: { action: 
         </div>
       </div>
       <HeaderFields id={p} saved={savedHeaders} />
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" name="routine_only" className="mt-1" defaultChecked={a?.routine_only ?? false} />
+        <span>
+          Só no roteiro
+          <span className="block text-xs text-muted">A IA só usa esta ação no passo de um roteiro ligado: desligar o roteiro tira a ação junto. Desmarcada, a IA usa a ação sempre que precisar.</span>
+        </span>
+      </label>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="active" defaultChecked={a ? a.active : true} /> Ativa
       </label>
