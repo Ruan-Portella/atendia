@@ -29,6 +29,7 @@ import {
   typedChoice,
   validateValue,
   variablesLine,
+  withoutValue,
   type EndReason,
   type NextStep,
   type RoutineClick,
@@ -574,14 +575,15 @@ export async function routinePreTurn(
     return { ...turn, run, note: run.failing ? null : "A pessoa ainda não mandou a foto. Se ela perguntou outra coisa, responda e peça a foto de novo (se ela não quiser mais, chame cancelar_roteiro)." };
   }
 
-  // 3. passo que pede um dado de formato fixo: o BoaVoz confere nas mensagens desta vez
+  // 3. passo que pede um dado de formato fixo: o BoaVoz confere nas mensagens desta vez (o resto da
+  // mensagem ainda preenche o passo seguinte: "CPF ..., CEP ..." anda os dois)
   if (consume && run) {
     const step = currentStep(run);
     if (step.type === "dado" && FIXED_KINDS.has(step.kind)) {
       const found = findValue(step.kind, i.texts);
       if (found && "value" in found) {
         run.variables = { ...run.variables, [step.variable]: { kind: step.kind, value: found.value } };
-        const moved = await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: [], waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"`, contact: true, identified });
+        const moved = await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: withoutValue(step.kind, i.texts, found.value), waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"`, contact: true, identified });
         if (moved.kind === "handoff") return { ...turn, fixed: { kind: "handoff", reason: moved.reason } };
         const ok = `${label(step.kind)} conferido: ${found.value}.`;
         if (moved.kind === "completed") return { ...turn, note: `${ok} O roteiro "${run.routine.name}" terminou: siga a conversa normalmente.` };
@@ -651,8 +653,8 @@ const runView = (run: ActiveRun) => ({ name: run.routine.name, steps: run.routin
 /** O roteiro espera a pessoa escolher a conta (parte 2c). */
 const heldPrompt = (name: string, note: string | null) =>
   [
-    `ROTEIRO EM ANDAMENTO: "${name}", esperando a pessoa escolher a conta.`,
-    "Os botões com as contas vão sozinhos: peça para ela escolher sobre qual conta é o atendimento, sem escrever a lista. Não siga para o próximo passo nem cite dados de nenhuma conta antes da escolha.",
+    `ROTEIRO EM ANDAMENTO: "${name}", esperando a pessoa escolher a conta. Ele já começou: não chame iniciar_roteiro para ele.`,
+    "Os botões com as contas vão sozinhos: peça para ela escolher sobre qual conta é o atendimento, sem escrever a lista e sem chamar mostrar_opcoes. Não siga para o próximo passo nem cite dados de nenhuma conta antes da escolha.",
     note ? `Nesta mensagem: ${note}` : "",
   ]
     .filter(Boolean)
@@ -698,7 +700,7 @@ export function routineSession(
 
   const tools: Record<string, Tool> = {
     iniciar_roteiro: tool({
-      description: `Começa um roteiro (os passos que a empresa definiu) quando a conversa entra no assunto dele. Roteiros: ${list}. Chame assim que reconhecer o assunto, antes de responder, e siga o passo que a ferramenta devolver. Com outro roteiro em andamento, chame só se a pessoa mudou para o assunto deste (o outro acaba).`,
+      description: `Começa um roteiro (os passos que a empresa definiu) quando a conversa entra no assunto dele. Roteiros: ${list}. Chame assim que reconhecer o assunto, antes de responder, e siga o passo que a ferramenta devolver. Não chame para o roteiro que já está em andamento. Com outro roteiro em andamento, chame só se a pessoa mudou para o assunto deste: o outro acaba sozinho (não chame cancelar_roteiro antes).`,
       inputSchema: z.object({ nome: z.enum(names).describe("o nome exato do roteiro") }),
       execute: async ({ nome }) => {
         const routine = available.find((r) => r.name === nome);
@@ -747,7 +749,7 @@ export function routineSession(
       },
     }),
     cancelar_roteiro: tool({
-      description: 'Roteiro em andamento: a pessoa quer parar ("esquece", "não quero mais", "cancela"). Encerra o roteiro.',
+      description: 'Roteiro em andamento: a pessoa quer parar ("esquece", "não quero mais", "cancela"). Encerra o roteiro. Se ela pediu outro assunto que tem roteiro, não chame: chame só iniciar_roteiro com ele (o atual acaba sozinho).',
       inputSchema: z.object({}),
       execute: async () => {
         if (!run) return noRun;
@@ -796,7 +798,7 @@ export function routineSession(
           return {
             ok: true,
             identificacao: "escolher_conta",
-            instrucao: `A pessoa foi identificada${applied.name ? ` (${applied.name})` : ""} e tem ${applied.accounts} contas. Peça para ela escolher sobre qual conta é o atendimento: os botões com as contas vão sozinhos (não escreva a lista). Não siga o roteiro nem cite dados de nenhuma conta antes da escolha.`,
+            instrucao: `A pessoa foi identificada${applied.name ? ` (${applied.name})` : ""} e tem ${applied.accounts} contas. Peça para ela escolher sobre qual conta é o atendimento: os botões com as contas vão sozinhos (não escreva a lista nem chame mostrar_opcoes). Não siga o roteiro nem cite dados de nenhuma conta antes da escolha.`,
           };
         }
         if (applied) lead = `${lead} A pessoa foi identificada${applied.name ? ` (${applied.name})` : ""}: as próximas consultas já vão com a conta dela.`;

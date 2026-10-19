@@ -16,6 +16,7 @@ import {
   brPhone,
   failButtons,
   findValue,
+  withoutValue,
   isCnpj,
   isCpf,
   keywordRoutine,
@@ -96,6 +97,9 @@ describe("roteiro na conversa: dados conferidos", () => {
     expect(findValue("telefone", ["pode ligar no (21) 99999-0000"])).toEqual({ value: "(21) 99999-0000" });
     // data e formato próprio vêm da IA (informar_dado)
     expect(findValue("data", ["15/03/2026"])).toBeNull();
+    // o valor conferido sai da mensagem; o resto vale para o passo seguinte
+    expect(withoutValue("cpf", ["cpf 111.444.777-35, cep 20040-002"], "111.444.777-35")).toEqual(["cpf  , cep 20040-002"]);
+    expect(withoutValue("data", ["15/03/2026"], "15/03/2026")).toEqual(["15/03/2026"]);
   });
 
   it("número de cartão sai antes de gravar; telefone e CPF ficam", () => {
@@ -154,7 +158,7 @@ describe("roteiro na conversa: botões, escolhas e caminho", () => {
       { name: "Segunda via", steps: [{ id: "passo001", type: "dado", text: "Peça o CPF", kind: "cpf", variable: "cpf", pattern: null, next: { to: "proximo" } }, botoes], stepId: "passo002", variables: { cpf: { kind: "cpf", value: "529.982.247-25" } }, failing: false },
       'A pessoa escolheu "Sim".',
     );
-    expect(p).toContain('ROTEIRO EM ANDAMENTO: "Segunda via", passo 2 de 2.');
+    expect(p).toContain('ROTEIRO EM ANDAMENTO: "Segunda via", passo 2 de 2. Ele já começou: não chame iniciar_roteiro para ele.');
     expect(p).toContain("Os botões (Sim, Não) vão sozinhos");
     // CPF como a pessoa mandou (decisão de 19/10/2026: a loja pode precisar dele para conferir a conta)
     expect(p).toContain("Dados já informados: cpf: 529.982.247-25.");
@@ -312,6 +316,21 @@ describe("roteiro na conversa: antes da IA", () => {
     expect(t2.run?.stepId).toBe("passo002");
     expect(t2.note).toBe("CPF conferido: 529.982.247-25.");
     expect(JSON.parse(String(runs(tables)[0].variables_enc))).toEqual({ cpf: { kind: "cpf", value: "529.982.247-25" } });
+  });
+
+  it("CPF e CEP na mesma mensagem: os dois passos andam, sem o mesmo número servir a um terceiro", async () => {
+    const steps: RoutineRow["steps"] = [
+      { id: "passo001", type: "dado", text: "Peça o CPF do titular", kind: "cpf", variable: "cpf", pattern: null, next: { to: "proximo" } },
+      { id: "passo002", type: "dado", text: "Peça o CEP da instalação", kind: "cep", variable: "cep", pattern: null, next: { to: "proximo" } },
+      { id: "passo003", type: "dado", text: "Peça o CPF de quem vai receber", kind: "cpf", variable: "cpf_recebe", pattern: null, next: { to: "proximo" } },
+      { id: "passo004", type: "instrucao", text: "Agradeça", next: { to: "proximo" } },
+    ];
+    const tables: Record<string, Row[]> = { routines: [routine({ steps })], conversations: [{ id: CONV }], messages: [] };
+    const db = fakeDb(tables);
+    await pre(db, ["2via"]);
+    const t = await pre(db, ["cpf 111.444.777-35, cep 20040-002"]);
+    expect(t.run?.stepId).toBe("passo003");
+    expect(JSON.parse(String(runs(tables)[0].variables_enc))).toEqual({ cpf: { kind: "cpf", value: "111.444.777-35" }, cep: { kind: "cep", value: "20040-002" } });
   });
 
   it("CPF errado conta tentativa; na terceira, botões de equipe e cancelar; Cancelar encerra sem a IA", async () => {

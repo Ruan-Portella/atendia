@@ -269,6 +269,17 @@ export function findValue(kind: DataKind, texts: string[]): { value: string } | 
   return invalid ? { invalid: true } : null;
 }
 
+/**
+ * As mensagens sem o valor que acabou de ser conferido: o resto ainda vale para o passo seguinte
+ * ("CPF 111.444.777-35, CEP 20040-002" anda os dois passos), sem o mesmo número servir duas vezes.
+ * Pura.
+ */
+export function withoutValue(kind: DataKind, texts: string[], value: string): string[] {
+  if (!FIXED_KINDS.has(kind)) return texts;
+  const re = CANDIDATES[kind as keyof typeof CANDIDATES];
+  return texts.map((t) => (t ?? "").replace(new RegExp(re.source, re.flags), (m) => (validateValue(kind, kind === "email" ? m.replace(/[.,;:!?)]+$/, "") : m) === value ? " " : m)));
+}
+
 /* ------------------------------------------------------------------ número de cartão */
 
 /** Lugar do número de cartão apagado (a IA lê isso e avisa a pessoa para não mandar cartão). */
@@ -479,15 +490,15 @@ export function variablesLine(vars: RoutineVariables): string {
 /** O que a IA faz no passo (também volta no resultado das ferramentas, quando o roteiro anda). Pura. */
 export function stepInstruction(step: RoutineStep, o: { failing?: boolean; waPhoneKnown?: boolean } = {}): string {
   if (o.failing && step.type === "dado")
-    return `Não deu para conferir o ${label(step.kind)} depois de ${MAX_ATTEMPTS} tentativas. Diga isso com gentileza e pergunte se a pessoa prefere falar com a equipe ou cancelar. Os botões (${FAIL_TEAM}, ${FAIL_CANCEL}) vão sozinhos com a sua mensagem: não escreva as opções.`;
+    return `Não deu para conferir o ${label(step.kind)} depois de ${MAX_ATTEMPTS} tentativas. Diga isso com gentileza e pergunte se a pessoa prefere falar com a equipe ou cancelar. Os botões (${FAIL_TEAM}, ${FAIL_CANCEL}) vão sozinhos com a sua mensagem: não escreva as opções nem chame mostrar_opcoes.`;
   if (o.failing && step.type === "foto")
-    return `Não deu para receber a foto pedida depois de ${MAX_ATTEMPTS} tentativas. Diga isso com gentileza e pergunte se a pessoa prefere falar com a equipe ou cancelar. Os botões (${FAIL_TEAM}, ${FAIL_CANCEL}) vão sozinhos com a sua mensagem: não escreva as opções.`;
+    return `Não deu para receber a foto pedida depois de ${MAX_ATTEMPTS} tentativas. Diga isso com gentileza e pergunte se a pessoa prefere falar com a equipe ou cancelar. Os botões (${FAIL_TEAM}, ${FAIL_CANCEL}) vão sozinhos com a sua mensagem: não escreva as opções nem chame mostrar_opcoes.`;
   switch (step.type) {
     case "instrucao":
       return `${step.text}\nQuando este passo estiver cumprido (se ele pede uma resposta da pessoa, só depois que ela respondeu), chame concluir_passo e siga o que a ferramenta devolver.`;
     case "dado":
       return FIXED_KINDS.has(step.kind)
-        ? `${step.text}\nO BoaVoz confere o ${label(step.kind)} quando a pessoa mandar: não confira você e não invente.`
+        ? `${step.text}\nO BoaVoz confere o ${label(step.kind)} quando a pessoa mandar e o roteiro anda sozinho: não confira você, não invente e não chame concluir_passo nem informar_dado.`
         : `${step.text}\nQuando a pessoa informar, chame informar_dado com o valor${step.kind === "data" ? " no formato dd/mm/aaaa" : " exatamente como ela escreveu"}.`;
     case "botoes":
       return `${step.text}\nOs botões (${step.options.map((x) => x.title).join(", ")}) vão sozinhos com a sua mensagem: escreva só a pergunta, sem listar as opções e sem chamar mostrar_opcoes.`;
@@ -514,11 +525,11 @@ export function routinePrompt(v: RunView, note: string | null): string {
   const i = v.steps.findIndex((s) => s.id === v.stepId);
   const step = v.steps[i];
   return [
-    `ROTEIRO EM ANDAMENTO: "${v.name}", passo ${i + 1} de ${v.steps.length}.`,
+    `ROTEIRO EM ANDAMENTO: "${v.name}", passo ${i + 1} de ${v.steps.length}. Ele já começou: não chame iniciar_roteiro para ele.`,
     `Passo atual (siga só este): ${stepInstruction(step, { failing: v.failing })}`,
     variablesLine(v.variables),
     note ? `Nesta mensagem: ${note}` : "",
-    'Regras: siga o passo atual com naturalidade, sem pular nem inventar passos. Se a pessoa perguntar outra coisa, responda e retome o passo só se ela ainda quiser isso. Se ela mudou de assunto e não quer mais, ou quiser parar, chame cancelar_roteiro (ofereça "cancelar", nunca "sair"). Se o assunto novo é de outro roteiro, chame iniciar_roteiro com ele. Se pedir uma pessoa da equipe, chame chamar_atendente.',
+    'Regras: siga o passo atual com naturalidade, sem pular nem inventar passos. Se a pessoa perguntar outra coisa, responda e retome o passo só se ela ainda quiser isso. Se ela mudou de assunto e não quer mais, ou quiser parar, chame cancelar_roteiro (ofereça "cancelar", nunca "sair"). Se o assunto novo é de outro roteiro, chame só iniciar_roteiro com ele (o atual acaba sozinho, sem cancelar_roteiro). Se pedir uma pessoa da equipe, chame chamar_atendente.',
   ]
     .filter(Boolean)
     .join("\n");
