@@ -17,7 +17,7 @@ export const LOGIN_CODE_TEXTS = {
   tooMany: "Muitas tentativas. Espere alguns minutos e tente de novo.",
   wait: "Espere um pouco antes de pedir outro código.",
   failed: "Não foi possível mandar o código agora. Tente de novo em instantes.",
-  invalidCode: "Digite o código de 6 números que chegou no e-mail.",
+  invalidCode: "Digite o código que chegou no e-mail (só os números).",
   wrongCode: "Código errado ou vencido. Confira o último e-mail ou peça outro código.",
 } as const;
 
@@ -105,7 +105,8 @@ export async function requestLoginCode(admin: SupabaseClient, i: { email: string
 
 /**
  * Confere o código no servidor, pela sessão do navegador (o cookie da sessão sai na resposta).
- * Limites: 8 tentativas por e-mail a cada 15 minutos e 40 por IP por hora (o código tem 6 números).
+ * Limites: 8 tentativas por e-mail a cada 15 minutos e 40 por IP por hora (o código tem de 6 a 10
+ * números, conforme o Supabase do ambiente; a dev usa 8).
  */
 export async function checkLoginCode(
   admin: SupabaseClient,

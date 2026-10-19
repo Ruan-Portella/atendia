@@ -133,7 +133,6 @@ export function AuthForm({ mode, emailEnabled }: { mode: "login" | "signup"; ema
               // colado com espaço ou hífen ("123 456"): fica só com os números
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               className="input text-center font-mono text-xl tracking-[0.3em]"
-              placeholder="000000"
             />
           </div>
           {msg && <Message msg={msg} />}
