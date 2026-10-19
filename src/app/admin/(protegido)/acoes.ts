@@ -20,7 +20,7 @@ import { apiKeyProblem, createApiKey, isApiPermission, revokeApiKey } from "@/li
 import { createIdentitySecret, revokeIdentitySecret, type IdentityScope } from "@/lib/identity";
 import { createWebhook, sendWebhookTest } from "@/lib/webhooks";
 import { syncSubscriptionSafe } from "@/lib/billing-sync";
-import { isBotSize } from "@/lib/plans";
+import { isBotSize, type BotSize } from "@/lib/plans";
 import { SIGNAL_KINDS, TEST_THRESHOLDS, THRESHOLDS, runContinuousChecks } from "@/lib/continuous-check";
 import { refreshReportDaily } from "@/lib/report-daily";
 import { cronsScheduledHere } from "@/lib/backoffice-ops";
@@ -31,6 +31,7 @@ import { canonicalPhone } from "@/lib/phone";
 import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
 import { classifyGainedAi } from "@/lib/gate/base";
+import { emitSizeChanged } from "@/lib/billing-events";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -112,6 +113,8 @@ export async function setBotSize(agencyId: string, botId: string, fd: FormData):
   await auditAdmin(s.email, "chatbot.tamanho", { agencyId, targetType: "bot", targetId: botId, after: { de: before, para: { size, volume_packs: packs, quota_override: override } } });
   // com IA a partir de agora: a base é classificada antes das próximas respostas
   classifyGainedAi(db, [{ id: botId, size, quota_override: override }]);
+  const prev = { size: isBotSize(before?.size) ? (before!.size as BotSize) : null, volumePacks: (before?.volume_packs as number | null) ?? null };
+  if (prev.size !== size || prev.volumePacks !== packs) await emitSizeChanged(db, botId, { status: "applied", size, volumePacks: packs, previous: prev, effectiveAt: new Date().toISOString() });
   // conta com assinatura: a próxima fatura acompanha (sem cobrança proporcional; sob medida fica fora)
   await syncSubscriptionSafe(db, agencyId);
   revalidatePath("/admin", "layout");

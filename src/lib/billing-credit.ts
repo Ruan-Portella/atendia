@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { creditEventData, emitCreditAlert } from "./billing-events";
 import { CREDIT_LOW_SHARE, CREDIT_MAX_BRL, CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, brlCents } from "./plans";
 import { monthBoundsBR } from "./billing";
 import { chargeNow } from "./billing-sync";
 import { notifyAgencyOwner } from "./notify";
-import { audit } from "./audit";
+import { audit, type AuditActor } from "./audit";
 import { appUrl } from "./utils";
 
 /*
@@ -117,7 +118,7 @@ export async function applyCredit(db: SupabaseClient, changeId: string, source: 
 export type PurchaseResult = { status: "paid"; balanceCents: number } | { status: "open"; url: string | null };
 
 /** Compra de crédito no cartão da assinatura: grava a compra, cobra na hora e põe o crédito se pagou. */
-export async function purchaseCredit(db: SupabaseClient, agency: { id: string; stripe_customer_id: string; stripe_subscription_id: string }, amountCents: number, source: "compra" | "recarga", createdBy: string | null): Promise<PurchaseResult> {
+export async function purchaseCredit(db: SupabaseClient, agency: { id: string; stripe_customer_id: string; stripe_subscription_id: string }, amountCents: number, source: "compra" | "recarga", createdBy: string | null, actor?: { type: AuditActor; id: string | null }): Promise<PurchaseResult> {
   const kind = source === "recarga" ? "recarga" : "credit";
   const { data: change, error } = await db.from("billing_changes").insert({ agency_id: agency.id, kind, target: { credito_centavos: amountCents }, amount_cents: amountCents, created_by: createdBy }).select("id").single();
   if (error || !change) throw new Error(error?.message ?? "compra não gravada");
@@ -126,7 +127,7 @@ export async function purchaseCredit(db: SupabaseClient, agency: { id: string; s
   if (r.invoiceId) await db.from("billing_changes").update({ stripe_ref: r.invoiceId }).eq("id", change.id);
   if (r.status === "open") return { status: "open", url: r.url };
   const balance = await applyCredit(db, change.id as string, source);
-  await audit(db, { agencyId: agency.id, actorType: createdBy ? "user" : "system", actorId: createdBy, action: source === "recarga" ? "credito.recarga" : "credito.comprar", targetType: "agency", targetId: agency.id, after: { valor_centavos: amountCents } });
+  await audit(db, { agencyId: agency.id, actorType: actor?.type ?? (createdBy ? "user" : "system"), actorId: actor?.id ?? createdBy, action: source === "recarga" ? "credito.recarga" : "credito.comprar", targetType: "agency", targetId: agency.id, after: { valor_centavos: amountCents } });
   return { status: "paid", balanceCents: balance ?? (await creditBalance(db, agency.id)) };
 }
 
@@ -173,13 +174,15 @@ export async function maybeAutoRecharge(db: SupabaseClient, agencyId: string): P
 /** Avisos depois de um desconto (saldo baixo ou acabou) e a recarga automática. Nunca lança. */
 export async function afterCreditUse(db: SupabaseClient, agencyId: string, leftCents: number): Promise<void> {
   try {
-    const { data: last } = await db.from("credit_lots").select("amount_cents").eq("agency_id", agencyId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: last } = await db.from("credit_lots").select("id, amount_cents").eq("agency_id", agencyId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     const alert = creditAlert(leftCents, Number(last?.amount_cents) || 0);
     const { data: a } = await db.from("agencies").select("credit_auto_enabled").eq("id", agencyId).maybeSingle();
     const autoOn = Boolean(a?.credit_auto_enabled);
     if (alert) {
       const [subject, lines] = creditEmail(alert, { balanceCents: leftCents, autoOn, creditUrl: appUrl("/painel/cobranca/credito") });
       await notifyAgencyOwner(db, agencyId, subject, lines);
+      // webhooks da conta: account.credit_low e account.credit_depleted
+      await emitCreditAlert(db, agencyId, alert, (last?.id as string | undefined) ?? null, creditEventData(leftCents, Number(last?.amount_cents) || 0, autoOn));
     }
     if (autoOn) await maybeAutoRecharge(db, agencyId);
   } catch (e) {

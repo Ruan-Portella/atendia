@@ -45,6 +45,8 @@ export interface ApiContext {
   key: Pick<ApiKeyRow, "id" | "agency_id" | "prefix" | "name">;
   /** Bots que a chave alcança agora (não demo, da agência da chave). */
   botIds: string[];
+  /** A chave vale para a conta inteira (o crédito e outros fatos da conta exigem isso). */
+  scopeAll: boolean;
   /** bot_ do corpo ou da query → uuid do bot, se estiver no escopo; senão 403 forbidden_scope. */
   requireBot(value: unknown): string;
   /** Corpo JSON (objeto), até 32 KB; senão 400 invalid_request. */
@@ -60,12 +62,13 @@ export function bearerKey(header: string | null): string | null {
 }
 
 /** Monta o contexto da rota a partir da chave já conferida. Função pura (exceto o db). */
-export function apiContext(db: SupabaseClient, key: ApiContext["key"], botIds: string[]): ApiContext {
+export function apiContext(db: SupabaseClient, key: ApiContext["key"], botIds: string[], scopeAll = false): ApiContext {
   const scope = new Set(botIds);
   return {
     db,
     key,
     botIds,
+    scopeAll,
     requireBot(value) {
       if (value === undefined || value === null || value === "") throw invalidRequest("bot_id é obrigatório nesta operação.", { field: "bot_id" });
       const m = typeof value === "string" ? BOT_ID.exec(value) : null;
@@ -157,7 +160,7 @@ export function withApiKey<P extends Record<string, string> = Record<string, nev
         void db.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", key.id).then(({ error }) => error && console.error("api: last_used_at", error.message));
       }
       const botIds = await scopeBotIds(db, key);
-      const ctx = apiContext(db, { id: key.id, agency_id: key.agency_id, prefix: key.prefix, name: key.name }, botIds);
+      const ctx = apiContext(db, { id: key.id, agency_id: key.agency_id, prefix: key.prefix, name: key.name }, botIds, key.scope_type === "all");
       return await handler(req, ctx, await route.params);
     } catch (e) {
       if (e instanceof ApiError) return apiErrorResponse(e.status, e.code, e.message, e.details, e.headers);

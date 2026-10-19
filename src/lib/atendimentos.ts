@@ -7,6 +7,7 @@ import { notifyAgencyOwner } from "./notify";
 import { appUrl, currentPeriodBR, monthStartBR } from "./utils";
 import { periodLabel, shiftPeriod } from "./report";
 import { OVERAGE_PRICE_CENTS, afterCreditUse, creditBalance } from "./billing-credit";
+import { emitOverageCapWarning, emitOverageChanged, emitOverageStarted, emitQuotaReached, emitQuotaWarning, type UsageSnapshot } from "./billing-events";
 
 export { ATENDIMENTO_DEFINITION, botQuota, overageAlertLevel, overageMax, quotaAlertLevel, quotaPhase, suggestSize } from "./quota";
 
@@ -28,7 +29,7 @@ export type AtendimentoBlock = "quota_exceeded";
 /** Chave do contato em hash (HMAC): ficha do contato no WhatsApp e no Instagram, visitor_id no widget. */
 export const contactKeyHash = (channel: AtendimentoChannel, key: string) => hmacHex(`atendimento:${channel}:${key}`);
 
-interface OpenRow {
+export interface OpenRow {
   status: "aberto" | "novo" | "excedente" | "cota" | "teto" | "sem_credito" | "suspenso" | "pico";
   atendimento_id: number | null;
   used: number | null;
@@ -85,7 +86,11 @@ export async function openAtendimento(
     return { blocked: null, isNew: false, id: null, overage: false };
   }
   if (STOPPED.has(row.status)) {
-    if (row.status === "pico") inBackground(() => notifySpike(db, bot).catch((e) => console.error("atendimento: aviso de pico", e)));
+    if (row.status === "pico") inBackground(() => notifySpike(db, bot, row).catch((e) => console.error("atendimento: aviso de pico", e)));
+    // crédito acabou: bot.quota_reached (um por dia e chatbot; o crédito pode voltar e acabar de novo)
+    if (row.status === "sem_credito") {
+      inBackground(async () => emitQuotaReached(db, bot.id, "sem_credito", await usageSnapshot(db, bot.id, row), new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" })).catch((e) => console.error("atendimento: webhook sem crédito", e)));
+    }
     return { blocked: "quota_exceeded", isNew: false, id: null, overage: false };
   }
   if (row.status === "novo" || row.status === "excedente") {
@@ -109,6 +114,20 @@ export async function requireAtendimento(...args: Parameters<typeof openAtendime
 
 const fmt = (n: number) => new Intl.NumberFormat("pt-BR").format(n);
 
+/** O uso do mês como os webhooks mandam, a partir da abertura do atendimento. Função pura. */
+export function snapshotOf(row: Pick<OpenRow, "used" | "quota" | "overage_on" | "overage_used" | "overage_max">, capBrl: number | null, period = currentPeriodBR()): UsageSnapshot {
+  return { month: period, used: row.used ?? 0, quota: row.quota ?? 0, overage: { enabled: Boolean(row.overage_on), used: row.overage_used ?? 0, capBrl, max: row.overage_max ?? null } };
+}
+
+async function usageSnapshot(db: SupabaseClient, botId: string, row: OpenRow): Promise<UsageSnapshot> {
+  const { data: b } = await db.from("bots").select("overage_cap_brl").eq("id", botId).maybeSingle();
+  return snapshotOf(row, b?.overage_cap_brl === null || b?.overage_cap_brl === undefined ? null : Number(b.overage_cap_brl));
+}
+
+/**
+ * Avisos da cota e do excedente, por e-mail ao dono e pelos webhooks (bot.quota_warning,
+ * bot.quota_reached, bot.overage_started e bot.overage_cap_warning).
+ */
 async function notifyQuotaLevel(db: SupabaseClient, bot: { id: string; agency_id: string }, row: OpenRow) {
   const month = periodLabel(currentPeriodBR());
   const usage = appUrl("/painel/cobranca/uso");
@@ -122,20 +141,34 @@ async function notifyQuotaLevel(db: SupabaseClient, bot: { id: string; agency_id
     if (level) {
       const b = await who();
       email = botQuotaEmail(level, b, row.used, row.quota, month, usage, row.overage_on ? { capBrl: b.cap || null, creditCents: await creditBalance(db, bot.agency_id) } : null);
+      const u = snapshotOf(row, b.cap || null);
+      // cota cheia: sem o excedente, o chatbot parou; com ele, o webhook sai no primeiro atendimento a mais
+      if (level !== 100) await emitQuotaWarning(db, bot.id, level, u);
+      else if (!row.overage_on) await emitQuotaReached(db, bot.id, "cota", u);
     }
-  } else if (row.status === "excedente" && row.overage_used !== null && row.overage_max !== null) {
-    const level = overageAlertLevel(row.overage_used, row.overage_max);
-    if (level) {
+  } else if (row.status === "excedente" && row.overage_used !== null) {
+    const level = row.overage_max !== null ? overageAlertLevel(row.overage_used, row.overage_max) : null;
+    if (level || row.overage_used === 1) {
       const b = await who();
-      email = botOverageEmail(level, b, row.overage_used, b.cap, month, usage);
+      const u = snapshotOf(row, b.cap || null);
+      if (row.overage_used === 1) await emitOverageStarted(db, bot.id, u);
+      if (level) {
+        email = botOverageEmail(level, b, row.overage_used, b.cap, month, usage);
+        if (level === "teto") await emitQuotaReached(db, bot.id, "teto", u);
+        else await emitOverageCapWarning(db, bot.id, level, u);
+      }
     }
   }
   if (email) await notifyAgencyOwner(db, bot.agency_id, email[0], email[1]);
 }
 
-/** Pico no chat do site: o excedente do chatbot ficou suspenso até o dono confirmar. */
-async function notifySpike(db: SupabaseClient, bot: { id: string; agency_id: string }) {
-  const { data: b } = await db.from("bots").select("name, client_name").eq("id", bot.id).maybeSingle();
+/** Pico no chat do site: o excedente do chatbot ficou suspenso até o dono confirmar (e-mail e webhooks). */
+async function notifySpike(db: SupabaseClient, bot: { id: string; agency_id: string }, row: OpenRow) {
+  const { data: b } = await db.from("bots").select("name, client_name, overage_cap_brl").eq("id", bot.id).maybeSingle();
+  const capBrl = b?.overage_cap_brl === null || b?.overage_cap_brl === undefined ? null : Number(b.overage_cap_brl);
+  const at = new Date().toISOString();
+  await emitOverageChanged(db, bot.id, { enabled: true, capBrl, suspended: "pico" }, at);
+  await emitQuotaReached(db, bot.id, "excedente_suspenso", snapshotOf(row, capBrl), at);
   const [subject, lines] = spikeEmail({ name: (b?.name as string | undefined) ?? "Chatbot", clientName: (b?.client_name as string | undefined) ?? null }, appUrl("/painel/cobranca/uso"));
   await notifyAgencyOwner(db, bot.agency_id, subject, lines);
 }

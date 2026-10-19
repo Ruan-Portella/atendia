@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "550613ba-6863-52fd-81eb-9e687798e482",
     "name": "BoaVoz API v1",
-    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).",
+    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).\n- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -3018,6 +3018,405 @@
           ]
         }
       ]
+    },
+    {
+      "name": "10. Cobrança",
+      "description": "Uso, tamanho e excedente do chatbot e o crédito da conta. Precisam de uma chave com a permissão **billing** (só o dono da conta cria); o crédito pede também o escopo da conta inteira. Trocar para um tamanho maior e comprar crédito COBRAM no cartão da assinatura (na dev, o cartão de teste da Stripe).",
+      "item": [
+        {
+          "name": "Uso do chatbot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/usage",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "usage"
+              ]
+            },
+            "description": "Tamanho, cota, uso do mês, projeção, média dos meses anteriores, tamanho sugerido, troca agendada e excedente. Guarda o tamanho em `bot_size`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const u = pm.response.json();",
+                  "  pm.test(\"uso do mês\", () => { pm.expect(u).to.have.property(\"quota\"); pm.expect(u).to.have.property(\"used\"); pm.expect(u.overage).to.have.property(\"enabled\"); });",
+                  "  pm.environment.set(\"bot_size\", u.size === null ? \"\" : u.size);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Excedente ligado com teto",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}"
+              ]
+            },
+            "description": "Liga o excedente com teto de R$ 50 no mês (142 atendimentos a mais, a R$ 0,35). Só chatbot com tamanho de IA; nos outros, 422 overage_not_available. Sai o webhook bot.overage_changed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overage\": {\n    \"enabled\": true,\n    \"cap_brl\": 50\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"excedente ligado com teto de 50\", () => { const o = pm.response.json().overage; pm.expect(o.enabled).to.eql(true); pm.expect(o.cap_brl).to.eql(50); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Excedente desligado",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}"
+              ]
+            },
+            "description": "Desliga o excedente (o teto fica guardado: sem cap_brl, ele não muda).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overage\": {\n    \"enabled\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"excedente desligado\", () => pm.expect(pm.response.json().overage.enabled).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mesmo tamanho (nada muda)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}"
+              ]
+            },
+            "description": "Manda o tamanho atual (guardado por \"Uso do chatbot\"): `size_change.status` volta `unchanged` e nada é cobrado. Para subir de verdade, troque por um tamanho maior: cobra a diferença proporcional até o dia 1º no cartão da assinatura (402 payment_required com a fatura, se o cartão recusar). Descer fica agendado para o dia 1º (status scheduled); mandar o tamanho atual de novo cancela o agendado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"size\": \"{{bot_size}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"nada mudou\", () => pm.expect(pm.response.json().size_change.status).to.eql(\"unchanged\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trocar tamanho sem Idempotency-Key",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}"
+              ]
+            },
+            "description": "Trocar o tamanho pode cobrar: a Idempotency-Key é obrigatória.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"size\": \"G\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta o cabeçalho\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"Idempotency-Key\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tamanho que não existe",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"size\": \"XL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta o size\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"size\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crédito da conta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/credit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "credit"
+              ]
+            },
+            "description": "Saldo, lotes que ainda valem e a recarga automática. Pede chave com escopo da conta inteira (senão, 403 forbidden_scope)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"saldo\", () => pm.expect(pm.response.json()).to.have.property(\"balance_brl\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Comprar R$ 50 de crédito (cobra)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/credit/purchases",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "credit",
+                "purchases"
+              ]
+            },
+            "description": "COBRA R$ 50 no cartão da assinatura (na dev, o de teste da Stripe). 201 com o saldo novo; 402 payment_required com a fatura, se o cartão recusar. O crédito vale 12 meses e não é reembolsável.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount_brl\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 402\", () => pm.expect([201, 402]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201) pm.test(\"comprado\", () => pm.expect(pm.response.json().status).to.eql(\"paid\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Compra abaixo do mínimo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/credit/purchases",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "credit",
+                "purchases"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount_brl\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta o valor\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"amount_brl\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
@@ -3133,6 +3532,11 @@
     },
     {
       "key": "pairing_link",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bot_size",
       "value": "",
       "type": "string"
     }

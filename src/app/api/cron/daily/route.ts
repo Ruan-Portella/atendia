@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { disconnectUnsized } from "@/lib/free-account";
 import { releaseDomainsWithoutPack } from "@/lib/domain-pack";
+import { emitMonthClosed } from "@/lib/month-close";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
 import { applyRetention, refreshSources } from "@/lib/jobs";
@@ -97,6 +98,8 @@ async function daily() {
   const inbox = await run("chatbots sem tamanho", () => disconnectUnsized(db));
   // domínio próprio sem o pacote sai (o webhook da Stripe já faz na virada; aqui, o que sobrou)
   const domains = await run("domínio sem pacote", () => releaseDomainsWithoutPack(db));
+  // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
+  const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

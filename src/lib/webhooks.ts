@@ -3,7 +3,7 @@ import { NEEDS_INTEGRATIONS, hasPack } from "./entitlements";
 import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { seal, unseal } from "./secret-box";
-import { openField, sealField, scopeOfBot } from "./field-cipher";
+import { PLATFORM_SCOPE, openField, sealField, scopeOfBot } from "./field-cipher";
 import { newActionSecret, signatureHeader } from "./actions";
 import { safePost } from "./safe-fetch";
 import { sendableHeaders } from "./custom-headers";
@@ -44,6 +44,15 @@ export const WEBHOOK_EVENTS = [
   "bot.paused",
   "bot.resumed",
   "compliance.changed",
+  "bot.quota_warning",
+  "bot.overage_started",
+  "bot.overage_cap_warning",
+  "bot.quota_reached",
+  "bot.size_changed",
+  "bot.overage_changed",
+  "bot.month_closed",
+  "account.credit_low",
+  "account.credit_depleted",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -55,7 +64,11 @@ export const WEBHOOK_EVENT_GROUPS: Array<{ label: string; events: WebhookEvent[]
   { label: "Campanhas", events: ["campaign.finished"] },
   { label: "Canais", events: ["channel.connected", "channel.disconnected", "channel.issue", "template.status_changed", "bot.paused", "bot.resumed"] },
   { label: "Conformidade", events: ["compliance.changed"] },
+  { label: "Cota e crédito", events: ["bot.quota_warning", "bot.overage_started", "bot.overage_cap_warning", "bot.quota_reached", "bot.size_changed", "bot.overage_changed", "bot.month_closed", "account.credit_low", "account.credit_depleted"] },
 ];
+
+/** Fatos da conta (crédito): sem chatbot no envelope, só para os webhooks da conta inteira. */
+export const ACCOUNT_EVENTS: readonly WebhookEvent[] = ["account.credit_low", "account.credit_depleted"];
 
 /** Desmarcados por padrão no editor: até 2 eventos por mensagem enviada. */
 export const HIGH_VOLUME_EVENTS: readonly WebhookEvent[] = ["message.status"];
@@ -261,6 +274,34 @@ export async function emitEvent(
   };
   if (o.background) inBackground(run);
   else await run();
+}
+
+/**
+ * Fato da conta (crédito): envelope sem chatbot, cliente, conversa nem contato, para os webhooks
+ * ativos da conta inteira (escopo "all") que assinam o tipo. Cifrado com a chave da plataforma
+ * (não tem conteúdo de cliente). Nada aqui derruba quem chamou.
+ */
+export async function emitAccountEvent(db: SupabaseClient, agencyId: string, e: { type: WebhookEvent; key: string; createdAt?: string; data: Record<string, unknown> }): Promise<void> {
+  try {
+    if (!(await hasPack(db, agencyId, "integracoes"))) return;
+    const { data: hooks } = await db.from("webhooks").select(WEBHOOK_COLS).eq("agency_id", agencyId).eq("active", true);
+    const targets = ((hooks ?? []) as WebhookRow[]).filter((w) => w.events.includes(e.type) && w.scope_type === "all");
+    if (!targets.length) return;
+    const id = eventId(e.type, e.key);
+    const envelope = { id, type: e.type, created_at: e.createdAt ?? new Date().toISOString(), bot: null, client: null, conversation: null, contact: null, data: e.data };
+    const payload_enc = await sealField("webhook_deliveries.payload_enc", JSON.stringify(envelope), PLATFORM_SCOPE);
+    const created: Array<{ d: DeliveryRow; w: WebhookRow }> = [];
+    for (const w of targets) {
+      const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc }).select("id, webhook_id, event_id, payload_enc, attempts").maybeSingle<DeliveryRow>();
+      if (error && !/duplicate|unique/i.test(error.message)) console.error("webhook: entrega não registrada", error.message);
+      if (d && !w.failing_since) created.push({ d, w });
+    }
+    inBackground(async () => {
+      for (const { d, w } of created) await attempt(db, d, w).catch((err) => console.error("webhook: tentativa", (err as Error).message));
+    });
+  } catch (err) {
+    console.error(`webhook: evento ${e.type} não registrado`, (err as Error).message);
+  }
 }
 
 /** Mensagem desfeita: as entregas dela (entregues ou pendentes) saem antes do message.deleted. */

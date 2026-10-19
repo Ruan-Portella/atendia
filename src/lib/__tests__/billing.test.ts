@@ -135,7 +135,7 @@ describe("webhook da Stripe", () => {
     const change = { id: "chg", agency_id: "ag", status, target: { bots: [{ id: "a", size: "P", volumePacks: null }, { id: "b", size: null, volumePacks: null }], packs: ["dominio"] } };
     const db = {
       from: (t: string) => ({
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: change, error: null }) }) }),
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: change, error: null }) }), in: async () => ({ data: [], error: null }) }),
         insert: async (row: unknown) => (inserts.push([t, row]), { error: null }),
       }),
       rpc: async (fn: string, args: Record<string, unknown>) => (rpc.push([fn, args]), { data: true, error: null }),

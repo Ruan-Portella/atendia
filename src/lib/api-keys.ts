@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * cria outra. Nos pilotos (P1, P2) quem cria é a equipe BoaVoz, no backoffice.
  */
 
-export const API_PERMISSIONS = ["messages", "conversations", "contacts", "pairing", "campaigns", "sources", "provisioning", "members"] as const;
+export const API_PERMISSIONS = ["messages", "conversations", "contacts", "pairing", "campaigns", "sources", "provisioning", "members", "billing"] as const;
 export type ApiPermission = (typeof API_PERMISSIONS)[number];
 export const isApiPermission = (v: string): v is ApiPermission => (API_PERMISSIONS as readonly string[]).includes(v);
 
@@ -23,6 +23,7 @@ export const PERMISSION_LABEL: Record<ApiPermission, string> = {
   sources: "fontes da base",
   provisioning: "provisionamento (clientes, bots, links de conexão)",
   members: "equipe do portal",
+  billing: "cobrança (uso, tamanho, excedente e crédito; pode cobrar no cartão da assinatura)",
 };
 
 export type ApiKeyScope = { type: "bots"; botIds: string[] } | { type: "client"; clientId: string } | { type: "all" };

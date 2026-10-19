@@ -153,6 +153,8 @@ export async function createAgencyApiKey(fd: FormData): Promise<ActionResult> {
   const name = text(fd.get("name"));
   const problem = apiKeyProblem({ name, scope, permissions });
   if (problem) return fail(problem);
+  // a permissão de cobrança pode cobrar no cartão da assinatura: só quem mexe na cobrança cria
+  if (permissions.includes("billing") && !can(c.ctx.role, "billing")) return fail("Só o dono da conta cria chave com a permissão de cobrança.");
   const created = await createApiKey(c.db, { agencyId: c.ctx.agency.id, name, scope, permissions: permissions.filter(isApiPermission) as ApiPermission[], createdBy: c.ctx.email });
   await auditIntegration(c.ctx, "api.chave.criar", { type: "api_key", id: created.id }, { name, prefix: created.prefix, escopo: scope, permissoes: permissions });
   done();

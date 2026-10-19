@@ -82,7 +82,7 @@ export default function WebhooksDocs() {
           [<code key="i">id</code>, <>Id do evento (<code>evt_…</code>). Sai do próprio fato: a nova tentativa e o reenvio trazem o mesmo id. Use para não processar duas vezes.</>],
           [<code key="t">type</code>, "O evento (tabela abaixo)."],
           [<code key="c">created_at</code>, "Quando o fato aconteceu. A ordem de chegada não é garantida (novas tentativas chegam depois): use este campo para ordenar."],
-          [<code key="b">bot</code>, "O chatbot, com o nome."],
+          [<code key="b">bot</code>, <>O chatbot, com o nome; null nos eventos da conta (<code>account.*</code>).</>],
           [<code key="cl">client</code>, "O cliente (o negócio) do chatbot, ou null."],
           [<code key="cv">conversation</code>, "A conversa e o canal, ou null nos eventos sem conversa."],
           [<code key="ct">contact</code>, <>Quem é: ids do canal (<code>phone</code>, <code>whatsapp_user_id</code>, <code>instagram_id</code>) e o nome, nunca o conteúdo da conversa. null nos eventos sem contato.</>],
@@ -140,6 +140,28 @@ export default function WebhooksDocs() {
           [<code key="8">compliance.changed</code>, "Mudou a situação do cliente nas regras de uso.", <><code>compliance</code> {`{status, previous_status, restrictions, …}`}.</>],
         ]}
       />
+      <H3 id="cobranca">Cota, excedente e crédito</H3>
+      <p>
+        Todos trazem o uso do mês no <code>data</code>: <code>month</code>, <code>used</code> (dentro da cota), <code>quota</code> e <code>overage</code> {`{enabled, used, cap_brl, max, value_brl}`}. Cada aviso sai uma vez por mês e chatbot.
+      </p>
+      <Table
+        head={["Evento", "Quando", "data"]}
+        rows={[
+          [<code key="1">bot.quota_warning</code>, "O chatbot chegou a 80% ou 95% da cota do mês.", <><code>level</code> (80 ou 95) e o uso.</>],
+          [<code key="2">bot.overage_started</code>, "O primeiro atendimento a mais do mês: a cota acabou com o excedente ligado.", "O uso."],
+          [<code key="3">bot.overage_cap_warning</code>, "O excedente chegou a 80% ou 95% do teto (só quando há teto).", <><code>level</code> e o uso.</>],
+          [<code key="4">bot.quota_reached</code>, "O chatbot parou de abrir atendimentos com a IA (modo só humano) até o mês virar ou alguém agir.", <><code>reason</code>: <code>cota</code> (cheia, sem excedente), <code>teto</code>, <code>sem_credito</code> ou <code>excedente_suspenso</code> (pico no chat do site); e o uso.</>],
+          [<code key="5">bot.size_changed</code>, "O tamanho mudou, foi agendado para o dia 1º ou o agendado saiu.", <><code>status</code> (<code>applied</code>, <code>scheduled</code>, <code>cancelled</code>), <code>size</code>, <code>volume_packs</code>, <code>previous</code> e <code>effective_at</code>.</>],
+          [<code key="6">bot.overage_changed</code>, "O excedente foi ligado, desligado, mudou de teto, ficou suspenso (pico ou ataque) ou voltou.", <><code>enabled</code>, <code>cap_brl</code> e <code>suspended</code> (<code>pico</code>, <code>ataque</code> ou null).</>],
+          [<code key="7">bot.month_closed</code>, "Nos primeiros dias do mês, o fechamento do mês anterior de cada chatbot com tamanho ou atendimento.", <><code>month</code>, <code>size</code> e <code>quota</code> que valeram, <code>atendimentos</code>, <code>overage_atendimentos</code>, <code>overage_value_brl</code> e <code>next</code> (o tamanho de agora).</>],
+          [<code key="8">account.credit_low</code>, "O crédito da conta ficou abaixo de 20% da última compra.", <><code>balance_brl</code>, <code>last_purchase_brl</code>, <code>low_threshold_brl</code> e <code>auto_recharge</code>.</>],
+          [<code key="9">account.credit_depleted</code>, "O crédito não paga o próximo atendimento a mais.", "Os mesmos campos."],
+        ]}
+      />
+      <Note title="Eventos da conta">
+        <code>account.credit_low</code> e <code>account.credit_depleted</code> são da conta, não de um chatbot: vêm com <code>bot</code> null e só para os webhooks com escopo de toda a conta.
+      </Note>
+
       <Note title="Aceite do negócio">
         No WhatsApp e no Instagram, os eventos com conteúdo de conversa ou de contato (mensagens, lead, atendimento e consentimento) só saem depois que o negócio aceita os termos de uso daquele canal, na conexão. Os de campanha, canal, modelo, pausa e conformidade saem sempre.
       </Note>

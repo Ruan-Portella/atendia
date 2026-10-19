@@ -500,6 +500,73 @@ erros = folder(
     ],
 )
 
+SAVE_USAGE = [
+    "if (pm.response.code === 200) {",
+    "  const u = pm.response.json();",
+    "  pm.test(\"uso do mês\", () => { pm.expect(u).to.have.property(\"quota\"); pm.expect(u).to.have.property(\"used\"); pm.expect(u.overage).to.have.property(\"enabled\"); });",
+    "  pm.environment.set(\"bot_size\", u.size === null ? \"\" : u.size);",
+    "}",
+]
+
+cobranca = folder(
+    "10. Cobrança",
+    "Uso, tamanho e excedente do chatbot e o crédito da conta. Precisam de uma chave com a permissão **billing** (só o dono da conta cria); o crédito pede também o escopo da conta inteira. Trocar para um tamanho maior e comprar crédito COBRAM no cartão da assinatura (na dev, o cartão de teste da Stripe).",
+    [
+        req("Uso do chatbot", "GET", f"bots/{BOT}/usage", desc="Tamanho, cota, uso do mês, projeção, média dos meses anteriores, tamanho sugerido, troca agendada e excedente. Guarda o tamanho em `bot_size`.", tests=expect_status(200) + SAVE_USAGE),
+        req(
+            "Excedente ligado com teto",
+            "PATCH",
+            f"bots/{BOT}",
+            body={"overage": {"enabled": True, "cap_brl": 50}},
+            desc="Liga o excedente com teto de R$ 50 no mês (142 atendimentos a mais, a R$ 0,35). Só chatbot com tamanho de IA; nos outros, 422 overage_not_available. Sai o webhook bot.overage_changed.",
+            tests=expect_status(200) + ['pm.test("excedente ligado com teto de 50", () => { const o = pm.response.json().overage; pm.expect(o.enabled).to.eql(true); pm.expect(o.cap_brl).to.eql(50); });'],
+        ),
+        req(
+            "Excedente desligado",
+            "PATCH",
+            f"bots/{BOT}",
+            body={"overage": {"enabled": False}},
+            desc="Desliga o excedente (o teto fica guardado: sem cap_brl, ele não muda).",
+            tests=expect_status(200) + ['pm.test("excedente desligado", () => pm.expect(pm.response.json().overage.enabled).to.eql(false));'],
+        ),
+        req(
+            "Mesmo tamanho (nada muda)",
+            "PATCH",
+            f"bots/{BOT}",
+            body={"size": "{{bot_size}}"},
+            headers={"Idempotency-Key": "{{$guid}}"},
+            desc="Manda o tamanho atual (guardado por \"Uso do chatbot\"): `size_change.status` volta `unchanged` e nada é cobrado. Para subir de verdade, troque por um tamanho maior: cobra a diferença proporcional até o dia 1º no cartão da assinatura (402 payment_required com a fatura, se o cartão recusar). Descer fica agendado para o dia 1º (status scheduled); mandar o tamanho atual de novo cancela o agendado.",
+            tests=expect_status(200) + ['pm.test("nada mudou", () => pm.expect(pm.response.json().size_change.status).to.eql("unchanged"));'],
+        ),
+        req(
+            "Trocar tamanho sem Idempotency-Key",
+            "PATCH",
+            f"bots/{BOT}",
+            body={"size": "G"},
+            desc="Trocar o tamanho pode cobrar: a Idempotency-Key é obrigatória.",
+            tests=expect_error(400, "invalid_request") + ['pm.test("aponta o cabeçalho", () => pm.expect(pm.response.json().error.details.field).to.eql("Idempotency-Key"));'],
+        ),
+        req(
+            "Tamanho que não existe",
+            "PATCH",
+            f"bots/{BOT}",
+            body={"size": "XL"},
+            headers={"Idempotency-Key": "{{$guid}}"},
+            tests=expect_error(400, "invalid_request") + ['pm.test("aponta o size", () => pm.expect(pm.response.json().error.details.field).to.eql("size"));'],
+        ),
+        req("Crédito da conta", "GET", "credit", desc="Saldo, lotes que ainda valem e a recarga automática. Pede chave com escopo da conta inteira (senão, 403 forbidden_scope).", tests=expect_status(200) + ['pm.test("saldo", () => pm.expect(pm.response.json()).to.have.property("balance_brl"));']),
+        req(
+            "Comprar R$ 50 de crédito (cobra)",
+            "POST",
+            "credit/purchases",
+            body={"amount_brl": 50},
+            desc="COBRA R$ 50 no cartão da assinatura (na dev, o de teste da Stripe). 201 com o saldo novo; 402 payment_required com a fatura, se o cartão recusar. O crédito vale 12 meses e não é reembolsável.",
+            tests=expect_status(201, 402) + ['if (pm.response.code === 201) pm.test("comprado", () => pm.expect(pm.response.json().status).to.eql("paid"));'],
+        ),
+        req("Compra abaixo do mínimo", "POST", "credit/purchases", body={"amount_brl": 10}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o valor", () => pm.expect(pm.response.json().error.details.field).to.eql("amount_brl"));']),
+    ],
+)
+
 collection = {
     "info": {
         "_postman_id": str(uuid.uuid5(uuid.NAMESPACE_URL, "boavoz-api-v1")),
@@ -514,6 +581,7 @@ collection = {
                 "- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.",
                 "- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.",
                 "- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).",
+                "- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.",
             ]
         ),
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
@@ -541,7 +609,7 @@ collection = {
             ),
         },
     ],
-    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas, componentes],
+    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas, componentes, cobranca],
 }
 
 # Só o que é de cada pessoa fica no ambiente (importado uma vez e preenchido no Postman, nunca no Git).
@@ -583,6 +651,7 @@ env = {
         {"key": "media_id", "value": "", "type": "default", "enabled": True},
         {"key": "pairing_code", "value": "", "type": "default", "enabled": True},
         {"key": "pairing_link", "value": "", "type": "default", "enabled": True},
+        {"key": "bot_size", "value": "", "type": "default", "enabled": True},
     ],
     "_postman_variable_scope": "environment",
 }

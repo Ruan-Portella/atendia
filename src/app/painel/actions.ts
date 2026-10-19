@@ -50,6 +50,7 @@ import { confirmAcceptance, connectBlockFor, dayLabel, getCompliance, parseAnswe
 import { notifyAgencyOwner, notifyClientPeople, notifyPlatform } from "@/lib/notify";
 import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retentionReduced } from "@/lib/retention";
 import { audit, requestMeta } from "@/lib/audit";
+import { BillingOpError, setOverage } from "@/lib/billing-ops";
 import { channelMsgHash } from "@/lib/hash";
 import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
 import { carryWhatsAppPreferences, consentHistory, consentStateOf, recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
@@ -363,13 +364,15 @@ export async function setBotOverage(botId: string, formData: FormData): Promise<
   const cap = typed ? parseCapBrl(typed) : null;
   if (typed && cap === null) return fail(`O teto do mês vai de ${brlCents(OVERAGE_CAP_MIN_BRL)} a ${brlCents(OVERAGE_CAP_MAX_BRL)}. Deixe vazio para não ter teto.`);
   const supabase = await createClient();
-  const { data: bot } = await supabase.from("bots").select("id, overage_enabled, overage_cap_brl").eq("id", botId).eq("is_demo", false).maybeSingle();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).eq("is_demo", false).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
-  const before = { overage_enabled: Boolean(bot.overage_enabled), overage_cap_brl: bot.overage_cap_brl === null ? null : Number(bot.overage_cap_brl) };
-  const after = { overage_enabled: enabled, overage_cap_brl: cap };
-  const { error } = await createAdminClient().from("bots").update(after).eq("id", botId).eq("agency_id", ctx.agency.id);
-  if (error) return fail("Não foi possível salvar. Tente de novo.");
-  await auditPanel("chatbot.excedente", { type: "bot", id: botId }, { before, after });
+  // a regra (só chatbot com IA tem excedente), a auditoria e o webhook ficam em billing-ops, como na API
+  try {
+    await setOverage(createAdminClient(), ctx.agency.id, botId, { enabled, capBrl: cap }, { type: "user", id: ctx.userId, meta: await requestMeta() });
+  } catch (e) {
+    if (e instanceof BillingOpError) return fail(e.message);
+    throw e;
+  }
   revalidatePath("/painel", "layout");
   if (!enabled) return ok("Excedente desligado: com a cota cheia, o chatbot entra no modo só humano.");
   const noCredit = (await creditBalance(createAdminClient(), ctx.agency.id)) < OVERAGE_PRICE_CENTS ? " A conta ainda não tem crédito: compre em Cobrança → Crédito." : "";

@@ -7,13 +7,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgency, type AgencyContext } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { choiceLabel, monthBoundsBR, packChargeCents, packsRemovedWith, parseTarget, planSizeChange, renewalLabel, targetMonthlyCents, type BillingTarget } from "@/lib/billing";
-import { applyUpgrade, chargeNow, syncSubscriptionSafe, voidPendingUpgrades } from "@/lib/billing-sync";
+import { choiceLabel, monthBoundsBR, packChargeCents, packsRemovedWith, parseTarget, renewalLabel, targetMonthlyCents, type BillingTarget } from "@/lib/billing";
+import { syncSubscriptionSafe, voidPendingUpgrades } from "@/lib/billing-sync";
+import { BillingOpError, changeSize, chargeUpgrade, type BillingActor, type SizeChange, type SubscribedAccount } from "@/lib/billing-ops";
 import { parseAutoRecharge, parseCreditBrl, purchaseCredit } from "@/lib/billing-credit";
 import { billingEnabled, catalogPrices, checkoutTiming, ensureStripeCustomer, stripe, subscriptionItems } from "@/lib/stripe";
 import { unpaidInvoices } from "@/lib/billing-view";
-import { PACKS, brlCents, isBotSize, isPackId, type BotSize } from "@/lib/plans";
-import { botQuota } from "@/lib/quota";
+import { emitOverageChanged } from "@/lib/billing-events";
+import { PACKS, brlCents, isPackId } from "@/lib/plans";
 import { audit, requestMeta } from "@/lib/audit";
 import { appUrl } from "@/lib/utils";
 
@@ -102,84 +103,65 @@ async function subscribed(): Promise<{ ctx: AgencyContext; customer: string; sub
   return { ctx, customer: agency.stripe_customer_id, subscription: agency.stripe_subscription_id };
 }
 
+/** A conta da sessão no formato das operações de cobrança. */
+const accountOf = (s: { ctx: AgencyContext; customer: string; subscription: string }): SubscribedAccount => ({ id: s.ctx.agency.id, billing_status: s.ctx.agency.billing_status, stripe_customer_id: s.customer, stripe_subscription_id: s.subscription });
+const actorOf = async (ctx: AgencyContext): Promise<BillingActor> => ({ type: "user", id: ctx.userId, meta: await requestMeta() });
+
 async function auditBilling(ctx: AgencyContext, action: string, target: { type: string; id: string }, change: { before?: Record<string, unknown>; after?: Record<string, unknown> }) {
   await audit(createAdminClient(), { agencyId: ctx.agency.id, actorType: "user", actorId: ctx.userId, action, targetType: target.type, targetId: target.id, ...change, ...(await requestMeta()) });
 }
 
 /**
- * Troca o tamanho de um chatbot numa conta com assinatura: subir cobra agora a diferença
- * proporcional (e a cota do mês sobe junto); descer ou tirar fica para o dia 1º; voltar ao tamanho
- * atual cancela a troca agendada. Cartão recusado: abre a fatura na Stripe para pagar.
+ * Troca o tamanho de um chatbot numa conta com assinatura (a regra fica em billing-ops, a mesma da
+ * API): subir cobra agora a diferença proporcional; descer ou tirar fica para o dia 1º; voltar ao
+ * tamanho atual cancela a troca agendada. Cartão recusado: abre a fatura na Stripe para pagar.
  */
 export async function changeBotSize(botId: string, fd: FormData): Promise<ActionResult> {
   const s = await subscribed();
   if ("error" in s) return fail(s.error);
   const { ctx } = s;
-  const db = createAdminClient();
-  await db.rpc("apply_due_bot_changes", { p_agency_id: ctx.agency.id });
-  // a sessão confere o escopo de quem está logado; a leitura completa vem pela service role
-  const { data: visible } = await (await createClient()).from("bots").select("id").eq("id", botId).maybeSingle();
-  const { data: bot } = await db.from("bots").select("id, name, size, volume_packs, quota_override, pending_size, pending_volume_packs, prorated_month, prorated_quota").eq("id", botId).eq("agency_id", ctx.agency.id).eq("is_demo", false).maybeSingle();
-  if (!visible || !bot) return fail("Chatbot não encontrado.");
-  if (bot.quota_override !== null) return fail("Este chatbot tem cota sob medida: o tamanho dele é combinado com a BoaVoz.");
+  // a sessão confere o escopo de quem está logado; a troca roda pela service role
+  const { data: visible } = await (await createClient()).from("bots").select("id, name").eq("id", botId).maybeSingle();
+  if (!visible) return fail("Chatbot não encontrado.");
   const parsed = parseTarget(fd, [botId]);
   if ("error" in parsed) return fail(parsed.error);
   const next = parsed.bots[0];
-  const size = isBotSize(bot.size) ? (bot.size as BotSize) : null;
-  const current = {
-    size,
-    volumePacks: (bot.volume_packs as number | null) ?? null,
-    monthQuota: botQuota({ size, volume_packs: bot.volume_packs as number | null, prorated_month: bot.prorated_month as string | null, prorated_quota: bot.prorated_quota as number | null }),
-    pendingSize: bot.pending_size === "none" ? ("none" as const) : isBotSize(bot.pending_size) ? (bot.pending_size as BotSize) : null,
-    pendingVolumePacks: (bot.pending_volume_packs as number | null) ?? null,
-  };
-  const plan = planSizeChange(current, next);
   const renewal = renewalLabel();
-  const before = { size: current.size, volume_packs: current.volumePacks, pending_size: current.pendingSize };
-  const done = (message: string) => {
-    revalidatePath("/painel", "layout");
-    return ok(message);
-  };
-
-  if (plan.kind === "same") return ok("Nada mudou.");
-  if (plan.kind === "already_scheduled") return ok(`Essa troca já está agendada para ${renewal}.`);
-  if (await voidPendingUpgrades(db, ctx.agency.id, (t) => t.bots.some((b) => b.id === botId))) return done(PAID_MEANWHILE);
-
-  if (plan.kind === "cancel_pending" || plan.kind === "downgrade") {
-    const pending =
-      plan.kind === "cancel_pending"
-        ? { pending_size: null, pending_volume_packs: null, pending_from: null }
-        : { pending_size: next.size ?? "none", pending_volume_packs: next.size === "volume" ? next.volumePacks : null, pending_from: monthBoundsBR().end.toISOString() };
-    const { error } = await db.from("bots").update(pending).eq("id", botId).eq("agency_id", ctx.agency.id);
-    if (error) return fail("Não foi possível salvar. Tente de novo.");
-    await syncSubscriptionSafe(db, ctx.agency.id);
-    await auditBilling(ctx, "assinatura.trocar", { type: "bot", id: botId }, { before, after: { agendado: plan.kind === "downgrade" ? choiceLabel(next) : null, a_partir_de: pending.pending_from } });
-    return done(
-      plan.kind === "cancel_pending"
-        ? `Troca agendada cancelada: ${bot.name} segue ${choiceLabel(current)}.`
-        : next.size
-          ? `${bot.name} fica ${choiceLabel(next)} a partir de ${renewal}. Até lá, segue ${choiceLabel(current)}, com a cota de agora.`
-          : `${bot.name} fica sem tamanho a partir de ${renewal}: nesse dia, o WhatsApp e o Instagram dele desconectam. Até lá, segue ${choiceLabel(current)}, com a cota de agora.`,
+  const name = visible.name as string;
+  let r: SizeChange;
+  try {
+    r = await changeSize(createAdminClient(), accountOf(s), botId, next, await actorOf(ctx));
+  } catch (e) {
+    if (e instanceof BillingOpError) return fail(e.message);
+    console.error("cobrança: troca de tamanho", e);
+    return fail("Não foi possível cobrar agora. Tente de novo em instantes.");
+  }
+  if (r.status === "unchanged") return ok("Nada mudou.");
+  if (r.status === "already_scheduled") return ok(`Essa troca já está agendada para ${renewal}.`);
+  revalidatePath("/painel", "layout");
+  if (r.status === "paid_meanwhile") return ok(PAID_MEANWHILE);
+  if (r.status === "cancelled") return ok(`Troca agendada cancelada: ${name} segue ${choiceLabel(r)}.`);
+  if (r.status === "scheduled") {
+    return ok(
+      r.size
+        ? `${name} fica ${choiceLabel(r)} a partir de ${renewal}. Até lá, segue com o tamanho e a cota de agora.`
+        : `${name} fica sem tamanho a partir de ${renewal}: nesse dia, o WhatsApp e o Instagram dele desconectam. Até lá, segue com o tamanho e a cota de agora.`,
     );
   }
-
-  if (ctx.agency.billing_status === "past_due") return fail(PAST_DUE);
-  const description = `${bot.name}: ${choiceLabel(current)} para ${choiceLabel(next)}, proporcional até ${renewal}`;
-  return chargeAndApply(ctx, s, { bots: [next], packs: [] }, plan.amountCents, description, `${bot.name} já está ${choiceLabel(next)}`);
+  if (r.status === "applied") {
+    return ok(r.deferred ? `Pronto: ${name} já está ${choiceLabel(r)}. A diferença (${brlCents(r.amountCents / 100)}) vem na fatura de ${renewal}.` : `Pronto: ${name} já está ${choiceLabel(r)}. Cobramos ${brlCents(r.amountCents / 100)} agora, proporcional até ${renewal}.`);
+  }
+  if (!r.url) return fail("O cartão não foi cobrado. Atualize o cartão em Pagamento e faturas e tente de novo.");
+  // cartão recusado ou pedindo autenticação: paga na página da Stripe; vale quando ela confirmar
+  redirect(r.url);
 }
 
-/** Cobra a subida (tamanho ou pacote) e aplica se pagou; cartão recusado abre a fatura na Stripe. */
+/** Cobra a subida de um pacote e aplica se pagou; cartão recusado abre a fatura na Stripe. */
 async function chargeAndApply(ctx: AgencyContext, s: { customer: string; subscription: string }, target: BillingTarget, amountCents: number, description: string, doneText: string): Promise<ActionResult> {
-  const db = createAdminClient();
   let url: string | null = null;
   try {
-    const { data: change, error } = await db.from("billing_changes").insert({ agency_id: ctx.agency.id, kind: "upgrade", target, amount_cents: amountCents, created_by: ctx.userId }).select("id").single();
-    if (error || !change) throw new Error(error?.message ?? "compra não gravada");
-    const r = await chargeNow({ stripe_customer_id: s.customer, stripe_subscription_id: s.subscription }, { changeId: change.id as string, agencyId: ctx.agency.id, amountCents, description });
-    if (r.invoiceId) await db.from("billing_changes").update({ stripe_ref: r.invoiceId }).eq("id", change.id);
-    await auditBilling(ctx, "assinatura.subir_pedido", { type: "agency", id: ctx.agency.id }, { after: { descricao: description, valor_centavos: amountCents, situacao: r.status } });
+    const r = await chargeUpgrade(createAdminClient(), accountOf({ ctx, ...s }), target, amountCents, description, await actorOf(ctx));
     if (r.status !== "open") {
-      await applyUpgrade(db, change.id as string);
       revalidatePath("/painel", "layout");
       return ok(
         r.status === "paid"
@@ -297,6 +279,8 @@ export async function resolveSpike(botId: string, verdict: "real" | "ataque"): P
   const { error } = await db.from("bots").update(change).eq("id", botId).eq("agency_id", ctx.agency.id).not("overage_suspended_reason", "is", null);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   await auditBilling(ctx, verdict === "real" ? "excedente.trafego_real" : "excedente.ataque", { type: "bot", id: botId }, { after: change });
+  const { data: b } = await db.from("bots").select("overage_enabled, overage_cap_brl").eq("id", botId).maybeSingle();
+  await emitOverageChanged(db, botId, { enabled: Boolean(b?.overage_enabled), capBrl: b?.overage_cap_brl === null || b?.overage_cap_brl === undefined ? null : Number(b.overage_cap_brl), suspended: verdict === "real" ? null : "ataque" });
   revalidatePath("/painel", "layout");
   return ok(verdict === "real" ? "Excedente de volta. Nos próximos 7 dias, um pico não suspende de novo." : `Marcado como ataque: o excedente desse chatbot fica suspenso até ${renewalLabel()}.`);
 }

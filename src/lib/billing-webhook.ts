@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { appliedBotRow, type BillingTarget } from "./billing";
+import { appliedBotRow, monthBoundsBR, type BillingTarget } from "./billing";
 import { audit } from "./audit";
 import { applyUpgrade, syncSubscriptionSafe, voidPendingUpgrades } from "./billing-sync";
 import { applyCredit } from "./billing-credit";
@@ -8,6 +8,8 @@ import { endApiPauses } from "./api-pause";
 import { classifyGainedAi } from "./gate/base";
 import { disconnectUnsized } from "./free-account";
 import { releaseDomainsWithoutPack } from "./domain-pack";
+import { emitSizeChanged } from "./billing-events";
+import { isBotSize, type BotSize } from "./plans";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl } from "./utils";
 
@@ -39,10 +41,18 @@ export async function applyCheckout(db: SupabaseClient, changeId: string, subscr
   const { data: change } = must(await db.from("billing_changes").select("id, agency_id, target, status").eq("id", changeId).maybeSingle());
   if (!change || change.status !== "pending") return false;
   const target = change.target as BillingTarget;
+  const { data: before } = must(await db.from("bots").select("id, size, volume_packs").in("id", target.bots.map((b) => b.id)));
   const { data: applied } = must(
     await db.rpc("apply_billing_change", { p_change_id: changeId, p_bots: target.bots.map((b) => appliedBotRow(b, now)), p_packs: target.packs, p_replace_packs: true, p_subscription_id: subscriptionId }),
   );
   if (applied) {
+    // bot.size_changed de quem mudou de tamanho com a assinatura
+    const prev = new Map((before ?? []).map((b) => [b.id as string, { size: isBotSize(b.size) ? (b.size as BotSize) : null, volumePacks: (b.volume_packs as number | null) ?? null }]));
+    for (const b of target.bots) {
+      const p = prev.get(b.id) ?? { size: null, volumePacks: null };
+      const volumePacks = b.size === "volume" ? b.volumePacks : null;
+      if (p.size !== b.size || p.volumePacks !== volumePacks) await emitSizeChanged(db, b.id, { status: "applied", size: b.size, volumePacks, previous: p, effectiveAt: now.toISOString() });
+    }
     // chatbots com IA a partir de agora: a base é classificada antes das próximas respostas
     classifyGainedAi(db, target.bots);
     await audit(db, {
@@ -77,12 +87,19 @@ export async function endSubscription(db: SupabaseClient, customer: string): Pro
   const { data: agencies } = must(await db.from("agencies").update({ billing_status: "none", stripe_subscription_id: null, billing_cancel_at: null }).eq("stripe_customer_id", customer).select("id"));
   for (const a of agencies ?? []) {
     const id = a.id as string;
+    // o retrato do mês para o bot.month_closed (o tamanho que valeu até aqui) e o aviso de cada tamanho que sai
+    const { data: sized } = must(await db.from("bots").select("id, size, volume_packs, prorated_month, prorated_quota").eq("agency_id", id).not("size", "is", null));
+    const closing = monthBoundsBR(new Date(Date.now() - 5 * 60_000)).firstDay;
+    if (sized?.length) await db.from("bot_month_close").upsert(sized.map((b) => ({ bot_id: b.id, month: closing, size: b.size, volume_packs: b.volume_packs, prorated_month: b.prorated_month, prorated_quota: b.prorated_quota })), { onConflict: "bot_id,month" });
     // subida ainda não paga não vale mais (a fatura avulsa é anulada): só a da assinatura fica devida
     await voidPendingUpgrades(db, id, () => true).catch((e) => console.error("assinatura: subidas pendentes", (e as Error).message));
     must(await db.from("bots").update({ size: null, volume_packs: null, pending_size: null, pending_volume_packs: null, pending_from: null, prorated_month: null, prorated_quota: null }).eq("agency_id", id));
     must(await db.from("agency_packs").delete().eq("agency_id", id));
     // sem o Integrações, as pausas que a API fez nas conversas acabam
     await endApiPauses(db, id).catch((e) => console.error("assinatura: pausas da API", (e as Error).message));
+    for (const b of sized ?? []) {
+      await emitSizeChanged(db, b.id as string, { status: "applied", size: null, volumePacks: null, previous: { size: isBotSize(b.size) ? (b.size as BotSize) : null, volumePacks: (b.volume_packs as number | null) ?? null }, effectiveAt: new Date().toISOString() });
+    }
     // sem tamanho, sem canal: o WhatsApp e o Instagram desconectam na hora (a tarefa diária pega o que falhar)
     await disconnectUnsized(db, { agencyId: id }).catch((e) => console.error("assinatura: canais sem tamanho", (e as Error).message));
     // sem o pacote, o domínio próprio sai

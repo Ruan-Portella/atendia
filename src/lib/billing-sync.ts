@@ -7,6 +7,7 @@ import { catalogPrices, stripe } from "./stripe";
 import { audit } from "./audit";
 import { currentPeriodBR } from "./utils";
 import { classifyGainedAi } from "./gate/base";
+import { emitSizeChanged } from "./billing-events";
 
 /*
  * Mudanças numa conta com assinatura (revisão de preços, parte 4b). A assinatura da Stripe
@@ -140,10 +141,12 @@ export async function applyUpgrade(db: SupabaseClient, changeId: string, now = n
   const agencyId = change.agency_id as string;
   const target = change.target as BillingTarget;
   const rows: Array<Record<string, unknown>> = [];
+  const previous = new Map<string, { size: BotSize | null; volumePacks: number | null }>();
   for (const b of target.bots) {
     const { data: bot } = must(await db.from("bots").select("id, size, volume_packs, quota_override, prorated_month, prorated_quota").eq("id", b.id).eq("agency_id", agencyId).maybeSingle());
     if (!bot) continue;
     const size = isBotSize(bot.size) ? (bot.size as BotSize) : null;
+    previous.set(b.id, { size, volumePacks: (bot.volume_packs as number | null) ?? null });
     const monthQuota = botQuota({ size, volume_packs: bot.volume_packs as number | null, prorated_month: bot.prorated_month as string | null, prorated_quota: bot.prorated_quota as number | null }, currentPeriodBR(now));
     const plan = planSizeChange({ size, volumePacks: (bot.volume_packs as number | null) ?? null, monthQuota, pendingSize: null, pendingVolumePacks: null }, b, now);
     rows.push({ id: b.id, size: b.size, volume_packs: b.size === "volume" ? b.volumePacks : null, prorated_month: monthBoundsBR(now).firstDay, prorated_quota: plan.kind === "upgrade" ? plan.monthQuota : monthQuota });
@@ -152,6 +155,11 @@ export async function applyUpgrade(db: SupabaseClient, changeId: string, now = n
   if (!applied) return false;
   // chatbots com IA a partir de agora: a base é classificada antes das próximas respostas
   classifyGainedAi(db, target.bots);
+  const at = now.toISOString();
+  for (const b of target.bots) {
+    const before = previous.get(b.id);
+    if (before) await emitSizeChanged(db, b.id, { status: "applied", size: b.size, volumePacks: b.size === "volume" ? b.volumePacks : null, previous: before, effectiveAt: at });
+  }
   await audit(db, { agencyId, actorType: "system", actorId: null, action: "assinatura.subir", targetType: "agency", targetId: agencyId, after: { chatbots: target.bots.map((b) => ({ id: b.id, tamanho: b.size, pacotes: b.volumePacks })), pacotes: target.packs } });
   await syncSubscriptionSafe(db, agencyId);
   return true;

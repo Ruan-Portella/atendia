@@ -82,6 +82,39 @@ POST /v1/pairings
 `;
 
 /** Referência da API pública /api/v1 (spec Peças 3, 4, 7 e "Formatos de payload"). */
+const USAGE = `
+GET /v1/bots/bot_8c1e…/usage
+
+{
+  "bot_id": "bot_8c1e…",
+  "month": "2026-10",
+  "size": "M",
+  "volume_packs": null,
+  "custom_quota": null,
+  "quota": 340,
+  "used": 340,
+  "status": "excedente",
+  "projection": 410,
+  "average_3_months": 352,
+  "suggested_size": { "size": "G", "volume_packs": null, "monthly_brl": 199, "saving_brl": 2.5 },
+  "scheduled": null,
+  "overage": { "enabled": true, "cap_brl": 100, "used": 12, "max": 285, "value_brl": 4.2, "suspended": null }
+}
+`;
+
+const PATCH_BOT = `
+PATCH /v1/bots/bot_8c1e…
+Idempotency-Key: troca-bar-do-ze-2026-10-19
+
+{ "size": "G", "overage": { "enabled": true, "cap_brl": 150 } }
+
+→ 200: o uso (como acima) e a troca
+  "size_change": { "status": "applied", "size": "G", "volume_packs": null, "charged_brl": 32.26, "next_invoice_brl": 0 }
+
+→ 402 payment_required: o cartão recusou; details.invoice_url é a fatura para pagar
+  (o tamanho novo vale quando ela for paga)
+`;
+
 export default function ApiDocs() {
   return (
     <DocPage
@@ -112,6 +145,7 @@ export default function ApiDocs() {
           [<code key="ct">contacts</code>, "Contatos, leads, etiquetas, idade e o pedido de exclusão do titular."],
           [<code key="cp">campaigns</code>, "Campanhas e lembretes, e registrar o aceite de novidades."],
           [<code key="p">pairing</code>, "Pareamento: ligar o contato à conta dele no seu sistema."],
+          [<code key="b">billing</code>, "Uso, tamanho e excedente de cada chatbot, e o crédito da conta. Pode cobrar no cartão da assinatura: só o dono da conta cria chave com ela."],
         ]}
       />
       <Note>Dê a cada integração só as permissões e o escopo de que ela precisa, e nunca use a chave no navegador ou num app: ela vale para tudo o que o escopo alcança.</Note>
@@ -129,7 +163,7 @@ export default function ApiDocs() {
           <strong>Paginação:</strong> <code>limit</code> de 1 a 100 (padrão 50) e <code>cursor</code> = o <code>next_cursor</code> da resposta anterior (null na última página).
         </li>
         <li>
-          <strong>Idempotency-Key</strong> (opcional nos envios, obrigatória em campanhas): vale 24 horas por chave de API. A mesma chave com o mesmo corpo devolve a resposta guardada, sem fazer de novo; com outro corpo, 409 <code>idempotency_conflict</code>. Erro de validação, 429 e 5xx não ficam guardados: dá para repetir com a mesma chave.
+          <strong>Idempotency-Key</strong> (opcional nos envios; obrigatória em campanhas, na troca de tamanho e na compra de crédito): vale 24 horas por chave de API. A mesma chave com o mesmo corpo devolve a resposta guardada, sem fazer de novo; com outro corpo, 409 <code>idempotency_conflict</code>. Erro de validação, 429 e 5xx não ficam guardados: dá para repetir com a mesma chave.
         </li>
       </ul>
       <H3 id="contato">Endereço do contato</H3>
@@ -151,12 +185,14 @@ export default function ApiDocs() {
         rows={[
           ["400", <code key="1">invalid_request</code>, <>Campo com problema; <code>details.field</code> aponta qual.</>],
           ["401", <code key="2">invalid_api_key</code>, "Chave ausente, inválida ou revogada."],
-          ["403", <code key="3">forbidden_scope</code>, "A chave não tem a permissão da rota."],
+          ["402", <><code>payment_required</code>, <code>payment_overdue</code></>, <>O cartão da assinatura recusou a cobrança (<code>details.invoice_url</code> é a fatura para pagar; vale quando ela for paga), ou o último pagamento da assinatura está em aberto.</>],
+          ["403", <code key="3">forbidden_scope</code>, "A chave não tem a permissão da rota (ou, no crédito, não vale para a conta inteira)."],
           ["403", <><code>plan_not_allowed</code>, <code>feature_suspended</code></>, "A conta não tem o pacote do recurso (a API e a identificação são do pacote Integrações), ou ele está suspenso na conta."],
           ["404", <code key="5">not_found</code>, "Não existe ou está fora do escopo da chave."],
-          ["409", <code key="6">idempotency_conflict</code>, "Idempotency-Key repetida com outro corpo (ou a primeira ainda está em andamento)."],
+          ["409", <><code>idempotency_conflict</code>, <code>conflict</code></>, "Idempotency-Key repetida com outro corpo (ou a primeira ainda está em andamento); ou uma subida anterior do chatbot acabou de ser paga (confira e mande de novo)."],
           ["410", <code key="7">media_gone</code>, "O arquivo passou do prazo de guarda ou foi apagado."],
           ["422", <><code>outside_messaging_window</code>, <code>channel_not_connected</code>, <code>bot_paused</code>, <code>bot_without_size</code>, <code>contact_suppressed</code>, <code>contact_opted_out</code>, <code>no_marketing_consent</code>, <code>template_category_mismatch</code>, <code>empty_audience</code>, <code>channel_rejected</code></>, "Regra do canal ou do contato: o BoaVoz confere antes de chamar a Meta e diz o motivo."],
+          ["422", <><code>subscription_required</code>, <code>custom_quota</code>, <code>overage_not_available</code></>, "Cobrança: a conta ainda não tem assinatura (a primeira é feita no painel), o chatbot tem cota sob medida combinada com a BoaVoz, ou o excedente pedido num chatbot sem tamanho de IA."],
           ["422", <code key="9">prohibited_content</code>, <>O portão barrou o texto ou um título (a API nunca edita). <code>details</code> traz o motivo, os trechos e o canal.</>],
           ["429", <code key="10">rate_limited</code>, <>Limite da chave ou do número; espere o <code>Retry-After</code>.</>],
         ]}
@@ -226,6 +262,25 @@ export default function ApiDocs() {
         <code>kind</code> <code>marketing</code>: <code>audience</code> por etiquetas, contatos ou ids externos; só recebe quem aceitou novidades (e, com bebida ou remédio, quem confirmou 18 anos). <code>kind</code> <code>utility_reminder</code>: <code>sends</code> com contato, horário e variáveis de cada um. Quem pediu para sair é pulado; o envio confere tudo de novo, como no painel.
       </p>
       <Code lang="http" code={CAMPAIGN} />
+
+      <H2 id="cobranca">Cobrança: uso, tamanho, excedente e crédito</H2>
+      <Table
+        head={["Rota", "Permissão", "O que faz"]}
+        rows={[
+          [<code key="1">GET /v1/bots/{"{id}"}/usage</code>, "billing", "Tamanho, cota e uso do mês, projeção, média dos meses anteriores (com atendimento), tamanho sugerido, troca agendada e o excedente."],
+          [<code key="2">PATCH /v1/bots/{"{id}"}</code>, "billing", <>Troca o tamanho (<code>size</code>: <code>atendimento</code>, <code>P</code>, <code>M</code>, <code>G</code>, <code>volume</code> com <code>volume_packs</code>, ou null) e o excedente (<code>overage</code> {`{enabled, cap_brl}`}; sem <code>cap_brl</code>, o teto fica como está). Com <code>size</code>, Idempotency-Key obrigatória.</>],
+          [<code key="3">GET /v1/credit</code>, "billing, conta inteira", "Saldo, os lotes que ainda valem (do que vence antes) e a recarga automática."],
+          [<code key="4">POST /v1/credit/purchases</code>, "billing, conta inteira", <>Compra crédito (<code>amount_brl</code>, de 50 a 50.000 reais inteiros) no cartão da assinatura. Idempotency-Key obrigatória. 201 com o saldo; 402 com a fatura se o cartão recusar.</>],
+        ]}
+      />
+      <p>
+        A regra é a mesma do painel. Subir de tamanho vale na hora e cobra a diferença proporcional até o dia 1º no cartão da assinatura (abaixo de R$ 1, ela vai para a fatura do dia 1º); descer ou tirar o tamanho fica agendado para o dia 1º (<code>size_change.status</code> <code>scheduled</code>), e mandar o tamanho atual cancela o agendado. A primeira assinatura é feita no painel. O crédito é da conta: as rotas dele pedem uma chave com escopo da conta inteira.
+      </p>
+      <Code lang="http" code={USAGE} />
+      <Code lang="http" code={PATCH_BOT} />
+      <p>
+        Numa plataforma, o restaurante liga o excedente no painel dela, ela liga pela API e cobra o restaurante como quiser a partir do <Link href="/docs/webhooks#cobranca">fechamento do mês</Link> (<code>bot.month_closed</code>). O BoaVoz nunca cobra o restaurante: o crédito é da conta da plataforma.
+      </p>
 
       <H2 id="pareamento">Pareamento</H2>
       <Table
