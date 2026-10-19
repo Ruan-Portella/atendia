@@ -26,7 +26,7 @@ import type { OutboundKind } from "../outbound-file";
 import { INTERNAL_FALLBACK, stripInternal } from "../internal-guard";
 import { CATEGORIES, GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
-import { routinePreTurn } from "../routine-engine";
+import { applyConfirmedAction, cancelRoutineAction, routinePreTurn } from "../routine-engine";
 
 /*
  * Portão nos canais da Meta (WhatsApp e Instagram), entre a fila e a IA: resposta da pergunta de
@@ -195,10 +195,17 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const sendFiles = (files: ActionFile[]) => deliverActionFiles(db, files, { bot, conversationId: convId, channel, destination: destinationOf(), sendFile: io.sendFile, sendText: (t) => io.send(t) });
   const click = await resolveConfirmClick(db, { bot, conversationId: convId, buttonId: q.button ?? null, text: q.text, alone: q.alone !== false, key: q.key, caller: callerNow });
   let confirmed: Parameters<typeof runChat>[0]["confirmed"];
+  // roteiro (B2'): o Confirmar de uma ação do passo anda o roteiro pelo resultado; o Cancelar encerra
+  let routineNote: string | null = null;
+  let routineHandoff: string | null = null;
   if (click.kind !== "none") {
     await storeOnce(db, convId, q.text, q.key, q.photos);
-    if (click.kind === "fixed") return void (await sendFixed(click.text, undefined, click.component ?? null));
+    if (click.kind === "fixed") {
+      if (click.canceledActionId) await cancelRoutineAction(db, convId, click.canceledActionId);
+      return void (await sendFixed(click.text, undefined, click.component ?? null));
+    }
     if (click.kind === "handoff") return void (await sendFixed(await requestHandoff(db, bot, convId, "Pedido sem confirmação: o contato pediu para falar com alguém")));
+    ({ note: routineNote, handoff: routineHandoff } = await applyConfirmedAction(db, { conversationId: convId, action: click.action.name, status: click.call.status, outcome: click.call.outcome ?? null, declared: click.action.outcomes, waPhone }));
     const [age, exempt] = await Promise.all([getAge(db, who), botGateExemptions(db, bot.id)]);
     const clickRegulatedAt = click.caller.regulatedAt ?? null;
     const shaped = await shapeActionResult(db, { bot, conversationId: convId, gateChannel: channel, waPhone, age, exempt, destination: destinationOf(), regulatedAt: clickRegulatedAt }, click.call, { execute: true });
@@ -213,6 +220,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
       const out = disclosure ? `${disclosure}\n\n${text}` : text;
       const sentReply = await deliver(db, { botId: bot.id, channel, conversationId: convId, kind: "ia", record: { insert: { role: "assistant", content: out, author: null, announce_chars: disclosure ? disclosure.length + 2 : null, ...(buttons ? { components: buttons } : {}) } }, transport: () => io.send(out, undefined, buttons) });
       if (sentReply.status === "sent") await sendFiles(shaped.files);
+      // o roteiro manda para a equipe depois desta ação: o aviso vai logo depois do reply
+      if (routineHandoff) await sendFixed(await requestHandoff(db, bot, convId, routineHandoff));
       return;
     }
     // sem reply: a IA escreve a partir do resultado (o clique já está gravado)
@@ -288,7 +297,9 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   // roteiros (B2'): botão do passo, escolha digitada, dado conferido, palavra-chave e fim por prazo,
   // antes da IA; depois do Confirmar ou da resposta de 18+, a mensagem já foi usada (só o estado vale)
   const turnTexts = q.texts?.length ? q.texts : [q.text];
-  const routineTurn = await routinePreTurn(db, { bot, conversationId: convId, texts: turnTexts, buttonId: q.button ?? null, waPhone, consume: !confirmed && !answered });
+  // depois do Confirmar, a equipe entra pelo roteiro: o aviso vai junto da resposta da IA
+  if (routineHandoff) routineNote = `${routineNote ?? ""} Diga à pessoa, junto do resultado: ${await requestHandoff(db, bot, convId, routineHandoff)}`.trim();
+  const routineTurn = await routinePreTurn(db, { bot, conversationId: convId, texts: turnTexts, buttonId: q.button ?? null, waPhone, consume: !confirmed && !answered, note: routineNote });
   if (routineTurn.fixed) {
     await storeOnce(db, convId, q.text, q.key, q.photos);
     await sendFixed(routineTurn.fixed.kind === "handoff" ? await requestHandoff(db, bot, convId, routineTurn.fixed.reason) : routineTurn.fixed.text);

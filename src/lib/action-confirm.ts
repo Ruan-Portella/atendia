@@ -336,7 +336,8 @@ export interface ClickInput {
 
 export type ClickResult =
   | { kind: "none" }
-  | { kind: "fixed"; text: string; component?: MessageComponent | null }
+  // canceledActionId: o Cancelar desta ação deu certo (o roteiro em que ela era o passo acaba)
+  | { kind: "fixed"; text: string; component?: MessageComponent | null; canceledActionId?: string }
   | { kind: "handoff" }
   | { kind: "called"; action: ActionRow; params: Record<string, unknown>; call: CallResult; caller: Caller; via: "confirmar" | "botao" };
 
@@ -381,7 +382,7 @@ export async function resolveConfirmClick(db: SupabaseClient, i: ClickInput): Pr
     return ref.single_use ? execute(db, i, ref, ["open", "uncertain"]) : executeAgain(db, i, ref);
   }
   if (target.verb === "nao") {
-    if (await cancelRef(db, ref.id)) return fixed(CONFIRM_TEXTS.canceled);
+    if (await cancelRef(db, ref.id)) return { kind: "fixed", text: CONFIRM_TEXTS.canceled, component: null, canceledActionId: ref.action_id };
     return fixed(ref.status === "uncertain" ? CONFIRM_TEXTS.cantCancelUncertain : unusableText(ref.status));
   }
   // "Tentar de novo" e Confirmar levam ao mesmo call_id (a incerta reaberta pelo texto vale pelos dois)

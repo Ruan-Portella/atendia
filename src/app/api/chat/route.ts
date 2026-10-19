@@ -23,7 +23,7 @@ import { openAtendimento } from "@/lib/atendimentos";
 import { saveMessage } from "@/lib/messages";
 import { chatIdentityOf, conversationAccess, identityColumns, upgradeConversation, widgetWho } from "@/lib/widget-identity";
 import { maskCardNumbers } from "@/lib/routine-run";
-import { routinePreTurn } from "@/lib/routine-engine";
+import { applyConfirmedAction, cancelRoutineAction, routinePreTurn } from "@/lib/routine-engine";
 
 const MAX_MESSAGE_CHARS = 2000;
 
@@ -232,6 +232,8 @@ export async function POST(req: Request) {
   // Confirmar, Cancelar ou "Tentar de novo" de uma ação "executa" (C pública, parte 5a): o clique é
   // resolvido pelo id do botão (ou pelo atalho "sim" logo depois do resumo), sem IA
   let confirmed: Parameters<typeof runChat>[0]["confirmed"];
+  // roteiro (B2'): o Confirmar de uma ação do passo anda o roteiro pelo resultado; o Cancelar encerra
+  let routineNote: string | null = null;
   // o clique vai no webhook message.received (interactive), como no WhatsApp e no Instagram
   const interactive: Interactive | null = parsed.data.buttonId ? { type: "button_reply", id: devButtonId(parsed.data.buttonId), title: text } : null;
   if (convId) {
@@ -251,6 +253,7 @@ export async function POST(req: Request) {
       if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: id, ip: clientIp(req), isNew: false }));
       await saveMessage(db, { conversation_id: id, role: "user", content: text }, { touch: "visitante", interactive });
       if (click.kind === "fixed") {
+        if (click.canceledActionId) await cancelRoutineAction(db, id, click.canceledActionId);
         await saveMessage(db, { conversation_id: id, role: "assistant", content: click.text, author: SYSTEM_AUTHOR, components: click.component ?? null });
         return fixedStream("confirmar", click.text, headers, { component: click.component });
       }
@@ -259,15 +262,19 @@ export async function POST(req: Request) {
         await saveMessage(db, { conversation_id: id, role: "assistant", content: notice, author: SYSTEM_AUTHOR });
         return fixedStream("confirmar", notice, { ...headers, "X-Handoff": "requested" }, { handoff: true });
       }
+      // roteiro: a equipe entra depois desta ação? (o aviso vai junto da resposta)
+      const routineMove = await applyConfirmedAction(db, { conversationId: id, action: click.action.name, status: click.call.status, outcome: click.call.outcome ?? null, declared: click.action.outcomes, waPhone: null });
+      const routineHandoffNotice = routineMove.handoff ? await requestHandoff(db, bot, id, routineMove.handoff) : null;
+      routineNote = routineHandoffNotice ? `${routineMove.note ?? ""} Diga à pessoa, junto do resultado: ${routineHandoffNotice}`.trim() : routineMove.note;
       // no site não há trava do BoaVoz: o data e o reply saem como vieram
       const shaped = await shapeActionResult(db, { bot, conversationId: id, gateChannel: "widget", waPhone: null, age: null, regulatedAt: null }, click.call, { execute: true });
       if (shaped.reply) {
-        // reply exato da ação, com os botões e os anexos que ela devolveu
+        // reply exato da ação, com os botões e os anexos que ela devolveu (e o aviso da equipe, se o roteiro mandou)
         const notice = widgetFilesNotice(shaped.files);
-        const content = notice ? `${shaped.reply}\n\n${notice}` : shaped.reply;
+        const content = [shaped.reply, notice, routineHandoffNotice].filter(Boolean).join("\n\n");
         const replyId = await saveMessage(db, { conversation_id: id, role: "assistant", content, components: shaped.component });
         if (replyId) await linkAttachments(db, shaped.files.flatMap((f) => (f.id && f.status !== "falha" ? [f.id] : [])), replyId);
-        return fixedStream("confirmar", content, headers, { component: shaped.component, files: widgetFiles(shaped.files) });
+        return fixedStream("confirmar", content, routineHandoffNotice ? { ...headers, "X-Handoff": "requested" } : headers, { component: shaped.component, files: widgetFiles(shaped.files), handoff: Boolean(routineHandoffNotice) });
       }
       confirmed = { action: click.action.name, params: click.params, output: click.call.status === "ok" ? { ...shaped.output, confirmada: true } : shaped.output, internal: shaped.internal, component: shaped.component, files: shaped.files, via: click.via };
     }
@@ -304,6 +311,7 @@ export async function POST(req: Request) {
       buttonId: parsed.data.buttonId ?? null,
       waPhone: null,
       consume: !confirmed,
+      note: routineNote,
       openConversation: async () => openConversation(db, bot, { channel: chatChannel, visitorId: visitorId ?? null, identity: await identityColumns(who, bot.id) }),
     });
     convId = routineTurn.conversationId ?? convId;

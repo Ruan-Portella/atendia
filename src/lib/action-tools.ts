@@ -16,6 +16,7 @@ import { REGULATED_WINDOW_MS } from "./gate/payment";
 import { logGate } from "./gate/log";
 import { INTERNAL_RULE, internalTerms } from "./internal-guard";
 import type { ChatIdentity } from "./widget-identity";
+import { boundParams, schemaWithout, type RoutineVariables } from "./routine-run";
 
 /*
  * As ações do bot como ferramentas da IA (spec "Peça 1"): acao_<nome>, só as ativas que o contato
@@ -287,6 +288,15 @@ export interface ActionToolsInput extends CallerInput {
   confirmRound?: boolean;
   /** Para o portão de parâmetros (etapa de IA): a agência paga a classificação. */
   agencyId?: string;
+  /**
+   * Roteiro (B2', parte 2b): no passo de ação, os parâmetros com o mesmo nome de uma variável vão
+   * preenchidos pelo BoaVoz (e saem do schema quando o passo já é o atual no começo da vez); o
+   * resultado da chamada anda o roteiro e o próximo passo volta junto do resultado.
+   */
+  routine?: {
+    step(): { action: string; variables: RoutineVariables } | null;
+    onResult(action: string, r: { status: string; outcome?: string | null }, declared: string[]): Promise<Record<string, unknown> | null>;
+  };
 }
 
 /** Ferramentas acao_<nome> para esta resposta (vazio se o bot não tem ações). */
@@ -306,14 +316,22 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
   const RATE_LIMITED = { ok: false, motivo: "rate_limited", instrucao: "Diga que são muitas consultas seguidas e peça para tentar de novo em um minuto." };
   // uma confirmação por vez (as chamadas em paralelo ficam desligadas no provedor; isto é a garantia)
   let confirmOpened = false;
+  // roteiro: o passo de ação no começo da vez (o schema sai sem os parâmetros que o BoaVoz preenche)
+  const stepAtStart = i.routine?.step() ?? null;
+  const boundOf = (a: ActionRow): Record<string, unknown> => {
+    const st = i.routine?.step();
+    return st && st.action === a.name ? boundParams(a.params_schema, st.variables) : {};
+  };
+  const schemaOf = (a: ActionRow) => (stepAtStart?.action === a.name ? schemaWithout(a.params_schema, Object.keys(boundParams(a.params_schema, stepAtStart.variables))) : a.params_schema);
 
   const tools: Record<string, Tool> = {};
   for (const a of actions) {
     if (needsConfirmation(a)) {
       tools[`acao_${a.name}`] = tool({
         description: `${a.description}\n\n${CONFIRM_RULE}`,
-        inputSchema: jsonSchema<Record<string, unknown>>(a.params_schema as Parameters<typeof jsonSchema>[0]),
-        execute: async (params: Record<string, unknown>) => {
+        inputSchema: jsonSchema<Record<string, unknown>>(schemaOf(a) as Parameters<typeof jsonSchema>[0]),
+        execute: async (input: Record<string, unknown>) => {
+          const params = { ...input, ...boundOf(a) };
           if (confirmOpened || !i.onConfirm) return { ok: false, motivo: "uma_por_vez", instrucao: "Já há uma confirmação nesta resposta: espere a pessoa responder a ela." };
           const missing = paramsProblems(a.params_schema, params);
           if (missing.length) return { ok: false, motivo: "faltam_dados", faltando: missing, instrucao: `Peça à pessoa: ${missing.join(", ")}. Não chame com dado vazio ou inventado.` };
@@ -330,15 +348,20 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
     }
     tools[`acao_${a.name}`] = tool({
       description: `${a.description}\n\n${ACTION_RULE}`,
-      inputSchema: jsonSchema<Record<string, unknown>>(a.params_schema as Parameters<typeof jsonSchema>[0]),
-      execute: async (params: Record<string, unknown>) => {
+      inputSchema: jsonSchema<Record<string, unknown>>(schemaOf(a) as Parameters<typeof jsonSchema>[0]),
+      execute: async (input: Record<string, unknown>) => {
+        // roteiro: o que o roteiro já conferiu vence o que a IA escreveu
+        const params = { ...input, ...boundOf(a) };
         // obrigatório ausente ou vazio: o endpoint não é chamado; a IA pede o dado à pessoa
         const missing = paramsProblems(a.params_schema, params);
         if (missing.length) return { ok: false, motivo: "faltam_dados", faltando: missing, instrucao: `Peça à pessoa: ${missing.join(", ")}. Não diga que não tem a informação.` };
         if (await limits()) return RATE_LIMITED;
         // 5 "não encontrado" desta ação nesta conversa em 1 hora: ninguém varre códigos de pedido ou de cliente
         const { count: misses } = await db.from("action_calls").select("id", { count: "exact", head: true }).eq("action_id", a.id).eq("conversation_id", i.conversationId).eq("status", "not_found").gt("created_at", new Date(Date.now() - 3_600_000).toISOString());
-        if ((misses ?? 0) >= 5) return { ok: false, motivo: "indisponivel", instrucao: "Esta consulta não está disponível agora. Não tente de novo; ofereça falar com a equipe." };
+        if ((misses ?? 0) >= 5) {
+          const roteiro = await i.routine?.onResult(a.name, { status: "unavailable" }, a.outcomes);
+          return { ok: false, motivo: "indisponivel", instrucao: "Esta consulta não está disponível agora. Não tente de novo; ofereça falar com a equipe.", ...(roteiro ? { roteiro } : {}) };
+        }
 
         const r = await callAction(db, a, { params, messageKey: i.messageKey, conversation: { id: i.conversationId, channel: caller.gateChannel }, contact: caller.contact, context: caller.context });
         const shaped = await shapeActionResult(db, shape, r);
@@ -347,7 +370,9 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         else if (shaped.component) i.onComponent?.(shaped.component);
         if (shaped.internal.length) i.onInternal?.(shaped.internal);
         if (shaped.files.length) i.onFiles?.(shaped.files);
-        return shaped.output;
+        // roteiro: o resultado escolhe o próximo passo, que volta junto para a IA seguir
+        const roteiro = await i.routine?.onResult(a.name, r, a.outcomes);
+        return roteiro ? { ...shaped.output, roteiro } : shaped.output;
       },
     });
   }

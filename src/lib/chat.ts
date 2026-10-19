@@ -815,7 +815,7 @@ export async function runChat(opts: {
   let replyComponent: MessageComponent | null = null;
   /** O componente desta vez: o resumo do Confirmar, senão o da ação (com reply, o dela), senão o da IA. */
   // os botões do passo do roteiro vêm antes dos da ação e dos da IA (que nem mostra opções nesse passo)
-  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (replyComponent ?? actionComponent) : (routine?.component() ?? actionComponent ?? shown));
+  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (replyComponent ?? actionComponent ?? routine?.component() ?? null) : (routine?.component() ?? actionComponent ?? shown));
   const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [...(opts.confirmed?.internal ?? [])];
@@ -847,7 +847,10 @@ export async function runChat(opts: {
     onFiles: (files) => void actionFiles.push(...files),
     confirmRound: Boolean(opts.confirmed),
     agencyId: bot.agency_id,
+    ...(routine ? { routine: { step: () => routine.actionStep(), onResult: (a: string, r: { status: string; outcome?: string | null }, d: string[]) => routine.onActionResult(a, r, d) } } : {}),
   });
+  // roteiro: a ação do passo que não veio entre as ferramentas segue o destino de erro (antes do prompt)
+  await routine?.prepare(new Set(Object.keys(actionTools)), { confirmRound: Boolean(opts.confirmed) });
   // até 5 passos com ações (o último sem ferramentas, para sempre sair texto); sem ações, 3 como antes
   const hasActions = Object.keys(actionTools).length > 0;
   // roteiro: começar e concluir o passo também são passos do modelo

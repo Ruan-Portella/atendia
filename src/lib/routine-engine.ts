@@ -16,6 +16,8 @@ import {
   keywordRoutine,
   nextFrom,
   parseRoutineButton,
+  resultDestination,
+  resultKey,
   routinePrompt,
   stepButtons,
   stepInstruction,
@@ -141,6 +143,37 @@ export async function sweepRoutineTimeouts(db: SupabaseClient): Promise<number> 
   return data?.length ?? 0;
 }
 
+/**
+ * Cancelar na confirmação de uma ação "executa" que é o passo atual do roteiro: o roteiro acaba,
+ * cancelado pelo contato (B2', parte 2b).
+ */
+export async function cancelRoutineAction(db: SupabaseClient, conversationId: string, actionId: string): Promise<void> {
+  const run = await loadActiveRun(db, conversationId);
+  const step = run ? currentStep(run) : null;
+  if (!run || step?.type !== "acao") return;
+  const { data } = await db.from("actions").select("name").eq("id", actionId).maybeSingle();
+  if (data?.name === step.action) await finishRun(db, run.id, "abandoned", "cancelled");
+}
+
+/**
+ * Confirmar de uma ação "executa" que é o passo atual: o roteiro anda pelo resultado da chamada.
+ * Devolve o que a IA precisa saber e, se o destino é a equipe, o motivo do pedido de atendente
+ * (o canal pede e avisa a pessoa junto da resposta).
+ */
+export async function applyConfirmedAction(
+  db: SupabaseClient,
+  i: { conversationId: string; action: string; status: string; outcome: string | null; declared: string[]; waPhone: string | null },
+): Promise<{ note: string | null; handoff: string | null }> {
+  const run = await loadActiveRun(db, i.conversationId);
+  const step = run ? currentStep(run) : null;
+  if (!run || step?.type !== "acao" || step.action !== i.action) return { note: null, handoff: null };
+  const key = resultKey(i, i.declared);
+  const moved = await moveTo(db, run, nextFrom(run.routine.steps, step.id, resultDestination(step, key)), { texts: [], waPhone: i.waPhone, why: `Roteiro "${run.routine.name}": ${i.action} (${key})`, contact: true });
+  if (moved.kind === "handoff") return { note: `Roteiro "${run.routine.name}": depois desta ação, a conversa vai para a equipe.`, handoff: moved.reason };
+  if (moved.kind === "completed") return { note: `O roteiro "${run.routine.name}" terminou com esta ação: siga a conversa normalmente.`, handoff: null };
+  return { note: `A ação do passo foi confirmada e chamada (resultado: ${key}).`, handoff: null };
+}
+
 /** Pedido do titular: os roteiros destas conversas saem (as variáveis são dado do contato). */
 export async function deleteRoutineRunsOfConversations(db: SupabaseClient, conversationIds: string[]): Promise<number> {
   if (!conversationIds.length) return 0;
@@ -172,16 +205,17 @@ export type Moved = { kind: "step" } | { kind: "completed" } | { kind: "handoff"
  * (abandonado, handoff). No passo novo que pede um dado, já preenche o que dá: o telefone desta
  * conversa do WhatsApp ou o dado que veio nas mensagens desta vez (nunca um valor já usado).
  */
-async function moveTo(db: SupabaseClient, run: ActiveRun, next: NextStep, ctx: { texts: string[]; waPhone: string | null; why: string; contact?: boolean }): Promise<Moved> {
+async function moveTo(db: SupabaseClient, run: ActiveRun, next: NextStep, ctx: { texts: string[]; waPhone: string | null; why: string; contact?: boolean; endReason?: EndReason }): Promise<Moved> {
   let n = next;
   let vars = run.variables;
   for (let guard = 0; guard <= run.routine.steps.length; guard++) {
+    // acabou por causa da ação indisponível: abandonado com esse motivo, mesmo no "encerrar"
     if (n.kind === "completed") {
-      await finishRun(db, run.id, "completed", null);
+      await finishRun(db, run.id, ctx.endReason ? "abandoned" : "completed", ctx.endReason ?? null);
       return { kind: "completed" };
     }
     if (n.kind === "handoff") {
-      await finishRun(db, run.id, "abandoned", "handoff");
+      await finishRun(db, run.id, "abandoned", ctx.endReason ?? "handoff");
       return { kind: "handoff", reason: ctx.why };
     }
     const step = n.step;
@@ -257,7 +291,17 @@ export const noRoutineTurn = (conversationId: string | null = null): RoutineTurn
  */
 export async function routinePreTurn(
   db: SupabaseClient,
-  i: { bot: { id: string; agency_id: string }; conversationId: string | null; texts: string[]; buttonId: string | null; waPhone: string | null; consume?: boolean; openConversation?: () => Promise<string> },
+  i: {
+    bot: { id: string; agency_id: string };
+    conversationId: string | null;
+    texts: string[];
+    buttonId: string | null;
+    waPhone: string | null;
+    consume?: boolean;
+    openConversation?: () => Promise<string>;
+    /** O que já aconteceu com o roteiro nesta mensagem (o Confirmar de uma ação do passo). */
+    note?: string | null;
+  },
 ): Promise<RoutineTurn> {
   const { data: rows } = await db.from("routines").select("*").eq("bot_id", i.bot.id).eq("active", true).order("name");
   const all = (rows ?? []) as unknown as RoutineRow[];
@@ -266,7 +310,7 @@ export async function routinePreTurn(
   let conversationId = i.conversationId;
   let run = conversationId ? await loadActiveRun(db, conversationId) : null;
   if (!available.length && !run) return noRoutineTurn(conversationId);
-  const turn: RoutineTurn = { run: null, available, note: null, fixed: null, conversationId };
+  const turn: RoutineTurn = { run: null, available, note: i.note ?? null, fixed: null, conversationId };
   const consume = i.consume !== false;
   const text = i.texts.at(-1) ?? "";
 
@@ -366,6 +410,16 @@ export async function routinePreTurn(
 
 export interface RoutineSession {
   tools: Record<string, Tool>;
+  /**
+   * Antes da IA: a ação do passo atual que não está entre as ferramentas desta vez (desativada, sem
+   * o pacote, nível do contato, 5 "não encontrado") segue o destino de erro (step_unavailable).
+   * Na vez depois de um Confirmar, as "executa" ficam de fora de propósito: não conta.
+   */
+  prepare(offered: Set<string>, o?: { confirmRound?: boolean }): Promise<void>;
+  /** Passo de ação: a ação e os dados do roteiro (os parâmetros com o mesmo nome vão preenchidos). */
+  actionStep(): { action: string; variables: RoutineVariables } | null;
+  /** Resultado da ação do passo: o roteiro anda pelo destino do resultado (o que vai junto do resultado para a IA). */
+  onActionResult(action: string, r: { status: string; outcome?: string | null }, declared: string[]): Promise<Record<string, unknown> | null>;
   /** O bloco do roteiro para a IA (depois do histórico), ou null. */
   prompt(): string | null;
   /** Os botões do passo em que a vez terminou (ou equipe e cancelar, depois das 3 tentativas). */
@@ -390,7 +444,8 @@ export function routineSession(
   const available = i.turn.available;
   if (!available.length) return null;
   let run = i.turn.run;
-  const opening = run ? routinePrompt(runView(run), i.turn.note) : i.turn.note ? `Roteiro: ${i.turn.note}` : null;
+  // o que aconteceu antes da IA (o BoaVoz já resolveu) e na preparação (ação indisponível)
+  const notes: string[] = i.turn.note ? [i.turn.note] : [];
 
   const after = async (moved: Moved, lead: string): Promise<Record<string, unknown>> => {
     if (moved.kind === "completed") {
@@ -469,7 +524,39 @@ export function routineSession(
 
   return {
     tools,
-    prompt: () => opening,
+    prepare: async (offered, o = {}) => {
+      if (!run || o.confirmRound) return;
+      const step = currentStep(run);
+      if (step.type !== "acao" || offered.has(`acao_${step.action}`)) return;
+      const name = run.routine.name;
+      const moved = await moveTo(db, run, nextFrom(run.routine.steps, step.id, resultDestination(step, "erro")), { texts: [], waPhone: i.waPhone, why: `Roteiro "${name}": a ação ${step.action} não está disponível`, endReason: "step_unavailable" });
+      if (moved.kind === "handoff") {
+        run = null;
+        notes.push(`A consulta do roteiro "${name}" não está disponível agora e a conversa foi passada para a equipe. Diga isso à pessoa usando este aviso: ${await i.requestHandoff(moved.reason)}`);
+      } else if (moved.kind === "completed") {
+        run = null;
+        notes.push(`A consulta do roteiro "${name}" não está disponível agora e o roteiro terminou: diga que não conseguiu consultar e siga a conversa.`);
+      } else notes.push("A consulta do passo anterior não está disponível agora: siga o passo atual.");
+    },
+    actionStep: () => {
+      if (!run) return null;
+      const step = currentStep(run);
+      return step.type === "acao" ? { action: step.action, variables: run.variables } : null;
+    },
+    onActionResult: async (action, r, declared) => {
+      if (!run) return null;
+      const step = currentStep(run);
+      if (step.type !== "acao" || step.action !== action) return null;
+      // 5 "não encontrado" em 1 hora tiram a ação do contato: é a ação que deixou de ser oferecida
+      const unavailable = r.status === "unavailable";
+      const key = unavailable ? "erro" : resultKey(r, declared);
+      const moved = await moveTo(db, run, nextFrom(run.routine.steps, step.id, resultDestination(step, key)), { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${run.routine.name}": ${action} (${key})`, ...(unavailable ? { endReason: "step_unavailable" as const } : {}) });
+      return after(moved, `Resultado da ação no roteiro: ${key}.`);
+    },
+    prompt: () => {
+      const note = notes.join(" ") || null;
+      return run ? routinePrompt(runView(run), note) : note ? `Roteiro: ${note}` : null;
+    },
     component: () => {
       if (!run) return null;
       if (run.failing) return failButtons(run.id);

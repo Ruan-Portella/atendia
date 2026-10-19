@@ -321,6 +321,82 @@ export function nextFrom(steps: RoutineStep[], fromId: string, d: Destination): 
   return i >= 0 && i + 1 < steps.length ? { kind: "step", step: steps[i + 1] } : { kind: "completed" };
 }
 
+/* ------------------------------------------------------------------ passo de ação (parte 2b) */
+
+/**
+ * O valor como vai para a ação: sem pontuação (CPF, CNPJ, CEP e telefone com DDD), e-mail em
+ * minúsculas, data em aaaa-mm-dd e número com ponto (ou número de verdade, se o parâmetro é
+ * number ou integer). Pura.
+ */
+export function actionValue(v: RoutineValue, type?: string): string | number {
+  let s: string;
+  switch (v.kind) {
+    case "cpf":
+    case "cnpj":
+    case "cpf_cnpj":
+      s = v.value.replace(/[.\-/\s]/g, "").toUpperCase();
+      break;
+    case "cep":
+    case "telefone":
+      s = v.value.replace(/\D/g, "");
+      break;
+    case "email":
+      s = v.value.toLowerCase();
+      break;
+    case "data": {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v.value);
+      s = m ? `${m[3]}-${m[2]}-${m[1]}` : v.value;
+      break;
+    }
+    case "numero":
+      s = v.value.replace(",", ".");
+      break;
+    default:
+      s = v.value;
+  }
+  if (type === "number" || type === "integer") {
+    const n = Number(s.replace(",", "."));
+    if (Number.isFinite(n)) return type === "integer" ? Math.trunc(n) : n;
+  }
+  return s;
+}
+
+type SchemaLike = { type?: string; properties?: Record<string, { type?: string }>; required?: string[] };
+
+/** Parâmetros da ação que o roteiro já tem (o mesmo nome de uma variável): o BoaVoz preenche com o valor conferido. Pura. */
+export function boundParams(schema: SchemaLike, vars: RoutineVariables): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const [name, p] of Object.entries(schema.properties ?? {})) {
+    const v = vars[name];
+    if (v && (p.type === "string" || p.type === "number" || p.type === "integer")) out[name] = actionValue(v, p.type);
+  }
+  return out;
+}
+
+/** O schema sem os parâmetros que o BoaVoz preenche (a IA não pede de novo nem copia). Pura. */
+export function schemaWithout<T extends SchemaLike>(schema: T, names: string[]): T {
+  if (!names.length) return schema;
+  const properties = Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([n]) => !names.includes(n)));
+  return { ...schema, properties, ...(schema.required ? { required: schema.required.filter((n) => !names.includes(n)) } : {}) };
+}
+
+/**
+ * A linha da tabela "resultado → destino" que vale para a chamada: o resultado declarado; ok sem
+ * resultado; não encontrado; o resto (falha, prazo, incerta, barrada, resultado não declarado)
+ * segue o erro. Pura.
+ */
+export function resultKey(r: { status: string; outcome?: string | null }, declared: string[]): string {
+  if (r.status === "not_found") return "nao_encontrado";
+  if (r.status !== "ok") return "erro";
+  if (!r.outcome) return "ok";
+  return declared.includes(r.outcome) ? r.outcome : "erro";
+}
+
+/** O destino da linha (sem destino na tabela, o do erro; sem esse, a equipe). Pura. */
+export function resultDestination(step: Extract<RoutineStep, { type: "acao" }>, key: string): Destination {
+  return step.results[key] ?? step.results.erro ?? { to: "atendente" };
+}
+
 /* ------------------------------------------------------------------ o que a IA recebe */
 
 const label = (kind: DataKind) => DATA_KIND_LABEL[kind] === "formato próprio (regex)" ? "dado" : DATA_KIND_LABEL[kind];
@@ -345,7 +421,7 @@ export function stepInstruction(step: RoutineStep, o: { failing?: boolean; waPho
     case "botoes":
       return `${step.text}\nOs botões (${step.options.map((x) => x.title).join(", ")}) vão sozinhos com a sua mensagem: escreva só a pergunta, sem listar as opções e sem chamar mostrar_opcoes.`;
     case "acao":
-      return step.text;
+      return `Chame agora a ferramenta acao_${step.action}: os dados já informados no roteiro vão preenchidos pelo BoaVoz (não peça de novo). Com o resultado: ${step.text}`;
   }
 }
 

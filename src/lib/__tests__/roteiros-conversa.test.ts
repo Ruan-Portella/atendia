@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  actionValue,
+  boundParams,
+  resultDestination,
+  resultKey,
+  schemaWithout,
   CARD_PLACEHOLDER,
   FAIL_CANCEL,
   FAIL_TEAM,
@@ -21,7 +26,7 @@ import {
   typedChoice,
   validateValue,
 } from "../routine-run";
-import { ROUTINE_CANCELLED_TEXT, deleteRoutineRunsOfConversations, endActiveRoutine, endRoutineRuns, routinePreTurn, routineSession, sweepRoutineTimeouts } from "../routine-engine";
+import { ROUTINE_CANCELLED_TEXT, applyConfirmedAction, cancelRoutineAction, deleteRoutineRunsOfConversations, endActiveRoutine, endRoutineRuns, routinePreTurn, routineSession, sweepRoutineTimeouts } from "../routine-engine";
 import type { RoutineRow, RoutineStep } from "../routines";
 
 /* ------------------------------------------------------------------ validação e máscaras (puras) */
@@ -496,5 +501,129 @@ describe("roteiro na conversa: fim pelos ganchos e limpeza", () => {
     expect(tables.routine_runs[2]).toMatchObject({ status: "abandoned", end_reason: "timeout" });
     expect(await deleteRoutineRunsOfConversations(db, [CONV, "conv-2"])).toBe(2);
     expect(tables.routine_runs.map((r) => r.id)).toEqual(["c"]);
+  });
+});
+
+/* ------------------------------------------------------------------ passo de ação (parte 2b) */
+
+describe("roteiro na conversa: passo de ação (puro)", () => {
+  it("o valor como vai para a ação: sem pontuação, data em aaaa-mm-dd e número de verdade quando o parâmetro é número", () => {
+    expect(actionValue({ kind: "cpf", value: "529.982.247-25" })).toBe("52998224725");
+    expect(actionValue({ kind: "cnpj", value: "12.ABC.345/01DE-35" })).toBe("12ABC34501DE35");
+    expect(actionValue({ kind: "cep", value: "20040-002" })).toBe("20040002");
+    expect(actionValue({ kind: "telefone", value: "(21) 99999-0000" })).toBe("21999990000");
+    expect(actionValue({ kind: "email", value: "Ana@Exemplo.com" })).toBe("ana@exemplo.com");
+    expect(actionValue({ kind: "data", value: "15/03/2026" })).toBe("2026-03-15");
+    expect(actionValue({ kind: "numero", value: "1234,5" })).toBe("1234.5");
+    expect(actionValue({ kind: "numero", value: "1234,5" }, "number")).toBe(1234.5);
+    expect(actionValue({ kind: "numero", value: "3" }, "integer")).toBe(3);
+    expect(actionValue({ kind: "escolha", value: "Está certo" })).toBe("Está certo");
+  });
+
+  it("parâmetros com o mesmo nome de uma variável vão preenchidos (texto e número; o resto fica com a IA)", () => {
+    const schema = { type: "object" as const, properties: { documento: { type: "string" as const }, quantidade: { type: "integer" as const }, ativo: { type: "boolean" as const }, nome: { type: "string" as const } }, required: ["documento", "nome"] };
+    const vars = { documento: { kind: "cpf" as const, value: "529.982.247-25" }, quantidade: { kind: "numero" as const, value: "3" }, ativo: { kind: "escolha" as const, value: "Sim" } };
+    expect(boundParams(schema, vars)).toEqual({ documento: "52998224725", quantidade: 3 });
+    expect(schemaWithout(schema, ["documento", "quantidade"])).toEqual({ type: "object", properties: { ativo: { type: "boolean" }, nome: { type: "string" } }, required: ["nome"] });
+    expect(schemaWithout(schema, [])).toBe(schema);
+  });
+
+  it("resultado → destino: declarado, ok, não encontrado e o resto no erro", () => {
+    expect(resultKey({ status: "ok" }, [])).toBe("ok");
+    expect(resultKey({ status: "ok", outcome: "sem_debito" }, ["sem_debito"])).toBe("sem_debito");
+    expect(resultKey({ status: "ok", outcome: "inventado" }, ["sem_debito"])).toBe("erro");
+    expect(resultKey({ status: "not_found" }, [])).toBe("nao_encontrado");
+    for (const st of ["error", "timeout", "uncertain", "blocked"]) expect(resultKey({ status: st }, [])).toBe("erro");
+    const step: Extract<RoutineStep, { type: "acao" }> = { id: "acao0001", type: "acao", text: "Busque", action: "buscar", results: { ok: { to: "encerrar" }, erro: { to: "passo", step: "x0000001" } } };
+    expect(resultDestination(step, "nao_encontrado")).toEqual({ to: "passo", step: "x0000001" });
+    expect(resultDestination({ ...step, results: {} }, "ok")).toEqual({ to: "atendente" });
+    expect(stepInstruction(step)).toContain("acao_buscar");
+  });
+});
+
+describe("roteiro na conversa: passo de ação (motor)", () => {
+  // roteiro com passo de ação só vale com o pacote Integrações
+  const PACK: Row = { agency_id: BOT.agency_id, pack: "integracoes", ends_at: null };
+  const segundaVia = routine({
+    id: "rot-3",
+    name: "Segunda via",
+    keywords: ["2via"],
+    steps: [
+      { id: "segv0001", type: "dado", text: "Peça o CPF", kind: "cpf", variable: "documento", pattern: null, next: { to: "proximo" } },
+      { id: "segv0002", type: "acao", text: "Envie o boleto", action: "buscar_segunda_via", results: { ok: { to: "encerrar" }, nao_encontrado: { to: "passo", step: "segv0003" }, erro: { to: "atendente" }, sem_debito: { to: "encerrar" } } },
+      { id: "segv0003", type: "instrucao", text: "Diga que não achou nada em aberto", next: { to: "atendente" } },
+    ],
+  });
+  const atAction = async (extra: Record<string, Row[]> = {}) => {
+    const tables: Record<string, Row[]> = { routines: [segundaVia], conversations: [{ id: CONV }], messages: [], agency_packs: [PACK], ...extra };
+    const db = fakeDb(tables);
+    await pre(db, ["2via"]);
+    const turn = await pre(db, ["529.982.247-25"]);
+    const handoffs: string[] = [];
+    const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn, texts: [], requestHandoff: async (r) => (handoffs.push(r), "aviso da equipe") })!;
+    return { tables, db, s, handoffs };
+  };
+
+  it("sem o pacote Integrações, o roteiro com passo de ação fica pausado (nem começa pela palavra-chave)", async () => {
+    const tables: Record<string, Row[]> = { routines: [segundaVia], conversations: [{ id: CONV }], messages: [] };
+    const t = await pre(fakeDb(tables), ["2via"]);
+    expect(t.available).toEqual([]);
+    expect(runs(tables)).toHaveLength(0);
+  });
+
+  it("o passo de ação entrega a ação e os dados; o resultado escolhe o destino", async () => {
+    const { tables, s } = await atAction();
+    expect(s.actionStep()).toEqual({ action: "buscar_segunda_via", variables: { documento: { kind: "cpf", value: "529.982.247-25" } } });
+    expect(s.prompt()).toContain("acao_buscar_segunda_via");
+    // outra ação não anda o roteiro
+    expect(await s.onActionResult("outra", { status: "ok" }, [])).toBeNull();
+    const out = await s.onActionResult("buscar_segunda_via", { status: "not_found" }, ["sem_debito"]);
+    expect(out).toMatchObject({ ok: true, passo: "3 de 3" });
+    expect(runs(tables)[0].step_id).toBe("segv0003");
+  });
+
+  it("resultado declarado encerra; resultado não declarado segue o erro (equipe)", async () => {
+    const a = await atAction();
+    expect(await a.s.onActionResult("buscar_segunda_via", { status: "ok", outcome: "sem_debito" }, ["sem_debito"])).toMatchObject({ ok: true, roteiro: "concluido" });
+    expect(runs(a.tables)[0]).toMatchObject({ status: "completed", end_reason: null });
+
+    const b = await atAction();
+    expect(await b.s.onActionResult("buscar_segunda_via", { status: "ok", outcome: "inventado" }, ["sem_debito"])).toMatchObject({ ok: true, roteiro: "equipe", aviso: "aviso da equipe" });
+    expect(runs(b.tables)[0]).toMatchObject({ status: "abandoned", end_reason: "handoff" });
+  });
+
+  it("ação que não veio entre as ferramentas: destino de erro, com o motivo step_unavailable", async () => {
+    const { tables, s, handoffs } = await atAction();
+    await s.prepare(new Set(["acao_outra"]), { confirmRound: true });
+    expect(runs(tables)[0].status).toBe("active");
+    await s.prepare(new Set(["acao_outra"]));
+    expect(runs(tables)[0]).toMatchObject({ status: "abandoned", end_reason: "step_unavailable" });
+    expect(handoffs).toHaveLength(1);
+    expect(s.prompt()).toContain("não está disponível agora e a conversa foi passada para a equipe");
+    expect(s.actionStep()).toBeNull();
+  });
+
+  it("5 'não encontrado' tiram a ação: indisponível também é step_unavailable", async () => {
+    const { tables, s } = await atAction();
+    await s.onActionResult("buscar_segunda_via", { status: "unavailable" }, []);
+    expect(runs(tables)[0]).toMatchObject({ status: "abandoned", end_reason: "step_unavailable" });
+  });
+
+  it("Confirmar de uma ação \"executa\" do passo anda pelo resultado; Cancelar encerra", async () => {
+    const pedido = routine({ id: "rot-4", name: "Pedido", keywords: ["pedido"], steps: [{ id: "pedi0001", type: "acao", text: "Confirme o pedido", action: "criar_pedido", results: { ok: { to: "atendente" }, nao_encontrado: { to: "atendente" }, erro: { to: "atendente" } } }] });
+    const tables: Record<string, Row[]> = { routines: [pedido], conversations: [{ id: CONV }], messages: [], agency_packs: [PACK], actions: [{ id: "act-1", name: "criar_pedido" }, { id: "act-2", name: "outra" }] };
+    const db = fakeDb(tables);
+    await pre(db, ["pedido"]);
+    expect(await applyConfirmedAction(db, { conversationId: CONV, action: "outra", status: "ok", outcome: null, declared: [], waPhone: null })).toEqual({ note: null, handoff: null });
+    const r = await applyConfirmedAction(db, { conversationId: CONV, action: "criar_pedido", status: "ok", outcome: null, declared: [], waPhone: null });
+    expect(r.handoff).toBe('Roteiro "Pedido": criar_pedido (ok)');
+    expect(runs(tables)[0]).toMatchObject({ status: "abandoned", end_reason: "handoff" });
+
+    // de novo, agora com o Cancelar
+    await pre(db, ["pedido"]);
+    await cancelRoutineAction(db, CONV, "act-2");
+    expect(runs(tables)[1].status).toBe("active");
+    await cancelRoutineAction(db, CONV, "act-1");
+    expect(runs(tables)[1]).toMatchObject({ status: "abandoned", end_reason: "cancelled" });
   });
 });
