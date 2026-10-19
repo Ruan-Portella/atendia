@@ -47,7 +47,7 @@ import { findMessage, saveMessage } from "./messages";
 import { maskCardNumbers } from "./routine-run";
 import { endActiveRoutine } from "./routine-engine";
 import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
-import { handleTeamNotices } from "./team-whatsapp";
+import { assistantContext, handleTeamNotices } from "./team-whatsapp";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
 const MEDIA_LABEL: Record<string, string> = {
@@ -395,11 +395,19 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
           transport: async () => (await reply(text)).messages?.[0]?.id ?? null,
         });
       },
+      identityKeyHash: last.identityKeyHash ?? null,
+      // confirmado: o número do assistente passa a mandar o hash de identidade (aparelho novo ou número reciclado)
+      onConfirmed: enableIdentityCheckOnce,
     },
     burst.map((q, i) => (optOut.handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.msg.button?.payload ?? q.msg.interactive?.button_reply?.id ?? null })),
   );
   for (const i of notices) optOut.handled.add(i);
   if (optOut.handled.size === burst.length) return;
+  // assistente da BoaVoz: quem escreve é da equipe de uma agência (número confirmado)? A IA sabe da conta
+  const teamNote = await assistantContext(db, { botId: bot.id, waId, identityKeyHash: last.identityKeyHash ?? null }).catch((e) => {
+    console.error("avisos: contexto do assistente", (e as Error).message);
+    return null;
+  });
 
   // pedido do titular (LGPD): "apaga meus dados", a pergunta de confirmação e a resposta (botões
   // ou "sim" digitado), em qualquer degrau que envia; a IA não responde a essas mensagens
@@ -608,6 +616,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         onLinked: enableIdentityCheckOnce,
         // passo de foto do roteiro (parte 2d): só com a leitura de fotos valendo agora
         photosOn,
+        // assistente da BoaVoz: a pessoa da equipe com o número confirmado e a conta dela
+        contextNote: teamNote,
       },
       {
         text: shown(qi),

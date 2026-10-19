@@ -127,6 +127,8 @@ export interface GateIO {
   onLinked?: () => Promise<void>;
   /** As fotos são lidas agora (leitura ligada, IA respondendo): o passo de foto do roteiro vale. */
   photosOn?: boolean;
+  /** O que a IA sabe de quem escreve, de fora da conversa (o assistente da BoaVoz: a pessoa da equipe e a conta). */
+  contextNote?: string | null;
 }
 
 export interface GateQuestion {
@@ -439,7 +441,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     routine: routineTurn,
     turnTexts,
     identityPort: port,
-    identityNote: idTurn.note,
+    identityNote: [idTurn.note, io.contextNote].filter(Boolean).join("\n\n") || null,
   });
   // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
   // resumo do Confirmar: só o que o BoaVoz montou (como o runChat gravou)

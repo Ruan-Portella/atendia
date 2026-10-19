@@ -35,7 +35,8 @@ function RequestForm({ label = "Receber no WhatsApp" }: { label?: string }) {
 export function TeamWhatsAppCard({ status, variant }: { status: NoticeStatus; variant: "top" | "profile" }) {
   if (!status.available) return null;
   const top = variant === "top";
-  if (top && (status.dismissed || status.status === "confirmed")) return null;
+  // no topo: até confirmar, e de novo quando o WhatsApp do número mudou (precisa confirmar outra vez)
+  if (top && (status.dismissed || (status.status === "confirmed" && !status.identityChanged))) return null;
 
   return (
     <section className={`card flex flex-col gap-3 ${top ? "border-brand/30 p-4" : "p-6"}`}>
@@ -49,7 +50,27 @@ export function TeamWhatsAppCard({ status, variant }: { status: NoticeStatus; va
         </div>
       </div>
 
-      {status.status === "confirmed" && !status.stopped && (
+      {status.status === "confirmed" && status.identityChanged && (
+        <div className="flex flex-col gap-3 text-sm">
+          <p>
+            O WhatsApp do número {status.masked} mudou (aparelho novo ou outra pessoa com o número) e os avisos pararam. Para voltar, confirme de novo: mandamos a mensagem e você toca em &quot;{NOTICE_YES}&quot;.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <ActionForm action={resendNoticeWhatsApp} success="Mensagem enviada.">
+              <SubmitButton className="btn-primary py-1.5 text-xs" pendingLabel="Mandando…">
+                Confirmar de novo
+              </SubmitButton>
+            </ActionForm>
+            <ActionForm action={stopNoticeWhatsApp}>
+              <SubmitButton className="text-xs font-semibold text-danger hover:underline" pendingLabel="Esquecendo…">
+                Esquecer o número
+              </SubmitButton>
+            </ActionForm>
+          </div>
+        </div>
+      )}
+
+      {status.status === "confirmed" && !status.stopped && !status.identityChanged && (
         <div className="flex flex-col gap-2 text-sm">
           <p>
             <span className="font-semibold">{status.masked}</span>
@@ -63,7 +84,7 @@ export function TeamWhatsAppCard({ status, variant }: { status: NoticeStatus; va
         </div>
       )}
 
-      {status.status === "confirmed" && status.stopped && (
+      {status.status === "confirmed" && status.stopped && !status.identityChanged && (
         <div className="flex flex-col gap-2 text-sm">
           <p>
             Você mandou SAIR no WhatsApp ({status.masked}) e os avisos pararam. Para voltar, toque em &quot;Foi engano&quot; na resposta que chegou por lá.

@@ -15,9 +15,10 @@ vi.mock("../whatsapp-templates", async (orig) => ({
 }));
 vi.mock("../send", () => ({ deliver: vi.fn(async (_db: unknown, o: { transport: () => Promise<string | null> }) => ({ status: "sent", messageId: 1, channelMessageId: await o.transport() })) }));
 vi.mock("../platform-events", () => ({ consentSource: () => "chat", queueConsentEvent: vi.fn(async () => {}) }));
+vi.mock("../atendimentos", () => ({ botQuotaStatus: vi.fn(async () => []) }));
 
 import { memoryDb, type MemRow } from "../memory-db";
-import { firstNameOf, forgetAssistantCache, handleTeamNotices, maskPhone, noticeButtons, noticeTemplateStatus, parseNoticeButton, requestTeamWhatsApp, templateValue, typedNoticeAnswer, NOTICE_TEXTS } from "../team-whatsapp";
+import { assistantContext, assistantGuides, assistantNote, firstNameOf, forgetAssistantCache, handleTeamNotices, maskPhone, noticeButtons, noticeTemplateStatus, parseNoticeButton, requestTeamWhatsApp, templateValue, typedNoticeAnswer, NOTICE_TEXTS } from "../team-whatsapp";
 import { phoneHash } from "../contacts";
 
 const ASSISTANT = "11111111-1111-4111-8111-111111111111";
@@ -168,5 +169,124 @@ describe("avisos no WhatsApp: o toque no modelo", () => {
     // já confirmado: o toque de novo só lembra que está ligado
     await handleTeamNotices(io(memoryDb(t), replies), [{ text: "Confirmar", buttonId: "avs:sim:0123456789ab" }]);
     expect(replies.at(-1)).toBe(NOTICE_TEXTS.already);
+  });
+});
+
+/* ------------------------------------------------------------------ parte 2: o assistente reconhece a pessoa */
+
+describe("assistente da BoaVoz: a nota sobre quem escreve", () => {
+  const bots = [
+    { name: "Clínica Vale", clientName: "Vale Verde", size: "M", quota: 340, used: 120 },
+    { name: "Bar do Zé", clientName: "Zé", size: "P", quota: 160, used: 160 },
+    { name: "Caixa", clientName: null, size: "atendimento", quota: 0, used: 0 },
+    { name: "Rascunho", clientName: "Novo", size: null, quota: 0, used: 0 },
+  ];
+
+  it("o dono vê a conta e os chatbots, em ordem, com o tamanho e o uso do mês", () => {
+    const n = assistantNote({ name: "Ana", agency: "Norte Marketing", role: "owner", billing: "past_due", bots });
+    expect(n).toContain("Quem escreve é Ana, da equipe da agência Norte Marketing");
+    expect(n).toContain("papel no painel: Dono");
+    expect(n).toContain("pagamento atrasado (a IA está pausada em todos os chatbots");
+    expect(n).toContain("Bar do Zé (cliente Zé): tamanho P, 160 de 160 atendimentos neste mês; Caixa: tamanho Atendimento (sem IA); Clínica Vale (cliente Vale Verde): tamanho M, 120 de 340");
+    expect(n).toContain("Rascunho (cliente Novo): sem tamanho (não atende nos canais)");
+    expect(n).toContain("Você não muda nada na conta");
+  });
+
+  it("quem não é dono não vê a cobrança; sem chatbot, a nota diz isso", () => {
+    const n = assistantNote({ name: "Bia", agency: "Norte", role: "agent", billing: null, bots: [] });
+    expect(n).not.toMatch(/Conta da agência/);
+    expect(n).toContain("papel no painel: Atendente");
+    expect(n).toContain("ainda não vê nenhum chatbot");
+  });
+
+  it("muitos chatbots: os 15 primeiros e quantos sobram", () => {
+    const many = Array.from({ length: 18 }, (_, i) => ({ name: `Bot ${String(i).padStart(2, "0")}`, clientName: null, size: "P", quota: 160, used: i }));
+    expect(assistantNote({ name: "Ana", agency: "Norte", role: "admin", billing: null, bots: many })).toContain("e mais 3.");
+  });
+});
+
+describe("assistente da BoaVoz: quem escreve, pelo número confirmado", () => {
+  const confirmed = (t: Record<string, MemRow[]>, over: MemRow = {}) =>
+    t.team_whatsapp.push({ member_id: MEMBER.id, agency_id: AGENCY.id, phone_hash: phoneHash(PHONE), status: "confirmed", nonce: "0123456789ab", identity_key_hash: null, identity_changed_at: null, ...over });
+  const withRole = (t: Record<string, MemRow[]>, over: MemRow) => Object.assign(t.agency_members[0], { role: "owner", scope: "all", removed_at: null, ...over });
+
+  it("só no chatbot da BoaVoz e só com o número confirmado", async () => {
+    const t = tables();
+    withRole(t, {});
+    expect(await assistantContext(memoryDb(t), { botId: ASSISTANT, waId: PHONE })).toBeNull();
+    confirmed(t);
+    expect(await assistantContext(memoryDb(t), { botId: "66666666-6666-4666-8666-666666666666", waId: PHONE })).toBeNull();
+    expect(await assistantContext(memoryDb(t), { botId: ASSISTANT, waId: PHONE })).toContain("Quem escreve é Ana, da equipe da agência Norte Marketing");
+  });
+
+  it("a identidade do WhatsApp: a primeira fica guardada; outra depois para o assistente (aparelho novo ou número reciclado)", async () => {
+    const t = tables();
+    withRole(t, {});
+    confirmed(t);
+    expect(await assistantContext(memoryDb(t), { botId: ASSISTANT, waId: PHONE, identityKeyHash: "chave-1" })).toBeTruthy();
+    expect(t.team_whatsapp[0].identity_key_hash).toBe("chave-1");
+    expect(await assistantContext(memoryDb(t), { botId: ASSISTANT, waId: PHONE, identityKeyHash: "chave-1" })).toBeTruthy();
+    expect(await assistantContext(memoryDb(t), { botId: ASSISTANT, waId: PHONE, identityKeyHash: "chave-2" })).toBeNull();
+    expect(t.team_whatsapp[0].identity_changed_at).toBeTruthy();
+    // daqui em diante, nem com a chave antiga (precisa confirmar de novo pelo painel)
+    expect(await assistantContext(memoryDb(t), { botId: ASSISTANT, waId: PHONE, identityKeyHash: "chave-1" })).toBeNull();
+  });
+
+  it("quem saiu da equipe não é reconhecido", async () => {
+    const t = tables();
+    withRole(t, { removed_at: "2026-10-19T10:00:00.000Z" });
+    confirmed(t);
+    expect(await assistantContext(memoryDb(t), { botId: ASSISTANT, waId: PHONE })).toBeNull();
+  });
+
+  it("o Confirmar grava a identidade do aparelho e liga a checagem da Meta", async () => {
+    const t = tables();
+    t.team_whatsapp.push({ member_id: MEMBER.id, agency_id: AGENCY.id, phone_hash: phoneHash(PHONE), status: "pending", nonce: "0123456789ab" });
+    let checked = 0;
+    await handleTeamNotices(
+      { db: memoryDb(t), bot: { id: ASSISTANT }, channel: { waba_id: "waba-1" }, waId: PHONE, conversation: async () => "conv-1", store: async () => {}, reply: async () => {}, identityKeyHash: "chave-1", onConfirmed: async () => void checked++ },
+      [{ text: "Confirmar", buttonId: "avs:sim:0123456789ab" }],
+    );
+    expect(t.team_whatsapp[0]).toMatchObject({ status: "confirmed", identity_key_hash: "chave-1", identity_changed_at: null });
+    expect(checked).toBe(1);
+  });
+});
+
+describe("assistente da BoaVoz: o guia do painel (docs/assistente)", () => {
+  it("cada arquivo tem título, cabe numa fonte de texto e fala dos assuntos principais", () => {
+    const guides = assistantGuides();
+    expect(guides.length).toBeGreaterThan(0);
+    for (const g of guides) {
+      expect(g.title).toMatch(/\(Boavoz\)$/i);
+      expect(g.content.length).toBeGreaterThan(2000);
+      expect(g.content.length).toBeLessThan(50_000);
+    }
+    const all = guides.map((g) => g.content).join("\n");
+    for (const topic of ["Conta grátis", "Tamanhos e preços", "Conectar o WhatsApp", "Roteiros", "Avisos no WhatsApp", "Equipe e papéis"]) expect(all).toContain(topic);
+    // os preços do guia batem com os do produto
+    expect(all).toContain("P: R$ 49 por mês, 160 atendimentos");
+    expect(all).toContain("M: R$ 99 por mês, 340 atendimentos");
+    expect(all).toContain("G: R$ 199 por mês, 680 atendimentos");
+  });
+});
+
+describe("assistente da BoaVoz: o escopo do papel", () => {
+  it("o atendente com chatbots escolhidos só vê os dele (e nada de cobrança)", async () => {
+    const { botQuotaStatus } = await import("../atendimentos");
+    vi.mocked(botQuotaStatus).mockResolvedValueOnce([
+      { botId: "b-1", name: "Bar do Zé", clientId: "c-1", clientName: "Zé", size: "P", volumePacks: null, quota: 160, used: 10 },
+      { botId: "b-2", name: "Clínica Vale", clientId: "c-2", clientName: "Vale", size: "M", volumePacks: null, quota: 340, used: 20 },
+      { botId: "b-3", name: "Pet Shop", clientId: "c-3", clientName: "Patas", size: "G", volumePacks: null, quota: 680, used: 30 },
+    ] as unknown as Awaited<ReturnType<typeof botQuotaStatus>>);
+    const t = tables();
+    Object.assign(t.agency_members[0], { role: "agent", scope: "selected", removed_at: null });
+    t.agencies[0].billing_status = "past_due";
+    t.agency_member_scopes = [{ member_id: MEMBER.id, bot_id: "b-1", client_id: null }, { member_id: MEMBER.id, bot_id: null, client_id: "c-3" }];
+    t.team_whatsapp.push({ member_id: MEMBER.id, agency_id: AGENCY.id, phone_hash: phoneHash(PHONE), status: "confirmed", nonce: "0123456789ab" });
+    const n = await assistantContext(memoryDb(t), { botId: ASSISTANT, waId: PHONE });
+    expect(n).toContain("Bar do Zé (cliente Zé)");
+    expect(n).toContain("Pet Shop (cliente Patas)");
+    expect(n).not.toContain("Clínica Vale");
+    expect(n).not.toContain("pagamento atrasado");
   });
 });

@@ -8,7 +8,7 @@ import { masterKeys } from "@/lib/keys";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { clearAssistantBot, createAssistantTemplates, runReencryptNow, runReportDailyNow, runRetentionNow, setAssistantBot } from "../acoes";
+import { clearAssistantBot, createAssistantTemplates, refreshAssistantBase, runReencryptNow, runReportDailyNow, runRetentionNow, setAssistantBot } from "../acoes";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { reportedThrough } from "@/lib/report-daily";
 import { assistantOverview, NOTICE_TEMPLATE } from "@/lib/team-whatsapp";
@@ -58,7 +58,7 @@ export default async function AdminOperations() {
         <section className="card flex flex-col gap-3 p-5">
           <h2 className="text-base font-bold">Assistente da BoaVoz (avisos no WhatsApp)</h2>
           <p className="text-xs text-muted">
-            Um chatbot normal, com número próprio de WhatsApp, que manda os avisos da conta para a equipe das agências (cada pessoa confirma o número pelo botão do modelo) e responde sobre o app com a base dele. Sem ele, o painel não mostra o cartão dos avisos. A área do cliente nunca recebe.
+            Um chatbot normal, com número próprio de WhatsApp, que manda os avisos da conta para a equipe das agências (cada pessoa confirma o número pelo botão do modelo) e responde sobre o app com a base dele. Sem ele, o painel não mostra o cartão dos avisos. A área do cliente nunca recebe. A base vem do guia do painel (docs/assistente no repositório): atualize a cada leva.
           </p>
           {assistant.botId ? (
             <div className="flex flex-col gap-1 text-sm">
@@ -87,6 +87,13 @@ export default async function AdminOperations() {
               <ResultForm action={createAssistantTemplates}>
                 <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Criando…">
                   Criar o modelo de confirmação
+                </SubmitButton>
+              </ResultForm>
+            )}
+            {assistant.botId && (
+              <ResultForm action={refreshAssistantBase}>
+                <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Atualizando…">
+                  Atualizar a base com o guia do painel
                 </SubmitButton>
               </ResultForm>
             )}

@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PLATFORM_SCOPE, openNullable, sealField } from "./field-cipher";
 import { canonicalPhone } from "./phone";
@@ -9,6 +11,10 @@ import { deliver } from "./send";
 import { firstExceeded } from "./rate-limit";
 import { normalizeKeyword } from "./routines";
 import { company } from "./company";
+import { BOT_SIZES } from "./plans";
+import { ROLE_LABELS, can, type AgencyRole } from "./roles";
+import { botQuotaStatus } from "./atendimentos";
+import { saveTextSource } from "./knowledge";
 import { SYSTEM_AUTHOR } from "./chat";
 import type { MessageComponent } from "./components";
 
@@ -155,14 +161,16 @@ export interface TeamWhatsApp {
   requestedAt: string;
   confirmedAt: string | null;
   refusedAt: string | null;
+  /** O WhatsApp do número mudou depois da confirmação (o assistente e os avisos param). */
+  identityChangedAt: string | null;
   prefs: Record<string, boolean>;
 }
 
-const COLS = "member_id, agency_id, phone_enc, status, requested_at, confirmed_at, refused_at, prefs";
-type Row = { member_id: string; agency_id: string; phone_enc: string; status: TeamWhatsAppStatus; requested_at: string; confirmed_at: string | null; refused_at: string | null; prefs: Record<string, boolean> | null };
+const COLS = "member_id, agency_id, phone_enc, status, requested_at, confirmed_at, refused_at, identity_changed_at, prefs";
+type Row = { member_id: string; agency_id: string; phone_enc: string; status: TeamWhatsAppStatus; requested_at: string; confirmed_at: string | null; refused_at: string | null; identity_changed_at?: string | null; prefs: Record<string, boolean> | null };
 
 async function opened(r: Row): Promise<TeamWhatsApp> {
-  return { memberId: r.member_id, agencyId: r.agency_id, phone: (await openNullable("team_whatsapp.phone_enc", r.phone_enc)) ?? "", status: r.status, requestedAt: r.requested_at, confirmedAt: r.confirmed_at, refusedAt: r.refused_at, prefs: r.prefs ?? {} };
+  return { memberId: r.member_id, agencyId: r.agency_id, phone: (await openNullable("team_whatsapp.phone_enc", r.phone_enc)) ?? "", status: r.status, requestedAt: r.requested_at, confirmedAt: r.confirmed_at, refusedAt: r.refused_at, identityChangedAt: r.identity_changed_at ?? null, prefs: r.prefs ?? {} };
 }
 
 export async function loadTeamWhatsApp(db: SupabaseClient, memberId: string): Promise<TeamWhatsApp | null> {
@@ -178,6 +186,8 @@ export interface NoticeStatus {
   confirmedAt: string | null;
   /** Confirmado, mas a pessoa mandou SAIR no WhatsApp (o "Foi engano" de lá devolve). */
   stopped: boolean;
+  /** Confirmado, mas o WhatsApp do número mudou (aparelho novo ou outro dono): confirmar de novo. */
+  identityChanged: boolean;
   /** "Agora não" no cartão do topo. */
   dismissed: boolean;
 }
@@ -185,10 +195,10 @@ export interface NoticeStatus {
 /** O que o painel mostra para a pessoa: os avisos existem nesta plataforma? O número dela e o estado. */
 export async function noticeStatus(db: SupabaseClient, memberId: string): Promise<NoticeStatus> {
   const assistant = await assistantChannel(db);
-  if (!assistant) return { available: false, status: null, masked: null, confirmedAt: null, stopped: false, dismissed: false };
+  if (!assistant) return { available: false, status: null, masked: null, confirmedAt: null, stopped: false, identityChanged: false, dismissed: false };
   const [row, { data: m }] = await Promise.all([loadTeamWhatsApp(db, memberId), db.from("agency_members").select("whatsapp_card_dismissed_at").eq("id", memberId).maybeSingle()]);
   const stopped = Boolean(row?.status === "confirmed" && row.phone && blocks((await activeSuppressions(db, { channel: "whatsapp", scope: suppressionScope({ wabaId: assistant.ch.waba_id, botId: assistant.botId }), contact: row.phone })).map((s) => s.kind), "UTILITY"));
-  return { available: true, status: row?.status ?? null, masked: row?.phone ? maskPhone(row.phone) : null, confirmedAt: row?.confirmedAt ?? null, stopped, dismissed: Boolean(m?.whatsapp_card_dismissed_at) };
+  return { available: true, status: row?.status ?? null, masked: row?.phone ? maskPhone(row.phone) : null, confirmedAt: row?.confirmedAt ?? null, stopped, identityChanged: Boolean(row?.identityChangedAt), dismissed: Boolean(m?.whatsapp_card_dismissed_at) };
 }
 
 /** A pessoa saiu da equipe (ou pediu para parar): o número sai. */
@@ -251,7 +261,7 @@ export async function requestTeamWhatsApp(
   const nonce = randomBytes(6).toString("hex");
   const now = new Date().toISOString();
   const { error } = await db.from("team_whatsapp").upsert(
-    { member_id: i.member.id, agency_id: i.agency.id, phone_enc: await sealField("team_whatsapp.phone_enc", phone, PLATFORM_SCOPE), phone_hash: hash, status: "pending", consent_version: NOTICE_CONSENT_VERSION, requested_at: now, nonce, confirmed_at: null, refused_at: null, updated_at: now },
+    { member_id: i.member.id, agency_id: i.agency.id, phone_enc: await sealField("team_whatsapp.phone_enc", phone, PLATFORM_SCOPE), phone_hash: hash, status: "pending", consent_version: NOTICE_CONSENT_VERSION, requested_at: now, nonce, confirmed_at: null, refused_at: null, identity_key_hash: null, identity_changed_at: null, updated_at: now },
     { onConflict: "member_id" },
   );
   // o índice único pegou outro pedido para o mesmo número ao mesmo tempo
@@ -288,6 +298,10 @@ export interface NoticeIO {
   conversation: () => Promise<string | null>;
   store: (i: number, conversationId: string) => Promise<void>;
   reply: (conversationId: string | null, text: string) => Promise<void>;
+  /** A identidade do WhatsApp que veio com a mensagem (com a checagem da Meta ligada no número). */
+  identityKeyHash?: string | null;
+  /** Depois do Confirmar: liga a checagem de identidade da Meta no número do assistente. */
+  onConfirmed?: () => Promise<void>;
 }
 
 /**
@@ -327,8 +341,10 @@ export async function handleTeamNotices(io: NoticeIO, items: Array<{ text: strin
         await io.reply(convId, NOTICE_TEXTS.already);
       } else if (r && matches) {
         const now = new Date().toISOString();
-        await io.db.from("team_whatsapp").update({ status: "confirmed", confirmed_at: now, updated_at: now }).eq("member_id", r.member_id).eq("status", "pending");
+        // a identidade do aparelho de agora: se mudar depois, o assistente para de reconhecer a pessoa
+        await io.db.from("team_whatsapp").update({ status: "confirmed", confirmed_at: now, identity_key_hash: io.identityKeyHash ?? null, identity_changed_at: null, updated_at: now }).eq("member_id", r.member_id).eq("status", "pending");
         cache.row = { ...r, status: "confirmed" };
+        await io.onConfirmed?.().catch((e) => console.error("avisos: checagem de identidade não ligou", (e as Error).message));
         const m = Array.isArray(r.agency_members) ? r.agency_members[0] : r.agency_members;
         const ag = Array.isArray(r.agencies) ? r.agencies[0] : r.agencies;
         await io.reply(convId, NOTICE_TEXTS.confirmed(firstNameOf(m ?? {}), ag?.name ?? "sua agência"));
@@ -382,3 +398,118 @@ export async function assistantOverview(db: SupabaseClient): Promise<AssistantOv
   }
   return { botId, label: bot ? `${bot.name} · ${bot.client_name}${agency ? ` (${agency})` : ""}` : null, connected: Boolean(ch), template, confirmed, pending };
 }
+
+/* ------------------------------------------------------------------ o assistente reconhece a pessoa (parte 2) */
+
+/** O que o assistente sabe da conta de quem escreve (só o que o papel dela vê no painel). */
+export interface AssistantPerson {
+  name: string;
+  agency: string;
+  role: AgencyRole;
+  /** Só para o dono (cobrança): conta grátis, assinatura ativa ou pagamento atrasado. */
+  billing: "free" | "active" | "past_due" | null;
+  bots: Array<{ name: string; clientName: string | null; size: string | null; volumePacks?: number | null; quota: number; used: number }>;
+}
+
+const BOTS_IN_NOTE = 15;
+
+/** O tamanho como o painel mostra ("tamanho M", "Atendimento, sem IA", "sem tamanho"). Pura. */
+function sizeText(b: AssistantPerson["bots"][number]): string {
+  if (!b.size) return "sem tamanho (não atende nos canais)";
+  const info = BOT_SIZES[b.size as keyof typeof BOT_SIZES];
+  if (!info) return `tamanho ${b.size}`;
+  if (b.size === "atendimento") return "tamanho Atendimento (sem IA)";
+  const packs = b.size === "volume" && b.volumePacks ? ` (${b.volumePacks} ${b.volumePacks === 1 ? "pacote" : "pacotes"})` : "";
+  return `tamanho ${info.name}${packs}, ${b.used} de ${b.quota} atendimentos neste mês`;
+}
+
+/**
+ * A nota que o assistente da BoaVoz lê sobre quem escreve: a pessoa, a agência, o papel, a conta
+ * (só para o dono) e os chatbots do escopo dela com a cota do mês. Pura.
+ */
+export function assistantNote(p: AssistantPerson): string {
+  const billing = p.billing === "past_due" ? "pagamento atrasado (a IA está pausada em todos os chatbots até a fatura ser paga)" : p.billing === "active" ? "assinatura ativa" : p.billing === "free" ? "conta grátis (sem assinatura)" : null;
+  const bots = [...p.bots].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const shown = bots.slice(0, BOTS_IN_NOTE).map((b) => `${b.name}${b.clientName ? ` (cliente ${b.clientName})` : ""}: ${sizeText(b)}`);
+  const more = bots.length > BOTS_IN_NOTE ? ` e mais ${bots.length - BOTS_IN_NOTE}` : "";
+  return [
+    `Quem escreve é ${p.name}, da equipe da agência ${p.agency} no ${company.brand} (papel no painel: ${ROLE_LABELS[p.role]}), pelo número que confirmou para os avisos.`,
+    billing ? `Conta da agência: ${billing}.` : "",
+    bots.length ? `Chatbots que essa pessoa vê no painel: ${shown.join("; ")}${more}.` : "Essa pessoa ainda não vê nenhum chatbot no painel.",
+    "Use esses dados para responder sobre a conta, sem inventar o que não está aqui (faturas, conversas, leads). Você não muda nada na conta: diga onde fica no painel.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Antes da IA, no chatbot da BoaVoz: a pessoa da equipe com o número confirmado (e a mesma
+ * identidade do WhatsApp da confirmação) e a nota sobre a conta dela. A identidade é gravada na
+ * primeira mensagem que traz o hash; se ela mudar, o assistente deixa de reconhecer a pessoa e os
+ * avisos param até ela confirmar de novo pelo painel. null: nos outros chatbots, ou sem pessoa.
+ */
+export async function assistantContext(db: SupabaseClient, i: { botId: string; waId: string; identityKeyHash?: string | null }): Promise<string | null> {
+  if ((await assistantBotId(db)) !== i.botId) return null;
+  const hash = metaPhoneHash(i.waId);
+  if (!hash) return null;
+  const { data: row } = await db.from("team_whatsapp").select("member_id, agency_id, identity_key_hash, identity_changed_at").eq("phone_hash", hash).eq("status", "confirmed").maybeSingle();
+  if (!row || row.identity_changed_at) return null;
+  if (i.identityKeyHash && row.identity_key_hash !== i.identityKeyHash) {
+    const now = new Date().toISOString();
+    if (row.identity_key_hash) {
+      await db.from("team_whatsapp").update({ identity_changed_at: now, updated_at: now }).eq("member_id", row.member_id);
+      return null;
+    }
+    // a primeira mensagem com a checagem ligada: a identidade de agora vale daqui em diante
+    await db.from("team_whatsapp").update({ identity_key_hash: i.identityKeyHash, updated_at: now }).eq("member_id", row.member_id);
+  }
+  const [{ data: m }, { data: ag }] = await Promise.all([
+    db.from("agency_members").select("id, display_name, email, role, scope, removed_at").eq("id", row.member_id).maybeSingle(),
+    db.from("agencies").select("name, billing_status").eq("id", row.agency_id).maybeSingle(),
+  ]);
+  if (!m || m.removed_at || !ag) return null;
+  const role = m.role as AgencyRole;
+  let bots = await botQuotaStatus(db, String(row.agency_id)).catch(() => []);
+  // escopo: o atendente e o editor com clientes escolhidos só veem os deles
+  if (m.scope === "selected") {
+    const { data: scopes } = await db.from("agency_member_scopes").select("client_id, bot_id").eq("member_id", row.member_id);
+    const clients = new Set((scopes ?? []).flatMap((x) => (x.client_id ? [String(x.client_id)] : [])));
+    const ids = new Set((scopes ?? []).flatMap((x) => (x.bot_id ? [String(x.bot_id)] : [])));
+    bots = bots.filter((b) => ids.has(b.botId) || (b.clientId !== null && clients.has(b.clientId)));
+  }
+  const billing = can(role, "billing") ? (ag.billing_status === "past_due" ? "past_due" : ag.billing_status === "active" ? "active" : "free") : null;
+  return assistantNote({ name: firstNameOf(m), agency: String(ag.name), role, billing, bots: bots.map((b) => ({ name: b.name, clientName: b.clientName, size: b.size, volumePacks: b.volumePacks, quota: b.quota, used: b.used })) });
+}
+
+/* ------------------------------------------------------------------ a base do assistente (parte 2) */
+
+/** O guia do painel: cada arquivo .md de docs/assistente vira um texto na base do assistente. */
+export function assistantGuides(dir = join(process.cwd(), "docs", "assistente")): Array<{ title: string; content: string }> {
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .sort()
+    .map((f) => {
+      const content = readFileSync(join(dir, f), "utf8").trim();
+      const title = /^#\s+(.+)$/m.exec(content)?.[1]?.trim() ?? f.replace(/\.md$/, "");
+      return { title: `${title} (${company.brand})`.slice(0, 120), content };
+    });
+}
+
+/**
+ * Atualiza a base do assistente com o guia do repositório: o texto de mesmo título é trocado (e
+ * reindexado), o novo é criado. Os outros conteúdos do chatbot ficam como estão.
+ */
+export async function refreshAssistantGuides(db: SupabaseClient, author: string): Promise<{ ok: boolean; lines: string[] }> {
+  const botId = await assistantBotId(db);
+  if (!botId) return { ok: false, lines: ["Escolha o chatbot do assistente primeiro."] };
+  const lines: string[] = [];
+  let ok = true;
+  for (const g of assistantGuides()) {
+    const { data: existing } = await db.from("sources").select("id").eq("bot_id", botId).eq("kind", "text").eq("title", g.title).limit(1).maybeSingle();
+    const r = await saveTextSource(db, { botId, sourceId: (existing?.id as string | undefined) ?? undefined, kind: "text", title: g.title, content: g.content, author });
+    if (!r.ok) ok = false;
+    lines.push(`${g.title}: ${r.message ?? (r.ok ? "ok" : "falhou")}`);
+  }
+  return { ok, lines };
+}
+

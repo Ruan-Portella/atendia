@@ -32,7 +32,7 @@ import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm
 import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
 import { classifyGainedAi } from "@/lib/gate/base";
 import { emitSizeChanged } from "@/lib/billing-events";
-import { assistantChannel, ensureNoticeTemplate, forgetAssistantCache } from "@/lib/team-whatsapp";
+import { assistantChannel, ensureNoticeTemplate, forgetAssistantCache, refreshAssistantGuides } from "@/lib/team-whatsapp";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -958,5 +958,14 @@ export async function createAssistantTemplates(): Promise<ActionResult> {
   } catch (e) {
     return fail(`A Meta recusou a criação: ${(e as Error).message}`);
   }
+}
+
+/** Carrega o guia do painel (docs/assistente do repositório) na base do assistente da BoaVoz. */
+export async function refreshAssistantBase(): Promise<ActionResult> {
+  const s = await requireAdmin("/admin/operacao (atualizou a base do assistente)");
+  const r = await refreshAssistantGuides(createAdminClient(), s.email);
+  await auditAdmin(s.email, "plataforma.assistente_base", { after: { ok: r.ok } });
+  revalidatePath("/admin/operacao");
+  return r.ok ? ok(r.lines.join("\n")) : fail(r.lines.join("\n"));
 }
 

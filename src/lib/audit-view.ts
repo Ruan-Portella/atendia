@@ -127,6 +127,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "perfil.avisos_whatsapp_pedido": "Pediu os avisos no WhatsApp (número da equipe)",
   "perfil.avisos_whatsapp_parar": "Parou os avisos no WhatsApp",
   "plataforma.assistente": "Assistente da BoaVoz (chatbot dos avisos)",
+  "plataforma.assistente_base": "Base do assistente da BoaVoz atualizada com o guia do painel",
   "seguranca.encerrar_sessoes": "Outras sessões encerradas",
   "seguranca.mfa_cadastrar": "Segundo fator cadastrado",
   "suporte.encerrar": "Acesso do suporte encerrado",
