@@ -9,7 +9,8 @@ export const metadata = { title: "Política de Privacidade" };
  * acesso, modo dados sensíveis, arquivos recebidos, pedido pelo chat, acesso do suporte com
  * autorização e subcontratados. Só entra aqui o que já existe: encerramento com carência e o prazo
  * dos backups (depois do Supabase Pro) entram quando existirem. Leva B3 (06/10/2026): a prova do
- * consentimento para novidades; o envio de campanhas entra com a tela de campanhas.
+ * consentimento para novidades; o envio de campanhas entra com a tela de campanhas. Avisos no
+ * WhatsApp (19/10/2026): o número da pessoa da equipe, com o aceite confirmado no WhatsApp.
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -48,6 +49,9 @@ export default function PrivacyPage() {
           </li>
           <li><strong>Contato:</strong> telefone ou identificador do WhatsApp e do Instagram, nome de perfil e, quando a empresa identifica o cliente dela no chat, o identificador informado por ela. Quando o contato pede um item regulamentado (como bebida alcoólica), guardamos a resposta à pergunta de maioridade.</li>
           <li><strong>Leads:</strong> nome, telefone, e-mail e o interesse, quando a pessoa decide informá-los.</li>
+          <li>
+            <strong>WhatsApp da equipe para avisos:</strong> quando uma pessoa da equipe de uma agência põe o número dela no painel, guardamos o número (cifrado), a confirmação que ela faz pelo botão na mensagem que chega no WhatsApp, quais avisos ela quer receber e o sinal de identidade do WhatsApp que a Meta envia (para parar os avisos se o número mudar de aparelho ou de dono). O número só é usado para os avisos da conta e para o assistente da {brand} conversar com ela por lá. Os avisos não levam o conteúdo das conversas. As pessoas dos clientes da agência nunca recebem mensagens da {brand}.
+          </li>
           <li>
             <strong>Registros de acesso:</strong> endereço IP completo, data e hora dos acessos ao painel e à área do cliente (entradas e sessões) e do chat do site (início de cada conversa e mudança de IP), como exige o Marco Civil da Internet. Nos demais registros, como o limite de uso do chat, o IP é guardado apenas como um código (hash).
           </li>
@@ -88,6 +92,7 @@ export default function PrivacyPage() {
           <li><strong>Cobrança e obrigações fiscais</strong> (execução de contrato e obrigação legal).</li>
           <li><strong>Segurança e prevenção a fraude</strong> (legítimo interesse, só nos dados da conta e para prevenir fraude): limites de uso, auditoria e investigação de abusos.</li>
           <li><strong>Comunicações sobre a conta</strong> (execução de contrato): avisos de cobrança, crédito, cota, segurança e alterações relevantes. Os e-mails de aviso não levam conteúdo de conversa: o de novo contato leva só o nome, o canal e o link para o painel.</li>
+          <li><strong>Avisos e assistente no WhatsApp da equipe</strong> (consentimento da pessoa, dado no painel e confirmado no WhatsApp): os avisos que ela escolheu e a conversa com o assistente da {brand}, que responde sobre o painel e sobre a conta (só o que o papel dela vê no painel). Ela retira o consentimento quando quiser, mandando SAIR no WhatsApp ou desligando em Meu perfil.</li>
         </ul>
       </Section>
 
@@ -157,6 +162,7 @@ export default function PrivacyPage() {
           </li>
           <li><strong>Totais dos relatórios:</strong> números por dia, sem dados pessoais, enquanto a conta existir.</li>
           <li><strong>Tokens de acesso do WhatsApp e do Instagram:</strong> até a desconexão ou o encerramento da conta.</li>
+          <li><strong>WhatsApp da equipe para avisos:</strong> enquanto a pessoa estiver na equipe e quiser receber; sai quando ela para os avisos ou sai da equipe. As conversas com o assistente da {brand} seguem o prazo das conversas (12 meses).</li>
           <li><strong>Dados da conta:</strong> enquanto ela estiver ativa, e depois pelo prazo exigido por lei (por exemplo, registros fiscais).</li>
         </ul>
         <p>

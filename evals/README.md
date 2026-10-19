@@ -141,6 +141,18 @@ Categorias: `roteiro` e `roteiro_seguranca` (obrigatória: nenhum dado da conta 
 nem para outra pessoa no número lembrado). Em 19/10/2026: 13/13 com o gpt-6-luna (3 rodadas), uns
 70 segundos e US$ 0,02 o conjunto inteiro.
 
+## Assistente da BoaVoz (`casos-assistente.jsonl`)
+
+O assistente da BoaVoz no WhatsApp (leva dos avisos, 19/10/2026) é um chatbot normal da plataforma,
+**"BoaVoz (assistente)"**, escolhido no backoffice (Operação → Assistente da BoaVoz). A base dele
+não é escrita à mão: o botão "Atualizar a base com o guia do painel" carrega
+`docs/assistente/guia-do-painel.md` (perguntas e respostas curtas sobre o painel, os preços e os
+canais) como fonte de texto. Os casos conferem os fatos do guia (preço do tamanho M, cota, crédito,
+custo do WhatsApp), o como fazer (conectar, coexistência, roteiros, papéis, parar os avisos), o
+que não está no guia, o pedido de pessoa e o fora do assunto: `&casos=assistente`.
+
+Quando o guia mudar (preço, prazo, nome de aba), atualize os casos junto e carregue a base de novo.
+
 ## Bots de teste por segmento (`casos-<segmento>.jsonl`)
 
 A troca de modelo mostrou que os erros aparecem no conteúdo de cada base (a cerveja oculta no
