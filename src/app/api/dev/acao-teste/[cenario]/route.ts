@@ -27,6 +27,9 @@ import { botActionSecrets } from "@/lib/actions";
  *   erro            500
  *   lento           a primeira tentativa demora 25 s (o BoaVoz desiste em 20 s: incerto); "Tentar de novo" responde ok
  *   em-andamento    409 {"error": "in_progress"} na primeira; depois, ok
+ *   segunda-via     consulta do roteiro (B2', parte 2b), com o parâmetro documento (o BoaVoz preenche
+ *                   com o CPF do roteiro, só os números): 529.982.247-25 tem um boleto em aberto (data e
+ *                   o PDF); 111.444.777-35 não tem nada em aberto (outcome sem_debito); outro CPF, 404
  */
 
 export const maxDuration = 60;
@@ -78,6 +81,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ cenario
   const repeated = async () => Boolean((await db.from("action_calls").select("id").eq("call_id", callId).limit(1)).data?.length);
 
   if (cenario === "cardapio") return json(200, { data: { itens: CARDAPIO } });
+  if (cenario === "segunda-via") {
+    const doc = String(body.params?.documento ?? "");
+    if (doc === "52998224725") return json(200, { data: { vencimento: "25/10/2026", valor: "R$ 189,90", linha_digitavel: "34191.79001 01043.510047 91020.150008 1 10010000018990" }, attachments: [{ url: PDF, filename: "segunda-via.pdf" }] });
+    if (doc === "11144477735") return json(200, { data: { mensagem: "Nenhuma conta em aberto para este documento." }, outcome: "sem_debito" });
+    return json(404, { error: "documento não encontrado" });
+  }
   if (cenario === "pdf") return json(200, { data: { mensagem: "O cardápio completo vai em PDF." }, attachments: [{ url: PDF, filename: "cardapio.pdf" }] });
   if (cenario === "foto") return json(200, { reply: "Olha a calabresa saindo do forno!", attachments: [{ url: PNG, filename: "calabresa.png" }] });
   if (cenario === "anexos-varios")
