@@ -27,6 +27,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "assinatura.reativar": "Assinatura reativada (cancelamento desfeito)",
   "canal.desconectar_sem_tamanho": "Canal desconectado: chatbot sem tamanho",
   "sem_tamanho.conferir": "Chatbots sem tamanho conferidos pela BoaVoz",
+  "dominio.remover_sem_pacote": "Domínio próprio desligado: sem o pacote",
   "credito.recarga": "Recarga automática do crédito",
   "credito.recarga_automatica": "Recarga automática do crédito ajustada",
   "excedente.trafego_real": "Pico no chat do site confirmado como tráfego real",

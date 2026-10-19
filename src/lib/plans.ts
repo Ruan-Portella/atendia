@@ -73,9 +73,13 @@ export const AI_BOTS_FILTER = `size.in.(${AI_SIZES.join(",")}),quota_override.no
 
 /** Conta grátis: respostas de teste da IA (teste ao vivo do painel e demos) enquanto não há assinatura. */
 export const TEST_ANSWERS_FREE = 50;
-/** Cada demo (com ou sem assinatura, também as da vitrine do site): respostas e dias de validade. */
+/** Cada demo (com ou sem assinatura): respostas e dias de validade; a da vitrine do site responde menos. */
 export const DEMO_ANSWERS = 50;
+export const DEMO_ANSWERS_SHOWCASE = 20;
 export const DEMO_DAYS = 14;
+/** Demos que a conta gera por mês (contadas na criação; apagar não devolve a vaga). */
+export const DEMOS_PER_MONTH_FREE = 3;
+export const DEMOS_PER_MONTH = 20;
 
 /** Respostas da IA que cabem num atendimento: a seguinte abre outro. */
 export const ANSWERS_PER_ATENDIMENTO = 40;

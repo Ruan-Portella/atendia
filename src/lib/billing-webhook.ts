@@ -7,6 +7,7 @@ import { applyCredit } from "./billing-credit";
 import { endApiPauses } from "./api-pause";
 import { classifyGainedAi } from "./gate/base";
 import { disconnectUnsized } from "./free-account";
+import { releaseDomainsWithoutPack } from "./domain-pack";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl } from "./utils";
 
@@ -84,6 +85,8 @@ export async function endSubscription(db: SupabaseClient, customer: string): Pro
     await endApiPauses(db, id).catch((e) => console.error("assinatura: pausas da API", (e as Error).message));
     // sem tamanho, sem canal: o WhatsApp e o Instagram desconectam na hora (a tarefa diária pega o que falhar)
     await disconnectUnsized(db, { agencyId: id }).catch((e) => console.error("assinatura: canais sem tamanho", (e as Error).message));
+    // sem o pacote, o domínio próprio sai
+    await releaseDomainsWithoutPack(db, { agencyId: id }).catch((e) => console.error("assinatura: domínio sem pacote", (e as Error).message));
     await audit(db, { agencyId: id, actorType: "system", actorId: null, action: "assinatura.encerrar", targetType: "agency", targetId: id });
   }
 }
@@ -123,6 +126,8 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
       for (const a of agencies ?? []) {
         must(await db.rpc("apply_due_bot_changes", { p_agency_id: a.id }));
         await disconnectUnsized(db, { agencyId: a.id as string }).catch((e) => console.error("assinatura: canais sem tamanho", (e as Error).message));
+        // pacote Domínio próprio tirado vale até o dia 1º: depois, o domínio sai
+        await releaseDomainsWithoutPack(db, { agencyId: a.id as string }).catch((e) => console.error("assinatura: domínio sem pacote", (e as Error).message));
       }
       // itens mudados (por nós ou no painel da Stripe): a assinatura fica igual ao que o BoaVoz guarda
       const changedItems = event.type === "customer.subscription.updated" && "items" in ((event.data.previous_attributes ?? {}) as Record<string, unknown>);

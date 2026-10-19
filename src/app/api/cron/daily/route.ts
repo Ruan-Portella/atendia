@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { disconnectUnsized } from "@/lib/free-account";
+import { releaseDomainsWithoutPack } from "@/lib/domain-pack";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
 import { applyRetention, refreshSources } from "@/lib/jobs";
@@ -94,6 +95,8 @@ async function daily() {
   // o que sobrar dos 5 minutos da rotina (cada análise é uma chamada de IA)
   // chatbot sem tamanho não fica com canal (o webhook da Stripe já desconecta na hora; aqui, o que sobrou)
   const inbox = await run("chatbots sem tamanho", () => disconnectUnsized(db));
+  // domínio próprio sem o pacote sai (o webhook da Stripe já faz na virada; aqui, o que sobrou)
+  const domains = await run("domínio sem pacote", () => releaseDomainsWithoutPack(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, domains, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

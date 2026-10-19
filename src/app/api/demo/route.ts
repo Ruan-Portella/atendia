@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ingestSource } from "@/lib/ingest";
 import { normalizeUrl, slugify } from "@/lib/utils";
 import { clientIp, firstExceeded, hashId, tooMany, type LimitRule } from "@/lib/rate-limit";
+import { claimDemo, demosMonthText, releaseDemo } from "@/lib/free-account";
 
 export const maxDuration = 60;
 
@@ -21,7 +22,9 @@ const bodySchema = z.object({
  *   e expira; serve para o visitante experimentar.
  *
  * Cada demo lê um site inteiro e gera embeddings (custa dinheiro de IA), então tem limite
- * por IP, por agência e um teto diário global para as anônimas.
+ * por IP, por agência e um teto diário global para as anônimas. A agência gera até 3 demos por
+ * mês na conta grátis e até 20 com assinatura (contadas na criação; site que não deu para ler
+ * devolve a vaga).
  */
 export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
@@ -52,6 +55,12 @@ export async function POST(req: Request) {
       ];
   const exceeded = await firstExceeded(db, rules);
   if (exceeded) return tooMany(exceeded);
+  // demos do mês da agência (a vitrine do site tem os limites por IP e o teto diário)
+  const own = agencyId;
+  if (own && !(await claimDemo(db, own))) {
+    const { data: ag } = await db.from("agencies").select("billing_status").eq("id", own).maybeSingle();
+    return Response.json({ error: "demo_limit", message: demosMonthText(Boolean(ag && ag.billing_status !== "none")) }, { status: 429 });
+  }
 
   if (!agencyId) {
     // agência vitrine: criada uma vez, dona das demos anônimas
@@ -80,7 +89,10 @@ export async function POST(req: Request) {
     })
     .select("id")
     .single();
-  if (error || !bot) return Response.json({ error: "create_failed", message: error?.message }, { status: 500 });
+  if (error || !bot) {
+    if (own) await releaseDemo(db, own);
+    return Response.json({ error: "create_failed", message: error?.message }, { status: 500 });
+  }
 
   const { data: source } = await db
     .from("sources")
@@ -94,6 +106,7 @@ export async function POST(req: Request) {
     return Response.json({ demoSlug, botId: bot.id, pages: r.pages, chunks: r.chunks, url: `/demo/${demoSlug}` });
   } catch (e) {
     await db.from("bots").update({ status: "error" }).eq("id", bot.id);
+    if (own) await releaseDemo(db, own);
     return Response.json({ error: "ingest_failed", message: (e as Error).message }, { status: 422 });
   }
 }

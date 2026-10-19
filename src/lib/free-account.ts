@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { DEMO_ANSWERS, DEMO_DAYS, TEST_ANSWERS_FREE } from "./plans";
+import { DEMOS_PER_MONTH, DEMOS_PER_MONTH_FREE, DEMO_ANSWERS, DEMO_ANSWERS_SHOWCASE, DEMO_DAYS, TEST_ANSWERS_FREE } from "./plans";
 import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "./channel-disconnect";
 import { notifyAgencyOwner } from "./notify";
 import { audit } from "./audit";
@@ -10,8 +10,9 @@ import { appUrl } from "./utils";
  * - Sem assinatura, o teste ao vivo do painel e as demos usam até 50 respostas da IA (a vitrine
  *   do site fica de fora). Com assinatura, o teste ao vivo é livre. O Atendimento não tem IA, nem
  *   no teste.
- * - Cada demo vale 14 dias e responde até 50 vezes, com ou sem assinatura (as da vitrine também):
- *   a demo é para mostrar, não para atender.
+ * - Cada demo vale 14 dias e responde até 50 vezes, com ou sem assinatura (a da vitrine do site,
+ *   até 20): a demo é para mostrar, não para atender. A conta gera até 3 demos por mês na conta
+ *   grátis e até 20 com assinatura (contadas na criação).
  * - WhatsApp, Instagram e o chat do site só ligam com tamanho (Atendimento, sem IA, ou um tamanho
  *   com IA): não há caixa de entrada grátis. O chatbot que perde o tamanho (no dia 1º ou no fim da
  *   assinatura) tem o WhatsApp e o Instagram desconectados na hora, sem apagar nada.
@@ -36,12 +37,35 @@ export type TestAnswer = "ok" | "demo_vencida" | "demo_limite" | "conta";
 
 /** Reserva uma resposta de teste da IA (teste ao vivo e demos). Falha nossa não trava o teste. */
 export async function takeTestAnswer(db: SupabaseClient, botId: string): Promise<TestAnswer> {
-  const { data, error } = await db.rpc("use_test_answer", { p_bot_id: botId, p_limit: TEST_ANSWERS_FREE, p_demo_limit: DEMO_ANSWERS });
+  const { data, error } = await db.rpc("use_test_answer", { p_bot_id: botId, p_limit: TEST_ANSWERS_FREE, p_demo_limit: DEMO_ANSWERS, p_showcase_demo_limit: DEMO_ANSWERS_SHOWCASE });
   if (error) {
     console.error("conta grátis: resposta de teste não conferida", error.message);
     return "ok";
   }
   return data === "demo_vencida" || data === "demo_limite" || data === "conta" ? data : "ok";
+}
+
+/** Recusa de demo nova: o limite do mês (contado na criação). */
+export function demosMonthText(subscribed: boolean): string {
+  return subscribed
+    ? `A conta já gerou as ${DEMOS_PER_MONTH} demos deste mês. O limite volta no dia 1º; enquanto isso, dá para transformar uma demo em chatbot.`
+    : `A conta grátis gera até ${DEMOS_PER_MONTH_FREE} demos por mês. Com assinatura, são até ${DEMOS_PER_MONTH}.`;
+}
+
+/** Reserva a criação de uma demo neste mês (a vitrine do site fica de fora). false = chegou ao limite. Falha nossa não trava. */
+export async function claimDemo(db: SupabaseClient, agencyId: string): Promise<boolean> {
+  const { data, error } = await db.rpc("claim_demo", { p_agency_id: agencyId, p_free_limit: DEMOS_PER_MONTH_FREE, p_paid_limit: DEMOS_PER_MONTH });
+  if (error) {
+    console.error("demos: vaga do mês não conferida", error.message);
+    return true;
+  }
+  return Boolean(data);
+}
+
+/** A demo não chegou a existir (site que não deu para ler): a vaga do mês volta. */
+export async function releaseDemo(db: SupabaseClient, agencyId: string): Promise<void> {
+  const { error } = await db.rpc("release_demo", { p_agency_id: agencyId });
+  if (error) console.error("demos: vaga do mês não devolvida", error.message);
 }
 
 export const SIZE_REQUIRED = "Para conectar o WhatsApp e o Instagram, este chatbot precisa de um tamanho. Escolha em Cobrança → Assinatura: Atendimento (sem IA) ou um tamanho com IA.";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ATENDIMENTO_TEST_OFF, DEMO_ENDED_PANEL, SIZE_REQUIRED, TEST_ANSWERS_DONE, UNSIZED_API_SENDS, demoEndedText, unsizedEmail } from "../free-account";
-import { AI_BOTS_FILTER, BOT_SIZES, DEMO_ANSWERS, DEMO_DAYS, TEST_ANSWERS_FREE, botHasAi, sizeOption } from "../plans";
+import { ATENDIMENTO_TEST_OFF, DEMO_ENDED_PANEL, SIZE_REQUIRED, TEST_ANSWERS_DONE, UNSIZED_API_SENDS, demoEndedText, demosMonthText, unsizedEmail } from "../free-account";
+import { domainReleasedEmail } from "../domain-pack";
+import { AI_BOTS_FILTER, BOT_SIZES, DEMOS_PER_MONTH, DEMOS_PER_MONTH_FREE, DEMO_ANSWERS, DEMO_ANSWERS_SHOWCASE, DEMO_DAYS, TEST_ANSWERS_FREE, botHasAi, sizeOption } from "../plans";
 import { isUnpaidSubscriptionInvoice } from "../billing-view";
 import { pastDueEmail } from "../billing-webhook";
 import { planSizeChange } from "../billing";
@@ -92,6 +93,26 @@ describe("demo: para mostrar, não para atender", () => {
     expect(demoEndedText("Agência Sol", false)).toBe("Esta demonstração terminou. Para continuar, fale com Agência Sol.");
     expect(demoEndedText(null, false)).toContain("quem enviou o link");
     expect(demoEndedText("BoaVoz", true)).toContain("crie sua conta grátis");
+  });
+
+  it("demos por mês: 3 na conta grátis, 20 com assinatura; a da vitrine responde 20 vezes", () => {
+    // os mesmos números da migração 0103 (claim_demo e use_test_answer recebem daqui)
+    expect(DEMOS_PER_MONTH_FREE).toBe(3);
+    expect(DEMOS_PER_MONTH).toBe(20);
+    expect(DEMO_ANSWERS_SHOWCASE).toBe(20);
+    expect(demosMonthText(false)).toBe("A conta grátis gera até 3 demos por mês. Com assinatura, são até 20.");
+    expect(demosMonthText(true)).toContain("as 20 demos deste mês");
+    expect(demosMonthText(true)).toContain("volta no dia 1º");
+  });
+});
+
+describe("domínio próprio sem o pacote", () => {
+  it("e-mail: o domínio desligado, para onde tudo voltou e como usar de novo", () => {
+    const [subject, lines] = domainReleasedEmail("chat.agencia.com.br", "https://x/painel/marca");
+    expect(subject).toBe("Domínio próprio desligado");
+    expect(lines.join(" ")).toContain("chat.agencia.com.br foi desligado");
+    expect(lines.join(" ")).toContain("domínio do BoaVoz");
+    expect(lines.join(" ")).toContain("https://x/painel/marca");
   });
 });
 

@@ -36,6 +36,9 @@ export interface Agency {
   billing_cancel_at: string | null;
   /** Respostas de teste da IA já usadas na conta grátis (teste ao vivo e demos). */
   test_answers_used: number;
+  /** Demos geradas no mês (demo_month, mês civil de São Paulo). */
+  demo_month: string | null;
+  demo_month_count: number;
   /** Recarga automática do crédito do excedente (centavos). */
   credit_auto_enabled: boolean;
   credit_auto_below_cents: number | null;

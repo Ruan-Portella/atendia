@@ -4,14 +4,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { belongsToHost } from "@/lib/domain-server";
 import { ChatWindow } from "@/components/chat-window";
 import { initials } from "@/lib/utils";
-import { DEMO_ANSWERS, brl } from "@/lib/plans";
+import { DEMO_ANSWERS, DEMO_ANSWERS_SHOWCASE, brl } from "@/lib/plans";
 import { demoEndedText } from "@/lib/free-account";
 
 const dayBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
 /** A demo terminou: passou da validade ou já respondeu o limite. */
-function demoEnded(bot: { demo_expires_at?: string | null; demo_answers_used?: number | null }, now = Date.now()): boolean {
-  return Boolean(bot.demo_expires_at && Date.parse(bot.demo_expires_at) <= now) || (bot.demo_answers_used ?? 0) >= DEMO_ANSWERS;
+function demoEnded(bot: { demo_expires_at?: string | null; demo_answers_used?: number | null }, limit: number, now = Date.now()): boolean {
+  return Boolean(bot.demo_expires_at && Date.parse(bot.demo_expires_at) <= now) || (bot.demo_answers_used ?? 0) >= limit;
 }
 
 export async function generateMetadata({ params }: PageProps<"/demo/[slug]">): Promise<Metadata> {
@@ -30,7 +30,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
   const { data: bot } = await db.from("bots").select("*").eq("demo_slug", slug).eq("is_demo", true).maybeSingle();
   if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
   const { data: agency } = await db.from("agencies").select("name, slug, logo_url, brand_color, support_whatsapp, privacy_url").eq("id", bot.agency_id).single();
-  const ended = demoEnded(bot);
+  const ended = demoEnded(bot, agency?.slug === "boavoz" ? DEMO_ANSWERS_SHOWCASE : DEMO_ANSWERS);
   await db.rpc("increment_demo_views", { p_slug: slug });
 
   const color = bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d";

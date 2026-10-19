@@ -7,7 +7,8 @@ import { relativeTime } from "@/lib/utils";
 import { agencyBaseUrl } from "@/lib/domain";
 import { BotRowActions } from "@/components/bot-row-actions";
 import { deleteBot } from "../actions";
-import { DEMO_ANSWERS, DEMO_DAYS } from "@/lib/plans";
+import { DEMOS_PER_MONTH, DEMOS_PER_MONTH_FREE, DEMO_ANSWERS, DEMO_DAYS } from "@/lib/plans";
+import { monthBoundsBR } from "@/lib/billing";
 
 const dayBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 /** "vale até 01/11 · 12 de 50 respostas" ou "terminou em 01/11". */
@@ -21,6 +22,8 @@ export const metadata = { title: "Demos" };
 
 export default async function DemosPage() {
   const { agency } = await requirePermission("config");
+  const monthLimit = agency.billing_status === "none" ? DEMOS_PER_MONTH_FREE : DEMOS_PER_MONTH;
+  const usedThisMonth = agency.demo_month === monthBoundsBR().firstDay ? agency.demo_month_count : 0;
   const supabase = await createClient();
   const { data: demos } = await supabase.from("bots").select("id, client_name, client_site, demo_slug, demo_views, status, created_at, demo_expires_at, demo_answers_used").eq("agency_id", agency.id).eq("is_demo", true).order("created_at", { ascending: false });
 
@@ -29,6 +32,9 @@ export default async function DemosPage() {
       <div>
         <h1 className="text-2xl font-bold sm:text-[28px]">Demos</h1>
         <p className="text-sm text-muted">Cole o site de um prospect. Em um minuto você tem um link para mandar no WhatsApp dele. Cada demo vale {DEMO_DAYS} dias e responde até {DEMO_ANSWERS} vezes.</p>
+        <p className="mt-1 text-sm text-muted tabular">
+          Neste mês: {usedThisMonth} de {monthLimit} demos{agency.billing_status === "none" ? ` (com assinatura, até ${DEMOS_PER_MONTH})` : ""}.
+        </p>
       </div>
       <div className="card max-w-[640px] p-6"><DemoGenerator inPanel /></div>
       <div className="card overflow-hidden">
