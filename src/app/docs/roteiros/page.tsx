@@ -28,7 +28,10 @@ const EVENT = `
   "contact": { "id": "ctc_77d0…", "whatsapp_user_id": null, "phone": "5511999990000", "instagram_id": null, "display": { "name": "Ana" } },
   "data": {
     "routine": { "id": "rtn_3b9e…", "name": "Segunda via" },
-    "run": { "id": "run_7f21…", "started_by": "keyword", "started_at": "2026-10-19T15:01:40.118Z", "ended_at": "2026-10-19T15:03:12.511Z", "step": 2, "steps_total": 3 }
+    "run": { "id": "run_7f21…", "started_by": "keyword", "started_at": "2026-10-19T15:01:40.118Z", "ended_at": "2026-10-19T15:03:12.511Z", "step": 2, "steps_total": 3 },
+    "variables": {
+      "documento": { "type": "cpf", "value": "52998224725" }
+    }
   }
 }
 `;
@@ -160,11 +163,11 @@ export default function RoutinesDocs() {
           [<code key="cc">context_changed</code>, "A conta ou a pessoa da conversa mudou (troca de conta, desconectar)."],
         ]}
       />
-      <p>Os dados que o roteiro juntou são apagados no fim.</p>
+      <p>Os dados que o roteiro juntou são apagados do BoaVoz no fim; o webhook leva antes.</p>
 
       <H2 id="eventos">Webhooks</H2>
       <p>
-        <code>routine.completed</code> quando o roteiro chega ao fim, e <code>routine.abandoned</code> quando acaba antes, com o <code>reason</code> da tabela acima. Os dois levam o roteiro e a execução (<code>started_by</code>: <code>keyword</code> ou <code>ai</code>; o passo em que acabou). Os dados que o roteiro juntou não vão no evento: a sua ação já recebe o que precisa no passo dela.
+        <code>routine.completed</code> quando o roteiro chega ao fim, e <code>routine.abandoned</code> quando acaba antes, com o <code>reason</code> da tabela acima. Os dois levam o roteiro, a execução (<code>started_by</code>: <code>keyword</code> ou <code>ai</code>; o passo em que acabou) e as <code>variables</code>: os dados que o roteiro juntou, cada um com <code>type</code> e <code>value</code>, no formato que as ações recebem (no abandonado, o que deu tempo de juntar). É o caminho para o seu sistema receber os dados de um roteiro sem ação, como um cadastro.
       </p>
       <Code lang="json · routine.completed" code={EVENT} />
 

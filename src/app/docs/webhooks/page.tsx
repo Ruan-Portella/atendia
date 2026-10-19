@@ -119,8 +119,8 @@ export default function WebhooksDocs() {
       <Table
         head={["Evento", "Quando", "data"]}
         rows={[
-          [<code key="1">routine.completed</code>, "O roteiro chegou ao fim.", <><code>routine</code> {`{id, name}`} e <code>run</code> {`{id, started_by, started_at, ended_at, step, steps_total}`}. Os dados que o roteiro juntou não vão (a ação do passo já recebe).</>],
-          [<code key="2">routine.abandoned</code>, "O roteiro acabou antes do fim.", <>O mesmo, mais <code>reason</code>: <code>handoff</code>, <code>cancelled</code>, <code>timeout</code>, <code>idle</code>, <code>replaced</code>, <code>routine_changed</code>, <code>step_unavailable</code> ou <code>context_changed</code> (veja <Link href="/docs/roteiros#fim">Fim do roteiro</Link>).</>],
+          [<code key="1">routine.completed</code>, "O roteiro chegou ao fim.", <><code>routine</code> {`{id, name}`}, <code>run</code> {`{id, started_by, started_at, ended_at, step, steps_total}`} e <code>variables</code> (os dados que o roteiro juntou, <code>{`{type, value}`}</code>, no formato das ações).</>],
+          [<code key="2">routine.abandoned</code>, "O roteiro acabou antes do fim.", <>O mesmo (as <code>variables</code> que deu tempo de juntar), mais <code>reason</code>: <code>handoff</code>, <code>cancelled</code>, <code>timeout</code>, <code>idle</code>, <code>replaced</code>, <code>routine_changed</code>, <code>step_unavailable</code> ou <code>context_changed</code> (veja <Link href="/docs/roteiros#fim">Fim do roteiro</Link>).</>],
         ]}
       />
       <H3 id="contato">Contato</H3>

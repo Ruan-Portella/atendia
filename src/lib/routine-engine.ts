@@ -162,14 +162,14 @@ export async function loadActiveRun(db: SupabaseClient, conversationId: string):
 /** Quais roteiros abertos encerrar: um, os de uma conversa, de um roteiro, de um chatbot ou os vencidos. */
 type CloseFilter = { id: string } | { conversationId: string } | { routineId: string } | { botId: string } | { lastContactBefore: string };
 
-const CLOSE_COLS = "id, conversation_id, routine_id, routine_name, step_index, steps_total, started_by, started_at";
-type ClosingRow = { id: string; conversation_id: string; routine_id: string | null; routine_name: string; step_index: number; steps_total: number; started_by: "ia" | "palavra"; started_at: string };
+const CLOSE_COLS = "id, conversation_id, routine_id, routine_name, step_index, steps_total, started_by, started_at, variables_enc";
+type ClosingRow = { id: string; conversation_id: string; routine_id: string | null; routine_name: string; step_index: number; steps_total: number; started_by: "ia" | "palavra"; started_at: string; variables_enc: string | null };
 const CLOSE_BATCH = 500;
 
 /**
  * Fim do roteiro: concluído ou abandonado (com o motivo). As variáveis saem na hora. Todo fim passa
- * por aqui e avisa o sistema da loja (routine.completed ou routine.abandoned). Devolve quantos
- * acabaram (até 500 por chamada).
+ * por aqui e avisa o sistema da loja (routine.completed ou routine.abandoned, com os dados que o
+ * roteiro juntou, lidos antes de apagar). Devolve quantos acabaram (até 500 por chamada).
  */
 async function closeRuns(db: SupabaseClient, f: CloseFilter, status: "completed" | "abandoned", reason: EndReason | null): Promise<number> {
   let q = db.from("routine_runs").select(CLOSE_COLS).eq("status", "active");
@@ -202,6 +202,8 @@ async function closeRuns(db: SupabaseClient, f: CloseFilter, status: "completed"
       status,
       reason,
       run: { id: r.id, routineId: r.routine_id, routineName: r.routine_name, startedBy: r.started_by, startedAt: r.started_at, endedAt: now, stepIndex: r.step_index, stepsTotal: r.steps_total },
+      // só aberto se algum webhook vai receber (o comum é não ter nenhum)
+      variables: () => openVariables(r.variables_enc),
     }).catch((e) => console.error("webhook: fim de roteiro", (e as Error).message));
   }
   return closed.size;

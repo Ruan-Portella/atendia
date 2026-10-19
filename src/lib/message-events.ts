@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { activeOf } from "./entitlements";
 import type { LeadRequest } from "./leads";
 import { parsePhotoReading, type PhotoReading } from "./photo-note";
+import { actionValue, type RoutineVariables } from "./routine-run";
 
 /*
  * Eventos de mensagem nos webhooks (C pública, parte 2a; spec Peça 2): message.received e
@@ -266,19 +267,25 @@ export interface RoutineEndRun {
 
 /**
  * data do routine.completed e do routine.abandoned: o roteiro, a execução (como começou e em que
- * passo acabou) e o motivo (só no abandonado). Os dados que o roteiro juntou não vão (spec,
- * "Formatos de payload"): a ação do passo já recebe o que precisa, e o evento não espalha CPF. Pura.
+ * passo acabou), o motivo (só no abandonado) e os dados que o roteiro juntou, no formato que as
+ * ações recebem (CPF só com os números, data em aaaa-mm-dd). Os dados vão (decisão do usuário em
+ * 19/10/2026): sem ação no roteiro, o webhook é o caminho até o sistema da loja, e o
+ * message.received já leva o que a pessoa escreveu. Pura.
  */
-export function routineEventData(r: RoutineEndRun, reason: string | null): Record<string, unknown> {
+export function routineEventData(r: RoutineEndRun, variables: RoutineVariables, reason: string | null): Record<string, unknown> {
   return {
     routine: { id: r.routineId ? `rtn_${r.routineId}` : null, name: r.routineName },
     run: { id: `run_${r.id}`, started_by: r.startedBy === "palavra" ? "keyword" : "ai", started_at: r.startedAt, ended_at: r.endedAt, step: r.stepIndex, steps_total: r.stepsTotal },
     ...(reason ? { reason } : {}),
+    variables: Object.fromEntries(Object.entries(variables).map(([k, v]) => [k, { type: v.kind, value: String(actionValue(v)) }])),
   };
 }
 
 /** routine.completed (o roteiro chegou ao fim) ou routine.abandoned (acabou antes, com o motivo). */
-export async function queueRoutineEvent(db: SupabaseClient, e: { conversationId: string; status: "completed" | "abandoned"; reason: string | null; run: RoutineEndRun }): Promise<void> {
+export async function queueRoutineEvent(
+  db: SupabaseClient,
+  e: { conversationId: string; status: "completed" | "abandoned"; reason: string | null; run: RoutineEndRun; variables: () => Promise<RoutineVariables> },
+): Promise<void> {
   try {
     const ctx = await eventContext(db, e.conversationId);
     if (!ctx) return;
@@ -293,7 +300,7 @@ export async function queueRoutineEvent(db: SupabaseClient, e: { conversationId:
         conversation: { id: e.conversationId, channel: ctx.channel },
         contact: await contactObject(db, ctx.contactId),
         contactId: ctx.contactId,
-        data: routineEventData(e.run, e.status === "abandoned" ? e.reason : null),
+        data: routineEventData(e.run, await e.variables(), e.status === "abandoned" ? e.reason : null),
       },
       { background: true },
     );

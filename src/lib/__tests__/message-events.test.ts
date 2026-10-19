@@ -28,15 +28,23 @@ describe("eventos de mensagem nos webhooks", () => {
 describe("eventos de roteiro nos webhooks", () => {
   const run = { id: "r-1", routineId: "rot-1", routineName: "Segunda via", startedBy: "palavra" as const, startedAt: "2026-10-19T12:00:00.000Z", endedAt: "2026-10-19T12:03:00.000Z", stepIndex: 2, stepsTotal: 3 };
 
-  it("routine.completed: o roteiro, como começou e o passo em que acabou (os dados que ele juntou não vão)", () => {
-    expect(routineEventData(run, null)).toEqual({
+  it("routine.completed: o roteiro, como começou, o passo em que acabou e os dados no formato das ações", () => {
+    expect(
+      routineEventData(run, { documento: { kind: "cpf", value: "529.982.247-25" }, data: { kind: "data", value: "15/03/2026" }, motivo: { kind: "escolha", value: "Veio com defeito" }, foto: { kind: "foto", value: "Roteador com a luz LOS acesa." } }, null),
+    ).toEqual({
       routine: { id: "rtn_rot-1", name: "Segunda via" },
       run: { id: "run_r-1", started_by: "keyword", started_at: "2026-10-19T12:00:00.000Z", ended_at: "2026-10-19T12:03:00.000Z", step: 2, steps_total: 3 },
+      variables: {
+        documento: { type: "cpf", value: "52998224725" },
+        data: { type: "data", value: "2026-03-15" },
+        motivo: { type: "escolha", value: "Veio com defeito" },
+        foto: { type: "foto", value: "Roteador com a luz LOS acesa." },
+      },
     });
   });
 
-  it("routine.abandoned leva o motivo; roteiro apagado vai sem id", () => {
-    expect(routineEventData({ ...run, routineId: null, startedBy: "ia" }, "idle")).toEqual({ routine: { id: null, name: "Segunda via" }, run: { ...routineEventData(run, null).run as object, started_by: "ai" }, reason: "idle" });
+  it("routine.abandoned leva o motivo e o que deu tempo de juntar; roteiro apagado vai sem id", () => {
+    expect(routineEventData({ ...run, routineId: null, startedBy: "ia" }, { email: { kind: "email", value: "Ana@Exemplo.com" } }, "idle")).toMatchObject({ routine: { id: null, name: "Segunda via" }, run: { started_by: "ai" }, reason: "idle", variables: { email: { type: "email", value: "ana@exemplo.com" } } });
     expect(WEBHOOK_EVENT_GROUPS.find((g) => g.label === "Roteiros")?.events).toEqual(["routine.completed", "routine.abandoned"]);
   });
 });
