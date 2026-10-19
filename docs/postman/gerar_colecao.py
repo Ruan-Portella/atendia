@@ -105,17 +105,19 @@ conversas = folder(
             "GET",
             "conversations/{{conversation_id}}/messages",
             query=[("limit", "50", False), ("cursor", "", True)],
-            desc="Da mais antiga para a mais nova, com status (received, sent, delivered, read, failed, uncertain) e error. Guarda o id da última mensagem em `message_id`.",
+            desc="Da mais antiga para a mais nova, com status (received, sent, delivered, read, failed, uncertain) e error. Guarda o id da última mensagem em `message_id`. Mensagem com arquivo traz `media`: no áudio, a transcrição; na foto que a IA leu, o `reading` (tipo, descrição e texto da foto).",
             tests=expect_status(200)
             + [
                 "const data = pm.response.json().data || [];",
                 "if (data.length) pm.environment.set(\"message_id\", data[data.length - 1].id);",
                 "const comArquivo = data.filter((m) => m.media).pop();",
                 "if (comArquivo) pm.environment.set(\"media_id\", comArquivo.media.id);",
+                "const lida = data.filter((m) => m.media && m.media.reading).pop();",
+                "if (lida) console.log(`foto lida pela IA (${lida.media.reading.type}): ${lida.media.reading.description || '-'}`);",
                 "console.log(data.map((m) => `${m.direction} ${m.source} ${m.status}: ${(m.text || \"\").slice(0, 60)}`).join(\"\\n\"));",
             ],
         ),
-        req("Uma mensagem", "GET", "messages/{{message_id}}", desc="Permissão **messages**. O status também chega por webhook (message.status) e no histórico. Mensagem com arquivo traz `media` (id, tipo, tamanho, nome e um link de 1 hora).", tests=expect_status(200)),
+        req("Uma mensagem", "GET", "messages/{{message_id}}", desc="Permissão **messages**. O status também chega por webhook (message.status) e no histórico. Mensagem com arquivo traz `media` (id, tipo, tamanho, nome e um link de 1 hora; no áudio, a transcrição; na foto que a IA leu, o `reading`).", tests=expect_status(200)),
         req(
             "Baixar arquivo",
             "GET",

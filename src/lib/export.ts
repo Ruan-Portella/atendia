@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { exportContactsPage } from "./contacts";
 import { exportLeadsPage } from "./leads";
 import { loadMessages } from "./messages";
+import { parsePhotoReading, photoReadingLines } from "./photo-note";
 
 /*
  * Exportação dos dados do negócio (leva S): conversas (uma linha por mensagem), contatos e leads,
@@ -25,6 +26,7 @@ const COLUMNS: Record<ExportKind, Array<[key: string, label: string]>> = {
     ["data", "Data da mensagem"],
     ["de", "De"],
     ["texto", "Texto"],
+    ["foto_ia", "Foto (o que a IA leu)"],
   ],
   contatos: [
     ["id", "Contato"],
@@ -85,9 +87,9 @@ export async function* exportRows(db: SupabaseClient, bots: Array<{ id: string; 
     if (error) throw new Error(`exportação das conversas: ${error.message}`);
     const convs = (data ?? []) as Array<{ id: string; bot_id: string; channel: string | null; started_at: string }>;
     for (const c of convs) {
-      const messages = await loadMessages(db, { conversationId: c.id }, ["role", "content", "created_at", "deleted_at"] as const);
+      const messages = await loadMessages(db, { conversationId: c.id }, ["role", "content", "created_at", "deleted_at", "photo_reading_enc"] as const);
       for (const m of messages)
-        yield { conversa: c.id, assistente: botName.get(c.bot_id) ?? null, canal: CHANNEL[c.channel ?? "widget"] ?? c.channel, inicio: c.started_at, data: m.created_at, de: WHO[m.role] ?? m.role, texto: m.deleted_at ? "(mensagem apagada pelo contato)" : m.content };
+        yield { conversa: c.id, assistente: botName.get(c.bot_id) ?? null, canal: CHANNEL[c.channel ?? "widget"] ?? c.channel, inicio: c.started_at, data: m.created_at, de: WHO[m.role] ?? m.role, texto: m.deleted_at ? "(mensagem apagada pelo contato)" : m.content, foto_ia: m.deleted_at ? null : photoReadingLines(parsePhotoReading(m.photo_reading_enc)).join(" | ") || null };
     }
     if (convs.length < PAGE) return;
   }

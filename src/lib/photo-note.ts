@@ -165,3 +165,26 @@ export function withHandoffNotice(text: string, notice: string | null | undefine
 export function photoReadingOn(o: { enabled: boolean; hasAi: boolean; sensitive: boolean; aiResponds: boolean; aiOff: boolean }): boolean {
   return o.enabled && o.hasAi && !o.sensitive && o.aiResponds && !o.aiOff;
 }
+
+/** A leitura da foto no formato da API e dos webhooks (media.reading); null sem leitura. Pura. */
+export function readingJson(r: PhotoReading | null | undefined): { type: PhotoReading["kind"]; description: string | null; text: string | null } | null {
+  return r ? { type: r.kind, description: r.description ?? null, text: r.text ?? null } : null;
+}
+
+const PANEL: Record<FixedKind | "ilegivel", string> = {
+  comprovante: "Comprovante de pagamento: a IA não leu e avisou a equipe.",
+  documento: "Documento pessoal ou cartão: a IA não leu e avisou a equipe.",
+  saude: "Exame, receita ou foto de saúde: a IA não analisou e avisou a equipe.",
+  impropria: "Imagem imprópria: a IA não descreveu.",
+  ilegivel: "A IA não conseguiu ver esta foto.",
+};
+
+/** O que a IA leu de cada foto, em linhas para a equipe (painel, área do cliente e exportação). Pura. */
+export function photoReadingLines(readings: PhotoReading[] | null | undefined): string[] {
+  if (!readings?.length) return [];
+  return readings.map((r, i) => {
+    const prefix = readings.length > 1 ? `Foto ${i + 1}: ` : "";
+    if (r.kind !== "comum") return prefix + PANEL[r.kind];
+    return `${prefix}A IA viu: ${r.description}${r.text ? ` Texto na foto: "${r.text}".` : ""}`;
+  });
+}

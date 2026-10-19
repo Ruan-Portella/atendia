@@ -103,7 +103,7 @@ export default function WebhooksDocs() {
         ]}
       />
       <p>
-        Arquivo na mensagem: <code>media</code> traz <code>{`{id, type, mime, size, filename, transcript, url, url_expires_at}`}</code>. O <code>url</code> vale 1 hora (é gerado de novo a cada tentativa); depois, baixe por <code>GET /v1/media/{"{id}"}</code>. Áudio vem com a transcrição.
+        Arquivo na mensagem: <code>media</code> traz <code>{`{id, type, mime, size, filename, transcript, reading, url, url_expires_at}`}</code>. O <code>url</code> vale 1 hora (é gerado de novo a cada tentativa); depois, baixe por <code>GET /v1/media/{"{id}"}</code>. Áudio vem com a transcrição; foto que a IA leu vem com <code>reading</code>, o que ela entendeu da foto (veja em <Link href="/docs/api#arquivos">Arquivos e fotos</Link>).
       </p>
       <H3 id="atendimento">Atendimento</H3>
       <Table

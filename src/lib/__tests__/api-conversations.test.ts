@@ -89,7 +89,7 @@ describe("conversas e mensagens pela API", () => {
   });
 
   it("mensagem no formato da API: desfeita sem texto; de quem é e o atendente", () => {
-    const m = { id: 7, conversation_id: "c1", role: "agent" as const, content: "Seu pedido saiu", author: "zendesk", author_type: "api" as const, author_id: null, author_display_name: "Ana", channel_msg_id: "w1", delivery_status: "delivered", blocked_reason: null, failed_at: null, error_code: null, deleted_at: null, edited_at: null, created_at: iso(0) };
+    const m = { id: 7, conversation_id: "c1", role: "agent" as const, content: "Seu pedido saiu", author: "zendesk", author_type: "api" as const, author_id: null, author_display_name: "Ana", channel_msg_id: "w1", delivery_status: "delivered", blocked_reason: null, failed_at: null, error_code: null, deleted_at: null, edited_at: null, photo_reading_enc: null, created_at: iso(0) };
     expect(messageObject(m, "whatsapp")).toMatchObject({ id: "msg_7", conversation_id: "conv_c1", direction: "outbound", source: "api", text: "Seu pedido saiu", status: "delivered", agent: { type: "api", display_name: "Ana", sender: "zendesk" } });
     expect(messageObject({ ...m, role: "user", author: null, author_type: null, deleted_at: iso(1) }, "instagram")).toMatchObject({ direction: "inbound", source: "contact", text: null, deleted: true, agent: null, status: "received" });
   });

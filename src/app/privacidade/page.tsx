@@ -17,7 +17,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Política de Privacidade"
-      updatedAt="16 de outubro de 2026"
+      updatedAt="19 de outubro de 2026"
       intro={`Esta política explica quais dados pessoais a ${brand} trata, para quê, com quem compartilha, por quanto tempo guarda e como você exerce seus direitos, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).`}
     >
       <Section title="1. Quem somos">
@@ -43,6 +43,9 @@ export default function PrivacyPage() {
           <li><strong>Conteúdo dos assistentes:</strong> páginas de sites, documentos e textos enviados para formar a base de conhecimento.</li>
           <li><strong>Conversas:</strong> mensagens trocadas com os assistentes e com atendentes humanos, data e hora, canal e um identificador técnico do visitante.</li>
           <li><strong>Arquivos recebidos:</strong> fotos, áudios, vídeos e documentos que o contato envia pelo WhatsApp ou pelo Instagram (até 16 MB), guardados para a empresa ver no histórico da conversa.</li>
+          <li>
+            <strong>Leitura de fotos:</strong> quando o assistente tem IA, a foto que o contato envia pelo WhatsApp ou pelo Instagram é lida em baixa resolução, e uma descrição curta do que ela mostra passa a fazer parte da conversa. A descrição não identifica pessoas e não copia links, e-mails nem números longos. Comprovantes de pagamento, documentos pessoais, cartões e fotos de saúde não são descritos. No modo dados sensíveis, nenhuma foto é lida.
+          </li>
           <li><strong>Contato:</strong> telefone ou identificador do WhatsApp e do Instagram, nome de perfil e, quando a empresa identifica o cliente dela no chat, o identificador informado por ela. Quando o contato pede um item regulamentado (como bebida alcoólica), guardamos a resposta à pergunta de maioridade.</li>
           <li><strong>Leads:</strong> nome, telefone, e-mail e o interesse, quando a pessoa decide informá-los.</li>
           <li>
@@ -99,7 +102,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Supabase</strong>: banco de dados, autenticação, fila e arquivos (Brasil, região de São Paulo).</li>
           <li><strong>Vercel</strong>: hospedagem da aplicação (funções na região de São Paulo).</li>
-          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento e transcrevem áudios. Pelos termos de uso das APIs, não usam os dados para treinar modelos.</li>
+          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento, transcrevem áudios e descrevem as fotos enviadas pelos contatos (a OpenAI). Pelos termos de uso das APIs, não usam os dados para treinar modelos.</li>
           <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp e no Instagram, quando a empresa conecta esses canais.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>

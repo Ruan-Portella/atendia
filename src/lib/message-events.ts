@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { activeOf } from "./entitlements";
 import type { LeadRequest } from "./leads";
+import { parsePhotoReading, type PhotoReading } from "./photo-note";
 
 /*
  * Eventos de mensagem nos webhooks (C pública, parte 2a; spec Peça 2): message.received e
@@ -66,6 +67,8 @@ export interface SavedMessage {
   blocked_reason?: string | null;
   failed_at?: string | null;
   error_code?: string | null;
+  /** o que a IA leu das fotos da mensagem do contato (media.reading) */
+  photo_reading?: PhotoReading[] | null;
 }
 
 const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
@@ -124,7 +127,7 @@ export async function queueMessageEvent(db: SupabaseClient, id: number, m: Saved
     const contact = await contactObject(db, ctx.contactId);
     const conversation = { id: m.conversation_id, channel: ctx.channel };
     const base = { bot: ctx.bot, createdAt: new Date().toISOString(), conversation, contact, contactId: ctx.contactId, messageId: id };
-    const content = o.withMedia ? await withMediaOf(db, id, m.content) : { text: m.content, media: null };
+    const content = o.withMedia ? await withMediaOf(db, id, m.content, m.photo_reading ?? null) : { text: m.content, media: null };
     if (m.role === "user") {
       await emitEvent(db, { ...base, type: "message.received", key: String(id), data: { message: { id: `msg_${id}`, ...content, interactive: o.interactive ?? extra?.interactive ?? null } } }, { background: true });
       return;
@@ -333,22 +336,25 @@ export async function releaseInbound(db: SupabaseClient, keys: string[]): Promis
     if (!deferredReceived.delete(key)) continue;
     try {
       const { findMessage } = await import("./messages");
-      const m = await findMessage(db, { inboundKey: key }, ["id", "conversation_id", "role", "content", "deleted_at"] as const);
+      const m = await findMessage(db, { inboundKey: key }, ["id", "conversation_id", "role", "content", "deleted_at", "photo_reading_enc"] as const);
       if (!m || m.deleted_at) continue;
-      // fora do registro: queueMessageEvent emite na hora, com a mídia guardada
-      await queueMessageEvent(db, m.id, { conversation_id: m.conversation_id, role: m.role, content: m.content }, { withMedia: true, interactive: extra?.interactive ?? null });
+      // fora do registro: queueMessageEvent emite na hora, com a mídia guardada (e o que a IA leu da foto)
+      await queueMessageEvent(db, m.id, { conversation_id: m.conversation_id, role: m.role, content: m.content, photo_reading: parsePhotoReading(m.photo_reading_enc) }, { withMedia: true, interactive: extra?.interactive ?? null });
     } catch (e) {
       console.error("webhook: evento da mensagem com arquivo não registrado", (e as Error).message);
     }
   }
 }
 
-/** Texto e media da mensagem com arquivo (o rótulo sai, a transcrição do áudio vai para media). */
-async function withMediaOf(db: SupabaseClient, messageId: number, content: string): Promise<{ text: string | null; media: Record<string, unknown> | null }> {
+/**
+ * Texto e media da mensagem com arquivo (o rótulo sai, a transcrição do áudio vai para media e o
+ * que a IA leu da foto vai para media.reading).
+ */
+async function withMediaOf(db: SupabaseClient, messageId: number, content: string, readings: PhotoReading[] | null): Promise<{ text: string | null; media: Record<string, unknown> | null }> {
   const { attachmentsOfMessages } = await import("./attachments");
   const file = (await attachmentsOfMessages(db, [messageId])).get(messageId)?.[0];
   if (!file) return { text: content, media: null };
   const { mediaObject, splitMediaText } = await import("./file-links");
   const split = splitMediaText(content);
-  return { text: split.text, media: mediaObject(file, split.transcript) };
+  return { text: split.text, media: mediaObject(file, split.transcript, Date.now(), file.doc_type === "image" ? (readings?.[0] ?? null) : null) };
 }

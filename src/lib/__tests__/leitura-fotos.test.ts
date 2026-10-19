@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   PHOTO_FIXED,
@@ -10,10 +10,13 @@ import {
   parsePhotoReading,
   photoReadingOn,
   photoSeen,
+  photoReadingLines,
   photosNote,
+  readingJson,
   withHandoffNotice,
   type PhotoReading,
 } from "../photo-note";
+import { mediaObject, messageObject } from "../api-conversations";
 import { PHOTOS_PER_BURST, readBurstPhotos, readPhoto } from "../photo-reading";
 import { unseenMediaText } from "../unseen-media";
 import { NO_DATE_NOTICE } from "../handoff-hours";
@@ -236,5 +239,45 @@ describe("leitura das fotos da rajada", () => {
       { stored: async () => null, count: async () => true, read: reads() },
     );
     expect(r.readings.get(0)!.map((x) => x.kind)).toEqual(["ilegivel", "comum"]);
+  });
+});
+
+describe("o que a IA leu, para a equipe e para o sistema do cliente (parte 2)", () => {
+  // o link assinado do arquivo usa a chave de links
+  beforeEach(() => vi.stubEnv("CONTACT_HASH_KEY", "chave-de-teste-com-mais-de-16"));
+  afterEach(() => vi.unstubAllEnvs());
+  const NOW = Date.parse("2026-10-19T12:00:00Z");
+  const ID = "0b7a6c1e-1111-4222-8333-444455556666";
+  const photo = { id: ID, mime: "image/jpeg", size: 2048, doc_type: "image" as const, filename: null };
+  const read: PhotoReading = { kind: "comum", description: "Uma pizza de calabresa numa caixa.", text: "Pizzaria do Zé" };
+
+  it("media.reading: tipo, descrição e texto; os tipos não lidos vêm sem descrição", () => {
+    expect(readingJson(read)).toEqual({ type: "comum", description: "Uma pizza de calabresa numa caixa.", text: "Pizzaria do Zé" });
+    expect(readingJson({ kind: "comprovante" })).toEqual({ type: "comprovante", description: null, text: null });
+    expect(readingJson(null)).toBeNull();
+  });
+
+  it("o reading só vai na foto; áudio e documento ficam com reading null", () => {
+    expect(mediaObject(photo, null, NOW, read)).toMatchObject({ type: "image", transcript: null, reading: { type: "comum", description: "Uma pizza de calabresa numa caixa." } });
+    expect(mediaObject({ ...photo, doc_type: "document" as const, mime: "application/pdf" }, null, NOW, read).reading).toBeNull();
+    expect(mediaObject(photo, null, NOW).reading).toBeNull();
+  });
+
+  it("a mensagem da API traz o reading da foto, a partir do que ficou gravado", () => {
+    const m = { id: 9, conversation_id: "c1", role: "user" as const, content: "📷 (foto) tem essa?", author: null, author_type: null, author_id: null, author_display_name: null, channel_msg_id: null, delivery_status: null, blocked_reason: null, failed_at: null, error_code: null, deleted_at: null, edited_at: null, photo_reading_enc: JSON.stringify([read]), created_at: new Date(NOW).toISOString() };
+    const out = messageObject(m, "whatsapp", [photo]);
+    expect(out.text).toBe("tem essa?");
+    expect(out.media?.reading).toEqual({ type: "comum", description: "Uma pizza de calabresa numa caixa.", text: "Pizzaria do Zé" });
+    // desfeita pelo contato: nem o arquivo nem a leitura
+    expect(messageObject({ ...m, deleted_at: new Date(NOW).toISOString() }, "whatsapp", [photo]).media).toBeNull();
+  });
+
+  it("no painel e na exportação: uma linha por foto, dizendo o que a IA fez", () => {
+    expect(photoReadingLines([read])).toEqual(['A IA viu: Uma pizza de calabresa numa caixa. Texto na foto: "Pizzaria do Zé".']);
+    expect(photoReadingLines([{ kind: "comprovante" }, { kind: "ilegivel" }])).toEqual([
+      "Foto 1: Comprovante de pagamento: a IA não leu e avisou a equipe.",
+      "Foto 2: A IA não conseguiu ver esta foto.",
+    ]);
+    expect(photoReadingLines(null)).toEqual([]);
   });
 });

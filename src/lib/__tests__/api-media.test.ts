@@ -116,7 +116,7 @@ describe("link assinado e a mídia nas respostas da API", () => {
   it("media no formato da spec, com o link de 1 hora", () => {
     const file = { id: ID, mime: "application/pdf", size: 1234, doc_type: "document" as const, filename: "boleto.pdf" };
     expect(mediaObject(file, null, NOW)).toMatchObject({ id: `med_${ID}`, type: "document", mime: "application/pdf", size: 1234, filename: "boleto.pdf", transcript: null, url_expires_at: new Date(NOW + 3600_000).toISOString() });
-    const m = { id: 9, conversation_id: "c1", role: "user" as const, content: "🎤 oi, tudo bem?", author: null, author_type: null, author_id: null, author_display_name: null, channel_msg_id: null, delivery_status: null, blocked_reason: null, failed_at: null, error_code: null, deleted_at: null, edited_at: null, created_at: new Date(NOW).toISOString() };
+    const m = { id: 9, conversation_id: "c1", role: "user" as const, content: "🎤 oi, tudo bem?", author: null, author_type: null, author_id: null, author_display_name: null, channel_msg_id: null, delivery_status: null, blocked_reason: null, failed_at: null, error_code: null, deleted_at: null, edited_at: null, photo_reading_enc: null, created_at: new Date(NOW).toISOString() };
     const out = messageObject(m, "whatsapp", [{ ...file, mime: "audio/ogg", doc_type: "audio", filename: null }]);
     expect(out.text).toBeNull();
     expect(out.media).toMatchObject({ type: "audio", transcript: "oi, tudo bem?" });

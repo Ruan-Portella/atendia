@@ -237,6 +237,14 @@ export default function ApiDocs() {
       </p>
       <Code lang="http" code={PAUSE} />
 
+      <H3 id="arquivos">Arquivos e fotos</H3>
+      <p>
+        Mensagem com arquivo traz <code>media</code> {`{id, type, mime, size, filename, transcript, reading, url, url_expires_at}`}. O <code>url</code> vale 1 hora; depois, baixe por <code>GET /v1/media/{"{id}"}</code>. Áudio vem com a transcrição em <code>transcript</code>.
+      </p>
+      <p>
+        Foto que a IA leu (WhatsApp e Instagram, em chatbot com tamanho de IA) vem com <code>reading</code> {`{type, description, text}`}. Com <code>type</code> <code>comum</code>, <code>description</code> diz o que a foto mostra e <code>text</code> traz o texto escrito nela, sem links, e-mails nem números longos. Os outros tipos não são lidos e vêm sem descrição: <code>comprovante</code> (comprovante de pagamento: a IA nunca confirma pagamento e avisa a equipe), <code>documento</code> (documento pessoal ou cartão), <code>saude</code> (exame, receita ou foto de saúde), <code>impropria</code> e <code>ilegivel</code> (não deu para ler). Foto que a IA não leu (modo dados sensíveis, equipe atendendo) vem com <code>reading</code> null.
+      </p>
+
       <H2 id="contatos">Contatos e leads</H2>
       <Table
         head={["Rota", "Permissão", "O que faz"]}

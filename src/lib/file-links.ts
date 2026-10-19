@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { hmacHex } from "./hash";
 import { appUrl } from "./utils";
+import { readingJson, type PhotoReading } from "./photo-note";
 
 /*
  * Link assinado da rota de arquivos (spec "Arquivos", leva S; C pública, partes 3c e 3d): quem não
@@ -65,10 +66,13 @@ export function splitMediaText(content: string): { text: string | null; transcri
   return { text: content, transcript: null };
 }
 
-/** O arquivo no formato da API (spec "Objetos", media), com o link assinado de 1 hora. Pura. */
-export function mediaObject(a: { id: string; doc_type: string; mime: string; size: number; filename: string | null }, transcript: string | null, now = Date.now()) {
+/**
+ * O arquivo no formato da API (spec "Objetos", media), com o link assinado de 1 hora. reading: o
+ * que a IA leu da foto (leva de leitura de fotos; só em imagem). Pura.
+ */
+export function mediaObject(a: { id: string; doc_type: string; mime: string; size: number; filename: string | null }, transcript: string | null, now = Date.now(), reading: PhotoReading | null = null) {
   const link = signedFileUrl(a.id, now);
-  return { id: `med_${a.id}`, type: a.doc_type, mime: a.mime, size: a.size, filename: a.filename, transcript, url: link.url, url_expires_at: link.expiresAt };
+  return { id: `med_${a.id}`, type: a.doc_type, mime: a.mime, size: a.size, filename: a.filename, transcript, reading: a.doc_type === "image" ? readingJson(reading) : null, url: link.url, url_expires_at: link.expiresAt };
 }
 
 /**

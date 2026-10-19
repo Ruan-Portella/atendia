@@ -10,6 +10,7 @@ import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type
 import { attachmentExpired, attachmentRow, attachmentsOfMessages, readAttachment, streamBytes, type AttachmentInfo } from "./attachments";
 import { mediaObject, splitMediaText } from "./file-links";
 import { fileHeaders } from "./file-headers";
+import { parsePhotoReading } from "./photo-note";
 
 /*
  * Conversas e mensagens pela API (C pública, parte 3a; permissões conversations e messages):
@@ -166,7 +167,7 @@ export async function listConversations(req: Request, api: ApiContext): Promise<
 
 /* ------------------------------------------------------------------ mensagens */
 
-const MSG_COLS = ["id", "conversation_id", "role", "content", "author", "author_type", "author_id", "author_display_name", "channel_msg_id", "delivery_status", "blocked_reason", "failed_at", "error_code", "deleted_at", "edited_at", "created_at"] as const;
+const MSG_COLS = ["id", "conversation_id", "role", "content", "author", "author_type", "author_id", "author_display_name", "channel_msg_id", "delivery_status", "blocked_reason", "failed_at", "error_code", "deleted_at", "edited_at", "photo_reading_enc", "created_at"] as const;
 type MsgRow = Pick<MessageRow, (typeof MSG_COLS)[number]>;
 
 /** Status de uma mensagem: recebida (do contato), ou o mais avançado que o canal informou. Pura. */
@@ -181,7 +182,7 @@ export function messageStatus(m: Pick<MsgRow, "role" | "failed_at" | "channel_ms
 
 export { mediaObject, splitMediaText };
 
-/** A mensagem no formato da API (desfeita: sem o texto). media: o primeiro arquivo dela. Pura. */
+/** A mensagem no formato da API (desfeita: sem o texto). media: o primeiro arquivo dela (foto lida: com o reading). Pura. */
 export function messageObject(m: MsgRow, channel: ApiChannel, files: AttachmentInfo[] = []) {
   const inbound = m.role === "user";
   const source = inbound ? "contact" : sourceOf(m);
@@ -194,7 +195,7 @@ export function messageObject(m: MsgRow, channel: ApiChannel, files: AttachmentI
     direction: inbound ? "inbound" : "outbound",
     source,
     text: m.deleted_at ? null : split.text,
-    media: file ? mediaObject(file, split.transcript) : null,
+    media: file ? mediaObject(file, split.transcript, Date.now(), file.doc_type === "image" ? (parsePhotoReading(m.photo_reading_enc)?.[0] ?? null) : null) : null,
     agent: inbound || source === "contact" ? null : agentObject(m, source),
     status,
     error: status === "failed" ? { code: m.error_code ?? null, message: null } : null,

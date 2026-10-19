@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { asButtons, cardName, parseComponents } from "@/lib/components";
+import { parsePhotoReading, photoReadingLines } from "@/lib/photo-note";
 
 /** Por que o canal recusou, nos erros mais comuns da Meta. */
 const FAILURE_TEXT: Record<string, string> = {
@@ -38,6 +39,8 @@ export interface ThreadMessage {
   created_at?: string;
   /** Arquivos que o contato mandou (guardados cifrados; abertos pela rota /api/files). */
   attachments?: Array<{ id: string; mime: string; size: number; doc_type: string; filename: string | null }>;
+  /** O que a IA leu das fotos do contato (JSON aberto pela camada de mensagens). */
+  photo_reading_enc?: string | null;
 }
 
 const kb = (n: number) => (n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -60,6 +63,19 @@ function AttachmentView({ a }: { a: NonNullable<ThreadMessage["attachments"]>[nu
     <a href={src} className="mt-1.5 block text-[12px] underline opacity-90">
       Baixar {a.filename ?? "arquivo"} ({kb(a.size)})
     </a>
+  );
+}
+
+/** O que a IA leu das fotos do contato (leva de leitura de fotos): a equipe entende a resposta dela. */
+function PhotoReadingView({ json }: { json?: string | null }) {
+  const lines = photoReadingLines(parsePhotoReading(json));
+  if (!lines.length) return null;
+  return (
+    <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] leading-snug opacity-80">
+      {lines.map((line, i) => (
+        <div key={i}>{line}</div>
+      ))}
+    </div>
   );
 }
 
@@ -173,6 +189,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
             <ShownComponent json={m.components_enc} />
             {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
             {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} />)}
+            {!m.deleted_at && m.role === "user" && <PhotoReadingView json={m.photo_reading_enc} />}
             {!m.deleted_at && m.channel_ref?.permalink && /^https:\/\//i.test(m.channel_ref.permalink) ? (
               <a href={m.channel_ref.permalink} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[11px] underline opacity-80">
                 Abrir {m.channel_ref.kind === "reel" ? "o reel" : "o post"} no Instagram
