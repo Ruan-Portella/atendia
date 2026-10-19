@@ -19,6 +19,7 @@ import { runDueAnalyses } from "@/lib/bot-analysis";
 import { deleteStalePending } from "@/lib/acceptance";
 import { linkLegacyConversations } from "@/lib/contacts";
 import { runContinuousChecks } from "@/lib/continuous-check";
+import { runDueAccountDeletions } from "@/lib/account-deletion";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
 export const maxDuration = 300;
@@ -63,6 +64,8 @@ async function daily() {
   const files = await run("arquivos sem conversa", () => sweepAttachments(db, () => hasTime()));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
+  // contas com a exclusão vencida (7 dias depois do pedido do dono): canais, assinatura, arquivos e a agência
+  const accounts = await run("exclusão de contas", () => runDueAccountDeletions(db));
   // cifra por campo (leva S): o histórico ainda sem cifra é cifrado em lotes, com o tempo que sobrar
   const cipher = await run("recifra do histórico", () => reencryptHistory(db, () => hasTime(), 200));
   // vínculo do WhatsApp sem o sinal de identidade da Meta cai depois de 180 dias sem mensagem (P2)
@@ -101,5 +104,5 @@ async function daily() {
   // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
   const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, monthClosed, reports, continuous, retention, files, acceptances, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

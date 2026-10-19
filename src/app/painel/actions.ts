@@ -18,6 +18,7 @@ import { PORTAL_ROLE_LABELS, isPortalRole, sendMemberLink, type PortalRole } fro
 import { appUrl, initials, normalizeUrl } from "@/lib/utils";
 import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
 import { grantSupport, revokeSupport } from "@/lib/support-access";
+import { cancelAccountDeletion, requestAccountDeletion } from "@/lib/account-deletion";
 import { hasMfa } from "@/lib/agency-mfa";
 import { purgeAttachments } from "@/lib/attachments";
 import { removeBotSourceFiles } from "@/lib/source-files";
@@ -1347,6 +1348,36 @@ export async function revokeSupportAccess(): Promise<ActionResult> {
   const done = await revokeSupport(createAdminClient(), { agencyId: agency.id, by: userId, meta: await requestMeta() });
   revalidatePath("/painel/seguranca");
   return ok(done ? "Acesso do suporte encerrado." : "O suporte já não tinha acesso.");
+}
+
+/**
+ * Segurança → Excluir a conta: só o dono, com o segundo fator e o nome da conta digitado. A
+ * exclusão acontece 7 dias depois (evento grave: e-mail e faixa para quem cuida da Segurança).
+ */
+export async function requestAccountDeletionAction(formData: FormData): Promise<ActionResult> {
+  // só o dono (a permissão da cobrança é só dele)
+  const ctx = await allowed("billing");
+  if (!ctx) return fail("Só o dono da conta pode excluí-la.");
+  if (!(await hasMfa())) return fail(MFA_NEEDED);
+  const same = (v: string) => v.replace(/\s+/g, " ").trim().toLowerCase();
+  if (same(text(formData.get("confirm_name"))) !== same(ctx.agency.name)) return fail(`Para confirmar, digite o nome da conta: ${ctx.agency.name}.`);
+  const r = await requestAccountDeletion(createAdminClient(), { agencyId: ctx.agency.id, userId: ctx.userId });
+  if (!r.ok) return fail(r.message);
+  await auditPanel("conta.exclusao_pedida", { type: "agency", id: ctx.agency.id }, { after: { data: r.scheduledFor } });
+  revalidatePath("/painel", "layout");
+  return ok(`Pronto: a conta será excluída em ${dateBR(r.scheduledFor)}. Até lá, dá para desistir aqui.`);
+}
+
+/** Segurança → Excluir a conta: o dono desiste (a assinatura volta a renovar). */
+export async function cancelAccountDeletionAction(): Promise<ActionResult> {
+  const ctx = await allowed("billing");
+  if (!ctx) return fail("Só o dono da conta pode desistir da exclusão.");
+  if (!(await hasMfa())) return fail(MFA_NEEDED);
+  const r = await cancelAccountDeletion(createAdminClient(), { agencyId: ctx.agency.id });
+  if (!r.ok) return fail(r.message);
+  await auditPanel("conta.exclusao_cancelada", { type: "agency", id: ctx.agency.id });
+  revalidatePath("/painel", "layout");
+  return ok("A exclusão foi cancelada: a conta continua como estava.");
 }
 
 /** Faixa de alertas de segurança: marca os de agora como vistos. */

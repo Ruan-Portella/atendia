@@ -19,6 +19,7 @@ export const SECURITY_ALERTS: Record<string, string> = {
   "canal.suspender": "Canal suspenso pela equipe BoaVoz",
   "seguranca.mfa_remover": "Segundo fator removido",
   "equipe.admin_novo": "Novo administrador na equipe",
+  "conta.exclusao_pedida": "Exclusão da conta pedida",
 };
 
 export const isSecurityAlert = (action: string) => action in SECURITY_ALERTS;

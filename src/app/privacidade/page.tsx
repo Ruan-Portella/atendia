@@ -166,7 +166,7 @@ export default function PrivacyPage() {
           <li><strong>Dados da conta:</strong> enquanto ela estiver ativa, e depois pelo prazo exigido por lei (por exemplo, registros fiscais).</li>
         </ul>
         <p>
-          A empresa atendida pode exportar os dados do seu atendimento (conversas, contatos e leads) a qualquer momento. Ao excluir um cliente, a chave de criptografia dele é apagada: o que ela protegia fica ilegível.
+          A empresa atendida pode exportar os dados do seu atendimento (conversas, contatos e leads) a qualquer momento. Ao excluir um cliente, a chave de criptografia dele é apagada: o que ela protegia fica ilegível. O dono da conta pode excluí-la em Segurança: 7 dias depois do pedido (até lá, dá para desistir), apagamos os chatbots, as conversas, os contatos, os leads, os arquivos e a equipe, e ficam só a auditoria (1 ano) e os registros de acesso (6 meses), como pede a lei.
         </p>
       </Section>
 

@@ -11,7 +11,7 @@ import { purgeAttachments } from "./attachments";
  * se o registro falhar, a exclusão não acontece (senão uma restauração traria o dado de volta).
  */
 
-export type DeletableTable = "conversations" | "leads" | "instagram_channels" | "whatsapp_channels" | "bots" | "clients" | "unanswered" | "contacts" | "message_content" | "inbound_key";
+export type DeletableTable = "conversations" | "leads" | "instagram_channels" | "whatsapp_channels" | "bots" | "clients" | "unanswered" | "contacts" | "message_content" | "inbound_key" | "agencies" | "auth_users";
 
 export async function logDeletion(db: SupabaseClient, table: DeletableTable, ids: string[], requestCode?: string | null) {
   if (!ids.length) return;

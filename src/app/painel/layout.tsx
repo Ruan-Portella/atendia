@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { dateBR } from "@/lib/retention";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { num } from "@/lib/plans";
@@ -49,6 +51,20 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}
           {banners.map((text) => <NoticeStrip key={text}>{text}</NoticeStrip>)}
+          {/* exclusão da conta pedida pelo dono: todos veem a data; o dono pode desistir */}
+          {agency.deletion_scheduled_for && (
+            <NoticeStrip
+              action={
+                role === "owner" ? (
+                  <Link href="/painel/seguranca?aba=conta" className="font-semibold underline">
+                    Desistir
+                  </Link>
+                ) : null
+              }
+            >
+              A conta será excluída em {dateBR(agency.deletion_scheduled_for)}, com os chatbots, as conversas e os contatos. Até lá, tudo continua funcionando.
+            </NoticeStrip>
+          )}
           {whatsappNotice && <TeamWhatsAppStrip status={whatsappNotice} brand={company.brand} consent={NOTICE_CONSENT_SHORT} />}
           {can(role, "config") && <PlanAlert bots={bots} billing={{ status: agency.billing_status, cancelAt: agency.billing_cancel_at }} />}
         </>

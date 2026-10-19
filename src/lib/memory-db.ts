@@ -88,6 +88,10 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       this.filters.push((r) => typeof r[c] === "string" && (r[c] as string) >= v);
       return this;
     }
+    lte(c: string, v: string) {
+      this.filters.push((r) => typeof r[c] === "string" && (r[c] as string) <= v);
+      return this;
+    }
     is(c: string, v: unknown) {
       this.filters.push((r) => (r[c] ?? null) === v);
       return this;

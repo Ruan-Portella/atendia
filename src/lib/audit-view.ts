@@ -124,6 +124,9 @@ export const ACTION_LABELS: Record<string, string> = {
   "roteiros.desativar": "Roteiro desligado",
   "roteiros.apagar": "Roteiro apagado",
   "roteiros.lembrar_numero": "Lembrar o número (identificação pelo roteiro)",
+  "conta.exclusao_pedida": "Exclusão da conta pedida (7 dias para desistir)",
+  "conta.exclusao_cancelada": "Exclusão da conta cancelada",
+  "conta.excluida": "Conta excluída",
   "perfil.avisos_whatsapp_pedido": "Pediu os avisos no WhatsApp (número da equipe)",
   "perfil.avisos_whatsapp_parar": "Parou os avisos no WhatsApp",
   "plataforma.assistente": "Assistente da BoaVoz (chatbot dos avisos)",
@@ -168,6 +171,7 @@ export const ACTION_GROUPS: Record<string, string> = {
   plano: "Plano",
   conformidade: "Verificação da BoaVoz",
   plataforma: "Avisos da BoaVoz",
+  conta: "Conta",
 };
 
 export const actionLabel = (action: string) => ACTION_LABELS[action] ?? action;

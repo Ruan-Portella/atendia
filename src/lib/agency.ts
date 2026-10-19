@@ -45,6 +45,8 @@ export interface Agency {
   credit_auto_below_cents: number | null;
   credit_auto_amount_cents: number | null;
   credit_auto_month_limit_cents: number | null;
+  /** Exclusão da conta pedida pelo dono: a data em que ela sai (7 dias depois do pedido; null: não pedida). */
+  deletion_scheduled_for: string | null;
   /** Como a conta usa o BoaVoz, respondido pelo dono no primeiro acesso (null: ainda não respondeu). */
   profile: AccountProfile | null;
   created_at: string;
