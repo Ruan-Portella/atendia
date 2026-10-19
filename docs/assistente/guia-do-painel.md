@@ -92,6 +92,15 @@ Na aba WhatsApp do chatbot, há três jeitos: o cadastro pela tela da Meta (o ma
 
 O número pode continuar no app WhatsApp Business do celular do cliente enquanto o BoaVoz atende pela API. Quando alguém responde pelo celular, a resposta aparece no painel e o assistente fica quieto naquela conversa por 1 hora, para não falar por cima da pessoa.
 
+## Problemas comuns na conexão
+
+- Entre com o Facebook de quem administra a empresa na Meta (ou de quem tem acesso de administrador ao portfólio): com outro login, a janela da Meta não mostra a conta certa. Quem não tem esse acesso pode mandar o link de conexão para o dono fazer.
+- Número que já foi usado na API pode ter um PIN de 6 dígitos (verificação em duas etapas). Se ninguém lembra, desligue no Gerenciador do WhatsApp (Números de telefone, Configurações) antes de conectar.
+- O nome de exibição precisa ser o do negócio, como no site ou na fachada. A Meta recusa nome genérico (por exemplo, "Delivery"), só com emojis ou com palavras como "oficial" sem ser a marca. O diagnóstico do número, na aba WhatsApp, mostra se o nome foi aprovado.
+- A Meta cobra os modelos de mensagem direto do negócio: tenha um cartão para cadastrar no fim da conexão. Sem forma de pagamento, a Meta recusa os modelos, e o painel avisa.
+- No número que já usa o app WhatsApp Business no celular (coexistência), o app precisa estar na versão 2.24.17 ou mais nova. Abra o app pelo menos uma vez por semana: parado por uns 14 dias, a Meta desconecta o número; para voltar, abra o app e conecte de novo.
+- No Instagram, se a conexão cair (senha trocada, app removido ou acesso vencido), o painel avisa: é só conectar de novo na aba Instagram do chatbot.
+
 ## Modelos de mensagem e janela de 24 horas
 
 No WhatsApp, a empresa só escreve livremente até 24 horas depois da última mensagem do contato. Fora dessa janela, só sai modelo de mensagem aprovado pela Meta: o BoaVoz cria sozinho o de retomada (para a equipe reabrir uma conversa parada) e a agência pode criar outros na aba WhatsApp. Modelo de marketing só sai para quem aceitou receber novidades. Quem manda SAIR, PARAR ou STOP deixa de receber modelos.
@@ -178,4 +187,4 @@ Só o dono exclui a conta, em Segurança, Excluir a conta (com o segundo fator e
 
 ## Sobre este assistente
 
-Este assistente é a própria BoaVoz atendendo pelo BoaVoz: um chatbot como os que a agência cria para os clientes. Ele responde sobre o painel e, para quem confirmou o número, sobre a conta (os chatbots, o tamanho e o uso do mês), sem mudar nada na conta. Para falar com alguém da equipe BoaVoz, é só pedir "falar com uma pessoa".
+Este assistente é a própria BoaVoz atendendo pelo BoaVoz: um chatbot como os que a agência cria para os clientes. Ele responde sobre o painel e, para quem confirmou o número, sobre a conta (os chatbots, o tamanho e o uso do mês), sem mudar nada na conta. Para falar com alguém da equipe BoaVoz, é só pedir "falar com uma pessoa". As mesmas respostas estão na central de ajuda, em boavoz.com/ajuda (o menu Ajuda do painel), uma página por assunto.

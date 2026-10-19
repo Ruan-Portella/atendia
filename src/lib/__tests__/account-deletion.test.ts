@@ -12,6 +12,7 @@ function tables(over: Partial<MemRow> = {}): Record<string, MemRow[]> {
     bots: [{ id: "b1", agency_id: AG }, { id: "b2", agency_id: AG }],
     clients: [{ id: "c1", agency_id: AG }],
     agency_members: [{ id: "m1", agency_id: AG, user_id: OWNER }, { id: "m2", agency_id: AG, user_id: "u-ana" }],
+    client_members: [{ id: "cm1", client_id: "c1" }, { id: "cm-outro", client_id: "c-outra-agencia" }],
     deletion_log: [],
     audit_log: [],
   };
@@ -94,7 +95,7 @@ describe("exclusão da conta", () => {
     expect(f.cancel).toHaveBeenCalledWith("sub_1");
     expect(t.deletion_log.map((d) => `${d.table_name}:${d.row_id}`).sort()).toEqual([`agencies:${AG}`, "auth_users:u-ana", `auth_users:${OWNER}`, "bots:b1", "bots:b2", "clients:c1"].sort());
     expect(f.purgeBotFiles).toHaveBeenCalledTimes(2);
-    expect(f.removeLogoFolder.mock.calls.map((c) => c[1])).toEqual([AG, "avatars/m1", "avatars/m2"]);
+    expect(f.removeLogoFolder.mock.calls.map((c) => c[1])).toEqual([AG, "avatars/m1", "avatars/m2", "avatars/cm1"]);
     expect(f.notifyOwner).toHaveBeenCalledWith(expect.anything(), AG, expect.stringContaining("foi excluída"), expect.any(Array));
     expect(t.agencies).toHaveLength(0);
     expect(f.deleteUser.mock.calls.map((c) => c[1])).toEqual([OWNER, "u-ana"]);

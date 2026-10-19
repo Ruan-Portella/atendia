@@ -19,6 +19,7 @@ export function MemberNav({ clientId, manager, handoff, knowledge, hours, waitin
     ...(manager && hours ? [tab(`${base}/horario`, "Horário")] : []),
     ...(manager ? [tab(`${base}/equipe`, "Equipe"), tab(`${base}/canais`, "Canais"), tab(`${base}/privacidade`, "Privacidade")] : []),
     tab(`${base}/perfil`, "Meu perfil"),
+    tab(`${base}/ajuda`, "Ajuda"),
   ];
   return (
     <nav className="mx-auto flex max-w-[980px] gap-1 overflow-x-auto px-4 [scrollbar-width:none] sm:px-6 print:hidden">

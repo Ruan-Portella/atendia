@@ -21,9 +21,12 @@ export function DocsShell({ children }: { children: ReactNode }) {
           <Logo />
           <span className="hidden text-sm font-semibold text-muted sm:inline">Documentação</span>
         </div>
-        <Link href="/painel" className="text-sm font-medium">
-          Entrar no painel
-        </Link>
+        <nav className="flex items-center gap-4 text-sm font-medium">
+          <Link href="/ajuda" className="hidden sm:inline">
+            Central de ajuda
+          </Link>
+          <Link href="/painel">Entrar no painel</Link>
+        </nav>
       </header>
       <div className="mx-auto flex w-full max-w-[1120px] flex-1 flex-col gap-6 px-5 py-6 sm:px-6 lg:flex-row lg:gap-10 lg:px-10 lg:py-10">
         <aside className="lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:w-[220px] lg:shrink-0 lg:self-start lg:overflow-y-auto">

@@ -152,6 +152,8 @@ export async function executeAccountDeletion(db: SupabaseClient, agencyId: strin
   ]);
   const botIds = (bots ?? []).map((b) => String(b.id));
   const clientIds = (clients ?? []).map((c) => String(c.id));
+  // as pessoas do portal dos clientes: as fotos delas ficam em avatars/<id> (as linhas vão em cascata)
+  const { data: portalPeople } = clientIds.length ? await db.from("client_members").select("id").in("client_id", clientIds) : { data: [] };
   const people = (members ?? []) as Array<{ id: string; user_id: string | null }>;
   const userIds = [...new Set([agency.owner_id, ...people.map((m) => m.user_id)].filter((u): u is string => Boolean(u)))];
 
@@ -175,7 +177,7 @@ export async function executeAccountDeletion(db: SupabaseClient, agencyId: strin
 
   for (const botId of botIds) await deps.purgeBotFiles(db, botId);
   await deps.removeLogoFolder(db, agencyId);
-  for (const m of people) await deps.removeLogoFolder(db, `avatars/${m.id}`);
+  for (const m of [...people, ...((portalPeople ?? []) as Array<{ id: string }>)]) await deps.removeLogoFolder(db, `avatars/${m.id}`);
 
   // o último e-mail sai antes (depois, o dono não existe mais)
   await deps.notifyOwner(db, agencyId, `A conta ${agency.name} no ${company.brand} foi excluída`, [
