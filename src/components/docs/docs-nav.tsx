@@ -8,6 +8,7 @@ export const DOCS_PAGES = [
   { href: "/docs", title: "Visão geral" },
   { href: "/docs/comeco-rapido", title: "Começo rápido" },
   { href: "/docs/acoes", title: "Ações" },
+  { href: "/docs/roteiros", title: "Roteiros" },
   { href: "/docs/mensagens-ricas", title: "Mensagens ricas" },
   { href: "/docs/webhooks", title: "Webhooks" },
   { href: "/docs/api", title: "Referência da API" },

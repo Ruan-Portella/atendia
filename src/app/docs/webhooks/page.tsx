@@ -115,6 +115,14 @@ export default function WebhooksDocs() {
           [<code key="4">handoff.returned</code>, "A conversa voltou para a IA.", <><code>reason</code> (<code>agent_resumed</code>, <code>timeout</code>, <code>api</code>) e <code>agent</code>.</>],
         ]}
       />
+      <H3 id="roteiros">Roteiros</H3>
+      <Table
+        head={["Evento", "Quando", "data"]}
+        rows={[
+          [<code key="1">routine.completed</code>, "O roteiro chegou ao fim.", <><code>routine</code> {`{id, name}`} e <code>run</code> {`{id, started_by, started_at, ended_at, step, steps_total}`}. Os dados que o roteiro juntou não vão (a ação do passo já recebe).</>],
+          [<code key="2">routine.abandoned</code>, "O roteiro acabou antes do fim.", <>O mesmo, mais <code>reason</code>: <code>handoff</code>, <code>cancelled</code>, <code>timeout</code>, <code>idle</code>, <code>replaced</code>, <code>routine_changed</code>, <code>step_unavailable</code> ou <code>context_changed</code> (veja <Link href="/docs/roteiros#fim">Fim do roteiro</Link>).</>],
+        ]}
+      />
       <H3 id="contato">Contato</H3>
       <Table
         head={["Evento", "Quando", "data"]}

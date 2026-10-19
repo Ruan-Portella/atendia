@@ -53,6 +53,8 @@ export const WEBHOOK_EVENTS = [
   "bot.month_closed",
   "account.credit_low",
   "account.credit_depleted",
+  "routine.completed",
+  "routine.abandoned",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -60,6 +62,7 @@ export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 export const WEBHOOK_EVENT_GROUPS: Array<{ label: string; events: WebhookEvent[] }> = [
   { label: "Mensagens", events: ["message.received", "message.sent", "message.status", "message.failed", "message.deleted"] },
   { label: "Atendimento", events: ["lead.created", "lead.updated", "handoff.requested", "handoff.returned"] },
+  { label: "Roteiros", events: ["routine.completed", "routine.abandoned"] },
   { label: "Contato", events: ["contact.linked", "contact.unlinked", "contact.opted_in", "contact.opted_out", "contact.deleted"] },
   { label: "Campanhas", events: ["campaign.finished"] },
   { label: "Canais", events: ["channel.connected", "channel.disconnected", "channel.issue", "template.status_changed", "bot.paused", "bot.resumed"] },

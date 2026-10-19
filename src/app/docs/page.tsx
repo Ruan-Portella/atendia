@@ -16,6 +16,7 @@ export default function DocsHome() {
         head={["Recurso", "Para quê"]}
         rows={[
           [<Link key="a" href="/docs/acoes">Ações</Link>, "Um endpoint seu que a IA chama na conversa: consultar pedido, agenda ou saldo; criar pedido ou agendar, com o Confirmar do contato."],
+          [<Link key="r" href="/docs/roteiros">Roteiros</Link>, "Passos que a IA segue num assunto (segunda via, suporte): dado conferido, botões, a sua ação no passo, a identificação da pessoa e a foto pedida."],
           [<Link key="m" href="/docs/mensagens-ricas">Mensagens ricas</Link>, "Botões, lista, link e carrossel, num formato só, convertidos para cada canal. Um botão pode chamar uma ação direto, sem a IA."],
           [<Link key="w" href="/docs/webhooks">Webhooks</Link>, "Seu sistema fica sabendo na hora: mensagem recebida ou enviada, lead, pedido de atendente, aceite de novidades e mais."],
           [<Link key="api" href="/docs/api">API</Link>, "Enviar mensagens e campanhas, ler conversas, leads e contatos, pausar a IA numa conversa."],

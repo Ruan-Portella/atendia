@@ -114,7 +114,7 @@ export default function ActionsDocs() {
           [<code key="7">bot</code>, <>O chatbot (<code>bot_…</code>).</>],
           [<code key="8">conversation</code>, <>Id (<code>conv_…</code>) e canal: <code>whatsapp</code>, <code>instagram</code> ou <code>widget</code> (o chat do site).</>],
           [<code key="9">contact</code>, "Quem está falando (veja Nível do contato)."],
-          [<code key="10">context</code>, <>O contexto assinado da conversa (por exemplo, a loja ou o workspace), <code>{`{source, data}`}</code>, ou null. Vai só para as ações: a IA não vê.</>],
+          [<code key="10">context</code>, <>O contexto da conversa (por exemplo, a loja, o workspace ou a conta), <code>{`{source, data}`}</code>, ou null. <code key="s">source</code>: <code>token</code> (o site), <code>pairing</code> (o pareamento) ou <code>routine</code> (a conta que a identificação pelo roteiro escolheu). Vai só para as ações: a IA não vê.</>],
         ]}
       />
 
@@ -165,6 +165,8 @@ export default function ActionsDocs() {
           [<code key="c">components</code>, <>Botões, lista, link ou carrossel (veja <Link href="/docs/mensagens-ricas">Mensagens ricas</Link>). Numa consulta sem reply, eles só vão se a resposta da IA oferece essa escolha; com reply e no resultado do Confirmar, vão sempre.</>],
           [<code key="a">attachments</code>, <>Até 5 arquivos <code>{`{url, filename?}`}</code>, em HTTPS (veja Arquivos).</>],
           [<code key="p">confirmation</code>, "Só na prévia do Confirmar (veja abaixo)."],
+          [<code key="o">outcome</code>, <>Num passo de ação de um roteiro: o resultado que escolhe o próximo passo (<code key="ex">{`"sem_debito"`}</code>), entre os declarados no cadastro (veja <Link href="/docs/roteiros#acao">Roteiros</Link>).</>],
+          [<code key="id">identity</code>, <>Num passo de ação de um roteiro: quem é a pessoa (<code key="f">{`{external_id, name, accounts}`}</code>). A conversa fica identificada e as próximas ações recebem o nível usuário (veja <Link href="/docs/roteiros#identificar">Identificar a pessoa</Link>).</>],
         ]}
       />
 
@@ -206,7 +208,7 @@ export default function ActionsDocs() {
         rows={[
           [<strong key="a">anônimo</strong>, "Qualquer contato, inclusive o visitante do site.", <>verified_by null; phone null.</>],
           [<strong key="c">canal</strong>, "O canal garante quem é: o número no WhatsApp, a conta no Instagram.", <>verified_by <code>meta</code>; no WhatsApp, <code>phone</code> só com dígitos e o código do país (no Instagram, null).</>],
-          [<strong key="u">usuário</strong>, "A empresa identificou a pessoa (token assinado no site ou pareamento no WhatsApp ou no Instagram).", <>verified_by <code>signed_token</code> ou <code>pairing</code>; <code>external_id</code> (o id dela no seu sistema) e <code>display</code>.</>],
+          [<strong key="u">usuário</strong>, "A empresa identificou a pessoa (token assinado no site, pareamento no WhatsApp ou no Instagram, ou a sua ação num roteiro).", <>verified_by <code>signed_token</code>, <code>pairing</code> ou <code>routine</code>; <code>external_id</code> (o id dela no seu sistema) e <code>display</code>.</>],
         ]}
       />
       <p>

@@ -159,45 +159,82 @@ export async function loadActiveRun(db: SupabaseClient, conversationId: string):
   return { id: r.id, conversationId: r.conversation_id, botId: r.bot_id, routine, stepId: r.step_id, variables: await openVariables(r.variables_enc), attempts: r.attempts, failing: r.failing, lastContactAt: r.last_contact_at, updatedAt: r.updated_at, routineVersion: r.routine_version, heldResult: r.held_result ?? null, idleTurns: r.idle_turns ?? 0 };
 }
 
-/** Fim do roteiro: concluído ou abandonado (com o motivo). As variáveis saem na hora. */
-async function finishRun(db: SupabaseClient, runId: string, status: "completed" | "abandoned", reason: EndReason | null): Promise<void> {
+/** Quais roteiros abertos encerrar: um, os de uma conversa, de um roteiro, de um chatbot ou os vencidos. */
+type CloseFilter = { id: string } | { conversationId: string } | { routineId: string } | { botId: string } | { lastContactBefore: string };
+
+const CLOSE_COLS = "id, conversation_id, routine_id, routine_name, step_index, steps_total, started_by, started_at";
+type ClosingRow = { id: string; conversation_id: string; routine_id: string | null; routine_name: string; step_index: number; steps_total: number; started_by: "ia" | "palavra"; started_at: string };
+const CLOSE_BATCH = 500;
+
+/**
+ * Fim do roteiro: concluído ou abandonado (com o motivo). As variáveis saem na hora. Todo fim passa
+ * por aqui e avisa o sistema da loja (routine.completed ou routine.abandoned). Devolve quantos
+ * acabaram (até 500 por chamada).
+ */
+async function closeRuns(db: SupabaseClient, f: CloseFilter, status: "completed" | "abandoned", reason: EndReason | null): Promise<number> {
+  let q = db.from("routine_runs").select(CLOSE_COLS).eq("status", "active");
+  if ("id" in f) q = q.eq("id", f.id);
+  else if ("conversationId" in f) q = q.eq("conversation_id", f.conversationId);
+  else if ("routineId" in f) q = q.eq("routine_id", f.routineId);
+  else if ("botId" in f) q = q.eq("bot_id", f.botId);
+  else q = q.lt("last_contact_at", f.lastContactBefore);
+  const { data: rows, error: readError } = await q.limit(CLOSE_BATCH);
+  if (readError) throw new Error(`roteiro: não encerrou (${readError.message})`);
+  if (!rows?.length) return 0;
   const now = new Date().toISOString();
-  await db.from("routine_runs").update({ status, end_reason: reason, variables_enc: null, ended_at: now, updated_at: now }).eq("id", runId).eq("status", "active");
+  const { data: done, error } = await db
+    .from("routine_runs")
+    .update({ status, end_reason: reason, variables_enc: null, ended_at: now, updated_at: now })
+    .in("id", rows.map((r) => r.id as string))
+    .eq("status", "active")
+    .select("id");
+  if (error) {
+    console.error("roteiro: não encerrou", error.message);
+    return 0;
+  }
+  const closed = new Set((done ?? []).map((d) => d.id as string));
+  for (const r of rows as unknown as ClosingRow[]) {
+    if (!closed.has(r.id)) continue;
+    // o aviso não segura nem derruba o fim do roteiro
+    const { queueRoutineEvent } = await import("./message-events");
+    await queueRoutineEvent(db, {
+      conversationId: r.conversation_id,
+      status,
+      reason,
+      run: { id: r.id, routineId: r.routine_id, routineName: r.routine_name, startedBy: r.started_by, startedAt: r.started_at, endedAt: now, stepIndex: r.step_index, stepsTotal: r.steps_total },
+    }).catch((e) => console.error("webhook: fim de roteiro", (e as Error).message));
+  }
+  return closed.size;
 }
 
-const ABANDON = (reason: EndReason) => {
-  const now = new Date().toISOString();
-  return { status: "abandoned", end_reason: reason, variables_enc: null, ended_at: now, updated_at: now };
-};
+async function finishRun(db: SupabaseClient, runId: string, status: "completed" | "abandoned", reason: EndReason | null): Promise<void> {
+  await closeRuns(db, { id: runId }, status, reason);
+}
 
 /** A IA deixou de responder (Assumir, pausa pela API, eco do celular, só humano), o contato pediu a equipe ou o contexto trocou. */
 export async function endActiveRoutine(db: SupabaseClient, conversationId: string, reason: EndReason): Promise<void> {
-  const { error } = await db.from("routine_runs").update(ABANDON(reason)).eq("conversation_id", conversationId).eq("status", "active");
-  if (error) console.error("roteiro: não encerrou", error.message);
+  await closeRuns(db, { conversationId }, "abandoned", reason).catch((e) => console.error((e as Error).message));
 }
 
 /** Roteiro salvo, desligado ou apagado: os em andamento acabam (routine_changed). */
 export async function endRoutineRuns(db: SupabaseClient, routineId: string, reason: EndReason): Promise<void> {
-  const { error } = await db.from("routine_runs").update(ABANDON(reason)).eq("routine_id", routineId).eq("status", "active");
-  if (error) console.error("roteiro: não encerrou", error.message);
+  while ((await closeRuns(db, { routineId }, "abandoned", reason).catch((e) => (console.error((e as Error).message), 0))) === CLOSE_BATCH);
 }
 
 /** Bot pausado pelo dono: todos os roteiros dele acabam (handoff). */
 export async function endBotRoutineRuns(db: SupabaseClient, botId: string, reason: EndReason): Promise<void> {
-  const { error } = await db.from("routine_runs").update(ABANDON(reason)).eq("bot_id", botId).eq("status", "active");
-  if (error) console.error("roteiro: não encerrou", error.message);
+  while ((await closeRuns(db, { botId }, "abandoned", reason).catch((e) => (console.error((e as Error).message), 0))) === CLOSE_BATCH);
 }
 
 /** Varredura diária: roteiro sem mensagem do contato há 24 horas acaba (timeout). */
 export async function sweepRoutineTimeouts(db: SupabaseClient): Promise<number> {
-  const { data, error } = await db
-    .from("routine_runs")
-    .update(ABANDON("timeout"))
-    .eq("status", "active")
-    .lt("last_contact_at", new Date(Date.now() - ROUTINE_TIMEOUT_MS).toISOString())
-    .select("id");
-  if (error) throw new Error(`roteiros vencidos: ${error.message}`);
-  return data?.length ?? 0;
+  const before = new Date(Date.now() - ROUTINE_TIMEOUT_MS).toISOString();
+  let total = 0;
+  for (;;) {
+    const n = await closeRuns(db, { lastContactBefore: before }, "abandoned", "timeout");
+    total += n;
+    if (n < CLOSE_BATCH) return total;
+  }
 }
 
 /**

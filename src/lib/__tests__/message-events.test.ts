@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sourceOf } from "../message-events";
+import { routineEventData, sourceOf } from "../message-events";
 import { HIGH_VOLUME_EVENTS, WEBHOOK_EVENTS, WEBHOOK_EVENT_GROUPS, eventId } from "../webhooks";
 
 describe("eventos de mensagem nos webhooks", () => {
@@ -22,5 +22,21 @@ describe("eventos de mensagem nos webhooks", () => {
     expect(eventId("message.status", "42:delivered")).toBe(eventId("message.status", "42:delivered"));
     expect(eventId("message.status", "42:delivered")).not.toBe(eventId("message.status", "42:read"));
     expect(eventId("message.failed", "42:131026")).not.toBe(eventId("message.failed", "42:131049"));
+  });
+});
+
+describe("eventos de roteiro nos webhooks", () => {
+  const run = { id: "r-1", routineId: "rot-1", routineName: "Segunda via", startedBy: "palavra" as const, startedAt: "2026-10-19T12:00:00.000Z", endedAt: "2026-10-19T12:03:00.000Z", stepIndex: 2, stepsTotal: 3 };
+
+  it("routine.completed: o roteiro, como começou e o passo em que acabou (os dados que ele juntou não vão)", () => {
+    expect(routineEventData(run, null)).toEqual({
+      routine: { id: "rtn_rot-1", name: "Segunda via" },
+      run: { id: "run_r-1", started_by: "keyword", started_at: "2026-10-19T12:00:00.000Z", ended_at: "2026-10-19T12:03:00.000Z", step: 2, steps_total: 3 },
+    });
+  });
+
+  it("routine.abandoned leva o motivo; roteiro apagado vai sem id", () => {
+    expect(routineEventData({ ...run, routineId: null, startedBy: "ia" }, "idle")).toEqual({ routine: { id: null, name: "Segunda via" }, run: { ...routineEventData(run, null).run as object, started_by: "ai" }, reason: "idle" });
+    expect(WEBHOOK_EVENT_GROUPS.find((g) => g.label === "Roteiros")?.events).toEqual(["routine.completed", "routine.abandoned"]);
   });
 });

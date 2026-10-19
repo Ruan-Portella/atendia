@@ -252,6 +252,56 @@ export async function queueHandoffRequested(db: SupabaseClient, conversationId: 
   }
 }
 
+/** O roteiro que acabou, como o webhook leva (routine.completed / routine.abandoned). */
+export interface RoutineEndRun {
+  id: string;
+  routineId: string | null;
+  routineName: string;
+  startedBy: "ia" | "palavra";
+  startedAt: string;
+  endedAt: string;
+  stepIndex: number;
+  stepsTotal: number;
+}
+
+/**
+ * data do routine.completed e do routine.abandoned: o roteiro, a execução (como começou e em que
+ * passo acabou) e o motivo (só no abandonado). Os dados que o roteiro juntou não vão (spec,
+ * "Formatos de payload"): a ação do passo já recebe o que precisa, e o evento não espalha CPF. Pura.
+ */
+export function routineEventData(r: RoutineEndRun, reason: string | null): Record<string, unknown> {
+  return {
+    routine: { id: r.routineId ? `rtn_${r.routineId}` : null, name: r.routineName },
+    run: { id: `run_${r.id}`, started_by: r.startedBy === "palavra" ? "keyword" : "ai", started_at: r.startedAt, ended_at: r.endedAt, step: r.stepIndex, steps_total: r.stepsTotal },
+    ...(reason ? { reason } : {}),
+  };
+}
+
+/** routine.completed (o roteiro chegou ao fim) ou routine.abandoned (acabou antes, com o motivo). */
+export async function queueRoutineEvent(db: SupabaseClient, e: { conversationId: string; status: "completed" | "abandoned"; reason: string | null; run: RoutineEndRun }): Promise<void> {
+  try {
+    const ctx = await eventContext(db, e.conversationId);
+    if (!ctx) return;
+    const { emitEvent } = await import("./webhooks");
+    await emitEvent(
+      db,
+      {
+        type: e.status === "completed" ? "routine.completed" : "routine.abandoned",
+        key: `${e.run.id}:${e.status}`,
+        bot: ctx.bot,
+        createdAt: e.run.endedAt,
+        conversation: { id: e.conversationId, channel: ctx.channel },
+        contact: await contactObject(db, ctx.contactId),
+        contactId: ctx.contactId,
+        data: routineEventData(e.run, e.status === "abandoned" ? e.reason : null),
+      },
+      { background: true },
+    );
+  } catch (err) {
+    console.error("webhook: evento de roteiro não registrado", (err as Error).message);
+  }
+}
+
 /** handoff.returned: a conversa voltou para a IA (o atendente devolveu, ou a pausa venceu ou foi pela API). */
 export async function queueHandoffReturned(db: SupabaseClient, conversationId: string, o: { reason: "agent_resumed" | "timeout" | "api"; agent?: { id: string; name: string; type: string } | null; at: string }): Promise<void> {
   try {
