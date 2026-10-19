@@ -317,20 +317,17 @@ export async function POST(req: Request) {
       await saveMessage(db, { conversation_id: id, role: "assistant", content: reply, author: SYSTEM_AUTHOR });
       return fixedStream("roteiro", reply, handoffNotice ? { ...headers, "X-Handoff": "requested" } : headers, { handoff: Boolean(handoffNotice) });
     }
-    // a IA lê o CPF mascarado (o painel guarda a mensagem como veio)
-    const asked = routineTurn.question ?? text;
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];
     const { result, conversationId: activeId, siteOffer, components, files, saved } = await runChat({
       db,
       bot,
       // depois do Confirmar, o clique já está gravado (e já vem no histórico)
-      messages: confirmed ? history : [...history, { id: "novo", role: "user", parts: [{ type: "text", text: asked }] }],
+      messages: confirmed ? history : [...history, { id: "novo", role: "user", parts: [{ type: "text", text }] }],
       storeQuestion: !confirmed,
-      questionContent: text,
       confirmed,
       interactive,
       routine: routineTurn,
-      turnTexts: [asked],
+      turnTexts: [text],
       conversationId: convId,
       visitorId: visitorId ?? null,
       channel: chatChannel,

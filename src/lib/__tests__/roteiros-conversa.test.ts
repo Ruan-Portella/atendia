@@ -11,8 +11,6 @@ import {
   isCpf,
   keywordRoutine,
   maskCardNumbers,
-  maskCpfs,
-  maskValue,
   nextFrom,
   parseDate,
   parseNumber,
@@ -89,14 +87,6 @@ describe("roteiro na conversa: dados conferidos", () => {
     expect(findValue("data", ["15/03/2026"])).toBeNull();
   });
 
-  it("máscaras: CPF, telefone e e-mail", () => {
-    expect(maskValue({ kind: "cpf", value: "529.982.247-25" })).toBe("***.982.247-**");
-    expect(maskValue({ kind: "telefone", value: "(21) 99999-0000" })).toBe("(21) *****-0000");
-    expect(maskValue({ kind: "email", value: "ana@exemplo.com.br" })).toBe("a***@exemplo.com.br");
-    expect(maskValue({ kind: "cep", value: "20040-002" })).toBe("20040-002");
-    expect(maskCpfs("CPF 529.982.247-25 e pedido 123.456.789-00")).toBe("CPF ***.982.247-** e pedido 123.456.789-00");
-  });
-
   it("número de cartão sai antes de gravar; telefone e CPF ficam", () => {
     expect(maskCardNumbers("cartão 4111 1111 1111 1111 validade 12/30")).toEqual({ text: `cartão ${CARD_PLACEHOLDER} validade 12/30`, found: true });
     expect(maskCardNumbers("5555-5555-5555-4444").found).toBe(true);
@@ -148,15 +138,15 @@ describe("roteiro na conversa: botões, escolhas e caminho", () => {
     expect(nextFrom(steps, "passo001", { to: "atendente" })).toEqual({ kind: "handoff" });
   });
 
-  it("o que a IA recebe: o passo, os dados mascarados e as regras", () => {
+  it("o que a IA recebe: o passo, os dados como vieram e as regras", () => {
     const p = routinePrompt(
       { name: "Segunda via", steps: [{ id: "passo001", type: "dado", text: "Peça o CPF", kind: "cpf", variable: "cpf", pattern: null, next: { to: "proximo" } }, botoes], stepId: "passo002", variables: { cpf: { kind: "cpf", value: "529.982.247-25" } }, failing: false },
       'A pessoa escolheu "Sim".',
     );
     expect(p).toContain('ROTEIRO EM ANDAMENTO: "Segunda via", passo 2 de 2.');
     expect(p).toContain("Os botões (Sim, Não) vão sozinhos");
-    expect(p).toContain("cpf: ***.982.247-**");
-    expect(p).not.toContain("529.982.247-25");
+    // CPF como a pessoa mandou (decisão de 19/10/2026: a loja pode precisar dele para conferir a conta)
+    expect(p).toContain("Dados já informados: cpf: 529.982.247-25.");
     expect(p).toContain('Nesta mensagem: A pessoa escolheu "Sim".');
     expect(p).toContain("cancelar_roteiro");
     expect(stepInstruction({ id: "passo003", type: "dado", text: "Peça a data", kind: "data", variable: "data", pattern: null, next: { to: "proximo" } })).toContain("informar_dado");
@@ -299,7 +289,7 @@ const pre = (db: SupabaseClient, texts: string[], o: { buttonId?: string | null;
   routinePreTurn(db, { bot: BOT, conversationId: CONV, texts, buttonId: o.buttonId ?? null, waPhone: o.waPhone ?? null, consume: o.consume });
 
 describe("roteiro na conversa: antes da IA", () => {
-  it("palavra-chave começa o roteiro; o CPF conferido avança e a IA lê mascarado", async () => {
+  it("palavra-chave começa o roteiro; o CPF conferido avança", async () => {
     const tables: Record<string, Row[]> = { routines: [routine()], conversations: [{ id: CONV }], messages: [] };
     const db = fakeDb(tables);
     const t1 = await pre(db, ["2VIA"]);
@@ -309,8 +299,7 @@ describe("roteiro na conversa: antes da IA", () => {
 
     const t2 = await pre(db, ["meu cpf é 529.982.247-25"]);
     expect(t2.run?.stepId).toBe("passo002");
-    expect(t2.note).toBe("CPF conferido: ***.982.247-**.");
-    expect(t2.question).toBe("meu cpf é ***.982.247-**");
+    expect(t2.note).toBe("CPF conferido: 529.982.247-25.");
     expect(JSON.parse(String(runs(tables)[0].variables_enc))).toEqual({ cpf: { kind: "cpf", value: "529.982.247-25" } });
   });
 
@@ -456,7 +445,7 @@ describe("roteiro na conversa: ferramentas da IA", () => {
     // instrução cumprida: o passo do telefone se preenche com o número desta conversa do WhatsApp
     const next = await exec(s, "concluir_passo");
     expect(next).toMatchObject({ ok: true, passo: "3 de 3" });
-    expect(String(next.dados)).toContain("telefone: (21) *****-0000");
+    expect(String(next.dados)).toContain("telefone: (21) 99999-0000");
 
     // data: a IA informa; errada conta tentativa
     expect(await exec(s, "informar_dado", { valor: "31/02/2026" })).toMatchObject({ ok: false });

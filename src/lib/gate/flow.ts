@@ -27,7 +27,6 @@ import { INTERNAL_FALLBACK, stripInternal } from "../internal-guard";
 import { CATEGORIES, GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
 import { routinePreTurn } from "../routine-engine";
-import { maskCpfs } from "../routine-run";
 
 /*
  * Portão nos canais da Meta (WhatsApp e Instagram), entre a fila e a IA: resposta da pergunta de
@@ -295,11 +294,6 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     await sendFixed(routineTurn.fixed.kind === "handoff" ? await requestHandoff(db, bot, convId, routineTurn.fixed.reason) : routineTurn.fixed.text);
     return;
   }
-  // a IA lê o CPF mascarado (o painel guarda a mensagem como veio)
-  if (routineTurn.question && !answered) {
-    question = routineTurn.question;
-    history = withLastUserText(history, question);
-  }
 
   // 2. portão da entrada (o "Não" sempre vence: a idade é lida de novo depois do setAge)
   const age: AgeStatus = await getAge(db, who);
@@ -380,7 +374,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     gate: { age, instruction: [entrance.instruction, refetch].filter(Boolean).join(" ") || undefined, remind: entrance.regulated.length > 0 || entrance.prohibited.length > 0 || Boolean(refetch), exempt, onlyMentioned: entrance.onlyMentioned, noHits: entrance.kind === "ia" && entrance.noHits, ...(refetchTool ? { refetchTool } : {}) },
     confirmed,
     routine: routineTurn,
-    turnTexts: routineTurn.question ? [question] : turnTexts,
+    turnTexts,
   });
   // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
   // resumo do Confirmar: só o que o BoaVoz montou (como o runChat gravou)
@@ -451,8 +445,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const adultOffer = (exit.offerAdult && !exit.emptied) || gated.offerAdult;
   if (adultOffer && component?.type === "options" && !isConfirmComponent(component) && component.options.length < LIMITS.list) component = { ...component, options: [...component.options, { id: AGE_SHOW, title: GATE_TEXTS.showAdultOptions }] };
   const adultButton = adultOffer && component?.type !== "options";
-  // CPF completo nunca sai pelo WhatsApp nem pelo Instagram (política da Meta): vai mascarado
-  let answer = maskCpfs(withRiskText(safe, urgent()).trim());
+  let answer = withRiskText(safe, urgent()).trim();
   if (answer) {
     // item proibido junto com outro assunto: o aviso fixo vai antes, na mesma mensagem
     if (entrance.prefix) answer = `${entrance.prefix}\n\n${answer}`;

@@ -3,9 +3,11 @@ import type { MessageComponent, OptionItem } from "./components";
 
 /*
  * Roteiros na conversa (leva B2', parte 2a), a parte pura: validação e extração dos dados
- * (dígito verificador do CPF e do CNPJ, também o CNPJ alfanumérico de 07/2026), máscaras, número de
- * cartão apagado antes de gravar, botões do passo e o texto que a IA recebe a cada vez. O estado
- * no banco e as ferramentas ficam em routine-engine.ts.
+ * (dígito verificador do CPF e do CNPJ, também o CNPJ alfanumérico de 07/2026), número de cartão
+ * apagado antes de gravar, botões do passo e o texto que a IA recebe a cada vez. O CPF e os outros
+ * dados que a pessoa manda ficam como vieram, no painel e para a IA (decisão de 19/10/2026: a loja
+ * pode precisar do CPF para conferir a conta). O estado no banco e as ferramentas ficam em
+ * routine-engine.ts.
  */
 
 /** 24 horas sem mensagem do contato: o roteiro acaba (timeout). */
@@ -198,30 +200,7 @@ export function findValue(kind: DataKind, texts: string[]): { value: string } | 
   return invalid ? { invalid: true } : null;
 }
 
-/* ------------------------------------------------------------------ máscaras */
-
-/** O que a IA e o painel mostram de um valor: CPF ***.456.789-**, telefone (11) *****-4321, e-mail j***@x.com. Pura. */
-export function maskValue(v: RoutineValue): string {
-  const d = onlyDigits(v.value);
-  if ((v.kind === "cpf" || v.kind === "cpf_cnpj") && d.length === 11) return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`;
-  if (v.kind === "telefone" && d.length >= 10) return `(${d.slice(0, 2)}) ${"*".repeat(d.length - 6)}-${d.slice(-4)}`;
-  if (v.kind === "email") {
-    const [user, domain] = v.value.split("@");
-    return `${user.slice(0, 1)}***@${domain ?? ""}`;
-  }
-  return v.value;
-}
-
-/**
- * CPF válido no meio de um texto vira ***.456.789-** (a política do WhatsApp proíbe mostrar o
- * número completo). Só os que conferem no dígito: telefone e código de pedido ficam. Pura.
- */
-export function maskCpfs(text: string): string {
-  return text.replace(new RegExp(CANDIDATES.cpf.source, "g"), (m) => {
-    const d = onlyDigits(m);
-    return d.length === 11 && isCpf(d) ? `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**` : m;
-  });
-}
+/* ------------------------------------------------------------------ número de cartão */
 
 /** Lugar do número de cartão apagado (a IA lê isso e avisa a pessoa para não mandar cartão). */
 export const CARD_PLACEHOLDER = "[número de cartão apagado por segurança]";
@@ -346,10 +325,10 @@ export function nextFrom(steps: RoutineStep[], fromId: string, d: Destination): 
 
 const label = (kind: DataKind) => DATA_KIND_LABEL[kind] === "formato próprio (regex)" ? "dado" : DATA_KIND_LABEL[kind];
 
-/** Os dados já informados, mascarados ("documento: ***.456.789-**"). Pura. */
+/** Os dados já informados ("documento: 529.982.247-25"). Pura. */
 export function variablesLine(vars: RoutineVariables): string {
-  const parts = Object.entries(vars).map(([k, v]) => `${k}: ${maskValue(v)}`);
-  return parts.length ? `Dados já informados: ${parts.join("; ")}. Não repita os números completos.` : "";
+  const parts = Object.entries(vars).map(([k, v]) => `${k}: ${v.value}`);
+  return parts.length ? `Dados já informados: ${parts.join("; ")}.` : "";
 }
 
 /** O que a IA faz no passo (também volta no resultado das ferramentas, quando o roteiro anda). Pura. */
@@ -361,7 +340,7 @@ export function stepInstruction(step: RoutineStep, o: { failing?: boolean; waPho
       return `${step.text}\nQuando este passo estiver cumprido (se ele pede uma resposta da pessoa, só depois que ela respondeu), chame concluir_passo e siga o que a ferramenta devolver.`;
     case "dado":
       return FIXED_KINDS.has(step.kind)
-        ? `${step.text}\nO BoaVoz confere o ${label(step.kind)} quando a pessoa mandar: não confira você, não invente e não repita o número.`
+        ? `${step.text}\nO BoaVoz confere o ${label(step.kind)} quando a pessoa mandar: não confira você e não invente.`
         : `${step.text}\nQuando a pessoa informar, chame informar_dado com o valor${step.kind === "data" ? " no formato dd/mm/aaaa" : " exatamente como ela escreveu"}.`;
     case "botoes":
       return `${step.text}\nOs botões (${step.options.map((x) => x.title).join(", ")}) vão sozinhos com a sua mensagem: escreva só a pergunta, sem listar as opções e sem chamar mostrar_opcoes.`;
@@ -380,7 +359,7 @@ export interface RunView {
 
 /**
  * O bloco do roteiro em andamento, depois do histórico (pesa mais que ele): o passo atual, os dados
- * já informados (mascarados), o que aconteceu nesta vez e as regras. Pura.
+ * já informados, o que aconteceu nesta vez e as regras. Pura.
  */
 export function routinePrompt(v: RunView, note: string | null): string {
   const i = v.steps.findIndex((s) => s.id === v.stepId);

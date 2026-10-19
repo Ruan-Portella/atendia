@@ -253,7 +253,6 @@ export function RoutineEditor({
                 )}
                 <p className="text-xs text-muted sm:col-span-2">
                   O BoaVoz confere o dado (o dígito verificador, no CPF e no CNPJ) e pede de novo até 3 vezes; depois, oferece atendente ou cancelar.
-                  {(s.kind === "cpf" || s.kind === "cpf_cnpj") && " O CPF aparece mascarado para o contato e no painel."}
                 </p>
               </div>
             )}

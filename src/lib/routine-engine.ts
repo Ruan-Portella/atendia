@@ -14,8 +14,6 @@ import {
   failButtons,
   findValue,
   keywordRoutine,
-  maskCpfs,
-  maskValue,
   nextFrom,
   parseRoutineButton,
   routinePrompt,
@@ -243,15 +241,13 @@ export interface RoutineTurn {
   available: RoutineRow[];
   /** O que aconteceu nesta mensagem, para a IA ("CPF conferido", "escolheu Sim"). */
   note: string | null;
-  /** A mensagem como a IA lê (CPF mascarado), quando mudou. */
-  question: string | null;
   /** Sem a IA: cancelado ou equipe pelo botão (o canal manda o texto ou o pedido de atendente). */
   fixed: { kind: "cancelled"; text: string } | { kind: "handoff"; reason: string } | null;
   /** Conversa aberta aqui (site: a palavra-chave começou o roteiro antes da conversa existir). */
   conversationId: string | null;
 }
 
-export const noRoutineTurn = (conversationId: string | null = null): RoutineTurn => ({ run: null, available: [], note: null, question: null, fixed: null, conversationId });
+export const noRoutineTurn = (conversationId: string | null = null): RoutineTurn => ({ run: null, available: [], note: null, fixed: null, conversationId });
 
 /**
  * Antes da IA: confere se o roteiro em andamento ainda vale (prazo, roteiro alterado, equipe que
@@ -270,7 +266,7 @@ export async function routinePreTurn(
   let conversationId = i.conversationId;
   let run = conversationId ? await loadActiveRun(db, conversationId) : null;
   if (!available.length && !run) return noRoutineTurn(conversationId);
-  const turn: RoutineTurn = { run: null, available, note: null, question: null, fixed: null, conversationId };
+  const turn: RoutineTurn = { run: null, available, note: null, fixed: null, conversationId };
   const consume = i.consume !== false;
   const text = i.texts.at(-1) ?? "";
 
@@ -328,22 +324,20 @@ export async function routinePreTurn(
     const step = currentStep(run);
     if (step.type === "dado" && FIXED_KINDS.has(step.kind)) {
       const found = findValue(step.kind, i.texts);
-      const masked = i.texts.some((t) => maskCpfs(t) !== t) ? maskCpfs(text) : null;
       if (found && "value" in found) {
         run.variables = { ...run.variables, [step.variable]: { kind: step.kind, value: found.value } };
-        const shown = maskValue({ kind: step.kind, value: found.value });
         const moved = await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: [], waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"`, contact: true });
         if (moved.kind === "handoff") return { ...turn, fixed: { kind: "handoff", reason: moved.reason } };
-        const ok = `${label(step.kind)} conferido: ${shown}.`;
-        if (moved.kind === "completed") return { ...turn, question: masked, note: `${ok} O roteiro "${run.routine.name}" terminou: siga a conversa normalmente.` };
-        return { ...turn, run, question: masked, note: ok };
+        const ok = `${label(step.kind)} conferido: ${found.value}.`;
+        if (moved.kind === "completed") return { ...turn, note: `${ok} O roteiro "${run.routine.name}" terminou: siga a conversa normalmente.` };
+        return { ...turn, run, note: ok };
       }
       if (found && "invalid" in found) {
         const attempts = run.attempts + 1;
         const failing = attempts >= MAX_ATTEMPTS;
         await saveRun(db, run, { attempts, failing, contact: true });
         const why = step.kind === "cpf" || step.kind === "cnpj" || step.kind === "cpf_cnpj" ? " (o dígito verificador não bate)" : "";
-        return { ...turn, run, question: masked, note: failing ? null : `O ${label(step.kind)} que a pessoa mandou não confere${why}. Peça para conferir e mandar de novo (tentativa ${attempts} de ${MAX_ATTEMPTS}), sem repetir o número.` };
+        return { ...turn, run, note: failing ? null : `O ${label(step.kind)} que a pessoa mandou não confere${why}. Peça para conferir e mandar de novo (tentativa ${attempts} de ${MAX_ATTEMPTS}), sem repetir o número.` };
       }
       await saveRun(db, run, { contact: true });
       return { ...turn, run, note: run.failing ? null : `A pessoa ainda não mandou o ${label(step.kind)}. Se ela perguntou outra coisa, responda e peça o ${label(step.kind)} de novo.` };
@@ -458,7 +452,7 @@ export function routineSession(
           return { ok: false, instrucao: failing ? stepInstruction(step, { failing: true }) : `Esse valor não confere com o que o passo pede. Peça de novo com gentileza (tentativa ${attempts} de ${MAX_ATTEMPTS}).` };
         }
         run.variables = { ...run.variables, [step.variable]: { kind: step.kind, value } };
-        return after(await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"` }), `Dado conferido: ${maskValue({ kind: step.kind, value })}.`);
+        return after(await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"` }), `Dado conferido: ${value}.`);
       },
     }),
     cancelar_roteiro: tool({
