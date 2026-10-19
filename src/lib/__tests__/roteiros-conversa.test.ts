@@ -30,6 +30,7 @@ import {
 import { ROUTINE_CANCELLED_TEXT, applyConfirmedAction, cancelRoutineAction, deleteRoutineRunsOfConversations, endActiveRoutine, endRoutineRuns, routinePreTurn, routineSession, sweepRoutineTimeouts } from "../routine-engine";
 import { routineInputFromJson, routineProblem, type RoutineRow, type RoutineStep } from "../routines";
 import { offeredByRoutine } from "../action-tools";
+import { cleanReason } from "../photo-reading";
 
 /* ------------------------------------------------------------------ validação e máscaras (puras) */
 
@@ -751,6 +752,9 @@ describe("passo de foto", () => {
     expect(photoValue(null)).toBeNull();
     expect(photoValue([{ kind: "comum", description: "x".repeat(900) }])!.length).toBe(600);
     expect(stepInstruction(suporte.steps[0])).toContain("concluir_passo");
+    // o motivo da conferência entra no meio da frase da IA
+    expect(cleanReason("A foto está escura e não mostra as luzes do roteador.")).toBe("a foto está escura e não mostra as luzes do roteador");
+    expect(cleanReason("  ")).toBeNull();
   });
 
   it("o editor: variável obrigatória e nada de pedir foto de documento, cartão, comprovante ou saúde", () => {
