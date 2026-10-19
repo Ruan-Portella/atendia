@@ -233,7 +233,7 @@ export default function ActionsDocs() {
       <NextSteps
         items={[
           { href: "/docs/mensagens-ricas", title: "Mensagens ricas", text: "Botões, lista, link e carrossel no retorno da ação." },
-          { href: "/docs/comeco-rapido", title: "Começo rápido", text: "O exemplo completo de consultar pedido." },
+          { href: "/docs/comeco-rapido", title: "Primeira ação", text: "O exemplo completo de consultar pedido." },
         ]}
       />
     </DocPage>

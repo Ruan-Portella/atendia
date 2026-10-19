@@ -28,6 +28,15 @@ Arquivos desta pasta:
 - Cada requisição confere o resultado (aba **Test Results**). Os erros da API aparecem no **Console** (embaixo, à esquerda) com o código e os detalhes.
 - Para rodar uma pasta inteira de uma vez: clique nos três pontos da pasta, **Run folder**. A pasta 3 manda mensagens de verdade para o seu WhatsApp.
 
+### A documentação sai da mesma fonte
+
+`gerar_colecao.py` grava também:
+
+- `src/lib/api-exemplos.json`: os exemplos das páginas da API na documentação (`/docs/api/<assunto>`, em cURL e JavaScript, com a resposta). Quais requisições viram exemplo, e de qual página, está em `DOC_OF`, pelo nome da requisição; as variáveis do Postman viram os valores de `DOC_VALUES`. Uma rota nova da API ganha a requisição na coleção e, se for para a documentação, a linha em `DOC_OF` com a resposta.
+- `public/docs/postman/`: cópias da coleção e de um ambiente **BoaVoz** (boavoz.com, sem o bypass da Vercel), para baixar pela documentação.
+
+Depois de mudar o gerador, rode-o e faça o commit dos arquivos gerados junto.
+
 ## Webhooks: onde receber os eventos
 
 Para testar, use o [Svix Play](https://www.svix.com/play/): é grátis, não pede cadastro e é da empresa que criou o padrão de assinatura dos webhooks do BoaVoz (Standard Webhooks). Ele mostra cada evento com os cabeçalhos (`webhook-id`, `webhook-timestamp`, `webhook-signature`), o corpo e a hora.

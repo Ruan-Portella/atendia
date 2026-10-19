@@ -66,7 +66,7 @@ export function onboardingSteps(input: { bots: OnboardingBot[]; hasLogo: boolean
       { key: "chave", title: "Crie uma chave da API", hint: "Em Integrações, escolha os chatbots e as permissões. A chave aparece uma vez só: guarde no seu sistema.", href: "/painel/integracoes", cta: "Criar chave", done: d.keys > 0 },
       { key: "webhook", title: "Cadastre um webhook", hint: "Os eventos (mensagem nova, lead, pedido de atendente) chegam no seu sistema, assinados. Confira pelo botão Testar.", href: "/painel/integracoes", cta: "Cadastrar webhook", done: d.webhooks > 0 },
       { key: "pacote", title: "Assine o pacote Integrações", hint: `Com ele, a API responde e os webhooks entregam (R$ ${PACKS.integracoes.priceBrl} por mês).`, href: "/painel/cobranca", cta: "Ver em Cobrança", done: d.integrations },
-      { key: "chamada", title: "Faça a primeira chamada", hint: "Siga o começo rápido da documentação ou importe a coleção do Postman.", href: "/docs/comeco-rapido", cta: "Abrir o guia", done: d.keyUsed },
+      { key: "chamada", title: "Faça a primeira chamada", hint: "Siga o guia para devs: a primeira mensagem pela API e os eventos no seu sistema (ou a coleção do Postman).", href: "/docs/guias/dev", cta: "Abrir o guia", done: d.keyUsed },
     ];
   }
 

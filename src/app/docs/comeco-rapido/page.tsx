@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Code, DocPage, H2, Note, NextSteps, Table } from "@/components/docs/doc";
 
-export const metadata = { title: "Começo rápido" };
+export const metadata = { title: "Primeira ação" };
 
 const ENDPOINT = `
 // npm i express standardwebhooks
@@ -76,7 +76,7 @@ const BODY = `
 export default function QuickStart() {
   return (
     <DocPage
-      title="Começo rápido"
+      title="Primeira ação"
       intro="Em 5 minutos: o contato pergunta “cadê meu pedido 1234?” no WhatsApp e o assistente responde com o status que vem do seu sistema."
     >
       <H2 id="segredo">1. Gere o segredo de ações</H2>

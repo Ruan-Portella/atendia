@@ -48,7 +48,7 @@ export default function CampaignsDocs() {
         ]}
       />
       <p>
-        Pelo painel: aba <strong>Campanhas</strong> do cliente. Pela API: <code>POST /v1/campaigns</code> (veja a <Link href="/docs/api#campanhas">referência</Link>). Os dois usam o mesmo motor, que confere tudo de novo na hora de cada envio.
+        Pelo painel: aba <strong>Campanhas</strong> do cliente. Pela API: <code>POST /v1/campaigns</code> (veja a <Link href="/docs/api/campanhas">referência</Link>). Os dois usam o mesmo motor, que confere tudo de novo na hora de cada envio.
       </p>
 
       <H2 id="aceite">O aceite de novidades</H2>
@@ -99,7 +99,7 @@ export default function CampaignsDocs() {
 
       <NextSteps
         items={[
-          { href: "/docs/api#campanhas", title: "Referência da API", text: "POST /v1/campaigns, GET da campanha e o aceite." },
+          { href: "/docs/api/campanhas", title: "Campanhas e aceite na API", text: "POST /v1/campaigns, GET da campanha e o aceite, com exemplos." },
           { href: "/docs/webhooks#contato", title: "Webhooks", text: "contact.opted_in, contact.opted_out e campaign.finished." },
         ]}
       />

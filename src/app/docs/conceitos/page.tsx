@@ -76,7 +76,7 @@ export default function ConceptsDocs() {
 
       <NextSteps
         items={[
-          { href: "/docs/comeco-rapido", title: "Começo rápido", text: "Sua primeira ação em 5 minutos." },
+          { href: "/docs/comeco-rapido", title: "Primeira ação", text: "Sua primeira ação em 5 minutos." },
           { href: "/docs/seguranca", title: "Segurança", text: "Como autorizar pelo contato verificado." },
         ]}
       />

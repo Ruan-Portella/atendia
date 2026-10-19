@@ -114,7 +114,7 @@ export default function IdentityDocs() {
       <H2 id="pareamento">Pareamento no WhatsApp e no Instagram</H2>
       <ol>
         <li>
-          Seu sistema chama <code>POST /v1/pairings</code> com <code>external_id</code>, <code>context</code> e <code>display</code> (veja a <Link href="/docs/api#pareamento">referência</Link>) e recebe o código e o link.
+          Seu sistema chama <code>POST /v1/pairings</code> com <code>external_id</code>, <code>context</code> e <code>display</code> (veja a <Link href="/docs/api/pareamento">referência</Link>) e recebe o código e o link.
         </li>
         <li>A pessoa abre o link no celular: o WhatsApp abre com “Conectar ABC123” escrito (no Instagram, o link leva o código, ou ela digita o código na DM). Ela manda e confirma.</li>
         <li>O BoaVoz liga o contato à conta dela e emite o webhook <code>contact.linked</code>. Daí em diante, as ações recebem o nível usuário nesse canal.</li>

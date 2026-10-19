@@ -1,9 +1,20 @@
-"""Gera a coleção e o ambiente do Postman da API do BoaVoz (rode na raiz do repositório: python docs/postman/gerar_colecao.py)."""
+"""Gera a coleção e o ambiente do Postman da API do BoaVoz e os exemplos das páginas da API na
+documentação (rode na raiz do repositório: python docs/postman/gerar_colecao.py).
+
+As requisições com doc= viram os exemplos de /docs/api/<página> (cURL e JavaScript, com a
+resposta): a coleção e a documentação saem da mesma fonte (src/lib/api-exemplos.json).
+"""
+import copy
 import json
+import os
+import re
 import uuid
 import io
 
 OUT = "docs/postman"
+DOCS_OUT = "src/lib/api-exemplos.json"
+# a coleção e um ambiente de produção, para baixar pela documentação (/docs/api)
+PUBLIC_OUT = "public/docs/postman"
 
 # ------------------------------------------------------------------ helpers
 
@@ -12,7 +23,11 @@ def script(*lines):
     return {"type": "text/javascript", "exec": list(lines)}
 
 
-def req(name, method, path, *, body=None, query=None, desc="", tests=(), idem=True, headers=None, token=None, pre=()):
+def req(name, method, path, *, body=None, query=None, desc="", tests=(), idem=True, headers=None, token=None, pre=(), doc=None):
+    doc = doc or DOC_OF.get(name)
+    if doc:
+        USED.add(name)
+        DOCS.append(doc_example(doc, method, path, body=body, query=query, idem=idem, headers=headers))
     hdr = []
     if body is not None:
         hdr.append({"key": "Content-Type", "value": "application/json"})
@@ -41,6 +56,293 @@ def req(name, method, path, *, body=None, query=None, desc="", tests=(), idem=Tr
     if events:
         item["event"] = events
     return item
+
+
+# ------------------------------------------------------------------ exemplos da documentação
+
+# Os valores das variáveis do Postman nos exemplos da documentação (ids no formato de verdade).
+DOC_VALUES = {
+    "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "phone": "5511999990000",
+    "phone_para_apagar": "5511999990000",
+    "phone_sem_idade": "5511999990000",
+    "phone_fora_da_janela": "5511999990000",
+    "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+    "whatsapp_conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+    "widget_conversation_id": "conv_5d2a9e1b-3c4f-4b6a-8e7d-2f1a0b9c8d7e",
+    "instagram_conversation_id": "conv_8b7a6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
+    "whatsapp_contact": "ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+    "instagram_contact": "ctc_3c2b1a0f-9e8d-4c7b-a6f5-4e3d2c1b0a9f",
+    "message_id": "msg_48211",
+    "media_id": "med_6f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
+    "campaign_id": "cmp_2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+    "link_id": "lnk_4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f8a",
+    "template_name": "pedido_saiu",
+    "template_language": "pt_BR",
+    "template_variable_1": "Ruan",
+    "marketing_template": "promo_sexta",
+    "reminder_template": "lembrete_consulta",
+    "send_at_future": "2026-10-20T18:00:00-03:00",
+    "external_id": "usuario_8812",
+    "idempotency_key": "pedido-1234-saiu",
+    "image_url": "https://loja.exemplo.com.br/fotos/pedido-1234.jpg",
+    "document_url": "https://loja.exemplo.com.br/boletos/1234.pdf",
+    "bot_size": "M",
+    "next_cursor": "eyJpZCI6NDgyMTF9",
+    "$guid": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90",
+}
+
+DOCS = []
+
+
+
+def doc_value(v):
+    """Troca as {{variáveis}} do Postman pelos valores de exemplo da documentação."""
+    if isinstance(v, str):
+        def sub(m):
+            key = m.group(1)
+            assert key in DOC_VALUES, f"variável sem valor de exemplo na documentação: {key}"
+            return DOC_VALUES[key]
+        return re.sub(r"\{\{([$\w]+)\}\}", sub, v)
+    if isinstance(v, list):
+        return [doc_value(x) for x in v]
+    if isinstance(v, dict):
+        return {k: doc_value(x) for k, x in v.items()}
+    return v
+
+
+def ex(page, id, title, status, response=None, binary=False):
+    """Marca a requisição como exemplo da página /docs/api/<page>, com a resposta."""
+    return {"page": page, "id": id, "title": title, "status": status, "response": response, "binary": binary}
+
+
+def doc_example(doc, method, path, *, body, query, idem, headers):
+    hdr = {}
+    if method == "POST" and idem:
+        hdr["Idempotency-Key"] = DOC_VALUES["$guid"]
+    for k, v in (headers or {}).items():
+        hdr[k] = doc_value(v)
+    return {
+        **{k: doc[k] for k in ("page", "id", "title")},
+        "method": method,
+        "path": doc_value(path.strip("/")),
+        "query": [[k, doc_value(v)] for k, v, off in (query or []) if not off],
+        "headers": hdr,
+        "body": doc_value(body),
+        "status": doc["status"],
+        "response": doc["response"],
+        "binary": doc["binary"],
+    }
+
+
+CONV = DOC_VALUES["conversation_id"]
+WIDGET = DOC_VALUES["widget_conversation_id"]
+
+
+def sent(msg, conv=CONV):
+    return {"message_id": msg, "conversation_id": conv, "status": "sent"}
+
+
+# Que requisição da coleção vira exemplo de qual página, com a resposta (pelo nome da requisição).
+DOC_OF = {
+    # /docs/api/mensagens
+    "Texto no WhatsApp (pelo telefone)": ex("mensagens", "texto", "Texto no WhatsApp", 201, sent("msg_48211")),
+    "Texto assinado (agent_name e sender)": ex("mensagens", "assinado", "Texto assinado por alguém da equipe", 201, sent("msg_48212")),
+    "Texto no chat do site": ex("mensagens", "site", "Texto no chat do site", 201, sent("msg_48213", WIDGET)),
+    "Imagem no WhatsApp (com legenda)": ex("mensagens", "imagem", "Imagem com legenda", 201, sent("msg_48214")),
+    "Documento no WhatsApp": ex("mensagens", "documento", "Documento", 201, sent("msg_48215")),
+    "Modelo do WhatsApp": ex("mensagens", "modelo", "Modelo aprovado (também fora da janela de 24 horas)", 201, sent("msg_48216")),
+    "Botões no WhatsApp": ex("mensagens", "botoes", "Texto com botões", 201, sent("msg_48217")),
+    "Repetir com a mesma chave (idempotência)": ex("mensagens", "idempotencia", "Repetir com a mesma Idempotency-Key", 201, sent("msg_48218")),
+    "Uma mensagem": ex("mensagens", "ler", "Ler uma mensagem (com o status)", 200, {
+        "id": "msg_48211",
+        "conversation_id": CONV,
+        "direction": "outbound",
+        "source": "api",
+        "text": "Teste da API do BoaVoz",
+        "media": None,
+        "agent": {"type": "api", "display_name": "Integração", "sender": None},
+        "status": "read",
+        "error": None,
+        "deleted": False,
+        "edited": False,
+        "created_at": "2026-10-19T15:02:11.481Z",
+    }),
+    "Modelos do bot": ex("mensagens", "modelos", "Os modelos do número", 200, {
+        "data": [
+            {"name": "pedido_saiu", "language": "pt_BR", "category": "utility", "status": "approved", "rejected_reason": None, "body": "Oi, {{1}}! O seu pedido saiu para entrega.", "variables": 1, "sendable": True, "unsupported_reason": None},
+            {"name": "promo_sexta", "language": "pt_BR", "category": "marketing", "status": "pending", "rejected_reason": None, "body": "{{1}}, a sexta chegou com 10% de desconto no cardápio!", "variables": 1, "sendable": False, "unsupported_reason": None},
+        ]
+    }),
+    # /docs/api/conversas
+    "Listar conversas (guarda os ids)": ex("conversas", "listar", "Listar as conversas", 200, {
+        "data": [
+            {
+                "id": CONV,
+                "bot_id": DOC_VALUES["bot_id"],
+                "channel": "whatsapp",
+                "contact": {"id": DOC_VALUES["whatsapp_contact"]},
+                "status": "ai",
+                "started_at": "2026-10-19T14:58:02.117Z",
+                "last_message_at": "2026-10-19T15:02:11.481Z",
+                "message_count": 6,
+                "ai_paused_until": None,
+                "agent": None,
+            }
+        ],
+        "next_cursor": "MjAyNi0xMC0xOVQxNTowMjoxMS40ODFafDBlOGY1YTNj",
+    }),
+    "Histórico da conversa": ex("conversas", "historico", "O histórico de uma conversa", 200, {
+        "conversation": {"id": CONV, "bot_id": DOC_VALUES["bot_id"], "channel": "whatsapp", "contact": {"id": DOC_VALUES["whatsapp_contact"]}, "status": "ai", "started_at": "2026-10-19T14:58:02.117Z", "last_message_at": "2026-10-19T15:02:11.481Z", "message_count": 2, "ai_paused_until": None, "agent": None},
+        "data": [
+            {"id": "msg_48209", "conversation_id": CONV, "direction": "inbound", "source": "contact", "text": "Meu pedido já saiu?", "media": None, "agent": None, "status": "received", "error": None, "deleted": False, "edited": False, "created_at": "2026-10-19T14:58:02.117Z"},
+            {"id": "msg_48210", "conversation_id": CONV, "direction": "outbound", "source": "ai", "text": "Saiu sim! A previsão é hoje, até as 20h.", "media": None, "agent": None, "status": "read", "error": None, "deleted": False, "edited": False, "created_at": "2026-10-19T14:58:05.902Z"},
+        ],
+        "next_cursor": None,
+    }),
+    "Pausar 24 h com anúncio (Ana)": ex("conversas", "pausar", "Pausar a IA (24 horas, com o anúncio da Ana)", 200, {"ai_paused_until": "2026-10-20T15:05:00.000Z"}),
+    "Pausar por 10 minutos": ex("conversas", "pausar-minutos", "Pausar por um prazo fixo", 200, {"ai_paused_until": "2026-10-19T15:15:00.000Z"}),
+    "Retomar": ex("conversas", "retomar", "Devolver a conversa para a IA", 200, {"ai_paused_until": None}),
+    "Baixar arquivo": ex("conversas", "arquivo", "Baixar o arquivo de uma mensagem", 200, binary=True),
+    # /docs/api/contatos
+    "Listar contatos": ex("contatos", "listar", "Listar os contatos (para sincronizar)", 200, {
+        "data": [
+            {
+                "id": DOC_VALUES["whatsapp_contact"],
+                "bot_id": DOC_VALUES["bot_id"],
+                "channel": "whatsapp",
+                "name": "Ruan",
+                "email": None,
+                "phone": "5511999990000",
+                "whatsapp_user_id": None,
+                "instagram_id": None,
+                "external_id": None,
+                "tags": ["vip"],
+                "consent": {"marketing": "granted", "opted_out": []},
+                "age_confirmed": None,
+                "first_inbound_at": "2026-10-02T13:10:44.000Z",
+                "last_inbound_at": "2026-10-19T14:58:02.117Z",
+                "created_at": "2026-10-02T13:10:44.000Z",
+                "updated_at": "2026-10-19T14:58:02.117Z",
+            }
+        ],
+        "next_cursor": None,
+    }),
+    "Etiquetas do contato": ex("contatos", "etiquetas", "Trocar as etiquetas", 200, {"data": [{"id": DOC_VALUES["whatsapp_contact"], "tags": ["vip", "postman"]}]}),
+    "Idade confirmada pela empresa": ex("contatos", "idade", "A empresa confirma a idade", 200, {"age_confirmed": True, "age_confirmed_source": "company"}),
+    "Leads": ex("contatos", "leads", "Listar os leads", 200, {
+        "data": [
+            {
+                "id": "lead_7f3e2d1c-0b9a-4c8d-9e7f-6a5b4c3d2e1f",
+                "bot_id": DOC_VALUES["bot_id"],
+                "conversation_id": CONV,
+                "channel": "whatsapp",
+                "name": "Ana Souza",
+                "phone": "5511988887777",
+                "email": "ana@exemplo.com.br",
+                "instagram": None,
+                "notes": "Quer orçamento para 30 pizzas no sábado.",
+                "requests": [{"created_at": "2026-10-19T15:10:00.000Z", "channel": "whatsapp", "conversation_id": CONV, "text": "Quer orçamento para 30 pizzas no sábado."}],
+                "created_at": "2026-10-19T15:10:00.000Z",
+                "last_request_at": "2026-10-19T15:10:00.000Z",
+                "updated_at": "2026-10-19T15:10:00.000Z",
+            }
+        ],
+        "next_cursor": None,
+    }),
+    "Apagar contato (pedido do titular)": ex("contatos", "apagar", "Apagar os dados do contato (pedido do titular)", 202, {"request_id": "dsr_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"}),
+    # /docs/api/campanhas
+    "Campanha de marketing (por etiqueta)": ex("campanhas", "marketing", "Campanha de novidades para uma etiqueta", 201, {
+        "campaign_id": DOC_VALUES["campaign_id"],
+        "status": "sending",
+        "estimated_contacts": 312,
+        "estimated_cost_cents": 1934,
+        "estimated_days": 1,
+        "excluded": {"no_consent": 41, "suppressed": 3},
+        "quiet_hours": False,
+    }),
+    "Lembretes (uma linha por envio)": ex("campanhas", "lembretes", "Lembretes, um por linha", 201, {
+        "campaign_id": DOC_VALUES["campaign_id"],
+        "status": "scheduled",
+        "estimated_contacts": 1,
+        "estimated_cost_cents": 5,
+        "excluded": {},
+        "off_hours": 0,
+    }),
+    "Status da campanha": ex("campanhas", "status", "O status e os totais", 200, {
+        "id": DOC_VALUES["campaign_id"],
+        "bot_id": DOC_VALUES["bot_id"],
+        "kind": "marketing",
+        "name": "Teste Postman",
+        "status": "finished",
+        "pause_reason": None,
+        "template": {"name": "promo_sexta", "language": "pt_BR", "category": "marketing"},
+        "scheduled_at": None,
+        "created_at": "2026-10-19T15:20:00.000Z",
+        "finished_at": "2026-10-19T15:31:12.000Z",
+        "estimated_contacts": 312,
+        "estimated_cost_cents": 1934,
+        "totals": {"sent": 312, "delivered": 305, "read": 211, "replied": 27, "failed": 7, "pending": 0, "uncertain": 0, "skipped_no_consent": 41, "skipped_no_age": 0, "skipped_suppressed": 3, "opted_out": 2},
+    }),
+    "Aceite de novidades (sim)": ex("campanhas", "aceite", "Registrar o aceite de novidades", 201, {"consent_id": "cns_7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", "contact_id": DOC_VALUES["whatsapp_contact"], "opted_out": False}),
+    # /docs/api/pareamento
+    "Criar código de pareamento": ex("pareamento", "codigo", "Gerar o código de pareamento", 201, {"code": "K7Q2M9", "link": "https://wa.me/5511999990000?text=Conectar%20K7Q2M9", "expires_at": "2026-10-19T15:40:00.000Z"}),
+    "Vínculos do usuário": ex("pareamento", "vinculos", "Os vínculos de um usuário do seu sistema", 200, {
+        "data": [
+            {
+                "id": DOC_VALUES["link_id"],
+                "bot_id": DOC_VALUES["bot_id"],
+                "contact_id": DOC_VALUES["whatsapp_contact"],
+                "channel": "whatsapp",
+                "source": "pairing",
+                "external_id": "usuario_8812",
+                "context": None,
+                "display": {"name": "Teste Postman"},
+                "phone_masked": "+55 11 9•••• 0000",
+                "linked_at": "2026-10-19T15:31:40.000Z",
+            }
+        ]
+    }),
+    "Desvincular": ex("pareamento", "desvincular", "Desfazer um vínculo", 204),
+    # /docs/api/cobranca
+    "Uso do chatbot": ex("cobranca", "uso", "O uso do mês de um chatbot", 200, {
+        "bot_id": DOC_VALUES["bot_id"],
+        "month": "2026-10",
+        "size": "M",
+        "volume_packs": None,
+        "custom_quota": None,
+        "quota": 340,
+        "used": 212,
+        "status": "cota",
+        "projection": 318,
+        "average_3_months": 287,
+        "suggested_size": None,
+        "scheduled": None,
+        "overage": {"enabled": False, "cap_brl": None, "used": 0, "max": 0, "value_brl": 0, "suspended": None},
+    }),
+    "Excedente ligado com teto": ex("cobranca", "excedente", "Ligar o excedente com teto", 200, {
+        "bot_id": DOC_VALUES["bot_id"],
+        "month": "2026-10",
+        "size": "M",
+        "volume_packs": None,
+        "custom_quota": None,
+        "quota": 340,
+        "used": 212,
+        "status": "cota",
+        "projection": 318,
+        "average_3_months": 287,
+        "suggested_size": None,
+        "scheduled": None,
+        "overage": {"enabled": True, "cap_brl": 50, "used": 0, "max": 142, "value_brl": 0, "suspended": None},
+    }),
+    "Crédito da conta": ex("cobranca", "credito", "O crédito da conta", 200, {
+        "balance_brl": 87.5,
+        "lots": [{"amount_brl": 100, "remaining_brl": 87.5, "source": "purchase", "expires_at": "2027-10-02T13:00:00.000Z", "created_at": "2026-10-02T13:00:00.000Z"}],
+        "auto_recharge": {"enabled": False, "below_brl": None, "amount_brl": None, "month_limit_brl": None},
+    }),
+    "Comprar R$ 50 de crédito (cobra)": ex("cobranca", "comprar", "Comprar crédito (cobra no cartão da assinatura)", 201, {"status": "paid", "amount_brl": 50, "balance_brl": 137.5}),
+}
+USED = set()
 
 
 def folder(name, desc, items):
@@ -667,4 +969,28 @@ with io.open(f"{OUT}/boavoz-api.postman_collection.json", "w", encoding="utf-8",
 with io.open(f"{OUT}/boavoz-dev.postman_environment.json", "w", encoding="utf-8", newline="\n") as f:
     json.dump(env, f, ensure_ascii=False, indent=2)
     f.write("\n")
-print("coleção gerada:", sum(len(fd["item"]) for fd in collection["item"]), "requisições")
+# Cópias públicas: a mesma coleção, com o texto de abertura para quem usa a produção, e um
+# ambiente "BoaVoz" (boavoz.com, sem o bypass da Vercel, que é só do dev).
+public_collection = copy.deepcopy(collection)
+desc = public_collection["info"]["description"].split("\n")
+desc[2] = "**Antes de começar:** importe também o ambiente `BoaVoz`, selecione-o no canto superior direito e preencha `api_key`, `bot_id` e `phone`."
+public_collection["info"]["description"] = "\n".join(desc)
+public_env = {
+    "id": str(uuid.uuid5(uuid.NAMESPACE_URL, "boavoz-env-prod")),
+    "name": "BoaVoz",
+    "values": [{**v, "value": "https://boavoz.com/api/v1"} if v["key"] == "base_url" else v for v in env["values"] if v["key"] != "vercel_bypass"],
+    "_postman_variable_scope": "environment",
+}
+os.makedirs(PUBLIC_OUT, exist_ok=True)
+for name, data in (("boavoz-api.postman_collection.json", public_collection), ("boavoz.postman_environment.json", public_env)):
+    with io.open(f"{PUBLIC_OUT}/{name}", "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+assert USED == set(DOC_OF), f"exemplos sem requisição com esse nome: {set(DOC_OF) - USED}"
+ids = [(d["page"], d["id"]) for d in DOCS]
+assert len(ids) == len(set(ids)), "id de exemplo repetido na mesma página"
+with io.open(DOCS_OUT, "w", encoding="utf-8", newline="\n") as f:
+    json.dump({"_gerado_por": "docs/postman/gerar_colecao.py (não edite à mão)", "exemplos": DOCS}, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+print("coleção gerada:", sum(len(fd["item"]) for fd in collection["item"]), "requisições;", len(DOCS), "exemplos na documentação")

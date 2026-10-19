@@ -1,0 +1,965 @@
+{
+  "_gerado_por": "docs/postman/gerar_colecao.py (não edite à mão)",
+  "exemplos": [
+    {
+      "page": "conversas",
+      "id": "listar",
+      "title": "Listar as conversas",
+      "method": "GET",
+      "path": "conversations",
+      "query": [
+        [
+          "limit",
+          "20"
+        ]
+      ],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+            "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "channel": "whatsapp",
+            "contact": {
+              "id": "ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
+            },
+            "status": "ai",
+            "started_at": "2026-10-19T14:58:02.117Z",
+            "last_message_at": "2026-10-19T15:02:11.481Z",
+            "message_count": 6,
+            "ai_paused_until": null,
+            "agent": null
+          }
+        ],
+        "next_cursor": "MjAyNi0xMC0xOVQxNTowMjoxMS40ODFafDBlOGY1YTNj"
+      },
+      "binary": false
+    },
+    {
+      "page": "conversas",
+      "id": "historico",
+      "title": "O histórico de uma conversa",
+      "method": "GET",
+      "path": "conversations/conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f/messages",
+      "query": [
+        [
+          "limit",
+          "50"
+        ]
+      ],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "conversation": {
+          "id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+          "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+          "channel": "whatsapp",
+          "contact": {
+            "id": "ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
+          },
+          "status": "ai",
+          "started_at": "2026-10-19T14:58:02.117Z",
+          "last_message_at": "2026-10-19T15:02:11.481Z",
+          "message_count": 2,
+          "ai_paused_until": null,
+          "agent": null
+        },
+        "data": [
+          {
+            "id": "msg_48209",
+            "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+            "direction": "inbound",
+            "source": "contact",
+            "text": "Meu pedido já saiu?",
+            "media": null,
+            "agent": null,
+            "status": "received",
+            "error": null,
+            "deleted": false,
+            "edited": false,
+            "created_at": "2026-10-19T14:58:02.117Z"
+          },
+          {
+            "id": "msg_48210",
+            "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+            "direction": "outbound",
+            "source": "ai",
+            "text": "Saiu sim! A previsão é hoje, até as 20h.",
+            "media": null,
+            "agent": null,
+            "status": "read",
+            "error": null,
+            "deleted": false,
+            "edited": false,
+            "created_at": "2026-10-19T14:58:05.902Z"
+          }
+        ],
+        "next_cursor": null
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "ler",
+      "title": "Ler uma mensagem (com o status)",
+      "method": "GET",
+      "path": "messages/msg_48211",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "id": "msg_48211",
+        "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+        "direction": "outbound",
+        "source": "api",
+        "text": "Teste da API do BoaVoz",
+        "media": null,
+        "agent": {
+          "type": "api",
+          "display_name": "Integração",
+          "sender": null
+        },
+        "status": "read",
+        "error": null,
+        "deleted": false,
+        "edited": false,
+        "created_at": "2026-10-19T15:02:11.481Z"
+      },
+      "binary": false
+    },
+    {
+      "page": "conversas",
+      "id": "arquivo",
+      "title": "Baixar o arquivo de uma mensagem",
+      "method": "GET",
+      "path": "media/med_6f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": null,
+      "binary": true
+    },
+    {
+      "page": "conversas",
+      "id": "pausar-minutos",
+      "title": "Pausar por um prazo fixo",
+      "method": "POST",
+      "path": "conversations/conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f/pause",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "minutes": 10
+      },
+      "status": 200,
+      "response": {
+        "ai_paused_until": "2026-10-19T15:15:00.000Z"
+      },
+      "binary": false
+    },
+    {
+      "page": "conversas",
+      "id": "pausar",
+      "title": "Pausar a IA (24 horas, com o anúncio da Ana)",
+      "method": "POST",
+      "path": "conversations/conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f/pause",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "announce": true,
+        "agent_name": "Ana"
+      },
+      "status": 200,
+      "response": {
+        "ai_paused_until": "2026-10-20T15:05:00.000Z"
+      },
+      "binary": false
+    },
+    {
+      "page": "conversas",
+      "id": "retomar",
+      "title": "Devolver a conversa para a IA",
+      "method": "POST",
+      "path": "conversations/conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f/resume",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {},
+      "status": 200,
+      "response": {
+        "ai_paused_until": null
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "texto",
+      "title": "Texto no WhatsApp",
+      "method": "POST",
+      "path": "messages",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "to": "phone:5511999990000",
+        "type": "text",
+        "text": "Teste da API do BoaVoz"
+      },
+      "status": 201,
+      "response": {
+        "message_id": "msg_48211",
+        "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+        "status": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "assinado",
+      "title": "Texto assinado por alguém da equipe",
+      "method": "POST",
+      "path": "messages",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "to": "phone:5511999990000",
+        "type": "text",
+        "text": "Seu pedido saiu para entrega.",
+        "agent_name": "Ana",
+        "sender": "postman"
+      },
+      "status": 201,
+      "response": {
+        "message_id": "msg_48212",
+        "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+        "status": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "site",
+      "title": "Texto no chat do site",
+      "method": "POST",
+      "path": "messages",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "conversation_id": "conv_5d2a9e1b-3c4f-4b6a-8e7d-2f1a0b9c8d7e",
+        "type": "text",
+        "text": "Oi! Aqui é o sistema integrado.",
+        "agent_name": "Ana"
+      },
+      "status": 201,
+      "response": {
+        "message_id": "msg_48213",
+        "conversation_id": "conv_5d2a9e1b-3c4f-4b6a-8e7d-2f1a0b9c8d7e",
+        "status": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "imagem",
+      "title": "Imagem com legenda",
+      "method": "POST",
+      "path": "messages",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "to": "phone:5511999990000",
+        "type": "image",
+        "image": {
+          "url": "https://loja.exemplo.com.br/fotos/pedido-1234.jpg"
+        },
+        "text": "Foto do seu pedido"
+      },
+      "status": 201,
+      "response": {
+        "message_id": "msg_48214",
+        "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+        "status": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "documento",
+      "title": "Documento",
+      "method": "POST",
+      "path": "messages",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "to": "phone:5511999990000",
+        "type": "document",
+        "document": {
+          "url": "https://loja.exemplo.com.br/boletos/1234.pdf",
+          "filename": "Boleto teste.pdf"
+        },
+        "text": "Segue o seu boleto"
+      },
+      "status": 201,
+      "response": {
+        "message_id": "msg_48215",
+        "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+        "status": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "modelo",
+      "title": "Modelo aprovado (também fora da janela de 24 horas)",
+      "method": "POST",
+      "path": "messages",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "to": "phone:5511999990000",
+        "type": "template",
+        "template": {
+          "name": "pedido_saiu",
+          "language": "pt_BR",
+          "variables": [
+            "Ruan"
+          ]
+        }
+      },
+      "status": 201,
+      "response": {
+        "message_id": "msg_48216",
+        "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+        "status": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "idempotencia",
+      "title": "Repetir com a mesma Idempotency-Key",
+      "method": "POST",
+      "path": "messages",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "pedido-1234-saiu"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "to": "phone:5511999990000",
+        "type": "text",
+        "text": "Mensagem idempotente"
+      },
+      "status": 201,
+      "response": {
+        "message_id": "msg_48218",
+        "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+        "status": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "modelos",
+      "title": "Os modelos do número",
+      "method": "GET",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/templates",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "name": "pedido_saiu",
+            "language": "pt_BR",
+            "category": "utility",
+            "status": "approved",
+            "rejected_reason": null,
+            "body": "Oi, {{1}}! O seu pedido saiu para entrega.",
+            "variables": 1,
+            "sendable": true,
+            "unsupported_reason": null
+          },
+          {
+            "name": "promo_sexta",
+            "language": "pt_BR",
+            "category": "marketing",
+            "status": "pending",
+            "rejected_reason": null,
+            "body": "{{1}}, a sexta chegou com 10% de desconto no cardápio!",
+            "variables": 1,
+            "sendable": false,
+            "unsupported_reason": null
+          }
+        ]
+      },
+      "binary": false
+    },
+    {
+      "page": "contatos",
+      "id": "listar",
+      "title": "Listar os contatos (para sincronizar)",
+      "method": "GET",
+      "path": "contacts",
+      "query": [
+        [
+          "limit",
+          "20"
+        ]
+      ],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+            "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "channel": "whatsapp",
+            "name": "Ruan",
+            "email": null,
+            "phone": "5511999990000",
+            "whatsapp_user_id": null,
+            "instagram_id": null,
+            "external_id": null,
+            "tags": [
+              "vip"
+            ],
+            "consent": {
+              "marketing": "granted",
+              "opted_out": []
+            },
+            "age_confirmed": null,
+            "first_inbound_at": "2026-10-02T13:10:44.000Z",
+            "last_inbound_at": "2026-10-19T14:58:02.117Z",
+            "created_at": "2026-10-02T13:10:44.000Z",
+            "updated_at": "2026-10-19T14:58:02.117Z"
+          }
+        ],
+        "next_cursor": null
+      },
+      "binary": false
+    },
+    {
+      "page": "contatos",
+      "id": "etiquetas",
+      "title": "Trocar as etiquetas",
+      "method": "PUT",
+      "path": "contacts/ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d/tags",
+      "query": [],
+      "headers": {},
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "tags": [
+          "vip",
+          "postman"
+        ]
+      },
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+            "tags": [
+              "vip",
+              "postman"
+            ]
+          }
+        ]
+      },
+      "binary": false
+    },
+    {
+      "page": "campanhas",
+      "id": "aceite",
+      "title": "Registrar o aceite de novidades",
+      "method": "POST",
+      "path": "contacts/phone:5511999990000/consent",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "channel": "whatsapp",
+        "granted": true,
+        "source": "Teste pelo Postman",
+        "text": "Aceito receber novidades e promoções por WhatsApp"
+      },
+      "status": 201,
+      "response": {
+        "consent_id": "cns_7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+        "contact_id": "ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+        "opted_out": false
+      },
+      "binary": false
+    },
+    {
+      "page": "contatos",
+      "id": "leads",
+      "title": "Listar os leads",
+      "method": "GET",
+      "path": "leads",
+      "query": [
+        [
+          "limit",
+          "20"
+        ]
+      ],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "lead_7f3e2d1c-0b9a-4c8d-9e7f-6a5b4c3d2e1f",
+            "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+            "channel": "whatsapp",
+            "name": "Ana Souza",
+            "phone": "5511988887777",
+            "email": "ana@exemplo.com.br",
+            "instagram": null,
+            "notes": "Quer orçamento para 30 pizzas no sábado.",
+            "requests": [
+              {
+                "created_at": "2026-10-19T15:10:00.000Z",
+                "channel": "whatsapp",
+                "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+                "text": "Quer orçamento para 30 pizzas no sábado."
+              }
+            ],
+            "created_at": "2026-10-19T15:10:00.000Z",
+            "last_request_at": "2026-10-19T15:10:00.000Z",
+            "updated_at": "2026-10-19T15:10:00.000Z"
+          }
+        ],
+        "next_cursor": null
+      },
+      "binary": false
+    },
+    {
+      "page": "contatos",
+      "id": "idade",
+      "title": "A empresa confirma a idade",
+      "method": "PUT",
+      "path": "contacts/phone:5511999990000/age",
+      "query": [],
+      "headers": {},
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "age_verified": true,
+        "origin": "Teste pelo Postman"
+      },
+      "status": 200,
+      "response": {
+        "age_confirmed": true,
+        "age_confirmed_source": "company"
+      },
+      "binary": false
+    },
+    {
+      "page": "pareamento",
+      "id": "codigo",
+      "title": "Gerar o código de pareamento",
+      "method": "POST",
+      "path": "pairings",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "channel": "whatsapp",
+        "external_id": "usuario_8812",
+        "display": {
+          "name": "Teste Postman"
+        }
+      },
+      "status": 201,
+      "response": {
+        "code": "K7Q2M9",
+        "link": "https://wa.me/5511999990000?text=Conectar%20K7Q2M9",
+        "expires_at": "2026-10-19T15:40:00.000Z"
+      },
+      "binary": false
+    },
+    {
+      "page": "pareamento",
+      "id": "vinculos",
+      "title": "Os vínculos de um usuário do seu sistema",
+      "method": "GET",
+      "path": "contacts/ext:usuario_8812/links",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "lnk_4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f8a",
+            "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "contact_id": "ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+            "channel": "whatsapp",
+            "source": "pairing",
+            "external_id": "usuario_8812",
+            "context": null,
+            "display": {
+              "name": "Teste Postman"
+            },
+            "phone_masked": "+55 11 9•••• 0000",
+            "linked_at": "2026-10-19T15:31:40.000Z"
+          }
+        ]
+      },
+      "binary": false
+    },
+    {
+      "page": "pareamento",
+      "id": "desvincular",
+      "title": "Desfazer um vínculo",
+      "method": "DELETE",
+      "path": "contacts/ext:usuario_8812/links/lnk_4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f8a",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 204,
+      "response": null,
+      "binary": false
+    },
+    {
+      "page": "campanhas",
+      "id": "marketing",
+      "title": "Campanha de novidades para uma etiqueta",
+      "method": "POST",
+      "path": "campaigns",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "kind": "marketing",
+        "name": "Teste Postman",
+        "template": {
+          "name": "promo_sexta",
+          "language": "pt_BR",
+          "variables": [
+            {
+              "type": "first_name",
+              "fallback": "cliente"
+            }
+          ]
+        },
+        "audience": {
+          "tags": [
+            "vip"
+          ]
+        }
+      },
+      "status": 201,
+      "response": {
+        "campaign_id": "cmp_2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+        "status": "sending",
+        "estimated_contacts": 312,
+        "estimated_cost_cents": 1934,
+        "estimated_days": 1,
+        "excluded": {
+          "no_consent": 41,
+          "suppressed": 3
+        },
+        "quiet_hours": false
+      },
+      "binary": false
+    },
+    {
+      "page": "campanhas",
+      "id": "lembretes",
+      "title": "Lembretes, um por linha",
+      "method": "POST",
+      "path": "campaigns",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "kind": "utility_reminder",
+        "name": "Lembrete teste",
+        "template": {
+          "name": "lembrete_consulta",
+          "language": "pt_BR"
+        },
+        "sends": [
+          {
+            "contact": "phone:5511999990000",
+            "send_at": "2026-10-20T18:00:00-03:00",
+            "variables": [
+              "Ruan"
+            ]
+          }
+        ]
+      },
+      "status": 201,
+      "response": {
+        "campaign_id": "cmp_2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+        "status": "scheduled",
+        "estimated_contacts": 1,
+        "estimated_cost_cents": 5,
+        "excluded": {},
+        "off_hours": 0
+      },
+      "binary": false
+    },
+    {
+      "page": "campanhas",
+      "id": "status",
+      "title": "O status e os totais",
+      "method": "GET",
+      "path": "campaigns/cmp_2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "id": "cmp_2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "kind": "marketing",
+        "name": "Teste Postman",
+        "status": "finished",
+        "pause_reason": null,
+        "template": {
+          "name": "promo_sexta",
+          "language": "pt_BR",
+          "category": "marketing"
+        },
+        "scheduled_at": null,
+        "created_at": "2026-10-19T15:20:00.000Z",
+        "finished_at": "2026-10-19T15:31:12.000Z",
+        "estimated_contacts": 312,
+        "estimated_cost_cents": 1934,
+        "totals": {
+          "sent": 312,
+          "delivered": 305,
+          "read": 211,
+          "replied": 27,
+          "failed": 7,
+          "pending": 0,
+          "uncertain": 0,
+          "skipped_no_consent": 41,
+          "skipped_no_age": 0,
+          "skipped_suppressed": 3,
+          "opted_out": 2
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "mensagens",
+      "id": "botoes",
+      "title": "Texto com botões",
+      "method": "POST",
+      "path": "messages",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "to": "phone:5511999990000",
+        "type": "text",
+        "text": "Quer receber o cardápio do dia?",
+        "components": {
+          "type": "buttons",
+          "buttons": [
+            {
+              "title": "Sim, quero",
+              "id": "quero_cardapio"
+            },
+            {
+              "title": "Agora não",
+              "id": "agora_nao"
+            }
+          ]
+        }
+      },
+      "status": 201,
+      "response": {
+        "message_id": "msg_48217",
+        "conversation_id": "conv_0e8f5a3c-2b1d-4c6e-9f7a-1d2c3b4a5e6f",
+        "status": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "contatos",
+      "id": "apagar",
+      "title": "Apagar os dados do contato (pedido do titular)",
+      "method": "DELETE",
+      "path": "contacts/phone:5511999990000",
+      "query": [
+        [
+          "bot_id",
+          "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        ]
+      ],
+      "headers": {},
+      "body": null,
+      "status": 202,
+      "response": {
+        "request_id": "dsr_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+      },
+      "binary": false
+    },
+    {
+      "page": "cobranca",
+      "id": "uso",
+      "title": "O uso do mês de um chatbot",
+      "method": "GET",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/usage",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "month": "2026-10",
+        "size": "M",
+        "volume_packs": null,
+        "custom_quota": null,
+        "quota": 340,
+        "used": 212,
+        "status": "cota",
+        "projection": 318,
+        "average_3_months": 287,
+        "suggested_size": null,
+        "scheduled": null,
+        "overage": {
+          "enabled": false,
+          "cap_brl": null,
+          "used": 0,
+          "max": 0,
+          "value_brl": 0,
+          "suspended": null
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "cobranca",
+      "id": "excedente",
+      "title": "Ligar o excedente com teto",
+      "method": "PATCH",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "query": [],
+      "headers": {},
+      "body": {
+        "overage": {
+          "enabled": true,
+          "cap_brl": 50
+        }
+      },
+      "status": 200,
+      "response": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "month": "2026-10",
+        "size": "M",
+        "volume_packs": null,
+        "custom_quota": null,
+        "quota": 340,
+        "used": 212,
+        "status": "cota",
+        "projection": 318,
+        "average_3_months": 287,
+        "suggested_size": null,
+        "scheduled": null,
+        "overage": {
+          "enabled": true,
+          "cap_brl": 50,
+          "used": 0,
+          "max": 142,
+          "value_brl": 0,
+          "suspended": null
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "cobranca",
+      "id": "credito",
+      "title": "O crédito da conta",
+      "method": "GET",
+      "path": "credit",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "balance_brl": 87.5,
+        "lots": [
+          {
+            "amount_brl": 100,
+            "remaining_brl": 87.5,
+            "source": "purchase",
+            "expires_at": "2027-10-02T13:00:00.000Z",
+            "created_at": "2026-10-02T13:00:00.000Z"
+          }
+        ],
+        "auto_recharge": {
+          "enabled": false,
+          "below_brl": null,
+          "amount_brl": null,
+          "month_limit_brl": null
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "cobranca",
+      "id": "comprar",
+      "title": "Comprar crédito (cobra no cartão da assinatura)",
+      "method": "POST",
+      "path": "credit/purchases",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "amount_brl": 50
+      },
+      "status": 201,
+      "response": {
+        "status": "paid",
+        "amount_brl": 50,
+        "balance_brl": 137.5
+      },
+      "binary": false
+    }
+  ]
+}

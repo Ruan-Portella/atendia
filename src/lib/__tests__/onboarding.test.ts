@@ -41,7 +41,7 @@ describe("onboardingSteps pelo perfil do primeiro acesso", () => {
     const fresh = onboardingSteps({ bots: [], hasLogo: false, profile: "developer" });
     expect(fresh.map((s) => s.key)).toEqual(["bot", "fontes", "chave", "webhook", "pacote", "chamada"]);
     expect(done(fresh)).toEqual([]);
-    expect(fresh.find((s) => s.key === "chamada")?.href).toBe("/docs/comeco-rapido");
+    expect(fresh.find((s) => s.key === "chamada")?.href).toBe("/docs/guias/dev");
     const steps = onboardingSteps({ bots: [bot({ readySources: 1 })], hasLogo: false, profile: "developer", dev: { keys: 1, keyUsed: true, webhooks: 0, integrations: true } });
     expect(done(steps)).toEqual(["bot", "fontes", "chave", "pacote", "chamada"]);
   });

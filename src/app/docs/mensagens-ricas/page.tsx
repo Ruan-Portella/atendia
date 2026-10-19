@@ -168,7 +168,7 @@ export default function RichMessagesDocs() {
       <NextSteps
         items={[
           { href: "/docs/acoes", title: "Ações", text: "O retorno das ações, com components, reply e arquivos." },
-          { href: "/docs/comeco-rapido", title: "Começo rápido", text: "Sua primeira ação em 5 minutos." },
+          { href: "/docs/comeco-rapido", title: "Primeira ação", text: "Sua primeira ação em 5 minutos." },
         ]}
       />
     </DocPage>

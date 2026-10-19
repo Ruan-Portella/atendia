@@ -11,6 +11,15 @@ export default function DocsHome() {
       title="Integrações do BoaVoz"
       intro="O assistente do BoaVoz responde no WhatsApp, no Instagram e no site. Com as Integrações, ele consulta e faz coisas no sistema do seu cliente durante a conversa, manda botões, listas e carrosséis, e avisa o seu sistema do que acontece."
     >
+      <H2 id="guias">Por onde começar</H2>
+      <NextSteps
+        items={[
+          { href: "/docs/guias/agencia", title: "Para agências", text: "Do cadastro ao chat no site e no WhatsApp do cliente, com a sua marca." },
+          { href: "/docs/guias/negocio", title: "Para o seu negócio", text: "O assistente do seu negócio no site, no WhatsApp e no Instagram." },
+          { href: "/docs/guias/dev", title: "Para devs", text: "A chave, a primeira mensagem pela API e os eventos no seu sistema." },
+        ]}
+      />
+
       <H2 id="o-que-da-para-fazer">O que dá para fazer</H2>
       <Table
         head={["Recurso", "Para quê"]}
@@ -44,11 +53,11 @@ export default function DocsHome() {
       <H2 id="comece">Comece por aqui</H2>
       <NextSteps
         items={[
-          { href: "/docs/comeco-rapido", title: "Começo rápido", text: "Sua primeira ação funcionando em 5 minutos: consultar um pedido." },
+          { href: "/docs/comeco-rapido", title: "Primeira ação", text: "Sua primeira ação funcionando em 5 minutos: consultar um pedido." },
           { href: "/docs/acoes", title: "Ações", text: "O que o BoaVoz manda, o que ele aceita de volta, assinatura, prazos e o Confirmar." },
           { href: "/docs/mensagens-ricas", title: "Mensagens ricas", text: "Botões, lista, link e carrossel, e como ficam em cada canal." },
           { href: "/docs/webhooks", title: "Webhooks", text: "Os eventos, o envelope, a assinatura e as novas tentativas." },
-          { href: "/docs/api", title: "Referência da API", text: "Rotas, permissões, erros, paginação e idempotência." },
+          { href: "/docs/api", title: "API", text: "Chave, convenções e erros, e uma página por assunto com exemplos em cURL e JavaScript." },
           { href: "/docs/seguranca", title: "Segurança", text: "Autorizar pelo contato verificado, segredos e LGPD." },
         ]}
       />
