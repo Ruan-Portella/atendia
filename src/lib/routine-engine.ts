@@ -9,6 +9,7 @@ import { parseComponents, type MessageComponent } from "./components";
 import { DATA_KIND_LABEL, routineUsesActions, type DataKind, type RoutineRow, type RoutineStep } from "./routines";
 import type { ActionIdentity } from "./actions";
 import type { PhotoReading } from "./photo-note";
+import type { PhotoVerdict } from "./photo-reading";
 import {
   FIXED_KINDS,
   MAX_ATTEMPTS,
@@ -81,13 +82,33 @@ export interface ActiveRun {
   photo?: TurnPhoto;
 }
 
-/** A foto nesta vez: o canal recebe foto (can) e o que a IA leu da que chegou (value). */
+/**
+ * A foto nesta vez: o canal recebe foto (can), o que a IA leu da que chegou (value) e a conferência
+ * do BoaVoz (a foto mostra o que o passo pede?), feita uma vez por passo nesta vez.
+ */
 export interface TurnPhoto {
   can: boolean;
   value: string | null;
+  check?: (asked: string) => Promise<PhotoVerdict>;
+  verdicts?: Map<string, PhotoVerdict>;
 }
 
 const NO_PHOTO: TurnPhoto = { can: false, value: null };
+
+/** A conferência da foto desta vez para o passo (sem conferência: vale). */
+async function verdictFor(photo: TurnPhoto, step: Extract<RoutineStep, { type: "foto" }>): Promise<PhotoVerdict> {
+  const cached = photo.verdicts?.get(step.id);
+  if (cached) return cached;
+  const v = photo.check ? await photo.check(step.text) : { ok: true, reason: null };
+  photo.verdicts?.set(step.id, v);
+  return v;
+}
+
+/** O que a IA diz quando a foto não serviu (o motivo vem da conferência). Pura. */
+const photoMissNote = (v: PhotoVerdict, attempt?: string) =>
+  v.error
+    ? "Não deu para conferir a foto agora: peça para a pessoa mandar de novo, sem dizer que houve erro."
+    : `A foto que a pessoa mandou não mostra o que este passo pede${v.reason ? ` (${v.reason})` : ""}. Diga isso com gentileza e peça outra${attempt ? ` (${attempt})` : ""}, sem seguir para o próximo passo.`;
 
 const RUN_COLS = "id, conversation_id, bot_id, step_id, variables_enc, attempts, failing, last_contact_at, updated_at, routine_version, held_result, idle_turns, routines(*)";
 
@@ -272,11 +293,16 @@ async function moveTo(db: SupabaseClient, run: ActiveRun, next: NextStep, ctx: {
         n = nextFrom(run.routine.steps, step.id, step.next);
         continue;
       }
-      // o passo começa sem foto; a que chegou nesta vez (e não serviu a outro passo) já fica guardada,
-      // e a IA confere se é a pedida (concluir_passo)
+      // o passo começa sem foto; a que chegou nesta vez (e não serviu a outro passo) vale se o BoaVoz
+      // conferir que ela mostra o que o passo pede, e aí o passo anda sozinho
       const { [step.variable]: _previous, ...rest } = vars;
       void _previous;
-      vars = photo.value && !Object.values(rest).some((v) => v.value === photo.value) ? { ...rest, [step.variable]: { kind: "foto", value: photo.value } } : rest;
+      vars = rest;
+      if (photo.value && !Object.values(rest).some((v) => v.value === photo.value) && (await verdictFor(photo, step)).ok) {
+        vars = { ...rest, [step.variable]: { kind: "foto", value: photo.value } };
+        n = nextFrom(run.routine.steps, step.id, step.next);
+        continue;
+      }
     }
     if (step.type === "dado") {
       const phone = step.kind === "telefone" && ctx.waPhone ? validateValue("telefone", ctx.waPhone) : null;
@@ -367,6 +393,8 @@ export async function routinePreTurn(
     /** Passo de foto (parte 2d): as fotos lidas desta rajada e se o canal recebe foto agora. */
     photos?: PhotoReading[] | null;
     canPhotos?: boolean;
+    /** A conferência da foto do passo (a foto mostra o que o passo pede?): o canal liga o modelo. */
+    checkPhoto?: (asked: string, seen: string) => Promise<PhotoVerdict>;
   },
 ): Promise<RoutineTurn> {
   const { data: rows } = await db.from("routines").select("*").eq("bot_id", i.bot.id).eq("active", true).order("name");
@@ -376,7 +404,8 @@ export async function routinePreTurn(
   let conversationId = i.conversationId;
   let run = conversationId ? await loadActiveRun(db, conversationId) : null;
   if (!available.length && !run) return noRoutineTurn(conversationId);
-  const photo: TurnPhoto = { can: Boolean(i.canPhotos), value: i.canPhotos ? photoValue(i.photos) : null };
+  const seen = i.canPhotos ? photoValue(i.photos) : null;
+  const photo: TurnPhoto = { can: Boolean(i.canPhotos), value: seen, ...(seen && i.checkPhoto ? { check: (asked: string) => i.checkPhoto!(asked, seen) } : {}), verdicts: new Map() };
   if (run) run.photo = photo;
   const turn: RoutineTurn = { run: null, available, note: i.note ?? null, fixed: null, conversationId, photo };
   const consume = i.consume !== false;
@@ -447,7 +476,7 @@ export async function routinePreTurn(
           return { ...turn, fixed: { kind: "cancelled", text: ROUTINE_CANCELLED_TEXT } };
         }
         await finishRun(db, run.id, "abandoned", "handoff");
-        return { ...turn, fixed: { kind: "handoff", reason: `Roteiro "${run.routine.name}": não deu para conferir o dado pedido` } };
+        return { ...turn, fixed: { kind: "handoff", reason: `Roteiro "${run.routine.name}": ${currentStep(run).type === "foto" ? "não deu para receber a foto pedida" : "não deu para conferir o dado pedido"}` } };
       }
     } else if (click.stepId === run.stepId) {
       const step = currentStep(run);
@@ -471,8 +500,9 @@ export async function routinePreTurn(
     run = null;
   }
 
-  // 3a. passo que pede foto (parte 2d): a foto que chegou nesta vez fica guardada e a IA confere se é
-  // a pedida (concluir_passo); sem como receber foto agora, o passo fica para trás
+  // 3a. passo que pede foto (parte 2d): o BoaVoz confere se a foto que chegou mostra o que o passo
+  // pede; se mostra, o passo anda sozinho; se não, conta tentativa (3 erradas: equipe ou cancelar).
+  // Sem como receber foto agora, o passo fica para trás
   if (consume && run && currentStep(run).type === "foto") {
     const step = currentStep(run) as Extract<RoutineStep, { type: "foto" }>;
     if (!photo.can) {
@@ -482,19 +512,27 @@ export async function routinePreTurn(
       return { ...turn, run };
     }
     if (photo.value) {
-      run.variables = { ...run.variables, [step.variable]: { kind: "foto", value: photo.value } };
-      await saveRun(db, run, { variables: run.variables, contact: true, idle: 0 });
-      return { ...turn, run, note: "A pessoa mandou a foto deste passo (a descrição automática está na mensagem dela). Se a foto mostra o que o passo pede, chame concluir_passo; se não, diga o que faltou e peça outra." };
+      const verdict = await verdictFor(photo, step);
+      if (verdict.ok) {
+        run.variables = { ...run.variables, [step.variable]: { kind: "foto", value: photo.value } };
+        const moved = await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"`, contact: true, identified });
+        if (moved.kind === "handoff") return { ...turn, fixed: { kind: "handoff", reason: moved.reason } };
+        const ok = "A foto que a pessoa mandou mostra o que o passo pedia (a descrição automática está na mensagem dela): comente o que for útil e siga.";
+        if (moved.kind === "completed") return { ...turn, note: `${ok} O roteiro "${run.routine.name}" terminou: siga a conversa normalmente.` };
+        return { ...turn, run, note: ok };
+      }
+      // não deu para conferir agora: a pessoa manda de novo, sem contar tentativa
+      if (verdict.error) {
+        await saveRun(db, run, { contact: true });
+        return { ...turn, run, note: photoMissNote(verdict) };
+      }
+      const attempts = run.attempts + 1;
+      const failing = attempts >= MAX_ATTEMPTS;
+      await saveRun(db, run, { attempts, failing, contact: true, idle: 0 });
+      return { ...turn, run, note: failing ? null : photoMissNote(verdict, `tentativa ${attempts} de ${MAX_ATTEMPTS}`) };
     }
-    const got = run.variables[step.variable];
     await saveRun(db, run, { contact: true, idle: run.idleTurns + 1 });
-    return {
-      ...turn,
-      run,
-      note: got
-        ? `A foto deste passo já chegou (${got.value}). Se ela mostra o que o passo pede, chame concluir_passo; se não, peça outra.`
-        : "A pessoa ainda não mandou a foto. Se ela perguntou outra coisa, responda e peça a foto de novo (se ela não quiser mais, chame cancelar_roteiro).",
-    };
+    return { ...turn, run, note: run.failing ? null : "A pessoa ainda não mandou a foto. Se ela perguntou outra coisa, responda e peça a foto de novo (se ela não quiser mais, chame cancelar_roteiro)." };
   }
 
   // 3. passo que pede um dado de formato fixo: o BoaVoz confere nas mensagens desta vez
@@ -610,7 +648,10 @@ export function routineSession(
     const r = run!;
     const step = currentStep(r);
     const idx = r.routine.steps.indexOf(step);
-    return { ok: true, passo: `${idx + 1} de ${r.routine.steps.length}`, instrucao: `${lead} Agora siga este passo: ${stepInstruction(step, { failing: r.failing })}`, ...(Object.keys(r.variables).length ? { dados: variablesLine(r.variables) } : {}) };
+    // passo de foto em que a foto desta vez não serviu: a IA diz o que faltou
+    const miss = step.type === "foto" ? r.photo?.verdicts?.get(step.id) : undefined;
+    const photoLead = miss && !miss.ok ? ` ${photoMissNote(miss)}` : "";
+    return { ok: true, passo: `${idx + 1} de ${r.routine.steps.length}`, instrucao: `${lead}${photoLead} Agora siga este passo: ${stepInstruction(step, { failing: r.failing })}`, ...(Object.keys(r.variables).length ? { dados: variablesLine(r.variables) } : {}) };
   };
   const noRun = { ok: false, instrucao: "Não há roteiro em andamento: responda normalmente." };
   const names = available.map((r) => r.name) as [string, ...string[]];
@@ -635,13 +676,13 @@ export function routineSession(
       },
     }),
     concluir_passo: tool({
-      description: "Roteiro em andamento: o passo atual foi cumprido (uma instrução; ou a foto que a pessoa mandou mostra o que o passo pede). Se o passo pede uma resposta da pessoa, chame só depois que ela respondeu. Devolve o próximo passo.",
+      description: "Roteiro em andamento: o passo atual (uma instrução) foi cumprido. Se o passo pede uma resposta da pessoa, chame só depois que ela respondeu. Devolve o próximo passo.",
       inputSchema: z.object({}),
       execute: async () => {
         if (!run) return noRun;
         const step = currentStep(run);
         if (step.type === "dado") return { ok: false, instrucao: "Este passo só anda quando o dado for conferido: peça o dado." };
-        if (step.type === "foto" && !run.variables[step.variable]) return { ok: false, instrucao: "Este passo só anda depois que a pessoa mandar a foto: peça a foto." };
+        if (step.type === "foto") return { ok: false, instrucao: "Este passo anda sozinho quando chega a foto que mostra o que ele pede (o BoaVoz confere): peça a foto." };
         if (step.type === "botoes") return { ok: false, instrucao: "Este passo só anda quando a pessoa tocar num botão ou responder com uma das opções." };
         if (step.type === "acao") return { ok: false, instrucao: run.heldResult ? "O roteiro espera a pessoa escolher a conta pelos botões." : "Este passo só anda depois da ação." };
         return after(await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"`, identified: identified() }), "Passo concluído.");

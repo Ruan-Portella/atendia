@@ -5,6 +5,7 @@ import { deliver } from "../send";
 import { deleteMessage, loadMessages } from "../messages";
 import { storeOnce } from "../whatsapp-inbound";
 import { photosNote, type PhotoReading } from "../photo-note";
+import { photoMatchesStep } from "../photo-reading";
 import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
 import { LIMITS, carouselClickText, joinShownText, parseComponents, type MessageComponent } from "../components";
@@ -348,6 +349,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     // passo de foto (parte 2d): a mensagem que esperava o "Sim, sou eu" não traz as fotos dela
     photos: idTurn.kind === "resume" ? null : (q.photoReadings ?? q.photos ?? null),
     canPhotos: Boolean(io.photosOn),
+    // a foto mostra o que o passo pede? O BoaVoz confere (classificação), não a IA da resposta
+    checkPhoto: (asked, seen) => photoMatchesStep(asked, seen, { onUsage: (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId: convId, kind: "classificacao", channel, ...u }) }),
   });
   if (routineTurn.fixed) {
     await storeOnce(db, convId, q.text, q.key, q.photos);

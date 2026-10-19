@@ -741,8 +741,8 @@ describe("passo de foto", () => {
   });
   const exec = async (s: NonNullable<ReturnType<typeof routineSession>>, name: string, input: Record<string, unknown> = {}) =>
     (s.tools[name] as unknown as { execute: (i: unknown, o: unknown) => Promise<Record<string, unknown>> }).execute(input, { toolCallId: "t", messages: [] });
-  const prePhoto = (db: SupabaseClient, texts: string[], photos: typeof ROTEADOR[] | null, canPhotos = true) =>
-    routinePreTurn(db, { bot: BOT, conversationId: CONV, texts, buttonId: null, waPhone: null, photos, canPhotos });
+  const prePhoto = (db: SupabaseClient, texts: string[], photos: Array<{ kind: "comum"; description: string; text?: string }> | null, o: { can?: boolean; check?: (asked: string, seen: string) => Promise<{ ok: boolean; reason: string | null; error?: boolean }> } = {}) =>
+    routinePreTurn(db, { bot: BOT, conversationId: CONV, texts, buttonId: null, waPhone: null, photos, canPhotos: o.can ?? true, checkPhoto: o.check });
 
   it("a descrição guardada: a das fotos descritas da rajada (comprovante e ilegível ficam de fora)", () => {
     expect(photoValue([ROTEADOR])).toBe('Roteador branco com a luz LOS vermelha acesa e a PON apagada. Texto na foto: "LOS PON".');
@@ -769,45 +769,79 @@ describe("passo de foto", () => {
     expect(routineProblem(read("Peça uma foto da nota fiscal"), ctx)).toBeNull();
   });
 
-  it("a foto que chega fica guardada no passo, e a IA conclui; sem foto, concluir_passo recusa", async () => {
+  it("o BoaVoz confere a foto: a certa anda sozinha; a errada conta tentativa (3: equipe ou cancelar); concluir_passo não anda este passo", async () => {
+    const CANECA = { kind: "comum" as const, description: "Caneca preta com um desenho colorido." };
     const tables: Record<string, Row[]> = { routines: [suporte], conversations: [{ id: CONV }], messages: [] };
     const db = fakeDb(tables);
+    const asked: string[] = [];
+    const answer = (v: { ok: boolean; reason: string | null; error?: boolean }) => async (a: string) => (asked.push(a), v);
     const t1 = await prePhoto(db, ["internet"], null);
     expect(t1.run?.stepId).toBe("inte0001");
     const s1 = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: t1, texts: [], requestHandoff: async () => "aviso" })!;
-    expect(await exec(s1, "concluir_passo")).toMatchObject({ ok: false, instrucao: "Este passo só anda depois que a pessoa mandar a foto: peça a foto." });
+    expect(await exec(s1, "concluir_passo")).toMatchObject({ ok: false, instrucao: "Este passo anda sozinho quando chega a foto que mostra o que ele pede (o BoaVoz confere): peça a foto." });
+    expect(s1.prompt()).toContain("O BoaVoz confere se ela mostra o que este passo pede");
 
     // escreveu sem foto: o passo segue esperando (e conta como parada)
-    const t2 = await prePhoto(db, ["mandei?"], null);
-    expect(t2.note).toContain("ainda não mandou a foto");
+    expect((await prePhoto(db, ["mandei?"], null)).note).toContain("ainda não mandou a foto");
     expect(runs(tables)[0].idle_turns).toBe(1);
 
-    // a foto chegou: fica guardada, o passo não anda sozinho (a IA confere)
-    const t3 = await prePhoto(db, ["[foto]"], [ROTEADOR]);
-    expect(t3.run?.stepId).toBe("inte0001");
-    expect(t3.note).toContain("Se a foto mostra o que o passo pede, chame concluir_passo");
+    // foto de outra coisa: não vale, conta tentativa e a IA sabe o que faltou
+    const wrong = await prePhoto(db, ["[foto]"], [CANECA], { check: answer({ ok: false, reason: "a foto mostra uma caneca, não o roteador" }) });
+    expect(asked).toEqual(["Peça uma foto das luzes do roteador"]);
+    expect(wrong.run?.stepId).toBe("inte0001");
+    expect(wrong.note).toBe("A foto que a pessoa mandou não mostra o que este passo pede (a foto mostra uma caneca, não o roteador). Diga isso com gentileza e peça outra (tentativa 1 de 3), sem seguir para o próximo passo.");
+    expect(runs(tables)[0]).toMatchObject({ attempts: 1, variables_enc: null });
+
+    // não deu para conferir agora: manda de novo, sem contar tentativa
+    const failed = await prePhoto(db, ["[foto]"], [ROTEADOR], { check: answer({ ok: false, reason: null, error: true }) });
+    expect(failed.note).toContain("Não deu para conferir a foto agora");
+    expect(runs(tables)[0].attempts).toBe(1);
+
+    // a foto certa: o passo anda sozinho e a descrição fica na variável
+    const right = await prePhoto(db, ["[foto]"], [ROTEADOR], { check: answer({ ok: true, reason: null }) });
+    expect(right.run?.stepId).toBe("inte0002");
+    expect(right.note).toContain("mostra o que o passo pedia");
     expect(JSON.parse(String(runs(tables)[0].variables_enc))).toEqual({ foto_roteador: { kind: "foto", value: photoValue([ROTEADOR]) } });
-    expect(runs(tables)[0].idle_turns).toBe(0);
-    const s3 = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: t3, texts: [], requestHandoff: async () => "aviso" })!;
-    expect(s3.prompt()).toContain("foto_roteador: Roteador branco");
-    expect(await exec(s3, "concluir_passo")).toMatchObject({ ok: true, passo: "2 de 2" });
-    expect(runs(tables)[0].step_id).toBe("inte0002");
   });
 
-  it("a foto mandada junto do pedido já entra no passo quando o roteiro começa", async () => {
+  it("3 fotos erradas: botões de equipe e cancelar; a equipe recebe o motivo da foto", async () => {
+    const CANECA = { kind: "comum" as const, description: "Caneca preta." };
     const tables: Record<string, Row[]> = { routines: [suporte], conversations: [{ id: CONV }], messages: [] };
     const db = fakeDb(tables);
-    const t = await prePhoto(db, ["minha internet caiu, olha o roteador"], [ROTEADOR]);
-    expect(t.run).toBeNull();
-    const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: t, texts: t.run ? [] : ["minha internet caiu, olha o roteador"], requestHandoff: async () => "aviso" })!;
-    expect(await exec(s, "iniciar_roteiro", { nome: "Internet" })).toMatchObject({ ok: true, passo: "1 de 2" });
-    expect(JSON.parse(String(runs(tables)[0].variables_enc))).toEqual({ foto_roteador: { kind: "foto", value: photoValue([ROTEADOR]) } });
+    const no = { check: async () => ({ ok: false, reason: "não é o roteador" }) };
+    await prePhoto(db, ["internet"], null);
+    await prePhoto(db, ["[foto]"], [CANECA], no);
+    await prePhoto(db, ["[foto]"], [CANECA], no);
+    const third = await prePhoto(db, ["[foto]"], [CANECA], no);
+    expect(third.run?.failing).toBe(true);
+    const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: third, texts: [], requestHandoff: async () => "aviso" })!;
+    expect(s.component()).toEqual(failButtons(third.run!.id));
+    expect(s.prompt()).toContain("Não deu para receber a foto pedida depois de 3 tentativas");
+    const team = await pre(db, [FAIL_TEAM], { buttonId: `rt:${third.run!.id}:falha:equipe` });
+    expect(team.fixed).toEqual({ kind: "handoff", reason: 'Roteiro "Internet": não deu para receber a foto pedida' });
+  });
+
+  it("a foto mandada junto do pedido: conferida, o roteiro já passa do passo; errada, o passo espera e a IA sabe o motivo", async () => {
+    const start = async (verdict: { ok: boolean; reason: string | null }) => {
+      const tables: Record<string, Row[]> = { routines: [suporte], conversations: [{ id: CONV }], messages: [] };
+      const db = fakeDb(tables);
+      const t = await prePhoto(db, ["minha internet caiu, olha o roteador"], [ROTEADOR], { check: async () => verdict });
+      const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: t, texts: ["minha internet caiu, olha o roteador"], requestHandoff: async () => "aviso" })!;
+      return { tables, out: await exec(s, "iniciar_roteiro", { nome: "Internet" }) };
+    };
+    const ok = await start({ ok: true, reason: null });
+    expect(ok.out).toMatchObject({ ok: true, passo: "2 de 2" });
+    expect(JSON.parse(String(runs(ok.tables)[0].variables_enc))).toEqual({ foto_roteador: { kind: "foto", value: photoValue([ROTEADOR]) } });
+    const miss = await start({ ok: false, reason: "a foto não mostra as luzes" });
+    expect(miss.out).toMatchObject({ ok: true, passo: "1 de 2" });
+    expect(String(miss.out.instrucao)).toContain("não mostra o que este passo pede (a foto não mostra as luzes)");
+    expect(runs(miss.tables)[0].variables_enc).toBeNull();
   });
 
   it("sem como receber foto (site, leitura desligada): o passo fica para trás", async () => {
     const tables: Record<string, Row[]> = { routines: [suporte], conversations: [{ id: CONV }], messages: [] };
     const db = fakeDb(tables);
-    const t = await prePhoto(db, ["internet"], null, false);
+    const t = await prePhoto(db, ["internet"], null, { can: false });
     expect(t.run?.stepId).toBe("inte0002");
     expect(runs(tables)[0].variables_enc).toBeNull();
   });

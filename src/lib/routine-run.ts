@@ -432,6 +432,8 @@ export function variablesLine(vars: RoutineVariables): string {
 export function stepInstruction(step: RoutineStep, o: { failing?: boolean; waPhoneKnown?: boolean } = {}): string {
   if (o.failing && step.type === "dado")
     return `Não deu para conferir o ${label(step.kind)} depois de ${MAX_ATTEMPTS} tentativas. Diga isso com gentileza e pergunte se a pessoa prefere falar com a equipe ou cancelar. Os botões (${FAIL_TEAM}, ${FAIL_CANCEL}) vão sozinhos com a sua mensagem: não escreva as opções.`;
+  if (o.failing && step.type === "foto")
+    return `Não deu para receber a foto pedida depois de ${MAX_ATTEMPTS} tentativas. Diga isso com gentileza e pergunte se a pessoa prefere falar com a equipe ou cancelar. Os botões (${FAIL_TEAM}, ${FAIL_CANCEL}) vão sozinhos com a sua mensagem: não escreva as opções.`;
   switch (step.type) {
     case "instrucao":
       return `${step.text}\nQuando este passo estiver cumprido (se ele pede uma resposta da pessoa, só depois que ela respondeu), chame concluir_passo e siga o que a ferramenta devolver.`;
@@ -444,7 +446,7 @@ export function stepInstruction(step: RoutineStep, o: { failing?: boolean; waPho
     case "acao":
       return `Chame agora a ferramenta acao_${step.action}: os dados já informados no roteiro vão preenchidos pelo BoaVoz (não peça de novo). Com o resultado: ${step.text}`;
     case "foto":
-      return `${step.text}\nA pessoa manda a foto por aqui, e você recebe a descrição automática dela junto da mensagem. Se a foto mostra o que este passo pede, chame concluir_passo; se não mostra (outra coisa, escura, cortada), diga o que faltou e peça outra. Nunca peça foto de documento pessoal, cartão ou comprovante de pagamento.`;
+      return `${step.text}\nA pessoa manda a foto por aqui. O BoaVoz confere se ela mostra o que este passo pede: se mostra, o roteiro segue sozinho; se não, você é avisado e pede outra dizendo o que faltou. Não chame concluir_passo neste passo. Nunca peça foto de documento pessoal, cartão ou comprovante de pagamento.`;
   }
 }
 
