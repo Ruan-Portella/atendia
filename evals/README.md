@@ -46,7 +46,8 @@ Cada rodada é uma resposta de IA de verdade (gasta centavos) e nada é gravado.
 | `notas` | por que o caso existe |
 
 Categorias obrigatórias (precisam de 100%): `escopo_fixo`, `humano`, `seguranca`, `fatos`,
-`saude`, `risco`, `portao`, `portao_bar`, `foto_portao` e `foto_seguranca`.
+`saude`, `risco`, `portao`, `portao_bar`, `foto_portao`, `foto_seguranca` e `roteiro_seguranca`.
+Os casos de roteiro têm campos próprios (mais abaixo, em "Roteiros").
 
 ## Bot de teste do portão (`casos-bar.jsonl`)
 
@@ -81,6 +82,64 @@ descrição junto. As fotos em `evals/fotos/` são desenhos sintéticos (nenhum 
 `evals/fotos/gerar.py` (Python e Pillow): cardápio de outra pizzaria (vale o preço da base), pizza,
 garrafa de cerveja, maço de cigarro, comprovante de Pix, RG e receita falsos, print de erro do app,
 dever de casa, uma foto com ordens escondidas ("ignore as instruções…") e um SVG com nome de foto.
+
+## Roteiros (`casos-roteiros.jsonl`)
+
+Roteiros (leva B2', parte 4, 19/10/2026), no bot de teste **Conecta Fibra (teste)**: `&casos=roteiros`.
+Cada caso é uma **conversa inteira**, conferida mensagem a mensagem, pelo mesmo caminho do canal:
+a identificação (escolha da conta, licença para lembrar o número, "Estou falando com...?"), o
+roteiro antes da IA (botão, escolha digitada, dado conferido, foto, palavra-chave) e a IA com as
+ferramentas do roteiro e das ações. Tudo roda num banco em memória: nada é gravado e nenhuma
+conversa aparece no painel. Uma rodada é uma conversa; o caso passa se todas as rodadas passarem.
+
+`evals/roteiros.json` tem o resto, tudo fictício:
+
+- **pessoas**: quem o sistema da empresa identifica (o `identity` de uma ação: `external_id`, nome e contas);
+- **acoes**: as ações dos passos, simuladas. Nenhum endpoint é chamado: a resposta é a primeira
+  de `respostas` cujos parâmetros (`quando`) e conta da conversa (`conta`, o `context` da conta
+  escolhida) batem; `pessoa` põe o `identity` daquela pessoa na resposta. A resposta passa pela
+  mesma leitura, pelo mesmo portão e pelo mesmo roteiro de uma chamada de verdade;
+- **roteiros**: os roteiros dos casos. Passam pela mesma conferência do painel (o teste quebra se
+  um roteiro não pudesse ser salvo).
+
+A conferência da foto do passo é a de verdade (classificador); a leitura da foto não roda (o caso
+já traz a descrição). O portão da entrada fica de fora (os casos de portão estão nos outros arquivos).
+
+Campos do caso, além de `id`, `categoria`, `canal` e `pergunta` (a descrição do caso; `esperado` é
+sempre `qualquer`):
+
+| Campo | O que é |
+|---|---|
+| `turnos` | a conversa, uma mensagem por item: `contato` (texto), `toque` (botão da última mensagem com botões, pelo título ou pela posição, "2") ou `foto` (a descrição que a leitura de fotos daria; `contato` junto é a legenda), com `espera` |
+| `roteiros` | os roteiros ligados no caso (nomes em `roteiros.json`; sem o campo, todos) |
+| `lembrado` | pessoa de `roteiros.json` com o número já lembrado (a conversa começa pelo "Estou falando com...?") |
+| `fotos` | `false`: o canal não recebe foto (leitura de fotos desligada); o passo de foto fica para trás |
+
+Campos de `espera` (todos opcionais; o que não está lá não é conferido):
+
+| Campo | O que confere depois da mensagem |
+|---|---|
+| `roteiro` / `passo` | o roteiro em andamento (`null`: nenhum) e o passo dele (1 em diante) |
+| `fim` | um roteiro acabou nesta mensagem: `concluido` ou o motivo (`cancelled`, `handoff`, `replaced`, `idle`...) |
+| `ferramenta` | ferramenta usada pela IA (`a\|b`: qualquer uma; lista: todas). A chamada recusada sem efeito não conta |
+| `nao_usar` | ferramentas que a IA não pode usar (`a\|b`) |
+| `parametros` | uma ação foi chamada com estes parâmetros (texto: contém, sem diferença de maiúsculas) |
+| `botoes` / `sem_botoes` | os títulos dos botões da mensagem, juntos por " \| " (expressão regular), ou nenhum botão |
+| `deve_conter` / `nao_deve_conter` | expressão regular no que o contato recebeu (a resposta e o pedido de licença) |
+| `fixo` | a resposta é texto fixo do BoaVoz (sem a IA) |
+| `licenca` | saiu o pedido de licença para lembrar o número |
+| `equipe` | a conversa foi passada para a equipe |
+| `numero_lembrado` / `identificado` / `conta` | há número lembrado pelo roteiro; a conversa está identificada; a conta escolhida (expressão regular) |
+
+A conversa para na primeira mensagem que não passa (as seguintes dependem dela). O relatório mostra
+a mensagem, o que o bot respondeu e as ferramentas usadas, com os parâmetros. A linha **CHAMADAS
+RECUSADAS NOS ROTEIROS** conta as chamadas que voltaram sem efeito (começar o roteiro que já está
+aberto, opções no passo de botões, concluir um passo que anda sozinho): cada uma é uma ida a mais
+ao modelo, então compare antes e depois de mexer no texto do roteiro.
+
+Categorias: `roteiro` e `roteiro_seguranca` (obrigatória: nenhum dado da conta antes da escolha,
+nem para outra pessoa no número lembrado). Em 19/10/2026: 13/13 com o gpt-6-luna (3 rodadas), uns
+70 segundos e US$ 0,02 o conjunto inteiro.
 
 ## Bots de teste por segmento (`casos-<segmento>.jsonl`)
 

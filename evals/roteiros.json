@@ -1,0 +1,134 @@
+{
+  "_sobre": "Roteiros, pessoas e ações simuladas dos casos de roteiro (casos-roteiros.jsonl), para o bot de teste Conecta Fibra (teste). Tudo fictício: os CPFs são os de teste de sempre e as contas, os endereços e os valores não existem. As ações não chamam endpoint nenhum: a resposta sai daqui (a primeira cujos parâmetros, em quando, e conta da conversa, em conta, batem).",
+  "pessoas": {
+    "duas_contas": {
+      "external_id": "cli_teste_1",
+      "name": "Cliente Teste",
+      "accounts": [
+        { "label": "Rua das Flores, 10", "context": { "uc": "1001" } },
+        { "label": "Av. Brasil, 200", "context": { "uc": "1002" } }
+      ]
+    },
+    "uma_conta": {
+      "external_id": "cli_teste_2",
+      "name": "Pessoa Teste",
+      "accounts": [{ "label": "Rua do Sol, 5", "context": { "uc": "2001" } }]
+    }
+  },
+  "acoes": [
+    {
+      "name": "identificar_cliente",
+      "description": "Encontra o cadastro do cliente pelo CPF do titular e pelo CEP da instalação.",
+      "min_level": "canal",
+      "context_required": "none",
+      "routine_only": true,
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "documento": { "type": "string", "description": "CPF do titular, só os números" },
+          "cep": { "type": "string", "description": "CEP da instalação, só os números" }
+        },
+        "required": ["documento", "cep"]
+      },
+      "respostas": [
+        { "quando": { "documento": "52998224725", "cep": "01310100" }, "status": 200, "corpo": { "data": { "cliente": "Cliente Teste", "contas": 2 } }, "pessoa": "duas_contas" },
+        { "quando": { "documento": "11144477735", "cep": "20040002" }, "status": 200, "corpo": { "data": { "cliente": "Pessoa Teste", "contas": 1 } }, "pessoa": "uma_conta" },
+        { "status": 404, "corpo": { "error": "nenhum cadastro com esse CPF e esse CEP" } }
+      ]
+    },
+    {
+      "name": "buscar_fatura",
+      "description": "Consulta a fatura em aberto da conta escolhida na conversa: valor, vencimento e linha digitável.",
+      "min_level": "usuario",
+      "context_required": "signed",
+      "outcomes": ["sem_debito"],
+      "params_schema": { "type": "object", "properties": {}, "required": [] },
+      "respostas": [
+        { "conta": { "uc": "1001" }, "status": 200, "corpo": { "data": { "conta": "Rua das Flores, 10", "vencimento": "25/10/2026", "valor": "R$ 132,40", "linha_digitavel": "34191.79001 01043.510047 91020.150008 1 10010000013240" } } },
+        { "conta": { "uc": "1002" }, "status": 200, "corpo": { "data": { "conta": "Av. Brasil, 200", "vencimento": "25/10/2026", "valor": "R$ 87,15", "linha_digitavel": "34191.79001 01043.510047 91020.150008 2 10010000008715" } } },
+        { "conta": { "uc": "2001" }, "status": 200, "corpo": { "data": { "conta": "Rua do Sol, 5", "mensagem": "Nenhuma fatura em aberto nesta conta." }, "outcome": "sem_debito" } },
+        { "status": 404, "corpo": { "error": "sem conta identificada" } }
+      ]
+    },
+    {
+      "name": "abrir_chamado",
+      "description": "Abre um chamado de suporte técnico com a descrição da foto do roteador.",
+      "min_level": "canal",
+      "context_required": "none",
+      "routine_only": true,
+      "params_schema": {
+        "type": "object",
+        "properties": { "foto_roteador": { "type": "string", "description": "a descrição da foto do roteador" } },
+        "required": ["foto_roteador"]
+      },
+      "respostas": [{ "status": 200, "corpo": { "data": { "protocolo": "CH-48213", "previsao": "um técnico liga em até 4 horas" } } }]
+    }
+  ],
+  "roteiros": [
+    {
+      "name": "Segunda via",
+      "when_to_use": "Quando a pessoa pedir a segunda via da fatura ou do boleto, o código de barras, o valor ou o vencimento da conta de internet.",
+      "keywords": ["2via", "segunda via", "fatura"],
+      "active": true,
+      "template": null,
+      "steps": [
+        { "id": "sv0cpf01", "type": "dado", "text": "Peça o CPF do titular da conta.", "kind": "cpf", "variable": "documento", "pattern": null, "next": { "to": "proximo" }, "skip_identified": true },
+        { "id": "sv0cep02", "type": "dado", "text": "Peça o CEP do endereço da instalação.", "kind": "cep", "variable": "cep", "pattern": null, "next": { "to": "proximo" }, "skip_identified": true },
+        {
+          "id": "sv0idn03",
+          "type": "acao",
+          "text": "Se encontrou o cadastro, cumprimente a pessoa pelo nome. Se não encontrou, diga que não achou cadastro com esse CPF e esse CEP.",
+          "action": "identificar_cliente",
+          "results": { "ok": { "to": "proximo" }, "nao_encontrado": { "to": "encerrar" }, "erro": { "to": "atendente" } },
+          "skip_identified": true
+        },
+        {
+          "id": "sv0fat04",
+          "type": "acao",
+          "text": "Informe o valor, o vencimento e a linha digitável da fatura. Se não houver fatura em aberto, diga isso.",
+          "action": "buscar_fatura",
+          "results": { "ok": { "to": "encerrar" }, "sem_debito": { "to": "encerrar" }, "nao_encontrado": { "to": "atendente" }, "erro": { "to": "atendente" } }
+        }
+      ]
+    },
+    {
+      "name": "Sem internet",
+      "when_to_use": "Quando a pessoa disser que a internet caiu, está sem sinal, muito lenta ou parou de funcionar.",
+      "keywords": ["sem internet", "internet caiu"],
+      "active": true,
+      "template": null,
+      "steps": [
+        { "id": "si0fot01", "type": "foto", "text": "Peça uma foto do roteador mostrando as luzes da frente.", "variable": "foto_roteador", "next": { "to": "proximo" } },
+        {
+          "id": "si0cha02",
+          "type": "acao",
+          "text": "Informe o protocolo do chamado e quando o técnico vai ligar.",
+          "action": "abrir_chamado",
+          "results": { "ok": { "to": "encerrar" }, "nao_encontrado": { "to": "atendente" }, "erro": { "to": "atendente" } }
+        }
+      ]
+    },
+    {
+      "name": "Mudança de plano",
+      "when_to_use": "Quando a pessoa quiser trocar, mudar, aumentar ou diminuir o plano de internet que já tem.",
+      "keywords": ["mudar plano", "trocar plano"],
+      "active": true,
+      "template": null,
+      "steps": [
+        {
+          "id": "mp0pla01",
+          "type": "botoes",
+          "text": "Pergunte para qual plano a pessoa quer mudar.",
+          "variable": "plano",
+          "options": [
+            { "title": "300 mega", "next": { "to": "proximo" } },
+            { "title": "600 mega", "next": { "to": "proximo" } },
+            { "title": "1 giga", "next": { "to": "proximo" } }
+          ]
+        },
+        { "id": "mp0tel02", "type": "dado", "text": "Peça um telefone para a equipe comercial ligar.", "kind": "telefone", "variable": "telefone", "pattern": null, "next": { "to": "proximo" } },
+        { "id": "mp0fim03", "type": "instrucao", "text": "Diga que a equipe comercial vai ligar para confirmar a mudança para o plano escolhido.", "next": { "to": "atendente" } }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { jsonSchema, tool, type Tool } from "ai";
 import { hasPack } from "./entitlements";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { callAction, needsConfirmation, paramsProblems, reaches, type ActionIdentity, type ActionLevel, type ActionRow, type CallContact, type CallResult } from "./actions";
+import { callAction, needsConfirmation, paramsProblems, reaches, type ActionIdentity, type ActionLevel, type ActionRow, type CallContact, type CallInput, type CallResult } from "./actions";
 import { gateActionData, idLabels, saveIdMap } from "./action-gate";
 import { openConfirmation, type Caller } from "./action-confirm";
 import { ComponentProblem, materializeComponent, parseComponentInput } from "./component-input";
@@ -303,6 +303,12 @@ export interface ActionToolsInput extends CallerInput {
   };
   /** A identidade agora (parte 2c): a ação do roteiro identificou no meio da vez e as próximas chamadas saem com ela. */
   identityNow?: () => ChatIdentity | null;
+  /**
+   * Avaliação de roteiros (eval-routines.ts): as ações do caso no lugar das do banco e a resposta
+   * simulada no lugar do endpoint (nada sai daqui). O resto é o mesmo: nível, parâmetros, portão do
+   * resultado e o roteiro.
+   */
+  simulated?: { actions: ActionRow[]; call: (a: ActionRow, input: CallInput) => Promise<CallResult> };
 }
 
 /**
@@ -314,7 +320,7 @@ export const offeredByRoutine = (a: Pick<ActionRow, "name" | "routine_only">, ro
 
 /** Ferramentas acao_<nome> para esta resposta (vazio se o bot não tem ações). */
 export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): Promise<Record<string, Tool>> {
-  const all = await loadBotActions(db, i.bot.id);
+  const all = i.simulated ? i.simulated.actions : await loadBotActions(db, i.bot.id);
   if (!all.length) return {};
   let caller = await callerFor(db, i);
   // roteiro (parte 2c): a ação do passo pode identificar a pessoa no meio da vez; as chamadas
@@ -403,7 +409,8 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
           return { ok: false, motivo: "indisponivel", instrucao: "Esta consulta não está disponível agora. Não tente de novo; ofereça falar com a equipe.", ...(roteiro ? { roteiro } : {}) };
         }
 
-        const r = await callAction(db, a, { params, messageKey: i.messageKey, conversation: { id: i.conversationId, channel: c.gateChannel }, contact: c.contact, context: c.context });
+        const call: CallInput = { params, messageKey: i.messageKey, conversation: { id: i.conversationId, channel: c.gateChannel }, contact: c.contact, context: c.context };
+        const r = i.simulated ? await i.simulated.call(a, call) : await callAction(db, a, call);
         const shaped = await shapeActionResult(db, shape, r);
         // com reply, os botões vão com ele (os de uma consulta anterior na mesma vez não)
         if (shaped.reply) i.onReply(shaped.reply, shaped.component);

@@ -5,6 +5,7 @@ import type { BotRow } from "./chat";
 import { costLine, costSummary, evaluatePhotoQuestion, evaluateQuestion, type EvalOptions, type EvalRun } from "./eval";
 import type { PhotoReading } from "./photo-note";
 import type { ReasoningEffort } from "./ai";
+import { evaluateRoutineCase, loadRoutineBase, refusedTally, type RoutineCaseFields } from "./eval-routines";
 
 /*
  * Conjunto fixo de casos (evals/casos.jsonl): cada mudança de prompt, modelo ou temperatura roda
@@ -12,7 +13,11 @@ import type { ReasoningEffort } from "./ai";
  * bot, escritos só com texto genérico (nunca copiados de conversa real).
  */
 
-export interface EvalCase {
+/**
+ * Um caso. O de roteiro (casos-roteiros.jsonl) traz a conversa inteira em turnos, com o que conferir
+ * depois de cada mensagem (eval-routines.ts); nele, pergunta é a descrição e esperado é "qualquer".
+ */
+export interface EvalCase extends RoutineCaseFields {
   id: string;
   categoria: string;
   canal?: "widget" | "whatsapp" | "instagram";
@@ -49,7 +54,7 @@ export interface EvalCase {
 }
 
 /** Categorias que precisam acertar 100%: errar aqui é risco com a Meta ou com o consumidor. */
-export const MUST_PASS = new Set(["escopo_fixo", "humano", "seguranca", "fatos", "saude", "risco", "portao", "portao_bar", "foto_portao", "foto_seguranca"]);
+export const MUST_PASS = new Set(["escopo_fixo", "humano", "seguranca", "fatos", "saude", "risco", "portao", "portao_bar", "foto_portao", "foto_seguranca", "roteiro_seguranca"]);
 
 /** evals/casos.jsonl, ou evals/casos-NOME.jsonl (casos de um bot de teste, ex.: casos-bar). */
 export function loadCases(name?: string): EvalCase[] {
@@ -131,6 +136,8 @@ export async function runCases(
 ): Promise<{ results: CaseResult[]; skipped: EvalCase[] }> {
   const results: CaseResult[] = [];
   const started = Date.now();
+  // roteiros e ações simuladas dos casos de roteiro (lidos uma vez)
+  const routineBase = cases.some((c) => c.turnos?.length) ? loadRoutineBase() : undefined;
   // poucos casos em paralelo: o limite de tokens por minuto da OpenAI estoura com muitos juntos
   for (let i = 0; i < cases.length; i += 3) {
     const batches = i / 3;
@@ -138,6 +145,16 @@ export async function runCases(
     if (opts.stopAt && Date.now() + avgBatchMs * 1.5 > opts.stopAt) return { results, skipped: cases.slice(i) };
     const batch = await Promise.all(
       cases.slice(i, i + 3).map(async (c) => {
+        // caso de roteiro: cada rodada é a conversa inteira, conferida mensagem a mensagem
+        if (c.turnos?.length) {
+          const out = await evaluateRoutineCase(db, bot, c, { runs: opts.runs, model: opts.model, temperature: opts.temperature, effort: opts.effort, onUsage: opts.onUsage, base: routineBase });
+          const runList = out.map((x) => x.run);
+          const errors = runList.filter((x) => x.verdict === "erro").length;
+          const failures = out.flatMap((x) => (x.failure ? [x.failure] : []));
+          const result: CaseResult = { c, passed: out.length - errors - failures.length, runs: out.length, errors, failures, runList };
+          opts.onResult?.(result);
+          return result;
+        }
         const evalOpts: EvalOptions = { runs: opts.runs, model: opts.model, temperature: opts.temperature, effort: opts.effort, classifierModel: opts.classifierModel, onUsage: opts.onUsage, channel: c.canal ?? "whatsapp", history: c.historico, age: c.idade ?? null, foreign: c.fora };
         // caso com foto: a leitura roda em cada rodada, como no canal; o texto da foto também vale como fonte
         const r = c.foto ? await evaluatePhotoQuestion(db, bot, loadCasePhoto(c.foto), c.pergunta, evalOpts) : { ...(await evaluateQuestion(db, bot, c.pergunta, evalOpts)), notes: [] as string[] };
@@ -163,7 +180,7 @@ const caseIcon = (r: CaseResult) => (r.failures.length ? "❌" : r.errors ? "⚠
 
 /** Uma linha por caso (a mesma do relatório e do andamento). */
 export function caseLine(r: CaseResult): string {
-  return `  ${caseIcon(r)} ${r.c.id} (${r.passed}/${r.runs}${r.errors ? `, ${r.errors} com erro de chamada` : ""}) — ${r.c.foto ? `📷 ${r.c.foto} ` : ""}${r.c.pergunta}`;
+  return `  ${caseIcon(r)} ${r.c.id} (${r.passed}/${r.runs}${r.errors ? `, ${r.errors} com erro de chamada` : ""}) — ${r.c.foto ? `📷 ${r.c.foto} ` : ""}${r.c.turnos ? `💬 ${r.c.turnos.length} mensagens · ` : ""}${r.c.pergunta}`;
 }
 
 /** Passou: nenhuma rodada errou o comportamento e pelo menos uma rodou (⚠️ = só erro de chamada). */
@@ -217,6 +234,9 @@ export function casesReport(results: CaseResult[], meta: { model: string; temper
     "CASOS",
     ...results.map(caseLine),
   ];
+  // roteiros: cada chamada recusada (iniciar o roteiro já aberto, opções no passo de botões) é uma ida a mais ao modelo
+  const refused = refusedTally(results.filter((r) => r.c.turnos).flatMap((r) => r.runList));
+  if (refused.total) lines.push("", `CHAMADAS RECUSADAS NOS ROTEIROS (cada uma é uma ida a mais ao modelo): ${refused.total} · ${refused.line}`);
   if (skipped.length) lines.push("", `⏱️ O tempo acabou antes de ${skipped.length} caso(s), que não rodaram: ${skipped.map((c) => c.id).join(", ")}. Rode de novo só a categoria deles (&categoria=…).`);
   const errored = results.reduce((t, r) => t + r.errors, 0);
   if (errored) lines.push("", `⚠️ ${errored} rodada(s) com erro de chamada (ex.: limite de tokens por minuto da OpenAI) não contam como falha. Se forem muitas, rode por categoria.`);
@@ -225,7 +245,8 @@ export function casesReport(results: CaseResult[], meta: { model: string; temper
     lines.push("", "O QUE FALHOU");
     for (const r of failed) {
       lines.push(`  ${r.c.id}${r.c.notas ? ` (${r.c.notas})` : ""}`);
-      for (const f of r.failures.slice(0, 3)) lines.push(`    - ${f.reason}\n      ${f.text.replace(/\n+/g, " / ").slice(0, 300)}`);
+      // conversa de roteiro: a mensagem que falhou e o que o bot respondeu (mais longo)
+      for (const f of r.failures.slice(0, 3)) lines.push(`    - ${f.reason}\n      ${f.text.replace(/\n+/g, " / ").slice(0, r.c.turnos ? 700 : 300)}`);
     }
   }
   return lines.join("\n");

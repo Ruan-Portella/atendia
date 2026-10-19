@@ -1,0 +1,174 @@
+import { randomUUID } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/*
+ * Banco em memória com o pedaço do PostgREST que o roteiro, a identificação e as ações usam (filtros
+ * simples, or com eq/neq/is, upsert por coluna, contagem, o embed routines(*) do routine_runs, um
+ * roteiro ativo por conversa e o rpc do limite de chamadas, sempre liberado). Serve à avaliação de
+ * roteiros (eval-routines.ts), que roda o motor de verdade sem gravar nada no banco.
+ */
+
+export type MemRow = Record<string, unknown>;
+
+/** Valores padrão das tabelas que o motor cria (como os defaults das migrações). */
+function defaultsOf(table: string, now: string): MemRow {
+  if (table === "routine_runs") return { status: "active", attempts: 0, failing: false, variables_enc: null, end_reason: null, ended_at: null, held_result: null, idle_turns: 0, started_at: now };
+  if (table === "contact_links") return { linked_at: now, unlinked_at: null, source: "pairing", identity_key_hash: null };
+  return {};
+}
+
+export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
+  let tick = 0;
+  // linked_at e started_at em ordem de criação (o motor ordena por eles)
+  const stamp = () => new Date(Date.now() + tick++).toISOString();
+
+  class Query {
+    filters: Array<(r: MemRow) => boolean> = [];
+    op: "select" | "insert" | "update" | "delete" | "upsert" = "select";
+    patch: MemRow = {};
+    rows: MemRow[] = [];
+    conflict = "id";
+    orderBy: { col: string; asc: boolean } | null = null;
+    lim = 0;
+    embed = false;
+    head = false;
+    constructor(public table: string) {}
+    select(cols?: string, o?: { count?: string; head?: boolean }) {
+      if (this.op === "select") {
+        this.embed = Boolean(cols?.includes("routines("));
+        this.head = Boolean(o?.head);
+      }
+      return this;
+    }
+    insert(r: MemRow | MemRow[]) {
+      this.op = "insert";
+      this.rows = Array.isArray(r) ? r : [r];
+      return this;
+    }
+    upsert(r: MemRow, o?: { onConflict?: string }) {
+      this.op = "upsert";
+      this.rows = [r];
+      this.conflict = o?.onConflict ?? "id";
+      return this;
+    }
+    update(p: MemRow) {
+      this.op = "update";
+      this.patch = p;
+      return this;
+    }
+    delete() {
+      this.op = "delete";
+      return this;
+    }
+    eq(c: string, v: unknown) {
+      this.filters.push((r) => r[c] === v);
+      return this;
+    }
+    neq(c: string, v: unknown) {
+      this.filters.push((r) => r[c] !== v);
+      return this;
+    }
+    in(c: string, vs: unknown[]) {
+      this.filters.push((r) => vs.includes(r[c]));
+      return this;
+    }
+    lt(c: string, v: string) {
+      this.filters.push((r) => typeof r[c] === "string" && (r[c] as string) < v);
+      return this;
+    }
+    gt(c: string, v: string) {
+      this.filters.push((r) => typeof r[c] === "string" && (r[c] as string) > v);
+      return this;
+    }
+    gte(c: string, v: string) {
+      this.filters.push((r) => typeof r[c] === "string" && (r[c] as string) >= v);
+      return this;
+    }
+    is(c: string, v: unknown) {
+      this.filters.push((r) => (r[c] ?? null) === v);
+      return this;
+    }
+    not(c: string, op: string, v: unknown) {
+      if (op === "is") this.filters.push((r) => (r[c] ?? null) !== v);
+      return this;
+    }
+    /** "a.is.null,b.neq.x,c.not.is.null": basta um bater. */
+    or(expr: string) {
+      const parts = expr.split(",").map((p) => {
+        const m = /^([a-z_]+)\.(not\.)?(eq|neq|is)\.(.*)$/.exec(p.trim());
+        if (!m) throw new Error(`banco em memória: or("${p}") não suportado`);
+        const [, col, not, op, raw] = m;
+        const v = raw === "null" ? null : raw;
+        const hit = (r: MemRow) => (op === "neq" ? (r[col] ?? null) !== v : (r[col] ?? null) === v);
+        return not ? (r: MemRow) => !hit(r) : hit;
+      });
+      this.filters.push((r) => parts.some((f) => f(r)));
+      return this;
+    }
+    order(c: string, o?: { ascending?: boolean }) {
+      this.orderBy = { col: c, asc: o?.ascending !== false };
+      return this;
+    }
+    limit(n: number) {
+      this.lim = n;
+      return this;
+    }
+    async maybeSingle() {
+      const r = await this.exec();
+      return { data: (r.data as MemRow[] | null)?.[0] ?? null, error: r.error };
+    }
+    async single() {
+      const r = await this.exec();
+      const d = r.data as MemRow[] | null;
+      return d?.length ? { data: d[0], error: null } : { data: null, error: r.error ?? { message: "sem linha" } };
+    }
+    then<A, B>(res: (v: { data: unknown; error: unknown; count?: number }) => A, rej?: (e: unknown) => B) {
+      return this.exec().then(res, rej);
+    }
+    async exec(): Promise<{ data: unknown; error: { message: string } | null; count?: number }> {
+      const t = (tables[this.table] ??= []);
+      if (this.op === "insert") {
+        const out: MemRow[] = [];
+        for (const r of this.rows) {
+          const row: MemRow = { id: randomUUID(), ...defaultsOf(this.table, stamp()), ...r };
+          // um roteiro ativo por conversa (o índice único parcial da migração 0107)
+          if (this.table === "routine_runs" && t.some((x) => x.conversation_id === row.conversation_id && x.status === "active")) return { data: null, error: { message: "duplicate key value violates unique constraint" } };
+          t.push(row);
+          out.push(row);
+        }
+        return { data: out.map((r) => ({ ...r })), error: null };
+      }
+      if (this.op === "upsert") {
+        const r = this.rows[0];
+        const hit = t.find((x) => x[this.conflict] === r[this.conflict]);
+        if (hit) Object.assign(hit, r);
+        else t.push({ ...r });
+        return { data: null, error: null };
+      }
+      let rows = t.filter((r) => this.filters.every((f) => f(r)));
+      if (this.op === "update") {
+        for (const r of rows) Object.assign(r, this.patch);
+        return { data: rows.map((r) => ({ ...r })), error: null };
+      }
+      if (this.op === "delete") {
+        tables[this.table] = t.filter((r) => !rows.includes(r));
+        return { data: rows.map((r) => ({ ...r })), error: null, count: rows.length };
+      }
+      if (this.orderBy) {
+        const { col, asc } = this.orderBy;
+        // id de mensagem é número: 10 vem depois de 9
+        const cmp = (a: unknown, b: unknown) => (typeof a === "number" && typeof b === "number" ? a - b : String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0);
+        rows = [...rows].sort((a, b) => cmp(a[col], b[col]) * (asc ? 1 : -1));
+      }
+      const count = rows.length;
+      if (this.lim) rows = rows.slice(0, this.lim);
+      if (this.head) return { data: null, error: null, count };
+      return { data: rows.map((r) => (this.embed ? { ...r, routines: (tables.routines ?? []).find((x) => x.id === r.routine_id) ?? null } : { ...r })), error: null, count };
+    }
+  }
+  return {
+    from: (t: string) => new Query(t),
+    // o limite de chamadas das ações (hit_rate_limit) sempre libera; o resto não existe aqui
+    rpc: async (fn: string) => (fn === "hit_rate_limit" ? { data: true, error: null } : { data: null, error: { message: `banco em memória: rpc ${fn} não existe` } }),
+  } as unknown as SupabaseClient;
+}
