@@ -4,6 +4,7 @@ import { isCustomHost } from "@/lib/domain";
 import { accessDay, logAccess, requestIp, type AccessActor } from "@/lib/access-log";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashId } from "@/lib/rate-limit";
+import { passwordOnlySession } from "@/lib/login-code";
 
 /** Cookie que marca "esta sessão já foi registrada hoje, deste IP" (evita gravar a cada página). */
 const ACCESS_MARK = "bv_al";
@@ -64,6 +65,18 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     url.pathname = "/login";
     url.searchParams.set("next", path);
     return NextResponse.redirect(url);
+  }
+  // sem senha (Entrada e docs, parte 3): a sessão aberta só com senha sai, e a pessoa entra pelo
+  // código no e-mail ou pelo Google (os cookies apagados vão junto no redirecionamento)
+  if (user && (path.startsWith("/painel") || path === "/comecar") && passwordOnlySession(user.amr)) {
+    await supabase.auth.signOut({ scope: "local" });
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    url.searchParams.set("senha", "1");
+    const out = NextResponse.redirect(url);
+    for (const c of response.cookies.getAll()) out.cookies.set(c);
+    return out;
   }
   if (user && (path === "/login" || path === "/cadastro")) {
     const url = request.nextUrl.clone();
