@@ -43,8 +43,8 @@ export async function captureWhatsAppMedia(db: SupabaseClient, channel: ChannelR
   return n;
 }
 
-/** Baixa do CDN do Instagram, até o limite. */
-async function fetchIgMedia(url: string): Promise<{ data: Uint8Array; mime: string } | null> {
+/** Baixa do CDN do Instagram, até o limite (safeFetch: nunca um endereço interno). null se grande demais. */
+export async function fetchIgMedia(url: string): Promise<{ data: Uint8Array; mime: string } | null> {
   const { res } = await safeFetch(url, { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`download ${res.status}`);
   const declared = Number(res.headers.get("content-length") ?? 0);

@@ -1,7 +1,7 @@
 import { handlePairing, linkColumnsForContact } from "./pairing";
 import { handleErasureRequest } from "./data-subject";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
+import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, requestHandoff, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withoutAi, type Mode } from "./conversation-mode";
 import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
@@ -12,12 +12,14 @@ import { findMessage, saveMessage, updateMessages } from "./messages";
 import { clearUnseen, igUnseenKind, markUnseen, recentUnseen, unseenMediaText, type UnseenMark } from "./unseen-media";
 import { hasPendingFrom, isRearmed, markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope } from "./suppression";
-import { canTranscribe, transcribeAudio } from "./ai";
+import { canReadPhotos, canTranscribe, transcribeAudio } from "./ai";
+import { fixedPhotoReply, photoReadingOn, photoSeen, withHandoffNotice, type PhotoReading } from "./photo-note";
+import { readBurstPhotos } from "./photo-reading";
+import { fetchIgMedia } from "./media-capture";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { instagramTyping, isInstagramAccessError, mediaPermalink, sendInstagramAttachment, sendInstagramTemplate, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
-import { MAX_MEDIA_BYTES } from "./whatsapp";
 import { answerWithGate, gateButtons } from "./gate/flow";
 import { choicesOf, instagramCarouselText, instagramLinkText, instagramPlan, instagramTemplate, type MessageComponent } from "./components";
 
@@ -28,6 +30,8 @@ const HISTORY = 12;
 
 const FALLBACK = "No momento não consigo responder por aqui. A equipe vai retornar sua mensagem em breve.";
 const ONLY_TEXT = "Por enquanto eu entendo mensagens de texto e áudios. Fotos e vídeos ainda não. Pode escrever sua dúvida?";
+/** Com a leitura de fotos ligada (leva de leitura de fotos). */
+const ONLY_TEXT_PHOTOS = "Por enquanto eu entendo texto, áudios e fotos. Vídeos ainda não. Pode escrever sua dúvida?";
 const AUDIO_FAILED = "Não consegui entender o áudio. Pode mandar de novo ou escrever?";
 /** Texto fixo que sai ao contato e também fica na conversa do painel (como do sistema). */
 const fixedRecord = (content: string): SendRecord => ({ insert: { role: "assistant", content, author: SYSTEM_AUTHOR } });
@@ -164,11 +168,10 @@ export async function sendCarousel(db: SupabaseClient, ch: IgChannelRow, to: str
 }
 
 async function transcribeFrom(url: string, onUsage?: Parameters<typeof transcribeAudio>[1]): Promise<string | null> {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`download do áudio falhou (${res.status})`);
-  const data = new Uint8Array(await res.arrayBuffer());
-  if (data.byteLength > MAX_MEDIA_BYTES) throw new Error("áudio grande demais");
-  const transcript = await transcribeAudio(data, onUsage);
+  // safeFetch (nunca um endereço interno), com limite de tamanho
+  const file = await fetchIgMedia(url);
+  if (!file) throw new Error("áudio grande demais");
+  const transcript = await transcribeAudio(file.data, onUsage);
   return transcript ? AUDIO_PREFIX + transcript : null;
 }
 
@@ -203,6 +206,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const mode = botHasAi(bot) ? resolved : withoutAi(resolved);
   // nada de IA (nem transcrição; o risco só pelo dicionário): chatbot sem IA ou pagamento em aberto
   const aiOff = !botHasAi(bot) || resolved.facts.humanOnly === "past_due";
+  // leitura de fotos: só com a IA respondendo, em chatbot com IA, fora do modo dados sensíveis
+  const photosOn = photoReadingOn({ enabled: canReadPhotos(), hasAi: botHasAi(bot), sensitive: Boolean(bot.sensitive_mode), aiResponds: mode.aiResponds, aiOff });
   // a pergunta pendente rearmada na volta da IA não é mensagem nova do contato
   if (contact && mode.storeInbound && !burst.every((q) => isRearmed(q.ev.message?.mid))) await touchInbound(db, contact);
 
@@ -261,6 +266,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     }
   };
 
+  /** Fotos lidas pela IA, por posição na rajada (gravadas junto da mensagem). */
+  let photos = new Map<number, PhotoReading[]>();
+
   /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
   const plainConversation = async (): Promise<string | null> => {
     if (!conv) {
@@ -270,7 +278,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     return conv?.id ?? null;
   };
   const storeAll = async (convId: string) => {
-    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key, photos.get(i));
     await afterStore();
   };
   /** Mensagem do sistema (confirmação, aviso): só sai se dá para enviar; gravada na conversa. */
@@ -392,13 +400,52 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   // aviso de indisponível já dado: sai quando a IA voltar a responder (o próximo episódio avisa de novo)
   const noticeMarked = Boolean(contact?.unavailable_notice_reason || conv?.unavailable_notice_reason);
 
+  // fotos (leva de leitura de fotos): com a IA respondendo, cada foto da DM vira uma descrição
+  // curta, lida antes da resposta (photo-reading.ts); vídeo, arquivo, story e post seguem como antes
+  const readStarted = Date.now();
+  const photoSlots = photosOn
+    ? burst.flatMap((q, i) => {
+        if (handled.has(i) || deleted.has(q.key)) return [];
+        const urls = (q.ev.message?.attachments ?? []).filter((a) => a.type === "image" && a.payload?.url).map((a) => a.payload!.url!);
+        return urls.length ? [{ index: i, key: q.key, fetchers: urls.map((url) => async () => (await fetchIgMedia(url))?.data ?? null) }] : [];
+      })
+    : [];
+  if (photoSlots.length) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    const read = await readBurstPhotos(db, { bot, channel: "instagram", contactKey: contactId ?? igsid, conversationId: convId, slots: photoSlots });
+    // cada foto conta como uma resposta do atendimento: sem vaga, nenhuma é lida e a IA não responde
+    if (read.blocked) return humanOnly(decideMode({ ...mode.facts, humanOnly: "quota_exceeded" }));
+    photos = read.readings;
+    // comprovante, documento pessoal, saúde ou imagem imprópria: texto fixo, sem IA; os três
+    // primeiros viram pedido de atendente (a IA nunca confirma pagamento)
+    const fixed = fixedPhotoReply(photos.values());
+    if (fixed) {
+      await storeAll(convId);
+      const text = withHandoffNotice(fixed.text, fixed.handoff ? await requestHandoff(db, bot, convId, fixed.handoff) : null);
+      await say("ia", text, fixedRecord(text), convId);
+      return;
+    }
+  }
+  /** A IA responde a esta mensagem: tem texto, ou é foto que ela leu. */
+  const answerable = (i: number) => !handled.has(i) && Boolean(texts[i] || photoSeen(photos.get(i)));
+
   // compartilhou um post ou reel, ou mandou mídia, sem escrever nada: o comentário costuma vir logo
   // atrás, em outra DM. Se vier, esta rodada só grava, e a próxima responde tudo junto (uma resposta)
   const lastEv = burst[burst.length - 1].ev;
-  // foto, vídeo, arquivo, story ou post sem legenda (o assistente não vê): o último desta rajada
-  const burstUnseen = burst.map((q, i) => (handled.has(i) || deleted.has(q.key) ? null : igUnseenKind(q.ev.message?.attachments))).filter((k) => k !== null).pop() ?? null;
+  // foto (que não deu para ler), vídeo, arquivo, story ou post sem legenda: o último desta rajada
+  const burstUnseen =
+    burst
+      .map((q, i) => {
+        if (handled.has(i) || deleted.has(q.key)) return null;
+        const atts = q.ev.message?.attachments;
+        return igUnseenKind(photoSeen(photos.get(i)) ? atts?.filter((a) => a.type !== "image") : atts);
+      })
+      .filter((k) => k !== null)
+      .pop() ?? null;
   if (!igText(lastEv) && lastEv.message?.attachments?.length && !deleted.has(burst[burst.length - 1].key)) {
-    await new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS));
+    // a leitura das fotos já levou parte da espera
+    await new Promise((r) => setTimeout(r, Math.max(0, FOLLOW_UP_WAIT_MS - (Date.now() - readStarted))));
     if (await hasPendingFrom(db, "instagram", bot.id, igsid)) {
       const convId = await plainConversation();
       if (convId) await storeAll(convId);
@@ -415,13 +462,13 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     const convId = await plainConversation();
     if (!convId) return;
     await storeAll(convId);
-    const text = unseenMediaText(unseen);
+    const text = unseenMediaText(unseen, { photosOn });
     const r = await say("ia", text, fixedRecord(text), convId);
     if (r.status === "sent") await clearUnseen(db, convId);
     return;
   }
 
-  const qi = texts.map((t, i) => (t && !handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
+  const qi = burst.map((_, i) => (answerable(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
     // opt-out tratado, ou DM desfeita antes de chegar: nada a responder
     if (handled.size || deleted.size) return;
@@ -429,7 +476,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     const convId = await plainConversation();
     if (convId) await storeAll(convId);
     const lastAudio = Boolean(lastEv.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
-    const fixed = lastAudio ? AUDIO_FAILED : ONLY_TEXT;
+    const fixed = lastAudio ? AUDIO_FAILED : photosOn ? ONLY_TEXT_PHOTOS : ONLY_TEXT;
     return void (await say("ia", fixed, convId ? fixedRecord(fixed) : null, convId));
   }
   const q = burst[qi];
@@ -448,7 +495,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     await requireAtendimento(db, bot, { channel: "instagram", contactKey: contactId ?? igsid, conversationId: conv.id });
     if (noticeMarked) await clearNotice(db, { contactId, conversationId: conv.id });
     await instagramTyping(ch, igsid);
-    for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
+    for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key, photos.get(i));
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
     await answerWithGate(
@@ -480,7 +527,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         chat: { instagram: { igsid } },
         historySize: HISTORY,
       },
-      { text: texts[qi]!, key: q.key, msgId: q.key, stored: before.state === "unanswered", button: igButtonId(q.ev), alone: texts.filter((t, i) => t && !handled.has(i)).length === 1 },
+      { text: shown(qi), key: q.key, msgId: q.key, stored: before.state === "unanswered", button: igButtonId(q.ev), alone: burst.filter((_, i) => answerable(i)).length === 1, photos: photos.get(qi) ?? null },
     );
     await afterStore();
   } catch (e) {

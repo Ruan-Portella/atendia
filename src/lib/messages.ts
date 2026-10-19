@@ -3,6 +3,7 @@ import { queueMessageEvent, type Interactive } from "./message-events";
 import { openField, sealField, scopeOfConversation } from "./field-cipher";
 import { authorTypeOf, type AuthorType } from "./authors";
 import type { MessageComponent } from "./components";
+import type { PhotoReading } from "./photo-note";
 
 /*
  * Camada única de mensagens (L1; spec "Cifra por campo"): toda leitura e gravação da tabela
@@ -26,6 +27,8 @@ export interface MessageRow {
   announce_chars: number | null;
   /** botões, lista ou link mostrados junto (JSON; cifrado no banco, aberto aqui) */
   components_enc: string | null;
+  /** o que a IA leu das fotos da mensagem (JSON de PhotoReading[]; cifrado no banco, aberto aqui) */
+  photo_reading_enc: string | null;
   sources: unknown;
   tool_results: unknown;
   template_category: string | null;
@@ -56,6 +59,8 @@ export interface NewMessage {
   announce_chars?: number | null;
   /** botões, lista ou link (vai cifrado em components_enc) */
   components?: MessageComponent | null;
+  /** leitura das fotos da mensagem do contato (vai cifrada em photo_reading_enc) */
+  photo_reading?: PhotoReading[] | null;
   sources?: unknown;
   tool_results?: unknown;
   template_category?: string | null;
@@ -74,6 +79,8 @@ export interface MessagePatch {
   announce_chars?: number | null;
   /** troca o componente (o portão tirou opções); null tira */
   components?: MessageComponent | null;
+  /** null tira a leitura das fotos (mensagem desfeita pelo contato) */
+  photo_reading?: PhotoReading[] | null;
   edited_at?: string | null;
   deleted_at?: string | null;
   channel_ref?: unknown;
@@ -84,21 +91,26 @@ export interface MessagePatch {
   channel_msg_hash?: string | null;
 }
 
-/** O conteúdo (e o componente) vai cifrado com a chave do cliente dono da conversa (ou da plataforma, nas demos). */
-const sealed = async <T extends { content?: string; components?: MessageComponent | null }>(row: T, conversationId: string): Promise<Omit<T, "components"> & { components_enc?: string | null }> => {
-  const { components, ...rest } = row;
-  const needs = rest.content !== undefined || components;
+/** O conteúdo (o componente e a leitura das fotos) vai cifrado com a chave do cliente dono da conversa (ou da plataforma, nas demos). */
+const sealed = async <T extends { content?: string; components?: MessageComponent | null; photo_reading?: PhotoReading[] | null }>(
+  row: T,
+  conversationId: string,
+): Promise<Omit<T, "components" | "photo_reading"> & { components_enc?: string | null; photo_reading_enc?: string | null }> => {
+  const { components, photo_reading, ...rest } = row;
+  const needs = rest.content !== undefined || components || photo_reading?.length;
   const scope = needs ? await scopeOfConversation(conversationId) : null;
-  const out: Omit<T, "components"> & { components_enc?: string | null } = rest;
+  const out: Omit<T, "components" | "photo_reading"> & { components_enc?: string | null; photo_reading_enc?: string | null } = rest;
   if (rest.content !== undefined) (out as { content?: string }).content = await sealField("messages.content", rest.content, scope!);
   if (components !== undefined) out.components_enc = components ? await sealField("messages.components_enc", JSON.stringify(components), scope!) : null;
+  if (photo_reading !== undefined) out.photo_reading_enc = photo_reading?.length ? await sealField("messages.photo_reading_enc", JSON.stringify(photo_reading), scope!) : null;
   return out;
 };
 const opened = async <T extends object>(row: T): Promise<T> => {
-  const r = row as { content?: unknown; components_enc?: unknown };
+  const r = row as { content?: unknown; components_enc?: unknown; photo_reading_enc?: unknown };
   let out = row;
   if (typeof r.content === "string") out = { ...out, content: await openField("messages.content", r.content) };
   if (typeof r.components_enc === "string") out = { ...out, components_enc: await openField("messages.components_enc", r.components_enc) };
+  if (typeof r.photo_reading_enc === "string") out = { ...out, photo_reading_enc: await openField("messages.photo_reading_enc", r.photo_reading_enc) };
   return out;
 };
 
@@ -153,7 +165,7 @@ export type MessageTarget = { id: number } | { ids: Array<number | string> } | {
  */
 export async function updateMessages(db: SupabaseClient, target: MessageTarget, patch: MessagePatch, only: { notDeleted?: boolean; withoutRef?: boolean } = {}): Promise<number[]> {
   let row: Record<string, unknown> = { ...patch };
-  if (patch.content !== undefined || patch.components !== undefined) {
+  if (patch.content !== undefined || patch.components !== undefined || patch.photo_reading !== undefined) {
     // conteúdo novo: cifrado com a chave do cliente dono da conversa dessas mensagens
     let sel = db.from("messages").select("conversation_id");
     if ("id" in target) sel = sel.eq("id", target.id);

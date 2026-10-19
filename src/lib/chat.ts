@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, embedText, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type Persona } from "./ai";
 import { notifyHandoff, notifyLead } from "./notify";
 import { findMessage, loadMessages, saveMessage, touchConversation } from "./messages";
+import { parsePhotoReading, photosNote, type PhotoReading } from "./photo-note";
 import type { Interactive } from "./message-events";
 import { isGapAnswer, isTeamCheckAnswer, looksUnanswered, recordUnanswered } from "./unanswered";
 import { saveLead } from "./leads";
@@ -61,6 +62,8 @@ export interface BotRow {
   /** Tamanho (null = sem tamanho) e cota sob medida da BoaVoz: sem tamanho de IA, nada de IA (botHasAi). */
   size?: string | null;
   quota_override?: number | null;
+  /** Modo dados sensíveis: a IA não lê fotos (photo-note.photoReadingOn). */
+  sensitive_mode?: boolean | null;
 }
 
 export const CORS_HEADERS = {
@@ -254,14 +257,16 @@ export function guardInternal(text: string, terms: string[]): string {
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000, since?: string | null): Promise<UIMessage[]> {
   // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora;
   // since: troca de contexto (P2) abre um trecho novo, a IA não lê o da conta anterior
-  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit, ...(since ? { createdAfter: since } : {}) }, ["id", "role", "content", "tool_results", "components_enc", "created_at"] as const);
+  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit, ...(since ? { createdAfter: since } : {}) }, ["id", "role", "content", "tool_results", "components_enc", "photo_reading_enc", "created_at"] as const);
   // da mais nova para a mais antiga: a primeira vez que uma ação aparece é a última chamada dela
   const seen = new Set<string>();
   const notes = rows.map((r) => actionsNote(r.tool_results as ToolResultRow[] | null, seen, r.created_at as string));
   return rows
     .map((r, i) => {
-      // botões, lista ou link mostrados: a IA vê as opções (para entender "2" ou "o segundo")
-      const text = String(r.content).slice(0, maxChars) + (r.role === "user" ? "" : componentsNote(parseComponents(r.components_enc)));
+      // botões, lista ou link mostrados: a IA vê as opções (para entender "2" ou "o segundo");
+      // foto do contato: a descrição automática vai junto (leva de leitura de fotos)
+      const photo = r.role === "user" ? photosNote(parsePhotoReading(r.photo_reading_enc)) : null;
+      const text = String(r.content).slice(0, maxChars) + (r.role === "user" ? (photo ? `\n${photo}` : "") : componentsNote(parseComponents(r.components_enc)));
       // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
       const done = notes[i];
       return { id: String(r.id), role: r.role === "user" ? ("user" as const) : ("assistant" as const), parts: [{ type: "text" as const, text: done ? `${text}\n\n${done}` : text }] };
@@ -713,6 +718,12 @@ export async function runChat(opts: {
   questionKey?: string;
   /** false: a pergunta já está gravada (ex.: depois do "Sim" do 18+, a IA responde à pergunta de antes). */
   storeQuestion?: boolean;
+  /**
+   * O que fica gravado como a pergunta, quando a IA lê mais do que o contato escreveu (a foto: a
+   * IA lê a descrição junto, o painel guarda só o rótulo e a legenda) e a leitura das fotos.
+   */
+  questionContent?: string;
+  photos?: PhotoReading[] | null;
   /** Busca já feita (o portão da entrada usa o mesmo resultado; não busca duas vezes). */
   retrieval?: Awaited<ReturnType<typeof retrieveContext>>;
   /** Portão (canais da Meta): idade do contato e instrução da entrada. */
@@ -756,7 +767,7 @@ export async function runChat(opts: {
   if (question && opts.storeQuestion !== false) {
     // com a chave do evento, o reprocesso não grava a mesma pergunta duas vezes
     // erro aqui sobe: na fila, o evento volta e é tentado de novo (a mensagem não some)
-    await saveMessage(db, { conversation_id: convId, role: "user", content: question, inbound_key: opts.questionKey ?? null }, { interactive: opts.interactive ?? null });
+    await saveMessage(db, { conversation_id: convId, role: "user", content: opts.questionContent ?? question, inbound_key: opts.questionKey ?? null, ...(opts.photos?.length ? { photo_reading: opts.photos } : {}) }, { interactive: opts.interactive ?? null });
   }
 
   let unansweredRecorded = false;

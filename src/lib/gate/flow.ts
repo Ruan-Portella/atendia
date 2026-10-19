@@ -4,6 +4,7 @@ import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, requestHandoff, retri
 import { deliver } from "../send";
 import { deleteMessage, loadMessages } from "../messages";
 import { storeOnce } from "../whatsapp-inbound";
+import { photosNote, type PhotoReading } from "../photo-note";
 import { recordAiUsage } from "../ai-usage";
 import { AGE_IGNORED_HOURS, AGE_NO, AGE_SHOW, AGE_YES, getAge, setAge, type AgeStatus } from "./age";
 import { LIMITS, carouselClickText, joinShownText, parseComponents, type MessageComponent } from "../components";
@@ -133,6 +134,11 @@ export interface GateQuestion {
   button?: string | null;
   /** Só esta mensagem com texto no lote (o atalho "sim" do Confirmar só vale sozinho). */
   alone?: boolean;
+  /**
+   * Fotos da mensagem lidas pela IA (leva de leitura de fotos): a IA e o portão leem a descrição
+   * junto do texto; a mensagem gravada fica só com o texto (rótulo e legenda) e a leitura à parte.
+   */
+  photos?: PhotoReading[] | null;
 }
 
 /** O contato vinculado (pareamento): nível usuario e o contexto ativo. */
@@ -153,6 +159,9 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const { db, bot, channel, contact, conversationId: convId } = io;
   const who = { botId: bot.id, channel, contact };
   const contactPhone = channel === "whatsapp" ? contact : null;
+  // foto lida: a pergunta que a IA e o portão leem leva a descrição automática junto
+  const note = photosNote(q.photos);
+  const asked = note ? `${q.text}\n${note}` : q.text;
 
   /**
    * Texto fixo da vez do assistente: vai ao contato pela camada única de envio e fica no painel
@@ -184,7 +193,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const click = await resolveConfirmClick(db, { bot, conversationId: convId, buttonId: q.button ?? null, text: q.text, alone: q.alone !== false, key: q.key, caller: callerNow });
   let confirmed: Parameters<typeof runChat>[0]["confirmed"];
   if (click.kind !== "none") {
-    await storeOnce(db, convId, q.text, q.key);
+    await storeOnce(db, convId, q.text, q.key, q.photos);
     if (click.kind === "fixed") return void (await sendFixed(click.text, undefined, click.component ?? null));
     if (click.kind === "handoff") return void (await sendFixed(await requestHandoff(db, bot, convId, "Pedido sem confirmação: o contato pediu para falar com alguém")));
     const [age, exempt] = await Promise.all([getAge(db, who), botGateExemptions(db, bot.id)]);
@@ -223,20 +232,20 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     // "Ver opções 18+": pergunta a idade (e depois do "Sim" responde de novo à pergunta de antes)
     const current = await getAge(db, who);
     if (current !== "sim") {
-      await storeOnce(db, convId, q.text, q.key);
+      await storeOnce(db, convId, q.text, q.key, q.photos);
       if (current === "nao") await sendFixed(GATE_TEXTS.under18);
-      else await askAge(pending?.question ?? q.text);
+      else await askAge(pending?.question ?? asked);
       await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: current === "nao" ? "nao_18" : "pede_18", categories: [] });
       return;
     }
   }
   // já confirmou e tocou em "Ver opções 18+": segue como um "Sim" (o "sim" do Confirmar nunca é resposta de 18+)
   const answered = confirmed ? null : (ageAnswer(q.text, q.button, pending) ?? (q.button === AGE_SHOW ? "sim" : null));
-  let question = q.text;
+  let question = asked;
   let storeQuestion = !confirmed;
   let history: UIMessage[];
   if (answered) {
-    await storeOnce(db, convId, q.text, q.key);
+    await storeOnce(db, convId, q.text, q.key, q.photos);
     await setAge(db, who, answered, "chat");
     if (answered === "nao") {
       await clearAgePending(db, convId);
@@ -289,7 +298,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     onUsage: (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId: convId, kind: "classificacao", channel, ...u }),
   });
   if (entrance.kind === "proibido") {
-    await storeOnce(db, convId, q.text, q.key);
+    await storeOnce(db, convId, q.text, q.key, q.photos);
     // o item veio do pedido da própria pessoa ("e o cigarro?"): o texto fixo diz onde ver o pedido completo
     const fromOrder = entrance.categories.some((c) => idMapCategories(idMap).includes(c));
     const where = fromOrder ? (idMapLinks(idMap)[0] ?? regulatedDestination(bot.regulated_channel, bot.human_handoff?.address)?.destino ?? null) : null;
@@ -298,13 +307,13 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     return;
   }
   if (entrance.kind === "nao_18") {
-    await storeOnce(db, convId, q.text, q.key);
+    await storeOnce(db, convId, q.text, q.key, q.photos);
     await sendFixed(GATE_TEXTS.under18);
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "nao_18", categories: entrance.categories });
     return;
   }
   if (entrance.kind === "pede_18") {
-    await storeOnce(db, convId, q.text, q.key);
+    await storeOnce(db, convId, q.text, q.key, q.photos);
     await askAge(question);
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: "pede_18", categories: entrance.categories });
     return;
@@ -317,7 +326,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
 
   // item barrado junto com outro assunto: a IA responde à mensagem sem o item (o painel guarda a original)
   if (entrance.question) {
-    if (storeQuestion) await storeOnce(db, convId, q.text, q.key);
+    if (storeQuestion) await storeOnce(db, convId, q.text, q.key, q.photos);
     storeQuestion = false;
     history = withLastUserText(history, entrance.question);
   }
@@ -344,6 +353,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     ...io.chat,
     questionKey: q.key,
     storeQuestion,
+    questionContent: q.text,
+    photos: q.photos ?? null,
     retrieval,
     identity,
     extraTools,

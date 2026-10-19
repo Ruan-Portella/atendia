@@ -136,6 +136,24 @@ function embeddingModel(): { model: EmbeddingModel; options: (task: "query" | "d
  * (OPENAI_API_KEY) e depois o Google (GOOGLE_API_KEY) de reserva. A Anthropic não transcreve.
  * Sem nenhuma das três, não há transcrição.
  */
+/**
+ * Leitura de fotos do contato (leva de 19/10/2026): modelo da OpenAI com visão, chamado sem
+ * ferramentas e em baixa resolução (photo-reading.ts). O gpt-6-luna aceita imagem e cobra a
+ * entrada a US$ 0,10 por milhão de tokens. OPENAI_VISION_MODEL troca; PHOTO_READING=off desliga
+ * a leitura na plataforma inteira (a foto volta ao texto fixo de antes).
+ */
+export function visionModelId(): string {
+  return process.env.OPENAI_VISION_MODEL ?? "gpt-6-luna";
+}
+
+export function visionModel(): LanguageModel {
+  return openai(visionModelId());
+}
+
+export function canReadPhotos(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY) && process.env.PHOTO_READING !== "off";
+}
+
 export function canTranscribe(): boolean {
   return Boolean(process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY);
 }

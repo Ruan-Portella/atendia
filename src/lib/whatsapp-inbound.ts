@@ -1,13 +1,15 @@
 import { IDENTITY_CHANGED_TEXT, checkIdentityKey, handlePairing, linkColumnsForContact } from "./pairing";
 import { handleErasureRequest } from "./data-subject";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
+import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, requestHandoff, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withoutAi, type Mode } from "./conversation-mode";
 import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf, markMarketingOffer } from "./contacts";
 import { firstExceeded, noticeOnce } from "./rate-limit";
-import { canTranscribe, transcribeAudio } from "./ai";
+import { canReadPhotos, canTranscribe, transcribeAudio } from "./ai";
+import { fixedPhotoReply, photoReadingOn, photoSeen, withHandoffNotice, type PhotoReading } from "./photo-note";
+import { readBurstPhotos } from "./photo-reading";
 import { recordAiUsage } from "./ai-usage";
 import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendMedia, sendPlan, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck } from "./whatsapp";
 import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, isPromoOptOutButton, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
@@ -28,6 +30,8 @@ const HISTORY = 12;
 
 const FALLBACK = "No momento não consigo responder por aqui. A equipe vai retornar sua mensagem em breve.";
 const ONLY_TEXT = "Por enquanto eu entendo mensagens de texto e áudios. Fotos, vídeos e documentos ainda não. Pode escrever sua dúvida?";
+/** Com a leitura de fotos ligada (leva de leitura de fotos). */
+const ONLY_TEXT_PHOTOS = "Por enquanto eu entendo texto, áudios e fotos. Vídeos e documentos ainda não. Pode escrever sua dúvida?";
 const AUDIO_FAILED = "Não consegui entender o áudio. Pode mandar de novo ou escrever?";
 /** Texto fixo que sai ao contato e também fica na conversa do painel (como do sistema). */
 const fixedRecord = (content: string): SendRecord => ({ insert: { role: "assistant", content, author: SYSTEM_AUTHOR } });
@@ -161,9 +165,12 @@ export interface QueuedMessage {
 export const STALE_HOURS = 24;
 export const isStale = (receivedAt: string, now = Date.now()) => now - new Date(receivedAt).getTime() > STALE_HOURS * 3_600_000;
 
-/** Grava a mensagem do contato numa conversa uma vez só (a chave do evento segura o reprocesso). */
-export async function storeOnce(db: SupabaseClient, conversationId: string, content: string, key: string) {
-  await saveMessage(db, { conversation_id: conversationId, role: "user", content, inbound_key: key }, { touch: "visitante" });
+/**
+ * Grava a mensagem do contato numa conversa uma vez só (a chave do evento segura o reprocesso).
+ * photos: o que a IA leu das fotos da mensagem (vai cifrado à parte do texto).
+ */
+export async function storeOnce(db: SupabaseClient, conversationId: string, content: string, key: string, photos?: PhotoReading[] | null) {
+  await saveMessage(db, { conversation_id: conversationId, role: "user", content, inbound_key: key, ...(photos?.length ? { photo_reading: photos } : {}) }, { touch: "visitante" });
 }
 
 /**
@@ -214,6 +221,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const mode = botHasAi(bot) ? resolved : withoutAi(resolved);
   // nada de IA (nem transcrição; o risco só pelo dicionário): chatbot sem IA ou pagamento em aberto
   const aiOff = !botHasAi(bot) || resolved.facts.humanOnly === "past_due";
+  // leitura de fotos: só com a IA respondendo, em chatbot com IA, fora do modo dados sensíveis
+  const photosOn = photoReadingOn({ enabled: canReadPhotos(), hasAi: botHasAi(bot), sensitive: Boolean(bot.sensitive_mode), aiResponds: mode.aiResponds, aiOff });
   // "já conversou" e a janela de 24 h: só mensagem do próprio contato que chegou (ordem da Meta e
   // desligamento geral: nada; a pergunta pendente rearmada na volta da IA não é mensagem nova)
   const rearmed = isRearmed(last.msg.id);
@@ -253,6 +262,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const texts: Array<string | null> = [];
   for (const q of burst) texts.push((inboundText(q.msg) ?? (await transcribe(q.msg)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
   const shown = (i: number) => texts[i] ?? mediaLabel(burst[i].msg.type);
+  /** Fotos lidas pela IA, por posição na rajada (gravadas junto da mensagem). */
+  let photos = new Map<number, PhotoReading[]>();
 
   /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
   const plainConversation = async (): Promise<string | null> => {
@@ -263,7 +274,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     return conv?.id ?? null;
   };
   const storeAll = async (convId: string) => {
-    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key);
+    for (let i = 0; i < burst.length; i++) await storeOnce(db, convId, shown(i), burst[i].key, photos.get(i));
   };
   const sendFixed = async (t: string) => (await reply(t)).messages?.[0]?.id ?? null;
   /** Aviso ao contato do degrau atual, uma vez por episódio (gravado na conversa como do sistema). */
@@ -444,13 +455,40 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   // aviso de indisponível já dado: sai quando a IA voltar a responder (o próximo episódio avisa de novo)
   const noticeMarked = Boolean(contact?.unavailable_notice_reason || conv?.unavailable_notice_reason);
 
+  // fotos (leva de leitura de fotos): com a IA respondendo, cada foto vira uma descrição curta,
+  // lida antes da resposta (photo-reading.ts); vídeo, documento e figurinha seguem como antes
+  const readStarted = Date.now();
+  const photoSlots = photosOn
+    ? burst.flatMap((q, i) => (!optOut.handled.has(i) && q.msg.type === "image" && q.msg.image?.id ? [{ index: i, key: q.key, fetchers: [async () => (await downloadMedia(channel, q.msg.image!.id!)).data] }] : []))
+    : [];
+  if (photoSlots.length) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    const read = await readBurstPhotos(db, { bot, channel: "whatsapp", contactKey: contactId ?? waId, conversationId: convId, slots: photoSlots });
+    // cada foto conta como uma resposta do atendimento: sem vaga, nenhuma é lida e a IA não responde
+    if (read.blocked) return humanOnly(decideMode({ ...mode.facts, humanOnly: "quota_exceeded" }));
+    photos = read.readings;
+    // comprovante, documento pessoal, saúde ou imagem imprópria: texto fixo, sem IA; os três
+    // primeiros viram pedido de atendente (a IA nunca confirma pagamento)
+    const fixed = fixedPhotoReply(photos.values());
+    if (fixed) {
+      await storeAll(convId);
+      const text = withHandoffNotice(fixed.text, fixed.handoff ? await requestHandoff(db, bot, convId, fixed.handoff) : null);
+      await say("ia", text, fixedRecord(text), convId);
+      return;
+    }
+  }
+  /** A IA responde a esta mensagem: tem texto, ou é foto que ela leu. */
+  const answerable = (i: number) => !optOut.handled.has(i) && Boolean(texts[i] || photoSeen(photos.get(i)));
+
   // a resposta vai para a última mensagem com texto; as de antes (e a mídia) só entram no histórico
-  // foto, vídeo ou documento (o assistente não vê): o último desta rajada, fora o que foi opt-out
-  const burstUnseen = burst.map((q, i) => (optOut.handled.has(i) ? null : waUnseenKind(q.msg.type))).filter((k) => k !== null).pop() ?? null;
+  // foto (que não deu para ler), vídeo ou documento: o último desta rajada, fora o que foi opt-out
+  const burstUnseen = burst.map((q, i) => (optOut.handled.has(i) || photoSeen(photos.get(i)) ? null : waUnseenKind(q.msg.type))).filter((k) => k !== null).pop() ?? null;
   // foto, vídeo ou documento sem legenda: a pergunta costuma vir logo atrás, em outra mensagem.
-  // Se vier, esta rodada só grava, e a próxima responde tudo junto (uma resposta só)
+  // Se vier, esta rodada só grava, e a próxima responde tudo junto (uma resposta só); a leitura
+  // das fotos já levou parte da espera
   if (!texts[texts.length - 1] && last.msg.type !== "audio") {
-    await new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS));
+    await new Promise((r) => setTimeout(r, Math.max(0, FOLLOW_UP_WAIT_MS - (Date.now() - readStarted))));
     if (await hasPendingFrom(db, "whatsapp", bot.id, waId)) {
       const convId = await plainConversation();
       if (convId) await storeAll(convId);
@@ -467,20 +505,20 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     const convId = await plainConversation();
     if (!convId) return;
     await storeAll(convId);
-    const text = unseenMediaText(unseen);
+    const text = unseenMediaText(unseen, { photosOn });
     const r = await say("ia", text, fixedRecord(text), convId);
     if (r.status === "sent") await clearUnseen(db, convId);
     return;
   }
 
-  const qi = texts.map((t, i) => (t && !optOut.handled.has(i) ? i : -1)).filter((i) => i >= 0).pop();
+  const qi = burst.map((_, i) => (answerable(i) ? i : -1)).filter((i) => i >= 0).pop();
   if (qi === undefined) {
     if (optOut.handled.size) return;
     // mídia sem texto: fica no painel e o contato recebe o aviso de que só entendemos texto e áudio
     const convId = await plainConversation();
     if (convId) await storeAll(convId);
     const lastAudio = last.msg.type === "audio" && canTranscribe();
-    const fixed = lastAudio ? AUDIO_FAILED : ONLY_TEXT;
+    const fixed = lastAudio ? AUDIO_FAILED : photosOn ? ONLY_TEXT_PHOTOS : ONLY_TEXT;
     return void (await say("ia", fixed, convId ? fixedRecord(fixed) : null, convId));
   }
   const q = burst[qi];
@@ -499,7 +537,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     await requireAtendimento(db, bot, { channel: "whatsapp", contactKey: contactId ?? waId, conversationId: conv.id });
     if (noticeMarked) await clearNotice(db, { contactId, conversationId: conv.id });
     if (!rearmed) await markReadTyping(channel, last.msg.id);
-    for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key);
+    for (let i = 0; i < burst.length; i++) if (i !== qi) await storeOnce(db, conv.id, shown(i), burst[i].key, photos.get(i));
 
     // portão (proibidos, 18+) e IA; a pergunta é gravada uma vez só, mesmo no reprocesso
     const answered = await answerWithGate(
@@ -530,7 +568,15 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         chat: { whatsapp: { waId, profileName } },
         historySize: HISTORY,
       },
-      { text: texts[qi]!, key: q.key, msgId: q.msg.id, stored: before.state === "unanswered", button: q.msg.interactive?.button_reply?.id ?? q.msg.interactive?.list_reply?.id ?? q.msg.button?.payload, alone: texts.filter((t, i) => t && !optOut.handled.has(i)).length === 1 },
+      {
+        text: shown(qi),
+        key: q.key,
+        msgId: q.msg.id,
+        stored: before.state === "unanswered",
+        button: q.msg.interactive?.button_reply?.id ?? q.msg.interactive?.list_reply?.id ?? q.msg.button?.payload,
+        alone: burst.filter((_, i) => answerable(i)).length === 1,
+        photos: photos.get(qi) ?? null,
+      },
     );
     // saiu depois da recusa por pagamento: o cartão entrou, o número volta ao normal
     if (channel.payment_issue_at) await db.from("whatsapp_channels").update({ payment_issue_at: null }).eq("bot_id", bot.id);

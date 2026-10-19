@@ -15,9 +15,14 @@ export const UNSEEN_WINDOW_MS = 2 * 60_000;
 const WHAT: Record<UnseenKind, string> = { foto: "sua foto", vídeo: "seu vídeo", arquivo: "seu arquivo", story: "o story", post: "o post", reel: "o reel" };
 const CANT: Record<UnseenKind, string> = { foto: "ver imagens", vídeo: "ver vídeos", arquivo: "abrir arquivos", story: "ver imagens", post: "ver imagens", reel: "ver vídeos" };
 
-/** O texto fixo ao contato. Função pura. */
-export function unseenMediaText(kind: UnseenKind): string {
-  return `Recebi ${WHAT[kind]}, mas por aqui eu ainda não consigo ${CANT[kind]}. Pode me escrever o que é ou o que você quer saber (o nome do produto, por exemplo)? Assim eu te respondo certo.`;
+/**
+ * O texto fixo ao contato. Com a leitura de fotos ligada, a foto que chega aqui é a que não deu
+ * para ler (arquivo que não é foto, falha do modelo). Função pura.
+ */
+export function unseenMediaText(kind: UnseenKind, o: { photosOn?: boolean } = {}): string {
+  const ask = "Pode me escrever o que é ou o que você quer saber (o nome do produto, por exemplo)? Assim eu te respondo certo.";
+  if (kind === "foto" && o.photosOn) return `Recebi ${WHAT[kind]}, mas não consegui ver direito. ${ask}`;
+  return `Recebi ${WHAT[kind]}, mas por aqui eu ainda não consigo ${CANT[kind]}. ${ask}`;
 }
 
 /** WhatsApp: foto, vídeo e documento (com ou sem legenda). Figurinha, localização e áudio não. */

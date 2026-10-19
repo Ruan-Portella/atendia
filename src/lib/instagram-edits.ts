@@ -83,7 +83,7 @@ export async function handleInstagramDelete(db: SupabaseClient, ev: IgMessagingE
     return "marcada";
   }
   await logDeletion(db, "message_content", ids);
-  await updateMessages(db, { ids }, { content: DELETED_LABEL, channel_ref: null, deleted_at: new Date().toISOString() });
+  await updateMessages(db, { ids }, { content: DELETED_LABEL, channel_ref: null, photo_reading: null, deleted_at: new Date().toISOString() });
   // lápide: os arquivos da mensagem saem também (objeto e linha)
   await purgeAttachments(db, { messageIds: ids.map(Number) });
   // webhooks: as entregas dessa mensagem saem antes, e o sistema do cliente recebe message.deleted
