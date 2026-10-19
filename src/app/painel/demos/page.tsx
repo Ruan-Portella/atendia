@@ -7,19 +7,28 @@ import { relativeTime } from "@/lib/utils";
 import { agencyBaseUrl } from "@/lib/domain";
 import { BotRowActions } from "@/components/bot-row-actions";
 import { deleteBot } from "../actions";
+import { DEMO_ANSWERS, DEMO_DAYS } from "@/lib/plans";
+
+const dayBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+/** "vale até 01/11 · 12 de 50 respostas" ou "terminou em 01/11". */
+function demoStatus(d: { demo_expires_at: string | null; demo_answers_used: number }, now = Date.now()): string {
+  if (d.demo_expires_at && Date.parse(d.demo_expires_at) <= now) return `terminou em ${dayBR(d.demo_expires_at)}`;
+  if (d.demo_answers_used >= DEMO_ANSWERS) return `terminou: usou as ${DEMO_ANSWERS} respostas`;
+  return `${d.demo_expires_at ? `vale até ${dayBR(d.demo_expires_at)} · ` : ""}${d.demo_answers_used} de ${DEMO_ANSWERS} respostas`;
+}
 
 export const metadata = { title: "Demos" };
 
 export default async function DemosPage() {
   const { agency } = await requirePermission("config");
   const supabase = await createClient();
-  const { data: demos } = await supabase.from("bots").select("id, client_name, client_site, demo_slug, demo_views, status, created_at").eq("agency_id", agency.id).eq("is_demo", true).order("created_at", { ascending: false });
+  const { data: demos } = await supabase.from("bots").select("id, client_name, client_site, demo_slug, demo_views, status, created_at, demo_expires_at, demo_answers_used").eq("agency_id", agency.id).eq("is_demo", true).order("created_at", { ascending: false });
 
   return (
     <>
       <div>
         <h1 className="text-2xl font-bold sm:text-[28px]">Demos</h1>
-        <p className="text-sm text-muted">Cole o site de um prospect. Em um minuto você tem um link para mandar no WhatsApp dele.</p>
+        <p className="text-sm text-muted">Cole o site de um prospect. Em um minuto você tem um link para mandar no WhatsApp dele. Cada demo vale {DEMO_DAYS} dias e responde até {DEMO_ANSWERS} vezes.</p>
       </div>
       <div className="card max-w-[640px] p-6"><DemoGenerator inPanel /></div>
       <div className="card overflow-hidden">
@@ -30,7 +39,7 @@ export default async function DemosPage() {
             <div key={d.id} className="flex flex-wrap items-center gap-3 border-b border-line-2 px-4 py-3.5 text-sm last:border-0">
               <div className="min-w-0 flex-1 leading-tight">
                 <Link href={`/painel/bots/${d.id}`} className="block truncate font-semibold">{d.client_name}</Link>
-                <span className="block truncate text-xs text-muted">{d.client_site?.replace(/^https?:\/\//, "")} · gerada {relativeTime(d.created_at)} · aberta {d.demo_views} {d.demo_views === 1 ? "vez" : "vezes"}{d.status === "error" ? " · erro ao ler o site" : ""}</span>
+                <span className="block truncate text-xs text-muted">{d.client_site?.replace(/^https?:\/\//, "")} · gerada {relativeTime(d.created_at)} · aberta {d.demo_views} {d.demo_views === 1 ? "vez" : "vezes"} · {demoStatus({ demo_expires_at: (d.demo_expires_at as string | null) ?? null, demo_answers_used: Number(d.demo_answers_used ?? 0) })}{d.status === "error" ? " · erro ao ler o site" : ""}</span>
               </div>
               {d.demo_views > 3 && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">quente</span>}
               <a href={url} target="_blank" rel="noopener" className="text-[13px] font-semibold text-brand">Abrir</a>

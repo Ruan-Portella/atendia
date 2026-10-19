@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { ATENDIMENTO_TEST_OFF, TEST_ANSWERS_DONE, takeTestAnswer } from "@/lib/free-account";
+import { ATENDIMENTO_TEST_OFF, DEMO_ENDED_PANEL, TEST_ANSWERS_DONE, demoEndedText, takeTestAnswer } from "@/lib/free-account";
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { CORS_HEADERS, SYSTEM_AUTHOR, appendActionComponent, appendActionFiles, appendSiteOffer, conversationHistory, lastUserText, openConversation, requestHandoff, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
+import { AI_BLOCK_LABEL, CORS_HEADERS, SYSTEM_AUTHOR, appendActionComponent, appendActionFiles, appendSiteOffer, conversationHistory, lastUserText, openConversation, requestHandoff, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
 import { resolveConfirmClick } from "@/lib/action-confirm";
 import { devButtonId, type Interactive } from "@/lib/message-events";
 import { callerFor, shapeActionResult } from "@/lib/action-tools";
@@ -218,10 +218,11 @@ export async function POST(req: Request) {
     });
   }
 
-  // bot pausado pelo dono, IA pausada pelo backoffice, chatbot sem IA, teste ou cota: o widget
-  // mostra o formulário de contato (o lead não se perde)
+  // bot pausado pelo dono, IA pausada pelo backoffice, pagamento em aberto, chatbot sem IA, teste ou
+  // cota: o widget mostra o formulário de contato (o lead não se perde); o teste ao vivo diz o motivo
   if (mode.handoff) {
     const reason = mode.blockReason ?? "paused";
+    if (channel === "painel") return fixedStream("teste", AI_BLOCK_LABEL[reason], CORS_HEADERS);
     return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" ? 503 : 402);
   }
 
@@ -271,11 +272,15 @@ export async function POST(req: Request) {
 
   // Atendimento não tem IA, nem no teste ao vivo
   if (channel === "painel" && bot.size === "atendimento" && !botHasAi(bot)) return fixedStream("teste", ATENDIMENTO_TEST_OFF, CORS_HEADERS);
-  // conta grátis (sem assinatura): o teste ao vivo do painel e as demos usam as respostas de teste da
-  // IA (a vitrine do site fica de fora); acabaram, o painel avisa e a demo mostra o formulário
-  if ((channel === "painel" || bot.is_demo) && !(await takeTestAnswer(db, bot.agency_id))) {
-    if (channel === "painel") return fixedStream("teste", TEST_ANSWERS_DONE, CORS_HEADERS);
-    return contactFallback("test_answers_done", 402);
+  // respostas de teste: cada demo vale 14 dias e responde até 50 vezes (as da vitrine do site
+  // também); na conta grátis, o teste ao vivo e as demos também param nas 50 da conta
+  if (channel === "painel" || bot.is_demo) {
+    const test = await takeTestAnswer(db, bot.id);
+    if (test !== "ok") {
+      if (channel === "painel") return fixedStream("teste", test === "conta" ? TEST_ANSWERS_DONE : DEMO_ENDED_PANEL, CORS_HEADERS);
+      const { data: owner } = await db.from("agencies").select("name, slug").eq("id", bot.agency_id).maybeSingle();
+      return fixedStream("demo", demoEndedText((owner?.name as string | null) ?? null, owner?.slug === "boavoz"), CORS_HEADERS);
+    }
   }
 
   // cota do mês: o atendimento deste visitante (24 horas) abre antes de chamar a IA; o teste ao

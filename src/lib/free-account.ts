@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { TEST_ANSWERS_FREE, UNSIZED_GRACE_DAYS } from "./plans";
+import { DEMO_ANSWERS, DEMO_DAYS, TEST_ANSWERS_FREE } from "./plans";
 import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "./channel-disconnect";
 import { notifyAgencyOwner } from "./notify";
 import { audit } from "./audit";
@@ -8,11 +8,13 @@ import { appUrl } from "./utils";
 /*
  * Conta grátis (revisão de preços, parte 5b; 17/10/2026, revista em 18/10).
  * - Sem assinatura, o teste ao vivo do painel e as demos usam até 50 respostas da IA (a vitrine
- *   do site fica de fora). Com assinatura, são livres. O Atendimento não tem IA, nem no teste.
+ *   do site fica de fora). Com assinatura, o teste ao vivo é livre. O Atendimento não tem IA, nem
+ *   no teste.
+ * - Cada demo vale 14 dias e responde até 50 vezes, com ou sem assinatura (as da vitrine também):
+ *   a demo é para mostrar, não para atender.
  * - WhatsApp, Instagram e o chat do site só ligam com tamanho (Atendimento, sem IA, ou um tamanho
- *   com IA): não há caixa de entrada grátis (18/10).
- * - O chatbot que perde o tamanho (no dia 1º ou no fim da assinatura) segue recebendo para a
- *   equipe, sem IA, por 30 dias e depois é desconectado (tarefa diária), sem apagar nada.
+ *   com IA): não há caixa de entrada grátis. O chatbot que perde o tamanho (no dia 1º ou no fim da
+ *   assinatura) tem o WhatsApp e o Instagram desconectados na hora, sem apagar nada.
  */
 
 export const TEST_ANSWERS_DONE = `Você usou as ${TEST_ANSWERS_FREE} respostas de teste da conta grátis. Para continuar testando, escolha um tamanho para um chatbot em Cobrança → Assinatura.`;
@@ -20,14 +22,26 @@ export const TEST_ANSWERS_DONE = `Você usou as ${TEST_ANSWERS_FREE} respostas d
 /** Teste ao vivo de um chatbot Atendimento: ele não tem IA. */
 export const ATENDIMENTO_TEST_OFF = "Este chatbot é Atendimento, sem IA: o teste ao vivo não responde. Para testar a IA, escolha um tamanho com IA em Cobrança → Assinatura.";
 
-/** Reserva uma resposta de teste da IA (conta sem assinatura). false = acabaram. Falha nossa não trava o teste. */
-export async function takeTestAnswer(db: SupabaseClient, agencyId: string): Promise<boolean> {
-  const { data, error } = await db.rpc("use_test_answer", { p_agency_id: agencyId, p_limit: TEST_ANSWERS_FREE });
+/** Teste ao vivo de uma demo que terminou. */
+export const DEMO_ENDED_PANEL = `Esta demo terminou: cada demo vale ${DEMO_DAYS} dias e responde até ${DEMO_ANSWERS} vezes. Gere outra em Demos ou transforme esta em chatbot.`;
+
+/** O que a demo que terminou diz a quem conversa com ela. Função pura. */
+export function demoEndedText(agencyName: string | null, showcase: boolean): string {
+  if (showcase) return "Esta demonstração terminou. Para montar o assistente do seu negócio, crie sua conta grátis no BoaVoz.";
+  return `Esta demonstração terminou. Para continuar, fale com ${agencyName ?? "quem enviou o link"}.`;
+}
+
+/** Resposta de teste: ok, a demo venceu ou chegou ao limite, ou a conta grátis usou as dela. */
+export type TestAnswer = "ok" | "demo_vencida" | "demo_limite" | "conta";
+
+/** Reserva uma resposta de teste da IA (teste ao vivo e demos). Falha nossa não trava o teste. */
+export async function takeTestAnswer(db: SupabaseClient, botId: string): Promise<TestAnswer> {
+  const { data, error } = await db.rpc("use_test_answer", { p_bot_id: botId, p_limit: TEST_ANSWERS_FREE, p_demo_limit: DEMO_ANSWERS });
   if (error) {
     console.error("conta grátis: resposta de teste não conferida", error.message);
-    return true;
+    return "ok";
   }
-  return Boolean(data);
+  return data === "demo_vencida" || data === "demo_limite" || data === "conta" ? data : "ok";
 }
 
 export const SIZE_REQUIRED = "Para conectar o WhatsApp e o Instagram, este chatbot precisa de um tamanho. Escolha em Cobrança → Assinatura: Atendimento (sem IA) ou um tamanho com IA.";
@@ -50,17 +64,14 @@ export interface ConnectedUnsized {
   botId: string;
   name: string;
   agencyId: string;
-  /** Quando o primeiro canal dele foi conectado. */
-  connectedAt: string;
-  graceUntil: string | null;
 }
 
-type ChannelRow = { bot_id: string; created_at: string; bots: BotJoin | BotJoin[] | null };
-type BotJoin = { id: string; agency_id: string; name: string; grace_until: string | null };
+type ChannelRow = { bot_id: string; bots: BotJoin | BotJoin[] | null };
+type BotJoin = { id: string; agency_id: string; name: string };
 
 /** Chatbots sem tamanho (e sem cota sob medida) com WhatsApp ou Instagram conectado. */
 export async function connectedUnsized(db: SupabaseClient, agencyId?: string): Promise<ConnectedUnsized[]> {
-  const sel = "bot_id, created_at, bots!inner(id, agency_id, name, size, quota_override, is_demo, grace_until)";
+  const sel = "bot_id, bots!inner(id, agency_id, name, size, quota_override, is_demo)";
   const query = (table: "whatsapp_channels" | "instagram_channels") => {
     const q = db.from(table).select(sel).is("disconnected_at", null).is("bots.size", null).is("bots.quota_override", null).eq("bots.is_demo", false);
     return agencyId ? q.eq("bots.agency_id", agencyId) : q;
@@ -70,63 +81,44 @@ export async function connectedUnsized(db: SupabaseClient, agencyId?: string): P
   const byBot = new Map<string, ConnectedUnsized>();
   for (const r of [...((wa.data ?? []) as unknown as ChannelRow[]), ...((ig.data ?? []) as unknown as ChannelRow[])]) {
     const b = Array.isArray(r.bots) ? r.bots[0] : r.bots;
-    if (!b) continue;
-    const cur = byBot.get(r.bot_id);
-    if (!cur || r.created_at < cur.connectedAt) byBot.set(r.bot_id, { botId: r.bot_id, name: b.name, agencyId: b.agency_id, connectedAt: r.created_at, graceUntil: b.grace_until ?? null });
+    if (b) byBot.set(r.bot_id, { botId: r.bot_id, name: b.name, agencyId: b.agency_id });
   }
   return [...byBot.values()];
 }
 
-const dayBR = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-
-/** E-mails do prazo do chatbot sem tamanho. Função pura. */
-export function graceEmail(kind: "inicio" | "desconectado", botName: string, until: Date | null, billingUrl: string): [string, string[]] {
-  if (kind === "inicio") {
-    return [
-      `${botName}: sem tamanho, os canais desconectam em ${dayBR(until!)}`,
-      [
-        `O chatbot ${botName} está sem tamanho. Até ${dayBR(until!)}, as mensagens do WhatsApp e do Instagram dele continuam chegando em Conversas para a sua equipe, sem IA.`,
-        "",
-        `Depois disso, o WhatsApp e o Instagram dele são desconectados (nada é apagado: as conversas ficam no painel). Para manter, escolha um tamanho: Atendimento (sem IA) ou um tamanho com IA: ${billingUrl}`,
-      ],
-    ];
-  }
+/** E-mail do chatbot que ficou sem tamanho e teve os canais desconectados. Função pura. */
+export function unsizedEmail(botName: string, billingUrl: string): [string, string[]] {
   return [
     `${botName}: WhatsApp e Instagram desconectados`,
     [
-      `O chatbot ${botName} ficou ${UNSIZED_GRACE_DAYS} dias sem tamanho, então o WhatsApp e o Instagram dele foram desconectados. As conversas continuam no painel.`,
+      `O chatbot ${botName} ficou sem tamanho, então o WhatsApp e o Instagram dele foram desconectados. Nada foi apagado: as conversas e a configuração continuam no painel.`,
       "",
-      `Para voltar, escolha um tamanho e conecte de novo: ${billingUrl}`,
+      `Para voltar, escolha um tamanho (Atendimento, sem IA, ou um tamanho com IA) e conecte de novo: ${billingUrl}`,
     ],
   ];
 }
 
 /**
- * Tarefa diária (e o botão do backoffice): o chatbot sem tamanho com canal ganha o prazo de 30 dias
- * (com aviso) e, vencido, é desconectado.
+ * Chatbot sem tamanho não fica com canal: desconecta o WhatsApp e o Instagram (sem apagar nada) e
+ * avisa o dono. Roda logo que o tamanho acaba (virada do mês e fim da assinatura, no webhook da
+ * Stripe), na tarefa diária e no botão do backoffice. Falha num chatbot não para os outros.
  */
-export async function retireUnsizedChannels(db: SupabaseClient, o: { agencyId?: string; now?: Date } = {}): Promise<{ warned: number; disconnected: number }> {
-  const now = o.now ?? new Date();
+export async function disconnectUnsized(db: SupabaseClient, o: { agencyId?: string } = {}): Promise<{ disconnected: number; failed: number }> {
   const billingUrl = appUrl("/painel/cobranca");
-  let warned = 0;
   let disconnected = 0;
+  let failed = 0;
   for (const b of await connectedUnsized(db, o.agencyId)) {
-    if (!b.graceUntil) {
-      const until = new Date(now.getTime() + UNSIZED_GRACE_DAYS * 86_400_000);
-      const { data } = await db.from("bots").update({ grace_until: until.toISOString() }).eq("id", b.botId).is("grace_until", null).select("id");
-      if (!data?.length) continue;
-      const [subject, lines] = graceEmail("inicio", b.name, until, billingUrl);
-      await notifyAgencyOwner(db, b.agencyId, subject, lines).catch(() => false);
-      warned++;
-    } else if (Date.parse(b.graceUntil) <= now.getTime()) {
+    try {
       await disconnectWhatsAppChannel(db, b.botId, "sem_tamanho");
       await disconnectInstagramChannel(db, b.botId, "sem_tamanho");
-      await db.from("bots").update({ grace_until: null }).eq("id", b.botId);
-      await audit(db, { agencyId: b.agencyId, actorType: "system", actorId: null, action: "canal.desconectar_sem_tamanho", targetType: "bot", targetId: b.botId, after: { dias: UNSIZED_GRACE_DAYS } });
-      const [subject, lines] = graceEmail("desconectado", b.name, null, billingUrl);
+      await audit(db, { agencyId: b.agencyId, actorType: "system", actorId: null, action: "canal.desconectar_sem_tamanho", targetType: "bot", targetId: b.botId });
+      const [subject, lines] = unsizedEmail(b.name, billingUrl);
       await notifyAgencyOwner(db, b.agencyId, subject, lines).catch(() => false);
       disconnected++;
+    } catch (e) {
+      failed++;
+      console.error("chatbot sem tamanho: canal não desconectado", b.botId, (e as Error).message);
     }
   }
-  return { warned, disconnected };
+  return { disconnected, failed };
 }

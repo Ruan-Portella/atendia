@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { retireUnsizedChannels } from "@/lib/free-account";
+import { disconnectUnsized } from "@/lib/free-account";
 import { clientsOfScope, trackCompliance } from "@/lib/platform-events";
 import { requireAdmin } from "@/lib/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -903,8 +903,9 @@ export async function grantCredit(agencyId: string, fd: FormData): Promise<Actio
 /** Confere agora os chatbots sem tamanho com canal da agência (a tarefa diária faz para todas). */
 export async function checkUnsizedChannels(agencyId: string): Promise<ActionResult> {
   const s = await requireAdmin(`/admin/clientes/${agencyId} (chatbots sem tamanho)`);
-  const r = await retireUnsizedChannels(createAdminClient(), { agencyId });
+  const r = await disconnectUnsized(createAdminClient(), { agencyId });
   await auditAdmin(s.email, "sem_tamanho.conferir", { agencyId, targetType: "agency", targetId: agencyId, after: r });
   revalidatePath("/admin", "layout");
-  return ok(r.warned || r.disconnected ? `${r.warned} chatbot(s) entraram no prazo de 30 dias; ${r.disconnected} desconectado(s).` : "Nada a fazer: nenhum chatbot sem tamanho com canal fora do prazo.");
+  if (r.failed) return fail(`${r.disconnected} chatbot(s) desconectado(s); ${r.failed} falharam (veja o log e tente de novo).`);
+  return ok(r.disconnected ? `${r.disconnected} chatbot(s) sem tamanho com o WhatsApp e o Instagram desconectados.` : "Nada a fazer: nenhum chatbot sem tamanho com canal.");
 }

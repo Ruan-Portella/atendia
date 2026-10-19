@@ -212,6 +212,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   // chatbot sem IA (Atendimento ou sem tamanho): tudo vai para a equipe, sem IA nenhuma (nem transcrição)
   const resolved = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel });
   const mode = botHasAi(bot) ? resolved : withoutAi(resolved);
+  // nada de IA (nem transcrição; o risco só pelo dicionário): chatbot sem IA ou pagamento em aberto
+  const aiOff = !botHasAi(bot) || resolved.facts.humanOnly === "past_due";
   // "já conversou" e a janela de 24 h: só mensagem do próprio contato que chegou (ordem da Meta e
   // desligamento geral: nada; a pergunta pendente rearmada na volta da IA não é mensagem nova)
   const rearmed = isRearmed(last.msg.id);
@@ -235,8 +237,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const transcribe = async (m: InboundMessage): Promise<string | null> => {
     const audioId = m.type === "audio" ? m.audio?.id : undefined;
     // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio);
-    // chatbot sem IA: a equipe ouve o áudio na conversa
-    if (!audioId || !canTranscribe() || mode.step <= 2 || !botHasAi(bot)) return null;
+    // sem IA (chatbot sem IA ou pagamento em aberto): a equipe ouve o áudio na conversa
+    if (!audioId || !canTranscribe() || mode.step <= 2 || aiOff) return null;
     try {
       const { data } = await downloadMedia(channel, audioId);
       const transcript = await transcribeAudio(data, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "whatsapp", ...u }));
@@ -282,7 +284,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     if (!convId) return;
     await storeAll(convId);
     // risco à vida tem prioridade sobre o texto do modo só humano
-    if (await handleRiskWithoutAi(db, bot, convId, texts, sendFixed, "whatsapp")) return;
+    if (await handleRiskWithoutAi(db, bot, convId, texts, sendFixed, "whatsapp", !aiOff)) return;
     await enterHumanOnly(db, bot, convId, m.blockReason ?? "paused");
     await sendNotice(convId, m.notice);
   };
@@ -423,7 +425,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     const convId = await plainConversation();
     if (!convId) return;
     await storeAll(convId);
-    await handleRiskWithoutAi(db, bot, convId, texts, sendFixed, "whatsapp");
+    await handleRiskWithoutAi(db, bot, convId, texts, sendFixed, "whatsapp", !aiOff);
     return;
   }
 

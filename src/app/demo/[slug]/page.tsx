@@ -4,7 +4,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { belongsToHost } from "@/lib/domain-server";
 import { ChatWindow } from "@/components/chat-window";
 import { initials } from "@/lib/utils";
-import { brl } from "@/lib/plans";
+import { DEMO_ANSWERS, brl } from "@/lib/plans";
+import { demoEndedText } from "@/lib/free-account";
+
+const dayBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+
+/** A demo terminou: passou da validade ou já respondeu o limite. */
+function demoEnded(bot: { demo_expires_at?: string | null; demo_answers_used?: number | null }, now = Date.now()): boolean {
+  return Boolean(bot.demo_expires_at && Date.parse(bot.demo_expires_at) <= now) || (bot.demo_answers_used ?? 0) >= DEMO_ANSWERS;
+}
 
 export async function generateMetadata({ params }: PageProps<"/demo/[slug]">): Promise<Metadata> {
   const { slug } = await params;
@@ -21,7 +29,8 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("demo_slug", slug).eq("is_demo", true).maybeSingle();
   if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
-  const { data: agency } = await db.from("agencies").select("name, logo_url, brand_color, support_whatsapp, privacy_url").eq("id", bot.agency_id).single();
+  const { data: agency } = await db.from("agencies").select("name, slug, logo_url, brand_color, support_whatsapp, privacy_url").eq("id", bot.agency_id).single();
+  const ended = demoEnded(bot);
   await db.rpc("increment_demo_views", { p_slug: slug });
 
   const color = bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d";
@@ -46,6 +55,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
       <main className="grid flex-1 gap-10 px-6 py-10 md:grid-cols-[minmax(0,1fr)_440px] md:px-12">
         <div className="flex flex-col gap-5">
           <span className="self-start rounded-full bg-amber-soft px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-amber-ink">Demonstração preparada para {bot.client_name}</span>
+          {bot.demo_expires_at && !ended && <span className="-mt-3 text-xs text-muted">Esta demonstração vale até {dayBR(bot.demo_expires_at)}.</span>}
           <h1 className="text-3xl font-bold leading-[1.08] md:text-[44px]" style={{ textWrap: "balance" }}>Um assistente que responde seus clientes 24 horas, treinado no seu próprio site.</h1>
           <p className="max-w-[600px] text-[17px] leading-relaxed text-ink-2">
             Montamos este assistente lendo o site {bot.client_site?.replace(/^https?:\/\//, "") ?? "da empresa"}. Ele já sabe o que vocês oferecem, horários, valores e como chegar. Teste ao lado com qualquer pergunta que um cliente faria.
@@ -69,10 +79,21 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
           )}
         </div>
         <div className="h-[600px] overflow-hidden rounded-2xl shadow-[0_16px_40px_rgba(27,31,29,0.12)]">
+          {ended ? (
+            <div className="flex h-full flex-col items-center justify-center gap-4 bg-panel p-8 text-center">
+              <p className="text-[15px] leading-relaxed text-ink-2">{demoEndedText(agency?.name ?? null, agency?.slug === "boavoz")}</p>
+              {agency?.slug === "boavoz" ? (
+                <a href="/cadastro" className="btn-primary">Criar conta grátis</a>
+              ) : (
+                wa && <a href={wa} className="btn-primary">Falar com a {agency?.name}</a>
+              )}
+            </div>
+          ) : (
           <ChatWindow
             channel="demo"
             bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou o assistente de ${bot.client_name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button) }}
           />
+          )}
         </div>
       </main>
     </div>

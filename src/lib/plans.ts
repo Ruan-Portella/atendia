@@ -73,8 +73,9 @@ export const AI_BOTS_FILTER = `size.in.(${AI_SIZES.join(",")}),quota_override.no
 
 /** Conta grátis: respostas de teste da IA (teste ao vivo do painel e demos) enquanto não há assinatura. */
 export const TEST_ANSWERS_FREE = 50;
-/** Chatbot que perdeu o tamanho com canal conectado: dias até os canais desconectarem. */
-export const UNSIZED_GRACE_DAYS = 30;
+/** Cada demo (com ou sem assinatura, também as da vitrine do site): respostas e dias de validade. */
+export const DEMO_ANSWERS = 50;
+export const DEMO_DAYS = 14;
 
 /** Respostas da IA que cabem num atendimento: a seguinte abre outro. */
 export const ANSWERS_PER_ATENDIMENTO = 40;

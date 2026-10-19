@@ -21,7 +21,8 @@ export async function GET(req: Request) {
   if (!bot) return Response.json({ error: "not_found" }, { status: 404, headers });
   // canal suspenso pela BoaVoz (regra de estado, degrau 2): o widget nem aparece no site
   const suspended = await isChannelSuspended(db, bot, "widget");
-  // o chat do site só liga com tamanho (o Atendimento mostra o formulário de contato); a demo é à parte
+  // o chat do site só liga com tamanho (o Atendimento mostra o formulário de contato); a demo só
+  // funciona na página dela (/demo/...), nunca instalada num site
   const sized = isBotSize(bot.size) || bot.quota_override !== null;
 
   const a = (bot.appearance ?? {}) as { color?: string; position?: string; offset?: number };
@@ -35,7 +36,7 @@ export async function GET(req: Request) {
       color,
       position: a.position === "left" ? "left" : "right",
       offset: Math.min(200, Math.max(0, Number(a.offset ?? 20) || 0)),
-      live: !suspended && (bot.is_demo || (bot.status === "live" && sized)),
+      live: !suspended && !bot.is_demo && bot.status === "live" && sized,
     },
     { headers },
   );

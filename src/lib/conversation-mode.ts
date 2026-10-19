@@ -15,7 +15,7 @@ import { apiPauseActive } from "./presence";
  *   3. Humano na conversa: "Assumir", resposta pelo celular/app há menos de 1 hora, ou IA pausada
  *      pela integração (API, com prazo; sem avisar a equipe)
  *   4. Bot pausado pelo dono (botão de emergência): aviso só se ele pediu
- *   5. Modo só humano: IA pausada pela BoaVoz; a cota do chatbot (cota cheia, sem crédito ou no
+ *   5. Modo só humano: IA pausada pela BoaVoz ou pagamento da assinatura em aberto; a cota do chatbot (cota cheia, sem crédito ou no
  *      teto do excedente) entra aqui quando openAtendimento não abre, antes de chamar a IA; o
  *      chatbot sem IA (Atendimento ou sem tamanho; withoutAi) entra logo na chegada, sem aviso ao
  *      contato e antes de qualquer IA (nem transcrição)

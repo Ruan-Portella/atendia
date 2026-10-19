@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ATENDIMENTO_TEST_OFF, SIZE_REQUIRED, TEST_ANSWERS_DONE, UNSIZED_API_SENDS, graceEmail } from "../free-account";
-import { AI_BOTS_FILTER, BOT_SIZES, TEST_ANSWERS_FREE, UNSIZED_GRACE_DAYS, botHasAi, sizeOption } from "../plans";
+import { ATENDIMENTO_TEST_OFF, DEMO_ENDED_PANEL, SIZE_REQUIRED, TEST_ANSWERS_DONE, UNSIZED_API_SENDS, demoEndedText, unsizedEmail } from "../free-account";
+import { AI_BOTS_FILTER, BOT_SIZES, DEMO_ANSWERS, DEMO_DAYS, TEST_ANSWERS_FREE, botHasAi, sizeOption } from "../plans";
+import { isUnpaidSubscriptionInvoice } from "../billing-view";
+import { pastDueEmail } from "../billing-webhook";
 import { planSizeChange } from "../billing";
 import { suggestSize } from "../quota";
 import { UNSIZED_SENDS_REASON } from "../campaigns";
@@ -8,9 +10,13 @@ import { decideMode, withoutAi, type ModeFacts } from "../conversation-mode";
 import { AI_BLOCK_LABEL } from "../chat";
 
 describe("conta grátis: números e textos (17/10, revistos em 18/10)", () => {
-  it("50 respostas de teste e 30 dias de prazo; canal só com tamanho, sem caixa de entrada grátis", () => {
+  it("50 respostas de teste; cada demo com 50 respostas e 14 dias; canal só com tamanho, sem caixa de entrada grátis", () => {
     expect(TEST_ANSWERS_FREE).toBe(50);
-    expect(UNSIZED_GRACE_DAYS).toBe(30);
+    // o mesmo número da migração 0102 (use_test_answer e a validade da demo nova)
+    expect(DEMO_ANSWERS).toBe(50);
+    expect(DEMO_DAYS).toBe(14);
+    expect(DEMO_ENDED_PANEL).toContain("14 dias");
+    expect(DEMO_ENDED_PANEL).toContain("50 vezes");
     expect(TEST_ANSWERS_DONE).toContain("50 respostas de teste");
     expect(SIZE_REQUIRED).toContain("precisa de um tamanho");
     expect(SIZE_REQUIRED).toContain("Atendimento (sem IA)");
@@ -70,15 +76,48 @@ describe("chatbot sem IA (Atendimento ou sem tamanho): tudo para a equipe", () =
   });
 });
 
-describe("prazo do chatbot sem tamanho", () => {
-  it("e-mails do prazo: a data, o que acontece e como manter", () => {
-    const [s1, l1] = graceEmail("inicio", "Zé", new Date("2026-11-16T15:00:00Z"), "https://x/cobranca");
-    expect(s1).toBe("Zé: sem tamanho, os canais desconectam em 16/11/2026");
-    expect(l1.join(" ")).toContain("Atendimento (sem IA)");
-    expect(l1.join(" ")).toContain("nada é apagado");
-    const [s2, l2] = graceEmail("desconectado", "Zé", null, "https://x/cobranca");
-    expect(s2).toBe("Zé: WhatsApp e Instagram desconectados");
-    expect(l2.join(" ")).toContain("30 dias sem tamanho");
+describe("chatbot sem tamanho: os canais desconectam na hora", () => {
+  it("e-mail: o que aconteceu, nada apagado e como voltar", () => {
+    const [subject, lines] = unsizedEmail("Zé", "https://x/cobranca");
+    expect(subject).toBe("Zé: WhatsApp e Instagram desconectados");
+    expect(lines.join(" ")).toContain("ficou sem tamanho");
+    expect(lines.join(" ")).toContain("Nada foi apagado");
+    expect(lines.join(" ")).toContain("Atendimento, sem IA");
+    expect(lines.join(" ")).toContain("https://x/cobranca");
+  });
+});
+
+describe("demo: para mostrar, não para atender", () => {
+  it("o aviso da demo que terminou: vitrine chama para a conta grátis; demo de agência, para a agência", () => {
+    expect(demoEndedText("Agência Sol", false)).toBe("Esta demonstração terminou. Para continuar, fale com Agência Sol.");
+    expect(demoEndedText(null, false)).toContain("quem enviou o link");
+    expect(demoEndedText("BoaVoz", true)).toContain("crie sua conta grátis");
+  });
+});
+
+describe("pagamento em aberto", () => {
+  it("a IA pausa (modo só humano, com o aviso ao contato) e o motivo diz que volta ao pagar", () => {
+    const m = decideMode({ ...facts, humanOnly: "past_due" });
+    expect(m).toMatchObject({ step: 5, blockReason: "past_due", handoff: true, aiResponds: false, canSend: true });
+    expect(m.notice?.reason).toBe("so_humano");
+    expect(AI_BLOCK_LABEL.past_due).toContain("pagamento");
+    const [subject, lines] = pastDueEmail("https://x/cobranca");
+    expect(subject).toBe("Pagamento da assinatura falhou: a IA está pausada");
+    expect(lines.join(" ")).toContain("Conversas para a sua equipe responder");
+    expect(lines.join(" ")).toContain("2 semanas");
+    // chatbot sem IA num atraso: segue sem IA e sem aviso
+    expect(withoutAi(withFacts({ ...facts, humanOnly: "past_due" }))).toMatchObject({ blockReason: "no_ai", notice: null });
+  });
+
+  it("para assinar de novo: só a fatura da assinatura sem pagamento conta (compra de crédito não)", () => {
+    const inv = (status: string, reason: string, remaining: number) => ({ status, billing_reason: reason, amount_remaining: remaining }) as Parameters<typeof isUnpaidSubscriptionInvoice>[0];
+    expect(isUnpaidSubscriptionInvoice(inv("open", "subscription_cycle", 4900))).toBe(true);
+    expect(isUnpaidSubscriptionInvoice(inv("uncollectible", "subscription_cycle", 4900))).toBe(true);
+    expect(isUnpaidSubscriptionInvoice(inv("open", "subscription_create", 2397))).toBe(true);
+    expect(isUnpaidSubscriptionInvoice(inv("open", "manual", 5000))).toBe(false);
+    expect(isUnpaidSubscriptionInvoice(inv("paid", "subscription_cycle", 0))).toBe(false);
+    expect(isUnpaidSubscriptionInvoice(inv("void", "subscription_cycle", 4900))).toBe(false);
+    expect(isUnpaidSubscriptionInvoice(inv("open", "subscription_cycle", 0))).toBe(false);
   });
 });
 

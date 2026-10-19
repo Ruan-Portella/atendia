@@ -2,16 +2,19 @@ import type Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { appliedBotRow, type BillingTarget } from "./billing";
 import { audit } from "./audit";
-import { applyUpgrade, syncSubscriptionSafe } from "./billing-sync";
+import { applyUpgrade, syncSubscriptionSafe, voidPendingUpgrades } from "./billing-sync";
 import { applyCredit } from "./billing-credit";
 import { endApiPauses } from "./api-pause";
 import { classifyGainedAi } from "./gate/base";
+import { disconnectUnsized } from "./free-account";
+import { notifyAgencyOwner } from "./notify";
+import { appUrl } from "./utils";
 
 /*
  * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), inclusive a
- * subida paga numa fatura avulsa; a situação da assinatura acompanha (pagamento atrasado suspende
- * o excedente); item mexido fora do BoaVoz volta ao que o BoaVoz guarda; e o fim da assinatura
- * tira o tamanho dos chatbots (a configuração fica guardada). Erro do banco vira exceção: o webhook
+ * subida paga numa fatura avulsa; a situação da assinatura acompanha (pagamento atrasado pausa a
+ * IA até pagar, 18/10); item mexido fora do BoaVoz volta ao que o BoaVoz guarda; e o fim da
+ * assinatura tira o tamanho dos chatbots e desconecta os canais (a configuração fica guardada). Erro do banco vira exceção: o webhook
  * devolve 500 e a Stripe entrega de novo (tudo aqui pode rodar mais de uma vez).
  */
 
@@ -54,15 +57,33 @@ export async function applyCheckout(db: SupabaseClient, changeId: string, subscr
   return Boolean(applied);
 }
 
-/** Fim da assinatura: os chatbots ficam sem tamanho (sem cota) e os pacotes saem. */
+/** E-mail do pagamento que falhou: a IA pausa até a fatura ser paga. Função pura. */
+export function pastDueEmail(billingUrl: string): [string, string[]] {
+  return [
+    "Pagamento da assinatura falhou: a IA está pausada",
+    [
+      "O pagamento da assinatura do BoaVoz não passou. Até a fatura ser paga, a IA fica pausada em todos os chatbots; as mensagens continuam chegando em Conversas para a sua equipe responder.",
+      "",
+      `Pague a fatura ou troque o cartão em Cobrança: ${billingUrl}`,
+      "",
+      "A Stripe tenta cobrar de novo por 2 semanas. Sem pagamento, a assinatura é cancelada, os chatbots ficam sem tamanho e o WhatsApp e o Instagram desconectam (nada é apagado).",
+    ],
+  ];
+}
+
+/** Fim da assinatura: os chatbots ficam sem tamanho (sem cota), os canais desconectam e os pacotes saem. */
 export async function endSubscription(db: SupabaseClient, customer: string): Promise<void> {
   const { data: agencies } = must(await db.from("agencies").update({ billing_status: "none", stripe_subscription_id: null, billing_cancel_at: null }).eq("stripe_customer_id", customer).select("id"));
   for (const a of agencies ?? []) {
     const id = a.id as string;
+    // subida ainda não paga não vale mais (a fatura avulsa é anulada): só a da assinatura fica devida
+    await voidPendingUpgrades(db, id, () => true).catch((e) => console.error("assinatura: subidas pendentes", (e as Error).message));
     must(await db.from("bots").update({ size: null, volume_packs: null, pending_size: null, pending_volume_packs: null, pending_from: null, prorated_month: null, prorated_quota: null }).eq("agency_id", id));
     must(await db.from("agency_packs").delete().eq("agency_id", id));
     // sem o Integrações, as pausas que a API fez nas conversas acabam
     await endApiPauses(db, id).catch((e) => console.error("assinatura: pausas da API", (e as Error).message));
+    // sem tamanho, sem canal: o WhatsApp e o Instagram desconectam na hora (a tarefa diária pega o que falhar)
+    await disconnectUnsized(db, { agencyId: id }).catch((e) => console.error("assinatura: canais sem tamanho", (e as Error).message));
     await audit(db, { agencyId: id, actorType: "system", actorId: null, action: "assinatura.encerrar", targetType: "agency", targetId: id });
   }
 }
@@ -89,9 +110,20 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
       }
       // cancelada no portal: vale no fim do período (cancel_at); até lá, tudo segue
       const cancelAt = sub.cancel_at ? new Date(sub.cancel_at * 1000).toISOString() : null;
+      const { data: before } = must(await db.from("agencies").select("id, billing_status").eq("stripe_customer_id", customer));
       const { data: agencies } = must(await db.from("agencies").update({ billing_status: status, stripe_subscription_id: sub.id, billing_cancel_at: cancelAt }).eq("stripe_customer_id", customer).select("id"));
-      // virada do mês: as trocas agendadas para o dia 1º valem
-      for (const a of agencies ?? []) must(await db.rpc("apply_due_bot_changes", { p_agency_id: a.id }));
+      // o pagamento acabou de falhar: a IA pausa até pagar (regra de estado) e o dono é avisado uma vez
+      if (status === "past_due") {
+        for (const a of (before ?? []).filter((a) => a.billing_status !== "past_due")) {
+          const [subject, lines] = pastDueEmail(appUrl("/painel/cobranca"));
+          await notifyAgencyOwner(db, a.id as string, subject, lines).catch(() => false);
+        }
+      }
+      // virada do mês: as trocas agendadas para o dia 1º valem; quem ficou sem tamanho perde os canais
+      for (const a of agencies ?? []) {
+        must(await db.rpc("apply_due_bot_changes", { p_agency_id: a.id }));
+        await disconnectUnsized(db, { agencyId: a.id as string }).catch((e) => console.error("assinatura: canais sem tamanho", (e as Error).message));
+      }
       // itens mudados (por nós ou no painel da Stripe): a assinatura fica igual ao que o BoaVoz guarda
       const changedItems = event.type === "customer.subscription.updated" && "items" in ((event.data.previous_attributes ?? {}) as Record<string, unknown>);
       if (changedItems) for (const a of agencies ?? []) await syncSubscriptionSafe(db, a.id as string);

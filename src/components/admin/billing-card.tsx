@@ -62,7 +62,7 @@ export function BillingCard({ agencyId, status, cancelAt, subscriptionId, testMo
         <SubmitButton className="btn-ghost py-1" pendingLabel="Dando…">Dar crédito</SubmitButton>
       </ActionForm>
       <ActionForm action={checkUnsizedChannels.bind(null, agencyId)} className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-xs text-muted">Chatbots sem tamanho com canal: prazo de 30 dias e depois desconecta (a tarefa diária confere todas as contas).</span>
+        <span className="text-xs text-muted">Chatbots sem tamanho com canal: o WhatsApp e o Instagram desconectam (a tarefa diária confere todas as contas).</span>
         <SubmitButton className="btn-ghost py-1" pendingLabel="Conferindo…">Conferir agora</SubmitButton>
       </ActionForm>
     </section>

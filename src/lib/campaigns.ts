@@ -416,7 +416,7 @@ async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: ()
   const body = templateBody(template!);
   const category = template!.category.toUpperCase();
 
-  // chatbot sem tamanho (perdeu o tamanho e está no prazo de 30 dias): não envia campanha nem lembrete
+  // chatbot sem tamanho (o canal desconecta quando o tamanho acaba): não envia campanha nem lembrete
   if (await isUnsized(db, c.bot_id)) {
     await pause(db, c, UNSIZED_SENDS_REASON);
     return { ...out, paused: true };

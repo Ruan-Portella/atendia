@@ -11,6 +11,7 @@ import { choiceLabel, monthBoundsBR, packChargeCents, packsRemovedWith, parseTar
 import { applyUpgrade, chargeNow, syncSubscriptionSafe, voidPendingUpgrades } from "@/lib/billing-sync";
 import { parseAutoRecharge, parseCreditBrl, purchaseCredit } from "@/lib/billing-credit";
 import { billingEnabled, catalogPrices, checkoutTiming, ensureStripeCustomer, stripe, subscriptionItems } from "@/lib/stripe";
+import { unpaidInvoices } from "@/lib/billing-view";
 import { PACKS, brlCents, isBotSize, isPackId, type BotSize } from "@/lib/plans";
 import { botQuota } from "@/lib/quota";
 import { audit, requestMeta } from "@/lib/audit";
@@ -30,6 +31,9 @@ export async function startCheckout(fd: FormData): Promise<ActionResult> {
   if (!can(ctx.role, "billing")) return fail(DENIED);
   if (!billingEnabled || !stripe) return fail(OFF);
   if (ctx.agency.billing_status !== "none") return fail("A conta já tem assinatura. Recarregue a página.");
+  // a assinatura anterior terminou sem pagar: primeiro a fatura em aberto
+  const unpaid = await unpaidInvoices(ctx.agency.stripe_customer_id);
+  if (unpaid.length) return fail(`Há ${unpaid.length === 1 ? "uma fatura" : `${unpaid.length} faturas`} da assinatura anterior sem pagamento (${brlCents(unpaid.reduce((t, i) => t + i.totalCents, 0) / 100)}). Pague nesta tela para assinar de novo.`);
   const db = createAdminClient();
   const { data: bots } = await db.from("bots").select("id").eq("agency_id", ctx.agency.id).eq("is_demo", false).is("quota_override", null);
   const target = parseTarget(fd, (bots ?? []).map((b) => b.id as string));
@@ -153,7 +157,9 @@ export async function changeBotSize(botId: string, fd: FormData): Promise<Action
     return done(
       plan.kind === "cancel_pending"
         ? `Troca agendada cancelada: ${bot.name} segue ${choiceLabel(current)}.`
-        : `${bot.name} fica ${choiceLabel(next)} a partir de ${renewal}. Até lá, segue ${choiceLabel(current)}, com a cota de agora.`,
+        : next.size
+          ? `${bot.name} fica ${choiceLabel(next)} a partir de ${renewal}. Até lá, segue ${choiceLabel(current)}, com a cota de agora.`
+          : `${bot.name} fica sem tamanho a partir de ${renewal}: nesse dia, o WhatsApp e o Instagram dele desconectam. Até lá, segue ${choiceLabel(current)}, com a cota de agora.`,
     );
   }
 

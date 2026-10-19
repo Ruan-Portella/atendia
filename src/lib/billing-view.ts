@@ -42,6 +42,25 @@ export function invoiceRow(i: Pick<Stripe.Invoice, "id" | "number" | "created" |
   };
 }
 
+/** Fatura da assinatura que ainda dá para pagar: em aberto, ou "não cobrável" depois das novas tentativas. Função pura. */
+export function isUnpaidSubscriptionInvoice(i: Pick<Stripe.Invoice, "status" | "billing_reason" | "amount_remaining">): boolean {
+  return (i.status === "open" || i.status === "uncollectible") && Boolean(i.billing_reason?.startsWith("subscription")) && (i.amount_remaining ?? 0) > 0;
+}
+
+/**
+ * Faturas da assinatura sem pagamento (a da assinatura cancelada por falta de pagamento fica
+ * aqui): para assinar de novo, primeiro paga. Compra de crédito não paga não entra (não é dívida).
+ * Falha da Stripe: lista vazia.
+ */
+export async function unpaidInvoices(customer: string | null): Promise<InvoiceRow[]> {
+  if (!stripe || !customer) return [];
+  const [open, uncollectible] = await Promise.all([
+    stripe.invoices.list({ customer, status: "open", limit: 10 }).catch(() => null),
+    stripe.invoices.list({ customer, status: "uncollectible", limit: 10 }).catch(() => null),
+  ]);
+  return [...(open?.data ?? []), ...(uncollectible?.data ?? [])].filter(isUnpaidSubscriptionInvoice).map(invoiceRow);
+}
+
 export async function billingView(agency: { stripe_customer_id: string | null; stripe_subscription_id: string | null }): Promise<BillingView> {
   if (!stripe || !agency.stripe_customer_id) return { next: null, invoices: [] };
   const customer = agency.stripe_customer_id;

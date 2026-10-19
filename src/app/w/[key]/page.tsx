@@ -17,8 +17,9 @@ export default async function WidgetPage({ params, searchParams }: PageProps<"/w
   const { data: bot } = await db.from("bots").select("*").eq("public_key", key).maybeSingle();
   if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
   const { data: agency } = await db.from("agencies").select("name, brand_color, privacy_url").eq("id", bot.agency_id).single();
-  // sem tamanho, o chat do site não liga (o Atendimento mostra o formulário de contato)
-  const offline = !bot.is_demo && (bot.status !== "live" || (!isBotSize(bot.size) && bot.quota_override === null));
+  // sem tamanho, o chat do site não liga (o Atendimento mostra o formulário de contato); a demo só
+  // funciona na página dela (/demo/...)
+  const offline = bot.is_demo || bot.status !== "live" || (!isBotSize(bot.size) && bot.quota_override === null);
   return (
     <WidgetFrame>
       {offline ? (

@@ -201,6 +201,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   // chatbot sem IA (Atendimento ou sem tamanho): tudo vai para a equipe, sem IA nenhuma (nem transcrição)
   const resolved = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch });
   const mode = botHasAi(bot) ? resolved : withoutAi(resolved);
+  // nada de IA (nem transcrição; o risco só pelo dicionário): chatbot sem IA ou pagamento em aberto
+  const aiOff = !botHasAi(bot) || resolved.facts.humanOnly === "past_due";
   // a pergunta pendente rearmada na volta da IA não é mensagem nova do contato
   if (contact && mode.storeInbound && !burst.every((q) => isRearmed(q.ev.message?.mid))) await touchInbound(db, contact);
 
@@ -222,8 +224,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const transcribe = async (ev: IgMessagingEvent) => {
     const audioUrl = ev.message?.attachments?.find((a) => a.type === "audio")?.payload?.url;
     // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio);
-    // chatbot sem IA: a equipe ouve o áudio na conversa
-    if (!audioUrl || !canTranscribe() || mode.step <= 2 || !botHasAi(bot)) return null;
+    // sem IA (chatbot sem IA ou pagamento em aberto): a equipe ouve o áudio na conversa
+    if (!audioUrl || !canTranscribe() || mode.step <= 2 || aiOff) return null;
     try {
       return await transcribeFrom(audioUrl, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "instagram", ...u }));
     } catch (e) {
@@ -290,7 +292,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     if (!convId) return;
     await storeAll(convId);
     // risco à vida tem prioridade sobre o texto do modo só humano
-    if (await handleRiskWithoutAi(db, bot, convId, texts, reply, "instagram")) return;
+    if (await handleRiskWithoutAi(db, bot, convId, texts, reply, "instagram", !aiOff)) return;
     await enterHumanOnly(db, bot, convId, m.blockReason ?? "paused");
     await sendNotice(convId, m.notice);
   };
@@ -372,7 +374,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     const convId = await plainConversation();
     if (!convId) return;
     await storeAll(convId);
-    await handleRiskWithoutAi(db, bot, convId, texts, reply, "instagram");
+    await handleRiskWithoutAi(db, bot, convId, texts, reply, "instagram", !aiOff);
     return;
   }
 

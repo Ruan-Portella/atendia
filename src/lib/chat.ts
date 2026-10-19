@@ -440,10 +440,11 @@ export async function handleRiskWithoutAi(
   /** Transporte do canal (devolve o id da mensagem na Meta); a camada única de envio confere e registra. */
   send: (text: string) => Promise<string | null>,
   channel: "whatsapp" | "instagram",
+  /** Sem IA (chatbot sem IA ou pagamento da assinatura em aberto): só o dicionário. */
+  ai = botHasAi(bot),
 ): Promise<boolean> {
   const text = texts.filter(Boolean).join("\n");
   if (!text) return false;
-  const ai = botHasAi(bot);
   const onUsage = (u: UsageTokens) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId, kind: "classificacao", channel, ...u });
   if (!(ai ? await detectRisk(text, onUsage) : riskHits(text).length > 0)) return false;
   const now = new Date().toISOString();
@@ -627,7 +628,7 @@ export function linkHostsFor(bot: Pick<BotRow, "client_site" | "human_handoff" |
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
-export type AiBlockReason = "quota_exceeded" | "paused" | "bot_paused" | "no_ai";
+export type AiBlockReason = "quota_exceeded" | "paused" | "bot_paused" | "no_ai" | "past_due";
 
 /**
  * Conferido em TODA mensagem (não só na conversa nova): a IA pausada pelo backoffice para também
@@ -635,7 +636,10 @@ export type AiBlockReason = "quota_exceeded" | "paused" | "bot_paused" | "no_ai"
  * resposta da IA (openAtendimento): o atendimento aberto segue até 40 respostas.
  */
 export async function aiBlockedReason(db: SupabaseClient, agencyId: string): Promise<AiBlockReason | null> {
-  if (await isAiPaused(db, agencyId)) return "paused";
+  const [paused, { data: agency }] = await Promise.all([isAiPaused(db, agencyId), db.from("agencies").select("billing_status").eq("id", agencyId).maybeSingle()]);
+  if (paused) return "paused";
+  // pagamento da assinatura em aberto: a IA pausa até a fatura ser paga; a equipe segue respondendo
+  if (agency?.billing_status === "past_due") return "past_due";
   return null;
 }
 
@@ -643,6 +647,7 @@ export async function aiBlockedReason(db: SupabaseClient, agencyId: string): Pro
 export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
   quota_exceeded: "Assistente parado: este chatbot usou todos os atendimentos do mês ou o crédito do excedente acabou. Ele volta ao subir de tamanho, com crédito ou no dia 1º.",
   no_ai: "Chatbot sem IA (Atendimento ou sem tamanho): as mensagens chegam aqui para a sua equipe responder.",
+  past_due: "Assistente pausado: o pagamento da assinatura está em aberto. Ele volta assim que a fatura for paga (Cobrança → Assinatura).",
   paused: "Assistente pausado pela equipe BoaVoz: as mensagens ficam aqui para a sua equipe responder.",
   bot_paused: "Assistente pausado por vocês (botão de emergência): as mensagens ficam aqui para a sua equipe responder.",
 };

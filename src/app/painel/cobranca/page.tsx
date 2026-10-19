@@ -11,7 +11,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { openBillingPortal, reactivateSubscription } from "./actions";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { billingView } from "@/lib/billing-view";
+import { billingView, unpaidInvoices } from "@/lib/billing-view";
 import { dateBR } from "@/lib/retention";
 
 export const metadata = { title: "Cobrança" };
@@ -37,6 +37,8 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
     packs.filter((p) => !p.endsAt).reduce((t, p) => t + PACKS[p.id].priceBrl * 100, 0);
   const view = await billingView(agency);
   const open = view.invoices.filter((i) => i.status === "em aberto");
+  // sem assinatura: a da assinatura anterior que ficou sem pagamento vem antes de assinar de novo
+  const unpaid = subscribed ? [] : await unpaidInvoices(agency.stripe_customer_id);
 
   return (
     <div className="max-w-[960px]">
@@ -48,7 +50,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
       {!billingEnabled && <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Cobrança ainda não configurada neste servidor (STRIPE_SECRET_KEY).</p>}
       {agency.billing_status === "past_due" && (
         <p className="mt-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
-          O último pagamento falhou. Os chatbots seguem dentro da cota e o crédito comprado continua valendo, mas a recarga automática parou. Atualize o cartão em Pagamento e faturas. Sem pagamento em 2 semanas, a assinatura é cancelada e os chatbots ficam sem tamanho (a configuração fica guardada).
+          O último pagamento falhou: a IA está pausada em todos os chatbots até a fatura ser paga, e a equipe segue respondendo em Conversas. O crédito comprado fica guardado, e a recarga automática parou. Pague a fatura abaixo ou atualize o cartão em Pagamento e faturas. Sem pagamento em 2 semanas, a assinatura é cancelada, os chatbots ficam sem tamanho e o WhatsApp e o Instagram desconectam (a configuração fica guardada).
         </p>
       )}
 
@@ -57,13 +59,23 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
           <p className="mt-5 text-sm text-muted">
             Escolha o tamanho de cada chatbot e os pacotes da conta. A fatura fecha todo dia 1º; o primeiro mês é proporcional, e a cota do primeiro mês também. Canais (WhatsApp, Instagram e chat do site) não são cobrados.
           </p>
-          <SubscribeForm bots={billable.map((b) => ({ id: b.botId, name: b.name, clientName: b.clientName, size: b.size, volumePacks: b.volumePacks }))} fraction={remainingFraction()} renewal={renewal} enabled={billingEnabled} />
+          {unpaid.map((i) => (
+            <p key={i.id} className="mt-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+              A assinatura anterior terminou com a fatura de <strong className="tabular">{brlCents(i.totalCents / 100)}</strong> sem pagamento ({i.description}). Para assinar de novo, pague primeiro.{" "}
+              {i.url && (
+                <a href={i.url} target="_blank" rel="noreferrer" className="font-semibold underline">
+                  Pagar na Stripe
+                </a>
+              )}
+            </p>
+          ))}
+          <SubscribeForm bots={billable.map((b) => ({ id: b.botId, name: b.name, clientName: b.clientName, size: b.size, volumePacks: b.volumePacks }))} fraction={remainingFraction()} renewal={renewal} enabled={billingEnabled && unpaid.length === 0} />
         </>
       ) : (
         <>
           {agency.billing_cancel_at && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
-              <span>A assinatura foi cancelada e termina em {dateBR(agency.billing_cancel_at)}. Depois disso, os chatbots ficam sem tamanho (modo só humano, com a configuração guardada) e os pacotes saem. O crédito fica guardado até vencer.</span>
+              <span>A assinatura foi cancelada e termina em {dateBR(agency.billing_cancel_at)}. Nesse dia, os chatbots ficam sem tamanho, o WhatsApp e o Instagram desconectam (a configuração fica guardada) e os pacotes saem. O crédito fica guardado até vencer.</span>
               <ActionForm action={reactivateSubscription}>
                 <SubmitButton className="btn-dark py-1" pendingLabel="Reativando…">Reativar</SubmitButton>
               </ActionForm>
