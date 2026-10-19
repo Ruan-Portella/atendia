@@ -29,7 +29,7 @@ export default async function MarcaPage() {
         <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo, no portal e nos e-mails.</p>
         {role === "owner" && (
           <p className="mt-2 text-sm text-muted">
-            Como você usa o {company.brand}: <span className="font-semibold text-ink">{agency.profile ? ACCOUNT_PROFILES[agency.profile].label.toLowerCase() : "ainda sem resposta"}</span> (muda os primeiros passos).{" "}
+            Como você usa o {company.brand}: <span className="font-semibold text-ink">{agency.profile ? ACCOUNT_PROFILES[agency.profile].label.replace(/^./, (c) => c.toLowerCase()) : "ainda sem resposta"}</span> (muda os primeiros passos).{" "}
             <Link href="/comecar?editar" className="font-semibold text-brand hover:underline">
               Mudar
             </Link>
