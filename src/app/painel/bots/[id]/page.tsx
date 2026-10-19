@@ -41,6 +41,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
+import { BotRoutines } from "@/components/routines/bot-routines";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { ConversationStateBadge } from "@/components/conversation-state";
@@ -61,6 +62,7 @@ const TABS = [
   ["aparencia", "Aparência e marca"],
   ["leads", "Captura de leads"],
   ["atendimento", "Atendimento humano"],
+  ["roteiros", "Roteiros"],
   ["acoes", "Ações"],
   ["conversas", "Conversas"],
   ["whatsapp", "WhatsApp"],
@@ -613,6 +615,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               )}
             </div>
           )}
+
+          {tab === "roteiros" && <BotRoutines botId={id} integrations={integrations} />}
 
           {tab === "acoes" &&
             (bot.is_demo ? (

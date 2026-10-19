@@ -8,6 +8,7 @@ import { BASE_GATE_VERSION, CATEGORIES, RULES_VERSION, type GateCategory } from 
 import { notifyAgencyOwner, notifyPlatform } from "./notify";
 import { appUrl } from "./utils";
 import { AI_BOTS_FILTER, botHasAi } from "./plans";
+import { routinesSummary, type RoutineInput } from "./routines";
 
 /*
  * Análise do bot (logo depois da L1; spec "Conformidade Meta"). Um processo só por chatbot:
@@ -73,10 +74,12 @@ export function aggregateCategories(chunks: Array<{ gate_segments: Array<{ t: st
 const PROHIBITED = (Object.keys(CATEGORIES) as GateCategory[]).filter((c) => CATEGORIES[c].level === "proibido");
 
 /** O texto que a IA analisa (o hash dele decide se precisa rodar de novo). Pura. */
-export function analysisPrompt(i: { company: string; instructions: string; topics: string; sources: string[]; found: FoundCategory[]; sample: string }): string {
+export function analysisPrompt(i: { company: string; instructions: string; topics: string; sources: string[]; found: FoundCategory[]; sample: string; routines?: string }): string {
   const found = i.found.length ? i.found.map((f) => `- ${CATEGORIES[f.categoria].label} (${f.nivel}, ${f.trechos} trecho(s)): ${f.exemplos.join(" | ")}`).join("\n") : "(nenhum)";
+  // sem roteiro, o texto fica igual ao de antes (o hash não muda e a análise não roda de novo à toa)
+  const routines = i.routines?.trim() ? `\nRoteiros que o assistente segue (escritos pela agência):\n${i.routines.trim()}` : "";
   return `Empresa: ${i.company}
-Instruções do assistente (escritas pela agência): ${i.instructions.trim().slice(0, 2000) || "(nenhuma)"}
+Instruções do assistente (escritas pela agência): ${i.instructions.trim().slice(0, 2000) || "(nenhuma)"}${routines}
 Assuntos do negócio: ${i.topics.trim().slice(0, 500) || "(não informado)"}
 Fontes da base: ${i.sources.slice(0, 30).join("; ") || "(nenhuma)"}
 Itens restritos que a classificação achou na base:
@@ -153,11 +156,12 @@ export async function analyzeBot(db: SupabaseClient, botId: string, opts: { forc
     return { status: "ignorado" };
   }
   if (!opts.force && !botHasAi(bot)) return { status: "ignorado" };
-  const [{ data: sources }, { count: unclassified }, { data: classified }, { data: sample }] = await Promise.all([
+  const [{ data: sources }, { count: unclassified }, { data: classified }, { data: sample }, { data: routines }] = await Promise.all([
     db.from("sources").select("title, url").eq("bot_id", botId).eq("status", "ready").order("created_at").limit(50),
     db.from("chunks").select("id", { count: "exact", head: true }).eq("bot_id", botId).or(`gate_version.is.null,gate_version.neq."${BASE_GATE_VERSION}"`),
     db.from("chunks").select("gate_segments").eq("bot_id", botId).not("gate_segments", "is", null).limit(2000),
     db.from("chunks").select("content").eq("bot_id", botId).order("id").limit(6),
+    db.from("routines").select("name, when_to_use, steps").eq("bot_id", botId).eq("active", true).order("name"),
   ]);
   if (!sources?.length) {
     await clearDue();
@@ -177,6 +181,7 @@ export async function analyzeBot(db: SupabaseClient, botId: string, opts: { forc
     sources: sources.map((s) => (s.title as string) || (s.url as string) || "fonte"),
     found,
     sample: (sample ?? []).map((s) => String(s.content)).join("\n---\n"),
+    routines: routinesSummary((routines ?? []) as unknown as Array<Pick<RoutineInput, "name" | "when_to_use" | "steps">>),
   });
   const inputHash = sha(`${ANALYSIS_VERSION}\n${prompt}`);
   const { data: last } = await db.from("compliance_checks").select("id, input_hash").eq("bot_id", botId).eq("kind", "bot_analysis").order("created_at", { ascending: false }).limit(1).maybeSingle();
