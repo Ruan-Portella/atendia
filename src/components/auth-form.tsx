@@ -14,7 +14,6 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const invited = next.startsWith("/convite/");
   const [email, setEmail] = useState(invited ? (params.get("email") ?? "") : "");
   const [password, setPassword] = useState("");
-  const [agency, setAgency] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const supabase = createClient();
@@ -48,7 +47,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: invited ? {} : { agency_name: agency }, emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(invited ? next : "/painel")}` },
+        options: { emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(invited ? next : "/painel")}` },
       });
       if (error) {
         setMsg({ kind: "err", text: error.message });
@@ -77,12 +76,6 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       <div className="my-5 flex items-center gap-3 text-xs text-muted"><span className="h-px flex-1 bg-line" />ou<span className="h-px flex-1 bg-line" /></div>
 
       <form onSubmit={submit} className="flex flex-col gap-4">
-        {mode === "signup" && !invited && (
-          <div>
-            <label htmlFor="agency" className="label">Nome da agência (ou o seu)</label>
-            <input id="agency" required value={agency} onChange={(e) => setAgency(e.target.value)} className="input" placeholder="Norte Marketing" />
-          </div>
-        )}
         <div>
           <label htmlFor="email" className="label">E-mail</label>
           <input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />

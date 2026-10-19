@@ -5,6 +5,7 @@ import { createAdminClient } from "./supabase/admin";
 import type { PackId } from "./plans";
 import { activePacks } from "./entitlements";
 import { slugify } from "./utils";
+import type { AccountProfile } from "./first-access";
 import { botQuotaStatus, type BotQuotaStatus } from "./atendimentos";
 import { activeMembership, can, hadMembership, openInvitesFor, type AgencyMember, type AgencyRole, type Permission } from "./team";
 import { firstName, personName } from "./authors";
@@ -44,6 +45,8 @@ export interface Agency {
   credit_auto_below_cents: number | null;
   credit_auto_amount_cents: number | null;
   credit_auto_month_limit_cents: number | null;
+  /** Como a conta usa o BoaVoz, respondido pelo dono no primeiro acesso (null: ainda não respondeu). */
+  profile: AccountProfile | null;
   created_at: string;
 }
 
@@ -115,6 +118,12 @@ export const requireAgency = cache(async (): Promise<AgencyContext> => {
   const quota = bots.reduce((t, b) => t + b.quota, 0);
   return { agency, email, packs, usage, quota, bots, userId, member, role: member.role };
 });
+
+/** O slug acompanha o nome novo da agência e mantém o sufixo sorteado. Pura. */
+export function agencySlug(current: string, name: string): string {
+  const base = slugify(name);
+  return current.startsWith(base) ? current : `${base}-${current.split("-").pop()}`;
+}
 
 /**
  * Cria a agência de quem chegou pelo cadastro (o gatilho da 0073 cria a linha do dono).

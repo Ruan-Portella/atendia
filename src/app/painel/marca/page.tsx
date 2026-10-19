@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { CheckCircle2, Clock, Info } from "lucide-react";
 import { requirePermission } from "@/lib/agency";
+import { ACCOUNT_PROFILES } from "@/lib/first-access";
+import { company } from "@/lib/company";
 import { saveCustomDomain, undoAgencyRetention, updateAgency, updatePrivacy, verifyCustomDomain } from "../actions";
 import { DEFAULT_RETENTION_MONTHS, RETENTION_MONTHS, dateBR } from "@/lib/retention";
 import { LogoUpload } from "@/components/logo-upload";
@@ -13,7 +15,7 @@ import { CopyButton } from "@/components/copy-button";
 export const metadata = { title: "Marca e domínio" };
 
 export default async function MarcaPage() {
-  const { agency, packs } = await requirePermission("brand");
+  const { agency, packs, role } = await requirePermission("brand");
   const domain = agency.custom_domain;
   const verified = Boolean(domain && agency.custom_domain_verified_at);
   const apex = domain ? isApexDomain(domain) : false;
@@ -25,6 +27,14 @@ export default async function MarcaPage() {
       <div>
         <h1 className="text-2xl font-bold sm:text-[28px]">Marca e domínio</h1>
         <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo, no portal e nos e-mails.</p>
+        {role === "owner" && (
+          <p className="mt-2 text-sm text-muted">
+            Como você usa o {company.brand}: <span className="font-semibold text-ink">{agency.profile ? ACCOUNT_PROFILES[agency.profile].label.toLowerCase() : "ainda sem resposta"}</span> (muda os primeiros passos).{" "}
+            <Link href="/comecar?editar" className="font-semibold text-brand hover:underline">
+              Mudar
+            </Link>
+          </p>
+        )}
       </div>
       <ActionForm key={[agency.name, agency.brand_color, agency.logo_url, agency.support_whatsapp].join("|")} action={updateAgency} className="card flex flex-col gap-4 p-6">
         <div><label htmlFor="name" className="label">Nome da agência</label><input id="name" name="name" defaultValue={agency.name} required minLength={2} maxLength={80} className="input" /></div>

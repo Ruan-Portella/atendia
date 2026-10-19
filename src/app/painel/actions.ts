@@ -9,13 +9,13 @@ import { cookies, headers } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAgency, type AgencyContext } from "@/lib/agency";
+import { agencySlug, requireAgency, type AgencyContext } from "@/lib/agency";
 import { attendantOf, can, type Permission } from "@/lib/team";
 import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { attendantAuthor, type Attendant } from "@/lib/authors";
 import { answerQuestion } from "@/lib/knowledge";
 import { PORTAL_ROLE_LABELS, isPortalRole, sendMemberLink, type PortalRole } from "@/lib/member";
-import { appUrl, initials, normalizeUrl, slugify } from "@/lib/utils";
+import { appUrl, initials, normalizeUrl } from "@/lib/utils";
 import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
 import { grantSupport, revokeSupport } from "@/lib/support-access";
 import { hasMfa } from "@/lib/agency-mfa";
@@ -511,7 +511,7 @@ export async function updateAgency(formData: FormData): Promise<ActionResult> {
   const d = parsed.data;
   const { error } = await supabase
     .from("agencies")
-    .update({ name: d.name, slug: agency.slug.startsWith(slugify(d.name)) ? agency.slug : `${slugify(d.name)}-${agency.slug.split("-").pop()}`, brand_color: d.brand_color, support_whatsapp: d.support_whatsapp?.replace(/\D/g, "") || null, logo_url: d.logo_url || null })
+    .update({ name: d.name, slug: agencySlug(agency.slug, d.name), brand_color: d.brand_color, support_whatsapp: d.support_whatsapp?.replace(/\D/g, "") || null, logo_url: d.logo_url || null })
     .eq("id", agency.id);
   if (error) return fail("Não foi possível salvar a marca. Tente de novo.");
   revalidatePath("/painel", "layout");

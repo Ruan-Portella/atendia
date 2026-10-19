@@ -12,7 +12,8 @@ import { PendingHandoffs } from "@/components/pending-handoffs";
 import { handoffStatus } from "@/lib/handoff-status";
 import { Kpi } from "@/components/kpi";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
-import { getOnboarding, ONBOARDING_COOKIE } from "@/lib/onboarding";
+import { getOnboarding, ONBOARDING_COOKIE, ONBOARDING_GOAL } from "@/lib/onboarding";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { daysAgoIso, initials } from "@/lib/utils";
 
 export const metadata = { title: "Clientes" };
@@ -38,7 +39,7 @@ export default async function ClientesPage() {
     supabase.from("clients").select("id, name, site, price_cents, bots(id, status, is_demo)").eq("agency_id", agency.id).eq("bots.is_demo", false).order("name"),
     getBotStats(supabase, daysAgoIso(30)),
     getPendingHandoffs(supabase),
-    hideOnboarding ? null : getOnboarding(supabase, agency),
+    hideOnboarding ? null : getOnboarding(supabase, agency, { admin: createAdminClient(), packs }),
   ]);
   const waitingBy = (c: ClientRow) => pending.filter((h) => h.bots?.client_id === c.id && handoffStatus(h)?.waiting).length;
   const clients = (data ?? []) as ClientRow[];
@@ -67,7 +68,7 @@ export default async function ClientesPage() {
 
       <PendingHandoffs items={pending} />
 
-      {onboarding && <OnboardingChecklist steps={onboarding} />}
+      {onboarding && <OnboardingChecklist steps={onboarding} goal={ONBOARDING_GOAL[agency.profile ?? "agency"]} changeProfile={role === "owner"} />}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-3.5 xl:grid-cols-4">
         <Kpi label="Conversas (30 dias)" value={num(all.conversations)} sub="em todos os clientes" />

@@ -9,10 +9,11 @@ O BoaVoz é uma plataforma para agências e freelancers criarem chatbots com IA 
 ## Como começar (primeiros passos)
 
 1. Crie a conta grátis em boavoz.com (e-mail e senha, ou Google).
-2. No painel, em Clientes, crie o cliente e um chatbot para ele.
-3. No chatbot, aba Base de conhecimento, adicione o site, PDFs, textos ou perguntas frequentes do cliente.
-4. Ajuste a aba Personalidade (nome do assistente, tom, instruções) e teste no "teste ao vivo".
-5. Quando estiver bom, escolha um tamanho para o chatbot (em Cobrança) e conecte os canais: o chat do site (aba Instalação), o WhatsApp e o Instagram.
+2. No primeiro acesso, diga como vai usar o BoaVoz: para os clientes da sua agência, para o seu negócio ou para integrar pela API. Ali vão também o nome da agência (ou do negócio), o seu nome e, se quiser, o seu WhatsApp para os avisos. A resposta muda os "Primeiros passos" do painel: a agência vai até o chat no site do cliente; o negócio, até o site ou o WhatsApp dele; quem integra, até a chave da API, o webhook, o pacote Integrações e a primeira chamada. Para mudar depois, use "Mudar o perfil" nos primeiros passos ou em Marca e domínio (só o dono da conta).
+3. No painel, em Clientes, crie o cliente e um chatbot para ele (no perfil do próprio negócio, o cliente é o próprio negócio).
+4. No chatbot, aba Base de conhecimento, adicione o site, PDFs, textos ou perguntas frequentes do cliente.
+5. Ajuste a aba Personalidade (nome do assistente, tom, instruções) e teste no "teste ao vivo".
+6. Quando estiver bom, escolha um tamanho para o chatbot (em Cobrança) e conecte os canais: o chat do site (aba Instalação), o WhatsApp e o Instagram.
 
 ## Conta grátis
 
@@ -169,7 +170,7 @@ O que vem do contato fica cifrado com a chave de cada cliente. A agência escolh
 
 ## Avisos no WhatsApp para a equipe
 
-Cada pessoa da equipe pode receber os avisos da conta no próprio WhatsApp, pelo número da BoaVoz: atendimento urgente, pedido de atendente, lead novo, WhatsApp de um cliente desconectado, pagamento atrasado e cota no fim. Para ligar, ponha o número em Meu perfil (ou em "Ativar no WhatsApp", na faixa do topo do painel) e toque em Confirmar na mensagem que chega. Os avisos não trazem o conteúdo das conversas, só o que aconteceu e onde ver no painel. Para parar, mande SAIR para o número da BoaVoz ou desligue em Meu perfil. Os clientes da agência nunca recebem mensagens da BoaVoz.
+Cada pessoa da equipe pode receber os avisos da conta no próprio WhatsApp, pelo número da BoaVoz: atendimento urgente, pedido de atendente, lead novo, WhatsApp de um cliente desconectado, pagamento atrasado e cota no fim. Para ligar, ponha o número no primeiro acesso, em Meu perfil ou em "Ativar no WhatsApp", na faixa do topo do painel, e toque em Confirmar na mensagem que chega. Os avisos não trazem o conteúdo das conversas, só o que aconteceu e onde ver no painel. Para parar, mande SAIR para o número da BoaVoz ou desligue em Meu perfil. Os clientes da agência nunca recebem mensagens da BoaVoz.
 
 ## Sobre este assistente
 

@@ -8,9 +8,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * Card "Primeiros passos" da home do painel. Cada passo se marca sozinho pelos dados
- * (ver `onboardingSteps`); o próximo a fazer fica em destaque. Some quando tudo está pronto.
+ * (ver `onboardingSteps`, pelo perfil do primeiro acesso); o próximo a fazer fica em destaque.
+ * Some quando tudo está pronto.
  */
-export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
+export function OnboardingChecklist({ steps, goal, changeProfile = false }: { steps: OnboardingStep[]; goal: string; changeProfile?: boolean }) {
   const doneCount = steps.filter((s) => s.done).length;
   if (doneCount === steps.length) return null;
   const next = steps.find((s) => !s.done)!;
@@ -21,7 +22,18 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-2 px-4 py-4 sm:px-[18px]">
         <div className="min-w-0">
           <h2 id="onboarding-title" className="text-base font-bold">Primeiros passos</h2>
-          <p className="text-sm text-muted">Do cadastro ao chat respondendo no site do cliente. {doneCount} de {steps.length} feitos.</p>
+          <p className="text-sm text-muted">
+            {goal} {doneCount} de {steps.length} feitos.
+            {/* o dono troca o perfil do primeiro acesso (os passos mudam junto) */}
+            {changeProfile && (
+              <>
+                {" "}
+                <Link href="/comecar?editar" className="font-semibold text-brand hover:underline">
+                  Mudar o perfil
+                </Link>
+              </>
+            )}
+          </p>
         </div>
         <ActionForm action={hideOnboarding}>
           <SubmitButton pendingLabel="Ocultando…" className="text-sm font-semibold text-muted hover:text-ink">Ocultar</SubmitButton>

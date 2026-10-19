@@ -1,0 +1,41 @@
+"use server";
+
+import { cookies } from "next/headers";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { agencySlug, requireAgency } from "@/lib/agency";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { fail, type ActionResult } from "@/lib/action-result";
+import { audit, requestMeta } from "@/lib/audit";
+import { parseFirstAccess } from "@/lib/first-access";
+import { ONBOARDING_COOKIE } from "@/lib/onboarding";
+import { requestTeamWhatsApp } from "@/lib/team-whatsapp";
+
+/**
+ * Primeiro acesso: o perfil e o nome da conta, o nome de quem entra e, se veio, o WhatsApp dos
+ * avisos (o mesmo pedido de Meu perfil, com o aceite ao lado do campo). Depois, o Início.
+ */
+export async function saveFirstAccess(formData: FormData): Promise<ActionResult> {
+  const ctx = await requireAgency();
+  if (ctx.role !== "owner") return fail("Só o dono da conta responde o primeiro acesso.");
+  const parsed = parseFirstAccess(formData);
+  if (!parsed.ok) return fail(parsed.message);
+  const { profile, accountName, displayName, phone } = parsed.value;
+
+  const db = createAdminClient();
+  const [{ error: agencyError }, { error: memberError }] = await Promise.all([
+    db.from("agencies").update({ profile, name: accountName, slug: agencySlug(ctx.agency.slug, accountName) }).eq("id", ctx.agency.id),
+    db.from("agency_members").update({ display_name: displayName }).eq("id", ctx.member.id),
+  ]);
+  if (agencyError || memberError) return fail("Não foi possível salvar. Tente de novo.");
+  // os primeiros passos do perfil novo aparecem, mesmo para quem tinha ocultado os do outro
+  (await cookies()).delete(ONBOARDING_COOKIE);
+  revalidatePath("/painel", "layout");
+
+  if (phone) {
+    const r = await requestTeamWhatsApp(db, { member: { ...ctx.member, display_name: displayName }, agency: { id: ctx.agency.id, name: accountName }, rawPhone: phone });
+    if (!r.ok) return fail(`${r.message} O resto já foi salvo: corrija o número ou deixe o campo em branco.`);
+    await audit(db, { agencyId: ctx.agency.id, actorType: "user", actorId: ctx.userId, action: "perfil.avisos_whatsapp_pedido", targetType: "member", targetId: ctx.member.id, ...(await requestMeta()) });
+  }
+  redirect("/painel/clientes");
+}

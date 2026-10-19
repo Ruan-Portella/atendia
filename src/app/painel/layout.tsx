@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { num } from "@/lib/plans";
@@ -18,6 +19,8 @@ const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsa
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {
   const { agency, usage, quota, bots, role, member } = await requireAgency();
+  // primeiro acesso (Entrada e docs, parte 1): o dono diz como vai usar o BoaVoz antes do painel
+  if (role === "owner" && !agency.profile) redirect("/comecar");
   const accountLabel = agency.billing_status === "past_due" ? "Pagamento atrasado" : agency.billing_status === "active" ? "Assinatura" : "Conta grátis";
   // pausa, desligamento e suspensão pelo backoffice, ordem da Meta: a agência precisa saber por que parou
   const notices = await panelNotices(createAdminClient(), agency.id);

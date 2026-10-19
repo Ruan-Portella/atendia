@@ -41,6 +41,9 @@ export const NOTICE_CONSENT_TEXT = `Ao tocar em "Receber no WhatsApp", você ace
 /** O aceite em uma frase, ao lado do campo na faixa do topo do painel (o texto completo fica em Meu perfil). */
 export const NOTICE_CONSENT_SHORT = `Ao tocar em "Receber no WhatsApp", você aceita receber do número da ${company.brand} os avisos da conta e conversar com o assistente de lá. A confirmação é pelo botão que chega no WhatsApp; para parar, mande SAIR por lá ou desligue em Meu perfil.`;
 
+/** O aceite no primeiro acesso, onde o número é opcional e o botão é o "Começar". */
+export const NOTICE_CONSENT_FIRST_ACCESS = `Com o número preenchido, ao tocar em "Começar" você aceita receber do número da ${company.brand} os avisos da conta (atendimento urgente, lead novo e cobrança) e conversar com o assistente de lá. A confirmação é pelo botão que chega no WhatsApp; para parar, mande SAIR por lá ou desligue em Meu perfil.`;
+
 /** Pedidos por dia: por pessoa e por agência (ninguém usa o painel para mandar mensagem a números de outros). */
 const REQUESTS_PER_MEMBER = 3;
 const REQUESTS_PER_AGENCY = 10;

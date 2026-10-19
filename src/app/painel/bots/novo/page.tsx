@@ -22,7 +22,8 @@ export default async function NewBotPage({ searchParams }: PageProps<"/painel/bo
       <h1 className="mt-3 text-2xl font-bold sm:text-[28px]">Novo chatbot</h1>
       <p className="text-sm text-muted">Um cliente pode ter vários chatbots (ex.: um para vendas e outro para suporte). Você adiciona o site e os documentos no próximo passo.</p>
       <ActionForm action={createBot} className="card mt-6 flex flex-col gap-4 p-6">
-        <ClientPicker clients={clients} defaultClientId={clienteId ?? undefined} idPrefix="nb" />
+        {/* o próprio negócio: o cliente do chatbot é ele mesmo (o nome vem do primeiro acesso) */}
+        <ClientPicker clients={clients} defaultClientId={clienteId ?? undefined} suggestedName={agency.profile === "business" ? agency.name : ""} idPrefix="nb" />
         <div>
           <label htmlFor="name" className="label">Nome do assistente</label>
           <input id="name" name="name" required minLength={2} maxLength={40} className="input" placeholder="Sofia" defaultValue="Assistente" />

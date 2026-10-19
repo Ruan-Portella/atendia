@@ -59,7 +59,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
 
   const path = request.nextUrl.pathname;
   // backoffice (/admin) também exige login; quem é admin e a segunda etapa são conferidos na página
-  if (!user && (path.startsWith("/painel") || path === "/admin" || path.startsWith("/admin/"))) {
+  if (!user && (path.startsWith("/painel") || path === "/comecar" || path === "/admin" || path.startsWith("/admin/"))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);
@@ -75,7 +75,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   // Registro de acesso (Marco Civil): uma linha por pessoa, IP e dia, em segundo plano
-  const area: AccessActor | null = path === "/admin" || path.startsWith("/admin/") ? "support" : /^\/cliente\/./.test(path) ? "member" : path.startsWith("/painel") ? "user" : null;
+  const area: AccessActor | null = path === "/admin" || path.startsWith("/admin/") ? "support" : /^\/cliente\/./.test(path) ? "member" : path.startsWith("/painel") || path === "/comecar" ? "user" : null;
   if (user && area) {
     const ip = requestIp(request.headers);
     const mark = `${accessDay()}.${hashId(`${area}:${user.sub}:${ip}`).slice(0, 16)}`;
