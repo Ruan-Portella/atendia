@@ -9,6 +9,8 @@ import { instagramContact, touchInbound } from "./contacts";
 import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./instagram-edits";
 import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage, updateMessages } from "./messages";
+import { maskCardNumbers } from "./routine-run";
+import { endActiveRoutine } from "./routine-engine";
 import { clearUnseen, igUnseenKind, markUnseen, recentUnseen, unseenMediaText, type UnseenMark } from "./unseen-media";
 import { hasPendingFrom, isRearmed, markOwnMessage } from "./inbound-queue";
 import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope } from "./suppression";
@@ -254,7 +256,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     // link ig.me com ?ref= aberto sem texto: fica na conversa como "Conectar REF"
     const ref = igRef(q.ev);
     const typed = [igText(q.ev), refs[i] ? sharedText(refs[i]!) : null].filter(Boolean).join("\n") || (ref ? `Conectar ${ref}` : null);
-    texts.push((typed ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
+    // número de cartão sai antes de gravar e antes da IA (também o dito no áudio)
+    const t = (typed ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null;
+    texts.push(t === null ? null : maskCardNumbers(t).text);
   }
   const shown = (i: number) => (deleted.has(burst[i].key) ? DELETED_LABEL : (texts[i] ?? igMediaLabel(burst[i].ev)));
   /** Depois de gravar: a referência do post ou reel e a marca de apagada nas mensagens. */
@@ -527,7 +531,17 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         chat: { instagram: { igsid } },
         historySize: HISTORY,
       },
-      { text: shown(qi), key: q.key, msgId: q.key, stored: before.state === "unanswered", button: igButtonId(q.ev), alone: burst.filter((_, i) => answerable(i)).length === 1, photos: photos.get(qi) ?? null },
+      {
+        text: shown(qi),
+        key: q.key,
+        msgId: q.key,
+        stored: before.state === "unanswered",
+        button: igButtonId(q.ev),
+        alone: burst.filter((_, i) => answerable(i)).length === 1,
+        photos: photos.get(qi) ?? null,
+        // roteiro (B2'): o dado pode ter vindo numa mensagem anterior da rajada
+        texts: burst.flatMap((_, i) => (answerable(i) && texts[i] ? [texts[i]!] : [])),
+      },
     );
     await afterStore();
   } catch (e) {
@@ -563,4 +577,6 @@ export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, 
   }
   if (!conv) return;
   await saveMessage(db, { conversation_id: conv.id, role: "agent", content, author: IG_APP_AUTHOR, inbound_key: key }, { touch: "equipe" });
+  // a equipe respondeu pelo app: o roteiro em andamento acaba (B2')
+  await endActiveRoutine(db, conv.id, "handoff");
 }

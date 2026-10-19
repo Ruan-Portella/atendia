@@ -75,7 +75,7 @@ const LEVELS: ActionLevel[] = ["anonimo", "canal", "usuario"];
 /** O nível do contato alcança o mínimo da ação? */
 export const reaches = (contact: ActionLevel, min: ActionLevel) => LEVELS.indexOf(contact) >= LEVELS.indexOf(min);
 
-export const RESERVED_NAMES = new Set(["registrar_lead", "chamar_atendente", "registrar_pergunta_sem_resposta", "registrar_recusa", "pedir_confirmacao_18", "mostrar_opcoes", "mostrar_link", "iniciar_roteiro"]);
+export const RESERVED_NAMES = new Set(["registrar_lead", "chamar_atendente", "registrar_pergunta_sem_resposta", "registrar_recusa", "pedir_confirmacao_18", "mostrar_opcoes", "mostrar_link", "iniciar_roteiro", "concluir_passo", "informar_dado", "cancelar_roteiro"]);
 
 /* ------------------------------------------------------------------ cadastro */
 

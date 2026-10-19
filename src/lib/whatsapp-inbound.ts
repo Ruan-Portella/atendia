@@ -44,6 +44,8 @@ import { PHONE_AUTHOR } from "./authors";
 import { hasPendingFrom, isRearmed } from "./inbound-queue";
 import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage } from "./messages";
+import { maskCardNumbers } from "./routine-run";
+import { endActiveRoutine } from "./routine-engine";
 import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
@@ -260,7 +262,11 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   };
   // texto de cada mensagem: digitado, áudio transcrito ou null (mídia sem texto)
   const texts: Array<string | null> = [];
-  for (const q of burst) texts.push((inboundText(q.msg) ?? (await transcribe(q.msg)))?.slice(0, MAX_MESSAGE_CHARS) ?? null);
+  // número de cartão sai antes de gravar e antes da IA (também o dito no áudio)
+  for (const q of burst) {
+    const t = (inboundText(q.msg) ?? (await transcribe(q.msg)))?.slice(0, MAX_MESSAGE_CHARS) ?? null;
+    texts.push(t === null ? null : maskCardNumbers(t).text);
+  }
   const shown = (i: number) => texts[i] ?? mediaLabel(burst[i].msg.type);
   /** Fotos lidas pela IA, por posição na rajada (gravadas junto da mensagem). */
   let photos = new Map<number, PhotoReading[]>();
@@ -576,6 +582,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         button: q.msg.interactive?.button_reply?.id ?? q.msg.interactive?.list_reply?.id ?? q.msg.button?.payload,
         alone: burst.filter((_, i) => answerable(i)).length === 1,
         photos: photos.get(qi) ?? null,
+        // roteiro (B2'): o dado pode ter vindo numa mensagem anterior da rajada
+        texts: burst.flatMap((_, i) => (answerable(i) && texts[i] ? [texts[i]!] : [])),
       },
     );
     // saiu depois da recusa por pagamento: o cartão entrou, o número volta ao normal
@@ -745,4 +753,6 @@ export async function handleEcho(db: SupabaseClient, channel: ChannelRow, echo: 
   }
   if (!conv) return;
   await saveMessage(db, { conversation_id: conv.id, role: "agent", content, author: PHONE_AUTHOR, inbound_key: key }, { touch: "equipe" });
+  // a equipe respondeu pelo celular: o roteiro em andamento acaba (B2')
+  await endActiveRoutine(db, conv.id, "handoff");
 }

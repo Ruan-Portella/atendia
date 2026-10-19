@@ -22,6 +22,8 @@ import { isResumable } from "@/lib/presence";
 import { openAtendimento } from "@/lib/atendimentos";
 import { saveMessage } from "@/lib/messages";
 import { chatIdentityOf, conversationAccess, identityColumns, upgradeConversation, widgetWho } from "@/lib/widget-identity";
+import { maskCardNumbers } from "@/lib/routine-run";
+import { routinePreTurn } from "@/lib/routine-engine";
 
 const MAX_MESSAGE_CHARS = 2000;
 
@@ -75,7 +77,8 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400, headers: CORS_HEADERS });
   const { key, conversationId, visitorId, messages } = parsed.data;
-  const text = (parsed.data.text ?? lastUserText((messages ?? []) as UIMessage[])).trim();
+  // número de cartão sai antes de gravar e antes da IA
+  const text = maskCardNumbers((parsed.data.text ?? lastUserText((messages ?? []) as UIMessage[])).trim()).text;
   if (!text) return Response.json({ error: "invalid_body" }, { status: 400, headers: CORS_HEADERS });
   if (text.length > MAX_MESSAGE_CHARS) {
     return Response.json({ error: "message_too_long", message: `Mensagem muito longa. Resuma em até ${MAX_MESSAGE_CHARS} caracteres.` }, { status: 413, headers: CORS_HEADERS });
@@ -289,24 +292,54 @@ export async function POST(req: Request) {
   if (slot?.blocked) return contactFallback(slot.blocked, 402);
 
   try {
+    // roteiros (B2'): botão do passo, escolha digitada, dado conferido e palavra-chave, antes da IA;
+    // a palavra-chave abre a conversa nova, se ainda não existe
+    const chatChannel = bot.is_demo ? "demo" : channel;
+    // a conversa começa nesta mensagem (registro de acesso e ligação com o atendimento), mesmo se o roteiro abrir
+    const newConversation = !convId;
+    const routineTurn = await routinePreTurn(db, {
+      bot,
+      conversationId: convId,
+      texts: [text],
+      buttonId: parsed.data.buttonId ?? null,
+      waPhone: null,
+      consume: !confirmed,
+      openConversation: async () => openConversation(db, bot, { channel: chatChannel, visitorId: visitorId ?? null, identity: await identityColumns(who, bot.id) }),
+    });
+    convId = routineTurn.conversationId ?? convId;
+    if (routineTurn.fixed && convId) {
+      const id = convId;
+      const headers = { ...CORS_HEADERS, "X-Conversation-Id": id, "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" };
+      if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: id, ip: clientIp(req), isNew: newConversation }));
+      await saveMessage(db, { conversation_id: id, role: "user", content: text }, { touch: "visitante", interactive });
+      const handoffNotice = routineTurn.fixed.kind === "handoff" ? await requestHandoff(db, bot, id, routineTurn.fixed.reason) : null;
+      const reply = handoffNotice ?? (routineTurn.fixed.kind === "cancelled" ? routineTurn.fixed.text : "");
+      await saveMessage(db, { conversation_id: id, role: "assistant", content: reply, author: SYSTEM_AUTHOR });
+      return fixedStream("roteiro", reply, handoffNotice ? { ...headers, "X-Handoff": "requested" } : headers, { handoff: Boolean(handoffNotice) });
+    }
+    // a IA lê o CPF mascarado (o painel guarda a mensagem como veio)
+    const asked = routineTurn.question ?? text;
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];
     const { result, conversationId: activeId, siteOffer, components, files, saved } = await runChat({
       db,
       bot,
       // depois do Confirmar, o clique já está gravado (e já vem no histórico)
-      messages: confirmed ? history : [...history, { id: "novo", role: "user", parts: [{ type: "text", text }] }],
+      messages: confirmed ? history : [...history, { id: "novo", role: "user", parts: [{ type: "text", text: asked }] }],
       storeQuestion: !confirmed,
+      questionContent: text,
       confirmed,
       interactive,
+      routine: routineTurn,
+      turnTexts: [asked],
       conversationId: convId,
       visitorId: visitorId ?? null,
-      channel: bot.is_demo ? "demo" : channel,
+      channel: chatChannel,
       identity: chatIdentityOf(who),
       identityColumns: await identityColumns(who, bot.id),
     });
     // registro de acesso do visitante (Marco Civil): IP quando a conversa começa e quando muda;
     // o teste ao vivo do painel já fica no registro de acesso do painel
-    if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: activeId, ip: clientIp(req), isNew: !convId }));
+    if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: activeId, ip: clientIp(req), isNew: newConversation }));
     // anexos das ações: ficam ligados à resposta gravada (o painel e o histórico mostram junto)
     after(async () => {
       const ids = files().flatMap((f) => (f.id && f.status !== "falha" ? [f.id] : []));
@@ -314,7 +347,7 @@ export async function POST(req: Request) {
       if (answerId) await linkAttachments(db, ids, answerId);
     });
     // atendimento aberto antes da conversa existir: liga a primeira conversa a ele
-    if (slot?.isNew && slot.id && !convId) after(async () => void (await db.from("atendimentos").update({ first_conversation_id: activeId }).eq("id", slot.id)));
+    if (slot?.isNew && slot.id && newConversation) after(async () => void (await db.from("atendimentos").update({ first_conversation_id: activeId }).eq("id", slot.id)));
     return createUIMessageStreamResponse({
       stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts({ component: components })).pipeThrough(appendActionComponent(components)).pipeThrough(appendActionFiles(files)).pipeThrough(appendSiteOffer(siteOffer)),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": activeId, ...(handoff ? { "X-Handoff": handoff } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },

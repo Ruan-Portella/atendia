@@ -10,6 +10,7 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { hasPack } from "@/lib/entitlements";
 import { markAnalysisDue } from "@/lib/bot-analysis";
 import { ROUTINES_PER_BOT, routineInputFromJson, routineProblem, routineUsesActions } from "@/lib/routines";
+import { endRoutineRuns } from "@/lib/routine-engine";
 
 /*
  * Roteiros (B2', parte 1): cadastro na aba Roteiros do chatbot. Quem configura o chatbot (dono,
@@ -69,6 +70,8 @@ export async function saveRoutine(botId: string, routineId: string | null, fd: F
   const row = { bot_id: bot.id, name: input.name, when_to_use: input.when_to_use, keywords: input.keywords, steps: input.steps, active: input.active, template: input.template, updated_at: new Date().toISOString() };
   const { error } = routineId ? await db.from("routines").update(row).eq("id", routineId).eq("bot_id", bot.id) : await db.from("routines").insert(row);
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe um roteiro com esse nome neste chatbot." : "Não foi possível salvar. Tente de novo.");
+  // quem estava no meio deste roteiro termina (o passo pode ter mudado); se pedir de novo, começa do 1
+  if (routineId) await endRoutineRuns(db, routineId, "routine_changed");
   await auditRoutine(ctx, routineId ? "roteiros.editar" : "roteiros.criar", bot.id, { nome: input.name, passos: input.steps.length, palavras_chave: input.keywords, ativo: input.active, com_acao: routineUsesActions(input), modelo: input.template });
   await markAnalysisDue(db, bot.id);
   revalidatePath(`/painel/bots/${bot.id}`);
@@ -84,6 +87,7 @@ export async function setRoutineActive(routineId: string, active: boolean): Prom
   const db = createAdminClient();
   const { error } = await db.from("routines").update({ active, updated_at: new Date().toISOString() }).eq("id", routine.id);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
+  if (!active) await endRoutineRuns(db, routine.id, "routine_changed");
   await auditRoutine(ctx, active ? "roteiros.ativar" : "roteiros.desativar", routine.bot_id, { nome: routine.name });
   if (active) await markAnalysisDue(db, routine.bot_id);
   revalidatePath(`/painel/bots/${routine.bot_id}`);
@@ -96,6 +100,8 @@ export async function deleteRoutine(routineId: string): Promise<ActionResult> {
   const routine = await scopedRoutine(routineId);
   if (!routine) return fail("Roteiro não encontrado.");
   const db = createAdminClient();
+  // antes de apagar: o roteiro em andamento ainda aponta para ele
+  await endRoutineRuns(db, routine.id, "routine_changed");
   const { error } = await db.from("routines").delete().eq("id", routine.id);
   if (error) return fail("Não foi possível apagar. Tente de novo.");
   await auditRoutine(ctx, "roteiros.apagar", routine.bot_id, { nome: routine.name });

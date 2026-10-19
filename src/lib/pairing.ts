@@ -6,6 +6,7 @@ import { hmacHex } from "./hash";
 import { openNullable, sealField, scopeOfBot, type CipherField } from "./field-cipher";
 import { canonicalPhone } from "./phone";
 import { contextHashOf } from "./identity";
+import { endActiveRoutine } from "./routine-engine";
 import { contactActiveLinkId, contactLastInbound, contactPhone, externalIdHash, phoneHash, setActiveLink } from "./contacts";
 import { normalizeGateText } from "./gate/payment";
 import type { ChatIdentity } from "./widget-identity";
@@ -244,6 +245,8 @@ export async function linkColumnsForContact(db: SupabaseClient, contactId: strin
 export async function applyLinkToConversation(db: SupabaseClient, conversationId: string, link: LinkRow | null): Promise<void> {
   const { error } = await db.from("conversations").update(await linkConversationColumns(link)).eq("id", conversationId);
   if (error) console.error("pareamento: conversa não atualizada", error.message);
+  // o roteiro em andamento acaba, com as variáveis apagadas (B2', context_changed)
+  await endActiveRoutine(db, conversationId, "context_changed");
 }
 
 async function linkFromPairing(db: SupabaseClient, p: PairingRow, contactId: string, identityKeyHash: string | null = null): Promise<LinkRow> {

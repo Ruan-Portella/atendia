@@ -61,6 +61,7 @@ import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
+import { endBotRoutineRuns } from "@/lib/routine-engine";
 import { firstExceeded } from "@/lib/rate-limit";
 import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -418,6 +419,8 @@ export async function pauseBot(botId: string, formData: FormData): Promise<Actio
   if (!data?.length) return fail("Este chatbot já está pausado.");
   // webhooks: bot.paused (o motivo vai como o dono escreveu)
   await queueBotPauseEvent(createAdminClient(), botId, { paused: true, pausedAt, at: pausedAt, by: "panel", reason });
+  // roteiros em andamento acabam: a IA parou (B2')
+  await endBotRoutineRuns(createAdminClient(), botId, "handoff");
   await auditPanel("bot.pausar", { type: "bot", id: botId }, { after: { reason, notify: formData.get("notify") === "on" } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("IA pausada. As próximas mensagens ficam para a sua equipe responder.");

@@ -4,6 +4,7 @@ import { daysAgoIso } from "./utils";
 import { applyRetentionTerms } from "./retention";
 import { purgeCampaignData } from "./campaigns";
 import { deleteExpiredRefs } from "./button-refs";
+import { sweepRoutineTimeouts } from "./routine-engine";
 
 /**
  * Tarefas diárias (rodam juntas em /api/cron/daily: o plano Hobby da Vercel só permite 2 crons).
@@ -41,6 +42,10 @@ export async function applyRetention(db: SupabaseClient, hasTime: () => boolean 
   await db.from("webhook_deliveries").delete().lt("created_at", daysAgoIso(30));
   // registro das chamadas de ações (Integrações): 30 dias
   await db.from("action_calls").delete().lt("created_at", daysAgoIso(30));
+  // roteiros (B2'): o que está sem mensagem do contato há 24 horas acaba (as variáveis saem); os
+  // encerrados, só com o passo e o motivo, ficam 13 meses para os números por roteiro
+  await sweepRoutineTimeouts(db);
+  await db.from("routine_runs").delete().lt("ended_at", daysAgoIso(400));
   // Confirmar / Cancelar das ações "executa": a referência vencida sai depois de 7 dias
   await deleteExpiredRefs(db, daysAgoIso(7));
   // análise do bot: o resumo escrito pela IA sai em 30 dias (os rótulos ficam 1 ano)

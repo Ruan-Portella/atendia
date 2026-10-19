@@ -7,6 +7,7 @@ import { contactsForErasure, deleteContacts, phoneHash, type ErasureContact } fr
 import { deleteLeads, leadIdsOfConversations } from "./leads";
 import { deleteUnanswered, unansweredIdsOfConversations } from "./unanswered";
 import { deleteActionCallsOfConversations } from "./actions";
+import { deleteRoutineRunsOfConversations } from "./routine-engine";
 import { deleteContactDeliveries, emitContactDeleted } from "./webhooks";
 import { deleteAgesOf } from "./gate/age";
 import { suppress, suppressionScope } from "./suppression";
@@ -249,6 +250,8 @@ export async function eraseTargets(
   await forgetCampaignSends(db, { contactIds, phoneHashes: phones.map(phoneHash) });
   let chamadas = 0;
   for (const ids of chunked(conversations)) chamadas += await deleteActionCallsOfConversations(db, ids);
+  // roteiros (B2'): as variáveis são dado do contato
+  for (const ids of chunked(conversations)) await deleteRoutineRunsOfConversations(db, ids);
   let perguntas = 0;
   for (const ids of chunked(conversations)) {
     const q = await unansweredIdsOfConversations(db, ids);

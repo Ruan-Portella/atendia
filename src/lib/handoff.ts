@@ -13,6 +13,7 @@ import { saveMessage, touchConversation } from "./messages";
 import { attendantAuthor, type Attendant } from "./authors";
 import { humanAgentEnabled } from "./presence";
 import { renderEntryNotice, type HumanHandoff } from "./handoff-hours";
+import { endActiveRoutine } from "./routine-engine";
 
 /**
  * Atendimento humano: as mesmas operações para a agência (painel) e para o cliente final
@@ -68,6 +69,8 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
     if (current && holdsConversation(current, who.id)) return ok(ALREADY_YOURS);
     return fail(`${current ? otherName(current) : "Outra pessoa da equipe"} já está atendendo esta conversa.`);
   }
+  // roteiro em andamento acaba: a equipe assumiu (B2')
+  await endActiveRoutine(admin, conversationId, "handoff");
   const previous = heldByOther(before, who.id) ? otherName(before) : null;
   return { ...ok(previous ? `Você assumiu no lugar de ${previous}. A próxima mensagem sai com o anúncio com o seu nome.` : "Você assumiu a conversa. O assistente pausou até você devolver."), previous };
 }

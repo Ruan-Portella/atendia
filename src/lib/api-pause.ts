@@ -5,6 +5,7 @@ import { queueHandoffReturned } from "./message-events";
 import { isOptOutKeyword } from "./suppression";
 import { audit } from "./audit";
 import { REARM_PREFIX } from "./inbound-queue";
+import { endActiveRoutine } from "./routine-engine";
 
 /*
  * Pausa da IA pela integração (C pública, parte 3a; spec Peça 3, "Pausar a IA"): estado próprio
@@ -55,6 +56,8 @@ export async function pauseConversationAi(db: SupabaseClient, conversationId: st
     })
     .eq("id", conversationId);
   if (error) throw new Error(`pausa da IA: ${error.message}`);
+  // roteiro em andamento acaba: a integração assumiu (B2')
+  await endActiveRoutine(db, conversationId, "handoff");
   return o.until;
 }
 

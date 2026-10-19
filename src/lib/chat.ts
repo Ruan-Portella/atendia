@@ -34,6 +34,7 @@ import { widgetFiles, widgetFilesNotice, type ActionFile } from "./action-files"
 import { identityPromptNote, type ChatIdentity } from "./widget-identity";
 import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
+import { endActiveRoutine, routineSession, type RoutineTurn } from "./routine-engine";
 
 export interface BotRow {
   id: string;
@@ -411,6 +412,8 @@ export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" 
  * Devolve o aviso ao contato: fora do horário, diz quando a equipe volta; nunca promete resposta imediata.
  */
 export async function requestHandoff(db: SupabaseClient, bot: BotRow, conversationId: string, reason: string): Promise<string> {
+  // roteiro em andamento (B2'): acaba aqui, passado para a equipe
+  await endActiveRoutine(db, conversationId, "handoff");
   // esperando só por um lead (pedido deixado): o pedido de atendente vale como novo e avisa a equipe
   const { data: updated } = await db
     .from("conversations")
@@ -665,6 +668,7 @@ export const HUMAN_ONLY_NOTICE = "Deixei sua mensagem registrada, e nossa equipe
  * equipe é avisada na primeira vez. O aviso ao contato é da regra de estado (conversation-mode).
  */
 export async function enterHumanOnly(db: SupabaseClient, bot: BotRow, conversationId: string, reason: AiBlockReason) {
+  await endActiveRoutine(db, conversationId, "handoff");
   const { data: updated } = await db
     .from("conversations")
     .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), handled_at: null })
@@ -735,6 +739,9 @@ export async function runChat(opts: {
   confirmed?: { action: string; params: Record<string, unknown>; output: Record<string, unknown>; internal?: string[]; component?: MessageComponent | null; files?: ActionFile[]; via?: "confirmar" | "botao" };
   /** Botão tocado no site: o message.received da pergunta leva o id e o título. */
   interactive?: Interactive | null;
+  /** Roteiros (B2'): o que o BoaVoz já resolveu antes da IA (routinePreTurn) e as mensagens desta vez. */
+  routine?: RoutineTurn | null;
+  turnTexts?: string[];
 }) {
   const { db, bot, messages, channel } = opts;
 
@@ -762,6 +769,10 @@ export async function runChat(opts: {
   // regras primeiro (iguais em toda a plataforma: cache da OpenAI); o que é deste bot e desta conversa depois
   const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: gated.context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes });
   const convId = conversationId;
+  // roteiros (B2'): as ferramentas, o bloco do passo atual e os botões do passo
+  const routine = opts.routine
+    ? routineSession(db, { bot, conversationId: convId, waPhone, turn: opts.routine, texts: opts.turnTexts ?? (question ? [question] : []), requestHandoff: (reason) => requestHandoff(db, bot, convId, reason) })
+    : null;
 
   // 3. Persiste a pergunta do visitante
   if (question && opts.storeQuestion !== false) {
@@ -803,7 +814,8 @@ export async function runChat(opts: {
   // botões da mesma chamada que devolveu o reply (a IA pode ter consultado outra ação antes, na mesma vez)
   let replyComponent: MessageComponent | null = null;
   /** O componente desta vez: o resumo do Confirmar, senão o da ação (com reply, o dela), senão o da IA. */
-  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (replyComponent ?? actionComponent) : (actionComponent ?? shown));
+  // os botões do passo do roteiro vêm antes dos da ação e dos da IA (que nem mostra opções nesse passo)
+  const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (replyComponent ?? actionComponent) : (routine?.component() ?? actionComponent ?? shown));
   const linkHosts = linkHostsFor(bot, context);
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [...(opts.confirmed?.internal ?? [])];
@@ -838,10 +850,12 @@ export async function runChat(opts: {
   });
   // até 5 passos com ações (o último sem ferramentas, para sempre sair texto); sem ações, 3 como antes
   const hasActions = Object.keys(actionTools).length > 0;
+  // roteiro: começar e concluir o passo também são passos do modelo
+  const multiStep = hasActions || Boolean(routine);
   // a consulta que tinha tirado os itens 18+ (só se ela ainda está disponível nesta vez); acao_<nome>
   // fica fora do tipo das ferramentas fixas, por isso o "as never" no toolChoice
   const refetchTool = opts.gate?.refetchTool && opts.gate.refetchTool in actionTools ? opts.gate.refetchTool : null;
-  const maxSteps = hasActions ? 5 : 3;
+  const maxSteps = multiStep ? 5 : 3;
   // com ação de Confirmar, uma chamada de ferramenta por vez (nunca duas confirmações no mesmo passo)
   const callOptions = modelCallOptions(chatModelId(), { temperature: CHAT_TEMPERATURE, cacheKey: chatCacheKey(channel), effort: chatReasoningEffort() });
   const serialTools = Object.values(actionTools).some((t) => typeof t.description === "string" && t.description.endsWith(CONFIRM_RULE));
@@ -858,6 +872,8 @@ export async function runChat(opts: {
       { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null)].filter(Boolean).join("\n\n") },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
+      // roteiro em andamento: o passo atual depois do histórico (pesa mais que ele)
+      ...(routine?.prompt() ? [{ role: "system" as const, content: routine.prompt()! }] : []),
       // depois do Confirmar: o resultado da chamada (a IA confirma a partir dele)
       ...(opts.confirmed ? [{ role: "system" as const, content: confirmedNote(opts.confirmed.action, opts.confirmed.output, opts.confirmed.via) }] : []),
       ...(scopeLock ? [{ role: "system" as const, content: scopeReminder(bot.client_name, hasActions ? [...gated.reminder, ACTIONS_PROMPT_NOTE] : gated.reminder) }] : [{ role: "system" as const, content: offTopicReminder(bot.client_name) }]),
@@ -865,7 +881,7 @@ export async function runChat(opts: {
     ...callOptions,
     ...(providerOptions ? { providerOptions } : {}),
     stopWhen: [stepCountIs(maxSteps), () => actionReply !== null, () => shown !== null],
-    prepareStep: hasActions
+    prepareStep: multiStep
       ? ({ stepNumber }) => (stepNumber >= maxSteps - 1 ? { toolChoice: "none" as const } : stepNumber === 0 && refetchTool ? { toolChoice: { type: "tool" as const, toolName: refetchTool as never } } : undefined)
       : undefined,
     // limite de tokens por minuto da OpenAI (pico): o SDK tenta de novo com espera crescente
@@ -894,6 +910,8 @@ export async function runChat(opts: {
         return { ok: true, instrucao: leadSavedNote(channel) };
       },
       chamar_atendente: async ({ motivo, urgente }) => {
+        // roteiro em andamento acaba (o pedido de atendente encerra no banco)
+        routine?.stop();
         if (urgente) {
           // risco à vida: aviso destacado à equipe e o texto fixo com os telefones de emergência
           urgentCalled = true;
@@ -925,6 +943,7 @@ export async function runChat(opts: {
         return { ok: true };
       },
       mostrar_opcoes: async ({ texto, opcoes }) => {
+        if (routine?.blocksOptions()) return { ok: false, instrucao: "Os botões deste passo do roteiro já vão sozinhos: escreva só a pergunta, sem as opções." };
         // um componente por mensagem: o da ação já vai junto
         if (actionComponent) return { ok: false, instrucao: "As opções da ação já vão como botões nesta resposta: responda em texto." };
         // as opções que a consulta devolveu: vão os botões da ação (com o que cada um faz)
@@ -955,6 +974,7 @@ export async function runChat(opts: {
         return { ok: true, componente: shown, texto };
       },
     }),
+    ...(routine?.tools ?? {}),
     ...actionTools,
     ...(opts.extraTools ?? {}),
   },
@@ -999,7 +1019,7 @@ export async function runChat(opts: {
         const content = actionReply ? [guarded.trim(), actionReply].filter(Boolean).join("\n\n") : guarded;
         // rede de segurança: lista curta com pergunta de escolha no texto vira opções (no site a
         // lista já saiu no texto; no WhatsApp e no Instagram o canal manda o texto sem ela)
-        if (!shown && !actionReply && !actionComponent) {
+        if (!shown && !actionReply && !actionComponent && !routine?.component()) {
           const fromList = optionsFromText(content);
           if (fromList) {
             // a lista é a que a consulta devolveu: vão os botões da ação
@@ -1008,7 +1028,7 @@ export async function runChat(opts: {
           }
         }
         // novidades no site: a oferta fica no fim do texto gravado, com os botões (como o widget mostrou)
-        const offer = siteOffer && !shown && !actionReply && !actionComponent ? siteOffer : null;
+        const offer = siteOffer && !shown && !actionReply && !actionComponent && !routine?.component() ? siteOffer : null;
         if (offer) shown = OPTIN_COMPONENT;
         const stored = offer && content ? `${content}\n\n${offer.text}` : content;
         if (stored) {
