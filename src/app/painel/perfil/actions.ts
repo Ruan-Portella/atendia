@@ -56,7 +56,9 @@ export async function resendNoticeWhatsApp(): Promise<ActionResult> {
 /** "Parar avisos": o número sai (para voltar, a pessoa pede de novo). */
 export async function stopNoticeWhatsApp(): Promise<ActionResult> {
   const ctx = await requireAgency();
-  await forgetTeamWhatsApp(createAdminClient(), ctx.member.id);
+  const db = createAdminClient();
+  // quem acabou de parar não vê o convite voltar no topo; o campo continua em Meu perfil
+  await Promise.all([forgetTeamWhatsApp(db, ctx.member.id), dismissNoticeCard(db, ctx.member.id)]);
   await auditNotice(ctx, "perfil.avisos_whatsapp_parar");
   revalidatePath("/painel", "layout");
   return ok("Pronto: os avisos pararam e o número saiu do BoaVoz.");

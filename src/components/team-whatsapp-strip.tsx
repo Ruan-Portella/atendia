@@ -12,12 +12,15 @@ import { dismissNoticeWhatsAppCard, requestNoticeWhatsApp, resendNoticeWhatsApp 
  * A faixa do topo do painel com o convite para os avisos no WhatsApp (leva de 19/10/2026): uma linha
  * só, como as outras faixas; o campo do número abre no "Ativar no WhatsApp". Some quando a pessoa
  * confirma ou toca em "Agora não" (o cartão completo fica em Meu perfil) e volta quando o WhatsApp
- * do número muda. Sem o assistente pronto, nada aparece.
+ * do número muda, mesmo depois do "Agora não": os avisos pararam e só ela resolve. Sem o assistente
+ * pronto, nada aparece.
  */
 export function TeamWhatsAppStrip({ status, brand, consent }: { status: NoticeStatus; brand: string; consent: string }) {
   const [open, setOpen] = useState(false);
-  if (!status.available || status.dismissed) return null;
-  if (status.status === "confirmed" && !status.identityChanged) return null;
+  if (!status.available) return null;
+  const identityAlert = status.status === "confirmed" && status.identityChanged;
+  if (status.status === "confirmed" && !identityAlert) return null;
+  if (status.dismissed && !identityAlert) return null;
 
   let text: React.ReactNode;
   let action: React.ReactNode = null;
@@ -46,11 +49,16 @@ export function TeamWhatsAppStrip({ status, brand, consent }: { status: NoticeSt
       </>
     );
     action = (
-      <ActionForm action={resendNoticeWhatsApp} success="Mensagem enviada.">
-        <SubmitButton className="btn-primary py-1.5 text-xs" pendingLabel="Mandando…">
-          Confirmar de novo
-        </SubmitButton>
-      </ActionForm>
+      <>
+        <ActionForm action={resendNoticeWhatsApp} success="Mensagem enviada.">
+          <SubmitButton className="btn-primary py-1.5 text-xs" pendingLabel="Mandando…">
+            Confirmar de novo
+          </SubmitButton>
+        </ActionForm>
+        <Link href="/painel/perfil#avisos" className="text-xs font-semibold text-brand hover:underline">
+          Parar os avisos
+        </Link>
+      </>
     );
   } else if (status.status === "refused") {
     text = (
@@ -84,11 +92,14 @@ export function TeamWhatsAppStrip({ status, brand, consent }: { status: NoticeSt
       <span className="min-w-[15rem] flex-1">{text}</span>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {action}
-        <ActionForm action={dismissNoticeWhatsAppCard}>
-          <SubmitButton className="text-xs text-muted hover:underline" pendingLabel="…">
-            Agora não
-          </SubmitButton>
-        </ActionForm>
+        {/* o alerta de identidade não fecha: some quando ela confirma de novo ou para os avisos */}
+        {!identityAlert && (
+          <ActionForm action={dismissNoticeWhatsAppCard}>
+            <SubmitButton className="text-xs text-muted hover:underline" pendingLabel="…">
+              Agora não
+            </SubmitButton>
+          </ActionForm>
+        )}
       </div>
       {open && status.status === null && (
         <div className="flex basis-full flex-col gap-1.5 sm:pl-7">

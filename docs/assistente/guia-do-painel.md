@@ -169,7 +169,7 @@ O que vem do contato fica cifrado com a chave de cada cliente. A agência escolh
 
 ## Avisos no WhatsApp para a equipe
 
-Cada pessoa da equipe pode receber os avisos da conta no próprio WhatsApp, pelo número da BoaVoz: atendimento urgente, pedido de atendente, lead novo, WhatsApp de um cliente desconectado, pagamento atrasado e cota no fim. Para ligar, ponha o número em Meu perfil (ou no cartão do topo do painel) e toque em Confirmar na mensagem que chega. Os avisos não trazem o conteúdo das conversas, só o que aconteceu e onde ver no painel. Para parar, mande SAIR para o número da BoaVoz ou desligue em Meu perfil. Os clientes da agência nunca recebem mensagens da BoaVoz.
+Cada pessoa da equipe pode receber os avisos da conta no próprio WhatsApp, pelo número da BoaVoz: atendimento urgente, pedido de atendente, lead novo, WhatsApp de um cliente desconectado, pagamento atrasado e cota no fim. Para ligar, ponha o número em Meu perfil (ou em "Ativar no WhatsApp", na faixa do topo do painel) e toque em Confirmar na mensagem que chega. Os avisos não trazem o conteúdo das conversas, só o que aconteceu e onde ver no painel. Para parar, mande SAIR para o número da BoaVoz ou desligue em Meu perfil. Os clientes da agência nunca recebem mensagens da BoaVoz.
 
 ## Sobre este assistente
 

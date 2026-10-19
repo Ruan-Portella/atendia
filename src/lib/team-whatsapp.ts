@@ -241,7 +241,7 @@ export async function forgetTeamWhatsApp(db: SupabaseClient, memberId: string): 
   if (error) console.error("avisos: número da equipe não saiu", error.message);
 }
 
-/** "Agora não" no cartão do topo do painel. */
+/** "Agora não" na faixa do topo do painel (e "Parar os avisos" em Meu perfil). */
 export async function dismissNoticeCard(db: SupabaseClient, memberId: string): Promise<void> {
   await db.from("agency_members").update({ whatsapp_card_dismissed_at: new Date().toISOString() }).eq("id", memberId);
 }
