@@ -257,7 +257,7 @@ describe("assistente da BoaVoz: o guia do painel (docs/assistente)", () => {
     const guides = assistantGuides();
     expect(guides.length).toBeGreaterThan(0);
     for (const g of guides) {
-      expect(g.title).toMatch(/\(Boavoz\)$/i);
+      expect(g.title).toBe("Guia do painel BoaVoz");
       expect(g.content.length).toBeGreaterThan(2000);
       expect(g.content.length).toBeLessThan(50_000);
     }

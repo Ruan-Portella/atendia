@@ -497,7 +497,7 @@ export function assistantGuides(dir = join(process.cwd(), "docs", "assistente"))
     .map((f) => {
       const content = readFileSync(join(dir, f), "utf8").trim();
       const title = /^#\s+(.+)$/m.exec(content)?.[1]?.trim() ?? f.replace(/\.md$/, "");
-      return { title: `${title} (${company.brand})`.slice(0, 120), content };
+      return { title: title.slice(0, 120), content };
     });
 }
 
