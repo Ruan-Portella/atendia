@@ -94,7 +94,7 @@ export default function CampaignsDocs() {
         <li>Envio sem resposta da Meta fica incerto e nunca é reenviado sozinho.</li>
       </ul>
       <Note title="Custo">
-        A Meta cobra cada mensagem de modelo, à parte do plano do BoaVoz. O painel e a API mostram a estimativa antes de agendar.
+        A Meta cobra cada mensagem de modelo, à parte da assinatura do BoaVoz. O painel e a API mostram a estimativa antes de agendar.
       </Note>
 
       <NextSteps

@@ -122,7 +122,7 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
     <>
       <p className="text-sm text-muted">
         O BoaVoz avisa o sistema do cliente do que acontece, assinado no padrão Standard Webhooks. 2xx em até 10 s é entrega; senão, novas tentativas em 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h e 24 h. Resposta 410 ou 3 dias só de falhas
-        desativam. Limite do plano: {webhookLimit} webhook{webhookLimit === 1 ? "" : "s"}. Eventos de canal, modelo, pausa do chatbot, novidades, campanha e conformidade chegam na próxima parte das Integrações.
+        desativam. Limite da conta: {webhookLimit} webhook{webhookLimit === 1 ? "" : "s"} (um por chatbot no ar, no mínimo 2). Eventos de canal, modelo, pausa do chatbot, novidades, campanha e conformidade chegam na próxima parte das Integrações.
       </p>
       {hooks.map((h) => {
         const hh = health.get(h.id as string);
@@ -206,7 +206,7 @@ async function WebhooksTab({ agencyId, webhookLimit, bots, botName }: { agencyId
           </ResultForm>
         </details>
       ) : (
-        <p className="text-xs text-muted">O plano chegou ao limite de webhooks.</p>
+        <p className="text-xs text-muted">A conta chegou ao limite de webhooks: um por chatbot no ar, no mínimo 2.</p>
       )}
     </>
   );

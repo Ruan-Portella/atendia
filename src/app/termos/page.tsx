@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LegalPage, Section } from "@/components/legal-page";
 import { company, companyIdentity } from "@/lib/company";
+import { CREDIT_MIN_BRL, CREDIT_VALID_MONTHS, DEMOS_PER_MONTH, DEMOS_PER_MONTH_FREE, DEMO_ANSWERS, DEMO_ANSWERS_SHOWCASE, DEMO_DAYS, OVERAGE_PRICE_BRL, TEST_ANSWERS_FREE, brl, brlCents } from "@/lib/plans";
 
 export const metadata = { title: "Termos de Uso" };
 
@@ -8,7 +9,7 @@ export default function TermsPage() {
   const { brand, email } = company;
   const operator = companyIdentity();
   return (
-    <LegalPage title="Termos de Uso" updatedAt="16 de outubro de 2026" intro={`Estes termos regem o uso da plataforma ${brand}. Ao criar uma conta, você concorda com eles.`}>
+    <LegalPage title="Termos de Uso" updatedAt="19 de outubro de 2026" intro={`Estes termos regem o uso da plataforma ${brand}. Ao criar uma conta, você concorda com eles.`}>
       <Section title="1. O serviço">
         <p>
           A {brand}{operator && `, operada por ${operator},`} é uma plataforma para criar, personalizar e publicar assistentes virtuais de atendimento, treinados no conteúdo de cada empresa, em sites e canais de mensagem como o WhatsApp. O assistente atende os clientes da própria empresa: responde dúvidas, registra contatos e passa a conversa para um atendente humano quando preciso.
@@ -23,16 +24,31 @@ export default function TermsPage() {
         </ul>
       </Section>
 
-      <Section title="3. Planos, teste e pagamento">
+      <Section title="3. Conta grátis, tamanhos e pagamento">
         <ul>
-          <li>Novas contas têm um período de teste grátis. Ao fim dele, o assistente só volta a responder com um plano pago.</li>
-          <li>Os planos são cobrados por mês, antecipadamente, pela Stripe. Você pode cancelar quando quiser; o acesso continua até o fim do período já pago.</li>
-          <li>Os limites de cada plano (assistentes e atendimentos por mês) estão na página de preços e no painel.</li>
+          <li>
+            <strong>Conta grátis:</strong> você monta e testa os assistentes sem cartão, com até {TEST_ANSWERS_FREE} respostas de teste da IA na conta, somando o teste no painel e as demos. Cada demo vale {DEMO_DAYS} dias e responde até {DEMO_ANSWERS} vezes (a gerada no site da {brand} sem conta, até {DEMO_ANSWERS_SHOWCASE}); a conta gera até {DEMOS_PER_MONTH_FREE} demos por mês, ou {DEMOS_PER_MONTH} com assinatura. O site, o WhatsApp e o Instagram só ligam num assistente com tamanho.
+          </li>
+          <li>
+            <strong>Tamanhos e pacotes:</strong> cada assistente no ar tem um tamanho, cobrado por mês: o tamanho Atendimento, sem nenhum recurso de IA (só a sua equipe responde), ou um tamanho com IA (P, M, G ou Volume), com uma cota de atendimentos por mês. Os pacotes (Domínio próprio, Integrações e Plataforma) valem para a conta toda. Os preços e as cotas estão na página de preços e no painel; mudanças de preço são avisadas com antecedência.
+          </li>
           <li>
             <strong>Atendimento</strong>, a unidade da cota, igual no site, no WhatsApp e no Instagram: 1 atendimento = cada período de 24 horas em que a IA respondeu a um contato, contado a partir da primeira resposta da IA, por contato, assistente e canal, com até 40 respostas da IA; a seguinte abre outro atendimento. Conversa nova, troca de contexto ou logout dentro das 24 horas não abrem outro. Não contam: respostas da equipe (painel ou celular), mensagens pela API, campanhas e lembretes, textos fixos da {brand} e períodos com a IA ou o assistente pausados. O mês é o mês civil, no horário de Brasília.
           </li>
           <li>
-            A cota é de cada assistente, pelo tamanho dele, sem tolerância. Quando a cota de um assistente acaba, só ele entra no <strong>modo só humano</strong> até o mês virar; o mesmo vale para a conta toda quando o teste vence ou quando falta pagamento. No modo só humano, a IA para de responder, as conversas continuam gravadas e a sua equipe segue respondendo pelo painel. Atendimento já aberto vai até completar 24 horas ou 40 respostas.
+            A cota é de cada assistente, pelo tamanho dele, sem tolerância. Quando a cota de um assistente acaba, só ele entra no <strong>modo só humano</strong> até o mês virar, a não ser que o excedente esteja ligado. No modo só humano, a IA para de responder, as conversas continuam gravadas e a sua equipe segue respondendo pelo painel. Atendimento já aberto vai até completar 24 horas ou 40 respostas.
+          </li>
+          <li>
+            <strong>Excedente e crédito:</strong> com o excedente ligado num assistente, cada atendimento além da cota custa {brlCents(OVERAGE_PRICE_BRL)}, descontado do crédito pré-pago da conta. O crédito é comprado a partir de {brl(CREDIT_MIN_BRL)}, vale {CREDIT_VALID_MONTHS} meses, é usado na ordem de vencimento e não é reembolsável, salvo quando a lei garantir o direito de arrependimento. A recarga automática é opcional, com o valor e o limite por mês escolhidos por você. Um pico anormal no chat do site suspende o excedente daquele assistente até você confirmar que o tráfego é real.
+          </li>
+          <li>
+            <strong>Cobrança:</strong> pela Stripe, no cartão. A fatura fecha todo dia 1º (mês civil, no horário de Brasília); o primeiro mês é proporcional, no preço e na cota. Subir de tamanho ou assinar um pacote vale na hora, com a diferença proporcional cobrada no ato; descer de tamanho ou tirar um pacote vale no dia 1º seguinte. Você pode cancelar quando quiser: a assinatura segue até o dia 1º seguinte, sem reembolso do mês em curso, salvo quando a lei exigir.
+          </li>
+          <li>
+            <strong>Pagamento em atraso:</strong> se a cobrança falhar, a IA de todos os assistentes pausa até a fatura ser paga, e a sua equipe segue respondendo. A Stripe tenta cobrar de novo por até 2 semanas; sem pagamento, a assinatura é cancelada. Para assinar de novo, a fatura em aberto precisa ser paga antes.
+          </li>
+          <li>
+            <strong>Sem tamanho ou sem pacote:</strong> quando um assistente fica sem tamanho (no dia 1º ou no fim da assinatura), o WhatsApp e o Instagram dele são desconectados, e ele não envia campanhas, lembretes nem modelos de mensagem. Sem o pacote Domínio próprio, o painel e o chat voltam ao domínio da {brand}. Nada é apagado: as conversas e a configuração ficam guardadas.
           </li>
           <li>
             <strong>Custos do WhatsApp:</strong> mensagens no WhatsApp podem ser cobradas pela Meta diretamente da empresa dona do número, conforme a tabela da Meta. Esses valores não fazem parte do plano da {brand}.
@@ -71,7 +87,7 @@ export default function TermsPage() {
           <li>atividades ilegais, fraude, golpes ou falsidade ideológica;</li>
           <li>spam, mensagens em massa sem consentimento ou coleta de dados sem base legal;</li>
           <li>discurso de ódio, assédio, conteúdo sexual envolvendo menores ou conteúdo que viole direitos de terceiros;</li>
-          <li>tentar invadir, sobrecarregar ou copiar a plataforma, ou contornar os limites dos planos.</li>
+          <li>tentar invadir, sobrecarregar ou copiar a plataforma, ou contornar os limites da conta grátis, das demos ou dos tamanhos (por exemplo, criando contas para repetir o teste).</li>
         </ul>
         <p>Podemos suspender contas que violem estes termos, avisando sempre que possível.</p>
       </Section>

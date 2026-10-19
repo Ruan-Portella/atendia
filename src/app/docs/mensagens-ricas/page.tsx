@@ -76,7 +76,7 @@ export default function RichMessagesDocs() {
       <H2 id="quem-usa">Quem usa</H2>
       <ul>
         <li>
-          <strong>A IA</strong>, sozinha, em todos os planos: mostra opções quando a pessoa precisa escolher e um botão de link quando a resposta é abrir uma página da base.
+          <strong>A IA</strong>, sozinha, em todo chatbot com IA: mostra opções quando a pessoa precisa escolher e um botão de link quando a resposta é abrir uma página da base.
         </li>
         <li>
           <strong>As suas ações</strong>, no campo <code>components</code> do retorno (veja <Link href="/docs/acoes">Ações</Link>).

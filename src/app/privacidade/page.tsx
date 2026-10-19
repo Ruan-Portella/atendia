@@ -39,7 +39,7 @@ export default function PrivacyPage() {
       <Section title="3. Dados que tratamos">
         <ul>
           <li><strong>Cadastro:</strong> nome, e-mail, nome da agência, logo, cores, telefone de suporte e dados de acesso.</li>
-          <li><strong>Pagamento:</strong> plano, histórico de cobranças e identificadores do meio de pagamento. Os dados do cartão são tratados diretamente pela Stripe; não os armazenamos.</li>
+          <li><strong>Pagamento:</strong> tamanhos e pacotes assinados, crédito comprado, histórico de cobranças e identificadores do meio de pagamento. Os dados do cartão são tratados diretamente pela Stripe; não os armazenamos.</li>
           <li><strong>Conteúdo dos assistentes:</strong> páginas de sites, documentos e textos enviados para formar a base de conhecimento.</li>
           <li><strong>Conversas:</strong> mensagens trocadas com os assistentes e com atendentes humanos, data e hora, canal e um identificador técnico do visitante.</li>
           <li><strong>Arquivos recebidos:</strong> fotos, áudios, vídeos e documentos que o contato envia pelo WhatsApp ou pelo Instagram (até 16 MB), guardados para a empresa ver no histórico da conversa.</li>
@@ -84,7 +84,7 @@ export default function PrivacyPage() {
           <li><strong>Registros de acesso</strong> (obrigação legal: Marco Civil da Internet, art. 15).</li>
           <li><strong>Cobrança e obrigações fiscais</strong> (execução de contrato e obrigação legal).</li>
           <li><strong>Segurança e prevenção a fraude</strong> (legítimo interesse, só nos dados da conta e para prevenir fraude): limites de uso, auditoria e investigação de abusos.</li>
-          <li><strong>Comunicações sobre a conta</strong> (execução de contrato): avisos de teste, cobrança, segurança e alterações relevantes. Os e-mails de aviso não levam conteúdo de conversa: o de novo contato leva só o nome, o canal e o link para o painel.</li>
+          <li><strong>Comunicações sobre a conta</strong> (execução de contrato): avisos de cobrança, crédito, cota, segurança e alterações relevantes. Os e-mails de aviso não levam conteúdo de conversa: o de novo contato leva só o nome, o canal e o link para o painel.</li>
         </ul>
       </Section>
 

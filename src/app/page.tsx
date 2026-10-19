@@ -3,9 +3,19 @@ import { Logo } from "@/components/logo";
 import { LegalFooter } from "@/components/legal-page";
 import { DemoGenerator } from "@/components/demo-generator";
 import { RoiCalculator } from "@/components/roi-calculator";
-import { BOT_SIZES, OVERAGE_PRICE_BRL, PACKS, brl, brlCents, num } from "@/lib/plans";
+import { BOT_SIZES, CREDIT_MIN_BRL, DEMOS_PER_MONTH_FREE, OVERAGE_PRICE_BRL, PACKS, TEST_ANSWERS_FREE, brl, brlCents, num } from "@/lib/plans";
 
 const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz";
+
+/** Perguntas da seção de preços (revisão de preços, parte 6). */
+const FAQ: Array<[string, string]> = [
+  ["Posso testar antes de pagar?", `Sim. A conta grátis monta e testa os chatbots com até ${TEST_ANSWERS_FREE} respostas da IA e gera até ${DEMOS_PER_MONTH_FREE} demos por mês para mandar aos clientes, sem cartão.`],
+  ["Preciso de chave da OpenAI?", "Não. A IA vem incluída no tamanho do chatbot, com o custo dela por nossa conta."],
+  ["E se a cota acabar?", `Só aquele chatbot passa para a sua equipe até o mês virar. Ou ligue o excedente: cada atendimento a mais custa ${brlCents(OVERAGE_PRICE_BRL)}, pago com crédito pré-pago (a partir de ${brl(CREDIT_MIN_BRL)}).`],
+  ["Como funciona a cobrança?", "No cartão, todo dia 1º, e o primeiro mês é proporcional. Subir de tamanho vale na hora, pagando só a diferença dos dias que faltam; descer vale no mês seguinte. Sem fidelidade."],
+  ["A Meta cobra à parte?", "No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente, sem nada nosso em cima. No Instagram, a Meta não cobra."],
+  ["E sem IA?", `O tamanho Atendimento (${brl(BOT_SIZES.atendimento.priceBrl)}/mês) liga o WhatsApp, o Instagram e o chat do site só com a sua equipe respondendo.`],
+];
 
 const NICHOS = ["Clínicas", "Imobiliárias", "Advogados", "Escolas e cursos", "Academias", "Restaurantes", "E-commerce", "Hotéis e pousadas"];
 
@@ -40,7 +50,7 @@ export default function LandingPage() {
             <Link href="/cadastro" className="btn-primary px-5 py-3.5 text-base">Criar conta grátis</Link>
             <a href="#como" className="btn-ghost px-4 py-3.5 text-base">Ver como funciona</a>
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted"><span>14 dias grátis</span><span className="hidden sm:inline">·</span><span>Sem cartão</span><span className="hidden sm:inline">·</span><span>Cancele quando quiser</span></div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted"><span>Monte e teste grátis</span><span className="hidden sm:inline">·</span><span>Sem cartão</span><span className="hidden sm:inline">·</span><span>IA incluída</span><span className="hidden sm:inline">·</span><span>Sem fidelidade</span></div>
         </div>
 
         <div className="card flex flex-col gap-4 p-7 shadow-[0_20px_50px_rgba(27,31,29,0.08)]">
@@ -83,7 +93,7 @@ export default function LandingPage() {
       <section className="grid items-center gap-12 bg-ink px-6 py-16 text-ground md:grid-cols-2 lg:px-16 xl:px-24">
         <div className="flex flex-col gap-4">
           <span className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-tint">Faça a conta</span>
-          <h2 className="text-3xl font-bold leading-[1.08] md:text-[44px]">Você paga a partir de {brl(BOT_SIZES.P.priceBrl)} por chatbot. Seus clientes pagam você.</h2>
+          <h2 className="text-3xl font-bold leading-[1.08] md:text-[44px]">Você paga a partir de {brl(BOT_SIZES.P.priceBrl)} por chatbot com IA. Seus clientes pagam você.</h2>
           <p className="max-w-[520px] text-[17px] leading-relaxed text-[#b9c2bd]">Um atendimento que responde 24 horas, agenda e qualifica leads tem valor para qualquer negócio local. Você define o preço do seu serviço. Seu cliente vê a sua marca no painel, no widget e no chat; só na conexão do WhatsApp e do Instagram as telas da Meta mostram a {brand} como fornecedora da tecnologia.</p>
         </div>
         <RoiCalculator />
@@ -114,7 +124,8 @@ export default function LandingPage() {
         <div className="max-w-[640px]">
           <span className="eyebrow">Preços</span>
           <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Conta grátis. Cada chatbot no ar com um tamanho.</h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">1 atendimento = 24 horas de conversa da IA com um contato, no site, no WhatsApp ou no Instagram, com até 40 respostas. Respostas da sua equipe não contam. Conectar WhatsApp, Instagram e o chat do site não custa nada a mais: vem com o tamanho do chatbot.</p>
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">Na conta grátis, você monta os chatbots, testa com até {TEST_ANSWERS_FREE} respostas da IA e gera demos para mandar aos clientes, sem cartão. Para atender no site, no WhatsApp e no Instagram, cada chatbot ganha um tamanho. A IA vem incluída: não precisa de chave nem de conta na OpenAI.</p>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-2">1 atendimento = 24 horas de conversa da IA com um contato, no site, no WhatsApp ou no Instagram, com até 40 respostas. Respostas da sua equipe não contam. Conectar WhatsApp, Instagram e o chat do site não custa nada a mais: vem com o tamanho do chatbot.</p>
           <p className="mt-2 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente. As mensagens do Instagram não são cobradas pela Meta.</p>
         </div>
         <div className="grid gap-5 md:grid-cols-4">
@@ -141,6 +152,14 @@ export default function LandingPage() {
         <p className="text-[15px] text-ink-2">
           Só a caixa de entrada da equipe, sem IA: tamanho Atendimento, {brl(BOT_SIZES.atendimento.priceBrl)}/mês por chatbot. Pacotes da conta: {Object.values(PACKS).map((p) => `${p.name} ${brl(p.priceBrl)}/mês`).join(" · ")}. Passou da cota? Ligue o excedente, pago com crédito: {brlCents(OVERAGE_PRICE_BRL)} por atendimento a mais.
         </p>
+        <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
+          {FAQ.map(([q, a]) => (
+            <div key={q} className="flex flex-col gap-1.5">
+              <div className="font-semibold">{q}</div>
+              <p className="text-[15px] leading-relaxed text-ink-2">{a}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="px-6 pb-20 lg:px-16 xl:px-24">
