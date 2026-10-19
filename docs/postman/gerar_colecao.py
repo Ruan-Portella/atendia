@@ -191,7 +191,7 @@ mensagens = folder(
             "POST",
             "messages",
             body={"bot_id": BOT, "to": "phone:{{phone}}", "type": "template", "template": {"name": "{{template_name}}", "language": "{{template_language}}", "variables": ["{{template_variable_1}}"]}},
-            desc="Funciona também fora da janela de 24 horas. Ajuste `variables` ao número de variáveis do modelo (veja em \"Modelos do bot\"); modelo sem variável: `[]`.",
+            desc="Funciona também fora da janela de 24 horas. Ajuste `variables` ao número de variáveis do modelo (veja em \"Modelos do bot\"); modelo sem variável: `[]`. Chatbot sem tamanho: 422 bot_without_size.",
             tests=expect_status(201, 202) + SAVE_SENT,
         ),
         req(
@@ -331,7 +331,7 @@ campanhas = folder(
             "POST",
             "campaigns",
             body={"bot_id": BOT, "kind": "marketing", "name": "Teste Postman", "template": {"name": "{{marketing_template}}", "language": "pt_BR", "variables": [{"type": "first_name", "fallback": "cliente"}]}, "audience": {"tags": ["vip"]}},
-            desc="Público: contatos com a etiqueta \"vip\" (use **5. Etiquetas do contato** antes) que aceitaram novidades. `{\"type\": \"first_name\", \"fallback\": \"cliente\"}` põe o primeiro nome do contato na variável. Ajuste `variables` ao modelo. Público sem ninguém apto: 422 empty_audience, com quem ficou de fora e por quê.",
+            desc="Público: contatos com a etiqueta \"vip\" (use **5. Etiquetas do contato** antes) que aceitaram novidades. `{\"type\": \"first_name\", \"fallback\": \"cliente\"}` põe o primeiro nome do contato na variável. Ajuste `variables` ao modelo. Público sem ninguém apto: 422 empty_audience, com quem ficou de fora e por quê. Chatbot sem tamanho: 422 bot_without_size.",
             tests=expect_status(201) + SAVE_CAMPAIGN,
         ),
         req(

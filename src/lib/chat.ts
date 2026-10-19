@@ -17,7 +17,8 @@ import { OPTIN_COMPONENT, optInSiteText, siteOfferDue } from "./marketing-consen
 import { canonicalPhone } from "./phone";
 import { instagramUsername } from "./instagram";
 import { componentsNote, hostsIn, joinShownText, normalizeLink, normalizeOptions, optionsFromText, parseComponents, type MessageComponent } from "./components";
-import { RISK_TEXT, detectRisk } from "./risk";
+import { RISK_TEXT, detectRisk, riskHits } from "./risk";
+import { botHasAi } from "./plans";
 import { isAiPaused } from "./ai-pause";
 import { ageNote, type AgeStatus } from "./gate/age";
 import { regulatedChannelNote, regulatedDestination, type RegulatedChannel } from "./gate/sales-channel";
@@ -57,7 +58,9 @@ export interface BotRow {
   regulated_channel?: RegulatedChannel | null;
   /** Oferecer novidades no WhatsApp, uma vez por contato (leva B3). */
   marketing_optin_offer?: boolean | null;
-  /** Excedente do plano (leva B1'): modo só humano. */
+  /** Tamanho (null = sem tamanho) e cota sob medida da BoaVoz: sem tamanho de IA, nada de IA (botHasAi). */
+  size?: string | null;
+  quota_override?: number | null;
 }
 
 export const CORS_HEADERS = {
@@ -425,7 +428,9 @@ export function withRiskText(answer: string, urgent: boolean): string {
  * Risco à vida com a IA fora (atendente assumiu, alguém respondeu pelo celular, modo só humano):
  * dicionário + checagem barata de IA. Se confirmar, vira pedido de atendente urgente (equipe
  * avisada com destaque) e o contato recebe o texto fixo, a não ser que alguém da equipe tenha
- * escrito nos últimos 10 minutos (aí só o alerta). Devolve true se agiu.
+ * escrito nos últimos 10 minutos (aí só o alerta). Chatbot sem IA (Atendimento ou sem tamanho):
+ * só o dicionário, sem a checagem de IA e sem o texto fixo (o "socorro" do dia a dia seria alarme
+ * falso para o contato); a conversa fica urgente para a equipe, que é quem atende. Devolve true se agiu.
  */
 export async function handleRiskWithoutAi(
   db: SupabaseClient,
@@ -437,11 +442,14 @@ export async function handleRiskWithoutAi(
   channel: "whatsapp" | "instagram",
 ): Promise<boolean> {
   const text = texts.filter(Boolean).join("\n");
+  if (!text) return false;
+  const ai = botHasAi(bot);
   const onUsage = (u: UsageTokens) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, conversationId, kind: "classificacao", channel, ...u });
-  if (!text || !(await detectRisk(text, onUsage))) return false;
+  if (!(ai ? await detectRisk(text, onUsage) : riskHits(text).length > 0)) return false;
   const now = new Date().toISOString();
   await db.from("conversations").update({ needs_human: true, handoff_requested_at: now, handoff_urgent_at: now, handled_at: null }).eq("id", conversationId);
   notifyHandoff({ db, bot, conversationId, reason: text.slice(0, 300), urgent: true }).catch(() => {});
+  if (!ai) return true;
   const since = new Date(Date.now() - 10 * 60_000).toISOString();
   const recentAgent = await findMessage(db, { conversationId, roles: ["agent"], createdAfter: since }, ["id"] as const);
   if (!recentAgent) {
@@ -619,7 +627,7 @@ export function linkHostsFor(bot: Pick<BotRow, "client_site" | "human_handoff" |
 }
 
 /** Por que a IA está parada para esta agência (modo só humano), ou null se pode responder. */
-export type AiBlockReason = "quota_exceeded" | "paused" | "bot_paused";
+export type AiBlockReason = "quota_exceeded" | "paused" | "bot_paused" | "no_ai";
 
 /**
  * Conferido em TODA mensagem (não só na conversa nova): a IA pausada pelo backoffice para também
@@ -633,7 +641,8 @@ export async function aiBlockedReason(db: SupabaseClient, agencyId: string): Pro
 
 /** Motivo do pedido de atendente automático, para a equipe. */
 export const AI_BLOCK_LABEL: Record<AiBlockReason, string> = {
-  quota_exceeded: "Assistente parado: este chatbot está sem tamanho, usou todos os atendimentos do mês ou o crédito do excedente acabou. Ele volta ao ganhar um tamanho, ao subir de tamanho, com crédito ou no dia 1º.",
+  quota_exceeded: "Assistente parado: este chatbot usou todos os atendimentos do mês ou o crédito do excedente acabou. Ele volta ao subir de tamanho, com crédito ou no dia 1º.",
+  no_ai: "Chatbot sem IA (Atendimento ou sem tamanho): as mensagens chegam aqui para a sua equipe responder.",
   paused: "Assistente pausado pela equipe BoaVoz: as mensagens ficam aqui para a sua equipe responder.",
   bot_paused: "Assistente pausado por vocês (botão de emergência): as mensagens ficam aqui para a sua equipe responder.",
 };

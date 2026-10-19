@@ -53,7 +53,7 @@ export function SubscribeForm({ bots, fraction, renewal, enabled }: Props) {
     <ActionForm action={startCheckout} className="mt-6 flex flex-col gap-6">
       <section>
         <h2 className="text-lg font-bold">Tamanho de cada chatbot</h2>
-        <p className="mt-1 text-sm text-muted">A cota do mês é de cada chatbot. O Atendimento não tem IA: é a caixa de entrada do WhatsApp e do Instagram com a sua equipe respondendo. A conta tem uma caixa de entrada grátis: um chatbot sem tamanho pode ficar com WhatsApp e Instagram, sem IA.</p>
+        <p className="mt-1 text-sm text-muted">A cota do mês é de cada chatbot. O Atendimento não tem IA nenhuma: é a caixa de entrada da sua equipe (conversas, contatos e campanhas). Todo chatbot no ar tem um tamanho, e conectar os canais não custa nada a mais.</p>
         <div className="card mt-3 overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead>

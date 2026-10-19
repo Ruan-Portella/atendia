@@ -8,6 +8,7 @@ import { lmipCheck } from "./lmip-check";
 import { BASE_GATE_VERSION, CATEGORIES, effectiveLevel, type GateCategory, type GateChannel } from "./rules";
 import type { AgeStatus } from "./age";
 import { flagNewProhibited } from "../bot-analysis";
+import { AI_BOTS_FILTER, botHasAi } from "../plans";
 
 /*
  * Portão, parte 6: a base de cada empresa classificada por IA, uma vez por trecho (depois da
@@ -151,7 +152,9 @@ const PARALLEL = 5;
 /**
  * Classifica os trechos sem classificação (ou de uma versão antiga), dentro do tempo dado.
  * Bots de demonstração da landing ficam de fora (só site, sem portão; e são criados por
- * visitantes). Falha num trecho não para os outros: ele fica para a próxima vez.
+ * visitantes), e os chatbots sem IA também (Atendimento ou sem tamanho: a base deles só é
+ * classificada quando ganham um tamanho com IA). Falha num trecho não para os outros: ele fica
+ * para a próxima vez.
  */
 export async function classifyPending(db: SupabaseClient, opts: { botId?: string; budgetMs: number }): Promise<{ classified: number; failed: number; remaining: number }> {
   const started = Date.now();
@@ -163,7 +166,7 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
   let failed = 0;
   let lastId = 0;
   while (Date.now() - started < opts.budgetMs - 20_000) {
-    let q = db.from("chunks").select("id, bot_id, content, bots!inner(client_name, agency_id, is_demo)").or(pendingFilter).eq("bots.is_demo", false).gt("id", lastId).order("id").limit(PAGE);
+    let q = db.from("chunks").select("id, bot_id, content, bots!inner(client_name, agency_id, is_demo, size, quota_override)").or(pendingFilter).eq("bots.is_demo", false).or(AI_BOTS_FILTER, { referencedTable: "bots" }).gt("id", lastId).order("id").limit(PAGE);
     if (opts.botId) q = q.eq("bot_id", opts.botId);
     const { data: rows, error } = await q;
     if (error) throw new Error(`classificação da base: ${error.message}`);
@@ -192,10 +195,15 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
     }
   }
   for (const [botId, cats] of foundByBot) await flagNewProhibited(db, botId, [...cats]).catch((e) => console.error("análise do bot:", (e as Error).message));
-  let rq = db.from("chunks").select("id, bots!inner(is_demo)", { count: "exact", head: true }).or(pendingFilter).eq("bots.is_demo", false);
+  let rq = db.from("chunks").select("id, bots!inner(is_demo, size, quota_override)", { count: "exact", head: true }).or(pendingFilter).eq("bots.is_demo", false).or(AI_BOTS_FILTER, { referencedTable: "bots" });
   if (opts.botId) rq = rq.eq("bot_id", opts.botId);
   const { count } = await rq;
   return { classified, failed, remaining: count ?? 0 };
+}
+
+/** Chatbots que acabaram de ganhar um tamanho com IA: a base deles é classificada agora (o portão vale nas próximas respostas). */
+export function classifyGainedAi(db: SupabaseClient, bots: Array<{ id: string; size?: string | null; quota_override?: number | null }>) {
+  for (const b of bots) if (botHasAi(b)) classifyLater(db, b.id);
 }
 
 /**

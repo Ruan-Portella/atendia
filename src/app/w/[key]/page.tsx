@@ -4,6 +4,7 @@ import { belongsToHost } from "@/lib/domain-server";
 import { ChatWindow } from "@/components/chat-window";
 import { WidgetFrame } from "@/components/widget-frame";
 import { initials } from "@/lib/utils";
+import { isBotSize } from "@/lib/plans";
 
 export const metadata = { title: { absolute: "Chat" }, robots: { index: false } };
 
@@ -16,7 +17,8 @@ export default async function WidgetPage({ params, searchParams }: PageProps<"/w
   const { data: bot } = await db.from("bots").select("*").eq("public_key", key).maybeSingle();
   if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
   const { data: agency } = await db.from("agencies").select("name, brand_color, privacy_url").eq("id", bot.agency_id).single();
-  const offline = bot.status !== "live" && !bot.is_demo;
+  // sem tamanho, o chat do site não liga (o Atendimento mostra o formulário de contato)
+  const offline = !bot.is_demo && (bot.status !== "live" || (!isBotSize(bot.size) && bot.quota_override === null));
   return (
     <WidgetFrame>
       {offline ? (

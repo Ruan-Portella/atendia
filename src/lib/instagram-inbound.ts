@@ -2,7 +2,8 @@ import { handlePairing, linkColumnsForContact } from "./pairing";
 import { handleErasureRequest } from "./data-subject";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
-import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
+import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withoutAi, type Mode } from "./conversation-mode";
+import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { instagramContact, touchInbound } from "./contacts";
 import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./instagram-edits";
@@ -197,7 +198,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const contact = await instagramContact(db, bot, igsid);
   const contactId = contact?.id ?? null;
   let conv = await recentConversation(db, bot.id, igsid, contactId);
-  const mode = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch });
+  // chatbot sem IA (Atendimento ou sem tamanho): tudo vai para a equipe, sem IA nenhuma (nem transcrição)
+  const resolved = await resolveMode(db, { bot, channel: "instagram", conversation: conv, ig: ch });
+  const mode = botHasAi(bot) ? resolved : withoutAi(resolved);
   // a pergunta pendente rearmada na volta da IA não é mensagem nova do contato
   if (contact && mode.storeInbound && !burst.every((q) => isRearmed(q.ev.message?.mid))) await touchInbound(db, contact);
 
@@ -218,8 +221,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
 
   const transcribe = async (ev: IgMessagingEvent) => {
     const audioUrl = ev.message?.attachments?.find((a) => a.type === "audio")?.payload?.url;
-    // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio)
-    if (!audioUrl || !canTranscribe() || mode.step <= 2) return null;
+    // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio);
+    // chatbot sem IA: a equipe ouve o áudio na conversa
+    if (!audioUrl || !canTranscribe() || mode.step <= 2 || !botHasAi(bot)) return null;
     try {
       return await transcribeFrom(audioUrl, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "instagram", ...u }));
     } catch (e) {

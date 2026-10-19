@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { FREE_INBOX_CAMPAIGN_SENDS } from "./plans";
-import { monthBoundsBR } from "./billing";
+import { isUnsized } from "./free-account";
 import { queueBotEvent } from "./platform-events";
 import { openNullable, scopeOfBot, sealNullable } from "./field-cipher";
 import { activeSuppressions, blocks, suppress, suppressionScope, type SuppressionKind } from "./suppression";
@@ -417,16 +416,12 @@ async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: ()
   const body = templateBody(template!);
   const category = template!.category.toUpperCase();
 
-  let left = allowance({ limit: tierLimit(standing.tier), recent: await portfolioRecipients(db, ch.waba_id, c.bot_id, o.now) });
-  // caixa de entrada grátis (chatbot sem tamanho): até 100 envios de campanha e lembrete no mês na conta
-  const free = await freeInboxAllowance(db, c.agency_id, c.bot_id, o.now);
-  if (free !== null) {
-    if (free <= 0) {
-      await pause(db, c, FREE_INBOX_SENDS_REASON);
-      return { ...out, paused: true };
-    }
-    left = Math.min(left, free);
+  // chatbot sem tamanho (perdeu o tamanho e está no prazo de 30 dias): não envia campanha nem lembrete
+  if (await isUnsized(db, c.bot_id)) {
+    await pause(db, c, UNSIZED_SENDS_REASON);
+    return { ...out, paused: true };
   }
+  let left = allowance({ limit: tierLimit(standing.tier), recent: await portfolioRecipients(db, ch.waba_id, c.bot_id, o.now) });
   const scope = suppressionScope({ wabaId: ch.waba_id, botId: c.bot_id });
 
   while (left > 0 && o.hasTime()) {
@@ -820,22 +815,6 @@ export async function whatsappLimits(db: SupabaseClient, botIds: string[]): Prom
   );
 }
 
-/* ------------------------------------------------------------------ caixa de entrada grátis (preços, parte 5b) */
+/* ------------------------------------------------------------------ chatbot sem tamanho (preços, 18/10) */
 
-export const FREE_INBOX_SENDS_REASON = `a caixa de entrada grátis envia até ${FREE_INBOX_CAMPAIGN_SENDS} mensagens de campanha e lembrete por mês; dê um tamanho ao chatbot (Atendimento, sem IA, ou com IA) para enviar mais`;
-
-/**
- * Quantos envios de campanha e lembrete ainda cabem no mês para este chatbot: null = sem esse teto
- * (chatbot com tamanho ou cota sob medida); sem tamanho, o que sobra dos 100 da conta (os chatbots
- * sem tamanho somados).
- */
-export async function freeInboxAllowance(db: SupabaseClient, agencyId: string, botId: string, now = new Date()): Promise<number | null> {
-  const { data: bot } = await db.from("bots").select("size, quota_override").eq("id", botId).maybeSingle();
-  if (!bot || bot.size || bot.quota_override !== null) return null;
-  const { data: unsized } = await db.from("bots").select("id").eq("agency_id", agencyId).is("size", null).is("quota_override", null);
-  const { data: camps } = await db.from("campaigns").select("id").in("bot_id", (unsized ?? []).map((b) => b.id as string));
-  const ids = (camps ?? []).map((c) => c.id as string);
-  if (!ids.length) return FREE_INBOX_CAMPAIGN_SENDS;
-  const { count } = await db.from("campaign_sends").select("id", { count: "exact", head: true }).in("campaign_id", ids).gte("sent_at", monthBoundsBR(now).start.toISOString());
-  return Math.max(0, FREE_INBOX_CAMPAIGN_SENDS - (count ?? 0));
-}
+export const UNSIZED_SENDS_REASON = "o chatbot está sem tamanho: escolha um tamanho (Atendimento, sem IA, ou com IA) em Cobrança → Assinatura para enviar campanhas e lembretes";

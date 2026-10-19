@@ -269,7 +269,7 @@ export interface BotQuotaStatus {
   overageSuspended: "pico" | "ataque" | null;
   /** O crédito da conta não paga o próximo atendimento a mais. */
   creditShort: boolean;
-  /** Sem tamanho e fora da caixa de entrada grátis: os canais desconectam nesta data. */
+  /** Sem tamanho (perdeu o tamanho com canal conectado): os canais desconectam nesta data. */
   graceUntil: string | null;
   /** Troca agendada para o dia 1º (descer ou tirar o tamanho): "none" = fica sem tamanho. */
   pendingSize: BotSize | "none" | null;

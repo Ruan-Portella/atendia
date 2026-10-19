@@ -10,6 +10,7 @@ import { botGateExemptions } from "./gate/exceptions";
 import { sendBlockedReason } from "./conversation-mode";
 import { audit } from "./audit";
 import { clientIp } from "./rate-limit";
+import { UNSIZED_API_SENDS, isUnsized } from "./free-account";
 import { channelError } from "./api-messages";
 import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type ApiContext } from "./api-v1";
 
@@ -141,6 +142,7 @@ export async function postCampaign(req: Request, api: ApiContext): Promise<Respo
     const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name, paused_at").eq("id", botId).maybeSingle();
     if (!bot) throw notFound();
     if (bot.paused_at) throw new ApiError(422, "bot_paused", "O bot está pausado pelo dono: campanhas e lembretes não saem até ele ser retomado.");
+    if (await isUnsized(db, botId)) throw new ApiError(422, "bot_without_size", UNSIZED_API_SENDS);
     const ch = await loadTemplateChannel(db, botId);
     if (!ch) throw new ApiError(422, "channel_not_connected", "O bot não tem WhatsApp conectado (com a conta do WhatsApp Business).", { channel: "whatsapp" });
     const blocked = await sendBlockedReason(db, botId, "whatsapp");

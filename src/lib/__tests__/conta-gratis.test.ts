@@ -1,34 +1,76 @@
 import { describe, expect, it } from "vitest";
-import { TEST_ANSWERS_DONE, graceEmail, pickFreeInbox, type ConnectedUnsized } from "../free-inbox";
-import { BOT_SIZES, FREE_INBOX_CAMPAIGN_SENDS, TEST_ANSWERS_FREE, UNSIZED_GRACE_DAYS, sizeOption } from "../plans";
+import { ATENDIMENTO_TEST_OFF, SIZE_REQUIRED, TEST_ANSWERS_DONE, UNSIZED_API_SENDS, graceEmail } from "../free-account";
+import { AI_BOTS_FILTER, BOT_SIZES, TEST_ANSWERS_FREE, UNSIZED_GRACE_DAYS, botHasAi, sizeOption } from "../plans";
 import { planSizeChange } from "../billing";
 import { suggestSize } from "../quota";
-import { FREE_INBOX_SENDS_REASON } from "../campaigns";
+import { UNSIZED_SENDS_REASON } from "../campaigns";
+import { decideMode, withoutAi, type ModeFacts } from "../conversation-mode";
+import { AI_BLOCK_LABEL } from "../chat";
 
-const bot = (botId: string, connectedAt: string, graceUntil: string | null = null): ConnectedUnsized => ({ botId, name: `Bot ${botId}`, agencyId: "a1", connectedAt, graceUntil });
-
-describe("conta grátis: números da decisão de 17/10", () => {
-  it("50 respostas de teste, 100 envios por mês na caixa grátis, 30 dias de prazo", () => {
+describe("conta grátis: números e textos (17/10, revistos em 18/10)", () => {
+  it("50 respostas de teste e 30 dias de prazo; canal só com tamanho, sem caixa de entrada grátis", () => {
     expect(TEST_ANSWERS_FREE).toBe(50);
-    expect(FREE_INBOX_CAMPAIGN_SENDS).toBe(100);
     expect(UNSIZED_GRACE_DAYS).toBe(30);
     expect(TEST_ANSWERS_DONE).toContain("50 respostas de teste");
-    expect(FREE_INBOX_SENDS_REASON).toContain("100 mensagens");
+    expect(SIZE_REQUIRED).toContain("precisa de um tamanho");
+    expect(SIZE_REQUIRED).toContain("Atendimento (sem IA)");
+    expect(UNSIZED_SENDS_REASON).toContain("sem tamanho");
+    expect(UNSIZED_API_SENDS).toContain("sem tamanho");
+    expect(ATENDIMENTO_TEST_OFF).toContain("sem IA");
   });
 });
 
-describe("caixa de entrada grátis", () => {
-  it("fica o chatbot sem tamanho conectado há mais tempo; os outros entram no prazo", () => {
-    const { holder, others } = pickFreeInbox([bot("b2", "2026-10-10T10:00:00Z"), bot("b1", "2026-09-01T10:00:00Z"), bot("b3", "2026-10-12T10:00:00Z")]);
-    expect(holder?.botId).toBe("b1");
-    expect(others.map((b) => b.botId)).toEqual(["b2", "b3"]);
+describe("chatbot com IA (botHasAi)", () => {
+  it("só tamanho de IA ou cota sob medida", () => {
+    for (const size of ["P", "M", "G", "volume"]) expect(botHasAi({ size, quota_override: null })).toBe(true);
+    expect(botHasAi({ size: "atendimento", quota_override: null })).toBe(false);
+    expect(botHasAi({ size: null, quota_override: null })).toBe(false);
+    expect(botHasAi({})).toBe(false);
+    // cota sob medida da BoaVoz: tem IA, com qualquer tamanho
+    expect(botHasAi({ size: null, quota_override: 500 })).toBe(true);
+    expect(botHasAi({ size: "atendimento", quota_override: 0 })).toBe(true);
+    expect(AI_BOTS_FILTER).toBe("size.in.(P,M,G,volume),quota_override.not.is.null");
+  });
+});
+
+const facts: ModeFacts = {
+  channel: "whatsapp",
+  channelDisconnected: false,
+  metaOrder: false,
+  whatsappDisabled: false,
+  metaPaymentIssue: false,
+  boavozSuspended: false,
+  humanInConversation: false,
+  apiPaused: false,
+  botPaused: false,
+  botPauseNotify: false,
+  humanOnly: null,
+  coexistence: false,
+};
+const withFacts = (f: ModeFacts) => ({ ...decideMode(f), facts: f });
+
+describe("chatbot sem IA (Atendimento ou sem tamanho): tudo para a equipe", () => {
+  it("modo só humano com motivo no_ai, sem aviso ao contato e sem a IA", () => {
+    const m = withoutAi(withFacts(facts));
+    expect(m).toMatchObject({ step: 5, state: "so_humano", blockReason: "no_ai", handoff: true, aiResponds: false, canSend: true, storeInbound: true, riskWatch: true, notice: null });
+    expect(m.facts.humanOnly).toBe("no_ai");
+    expect(AI_BLOCK_LABEL.no_ai).toContain("sem IA");
   });
 
-  it("um só: é a caixa grátis, sem prazo; nenhum: ninguém", () => {
-    expect(pickFreeInbox([bot("b1", "2026-10-10T10:00:00Z")])).toEqual({ holder: bot("b1", "2026-10-10T10:00:00Z"), others: [] });
-    expect(pickFreeInbox([])).toEqual({ holder: null, others: [] });
+  it("os degraus de antes seguem valendo (canal bloqueado, suspensão, equipe na conversa, bot pausado)", () => {
+    expect(withoutAi(withFacts({ ...facts, channelDisconnected: true }))).toMatchObject({ step: 1, canSend: false });
+    expect(withoutAi(withFacts({ ...facts, boavozSuspended: true }))).toMatchObject({ step: 2 });
+    expect(withoutAi(withFacts({ ...facts, humanInConversation: true }))).toMatchObject({ step: 3, handoff: false });
+    expect(withoutAi(withFacts({ ...facts, botPaused: true }))).toMatchObject({ step: 4, blockReason: "bot_paused" });
   });
 
+  it("a IA pausada pela BoaVoz, num chatbot com IA, segue com o aviso ao contato", () => {
+    expect(decideMode({ ...facts, humanOnly: "paused" }).notice?.reason).toBe("so_humano");
+    expect(decideMode({ ...facts, humanOnly: "paused", coexistence: true }).notice).toBeNull();
+  });
+});
+
+describe("prazo do chatbot sem tamanho", () => {
   it("e-mails do prazo: a data, o que acontece e como manter", () => {
     const [s1, l1] = graceEmail("inicio", "Zé", new Date("2026-11-16T15:00:00Z"), "https://x/cobranca");
     expect(s1).toBe("Zé: sem tamanho, os canais desconectam em 16/11/2026");

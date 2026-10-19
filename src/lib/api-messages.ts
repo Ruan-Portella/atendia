@@ -28,6 +28,7 @@ import { lastContactMessageAt } from "./whatsapp-inbound";
 import { renderEntryNotice, type HumanHandoff } from "./handoff-hours";
 import { linkColumnsForContact } from "./pairing";
 import { firstExceeded } from "./rate-limit";
+import { UNSIZED_API_SENDS, isUnsized } from "./free-account";
 import { API_PAUSE_DEFAULT_MINUTES } from "./api-pause";
 import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type ApiContext } from "./api-v1";
 
@@ -500,6 +501,8 @@ async function sendTemplateMessage(api: ApiContext, botId: string, p: Extract<Se
   if (to.channel !== "whatsapp") throw invalidRequest("Modelos são só do WhatsApp.", { field: "type" });
   const ch: TemplateChannel | null = await loadTemplateChannel(db, botId);
   if (!ch) throw new ApiError(422, "channel_not_connected", "O bot não tem WhatsApp conectado (com a conta do WhatsApp Business).", { channel: "whatsapp" });
+  // chatbot sem tamanho (no prazo de 30 dias): modelo não sai, como as campanhas
+  if (await isUnsized(db, botId)) throw new ApiError(422, "bot_without_size", UNSIZED_API_SENDS);
   await requireSendable(db, botId, "whatsapp");
   await numberRate(db, ch.phone_number_id);
 

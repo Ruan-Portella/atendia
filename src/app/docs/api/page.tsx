@@ -156,7 +156,7 @@ export default function ApiDocs() {
           ["404", <code key="5">not_found</code>, "Não existe ou está fora do escopo da chave."],
           ["409", <code key="6">idempotency_conflict</code>, "Idempotency-Key repetida com outro corpo (ou a primeira ainda está em andamento)."],
           ["410", <code key="7">media_gone</code>, "O arquivo passou do prazo de guarda ou foi apagado."],
-          ["422", <><code>outside_messaging_window</code>, <code>channel_not_connected</code>, <code>bot_paused</code>, <code>contact_suppressed</code>, <code>contact_opted_out</code>, <code>no_marketing_consent</code>, <code>template_category_mismatch</code>, <code>empty_audience</code>, <code>channel_rejected</code></>, "Regra do canal ou do contato: o BoaVoz confere antes de chamar a Meta e diz o motivo."],
+          ["422", <><code>outside_messaging_window</code>, <code>channel_not_connected</code>, <code>bot_paused</code>, <code>bot_without_size</code>, <code>contact_suppressed</code>, <code>contact_opted_out</code>, <code>no_marketing_consent</code>, <code>template_category_mismatch</code>, <code>empty_audience</code>, <code>channel_rejected</code></>, "Regra do canal ou do contato: o BoaVoz confere antes de chamar a Meta e diz o motivo."],
           ["422", <code key="9">prohibited_content</code>, <>O portão barrou o texto ou um título (a API nunca edita). <code>details</code> traz o motivo, os trechos e o canal.</>],
           ["429", <code key="10">rate_limited</code>, <>Limite da chave ou do número; espere o <code>Retry-After</code>.</>],
         ]}

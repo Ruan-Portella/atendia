@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { retireUnsizedChannels } from "@/lib/free-inbox";
+import { retireUnsizedChannels } from "@/lib/free-account";
 import { clientsOfScope, trackCompliance } from "@/lib/platform-events";
 import { requireAdmin } from "@/lib/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -30,6 +30,7 @@ import { whatsappContact } from "@/lib/contacts";
 import { canonicalPhone } from "@/lib/phone";
 import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
+import { classifyGainedAi } from "@/lib/gate/base";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -109,6 +110,8 @@ export async function setBotSize(agencyId: string, botId: string, fd: FormData):
   const { error } = await db.from("bots").update({ size, volume_packs: packs, quota_override: override, pending_size: null, pending_volume_packs: null, pending_from: null, prorated_month: null, prorated_quota: null }).eq("id", botId);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   await auditAdmin(s.email, "chatbot.tamanho", { agencyId, targetType: "bot", targetId: botId, after: { de: before, para: { size, volume_packs: packs, quota_override: override } } });
+  // com IA a partir de agora: a base é classificada antes das próximas respostas
+  classifyGainedAi(db, [{ id: botId, size, quota_override: override }]);
   // conta com assinatura: a próxima fatura acompanha (sem cobrança proporcional; sob medida fica fora)
   await syncSubscriptionSafe(db, agencyId);
   revalidatePath("/admin", "layout");
@@ -897,11 +900,11 @@ export async function grantCredit(agencyId: string, fd: FormData): Promise<Actio
   return ok(`Crédito de R$ ${reais.toLocaleString("pt-BR")} dado à agência (vale 12 meses).`);
 }
 
-/** Confere agora a caixa de entrada grátis da agência (a tarefa diária faz para todas). */
-export async function checkFreeInbox(agencyId: string): Promise<ActionResult> {
-  const s = await requireAdmin(`/admin/clientes/${agencyId} (caixa de entrada grátis)`);
+/** Confere agora os chatbots sem tamanho com canal da agência (a tarefa diária faz para todas). */
+export async function checkUnsizedChannels(agencyId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (chatbots sem tamanho)`);
   const r = await retireUnsizedChannels(createAdminClient(), { agencyId });
-  await auditAdmin(s.email, "caixa_gratis.conferir", { agencyId, targetType: "agency", targetId: agencyId, after: r });
+  await auditAdmin(s.email, "sem_tamanho.conferir", { agencyId, targetType: "agency", targetId: agencyId, after: r });
   revalidatePath("/admin", "layout");
-  return ok(r.warned || r.disconnected ? `${r.warned} chatbot(s) entraram no prazo de 30 dias; ${r.disconnected} desconectado(s).` : "Nada a fazer: só a caixa de entrada grátis está sem tamanho com canal.");
+  return ok(r.warned || r.disconnected ? `${r.warned} chatbot(s) entraram no prazo de 30 dias; ${r.disconnected} desconectado(s).` : "Nada a fazer: nenhum chatbot sem tamanho com canal fora do prazo.");
 }

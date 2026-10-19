@@ -77,8 +77,8 @@ export function PlanAlert({ bots, billing }: Props) {
     const day = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
     text =
       grace.length === 1
-        ? `${grace[0].name} está sem tamanho e a caixa de entrada grátis da conta é de outro chatbot: o WhatsApp e o Instagram dele desconectam em ${day(grace[0].graceUntil!)}. Para manter, escolha um tamanho (o Atendimento é sem IA).`
-        : `${grace.length} chatbots estão sem tamanho fora da caixa de entrada grátis (${names(grace)}): os canais deles desconectam a partir de ${day(grace.map((b) => b.graceUntil!).sort()[0])}. Para manter, escolha um tamanho.`;
+        ? `${grace[0].name} está sem tamanho: o WhatsApp e o Instagram dele desconectam em ${day(grace[0].graceUntil!)}. Para manter, escolha um tamanho (o Atendimento é sem IA).`
+        : `${grace.length} chatbots estão sem tamanho (${names(grace)}): os canais deles desconectam a partir de ${day(grace.map((b) => b.graceUntil!).sort()[0])}. Para manter, escolha um tamanho.`;
   } else if (spike.length) {
     tone = "warn";
     text = `Pico no chat do site de ${names(spike)}: o excedente ficou suspenso até você confirmar se é tráfego real ou ataque.`;
@@ -107,8 +107,8 @@ export function PlanAlert({ bots, billing }: Props) {
     label = "Escolher o tamanho";
     text =
       unsized.length === 1
-        ? `${unsized[0].name} está sem tamanho: a IA não responde nele. Para a IA responder, escolha um tamanho.`
-        : `${unsized.length} chatbots estão sem tamanho (${names(unsized)}): a IA não responde neles. Para a IA responder, escolha um tamanho.`;
+        ? `${unsized[0].name} está sem tamanho: ele não liga no WhatsApp, no Instagram nem no chat do site. Escolha um tamanho (o Atendimento é sem IA).`
+        : `${unsized.length} chatbots estão sem tamanho (${names(unsized)}): eles não ligam no WhatsApp, no Instagram nem no chat do site. Escolha um tamanho (o Atendimento é sem IA).`;
   }
   if (!tone) return null;
   return (

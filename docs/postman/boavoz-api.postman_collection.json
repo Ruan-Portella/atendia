@@ -1047,7 +1047,7 @@
                 "messages"
               ]
             },
-            "description": "Funciona também fora da janela de 24 horas. Ajuste `variables` ao número de variáveis do modelo (veja em \"Modelos do bot\"); modelo sem variável: `[]`.",
+            "description": "Funciona também fora da janela de 24 horas. Ajuste `variables` ao número de variáveis do modelo (veja em \"Modelos do bot\"); modelo sem variável: `[]`. Chatbot sem tamanho: 422 bot_without_size.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"to\": \"phone:{{phone}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{template_name}}\",\n    \"language\": \"{{template_language}}\",\n    \"variables\": [\n      \"{{template_variable_1}}\"\n    ]\n  }\n}",
@@ -2262,7 +2262,7 @@
                 "campaigns"
               ]
             },
-            "description": "Público: contatos com a etiqueta \"vip\" (use **5. Etiquetas do contato** antes) que aceitaram novidades. `{\"type\": \"first_name\", \"fallback\": \"cliente\"}` põe o primeiro nome do contato na variável. Ajuste `variables` ao modelo. Público sem ninguém apto: 422 empty_audience, com quem ficou de fora e por quê.",
+            "description": "Público: contatos com a etiqueta \"vip\" (use **5. Etiquetas do contato** antes) que aceitaram novidades. `{\"type\": \"first_name\", \"fallback\": \"cliente\"}` põe o primeiro nome do contato na variável. Ajuste `variables` ao modelo. Público sem ninguém apto: 422 empty_audience, com quem ficou de fora e por quê. Chatbot sem tamanho: 422 bot_without_size.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"kind\": \"marketing\",\n  \"name\": \"Teste Postman\",\n  \"template\": {\n    \"name\": \"{{marketing_template}}\",\n    \"language\": \"pt_BR\",\n    \"variables\": [\n      {\n        \"type\": \"first_name\",\n        \"fallback\": \"cliente\"\n      }\n    ]\n  },\n  \"audience\": {\n    \"tags\": [\n      \"vip\"\n    ]\n  }\n}",

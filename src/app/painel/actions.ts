@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { inboxSlotBlock } from "@/lib/free-inbox";
+import { sizeRequiredBlock } from "@/lib/free-account";
 import { queueBotPauseEvent, queueChannelEvent, queueConsentEvent, trackCompliance } from "@/lib/platform-events";
 import { resumeConversationAi } from "@/lib/api-pause";
 import { redirect } from "next/navigation";
@@ -701,9 +701,9 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();
   if (!bot) return fail("Chatbot não encontrado.");
   if (bot.is_demo) return fail("Converta a demo em chatbot antes de ligar o WhatsApp.");
-  // sem tamanho, só a caixa de entrada grátis da conta (um chatbot)
-  const slot = await inboxSlotBlock(createAdminClient(), agency.id, botId);
-  if (slot) return fail(slot);
+  // canal só com tamanho (Atendimento, sem IA, ou com IA)
+  const unsized = await sizeRequiredBlock(createAdminClient(), botId);
+  if (unsized) return fail(unsized);
   if (!whatsappConfigured()) return fail("O WhatsApp ainda não está configurado no servidor (WHATSAPP_TOKEN).");
   // tela única de aceite: o negócio aceita antes de conectar (e não pode estar bloqueado ou aguardando revisão)
   const blocked = await connectBlockFor(createAdminClient(), { clientId: bot.client_id as string | null, channel: "whatsapp" });
@@ -824,9 +824,9 @@ export async function createWhatsAppConnectLink(botId: string, channel: "whatsap
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo").eq("id", botId).maybeSingle();
   if (!bot) return { ok: false, message: "Chatbot não encontrado." };
-  // sem tamanho, só a caixa de entrada grátis da conta (um chatbot)
-  const slot = await inboxSlotBlock(createAdminClient(), agency.id, botId);
-  if (slot) return { ok: false, message: slot };
+  // canal só com tamanho (Atendimento, sem IA, ou com IA)
+  const unsized = await sizeRequiredBlock(createAdminClient(), botId);
+  if (unsized) return { ok: false, message: unsized };
   if (bot.is_demo) return { ok: false, message: "Converta a demo em chatbot antes de ligar o WhatsApp." };
   try {
     const { url } = await createConnectLink(createAdminClient(), botId, channel);
@@ -883,6 +883,7 @@ export async function analyzeBotNow(botId: string): Promise<ActionResult> {
     revalidatePath(`/painel/bots/${botId}`);
     if (r.status === "aguardando_classificacao") return fail("A base ainda está sendo lida. Tente de novo em alguns minutos.");
     if (r.status === "sem_base") return fail("Adicione pelo menos uma fonte pronta antes de analisar.");
+    if (r.status === "ignorado") return fail("A análise roda quando o chatbot tem um tamanho com IA.");
     return r.pending ? ok("Análise feita: ficou para revisão da equipe BoaVoz (até 2 dias úteis).") : ok("Análise feita. O WhatsApp está liberado para este assistente.");
   } catch {
     return fail("Não foi possível analisar agora. Tente de novo em alguns minutos.");

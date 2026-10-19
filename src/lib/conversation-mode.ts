@@ -15,8 +15,10 @@ import { apiPauseActive } from "./presence";
  *   3. Humano na conversa: "Assumir", resposta pelo celular/app há menos de 1 hora, ou IA pausada
  *      pela integração (API, com prazo; sem avisar a equipe)
  *   4. Bot pausado pelo dono (botão de emergência): aviso só se ele pediu
- *   5. Modo só humano: IA pausada pela BoaVoz; a cota do chatbot (sem tamanho, cota cheia, sem
- *      crédito ou no teto do excedente) entra aqui quando openAtendimento não abre, antes de chamar a IA
+ *   5. Modo só humano: IA pausada pela BoaVoz; a cota do chatbot (cota cheia, sem crédito ou no
+ *      teto do excedente) entra aqui quando openAtendimento não abre, antes de chamar a IA; o
+ *      chatbot sem IA (Atendimento ou sem tamanho; withoutAi) entra logo na chegada, sem aviso ao
+ *      contato e antes de qualquer IA (nem transcrição)
  *   6. Normal
  * O opt-out (SAIR, PARAR, STOP) roda antes de todos; a confirmação só sai se dá para enviar.
  * Risco à vida nunca roda nos degraus 1 e 2; nos 3 a 5, dispara o texto fixo de emergência.
@@ -91,9 +93,21 @@ export function decideMode(f: ModeFacts): Mode {
     return { ...base, step: 4, state: "bot_pausado", reason: "bot pausado pelo dono", handoff: true, blockReason: "bot_paused", notice: f.botPauseNotify && !f.coexistence ? { reason: "bot_pausado", text: HUMAN_ONLY_NOTICE } : null };
   }
   if (f.humanOnly) {
-    return { ...base, step: 5, state: "so_humano", reason: `modo só humano (${f.humanOnly})`, handoff: true, blockReason: f.humanOnly, notice: f.coexistence ? null : { reason: "so_humano", text: HUMAN_ONLY_NOTICE } };
+    // chatbot sem IA: a equipe é o atendimento, não há assistente para dizer que está fora
+    const notice = f.coexistence || f.humanOnly === "no_ai" ? null : { reason: "so_humano" as const, text: HUMAN_ONLY_NOTICE };
+    return { ...base, step: 5, state: "so_humano", reason: `modo só humano (${f.humanOnly})`, handoff: true, blockReason: f.humanOnly, notice };
   }
   return { ...base, step: 6, state: "normal", reason: "normal", aiResponds: true, riskWatch: false };
+}
+
+/**
+ * Chatbot sem IA (Atendimento ou sem tamanho; plans.botHasAi): o degrau do modo só humano, com
+ * motivo no_ai. Os degraus de 1 a 4 seguem valendo (canal bloqueado, suspensão, equipe na
+ * conversa, bot pausado). Função pura.
+ */
+export function withoutAi(mode: Mode & { facts: ModeFacts }): Mode & { facts: ModeFacts } {
+  const facts: ModeFacts = { ...mode.facts, humanOnly: "no_ai" };
+  return { ...decideMode(facts), facts };
 }
 
 /** Número sem pagamento na Meta: bloqueia por 1 hora; depois tenta de novo (se falhar, marca de novo). */

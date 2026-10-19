@@ -5,6 +5,7 @@ import { audit } from "./audit";
 import { applyUpgrade, syncSubscriptionSafe } from "./billing-sync";
 import { applyCredit } from "./billing-credit";
 import { endApiPauses } from "./api-pause";
+import { classifyGainedAi } from "./gate/base";
 
 /*
  * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), inclusive a
@@ -38,6 +39,8 @@ export async function applyCheckout(db: SupabaseClient, changeId: string, subscr
     await db.rpc("apply_billing_change", { p_change_id: changeId, p_bots: target.bots.map((b) => appliedBotRow(b, now)), p_packs: target.packs, p_replace_packs: true, p_subscription_id: subscriptionId }),
   );
   if (applied) {
+    // chatbots com IA a partir de agora: a base é classificada antes das próximas respostas
+    classifyGainedAi(db, target.bots);
     await audit(db, {
       agencyId: change.agency_id as string,
       actorType: "system",

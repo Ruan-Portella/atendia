@@ -2,8 +2,10 @@
  * Tamanho de cada chatbot no ar (revisão de preços, 16/10/2026): a cota do mês é do chatbot.
  * Preço com pelo menos 25% de margem no pior caso (cota toda em atendimentos de 40 respostas e
  * 5 minutos de áudio). Volume: por pacote de 1.000, para um chatbot que atende todos os usuários
- * de um app. Atendimento (17/10/2026): sem IA, para quem só quer a caixa de entrada (WhatsApp,
- * Instagram e a equipe respondendo); a primeira caixa de entrada da conta é grátis.
+ * de um app. Atendimento (17/10/2026): sem IA nenhuma, para quem só quer o software da caixa de
+ * entrada da equipe. Todo chatbot no ar tem um tamanho (não há caixa de entrada grátis, 18/10/2026);
+ * o preço é do software e da IA, nunca do uso do WhatsApp (termos de Tech Provider): conectar
+ * canal não custa nada a mais.
  */
 export type BotSize = "atendimento" | "P" | "M" | "G" | "volume";
 
@@ -17,7 +19,7 @@ export interface SizeInfo {
 }
 
 export const BOT_SIZES: Record<BotSize, SizeInfo> = {
-  atendimento: { id: "atendimento", name: "Atendimento", priceBrl: 29, atendimentos: 0, description: "WhatsApp, Instagram e a equipe, sem IA" },
+  atendimento: { id: "atendimento", name: "Atendimento", priceBrl: 29, atendimentos: 0, description: "caixa de entrada da equipe, sem IA" },
   P: { id: "P", name: "P", priceBrl: 49, atendimentos: 160, description: "umas 5 conversas por dia" },
   M: { id: "M", name: "M", priceBrl: 99, atendimentos: 340, description: "umas 11 conversas por dia" },
   G: { id: "G", name: "G", priceBrl: 199, atendimentos: 680, description: "umas 22 conversas por dia" },
@@ -57,11 +59,21 @@ export const isPackId = (v: unknown): v is PackId => typeof v === "string" && v 
 /** Tamanhos com IA (o Atendimento não tem IA). */
 export const AI_SIZES: readonly BotSize[] = ["P", "M", "G", "volume"];
 
+/**
+ * O chatbot usa IA? Só com tamanho de IA ou cota sob medida. Sem tamanho ou no Atendimento, nada
+ * de IA (18/10/2026): nem resposta, nem portão, transcrição de áudio, checagem de risco ou análise
+ * da base. Fora disso, só as respostas de teste da conta grátis e as demos. Função pura.
+ */
+export function botHasAi(bot: { size?: unknown; quota_override?: unknown }): boolean {
+  return (AI_SIZES as readonly unknown[]).includes(bot.size) || (bot.quota_override !== null && bot.quota_override !== undefined);
+}
+
+/** Filtro do PostgREST para os chatbots com IA (tamanho de IA ou cota sob medida). */
+export const AI_BOTS_FILTER = `size.in.(${AI_SIZES.join(",")}),quota_override.not.is.null`;
+
 /** Conta grátis: respostas de teste da IA (teste ao vivo do painel e demos) enquanto não há assinatura. */
 export const TEST_ANSWERS_FREE = 50;
-/** Caixa de entrada grátis (um chatbot sem tamanho por conta): envios de campanha e lembrete por mês. */
-export const FREE_INBOX_CAMPAIGN_SENDS = 100;
-/** Chatbot sem tamanho fora da caixa grátis: dias até os canais desconectarem. */
+/** Chatbot que perdeu o tamanho com canal conectado: dias até os canais desconectarem. */
 export const UNSIZED_GRACE_DAYS = 30;
 
 /** Respostas da IA que cabem num atendimento: a seguinte abre outro. */

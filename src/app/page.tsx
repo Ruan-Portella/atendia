@@ -114,7 +114,7 @@ export default function LandingPage() {
         <div className="max-w-[640px]">
           <span className="eyebrow">Preços</span>
           <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Conta grátis. Cada chatbot no ar com um tamanho.</h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">1 atendimento = 24 horas de conversa da IA com um contato, no site, no WhatsApp ou no Instagram, com até 40 respostas. Respostas da sua equipe não contam. Conectar canais não custa nada.</p>
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">1 atendimento = 24 horas de conversa da IA com um contato, no site, no WhatsApp ou no Instagram, com até 40 respostas. Respostas da sua equipe não contam. Conectar WhatsApp, Instagram e o chat do site não custa nada a mais: vem com o tamanho do chatbot.</p>
           <p className="mt-2 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente. As mensagens do Instagram não são cobradas pela Meta.</p>
         </div>
         <div className="grid gap-5 md:grid-cols-4">
@@ -139,7 +139,7 @@ export default function LandingPage() {
           })}
         </div>
         <p className="text-[15px] text-ink-2">
-          Só a caixa de entrada, sem IA: a primeira é grátis, e as outras são o tamanho Atendimento ({brl(BOT_SIZES.atendimento.priceBrl)}/mês por chatbot). Pacotes da conta: {Object.values(PACKS).map((p) => `${p.name} ${brl(p.priceBrl)}/mês`).join(" · ")}. Passou da cota? Ligue o excedente, pago com crédito: {brlCents(OVERAGE_PRICE_BRL)} por atendimento a mais.
+          Só a caixa de entrada da equipe, sem IA: tamanho Atendimento, {brl(BOT_SIZES.atendimento.priceBrl)}/mês por chatbot. Pacotes da conta: {Object.values(PACKS).map((p) => `${p.name} ${brl(p.priceBrl)}/mês`).join(" · ")}. Passou da cota? Ligue o excedente, pago com crédito: {brlCents(OVERAGE_PRICE_BRL)} por atendimento a mais.
         </p>
       </section>
 

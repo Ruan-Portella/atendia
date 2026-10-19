@@ -6,6 +6,7 @@ import { botQuota } from "./quota";
 import { catalogPrices, stripe } from "./stripe";
 import { audit } from "./audit";
 import { currentPeriodBR } from "./utils";
+import { classifyGainedAi } from "./gate/base";
 
 /*
  * Mudanças numa conta com assinatura (revisão de preços, parte 4b). A assinatura da Stripe
@@ -149,6 +150,8 @@ export async function applyUpgrade(db: SupabaseClient, changeId: string, now = n
   }
   const { data: applied } = must(await db.rpc("apply_billing_change", { p_change_id: changeId, p_bots: rows, p_packs: target.packs, p_replace_packs: false, p_subscription_id: null }));
   if (!applied) return false;
+  // chatbots com IA a partir de agora: a base é classificada antes das próximas respostas
+  classifyGainedAi(db, target.bots);
   await audit(db, { agencyId, actorType: "system", actorId: null, action: "assinatura.subir", targetType: "agency", targetId: agencyId, after: { chatbots: target.bots.map((b) => ({ id: b.id, tamanho: b.size, pacotes: b.volumePacks })), pacotes: target.packs } });
   await syncSubscriptionSafe(db, agencyId);
   return true;

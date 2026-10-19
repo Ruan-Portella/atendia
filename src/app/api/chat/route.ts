@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TEST_ANSWERS_DONE, takeTestAnswer } from "@/lib/free-inbox";
+import { ATENDIMENTO_TEST_OFF, TEST_ANSWERS_DONE, takeTestAnswer } from "@/lib/free-account";
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -14,7 +14,8 @@ import { linkAttachments } from "@/lib/attachments";
 import type { WidgetFile } from "@/lib/file-links";
 import { handleSiteOptIn } from "@/lib/site-optin";
 import { handleErasureRequest } from "@/lib/data-subject";
-import { SUSPENDED_NOTICE, resolveMode } from "@/lib/conversation-mode";
+import { SUSPENDED_NOTICE, resolveMode, withoutAi } from "@/lib/conversation-mode";
+import { botHasAi } from "@/lib/plans";
 import { logWidgetAccess } from "@/lib/access-log";
 import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
 import { isResumable } from "@/lib/presence";
@@ -128,8 +129,10 @@ export async function POST(req: Request) {
   ]);
   if (exceeded) return tooMany(exceeded, CORS_HEADERS);
 
-  // regra única de estado (conversation-mode): suspensão, equipe na conversa, pausa e modo só humano
-  const mode = await resolveMode(db, { bot, channel: "widget", conversation: conv });
+  // regra única de estado (conversation-mode): suspensão, equipe na conversa, pausa e modo só humano;
+  // no site, o chatbot sem IA (Atendimento ou sem tamanho) é só o formulário de contato
+  const resolved = await resolveMode(db, { bot, channel: "widget", conversation: conv });
+  const mode = channel === "widget" && !bot.is_demo && !botHasAi(bot) ? withoutAi(resolved) : resolved;
   if (mode.step === 2) return Response.json({ error: "channel_suspended", message: SUSPENDED_NOTICE }, { status: 403, headers: CORS_HEADERS });
 
   // pedido do titular (LGPD): "apaga meus dados" e o SIM/NÃO da confirmação, com texto fixo e sem a
@@ -215,8 +218,8 @@ export async function POST(req: Request) {
     });
   }
 
-  // bot pausado pelo dono, IA pausada pelo backoffice, plano, teste ou cota: o widget mostra o
-  // formulário de contato (o lead não se perde)
+  // bot pausado pelo dono, IA pausada pelo backoffice, chatbot sem IA, teste ou cota: o widget
+  // mostra o formulário de contato (o lead não se perde)
   if (mode.handoff) {
     const reason = mode.blockReason ?? "paused";
     return contactFallback(reason === "paused" ? "ai_paused" : reason, reason === "paused" || reason === "bot_paused" ? 503 : 402);
@@ -266,6 +269,8 @@ export async function POST(req: Request) {
     }
   }
 
+  // Atendimento não tem IA, nem no teste ao vivo
+  if (channel === "painel" && bot.size === "atendimento" && !botHasAi(bot)) return fixedStream("teste", ATENDIMENTO_TEST_OFF, CORS_HEADERS);
   // conta grátis (sem assinatura): o teste ao vivo do painel e as demos usam as respostas de teste da
   // IA (a vitrine do site fica de fora); acabaram, o painel avisa e a demo mostra o formulário
   if ((channel === "painel" || bot.is_demo) && !(await takeTestAnswer(db, bot.agency_id))) {

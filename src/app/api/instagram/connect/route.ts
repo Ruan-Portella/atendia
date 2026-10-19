@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { inboxSlotBlock } from "@/lib/free-inbox";
+import { sizeRequiredBlock } from "@/lib/free-account";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
@@ -24,8 +24,8 @@ export async function GET(req: Request) {
     const link = await resolveConnectLink(createAdminClient(), linkToken);
     if (!link || link.state !== "open" || link.channel !== "instagram" || link.bot.is_demo) redirect(`/conectar/${encodeURIComponent(linkToken)}`);
     if (await channelBlock(createAdminClient(), link.agencyId, "instagram")) redirect(`/conectar/${encodeURIComponent(linkToken)}?ig_erro=${encodeURIComponent("A conexão do Instagram ainda não está liberada para este assistente. Fale com a agência.")}`);
-    // sem tamanho, só a caixa de entrada grátis da conta (um chatbot)
-    if (await inboxSlotBlock(createAdminClient(), link.agencyId, link.botId)) redirect(`/conectar/${encodeURIComponent(linkToken)}?ig_erro=${encodeURIComponent("A conexão deste assistente precisa de um plano ativo. Fale com a agência.")}`);
+    // canal só com tamanho (Atendimento, sem IA, ou com IA)
+    if (await sizeRequiredBlock(createAdminClient(), link.botId)) redirect(`/conectar/${encodeURIComponent(linkToken)}?ig_erro=${encodeURIComponent("A conexão deste assistente precisa de um plano ativo. Fale com a agência.")}`);
     // tela única de aceite: sem o aceite (pendente deste link) ou com o negócio bloqueado, não abre o login
     const blocked = await connectBlockFor(createAdminClient(), { clientId: link.clientId, channel: "instagram", linkTokenHash: hashToken(linkToken), neutral: true });
     if (blocked) redirect(`/conectar/${encodeURIComponent(linkToken)}?ig_erro=${encodeURIComponent(blocked)}`);
@@ -39,8 +39,8 @@ export async function GET(req: Request) {
   const supabase = await createClient();
   const { data: bot } = await supabase.from("bots").select("id, is_demo, client_id").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) redirect("/painel/clientes");
-  const slot = await inboxSlotBlock(createAdminClient(), agency.id, bot.id);
-  if (slot) redirect(`/painel/bots/${bot.id}?tab=instagram&ig_erro=${encodeURIComponent(slot)}`);
+  const unsized = await sizeRequiredBlock(createAdminClient(), bot.id);
+  if (unsized) redirect(`/painel/bots/${bot.id}?tab=instagram&ig_erro=${encodeURIComponent(unsized)}`);
   const blocked = await connectBlockFor(createAdminClient(), { clientId: bot.client_id as string | null, channel: "instagram" });
   if (blocked) redirect(`/painel/bots/${bot.id}?tab=instagram&ig_erro=${encodeURIComponent(blocked)}`);
   redirect(authorizeUrl(signState({ botId: bot.id, via: "painel" })));

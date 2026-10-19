@@ -2,7 +2,8 @@ import { IDENTITY_CHANGED_TEXT, checkIdentityKey, handlePairing, linkColumnsForC
 import { handleErasureRequest } from "./data-subject";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, type BotRow } from "./chat";
-import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, type Mode } from "./conversation-mode";
+import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withoutAi, type Mode } from "./conversation-mode";
+import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf, markMarketingOffer } from "./contacts";
 import { firstExceeded, noticeOnce } from "./rate-limit";
@@ -208,7 +209,9 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   const contact = await whatsappContact(db, bot, { phone: last.msg.from ?? null, bsuid: last.msg.from_user_id ?? null, name: profileName });
   const contactId = contact?.id ?? null;
   let conv = await recentConversation(db, bot.id, waId, contactId);
-  const mode = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel });
+  // chatbot sem IA (Atendimento ou sem tamanho): tudo vai para a equipe, sem IA nenhuma (nem transcrição)
+  const resolved = await resolveMode(db, { bot, channel: "whatsapp", conversation: conv, wa: channel });
+  const mode = botHasAi(bot) ? resolved : withoutAi(resolved);
   // "já conversou" e a janela de 24 h: só mensagem do próprio contato que chegou (ordem da Meta e
   // desligamento geral: nada; a pergunta pendente rearmada na volta da IA não é mensagem nova)
   const rearmed = isRearmed(last.msg.id);
@@ -231,8 +234,9 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
 
   const transcribe = async (m: InboundMessage): Promise<string | null> => {
     const audioId = m.type === "audio" ? m.audio?.id : undefined;
-    // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio)
-    if (!audioId || !canTranscribe() || mode.step <= 2) return null;
+    // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio);
+    // chatbot sem IA: a equipe ouve o áudio na conversa
+    if (!audioId || !canTranscribe() || mode.step <= 2 || !botHasAi(bot)) return null;
     try {
       const { data } = await downloadMedia(channel, audioId);
       const transcript = await transcribeAudio(data, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "whatsapp", ...u }));

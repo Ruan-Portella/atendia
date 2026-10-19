@@ -7,6 +7,7 @@ import { recordAiUsage, usageFrom } from "./ai-usage";
 import { BASE_GATE_VERSION, CATEGORIES, RULES_VERSION, type GateCategory } from "./gate/rules";
 import { notifyAgencyOwner, notifyPlatform } from "./notify";
 import { appUrl } from "./utils";
+import { AI_BOTS_FILTER, botHasAi } from "./plans";
 
 /*
  * Análise do bot (logo depois da L1; spec "Conformidade Meta"). Um processo só por chatbot:
@@ -139,14 +140,19 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
 export type AnalysisStatus = "feita" | "igual" | "sem_base" | "aguardando_classificacao" | "ignorado";
 
-/** Analisa um chatbot. force: roda mesmo sem mudança (botão do backoffice). */
+/**
+ * Analisa um chatbot. force: roda mesmo sem mudança (botão do backoffice). Chatbot sem IA
+ * (Atendimento ou sem tamanho): não roda, e a análise fica agendada para quando ele ganhar um
+ * tamanho com IA.
+ */
 export async function analyzeBot(db: SupabaseClient, botId: string, opts: { force?: boolean } = {}): Promise<{ status: AnalysisStatus; pending?: boolean }> {
   const clearDue = () => db.from("bots").update({ analysis_due_at: null }).eq("id", botId);
-  const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name, client_name, persona, business_topics, is_demo").eq("id", botId).maybeSingle();
+  const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name, client_name, persona, business_topics, is_demo, size, quota_override").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) {
     if (bot) await clearDue();
     return { status: "ignorado" };
   }
+  if (!opts.force && !botHasAi(bot)) return { status: "ignorado" };
   const [{ data: sources }, { count: unclassified }, { data: classified }, { data: sample }] = await Promise.all([
     db.from("sources").select("title, url").eq("bot_id", botId).eq("status", "ready").order("created_at").limit(50),
     db.from("chunks").select("id", { count: "exact", head: true }).eq("bot_id", botId).or(`gate_version.is.null,gate_version.neq."${BASE_GATE_VERSION}"`),
@@ -256,7 +262,8 @@ async function updateProfile(db: SupabaseClient, bot: { agency_id: string; clien
 /** Roda as análises agendadas (rotina diária e botão do backoffice), dentro do tempo dado. */
 export async function runDueAnalyses(db: SupabaseClient, opts: { budgetMs: number; limit?: number }): Promise<{ feitas: number; puladas: number; falhas: number; restantes: number }> {
   const started = Date.now();
-  const { data: due } = await db.from("bots").select("id").eq("is_demo", false).lte("analysis_due_at", new Date().toISOString()).order("analysis_due_at").limit(opts.limit ?? 20);
+  // só chatbots com IA: os outros ficam agendados até ganharem um tamanho com IA
+  const { data: due } = await db.from("bots").select("id").eq("is_demo", false).or(AI_BOTS_FILTER).lte("analysis_due_at", new Date().toISOString()).order("analysis_due_at").limit(opts.limit ?? 20);
   let feitas = 0;
   let puladas = 0;
   let falhas = 0;
@@ -271,7 +278,7 @@ export async function runDueAnalyses(db: SupabaseClient, opts: { budgetMs: numbe
       console.error("análise do bot:", b.id, (e as Error).message);
     }
   }
-  const { count } = await db.from("bots").select("id", { count: "exact", head: true }).eq("is_demo", false).lte("analysis_due_at", new Date().toISOString());
+  const { count } = await db.from("bots").select("id", { count: "exact", head: true }).eq("is_demo", false).or(AI_BOTS_FILTER).lte("analysis_due_at", new Date().toISOString());
   return { feitas, puladas, falhas, restantes: count ?? 0 };
 }
 
