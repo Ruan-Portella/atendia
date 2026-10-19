@@ -91,7 +91,8 @@ export interface ChatIdentity {
   userDisplay: Record<string, unknown> | null;
   contextDisplay: string | null;
   context: Record<string, unknown> | null;
-  source: "token" | "pairing";
+  /** token: o widget do site; pairing: o código do sistema da empresa; routine: a ação do roteiro (parte 2c). */
+  source: "token" | "pairing" | "routine";
   ageVerified: boolean | null;
   /** Outras contas conectadas a este contato (pareamento): a IA pode trocar com trocar_contexto. */
   otherContexts?: string[];
@@ -107,5 +108,5 @@ export function identityPromptNote(id: ChatIdentity | null): string | null {
   const who = id.externalId ? `uma pessoa identificada pela empresa${name ? ` (${name})` : ""}` : "uma pessoa";
   const where = id.contextDisplay ? `, no contexto "${id.contextDisplay.slice(0, 120)}"` : "";
   const others = id.otherContexts?.length ? ` A pessoa também tem conectado: ${id.otherContexts.slice(0, 10).join("; ")}. Se ela pedir para trocar, use trocar_contexto.` : "";
-  return `Você está falando com ${who}${where}. A identidade já foi confirmada pela empresa: nunca peça documento, senha ou prova de quem ela é. Em respostas com dados da conta, cite o contexto.${others}`;
+  return `Você está falando com ${who}${where}. A identidade já foi confirmada pela empresa: nunca peça documento, senha ou prova de quem ela é (a não ser que o passo do roteiro em andamento peça um dado). Em respostas com dados da conta, cite o contexto.${others}`;
 }

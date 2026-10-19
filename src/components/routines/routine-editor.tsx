@@ -254,6 +254,10 @@ export function RoutineEditor({
                 <p className="text-xs text-muted sm:col-span-2">
                   O BoaVoz confere o dado (o dígito verificador, no CPF e no CNPJ) e pede de novo até 3 vezes; depois, oferece atendente ou cancelar.
                 </p>
+                <label className="flex items-start gap-2 text-xs text-muted sm:col-span-2">
+                  <input type="checkbox" className="mt-0.5" checked={s.skip_identified === true} onChange={(e) => patchStep(i, { skip_identified: e.target.checked || undefined } as Partial<RoutineStep>)} />
+                  <span>Pular se a pessoa já estiver identificada (número lembrado e confirmado, ou conta conectada). Use nos dados que servem só para identificar, como o CPF.</span>
+                </label>
               </div>
             )}
 
@@ -330,6 +334,11 @@ export function RoutineEditor({
                   </div>
                 ))}
                 <p className="text-xs text-muted">Os parâmetros com o mesmo nome de uma variável do roteiro vão preenchidos pelo BoaVoz, com o valor conferido.</p>
+                <p className="text-xs text-muted">Se a ação devolver <code className="font-mono">identity</code>, a pessoa fica identificada: as próximas ações recebem a conta dela, e no WhatsApp e no Instagram o BoaVoz pede licença para lembrar o número.</p>
+                <label className="flex items-start gap-2 text-xs text-muted">
+                  <input type="checkbox" className="mt-0.5" checked={s.skip_identified === true} onChange={(e) => patchStep(i, { skip_identified: e.target.checked || undefined } as Partial<RoutineStep>)} />
+                  <span>Pular se a pessoa já estiver identificada (segue como se a ação tivesse dado certo). Use na ação que só identifica.</span>
+                </label>
               </div>
             )}
 

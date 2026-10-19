@@ -35,6 +35,7 @@ import { identityPromptNote, type ChatIdentity } from "./widget-identity";
 import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
 import { endActiveRoutine, routineSession, type RoutineTurn } from "./routine-engine";
+import type { IdentityPort } from "./routine-identity";
 
 export interface BotRow {
   id: string;
@@ -742,6 +743,13 @@ export async function runChat(opts: {
   /** Roteiros (B2'): o que o BoaVoz já resolveu antes da IA (routinePreTurn) e as mensagens desta vez. */
   routine?: RoutineTurn | null;
   turnTexts?: string[];
+  /**
+   * Identidade da conversa pelo roteiro (parte 2c): a ação do passo pode identificar a pessoa no
+   * meio da vez (as próximas chamadas saem com ela) e a escolha da conta vai em botões.
+   */
+  identityPort?: IdentityPort | null;
+  /** O que a IA precisa saber da identificação nesta mensagem ("a pessoa escolheu a conta X"). */
+  identityNote?: string | null;
 }) {
   const { db, bot, messages, channel } = opts;
 
@@ -771,7 +779,7 @@ export async function runChat(opts: {
   const convId = conversationId;
   // roteiros (B2'): as ferramentas, o bloco do passo atual e os botões do passo
   const routine = opts.routine
-    ? routineSession(db, { bot, conversationId: convId, waPhone, turn: opts.routine, texts: opts.turnTexts ?? (question ? [question] : []), requestHandoff: (reason) => requestHandoff(db, bot, convId, reason) })
+    ? routineSession(db, { bot, conversationId: convId, waPhone, turn: opts.routine, texts: opts.turnTexts ?? (question ? [question] : []), requestHandoff: (reason) => requestHandoff(db, bot, convId, reason), identity: opts.identityPort ?? null })
     : null;
 
   // 3. Persiste a pergunta do visitante
@@ -847,7 +855,8 @@ export async function runChat(opts: {
     onFiles: (files) => void actionFiles.push(...files),
     confirmRound: Boolean(opts.confirmed),
     agencyId: bot.agency_id,
-    ...(routine ? { routine: { step: () => routine.actionStep(), onResult: (a: string, r: { status: string; outcome?: string | null }, d: string[]) => routine.onActionResult(a, r, d) } } : {}),
+    ...(routine ? { routine: { step: () => routine.actionStep(), onResult: (a, r, d) => routine.onActionResult(a, r, d), upcoming: () => routine.upcoming() } } : {}),
+    ...(opts.identityPort ? { identityNow: () => opts.identityPort!.current() } : {}),
   });
   // roteiro: a ação do passo que não veio entre as ferramentas segue o destino de erro (antes do prompt)
   await routine?.prepare(new Set(Object.keys(actionTools)), { confirmRound: Boolean(opts.confirmed) });
@@ -872,7 +881,7 @@ export async function runChat(opts: {
     // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
     allowSystemInMessages: true,
     messages: [
-      { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null)].filter(Boolean).join("\n\n") },
+      { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null), opts.identityNote ?? null].filter(Boolean).join("\n\n") },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
       // roteiro em andamento: o passo atual depois do histórico (pesa mais que ele)

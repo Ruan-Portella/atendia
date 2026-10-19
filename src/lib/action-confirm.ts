@@ -198,7 +198,7 @@ export interface Caller {
   level: ActionLevel;
   hasContext: boolean;
   contact: CallContact;
-  context: { source: "token" | "pairing" | "bot"; data: Record<string, unknown> } | null;
+  context: { source: "token" | "pairing" | "bot" | "routine"; data: Record<string, unknown> } | null;
   gateChannel: "widget" | "whatsapp" | "instagram";
   /** Última vez que a conversa falou de bebida ou remédio (portão do reply). */
   regulatedAt?: string | null;

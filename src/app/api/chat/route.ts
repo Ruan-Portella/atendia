@@ -24,6 +24,7 @@ import { saveMessage } from "@/lib/messages";
 import { chatIdentityOf, conversationAccess, identityColumns, upgradeConversation, widgetWho } from "@/lib/widget-identity";
 import { maskCardNumbers } from "@/lib/routine-run";
 import { applyConfirmedAction, cancelRoutineAction, routinePreTurn } from "@/lib/routine-engine";
+import { conversationChatIdentity, identityPort, identityPreTurn, loadConversationIdentity } from "@/lib/routine-identity";
 
 const MAX_MESSAGE_CHARS = 2000;
 
@@ -238,7 +239,8 @@ export async function POST(req: Request) {
   const interactive: Interactive | null = parsed.data.buttonId ? { type: "button_reply", id: devButtonId(parsed.data.buttonId), title: text } : null;
   if (convId) {
     const id = convId;
-    const identity = chatIdentityOf(who);
+    // o token do site, senão a identidade que o roteiro deu a esta conversa (parte 2c)
+    const identity = chatIdentityOf(who) ?? (await conversationChatIdentity(db, id));
     const click = await resolveConfirmClick(db, {
       bot,
       conversationId: id,
@@ -299,22 +301,43 @@ export async function POST(req: Request) {
   if (slot?.blocked) return contactFallback(slot.blocked, 402);
 
   try {
-    // roteiros (B2'): botão do passo, escolha digitada, dado conferido e palavra-chave, antes da IA;
-    // a palavra-chave abre a conversa nova, se ainda não existe
     const chatChannel = bot.is_demo ? "demo" : channel;
-    // a conversa começa nesta mensagem (registro de acesso e ligação com o atendimento), mesmo se o roteiro abrir
+    // a conversa começa nesta mensagem (registro de acesso e ligação com o atendimento)
     const newConversation = !convId;
+    const tokenIdentity = chatIdentityOf(who);
+    // identificação pelo roteiro (B2', parte 2c): o toque na escolha da conta, antes do roteiro (no
+    // site não há número para lembrar nem a pergunta "Estou falando com...?")
+    let identityNote: string | null = null;
+    let identityConsumed = false;
+    if (convId && !confirmed) {
+      const idTurn = await identityPreTurn(db, { bot, channel: chatChannel, conversationId: convId, contactId: null, buttonId: parsed.data.buttonId ?? null, text, texts: [text], consume: true, external: Boolean(tokenIdentity?.externalId) });
+      if (idTurn.kind === "fixed") {
+        const id = convId;
+        if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: id, ip: clientIp(req), isNew: false }));
+        await saveMessage(db, { conversation_id: id, role: "user", content: text }, { touch: "visitante", interactive });
+        await saveMessage(db, { conversation_id: id, role: "assistant", content: idTurn.text, author: SYSTEM_AUTHOR, components: idTurn.component });
+        return fixedStream("identificacao", idTurn.text, { ...CORS_HEADERS, "X-Conversation-Id": id, "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" }, { component: idTurn.component });
+      }
+      if (idTurn.kind === "none") {
+        identityNote = idTurn.note;
+        identityConsumed = idTurn.consumed;
+      }
+    }
+    // a conversa abre aqui, e não no runChat: a identidade que a ação do roteiro devolver já é
+    // gravada nela nesta vez
+    convId ??= await openConversation(db, bot, { channel: chatChannel, visitorId: visitorId ?? null, identity: await identityColumns(who, bot.id) });
+    const port = identityPort(db, { conversationId: convId, botId: bot.id, contactId: null, channel: chatChannel, initial: await loadConversationIdentity(db, convId), external: tokenIdentity });
+    // roteiros (B2'): botão do passo, escolha digitada, dado conferido e palavra-chave, antes da IA
     const routineTurn = await routinePreTurn(db, {
       bot,
       conversationId: convId,
       texts: [text],
       buttonId: parsed.data.buttonId ?? null,
       waPhone: null,
-      consume: !confirmed,
+      consume: !confirmed && !identityConsumed,
       note: routineNote,
-      openConversation: async () => openConversation(db, bot, { channel: chatChannel, visitorId: visitorId ?? null, identity: await identityColumns(who, bot.id) }),
+      identity: { identified: port.identified(), choosing: port.choosing() },
     });
-    convId = routineTurn.conversationId ?? convId;
     if (routineTurn.fixed && convId) {
       const id = convId;
       const headers = { ...CORS_HEADERS, "X-Conversation-Id": id, "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" };
@@ -339,8 +362,12 @@ export async function POST(req: Request) {
       conversationId: convId,
       visitorId: visitorId ?? null,
       channel: chatChannel,
-      identity: chatIdentityOf(who),
+      identity: tokenIdentity ?? port.current(),
       identityColumns: await identityColumns(who, bot.id),
+      // pessoa identificada pelo roteiro com 2 contas ou mais: a IA pode trocar
+      extraTools: port.switchTool(),
+      identityPort: port,
+      identityNote,
     });
     // registro de acesso do visitante (Marco Civil): IP quando a conversa começa e quando muda;
     // o teste ao vivo do painel já fica no registro de acesso do painel

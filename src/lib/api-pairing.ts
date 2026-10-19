@@ -77,7 +77,7 @@ async function linksOf(req: Request, api: ApiContext, contactParam: string) {
   }
   const { data } = await api.db
     .from("contact_links")
-    .select("id, bot_id, contact_id, channel, external_id_enc, context_enc, display, linked_at")
+    .select("id, bot_id, contact_id, channel, external_id_enc, context_enc, display, linked_at, source")
     .in("contact_id", contacts.map((c) => c.id))
     .is("unlinked_at", null)
     .order("linked_at");
@@ -90,6 +90,8 @@ async function linksOf(req: Request, api: ApiContext, contactParam: string) {
       bot_id: `bot_${l.bot_id}`,
       contact_id: `ctc_${l.contact_id}`,
       channel: l.channel,
+      // pairing: código do sistema da empresa; routine: número lembrado pelo roteiro (parte 2c)
+      source: (l.source as string | null) === "routine" ? "routine" : "pairing",
       external_id: await openField("contact_links.external_id_enc", String(l.external_id_enc)),
       context: l.context_enc ? (JSON.parse(await openField("contact_links.context_enc", String(l.context_enc))) as unknown) : null,
       display: l.display ?? null,

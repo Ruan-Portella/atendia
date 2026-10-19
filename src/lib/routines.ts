@@ -44,11 +44,16 @@ export const STEP_TYPE_LABEL: Record<StepType, string> = { instrucao: "Instruç�
 /** Para onde o roteiro vai depois de um passo, de um botão ou de um resultado de ação. */
 export type Destination = { to: "proximo" } | { to: "passo"; step: string } | { to: "encerrar" } | { to: "atendente" };
 
+/**
+ * skip_identified (parte 2c): o passo serve para identificar a pessoa; com ela já identificada
+ * (número lembrado e confirmado, pareamento ou token do site), o BoaVoz pula o passo: o dado fica
+ * sem valor e a ação segue o destino do "ok".
+ */
 export type RoutineStep =
   | { id: string; type: "instrucao"; text: string; next: Destination }
-  | { id: string; type: "dado"; text: string; kind: DataKind; variable: string; pattern: string | null; next: Destination }
+  | { id: string; type: "dado"; text: string; kind: DataKind; variable: string; pattern: string | null; next: Destination; skip_identified?: boolean }
   | { id: string; type: "botoes"; text: string; variable: string | null; options: Array<{ title: string; next: Destination }> }
-  | { id: string; type: "acao"; text: string; action: string; results: Record<string, Destination> };
+  | { id: string; type: "acao"; text: string; action: string; results: Record<string, Destination>; skip_identified?: boolean };
 
 export interface RoutineInput {
   name: string;
@@ -147,11 +152,12 @@ export function routineInputFromJson(raw: string): RoutineInput | { error: strin
     const id = str(o.id, 20);
     const text = str(o.text, STEP_TEXT_MAX + 1);
     const next = readDestination(o.next) ?? { to: "proximo" };
+    const skip = o.skip_identified === true ? { skip_identified: true } : {};
     if (o.type === "instrucao") steps.push({ id, type: "instrucao", text, next });
     else if (o.type === "dado") {
       const kind = (DATA_KINDS as readonly string[]).includes(String(o.kind)) ? (o.kind as DataKind) : null;
       if (!kind) return { error: "Escolha o tipo do dado em todos os passos que pedem um dado." };
-      steps.push({ id, type: "dado", text, kind, variable: str(o.variable, 40), pattern: kind === "regex" ? str(o.pattern, PATTERN_MAX + 1) || null : null, next });
+      steps.push({ id, type: "dado", text, kind, variable: str(o.variable, 40), pattern: kind === "regex" ? str(o.pattern, PATTERN_MAX + 1) || null : null, next, ...skip });
     } else if (o.type === "botoes") {
       const options = Array.isArray(o.options)
         ? (o.options as unknown[]).map((x) => {
@@ -168,7 +174,7 @@ export function routineInputFromJson(raw: string): RoutineInput | { error: strin
           if (d) results[k] = d;
         }
       }
-      steps.push({ id, type: "acao", text, action: str(o.action, 48), results });
+      steps.push({ id, type: "acao", text, action: str(o.action, 48), results, ...skip });
     } else return { error: "Tipo de passo desconhecido." };
   }
   const template = typeof j.template === "string" && (TEMPLATE_IDS as readonly string[]).includes(j.template) ? (j.template as RoutineTemplateId) : null;

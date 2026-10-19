@@ -121,8 +121,8 @@ export default function WebhooksDocs() {
         rows={[
           [<code key="1">contact.opted_in</code>, "Aceitou receber novidades (ou lembretes).", <><code>consent</code> {`{channel, type, source, at}`}; type <code>marketing</code>, <code>utility</code> ou <code>all</code>.</>],
           [<code key="2">contact.opted_out</code>, "Pediu para não receber (SAIR, botão ou o próprio WhatsApp).", <>O mesmo <code>consent</code>.</>],
-          [<code key="3">contact.linked</code>, "O contato foi ligado a uma conta do seu sistema (pareamento).", <><code>link</code> {`{id, channel, external_id, phone_masked}`}.</>],
-          [<code key="4">contact.unlinked</code>, "O vínculo foi desfeito.", <><code>link</code> e <code>reason</code> (<code>api</code>, <code>chat</code>, <code>identity_changed</code>, <code>inactivity</code>).</>],
+          [<code key="3">contact.linked</code>, "O contato foi ligado a uma conta do seu sistema (pareamento, ou número lembrado pelo roteiro com a licença da pessoa).", <><code>link</code> {`{id, channel, source, external_id, phone_masked}`}; source <code>pairing</code> ou <code>routine</code>.</>],
+          [<code key="4">contact.unlinked</code>, "O vínculo foi desfeito.", <><code>link</code> e <code>reason</code> (<code>api</code>, <code>chat</code>, <code>identity_changed</code>, <code>inactivity</code> ou <code>other_person</code>: a pessoa disse que não é quem estava lembrado no número).</>],
           [<code key="5">contact.deleted</code>, "Pedido do titular (LGPD) concluído: os dados do contato foram apagados.", <><code>reason</code> e <code>request_id</code>; o <code>contact</code> traz só id e external_id. Apague do seu lado também.</>],
         ]}
       />

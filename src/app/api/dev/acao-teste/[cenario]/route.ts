@@ -30,6 +30,11 @@ import { botActionSecrets } from "@/lib/actions";
  *   segunda-via     consulta do roteiro (B2', parte 2b), com o parâmetro documento (o BoaVoz preenche
  *                   com o CPF do roteiro, só os números): 529.982.247-25 tem um boleto em aberto (data e
  *                   o PDF); 111.444.777-35 não tem nada em aberto (outcome sem_debito); outro CPF, 404
+ *   identificar     consulta do roteiro que identifica a pessoa (B2', parte 2c), com o parâmetro
+ *                   documento: 529.982.247-25 é "Cliente Teste" com 2 contas (identity com accounts);
+ *                   111.444.777-35 é "Pessoa Teste" com 1 conta; outro CPF, 404
+ *   fatura          consulta que usa a conta da conversa (context.data.uc, do identity acima): a
+ *                   fatura da conta; sem conta identificada, 404
  */
 
 export const maxDuration = 60;
@@ -39,6 +44,13 @@ const CARDAPIO = [
   { id: "102", nome: "Pizza Marguerita", preco: "R$ 45,90" },
   { id: "201", nome: "Coca-Cola 2L", preco: "R$ 12,00" },
   { id: "202", nome: "Cerveja Heineken 600ml", preco: "R$ 14,00" },
+];
+
+// contas de teste da identificação pelo roteiro (B2', parte 2c)
+const CONTAS = [
+  { cliente: "cli_teste_1", uc: "1001", endereco: "Rua das Flores, 10", valor: "R$ 132,40" },
+  { cliente: "cli_teste_1", uc: "1002", endereco: "Av. Brasil, 200", valor: "R$ 87,15" },
+  { cliente: "cli_teste_2", uc: "2001", endereco: "Rua do Sol, 5", valor: "R$ 45,00" },
 ];
 
 const json = (status: number, body: unknown) => Response.json(body, { status });
@@ -81,6 +93,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ cenario
   const repeated = async () => Boolean((await db.from("action_calls").select("id").eq("call_id", callId).limit(1)).data?.length);
 
   if (cenario === "cardapio") return json(200, { data: { itens: CARDAPIO } });
+  if (cenario === "identificar") {
+    const doc = String(body.params?.documento ?? "");
+    if (doc === "52998224725")
+      return json(200, {
+        data: { cliente: "Cliente Teste", contas: 2 },
+        identity: { external_id: "cli_teste_1", name: "Cliente Teste", accounts: CONTAS.filter((c) => c.cliente === "cli_teste_1").map((c) => ({ label: c.endereco, context: { uc: c.uc } })) },
+      });
+    if (doc === "11144477735")
+      return json(200, {
+        data: { cliente: "Pessoa Teste", contas: 1 },
+        identity: { external_id: "cli_teste_2", name: "Pessoa Teste", accounts: CONTAS.filter((c) => c.cliente === "cli_teste_2").map((c) => ({ label: c.endereco, context: { uc: c.uc } })) },
+      });
+    return json(404, { error: "documento não encontrado" });
+  }
+  if (cenario === "fatura") {
+    const uc = String((body as { context?: { data?: { uc?: unknown } } | null }).context?.data?.uc ?? "");
+    const conta = CONTAS.find((c) => c.uc === uc);
+    if (!conta) return json(404, { error: "sem conta identificada" });
+    return json(200, { data: { uc: conta.uc, endereco: conta.endereco, vencimento: "25/10/2026", valor: conta.valor } });
+  }
   if (cenario === "segunda-via") {
     const doc = String(body.params?.documento ?? "");
     if (doc === "52998224725") return json(200, { data: { vencimento: "25/10/2026", valor: "R$ 189,90", linha_digitavel: "34191.79001 01043.510047 91020.150008 1 10010000018990" }, attachments: [{ url: PDF, filename: "segunda-via.pdf" }] });

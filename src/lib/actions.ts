@@ -200,7 +200,7 @@ export function signatureHeader(secrets: string[], id: string, timestamp: Date, 
 export interface CallContact {
   id: string | null;
   level: ActionLevel;
-  verified_by: "meta" | "signed_token" | "pairing" | null;
+  verified_by: "meta" | "signed_token" | "pairing" | "routine" | null;
   /** Id da pessoa no sistema da empresa (nível usuario). */
   external_id?: string | null;
   /** O que a empresa mandou para personalizar ({"name": "Ruan"}). */
@@ -225,7 +225,7 @@ export interface CallInput {
   conversation?: { id: string; channel: "widget" | "whatsapp" | "instagram" } | null;
   contact?: CallContact | null;
   /** Contexto assinado da conversa (workspace, loja): só para as ações, nunca para a IA. */
-  context?: { source: "token" | "pairing" | "bot"; data: Record<string, unknown> } | null;
+  context?: { source: "token" | "pairing" | "bot" | "routine"; data: Record<string, unknown> } | null;
 }
 
 export interface CallResult {
@@ -244,6 +244,8 @@ export interface CallResult {
   confirmation?: Confirmation | null;
   /** components do retorno, como veio (conferido e convertido por component-input.ts). */
   components?: unknown;
+  /** Quem é a pessoa, quando a ação identificou (vale no passo de um roteiro, parte 2c). */
+  identity?: ActionIdentity | null;
   /** Mensagem de erro para o log, para o Testar e para a IA ("não encontrado: …"). */
   error?: string;
   /** Avisos (data acima de 8 KB, resposta cortada). */
@@ -300,6 +302,45 @@ function previewItems(raw: unknown): string[] {
   return out;
 }
 
+/** Uma conta da pessoa identificada: o nome que aparece no botão e o contexto que vai para as ações. */
+export interface IdentityAccount {
+  label: string | null;
+  context: Record<string, unknown> | null;
+}
+
+/** identity do retorno (B2', parte 2c): quem é a pessoa no sistema da empresa e as contas dela. */
+export interface ActionIdentity {
+  externalId: string;
+  name: string | null;
+  accounts: IdentityAccount[];
+}
+
+/** Contas por pessoa (a lista do WhatsApp tem até 10 linhas). */
+export const IDENTITY_ACCOUNTS_MAX = 10;
+const IDENTITY_TEXT_MAX = 60;
+const oneLine = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().replace(/\s+/g, " ").slice(0, max) : null);
+
+/**
+ * identity do retorno, conferida: external_id (texto ou número, até 200), name (até 60) e accounts
+ * (até 10, cada uma com label até 60 e context em objeto de até 2 KB). Conta sem nome nem contexto
+ * sai; fora do formato, null. Função pura.
+ */
+export function readIdentity(raw: unknown): ActionIdentity | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const externalId = typeof o.external_id === "number" && Number.isFinite(o.external_id) ? String(o.external_id) : typeof o.external_id === "string" ? o.external_id.trim() : "";
+  if (!externalId || externalId.length > 200) return null;
+  const accounts: IdentityAccount[] = [];
+  for (const a of Array.isArray(o.accounts) ? (o.accounts as unknown[]).slice(0, IDENTITY_ACCOUNTS_MAX) : []) {
+    if (!a || typeof a !== "object" || Array.isArray(a)) continue;
+    const x = a as Record<string, unknown>;
+    const ctx = x.context && typeof x.context === "object" && !Array.isArray(x.context) && JSON.stringify(x.context).length <= 2048 ? (x.context as Record<string, unknown>) : null;
+    const label = oneLine(x.label, IDENTITY_TEXT_MAX);
+    if (label || ctx) accounts.push({ label, context: ctx });
+  }
+  return { externalId, name: oneLine(o.name, IDENTITY_TEXT_MAX), accounts };
+}
+
 /** confirmation da prévia, conferida (null = o endpoint não mandou). Função pura. */
 export function readConfirmation(raw: unknown): Confirmation | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -317,7 +358,7 @@ const EMPTY_OK = { status: "ok" as const, data: null, reply: null, internal: nul
  * confirmada, 2xx sem data nem reply (ou sem JSON) também é sucesso, e 409 (ainda em
  * processamento) é incerto. Função pura.
  */
-export function readResponse(httpStatus: number, text: string, o: { execute?: boolean } = {}): Pick<CallResult, "status" | "data" | "reply" | "internal" | "attachments" | "outcome" | "confirmation" | "components" | "error"> {
+export function readResponse(httpStatus: number, text: string, o: { execute?: boolean } = {}): Pick<CallResult, "status" | "data" | "reply" | "internal" | "attachments" | "outcome" | "confirmation" | "components" | "identity" | "error"> {
   let json: Record<string, unknown> | null = null;
   if (text.trim()) {
     try {
@@ -338,7 +379,8 @@ export function readResponse(httpStatus: number, text: string, o: { execute?: bo
     : [];
   const outcome = typeof json.outcome === "string" && /^[a-z0-9_]{1,40}$/.test(json.outcome) ? json.outcome : null;
   const internal = json.internal && typeof json.internal === "object" && !Array.isArray(json.internal) ? (json.internal as Record<string, unknown>) : null;
-  return { status: "ok", data: json.data ?? null, reply: typeof json.reply === "string" ? json.reply.slice(0, 4000) : null, internal, attachments, outcome, confirmation: readConfirmation(json.confirmation), ...(json.components !== undefined && json.components !== null ? { components: json.components } : {}) };
+  const identity = readIdentity(json.identity);
+  return { status: "ok", data: json.data ?? null, reply: typeof json.reply === "string" ? json.reply.slice(0, 4000) : null, internal, attachments, outcome, confirmation: readConfirmation(json.confirmation), ...(json.components !== undefined && json.components !== null ? { components: json.components } : {}), ...(identity ? { identity } : {}) };
 }
 
 /**

@@ -34,6 +34,7 @@ import { GateReviewButton } from "@/components/gate-review-button";
 import { ageRecord } from "@/lib/gate/age";
 import { CONSENT_LABEL, SOURCE_LABEL, consentHistory, consentStateOf } from "@/lib/marketing-consent";
 import { suppressionScope } from "@/lib/suppression";
+import { accountLabel, loadConversationIdentity } from "@/lib/routine-identity";
 
 export const metadata = { title: "Conversa" };
 
@@ -85,6 +86,10 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
   const contactName = leads[0]?.name ?? "";
   // pessoa identificada pela empresa (token do site ou pareamento, P2) e o contexto da conversa
   const identifiedName = conv.identity_hash && conv.contact_id ? await contactDisplayName(supabase, conv.contact_id) : null;
+  // pessoa identificada pelo roteiro (B2', parte 2c; tabela interna: service role), com a conta escolhida
+  const routineId = conv.identity_hash ? null : (await loadConversationIdentity(createAdminClient(), cid)).state;
+  const routineAccount = routineId && routineId.active !== null ? accountLabel(routineId.accounts[routineId.active], routineId.active) : null;
+  const routineIdentity = routineId ? ` · identificado pelo roteiro${routineId.name ? `: ${routineId.name}` : ""}${routineAccount ? ` · conta: ${routineAccount}` : routineId.accounts.length > 1 ? " · escolhendo a conta" : ""}${routineId.remembered ? " · número lembrado" : ""}` : "";
   // resposta de 18+ do contato neste bot (tabela interna: lida com a service role)
   const age = isWhatsApp || isInstagram ? await ageRecord(createAdminClient(), { botId: id, channel: isWhatsApp ? "whatsapp" : "instagram", contact: (isWhatsApp ? conv.wa_id : conv.ig_id)! }) : null;
   // novidades (leva B3): o último sim ou não do contato, com a prova (tabela interna: service role)
@@ -114,7 +119,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
         <div className="min-w-0 flex-1">
           <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-semibold text-muted">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>
           <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa {relativeTime(conv.started_at)} <ConversationStateBadge conv={conv} withTime />{sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">dados sensíveis</span>}</h1>
-          <p className="text-xs text-muted">canal: {conv.channel}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
+          <p className="text-xs text-muted">canal: {conv.channel}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
           {gateCats.length > 0 && (
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>O portão acusou:</span>

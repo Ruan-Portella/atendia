@@ -14,6 +14,7 @@ function memDb(tables: Record<string, Row[]>) {
     const filters: Array<(r: Row) => boolean> = [];
     let patch: Row | null = null;
     let inserted: Row[] | null = null;
+    let removing = false;
     let max = Infinity;
     const run = () => {
       if (inserted) {
@@ -24,11 +25,14 @@ function memDb(tables: Record<string, Row[]>) {
       }
       const hit = rows.filter((r) => filters.every((f) => f(r))).slice(0, max);
       if (patch) hit.forEach((r) => Object.assign(r, patch));
+      if (removing) for (const r of hit) rows.splice(rows.indexOf(r), 1);
       return hit;
     };
     const b = {
       select: () => b,
       order: () => b,
+      delete: () => ((removing = true), b),
+      not: (k: string, op: string, v: unknown) => (filters.push((r) => (op === "is" ? (r[k] ?? null) !== v : r[k] !== v)), b),
       eq: (k: string, v: unknown) => (filters.push((r) => r[k] === v), b),
       is: (k: string, v: unknown) => (filters.push((r) => (r[k] ?? null) === v), b),
       gt: (k: string, v: string) => (filters.push((r) => String(r[k] ?? "") > v), b),

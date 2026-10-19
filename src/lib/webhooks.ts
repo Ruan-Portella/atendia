@@ -396,18 +396,21 @@ export async function sendWebhookTest(db: SupabaseClient, webhookId: string, age
 /* ------------------------------------------------------------------ vínculos (P2) */
 
 /**
- * contact.linked / contact.unlinked: data {link: {id, channel, external_id, phone_masked}} e, no
- * unlinked, reason (api, chat, identity_changed, inactivity). Chave do id: o vínculo e a ação
- * (no linked, também o pareamento: parear de novo a mesma conta avisa de novo).
+ * contact.linked / contact.unlinked: data {link: {id, channel, source, external_id, phone_masked}}
+ * e, no unlinked, reason (api, chat, identity_changed, inactivity, other_person). source: pairing
+ * (código do sistema da empresa) ou routine (número lembrado pelo roteiro, com a licença da pessoa).
+ * Chave do id: o vínculo e a ação (no linked, também o pareamento: parear de novo a mesma conta
+ * avisa de novo).
  */
 export async function emitLinkEvent(db: SupabaseClient, linkId: string, action: "linked" | "unlinked", o: { reason?: string; conversationId?: string | null } = {}): Promise<void> {
-  const { data: link } = await db.from("contact_links").select("id, bot_id, contact_id, channel, external_id_enc, display, pairing_id, linked_at, unlinked_at").eq("id", linkId).maybeSingle();
+  const { data: link } = await db.from("contact_links").select("id, bot_id, contact_id, channel, external_id_enc, display, pairing_id, linked_at, unlinked_at, source").eq("id", linkId).maybeSingle();
   if (!link) return;
   const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name").eq("id", link.bot_id).maybeSingle();
   if (!bot) return;
   const ids = await contactChannelIds(db, String(link.contact_id));
   const externalId = await openField("contact_links.external_id_enc", String(link.external_id_enc));
   const phoneMasked = link.channel === "whatsapp" && ids.phone ? `${"*".repeat(Math.max(0, ids.phone.length - 4))}${ids.phone.slice(-4)}` : null;
+  const source = (link.source as string | null) === "routine" ? "routine" : "pairing";
   await emitEvent(db, {
     type: action === "linked" ? "contact.linked" : "contact.unlinked",
     key: action === "linked" ? `${link.id}:linked:${link.pairing_id ?? ""}` : `${link.id}:unlinked`,
@@ -418,13 +421,13 @@ export async function emitLinkEvent(db: SupabaseClient, linkId: string, action: 
     contact: {
       id: `ctc_${link.contact_id}`,
       level: action === "linked" ? "usuario" : "canal",
-      verified_by: action === "linked" ? "pairing" : "meta",
+      verified_by: action === "linked" ? source : "meta",
       whatsapp_user_id: ids.bsuid,
       phone: link.channel === "whatsapp" ? ids.phone : null,
       instagram_id: link.channel === "instagram" ? ids.igsid : null,
       external_id: externalId,
       display: link.display ?? null,
     },
-    data: { link: { id: `lnk_${link.id}`, channel: link.channel, external_id: externalId, phone_masked: phoneMasked }, ...(action === "unlinked" ? { reason: o.reason ?? "api" } : {}) },
+    data: { link: { id: `lnk_${link.id}`, channel: link.channel, source, external_id: externalId, phone_masked: phoneMasked }, ...(action === "unlinked" ? { reason: o.reason ?? "api" } : {}) },
   });
 }

@@ -335,6 +335,14 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     });
   }
 
+  // a partir do primeiro vínculo (pareamento ou número lembrado pelo roteiro), o número manda o hash
+  // de identidade em cada mensagem: número reciclado ou aparelho novo derrubam o vínculo
+  const enableIdentityCheckOnce = async () => {
+    if ((channel as { identity_check_at?: string | null }).identity_check_at) return;
+    await enableIdentityCheck(channel);
+    await db.from("whatsapp_channels").update({ identity_check_at: new Date().toISOString() }).eq("phone_number_id", channel.phone_number_id);
+  };
+
   // pareamento (P2): "Conectar ABC123", a confirmação por botão e "desconectar", em qualquer degrau
   // que envia (a IA não responde a essas mensagens)
   const paired = await handlePairing(
@@ -345,12 +353,7 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
       contactId,
       phone: last.msg.from ?? null,
       identityKeyHash: last.identityKeyHash ?? null,
-      // a partir do primeiro vínculo, o número manda o hash de identidade em cada mensagem
-      onLinked: async () => {
-        if ((channel as { identity_check_at?: string | null }).identity_check_at) return;
-        await enableIdentityCheck(channel);
-        await db.from("whatsapp_channels").update({ identity_check_at: new Date().toISOString() }).eq("phone_number_id", channel.phone_number_id);
-      },
+      onLinked: enableIdentityCheckOnce,
       conversation: plainConversation,
       store: (i, convId) => storeOnce(db, convId, shown(i), burst[i].key),
       reply: async (convId, text, buttons) => {
@@ -573,6 +576,8 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
         sendFile: async (f) => (await sendMedia(channel, waId, { type: f.kind, link: f.url, filename: f.filename })).messages?.[0]?.id ?? null,
         chat: { whatsapp: { waId, profileName } },
         historySize: HISTORY,
+        // número lembrado pelo roteiro (parte 2c): a checagem de identidade passa a valer
+        onLinked: enableIdentityCheckOnce,
       },
       {
         text: shown(qi),

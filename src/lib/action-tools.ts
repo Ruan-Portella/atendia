@@ -1,7 +1,7 @@
 import { jsonSchema, tool, type Tool } from "ai";
 import { hasPack } from "./entitlements";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { callAction, needsConfirmation, paramsProblems, reaches, type ActionLevel, type ActionRow, type CallContact, type CallResult } from "./actions";
+import { callAction, needsConfirmation, paramsProblems, reaches, type ActionIdentity, type ActionLevel, type ActionRow, type CallContact, type CallResult } from "./actions";
 import { gateActionData, idLabels, saveIdMap } from "./action-gate";
 import { openConfirmation, type Caller } from "./action-confirm";
 import { ComponentProblem, materializeComponent, parseComponentInput } from "./component-input";
@@ -125,7 +125,7 @@ export async function callerFor(db: SupabaseClient, i: CallerInput): Promise<Cal
   const contact: CallContact = {
     id: (conv?.contact_id as string | null) ?? null,
     level,
-    verified_by: i.identity?.externalId ? (i.identity.source === "pairing" ? "pairing" : "signed_token") : gateChannel === "widget" ? null : "meta",
+    verified_by: i.identity?.externalId ? (i.identity.source === "token" ? "signed_token" : i.identity.source) : gateChannel === "widget" ? null : "meta",
     ...(i.identity?.externalId ? { external_id: i.identity.externalId, display: i.identity.userDisplay } : {}),
     phone: i.waPhone,
     whatsapp_user_id: null,
@@ -295,17 +295,37 @@ export interface ActionToolsInput extends CallerInput {
    */
   routine?: {
     step(): { action: string; variables: RoutineVariables } | null;
-    onResult(action: string, r: { status: string; outcome?: string | null }, declared: string[]): Promise<Record<string, unknown> | null>;
+    onResult(action: string, r: { status: string; outcome?: string | null; identity?: ActionIdentity | null }, declared: string[]): Promise<Record<string, unknown> | null>;
+    /** As ações dos próximos passos (entram já: a ação do passo atual pode identificar a pessoa nesta vez). */
+    upcoming?(): string[];
   };
+  /** A identidade agora (parte 2c): a ação do roteiro identificou no meio da vez e as próximas chamadas saem com ela. */
+  identityNow?: () => ChatIdentity | null;
 }
 
 /** Ferramentas acao_<nome> para esta resposta (vazio se o bot não tem ações). */
 export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): Promise<Record<string, Tool>> {
   const all = await loadBotActions(db, i.bot.id);
   if (!all.length) return {};
-  const caller = await callerFor(db, i);
-  const actions = all.filter((a) => (a.context_required === "none" || caller.hasContext) && reaches(caller.level, a.min_level) && !(i.confirmRound && needsConfirmation(a)));
+  let caller = await callerFor(db, i);
+  // roteiro (parte 2c): a ação do passo pode identificar a pessoa no meio da vez; as chamadas
+  // seguintes saem com a identidade nova (nível usuario e a conta escolhida)
+  const keyOf = (id: ChatIdentity | null | undefined) => JSON.stringify([id?.externalId ?? null, id?.context ?? null]);
+  let callerKey = keyOf(i.identity);
+  const callerNow = async () => {
+    const now = i.identityNow?.() ?? i.identity ?? null;
+    if (keyOf(now) !== callerKey) {
+      callerKey = keyOf(now);
+      caller = await callerFor(db, { ...i, identity: now });
+    }
+    return caller;
+  };
+  const allowed = (a: ActionRow, c: typeof caller) => (a.context_required === "none" || c.hasContext) && reaches(c.level, a.min_level);
+  // as dos próximos passos do roteiro entram mesmo antes da identificação: a chamada confere de novo
+  const upcoming = new Set(i.routine?.upcoming?.() ?? []);
+  const actions = all.filter((a) => !(i.confirmRound && needsConfirmation(a)) && (allowed(a, caller) || upcoming.has(a.name)));
   if (!actions.length) return {};
+  const NOT_YET = { ok: false, motivo: "precisa_identificar", instrucao: "Esta consulta precisa da pessoa identificada: siga o passo atual do roteiro." };
   const shape: ShapeInput = { bot: i.bot, conversationId: i.conversationId, gateChannel: caller.gateChannel, waPhone: i.waPhone, age: i.age, exempt: i.exempt, destination: i.destination, regulatedAt: caller.regulatedAt };
   const gate = caller.gateChannel === "widget" ? null : { channel: caller.gateChannel, contactPhone: i.waPhone, exempt: i.exempt, destination: i.destination ?? null };
   const limits = () =>
@@ -333,10 +353,12 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         execute: async (input: Record<string, unknown>) => {
           const params = { ...input, ...boundOf(a) };
           if (confirmOpened || !i.onConfirm) return { ok: false, motivo: "uma_por_vez", instrucao: "Já há uma confirmação nesta resposta: espere a pessoa responder a ela." };
+          const c = await callerNow();
+          if (!allowed(a, c)) return NOT_YET;
           const missing = paramsProblems(a.params_schema, params);
           if (missing.length) return { ok: false, motivo: "faltam_dados", faltando: missing, instrucao: `Peça à pessoa: ${missing.join(", ")}. Não chame com dado vazio ou inventado.` };
           if (await limits()) return RATE_LIMITED;
-          const opened = await openConfirmation(db, { bot: { id: i.bot.id, agency_id: i.agencyId ?? "" }, conversationId: i.conversationId, action: a, params, caller, messageKey: i.messageKey, gate });
+          const opened = await openConfirmation(db, { bot: { id: i.bot.id, agency_id: i.agencyId ?? "" }, conversationId: i.conversationId, action: a, params, caller: c, messageKey: i.messageKey, gate });
           if (!opened.ok) return opened.output;
           confirmOpened = true;
           i.onConfirm({ text: opened.text, component: opened.component });
@@ -352,6 +374,8 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
       execute: async (input: Record<string, unknown>) => {
         // roteiro: o que o roteiro já conferiu vence o que a IA escreveu
         const params = { ...input, ...boundOf(a) };
+        const c = await callerNow();
+        if (!allowed(a, c)) return NOT_YET;
         // obrigatório ausente ou vazio: o endpoint não é chamado; a IA pede o dado à pessoa
         const missing = paramsProblems(a.params_schema, params);
         if (missing.length) return { ok: false, motivo: "faltam_dados", faltando: missing, instrucao: `Peça à pessoa: ${missing.join(", ")}. Não diga que não tem a informação.` };
@@ -363,7 +387,7 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
           return { ok: false, motivo: "indisponivel", instrucao: "Esta consulta não está disponível agora. Não tente de novo; ofereça falar com a equipe.", ...(roteiro ? { roteiro } : {}) };
         }
 
-        const r = await callAction(db, a, { params, messageKey: i.messageKey, conversation: { id: i.conversationId, channel: caller.gateChannel }, contact: caller.contact, context: caller.context });
+        const r = await callAction(db, a, { params, messageKey: i.messageKey, conversation: { id: i.conversationId, channel: c.gateChannel }, contact: c.contact, context: c.context });
         const shaped = await shapeActionResult(db, shape, r);
         // com reply, os botões vão com ele (os de uma consulta anterior na mesma vez não)
         if (shaped.reply) i.onReply(shaped.reply, shaped.component);

@@ -17,7 +17,8 @@ import { REGULATED_WINDOW_MS } from "./payment";
 import { botGateExemptions } from "./exceptions";
 import { idMapCategories, idMapLinks, openIdMap } from "../action-gate";
 import { openNullable, sealField, scopeOfConversation } from "../field-cipher";
-import { activeLinkOf, chatIdentityFromLink, contextSwitchTool } from "../pairing";
+import { activeLinkOf, chatIdentityFromLink, contextSwitchTool, isPairingLink } from "../pairing";
+import { conversationChatIdentity, identityPort, identityPreTurn, loadConversationIdentity, markConsentAsked } from "../routine-identity";
 import { callerFor, shapeActionResult } from "../action-tools";
 import { isConfirmComponent, parseConfirmButton, resolveConfirmClick } from "../action-confirm";
 import { setRefStatus } from "../button-refs";
@@ -121,6 +122,8 @@ export interface GateIO {
   /** Dados do contato para o runChat (nome do perfil no WhatsApp). */
   chat: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: { igsid: string } };
   historySize: number;
+  /** Depois de lembrar o número pelo roteiro (no WhatsApp, liga a checagem de identidade da Meta). */
+  onLinked?: () => Promise<void>;
 }
 
 export interface GateQuestion {
@@ -144,11 +147,16 @@ export interface GateQuestion {
   texts?: string[];
 }
 
-/** O contato vinculado (pareamento): nível usuario e o contexto ativo. */
+/**
+ * O contato vinculado pelo pareamento: nível usuario e o contexto ativo. O número lembrado pelo
+ * roteiro fica de fora: ele só vale na conversa depois do "Sim, sou eu" (routine-identity.ts).
+ */
 async function linkIdentity(db: SupabaseClient, contactId: string | null) {
-  const links = contactId ? await activeLinkOf(db, contactId) : null;
-  const identity = links?.active ? await chatIdentityFromLink(links.active, links.all) : null;
-  return { links, identity };
+  const found = contactId ? await activeLinkOf(db, contactId) : null;
+  const all = found?.all.filter(isPairingLink) ?? [];
+  const active = found?.active && isPairingLink(found.active) ? found.active : null;
+  const identity = active ? await chatIdentityFromLink(active, all) : null;
+  return { links: found ? { active, all } : null, identity };
 }
 
 /** Responde à pergunta passando pelo portão. Erro sobe para o canal (acesso, pagamento, cota). */
@@ -189,7 +197,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const callerNow = async () => {
     const { data: row } = await db.from("conversations").select("contact_id").eq("id", convId).maybeSingle();
     const { identity } = await linkIdentity(db, (row?.contact_id as string | null | undefined) ?? null);
-    return callerFor(db, { bot, conversationId: convId, channel, waPhone, age: await getAge(db, who), contactKey: contact, identity });
+    // sem pareamento, a identidade que o roteiro deu a esta conversa (parte 2c)
+    return callerFor(db, { bot, conversationId: convId, channel, waPhone, age: await getAge(db, who), contactKey: contact, identity: identity ?? (await conversationChatIdentity(db, convId)) });
   };
   /** Anexos das ações, logo depois do texto (barrado ou falho: o aviso fixo). */
   const sendFiles = (files: ActionFile[]) => deliverActionFiles(db, files, { bot, conversationId: convId, channel, destination: destinationOf(), sendFile: io.sendFile, sendText: (t) => io.send(t) });
@@ -294,12 +303,35 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     if (!q.stored && !confirmed) history.push({ id: q.msgId, role: "user", parts: [{ type: "text", text: question }] });
   }
 
+  // identificação pelo roteiro (B2', parte 2c): a escolha da conta, a licença para lembrar o número e
+  // o "Estou falando com...?" (a mensagem de um número lembrado espera a resposta), antes do roteiro
+  const contactId = (pendingRow?.contact_id as string | null | undefined) ?? null;
+  const { links, identity: pairingIdentity } = await linkIdentity(db, contactId);
+  let turnTexts = q.texts?.length ? q.texts : [q.text];
+  let routineButton = q.button ?? null;
+  const idTurn = await identityPreTurn(db, { bot, channel, conversationId: convId, contactId, buttonId: q.button ?? null, text: q.text, texts: turnTexts, consume: !confirmed && !answered, external: Boolean(pairingIdentity?.externalId), onLinked: io.onLinked });
+  if (idTurn.kind === "fixed") {
+    await storeOnce(db, convId, q.text, q.key, q.photos);
+    await sendFixed(idTurn.text, undefined, idTurn.component);
+    return;
+  }
+  if (idTurn.kind === "resume") {
+    // a resposta fica gravada; a IA responde agora à mensagem que esperava (o portão confere ela)
+    await storeOnce(db, convId, q.text, q.key, q.photos);
+    storeQuestion = false;
+    question = idTurn.text;
+    history = historyUpTo(await conversationHistory(db, convId, io.historySize, undefined, since), idTurn.text);
+    turnTexts = idTurn.texts.length ? idTurn.texts : [idTurn.text];
+    routineButton = null;
+  }
+  const port = identityPort(db, { conversationId: convId, botId: bot.id, contactId, channel, initial: await loadConversationIdentity(db, convId), external: pairingIdentity });
+
   // roteiros (B2'): botão do passo, escolha digitada, dado conferido, palavra-chave e fim por prazo,
   // antes da IA; depois do Confirmar ou da resposta de 18+, a mensagem já foi usada (só o estado vale)
-  const turnTexts = q.texts?.length ? q.texts : [q.text];
   // depois do Confirmar, a equipe entra pelo roteiro: o aviso vai junto da resposta da IA
   if (routineHandoff) routineNote = `${routineNote ?? ""} Diga à pessoa, junto do resultado: ${await requestHandoff(db, bot, convId, routineHandoff)}`.trim();
-  const routineTurn = await routinePreTurn(db, { bot, conversationId: convId, texts: turnTexts, buttonId: q.button ?? null, waPhone, consume: !confirmed && !answered, note: routineNote });
+  const consumed = idTurn.kind === "none" && idTurn.consumed;
+  const routineTurn = await routinePreTurn(db, { bot, conversationId: convId, texts: turnTexts, buttonId: routineButton, waPhone, consume: !confirmed && !answered && !consumed, note: routineNote, identity: { identified: port.identified(), choosing: port.choosing() } });
   if (routineTurn.fixed) {
     await storeOnce(db, convId, q.text, q.key, q.photos);
     await sendFixed(routineTurn.fixed.kind === "handoff" ? await requestHandoff(db, bot, convId, routineTurn.fixed.reason) : routineTurn.fixed.text);
@@ -360,10 +392,10 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   // qual consulta: a mais recente que devolveu itens fora por idade (a IA é obrigada a chamá-la primeiro)
   const refetchTool = refetch ? await hiddenByAgeTool(db, convId) : null;
 
-  // contato vinculado (pareamento): nível usuario e o contexto ativo; com 2 contas ou mais, a IA pode trocar
-  const contactId = (pendingRow?.contact_id as string | null | undefined) ?? null;
-  const { links, identity } = await linkIdentity(db, contactId);
-  const extraTools = contactId && links ? contextSwitchTool(db, { contactId, conversationId: convId, links: links.all, activeId: links.active?.id ?? null }) : {};
+  // contato vinculado (pareamento) ou identificado pelo roteiro: nível usuario e a conta ativa; com 2
+  // contas ou mais, a IA pode trocar
+  const identity = pairingIdentity ?? port.current();
+  const extraTools = pairingIdentity && contactId && links ? contextSwitchTool(db, { contactId, conversationId: convId, links: links.all, activeId: links.active?.id ?? null }) : port.switchTool();
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
@@ -386,6 +418,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     confirmed,
     routine: routineTurn,
     turnTexts,
+    identityPort: port,
+    identityNote: idTurn.note,
   });
   // botões, lista ou link: o texto da ferramenta entra na mensagem (como o runChat gravou)
   // resumo do Confirmar: só o que o BoaVoz montou (como o runChat gravou)
@@ -471,6 +505,12 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     if (adultButton && component?.type === "carousel") await sendFixed(GATE_TEXTS.showAdultPrompt, "adulto");
     // anexos devolvidos pelas ações: logo depois do texto
     await sendFiles(actionFiles());
+    // identificação pelo roteiro: a licença para lembrar o número, logo depois da primeira resposta
+    // sem botões (os da licença nunca disputam com os de um passo)
+    if (!component && !adultButton) {
+      const ask = port.consentPrompt();
+      if (ask && (await sendFixed(ask.text, undefined, ask.component))) await markConsentAsked(db, { conversationId: convId, botId: bot.id, contactId });
+    }
   }
   // a conversa seguiu: a pergunta de 18+ fecha (só depois do envio; no reprocesso ela ainda vale).
   // Com o botão "Ver opções 18+", esta pergunta fica guardada para depois do "Sim" (a idade ainda

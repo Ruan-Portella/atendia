@@ -47,7 +47,9 @@ export type CipherField =
   | "attachments.filename_enc"
   | "campaign_sends.phone_enc"
   | "campaign_sends.variables_enc"
-  | "routine_runs.variables_enc";
+  | "routine_runs.variables_enc"
+  | "conversation_identities.state_enc"
+  | "conversation_identities.check_enc";
 
 /** Escopo da cifra: o cliente dono do dado, ou null (plataforma: chatbot sem cliente, demos). */
 export interface CipherScope {

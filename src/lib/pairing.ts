@@ -51,9 +51,17 @@ export interface LinkRow {
   linked_at: string;
   /** Hash de identidade da Meta (WhatsApp) quando o vínculo foi feito ou visto pela primeira vez. */
   identity_key_hash?: string | null;
+  /**
+   * pairing: código do sistema da empresa (P2); routine: número lembrado pelo roteiro, com a
+   * licença da pessoa (B2', parte 2c), que só vale depois do "Sim, sou eu" de cada conversa nova.
+   */
+  source?: "pairing" | "routine";
 }
 
-const LINK_COLS = "id, bot_id, contact_id, channel, external_id_hash, external_id_enc, context_hash, context_enc, display, linked_at, identity_key_hash";
+const LINK_COLS = "id, bot_id, contact_id, channel, external_id_hash, external_id_enc, context_hash, context_enc, display, linked_at, identity_key_hash, source";
+
+/** Vínculo do pareamento (o do roteiro só vale depois da confirmação na conversa). Pura. */
+export const isPairingLink = (l: Pick<LinkRow, "source">) => (l.source ?? "pairing") === "pairing";
 
 /** Cifra com a chave do cliente dono do chatbot (o código, o vínculo e o contexto vêm da empresa e do contato). */
 const seal = async (field: CipherField, botId: string, v: string) => sealField(field, v, await scopeOfBot(botId));
@@ -117,7 +125,19 @@ export const PAIRING_TEXTS = {
   unlinked: (channel: PairingChannel, where: string, remaining: string[]) =>
     `Pronto, este ${channelName(channel)} foi desconectado ${fromLink(where)}.${remaining.length ? ` Continua conectado ${remaining.map(toLink).join(", ")}: para desconectar também, mande "desconectar" de novo.` : ""}`,
   notLinked: (channel: PairingChannel) => `Este ${channel === "whatsapp" ? "WhatsApp" : "Instagram"} não está conectado a nenhuma conta.`,
+  leftConversation: "Pronto, esta conversa não está mais ligada à sua conta. Para ver dados da conta de novo, é só se identificar.",
 } as const;
+
+/**
+ * "desconectar" também tira a identificação que o roteiro deu a esta conversa (parte 2c), mesmo sem
+ * número lembrado; o roteiro em andamento acaba (context_changed). Devolve se havia identificação.
+ */
+async function dropConversationIdentity(db: SupabaseClient, conversationId: string): Promise<boolean> {
+  const { data } = await db.from("conversation_identities").delete().eq("conversation_id", conversationId).not("state_enc", "is", null).select("conversation_id");
+  if (!data?.length) return false;
+  await endActiveRoutine(db, conversationId, "context_changed");
+  return true;
+}
 
 /* ------------------------------------------------------------------ códigos */
 
@@ -231,11 +251,14 @@ export async function linkConversationColumns(link: LinkRow | null, now = new Da
   };
 }
 
-/** Conversa nova de um contato vinculado: já nasce no contexto ativo (sem trecho anterior). */
+/**
+ * Conversa nova de um contato vinculado: já nasce no contexto ativo (sem trecho anterior). Número
+ * lembrado pelo roteiro não: a conversa começa perguntando se é a mesma pessoa.
+ */
 export async function linkColumnsForContact(db: SupabaseClient, contactId: string | null): Promise<Record<string, unknown>> {
   if (!contactId) return {};
   const { active } = await activeLinkOf(db, contactId);
-  if (!active) return {};
+  if (!active || !isPairingLink(active)) return {};
   const { context_since: _since, ...cols } = await linkConversationColumns(active);
   void _since;
   return cols;
@@ -282,16 +305,27 @@ async function linkFromPairing(db: SupabaseClient, p: PairingRow, contactId: str
  * Sai contact.unlinked com o motivo (api, chat, identity_changed, inactivity).
  */
 export async function unlinkLink(db: SupabaseClient, link: Pick<LinkRow, "id" | "contact_id">, reason: string): Promise<boolean> {
-  const { data } = await db.from("contact_links").update({ unlinked_at: new Date().toISOString(), unlink_reason: reason }).eq("id", link.id).is("unlinked_at", null).select("id");
+  const { data } = await db.from("contact_links").update({ unlinked_at: new Date().toISOString(), unlink_reason: reason }).eq("id", link.id).is("unlinked_at", null).select("id, external_id_hash, source");
   if (!data?.length) return false;
+  const row = data[0] as { external_id_hash?: string | null; source?: string | null };
   await emitLinkEvent(db, link.id, "unlinked", { reason }).catch((e) => console.error("webhook: contact.unlinked", (e as Error).message));
+  // as conversas deste contato identificadas pelo roteiro como esta pessoa perdem a identidade, e o
+  // roteiro em andamento nelas acaba (parte 2c)
+  if (row.external_id_hash) {
+    const { data: gone, error } = await db.from("conversation_identities").delete().eq("contact_id", link.contact_id).eq("external_id_hash", row.external_id_hash).select("conversation_id");
+    if (error) console.error("pareamento: identidade da conversa não saiu", error.message);
+    for (const c of gone ?? []) await endActiveRoutine(db, String((c as { conversation_id: string }).conversation_id), "context_changed");
+  }
   if ((await contactActiveLinkId(db, link.contact_id)) === link.id) {
     const rest = await activeLinks(db, link.contact_id);
     const next = rest[rest.length - 1] ?? null;
     await setActiveLink(db, link.contact_id, next?.id ?? null, next?.display ?? null);
-    // a conversa aberta muda de contexto (ou fica sem): a IA não lê o trecho da conta desconectada
-    const { data: convs } = await db.from("conversations").select("id").eq("contact_id", link.contact_id).gt("last_message_at", new Date(Date.now() - 24 * 3_600_000).toISOString());
-    for (const c of convs ?? []) await applyLinkToConversation(db, c.id as string, next);
+    // a conversa aberta muda de contexto (ou fica sem): a IA não lê o trecho da conta desconectada.
+    // O número lembrado pelo roteiro nunca entrou nas colunas da conversa (vale depois do "Sim, sou eu")
+    if ((row.source ?? "pairing") === "pairing") {
+      const { data: convs } = await db.from("conversations").select("id").eq("contact_id", link.contact_id).gt("last_message_at", new Date(Date.now() - 24 * 3_600_000).toISOString());
+      for (const c of convs ?? []) await applyLinkToConversation(db, c.id as string, next && isPairingLink(next) ? next : null);
+    }
   }
   return true;
 }
@@ -358,8 +392,9 @@ export async function handlePairing(io: PairingIO, items: PairingMessage[]): Pro
 
     if (unlink) {
       const { active, all } = await activeLinkOf(io.db, contactId);
+      const dropped = convId ? await dropConversationIdentity(io.db, convId) : false;
       if (!active) {
-        await io.reply(convId, PAIRING_TEXTS.notLinked(io.channel));
+        await io.reply(convId, dropped ? PAIRING_TEXTS.leftConversation : PAIRING_TEXTS.notLinked(io.channel));
         continue;
       }
       await unlinkLink(io.db, active, "chat");

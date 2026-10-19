@@ -303,7 +303,7 @@ contatos = folder(
             "Vínculos do usuário",
             "GET",
             "contacts/ext:{{external_id}}/links",
-            desc="Os vínculos ativos do `external_id`. Sem vínculo (pareamento ainda não concluído pelo celular, ou depois de desvincular), a lista vem vazia. Guarda o primeiro em `link_id`.",
+            desc="Os vínculos ativos do `external_id`, com a origem em `source`: `pairing` (pelo código) ou `routine` (número lembrado pelo roteiro, com a licença da pessoa). Sem vínculo (pareamento ainda não concluído pelo celular, ou depois de desvincular), a lista vem vazia. Guarda o primeiro em `link_id`.",
             tests=expect_status(200)
             + [
                 "const d = pm.response.json().data || [];",
