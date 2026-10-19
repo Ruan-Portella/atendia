@@ -4,10 +4,13 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { RoutineEditor } from "@/components/routines/routine-editor";
 import { ROUTINES_PER_BOT, routineUsesActions, type RoutineRow } from "@/lib/routines";
-import { deleteRoutine, saveRoutine, setRoutineActive } from "@/app/painel/roteiros/actions";
+import { deleteRoutine, saveRoutine, setRememberNumber, setRoutineActive } from "@/app/painel/roteiros/actions";
 
-/** Situação do roteiro para a IA: ligado, desligado, pausado sem o pacote ou com ação que não existe mais. */
-function statusOf(r: RoutineRow, integrations: boolean, actions: Array<{ name: string; active: boolean }>): { label: string; tone: "ok" | "muted" | "warn" } {
+/**
+ * Situação do roteiro para a IA: ligado, desligado, pausado sem o pacote, com ação que não existe
+ * mais, ou com o passo de foto pulado (leitura de fotos desligada no modo dados sensíveis).
+ */
+function statusOf(r: RoutineRow, integrations: boolean, actions: Array<{ name: string; active: boolean }>, photos: boolean): { label: string; tone: "ok" | "muted" | "warn" } {
   if (!r.active) return { label: "desligado", tone: "muted" };
   if (routineUsesActions(r) && !integrations) return { label: "pausado: passo com ação precisa do pacote Integrações", tone: "warn" };
   for (const s of r.steps) {
@@ -16,6 +19,7 @@ function statusOf(r: RoutineRow, integrations: boolean, actions: Array<{ name: s
     if (!a) return { label: `a ação ${s.action || "do passo"} não existe mais`, tone: "warn" };
     if (!a.active) return { label: `a ação ${a.name} está desativada`, tone: "warn" };
   }
+  if (!photos && r.steps.some((s) => s.type === "foto")) return { label: "ligado, mas o passo de foto é pulado: no modo dados sensíveis, a IA não lê fotos", tone: "warn" };
   return { label: "ligado", tone: "ok" };
 }
 
@@ -28,10 +32,15 @@ const TONE = { ok: "text-brand", muted: "text-muted", warn: "text-amber-ink" };
  */
 export async function BotRoutines({ botId, integrations }: { botId: string; integrations: boolean }) {
   const db = createAdminClient();
-  const [{ data: rows }, { data: acts }] = await Promise.all([
+  const [{ data: rows }, { data: acts }, { data: bot }, { count: remembered }] = await Promise.all([
     db.from("routines").select("*").eq("bot_id", botId).order("name"),
     db.from("actions").select("name, outcomes, active").eq("bot_id", botId).order("name"),
+    db.from("bots").select("offer_remember_number, sensitive_mode").eq("id", botId).maybeSingle(),
+    db.from("contact_links").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("source", "routine").is("unlinked_at", null),
   ]);
+  const offerRemember = (bot?.offer_remember_number as boolean | null | undefined) !== false;
+  // leitura de fotos: desligada no modo dados sensíveis (o passo de foto é pulado)
+  const photos = !bot?.sensitive_mode;
   const routines = (rows ?? []) as unknown as RoutineRow[];
   const actions = (acts ?? []) as Array<{ name: string; outcomes: string[]; active: boolean }>;
 
@@ -53,7 +62,7 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
       <div className="card overflow-hidden">
         {routines.length ? (
           routines.map((r) => {
-            const st = statusOf(r, integrations, actions);
+            const st = statusOf(r, integrations, actions, photos);
             return (
               <details key={r.id} className="border-b border-line-2 last:border-0">
                 <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
@@ -83,6 +92,36 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
         ) : (
           <p className="px-5 py-6 text-center text-sm text-muted">Nenhum roteiro neste chatbot. Comece por um modelo pronto ou do zero.</p>
         )}
+      </div>
+
+      <div className="card flex flex-col gap-2 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold">Lembrar o número depois da identificação</h3>
+          <span className={`text-xs ${offerRemember ? "text-brand" : "text-muted"}`}>{offerRemember ? "ligado" : "desligado"}</span>
+        </div>
+        <p className="text-xs text-muted">
+          Quando a ação de um roteiro identifica a pessoa no WhatsApp ou no Instagram, o BoaVoz pergunta se pode lembrar o número. Com o número lembrado, cada conversa nova começa por &quot;Estou falando com…?&quot;, e a pessoa não repete os dados. Desligado, a identificação vale só para a conversa.
+          {offerRemember && remembered ? ` Hoje: ${remembered} ${remembered === 1 ? "vínculo lembrado" : "vínculos lembrados"}.` : ""}
+        </p>
+        <div>
+          {offerRemember ? (
+            <ConfirmAction
+              action={setRememberNumber.bind(null, botId, false)}
+              title="Desligar o lembrar o número?"
+              description="O BoaVoz deixa de pedir para lembrar o número e esquece os números já lembrados neste chatbot (o sistema da loja recebe contact.unlinked). Não dá para desfazer."
+              confirmLabel="Desligar e esquecer"
+              className="text-xs font-semibold text-danger hover:underline"
+            >
+              Desligar
+            </ConfirmAction>
+          ) : (
+            <ActionForm action={setRememberNumber.bind(null, botId, true)}>
+              <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Salvando…">
+                Ligar
+              </SubmitButton>
+            </ActionForm>
+          )}
+        </div>
       </div>
 
       {routines.length < ROUTINES_PER_BOT ? (

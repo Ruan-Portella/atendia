@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  photoValue,
   actionValue,
   boundParams,
   resultDestination,
@@ -27,7 +28,7 @@ import {
   validateValue,
 } from "../routine-run";
 import { ROUTINE_CANCELLED_TEXT, applyConfirmedAction, cancelRoutineAction, deleteRoutineRunsOfConversations, endActiveRoutine, endRoutineRuns, routinePreTurn, routineSession, sweepRoutineTimeouts } from "../routine-engine";
-import type { RoutineRow, RoutineStep } from "../routines";
+import { routineInputFromJson, routineProblem, type RoutineRow, type RoutineStep } from "../routines";
 import { offeredByRoutine } from "../action-tools";
 
 /* ------------------------------------------------------------------ validação e máscaras (puras) */
@@ -721,5 +722,93 @@ describe("ação só no roteiro", () => {
     const turn = await pre(db, ["oi"]);
     const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn, texts: [], requestHandoff: async () => "" })!;
     expect(s.stepActions()).toEqual(["buscar_segunda_via"]);
+  });
+});
+
+/* ------------------------------------------------------------------ passo de foto (parte 2d) */
+
+describe("passo de foto", () => {
+  const ROTEADOR = { kind: "comum" as const, description: "Roteador branco com a luz LOS vermelha acesa e a PON apagada.", text: "LOS PON" };
+  const suporte = routine({
+    id: "rot-7",
+    name: "Internet",
+    when_to_use: "O cliente está sem internet ou com a internet lenta",
+    keywords: ["internet"],
+    steps: [
+      { id: "inte0001", type: "foto", text: "Peça uma foto das luzes do roteador", variable: "foto_roteador", next: { to: "proximo" } },
+      { id: "inte0002", type: "instrucao", text: "Oriente pela luz que está acesa", next: { to: "atendente" } },
+    ],
+  });
+  const exec = async (s: NonNullable<ReturnType<typeof routineSession>>, name: string, input: Record<string, unknown> = {}) =>
+    (s.tools[name] as unknown as { execute: (i: unknown, o: unknown) => Promise<Record<string, unknown>> }).execute(input, { toolCallId: "t", messages: [] });
+  const prePhoto = (db: SupabaseClient, texts: string[], photos: typeof ROTEADOR[] | null, canPhotos = true) =>
+    routinePreTurn(db, { bot: BOT, conversationId: CONV, texts, buttonId: null, waPhone: null, photos, canPhotos });
+
+  it("a descrição guardada: a das fotos descritas da rajada (comprovante e ilegível ficam de fora)", () => {
+    expect(photoValue([ROTEADOR])).toBe('Roteador branco com a luz LOS vermelha acesa e a PON apagada. Texto na foto: "LOS PON".');
+    expect(photoValue([{ kind: "comprovante" }, { kind: "ilegivel" }])).toBeNull();
+    expect(photoValue([ROTEADOR, { kind: "comum", description: "Cabo de rede solto." }])).toBe('Foto 1: Roteador branco com a luz LOS vermelha acesa e a PON apagada. Texto na foto: "LOS PON". Foto 2: Cabo de rede solto.');
+    expect(photoValue(null)).toBeNull();
+    expect(photoValue([{ kind: "comum", description: "x".repeat(900) }])!.length).toBe(600);
+    expect(stepInstruction(suporte.steps[0])).toContain("concluir_passo");
+  });
+
+  it("o editor: variável obrigatória e nada de pedir foto de documento, cartão, comprovante ou saúde", () => {
+    const base = { name: "Internet", when_to_use: "O cliente está sem internet", keywords: [], active: true, template: null };
+    const ctx = { actions: [], others: [], integrations: false };
+    const read = (text: string, variable = "foto") => {
+      const r = routineInputFromJson(JSON.stringify({ ...base, steps: [{ id: "inte0001", type: "foto", text, variable }] }));
+      if ("error" in r) throw new Error(r.error);
+      return r;
+    };
+    expect(read("Peça uma foto das luzes do roteador").steps[0]).toEqual({ id: "inte0001", type: "foto", text: "Peça uma foto das luzes do roteador", variable: "foto", next: { to: "proximo" } });
+    expect(routineProblem(read("Peça uma foto das luzes do roteador"), ctx)).toBeNull();
+    expect(routineProblem(read("Peça uma foto das luzes do roteador", "Foto Roteador"), ctx)).toContain("nome da variável");
+    for (const t of ["Peça uma foto do RG", "Peça a foto da CNH", "Peça uma foto do cartão", "Peça o comprovante do Pix", "Peça a foto do exame", "Peça a foto da receita"]) expect(routineProblem(read(t), ctx)).toContain("o passo de foto não pede");
+    // nota fiscal a IA lê
+    expect(routineProblem(read("Peça uma foto da nota fiscal"), ctx)).toBeNull();
+  });
+
+  it("a foto que chega fica guardada no passo, e a IA conclui; sem foto, concluir_passo recusa", async () => {
+    const tables: Record<string, Row[]> = { routines: [suporte], conversations: [{ id: CONV }], messages: [] };
+    const db = fakeDb(tables);
+    const t1 = await prePhoto(db, ["internet"], null);
+    expect(t1.run?.stepId).toBe("inte0001");
+    const s1 = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: t1, texts: [], requestHandoff: async () => "aviso" })!;
+    expect(await exec(s1, "concluir_passo")).toMatchObject({ ok: false, instrucao: "Este passo só anda depois que a pessoa mandar a foto: peça a foto." });
+
+    // escreveu sem foto: o passo segue esperando (e conta como parada)
+    const t2 = await prePhoto(db, ["mandei?"], null);
+    expect(t2.note).toContain("ainda não mandou a foto");
+    expect(runs(tables)[0].idle_turns).toBe(1);
+
+    // a foto chegou: fica guardada, o passo não anda sozinho (a IA confere)
+    const t3 = await prePhoto(db, ["[foto]"], [ROTEADOR]);
+    expect(t3.run?.stepId).toBe("inte0001");
+    expect(t3.note).toContain("Se a foto mostra o que o passo pede, chame concluir_passo");
+    expect(JSON.parse(String(runs(tables)[0].variables_enc))).toEqual({ foto_roteador: { kind: "foto", value: photoValue([ROTEADOR]) } });
+    expect(runs(tables)[0].idle_turns).toBe(0);
+    const s3 = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: t3, texts: [], requestHandoff: async () => "aviso" })!;
+    expect(s3.prompt()).toContain("foto_roteador: Roteador branco");
+    expect(await exec(s3, "concluir_passo")).toMatchObject({ ok: true, passo: "2 de 2" });
+    expect(runs(tables)[0].step_id).toBe("inte0002");
+  });
+
+  it("a foto mandada junto do pedido já entra no passo quando o roteiro começa", async () => {
+    const tables: Record<string, Row[]> = { routines: [suporte], conversations: [{ id: CONV }], messages: [] };
+    const db = fakeDb(tables);
+    const t = await prePhoto(db, ["minha internet caiu, olha o roteador"], [ROTEADOR]);
+    expect(t.run).toBeNull();
+    const s = routineSession(db, { bot: BOT, conversationId: CONV, waPhone: null, turn: t, texts: t.run ? [] : ["minha internet caiu, olha o roteador"], requestHandoff: async () => "aviso" })!;
+    expect(await exec(s, "iniciar_roteiro", { nome: "Internet" })).toMatchObject({ ok: true, passo: "1 de 2" });
+    expect(JSON.parse(String(runs(tables)[0].variables_enc))).toEqual({ foto_roteador: { kind: "foto", value: photoValue([ROTEADOR]) } });
+  });
+
+  it("sem como receber foto (site, leitura desligada): o passo fica para trás", async () => {
+    const tables: Record<string, Row[]> = { routines: [suporte], conversations: [{ id: CONV }], messages: [] };
+    const db = fakeDb(tables);
+    const t = await prePhoto(db, ["internet"], null, false);
+    expect(t.run?.stepId).toBe("inte0002");
+    expect(runs(tables)[0].variables_enc).toBeNull();
   });
 });

@@ -530,6 +530,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         },
         chat: { instagram: { igsid } },
         historySize: HISTORY,
+        // passo de foto do roteiro (parte 2d): só com a leitura de fotos valendo agora
+        photosOn,
       },
       {
         text: shown(qi),
@@ -541,6 +543,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
         photos: photos.get(qi) ?? null,
         // roteiro (B2'): o dado pode ter vindo numa mensagem anterior da rajada
         texts: burst.flatMap((_, i) => (answerable(i) && texts[i] ? [texts[i]!] : [])),
+        // e a foto do passo também (parte 2d)
+        photoReadings: burst.flatMap((_, i) => (answerable(i) ? (photos.get(i) ?? []) : [])),
       },
     );
     await afterStore();

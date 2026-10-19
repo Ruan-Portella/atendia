@@ -46,6 +46,7 @@ const TEXT_LABEL: Record<StepType, string> = {
   dado: "Como a IA pede o dado",
   botoes: "O que a IA pergunta antes dos botões",
   acao: "O que a IA faz com o resultado da ação",
+  foto: "Como a IA pede a foto",
 };
 
 function DestinationSelect({ id, value, onChange, steps, self, allowSelf }: { id: string; value: Destination; onChange: (d: Destination) => void; steps: RoutineStep[]; self: string; allowSelf: boolean }) {
@@ -80,6 +81,7 @@ function retype(s: RoutineStep, type: StepType, actions: ActionInfo[]): RoutineS
         { title: "Não", next: { to: "atendente" } },
       ],
     };
+  if (type === "foto") return { ...base, type, variable: "foto", next: { to: "proximo" } };
   const first = actions.find((a) => a.active) ?? actions[0];
   return { ...base, type, action: first?.name ?? "", results: defaultResults(first?.outcomes) };
 }
@@ -126,7 +128,7 @@ export function RoutineEditor({
       return steps
         .filter((_, j) => j !== i)
         .map((s) => {
-          if (s.type === "instrucao" || s.type === "dado") return { ...s, next: fix(s.next) };
+          if (s.type === "instrucao" || s.type === "dado" || s.type === "foto") return { ...s, next: fix(s.next) };
           if (s.type === "botoes") return { ...s, options: s.options.map((o) => ({ ...o, next: fix(o.next) })) };
           return { ...s, results: Object.fromEntries(Object.entries(s.results).map(([k, d]) => [k, fix(d)])) };
         });
@@ -342,7 +344,19 @@ export function RoutineEditor({
               </div>
             )}
 
-            {(s.type === "instrucao" || s.type === "dado") && (
+            {s.type === "foto" && (
+              <div className="mt-2 flex flex-col gap-2">
+                <div>
+                  <label className="label" htmlFor={`rfvar-${p}-${s.id}`}>Guardar a descrição da foto na variável</label>
+                  <input id={`rfvar-${p}-${s.id}`} value={s.variable} onChange={(e) => patchStep(i, { variable: e.target.value.trim() } as Partial<RoutineStep>)} className="input w-56 font-mono" placeholder="foto_roteador" />
+                </div>
+                <p className="text-xs text-muted">
+                  Só no WhatsApp e no Instagram: a IA vê a descrição da foto e segue quando ela mostra o que o passo pede; se não, pede outra. A variável guarda a descrição (vai para a ação que tiver um parâmetro com o mesmo nome). No site, ou com a leitura de fotos desligada (modo dados sensíveis), o passo é pulado. Documento pessoal, cartão, comprovante e foto de saúde não são lidos.
+                </p>
+              </div>
+            )}
+
+            {(s.type === "instrucao" || s.type === "dado" || s.type === "foto") && (
               <div className="mt-2 grid items-center gap-2 sm:grid-cols-[1fr_1.4fr]">
                 <label className="text-xs text-muted" htmlFor={`rnext-${p}-${s.id}`}>
                   Depois deste passo

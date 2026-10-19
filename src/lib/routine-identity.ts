@@ -253,13 +253,14 @@ async function saveIdentity(
  * mesma conversa abre um trecho novo: a IA não lê o que era da anterior). No WhatsApp e no
  * Instagram, sem o número lembrado para esta pessoa, fica devendo o pedido de licença.
  */
-export async function applyRoutineIdentity(db: SupabaseClient, i: Where & { channel: string; identity: ActionIdentity; previous: IdentityState | null }): Promise<{ state: IdentityState; consent?: "due" | null }> {
+export async function applyRoutineIdentity(db: SupabaseClient, i: Where & { channel: string; identity: ActionIdentity; previous: IdentityState | null; offerRemember?: boolean }): Promise<{ state: IdentityState; consent?: "due" | null }> {
   const hash = externalIdHash(i.identity.externalId);
   const remembered = i.contactId ? (await activeLinks(db, i.contactId)).some((l) => l.source === "routine" && l.external_id_hash === hash) : false;
   const state = stateOf(i.identity, remembered);
   const now = new Date().toISOString();
   const samePerson = i.previous?.externalId === state.externalId;
-  const consent = isMeta(i.channel) && i.contactId && !remembered ? ("due" as const) : null;
+  // a loja pode desligar o "lembrar o número" (Roteiros → Oferecer lembrar o número)
+  const consent = isMeta(i.channel) && i.contactId && !remembered && i.offerRemember !== false ? ("due" as const) : null;
   // a mesma pessoa de novo: o pedido de licença fica como estava (já perguntado ou recusado)
   await saveIdentity(db, i, { state, identifiedAt: now, check: null, ...(samePerson ? {} : { consent }) });
   if (i.previous && !samePerson) await db.from("conversations").update({ context_since: now }).eq("id", i.conversationId);
@@ -350,6 +351,23 @@ export async function rememberIdentity(db: SupabaseClient, w: Where & { channel:
   return next;
 }
 
+/**
+ * A loja desligou "Oferecer lembrar o número": os números lembrados pelo roteiro neste chatbot saem
+ * (contact.unlinked, remember_off), em lotes. Devolve quantos vínculos saíram.
+ */
+export async function forgetBotRememberedNumbers(db: SupabaseClient, botId: string): Promise<number> {
+  let n = 0;
+  for (;;) {
+    const { data } = await db.from("contact_links").select("id, contact_id").eq("bot_id", botId).eq("source", "routine").is("unlinked_at", null).limit(200);
+    if (!data?.length) return n;
+    let done = 0;
+    for (const l of data) if (await unlinkLink(db, { id: l.id as string, contact_id: l.contact_id as string }, "remember_off")) done++;
+    n += done;
+    // nada saiu nesta volta (outro processo no meio-tempo): para, sem girar à toa
+    if (!done) return n;
+  }
+}
+
 /** "Sou outra pessoa": todos os números lembrados pelo roteiro saem (contact.unlinked, other_person). */
 export async function forgetRoutineLinks(db: SupabaseClient, contactId: string, reason: string): Promise<number> {
   let n = 0;
@@ -418,6 +436,8 @@ export async function identityPreTurn(
     external: boolean;
     /** Depois de lembrar o número (no WhatsApp, liga a checagem de identidade da Meta). */
     onLinked?: () => Promise<void>;
+    /** A loja oferece lembrar o número (padrão: sim). Desligado: nem a licença nem o "Estou falando com...?". */
+    offerRemember?: boolean;
   },
   now = Date.now(),
 ): Promise<IdentityTurn> {
@@ -452,7 +472,7 @@ export async function identityPreTurn(
 
   if (click?.kind === "lembrar" || click?.kind === "nao") {
     const s = cur.state;
-    if (!isMeta(i.channel) || !s || tagOf(s.externalId) !== click.tag) return stale;
+    if (!isMeta(i.channel) || !s || tagOf(s.externalId) !== click.tag || i.offerRemember === false) return stale;
     if (click.kind === "nao") {
       await saveIdentity(db, w, { consent: null });
       return { kind: "fixed", text: IDENTITY_TEXTS.notRemembered, component: null };
@@ -485,7 +505,7 @@ export async function identityPreTurn(
 
   // conversa sem identidade de um número lembrado pelo roteiro: pergunta antes (uma vez a cada 24 horas)
   const asked = cur.checkAt && now - Date.parse(cur.checkAt) <= IDENTITY_TTL_MS;
-  if (isMeta(i.channel) && i.contactId && !cur.state && !asked && !i.buttonId) {
+  if (isMeta(i.channel) && i.contactId && !cur.state && !asked && !i.buttonId && i.offerRemember !== false) {
     const r = await rememberedLink(db, i.contactId);
     if (r) {
       await saveIdentity(db, w, { check: { linkId: r.link.id, text: i.text, texts: i.texts }, checkAt: new Date(now).toISOString() });
@@ -515,7 +535,7 @@ export interface IdentityPort extends RoutineIdentityPort {
  * A identidade da conversa para o roteiro e para as ações desta vez. external: a identidade do
  * pareamento ou do token do site, que vence (com ela, o roteiro não identifica de novo).
  */
-export function identityPort(db: SupabaseClient, i: Where & { channel: string; initial: ConversationIdentity; external: ChatIdentity | null }): IdentityPort {
+export function identityPort(db: SupabaseClient, i: Where & { channel: string; initial: ConversationIdentity; external: ChatIdentity | null; offerRemember?: boolean }): IdentityPort {
   let state = i.initial.state;
   let consent = i.initial.consent;
   const external = i.external?.externalId ? i.external : null;
@@ -531,7 +551,7 @@ export function identityPort(db: SupabaseClient, i: Where & { channel: string; i
       return { choosing: isChoosing(state), name: state.name, accounts: state.accounts.length };
     },
     current: () => external ?? (state ? chatIdentityOfState(state) : null),
-    consentPrompt: () => consentPrompt(i.channel, { state, consent }),
+    consentPrompt: () => (i.offerRemember === false ? null : consentPrompt(i.channel, { state, consent })),
     switchTool: (): Record<string, Tool> => {
       const s = state;
       if (external || !s || s.active === null || s.accounts.length < 2) return {};

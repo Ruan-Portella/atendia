@@ -1,5 +1,6 @@
 import { normalizeKeyword, DATA_KIND_LABEL, type DataKind, type Destination, type RoutineStep } from "./routines";
 import type { MessageComponent, OptionItem } from "./components";
+import type { PhotoReading } from "./photo-note";
 
 /*
  * Roteiros na conversa (leva B2', parte 2a), a parte pura: validação e extração dos dados
@@ -33,8 +34,24 @@ export const END_REASON_LABEL: Record<EndReason, string> = {
 
 /** Valor guardado de uma variável do roteiro (o tipo decide a máscara). */
 export interface RoutineValue {
-  kind: DataKind | "escolha";
+  /** foto: a descrição que a IA leu da foto do passo (parte 2d). */
+  kind: DataKind | "escolha" | "foto";
   value: string;
+}
+
+/** Tamanho da descrição guardada da foto do passo (vai para a IA e para as ações). */
+export const PHOTO_VALUE_MAX = 600;
+
+/**
+ * O que fica guardado da foto do passo: a descrição e o texto de cada foto descrita da rajada
+ * (comprovante, documento e ilegível ficam de fora). null sem foto descrita. Pura.
+ */
+export function photoValue(readings: PhotoReading[] | null | undefined): string | null {
+  const seen = (readings ?? []).filter((r) => r.kind === "comum" && r.description);
+  if (!seen.length) return null;
+  const one = (r: PhotoReading) => `${r.description}${r.text ? ` Texto na foto: "${r.text}".` : ""}`;
+  const out = seen.length === 1 ? one(seen[0]) : seen.map((r, i) => `Foto ${i + 1}: ${one(r)}`).join(" ");
+  return out.slice(0, PHOTO_VALUE_MAX);
 }
 export type RoutineVariables = Record<string, RoutineValue>;
 
@@ -426,6 +443,8 @@ export function stepInstruction(step: RoutineStep, o: { failing?: boolean; waPho
       return `${step.text}\nOs botões (${step.options.map((x) => x.title).join(", ")}) vão sozinhos com a sua mensagem: escreva só a pergunta, sem listar as opções e sem chamar mostrar_opcoes.`;
     case "acao":
       return `Chame agora a ferramenta acao_${step.action}: os dados já informados no roteiro vão preenchidos pelo BoaVoz (não peça de novo). Com o resultado: ${step.text}`;
+    case "foto":
+      return `${step.text}\nA pessoa manda a foto por aqui, e você recebe a descrição automática dela junto da mensagem. Se a foto mostra o que este passo pede, chame concluir_passo; se não mostra (outra coisa, escura, cortada), diga o que faltou e peça outra. Nunca peça foto de documento pessoal, cartão ou comprovante de pagamento.`;
   }
 }
 

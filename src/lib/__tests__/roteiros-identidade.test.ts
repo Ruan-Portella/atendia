@@ -17,6 +17,7 @@ import {
   consentButtons,
   consentPrompt,
   consentYes,
+  forgetBotRememberedNumbers,
   identityPort,
   identityPreTurn,
   loadConversationIdentity,
@@ -543,5 +544,30 @@ describe("identificação pelo roteiro: lembrar o número", () => {
     expect(tables.conversation_identities).toHaveLength(0);
     await handlePairing(io, [{ text: "desconectar", buttonId: null }]);
     expect(replies[1]).toBe(PAIRING_TEXTS.notLinked("whatsapp"));
+  });
+});
+
+describe("identificação pelo roteiro: a loja desliga o lembrar o número", () => {
+  beforeEach(() => vi.stubEnv("CONTACT_HASH_KEY", "chave-de-teste-com-mais-de-16"));
+
+  it("desligado: identifica sem pedir licença e sem a pergunta da conversa nova; desligar esquece os lembrados (remember_off)", async () => {
+    const { tables, db } = world();
+    await rememberedNumber(db);
+    expect(tables.contact_links.filter((l) => !l.unlinked_at)).toHaveLength(2);
+    // com a chave desligada, a conversa nova não pergunta (mesmo com número lembrado)
+    const off = (conv: string, text: string, buttonId: string | null = null) =>
+      identityPreTurn(db, { bot: BOT, channel: "whatsapp", conversationId: conv, contactId: CONTACT, buttonId, text, texts: [text], consume: true, external: false, offerRemember: false });
+    expect(await off("conv-2", "fatura")).toEqual({ kind: "none", note: null, consumed: false });
+    expect(await forgetBotRememberedNumbers(db, BOT.id)).toBe(2);
+    expect(tables.contact_links.every((l) => l.unlink_reason === "remember_off" && l.unlinked_at)).toBe(true);
+    expect((await loadConversationIdentity(db, "conv-1")).state).toBeNull();
+    // identificar de novo: sem licença pendente, e o botão antigo não vale
+    const p = identityPort(db, { conversationId: "conv-3", botId: BOT.id, contactId: CONTACT, channel: "whatsapp", initial: await loadConversationIdentity(db, "conv-3"), external: null, offerRemember: false });
+    await p.apply(ONE);
+    expect(p.consentPrompt()).toBeNull();
+    expect(tables.conversation_identities.find((r) => r.conversation_id === "conv-3")?.consent).toBeNull();
+    const [yes] = opts(consentButtons("whatsapp", stateOf(ONE, false)));
+    expect(await off("conv-3", yes.title, yes.id)).toEqual({ kind: "fixed", text: IDENTITY_TEXTS.stale, component: null });
+    expect(tables.contact_links.filter((l) => !l.unlinked_at)).toHaveLength(0);
   });
 });

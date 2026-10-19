@@ -8,6 +8,7 @@ import { IG_APP_AUTHOR, PHONE_AUTHOR } from "./authors";
 import { parseComponents, type MessageComponent } from "./components";
 import { DATA_KIND_LABEL, routineUsesActions, type DataKind, type RoutineRow, type RoutineStep } from "./routines";
 import type { ActionIdentity } from "./actions";
+import type { PhotoReading } from "./photo-note";
 import {
   FIXED_KINDS,
   MAX_ATTEMPTS,
@@ -18,6 +19,7 @@ import {
   keywordRoutine,
   nextFrom,
   parseRoutineButton,
+  photoValue,
   resultDestination,
   resultKey,
   routinePrompt,
@@ -72,7 +74,20 @@ export interface ActiveRun {
   heldResult: string | null;
   /** Mensagens seguidas do contato sem o roteiro andar (zera quando anda). */
   idleTurns: number;
+  /**
+   * Só nesta vez, não fica no banco (parte 2d): o canal recebe foto agora (WhatsApp e Instagram com
+   * a leitura ligada) e a descrição da foto que chegou nesta vez.
+   */
+  photo?: TurnPhoto;
 }
+
+/** A foto nesta vez: o canal recebe foto (can) e o que a IA leu da que chegou (value). */
+export interface TurnPhoto {
+  can: boolean;
+  value: string | null;
+}
+
+const NO_PHOTO: TurnPhoto = { can: false, value: null };
 
 const RUN_COLS = "id, conversation_id, bot_id, step_id, variables_enc, attempts, failing, last_contact_at, updated_at, routine_version, held_result, idle_turns, routines(*)";
 
@@ -250,6 +265,19 @@ async function moveTo(db: SupabaseClient, run: ActiveRun, next: NextStep, ctx: {
       n = nextFrom(run.routine.steps, step.id, step.type === "dado" ? step.next : resultDestination(step, "ok"));
       continue;
     }
+    if (step.type === "foto") {
+      // sem como receber foto agora (site, leitura de fotos desligada): o passo fica para trás
+      const photo = run.photo ?? NO_PHOTO;
+      if (!photo.can) {
+        n = nextFrom(run.routine.steps, step.id, step.next);
+        continue;
+      }
+      // o passo começa sem foto; a que chegou nesta vez (e não serviu a outro passo) já fica guardada,
+      // e a IA confere se é a pedida (concluir_passo)
+      const { [step.variable]: _previous, ...rest } = vars;
+      void _previous;
+      vars = photo.value && !Object.values(rest).some((v) => v.value === photo.value) ? { ...rest, [step.variable]: { kind: "foto", value: photo.value } } : rest;
+    }
     if (step.type === "dado") {
       const phone = step.kind === "telefone" && ctx.waPhone ? validateValue("telefone", ctx.waPhone) : null;
       const found = phone ? { value: phone } : findValue(step.kind, ctx.texts);
@@ -267,7 +295,7 @@ async function moveTo(db: SupabaseClient, run: ActiveRun, next: NextStep, ctx: {
   return { kind: "step" };
 }
 
-async function startRun(db: SupabaseClient, i: { botId: string; conversationId: string; routine: RoutineRow; by: "ia" | "palavra"; texts: string[]; waPhone: string | null; identified?: boolean }): Promise<{ run: ActiveRun | null; moved: Moved }> {
+async function startRun(db: SupabaseClient, i: { botId: string; conversationId: string; routine: RoutineRow; by: "ia" | "palavra"; texts: string[]; waPhone: string | null; identified?: boolean; photo?: TurnPhoto }): Promise<{ run: ActiveRun | null; moved: Moved }> {
   const first = i.routine.steps[0];
   const now = new Date().toISOString();
   const { data, error } = await db
@@ -279,7 +307,7 @@ async function startRun(db: SupabaseClient, i: { botId: string; conversationId: 
     // outro roteiro começou ao mesmo tempo nesta conversa (um por vez): segue o que está valendo
     return { run: await loadActiveRun(db, i.conversationId), moved: { kind: "step" } };
   }
-  const run: ActiveRun = { id: data.id as string, conversationId: i.conversationId, botId: i.botId, routine: i.routine, stepId: first.id, variables: {}, attempts: 0, failing: false, lastContactAt: now, updatedAt: now, routineVersion: i.routine.updated_at, heldResult: null, idleTurns: 0 };
+  const run: ActiveRun = { id: data.id as string, conversationId: i.conversationId, botId: i.botId, routine: i.routine, stepId: first.id, variables: {}, attempts: 0, failing: false, lastContactAt: now, updatedAt: now, routineVersion: i.routine.updated_at, heldResult: null, idleTurns: 0, photo: i.photo ?? NO_PHOTO };
   const moved = await moveTo(db, run, { kind: "step", step: first }, { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${i.routine.name}"`, identified: i.identified });
   return { run: moved.kind === "step" ? run : null, moved };
 }
@@ -310,9 +338,11 @@ export interface RoutineTurn {
   fixed: { kind: "cancelled"; text: string } | { kind: "handoff"; reason: string } | null;
   /** Conversa aberta aqui (site: a palavra-chave começou o roteiro antes da conversa existir). */
   conversationId: string | null;
+  /** A foto nesta vez (parte 2d): o roteiro que a IA começar ou andar usa a mesma. */
+  photo: TurnPhoto;
 }
 
-export const noRoutineTurn = (conversationId: string | null = null): RoutineTurn => ({ run: null, available: [], note: null, fixed: null, conversationId });
+export const noRoutineTurn = (conversationId: string | null = null): RoutineTurn => ({ run: null, available: [], note: null, fixed: null, conversationId, photo: NO_PHOTO });
 
 /**
  * Antes da IA: confere se o roteiro em andamento ainda vale (prazo, roteiro alterado, equipe que
@@ -334,6 +364,9 @@ export async function routinePreTurn(
     note?: string | null;
     /** A identidade da conversa (parte 2c): pula os passos marcados e solta o roteiro que esperava a escolha da conta. */
     identity?: { identified: boolean; choosing: boolean };
+    /** Passo de foto (parte 2d): as fotos lidas desta rajada e se o canal recebe foto agora. */
+    photos?: PhotoReading[] | null;
+    canPhotos?: boolean;
   },
 ): Promise<RoutineTurn> {
   const { data: rows } = await db.from("routines").select("*").eq("bot_id", i.bot.id).eq("active", true).order("name");
@@ -343,7 +376,9 @@ export async function routinePreTurn(
   let conversationId = i.conversationId;
   let run = conversationId ? await loadActiveRun(db, conversationId) : null;
   if (!available.length && !run) return noRoutineTurn(conversationId);
-  const turn: RoutineTurn = { run: null, available, note: i.note ?? null, fixed: null, conversationId };
+  const photo: TurnPhoto = { can: Boolean(i.canPhotos), value: i.canPhotos ? photoValue(i.photos) : null };
+  if (run) run.photo = photo;
+  const turn: RoutineTurn = { run: null, available, note: i.note ?? null, fixed: null, conversationId, photo };
   const consume = i.consume !== false;
   const text = i.texts.at(-1) ?? "";
   const identified = Boolean(i.identity?.identified);
@@ -436,6 +471,32 @@ export async function routinePreTurn(
     run = null;
   }
 
+  // 3a. passo que pede foto (parte 2d): a foto que chegou nesta vez fica guardada e a IA confere se é
+  // a pedida (concluir_passo); sem como receber foto agora, o passo fica para trás
+  if (consume && run && currentStep(run).type === "foto") {
+    const step = currentStep(run) as Extract<RoutineStep, { type: "foto" }>;
+    if (!photo.can) {
+      const moved = await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"`, contact: true, identified });
+      if (moved.kind === "handoff") return { ...turn, fixed: { kind: "handoff", reason: moved.reason } };
+      if (moved.kind === "completed") return { ...turn, note: `O roteiro "${run.routine.name}" terminou: siga a conversa normalmente.` };
+      return { ...turn, run };
+    }
+    if (photo.value) {
+      run.variables = { ...run.variables, [step.variable]: { kind: "foto", value: photo.value } };
+      await saveRun(db, run, { variables: run.variables, contact: true, idle: 0 });
+      return { ...turn, run, note: "A pessoa mandou a foto deste passo (a descrição automática está na mensagem dela). Se a foto mostra o que o passo pede, chame concluir_passo; se não, diga o que faltou e peça outra." };
+    }
+    const got = run.variables[step.variable];
+    await saveRun(db, run, { contact: true, idle: run.idleTurns + 1 });
+    return {
+      ...turn,
+      run,
+      note: got
+        ? `A foto deste passo já chegou (${got.value}). Se ela mostra o que o passo pede, chame concluir_passo; se não, peça outra.`
+        : "A pessoa ainda não mandou a foto. Se ela perguntou outra coisa, responda e peça a foto de novo (se ela não quiser mais, chame cancelar_roteiro).",
+    };
+  }
+
   // 3. passo que pede um dado de formato fixo: o BoaVoz confere nas mensagens desta vez
   if (consume && run) {
     const step = currentStep(run);
@@ -465,7 +526,7 @@ export async function routinePreTurn(
   if (!run && keyword) {
     conversationId ??= i.openConversation ? await i.openConversation() : null;
     if (conversationId) {
-      const started = await startRun(db, { botId: i.bot.id, conversationId, routine: keyword, by: "palavra", texts: [], waPhone: i.waPhone, identified });
+      const started = await startRun(db, { botId: i.bot.id, conversationId, routine: keyword, by: "palavra", texts: [], waPhone: i.waPhone, identified, photo });
       const begun = `A pessoa mandou a palavra-chave "${text.trim()}": o roteiro "${keyword.name}" começou.`;
       if (started.moved.kind === "handoff") return { ...turn, conversationId, fixed: { kind: "handoff", reason: started.moved.reason } };
       return { ...turn, conversationId, run: started.run, note: started.moved.kind === "completed" ? `${begun} Ele já terminou: siga a conversa normalmente.` : begun };
@@ -568,18 +629,19 @@ export function routineSession(
           await finishRun(db, run.id, "abandoned", "replaced");
           run = null;
         }
-        const started = await startRun(db, { botId: i.bot.id, conversationId: i.conversationId, routine, by: "ia", texts: i.texts, waPhone: i.waPhone, identified: identified() });
+        const started = await startRun(db, { botId: i.bot.id, conversationId: i.conversationId, routine, by: "ia", texts: i.texts, waPhone: i.waPhone, identified: identified(), photo: i.turn.photo });
         run = started.run;
         return after(started.moved, `Roteiro "${routine.name}" começou.`);
       },
     }),
     concluir_passo: tool({
-      description: "Roteiro em andamento: o passo atual (uma instrução) foi cumprido. Se o passo pede uma resposta da pessoa, chame só depois que ela respondeu. Devolve o próximo passo.",
+      description: "Roteiro em andamento: o passo atual foi cumprido (uma instrução; ou a foto que a pessoa mandou mostra o que o passo pede). Se o passo pede uma resposta da pessoa, chame só depois que ela respondeu. Devolve o próximo passo.",
       inputSchema: z.object({}),
       execute: async () => {
         if (!run) return noRun;
         const step = currentStep(run);
         if (step.type === "dado") return { ok: false, instrucao: "Este passo só anda quando o dado for conferido: peça o dado." };
+        if (step.type === "foto" && !run.variables[step.variable]) return { ok: false, instrucao: "Este passo só anda depois que a pessoa mandar a foto: peça a foto." };
         if (step.type === "botoes") return { ok: false, instrucao: "Este passo só anda quando a pessoa tocar num botão ou responder com uma das opções." };
         if (step.type === "acao") return { ok: false, instrucao: run.heldResult ? "O roteiro espera a pessoa escolher a conta pelos botões." : "Este passo só anda depois da ação." };
         return after(await moveTo(db, run, nextFrom(run.routine.steps, step.id, step.next), { texts: i.texts, waPhone: i.waPhone, why: `Roteiro "${run.routine.name}"`, identified: identified() }), "Passo concluído.");

@@ -11,6 +11,7 @@ import { hasPack } from "@/lib/entitlements";
 import { markAnalysisDue } from "@/lib/bot-analysis";
 import { ROUTINES_PER_BOT, routineInputFromJson, routineProblem, routineUsesActions } from "@/lib/routines";
 import { endRoutineRuns } from "@/lib/routine-engine";
+import { forgetBotRememberedNumbers } from "@/lib/routine-identity";
 
 /*
  * Roteiros (B2', parte 1): cadastro na aba Roteiros do chatbot. Quem configura o chatbot (dono,
@@ -92,6 +93,25 @@ export async function setRoutineActive(routineId: string, active: boolean): Prom
   if (active) await markAnalysisDue(db, routine.bot_id);
   revalidatePath(`/painel/bots/${routine.bot_id}`);
   return ok(active ? "Roteiro ligado." : "Roteiro desligado: a IA não usa mais este roteiro.");
+}
+
+/**
+ * Oferecer lembrar o número (identificação pelo roteiro). Desligar esquece os números já lembrados
+ * neste chatbot: dado guardado sem uso não fica.
+ */
+export async function setRememberNumber(botId: string, on: boolean): Promise<ActionResult> {
+  const ctx = await context();
+  if (!ctx) return fail(DENIED);
+  const bot = await scopedBot(botId);
+  if (!bot) return fail("Chatbot não encontrado.");
+  const db = createAdminClient();
+  const { error } = await db.from("bots").update({ offer_remember_number: on }).eq("id", bot.id);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  const forgotten = on ? 0 : await forgetBotRememberedNumbers(db, bot.id);
+  await auditRoutine(ctx, "roteiros.lembrar_numero", bot.id, { ligado: on, ...(on ? {} : { vinculos_esquecidos: forgotten }) });
+  revalidatePath(`/painel/bots/${bot.id}`);
+  if (on) return ok("Ligado: depois da identificação, o BoaVoz pede licença para lembrar o número.");
+  return ok(forgotten ? `Desligado: ${forgotten === 1 ? "1 vínculo de número lembrado foi esquecido" : `${forgotten} vínculos de números lembrados foram esquecidos`}.` : "Desligado: o BoaVoz não pede mais para lembrar o número.");
 }
 
 export async function deleteRoutine(routineId: string): Promise<ActionResult> {

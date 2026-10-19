@@ -123,6 +123,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "roteiros.ativar": "Roteiro ligado",
   "roteiros.desativar": "Roteiro desligado",
   "roteiros.apagar": "Roteiro apagado",
+  "roteiros.lembrar_numero": "Lembrar o número (identificação pelo roteiro)",
   "seguranca.encerrar_sessoes": "Outras sessões encerradas",
   "seguranca.mfa_cadastrar": "Segundo fator cadastrado",
   "suporte.encerrar": "Acesso do suporte encerrado",

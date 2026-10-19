@@ -35,6 +35,9 @@ import { botActionSecrets } from "@/lib/actions";
  *                   111.444.777-35 é "Pessoa Teste" com 1 conta; outro CPF, 404
  *   fatura          consulta que usa a conta da conversa (context.data.uc, do identity acima): a
  *                   fatura da conta; sem conta identificada, 404
+ *   chamado         consulta do roteiro com passo de foto (B2', parte 2d), com o parâmetro
+ *                   foto_roteador (o BoaVoz preenche com a descrição da foto): abre um chamado de teste
+ *                   e devolve o que recebeu da foto; sem a descrição, 404
  */
 
 export const maxDuration = 60;
@@ -106,6 +109,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ cenario
         identity: { external_id: "cli_teste_2", name: "Pessoa Teste", accounts: CONTAS.filter((c) => c.cliente === "cli_teste_2").map((c) => ({ label: c.endereco, context: { uc: c.uc } })) },
       });
     return json(404, { error: "documento não encontrado" });
+  }
+  if (cenario === "chamado") {
+    const foto = String(body.params?.foto_roteador ?? "").trim();
+    if (!foto) return json(404, { error: "sem a descrição da foto" });
+    return json(200, { data: { protocolo: `CH-${createHash("sha256").update(callId).digest("hex").slice(0, 6).toUpperCase()}`, foto_recebida: foto.slice(0, 200), previsao: "um técnico liga em até 4 horas" } });
   }
   if (cenario === "fatura") {
     const uc = String((body as { context?: { data?: { uc?: unknown } } | null }).context?.data?.uc ?? "");

@@ -124,6 +124,8 @@ export interface GateIO {
   historySize: number;
   /** Depois de lembrar o número pelo roteiro (no WhatsApp, liga a checagem de identidade da Meta). */
   onLinked?: () => Promise<void>;
+  /** As fotos são lidas agora (leitura ligada, IA respondendo): o passo de foto do roteiro vale. */
+  photosOn?: boolean;
 }
 
 export interface GateQuestion {
@@ -145,6 +147,8 @@ export interface GateQuestion {
   photos?: PhotoReading[] | null;
   /** Os textos da rajada, na ordem (roteiro: o dado pode ter vindo numa mensagem anterior). */
   texts?: string[];
+  /** As fotos lidas de toda a rajada (roteiro: a foto do passo pode ter vindo antes do texto). */
+  photoReadings?: PhotoReading[] | null;
 }
 
 /**
@@ -309,7 +313,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const { links, identity: pairingIdentity } = await linkIdentity(db, contactId);
   let turnTexts = q.texts?.length ? q.texts : [q.text];
   let routineButton = q.button ?? null;
-  const idTurn = await identityPreTurn(db, { bot, channel, conversationId: convId, contactId, buttonId: q.button ?? null, text: q.text, texts: turnTexts, consume: !confirmed && !answered, external: Boolean(pairingIdentity?.externalId), onLinked: io.onLinked });
+  const offerRemember = bot.offer_remember_number !== false;
+  const idTurn = await identityPreTurn(db, { bot, channel, conversationId: convId, contactId, buttonId: q.button ?? null, text: q.text, texts: turnTexts, consume: !confirmed && !answered, external: Boolean(pairingIdentity?.externalId), onLinked: io.onLinked, offerRemember });
   if (idTurn.kind === "fixed") {
     await storeOnce(db, convId, q.text, q.key, q.photos);
     await sendFixed(idTurn.text, undefined, idTurn.component);
@@ -324,14 +329,26 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     turnTexts = idTurn.texts.length ? idTurn.texts : [idTurn.text];
     routineButton = null;
   }
-  const port = identityPort(db, { conversationId: convId, botId: bot.id, contactId, channel, initial: await loadConversationIdentity(db, convId), external: pairingIdentity });
+  const port = identityPort(db, { conversationId: convId, botId: bot.id, contactId, channel, initial: await loadConversationIdentity(db, convId), external: pairingIdentity, offerRemember });
 
   // roteiros (B2'): botão do passo, escolha digitada, dado conferido, palavra-chave e fim por prazo,
   // antes da IA; depois do Confirmar ou da resposta de 18+, a mensagem já foi usada (só o estado vale)
   // depois do Confirmar, a equipe entra pelo roteiro: o aviso vai junto da resposta da IA
   if (routineHandoff) routineNote = `${routineNote ?? ""} Diga à pessoa, junto do resultado: ${await requestHandoff(db, bot, convId, routineHandoff)}`.trim();
   const consumed = idTurn.kind === "none" && idTurn.consumed;
-  const routineTurn = await routinePreTurn(db, { bot, conversationId: convId, texts: turnTexts, buttonId: routineButton, waPhone, consume: !confirmed && !answered && !consumed, note: routineNote, identity: { identified: port.identified(), choosing: port.choosing() } });
+  const routineTurn = await routinePreTurn(db, {
+    bot,
+    conversationId: convId,
+    texts: turnTexts,
+    buttonId: routineButton,
+    waPhone,
+    consume: !confirmed && !answered && !consumed,
+    note: routineNote,
+    identity: { identified: port.identified(), choosing: port.choosing() },
+    // passo de foto (parte 2d): a mensagem que esperava o "Sim, sou eu" não traz as fotos dela
+    photos: idTurn.kind === "resume" ? null : (q.photoReadings ?? q.photos ?? null),
+    canPhotos: Boolean(io.photosOn),
+  });
   if (routineTurn.fixed) {
     await storeOnce(db, convId, q.text, q.key, q.photos);
     await sendFixed(routineTurn.fixed.kind === "handoff" ? await requestHandoff(db, bot, convId, routineTurn.fixed.reason) : routineTurn.fixed.text);

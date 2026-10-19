@@ -37,9 +37,9 @@ export const DATA_KIND_LABEL: Record<DataKind, string> = {
   regex: "formato próprio (regex)",
 };
 
-export const STEP_TYPES = ["instrucao", "dado", "botoes", "acao"] as const;
+export const STEP_TYPES = ["instrucao", "dado", "botoes", "acao", "foto"] as const;
 export type StepType = (typeof STEP_TYPES)[number];
-export const STEP_TYPE_LABEL: Record<StepType, string> = { instrucao: "Instrução", dado: "Pedir um dado", botoes: "Botões", acao: "Ação" };
+export const STEP_TYPE_LABEL: Record<StepType, string> = { instrucao: "Instrução", dado: "Pedir um dado", botoes: "Botões", acao: "Ação", foto: "Pedir uma foto" };
 
 /** Para onde o roteiro vai depois de um passo, de um botão ou de um resultado de ação. */
 export type Destination = { to: "proximo" } | { to: "passo"; step: string } | { to: "encerrar" } | { to: "atendente" };
@@ -53,7 +53,12 @@ export type RoutineStep =
   | { id: string; type: "instrucao"; text: string; next: Destination }
   | { id: string; type: "dado"; text: string; kind: DataKind; variable: string; pattern: string | null; next: Destination; skip_identified?: boolean }
   | { id: string; type: "botoes"; text: string; variable: string | null; options: Array<{ title: string; next: Destination }> }
-  | { id: string; type: "acao"; text: string; action: string; results: Record<string, Destination>; skip_identified?: boolean };
+  | { id: string; type: "acao"; text: string; action: string; results: Record<string, Destination>; skip_identified?: boolean }
+  /**
+   * Foto (parte 2d), pela leitura de fotos: só no WhatsApp e no Instagram (no site, ou com a leitura
+   * desligada, o passo é pulado). A variável guarda a descrição que a IA leu.
+   */
+  | { id: string; type: "foto"; text: string; variable: string; next: Destination };
 
 export interface RoutineInput {
   name: string;
@@ -90,6 +95,11 @@ const FORBIDDEN_ASK_RE =
   /n[uú]mero\s+(?:d[oa]s?|de)\s+(?:seu\s+|sua\s+)?cart[aã]o|dados\s+do\s+cart[aã]o|\bcvv\b|\bcvc\b|c[oó]digo\s+de\s+seguran[cç]a\s+do\s+cart[aã]o|validade\s+do\s+cart[aã]o|conta\s+(?:banc[aá]ria|corrente|poupan[cç]a)|ag[eê]ncia\s+e\s+(?:o\s+n[uú]mero\s+da\s+)?conta|c[oó]digo\s+(?:de\s+verifica[cç][aã]o|que\s+(?:chegou|recebeu)|do\s+sms|por\s+sms)|token\s+do\s+banco/i;
 /** No passo que pede o dado, também a senha (no texto de uma instrução, "a senha do wi-fi é…" é informação, não pedido). */
 const PASSWORD_ASK_RE = /\bsenha\b/i;
+/**
+ * Passo de foto que pede o que a leitura de fotos nunca lê: documento pessoal, cartão, comprovante
+ * de pagamento e foto de saúde (vão direto para a equipe, com texto fixo).
+ */
+const PHOTO_ASK_FORBIDDEN_RE = /\b(?:rg|cnh|identidade|passaporte|documento\s+(?:pessoal|de\s+identidade|com\s+foto)|cart[aã]o|comprovante|receita|exame|laudo|atestado)\b/i;
 /** Números de cartão de teste: uma regex própria que aceita um deles pediria cartão. */
 const CARD_SAMPLES = ["4111111111111111", "4111 1111 1111 1111", "5500-0000-0000-0004", "378282246310005"];
 
@@ -175,7 +185,8 @@ export function routineInputFromJson(raw: string): RoutineInput | { error: strin
         }
       }
       steps.push({ id, type: "acao", text, action: str(o.action, 48), results, ...skip });
-    } else return { error: "Tipo de passo desconhecido." };
+    } else if (o.type === "foto") steps.push({ id, type: "foto", text, variable: str(o.variable, 40), next });
+    else return { error: "Tipo de passo desconhecido." };
   }
   const template = typeof j.template === "string" && (TEMPLATE_IDS as readonly string[]).includes(j.template) ? (j.template as RoutineTemplateId) : null;
   return {
@@ -299,6 +310,13 @@ export function routineProblem(r: RoutineInput, ctx: RoutineContext): string | n
         const p = destinationProblem(o.next, r.steps, s.id, `${where}, botão "${o.title}"`, true);
         if (p) return p;
       }
+    } else if (s.type === "foto") {
+      if (!VARIABLE_RE.test(s.variable)) return `${where}: o nome da variável vai em minúsculas, sem espaço nem acento (ex.: foto_roteador).`;
+      if (variables.has(s.variable)) return `${where}: a variável "${s.variable}" já é usada em outro passo.`;
+      variables.add(s.variable);
+      if (PHOTO_ASK_FORBIDDEN_RE.test(s.text)) return `${where}: o passo de foto não pede documento pessoal, cartão, comprovante nem foto de saúde. A IA não lê esses tipos: eles vão direto para a equipe.`;
+      const p = destinationProblem(s.next, r.steps, s.id, where, false);
+      if (p) return p;
     } else {
       if (!ctx.integrations) return `${where}: passo com ação faz parte do pacote Integrações. Assine em Cobrança → Assinatura.`;
       const action = ctx.actions.find((a) => a.name === s.action);

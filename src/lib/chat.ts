@@ -61,6 +61,8 @@ export interface BotRow {
   regulated_channel?: RegulatedChannel | null;
   /** Oferecer novidades no WhatsApp, uma vez por contato (leva B3). */
   marketing_optin_offer?: boolean | null;
+  /** Identificação pelo roteiro: o BoaVoz oferece lembrar o número (padrão: sim). */
+  offer_remember_number?: boolean | null;
   /** Tamanho (null = sem tamanho) e cota sob medida da BoaVoz: sem tamanho de IA, nada de IA (botHasAi). */
   size?: string | null;
   quota_override?: number | null;
