@@ -22,6 +22,7 @@ import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "@/lib/cha
 import { notifyAgencyOwner } from "@/lib/notify";
 import { appUrl } from "@/lib/utils";
 import { isRetentionMonths, retentionLabel, retentionReduced } from "@/lib/retention";
+import { parseMomentNotice, untilLabel } from "@/lib/moment-notice";
 import { headers } from "next/headers";
 
 const GENERIC = "Se esse e-mail tiver acesso, enviamos um link para entrar. Confira a caixa de entrada (e o spam).";
@@ -152,6 +153,29 @@ export async function memberSaveText(clientId: string, botId: string, sourceId: 
   const r = await saveTextSource(ctx.admin, { botId, sourceId: sourceId ?? undefined, kind: text(formData.get("kind")), title: text(formData.get("title")), content: String(formData.get("content") ?? ""), author: ctx.email });
   revalidatePath(`/cliente/${clientId}/aprender`);
   return r;
+}
+
+/** Aviso do momento escrito pela loja (Lançamento, parte 3), com quem tem a base liberada. */
+export async function memberSaveMomentNotice(clientId: string, botId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await ownBot(clientId, botId);
+  if (!ctx) return fail(NO_KNOWLEDGE);
+  const p = parseMomentNotice(formData);
+  if (!p.ok) return fail(p.message);
+  const { error } = await ctx.admin.from("bots").update({ moment_notice: p.value.text, moment_notice_until: p.value.until, moment_notice_by: ctx.email }).eq("id", botId);
+  if (error) return fail("Não foi possível salvar o aviso. Tente de novo.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "bot.aviso_momento", targetType: "bot", targetId: botId, after: { ate: p.value.until }, ...(await requestMeta()) });
+  revalidatePath(`/cliente/${clientId}/aprender`);
+  return ok(`Aviso no ar até ${untilLabel(p.value.until)}.`);
+}
+
+export async function memberClearMomentNotice(clientId: string, botId: string): Promise<ActionResult> {
+  const ctx = await ownBot(clientId, botId);
+  if (!ctx) return fail(NO_KNOWLEDGE);
+  const { error } = await ctx.admin.from("bots").update({ moment_notice: null, moment_notice_until: null, moment_notice_by: null }).eq("id", botId);
+  if (error) return fail("Não foi possível tirar o aviso. Tente de novo.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "bot.aviso_momento_apagar", targetType: "bot", targetId: botId, ...(await requestMeta()) });
+  revalidatePath(`/cliente/${clientId}/aprender`);
+  return ok("Aviso tirado.");
 }
 
 export async function memberDeleteText(clientId: string, botId: string, sourceId: string): Promise<ActionResult> {

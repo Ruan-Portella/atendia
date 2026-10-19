@@ -3,7 +3,9 @@ import { relativeTime } from "@/lib/utils";
 import { listUnanswered } from "@/lib/unanswered";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { TextSources, type TextSourceItem } from "@/components/text-sources";
-import { memberAnswer, memberDeleteText, memberDismiss, memberSaveText } from "../../actions";
+import { memberAnswer, memberClearMomentNotice, memberDeleteText, memberDismiss, memberSaveMomentNotice, memberSaveText } from "../../actions";
+import { MomentNoticeCard } from "@/components/moment-notice-card";
+import { activeMomentNotice, defaultUntilInput } from "@/lib/moment-notice";
 
 export const metadata = { title: { absolute: "Ensinar o assistente" }, robots: { index: false, follow: false } };
 
@@ -13,7 +15,7 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
   const { email, admin, botIds } = await requireMember(id, "knowledge");
   const ids = botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"];
   const [{ data: bots }, questions, { data: sources }] = await Promise.all([
-    admin.from("bots").select("id, name").in("id", ids).order("created_at"),
+    admin.from("bots").select("id, name, moment_notice, moment_notice_until, moment_notice_by").in("id", ids).order("created_at"),
     listUnanswered(admin, { botIds: ids, limit: 60 }),
     admin.from("sources").select("id, bot_id, kind, title, content, created_by, updated_at").in("bot_id", ids).in("kind", ["text", "faq"]).order("created_at"),
   ]);
@@ -50,6 +52,14 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
                 <UnansweredItem key={q.id} question={q.question} answer={memberAnswer.bind(null, id, bot.id, q.id)} dismiss={memberDismiss.bind(null, id, bot.id, q.id)} />
               ))}
             </div>
+            <MomentNoticeCard
+              notice={activeMomentNotice(bot)}
+              lastUntil={bot.moment_notice_until}
+              author={who(bot.moment_notice_by).trim() || null}
+              defaultUntil={defaultUntilInput()}
+              save={memberSaveMomentNotice.bind(null, id, bot.id)}
+              clear={memberClearMomentNotice.bind(null, id, bot.id)}
+            />
             <div className="flex flex-col gap-2">
               <h3 className="text-sm font-semibold">Textos e perguntas frequentes</h3>
               <TextSources items={items} create={memberSaveText.bind(null, id, bot.id, null)} />

@@ -41,6 +41,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "bot.excluir": "Chatbot excluído",
   "bot.modo_sensivel": "Modo dados sensíveis alterado",
   "bot.pausar": "Chatbot pausado",
+  "bot.aviso_momento": "Aviso do momento posto no ar",
+  "bot.aviso_momento_apagar": "Aviso do momento tirado",
   "bot.retomar": "Chatbot retomado",
   "bot.novidades": "Oferta de novidades no WhatsApp alterada",
   "campanha.criar": "Campanha criada",

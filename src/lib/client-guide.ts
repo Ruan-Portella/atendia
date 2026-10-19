@@ -60,6 +60,7 @@ export function clientGuide(access: GuideAccess, names: { agency: string; client
       paragraphs: [
         "Em Ensinar o assistente, você responde as perguntas que ele não soube: a resposta vale já na próxima conversa.",
         `Ali também ficam os textos e as perguntas frequentes, para manter preços, horários e regras em dia. O site e os PDFs ficam com a ${a}.`,
+        "O aviso do momento é um recado com prazo (instabilidade, manutenção, atraso, mudança de horário): o assistente usa quando alguém pergunta, e o aviso some sozinho no fim do prazo.",
       ],
     },
     {

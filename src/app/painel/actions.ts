@@ -19,6 +19,7 @@ import { appUrl, initials, normalizeUrl } from "@/lib/utils";
 import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
 import { grantSupport, revokeSupport } from "@/lib/support-access";
 import { cancelAccountDeletion, requestAccountDeletion } from "@/lib/account-deletion";
+import { parseMomentNotice, untilLabel } from "@/lib/moment-notice";
 import { hasMfa } from "@/lib/agency-mfa";
 import { purgeAttachments } from "@/lib/attachments";
 import { removeBotSourceFiles } from "@/lib/source-files";
@@ -689,6 +690,30 @@ export async function setAutoRefresh(botId: string, formData: FormData): Promise
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   revalidatePath(`/painel/bots/${botId}`);
   return ok(enabled ? "O site será relido toda semana." : "Releitura automática desligada.");
+}
+
+/** Aviso do momento do chatbot (Lançamento, parte 3): o texto com prazo que a IA usa quando perguntam. */
+export async function saveMomentNotice(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const p = parseMomentNotice(formData);
+  if (!p.ok) return fail(p.message);
+  const supabase = await createClient();
+  const { error, count } = await supabase.from("bots").update({ moment_notice: p.value.text, moment_notice_until: p.value.until, moment_notice_by: "agência" }, { count: "exact" }).eq("id", botId);
+  if (error || !count) return fail("Não foi possível salvar o aviso. Tente de novo.");
+  await auditPanel("bot.aviso_momento", { type: "bot", id: botId }, { after: { ate: p.value.until } });
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(`Aviso no ar até ${untilLabel(p.value.until)}.`);
+}
+
+/** Tira o aviso do momento antes do prazo. */
+export async function clearMomentNotice(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const supabase = await createClient();
+  const { error } = await supabase.from("bots").update({ moment_notice: null, moment_notice_until: null, moment_notice_by: null }).eq("id", botId);
+  if (error) return fail("Não foi possível tirar o aviso. Tente de novo.");
+  await auditPanel("bot.aviso_momento_apagar", { type: "bot", id: botId });
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Aviso tirado.");
 }
 
 /* ------------------------------------------------------------------ whatsapp */

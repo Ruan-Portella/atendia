@@ -12,6 +12,8 @@ import { agencyBaseUrl } from "@/lib/domain";
 import { embeddedSignupConfig } from "@/lib/whatsapp";
 import { channelAccessOf } from "@/lib/features";
 import { WhatsAppConnect } from "@/components/whatsapp-connect";
+import { MomentNoticeCard } from "@/components/moment-notice-card";
+import { activeMomentNotice, defaultUntilInput } from "@/lib/moment-notice";
 import { CoexistenceConnect } from "@/components/coexistence-connect";
 import { esVariantOf } from "@/lib/embedded-signup";
 import { ConnectChecklist } from "@/components/connect-checklist";
@@ -39,6 +41,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { MarketingOptInForm } from "@/components/marketing-optin-form";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
+import { saveMomentNotice, clearMomentNotice } from "../../actions";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
@@ -220,6 +223,16 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <p className="text-sm text-muted">Tudo que {bot.name} sabe vem daqui. Ele não inventa o que não está nas fontes.</p>
               </div>
               <SourcesManager botId={id} sources={sources} />
+              {!bot.is_demo && (
+                <MomentNoticeCard
+                  notice={activeMomentNotice(bot)}
+                  lastUntil={bot.moment_notice_until}
+                  author={bot.moment_notice_by === "agência" ? "pela agência" : bot.moment_notice_by ? `por ${bot.moment_notice_by}` : null}
+                  defaultUntil={defaultUntilInput()}
+                  save={saveMomentNotice.bind(null, id)}
+                  clear={clearMomentNotice.bind(null, id)}
+                />
+              )}
               {!bot.is_demo && sources.some((s) => s.kind === "site" || s.kind === "page") && (
                 <ActionForm key={String(bot.auto_refresh)} action={setAutoRefresh.bind(null, id)} className="flex flex-wrap items-center gap-3 text-sm">
                   <label className="flex items-center gap-2"><input type="checkbox" name="auto_refresh" defaultChecked={bot.auto_refresh !== false} /> Reler o site do cliente automaticamente toda semana</label>

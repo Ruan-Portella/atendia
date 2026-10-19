@@ -60,6 +60,10 @@ Em Demos, a agência gera uma demonstração do chatbot de um possível cliente 
 
 Na aba Base de conhecimento do chatbot, a agência adiciona o que o assistente sabe: o site do cliente (o BoaVoz lê as páginas sozinho), uma página só, PDF de até 15 MB, texto e perguntas frequentes (FAQ). O site é lido de novo toda semana, sozinho. O assistente só responde com o que está na base: o que não está vira "Não tenho essa informação" e a pergunta fica registrada para a equipe responder. Respondida no painel, ela entra na base como FAQ.
 
+## Aviso do momento
+
+Na aba Base de conhecimento do chatbot (e em Ensinar o assistente, na área do cliente), dá para pôr um aviso do momento: um recado com prazo, como instabilidade, manutenção, atraso ou mudança de horário, de até 500 caracteres e que vale até o dia e a hora escolhidos (no máximo 30 dias). O assistente usa o aviso quando alguém pergunta ou o assunto tem a ver, sem começar a conversa por ele, e o aviso some sozinho no fim do prazo. Dá para tirar antes, na mesma tela.
+
 ## Perguntas sem resposta
 
 Quando o assistente não acha a resposta na base, ele diz que não tem a informação, oferece deixar o contato e registra a pergunta. Essas perguntas ficam na aba Base de conhecimento: é só responder por lá que o assistente passa a saber (a resposta vira FAQ). É o jeito mais rápido de completar a base nos primeiros dias.

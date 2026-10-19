@@ -25,7 +25,7 @@ const SKIP = new Set(["Sobre este assistente"]);
 /** Os grupos da central, na ordem; cada seção do guia cai num deles (a que faltar vai para "Mais"). */
 export const HELP_GROUPS: Array<{ title: string; sections: string[] }> = [
   { title: "Começar", sections: ["O que é o BoaVoz", "Como começar (primeiros passos)", "Conta grátis", "Demos para prospects"] },
-  { title: "Chatbots e IA", sections: ["Base de conhecimento (fontes)", "Perguntas sem resposta", "Personalidade e instruções", "O que o assistente não faz", "Leads (captura de contatos)", "Áudios e fotos", "Roteiros", "Identificação pelo roteiro e lembrar o número"] },
+  { title: "Chatbots e IA", sections: ["Base de conhecimento (fontes)", "Aviso do momento", "Perguntas sem resposta", "Personalidade e instruções", "O que o assistente não faz", "Leads (captura de contatos)", "Áudios e fotos", "Roteiros", "Identificação pelo roteiro e lembrar o número"] },
   { title: "Canais", sections: ["Chat do site (widget)", "Conectar o WhatsApp de um cliente", "WhatsApp com o app do celular (coexistência)", "Problemas comuns na conexão", "Modelos de mensagem e janela de 24 horas", "Custo do WhatsApp", "Instagram Direct", "Regras da Meta e o portão do BoaVoz", "Botão de emergência"] },
   { title: "Atendimento e equipe", sections: ["Atendimento humano e conversas", "Equipe e papéis", "Meu perfil", "Avisos no WhatsApp para a equipe", "Área do cliente (portal)", "Relatório mensal", "Marca e domínio"] },
   { title: "Contatos e campanhas", sections: ["Contatos", "Campanhas no WhatsApp", "Lembretes"] },
