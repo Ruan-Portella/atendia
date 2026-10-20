@@ -92,7 +92,7 @@ describe("links ig.me com origem", () => {
   });
 
   it("o link da bio, do QR e do anúncio", () => {
-    // o formato da Meta para o Instagram (o /m/ é do Messenger e dá "página não disponível")
+    // o formato da documentação da API do Instagram com login do Instagram
     expect(igMeLink("lojadaana", "qr-do-balcao")).toBe("https://ig.me/lojadaana?ref=qr-do-balcao");
   });
 

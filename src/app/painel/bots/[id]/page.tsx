@@ -62,6 +62,8 @@ import { commentsEnabled } from "@/lib/instagram";
 import { InstagramCommentsCard } from "@/components/instagram-comments-card";
 import { listComments, type CommentItem } from "@/lib/instagram-comments";
 import { iceBreakersOf } from "@/lib/instagram-direct";
+import { IG_USERNAME_PANEL_MS, refreshInstagramUsername } from "@/lib/instagram-channel";
+import { renamedNotice } from "@/lib/instagram-links";
 import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
@@ -121,7 +123,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
   // inteiros) não vem mais: só o de textos/FAQs, que o modal de edição precisa.
   const none = Promise.resolve({ data: null, count: null });
-  const [{ agency }, { data: bot }, { count: ownReady }, { data: sourceMeta }, { data: sourceTexts }, unanswered, { data: conversations }, leadCount, { data: instagram }, { data: whatsapp }] = await Promise.all([
+  const [{ agency }, { data: bot }, { count: ownReady }, { data: sourceMeta }, { data: sourceTexts }, unanswered, { data: conversations }, leadCount, { data: igRow }, { data: whatsapp }] = await Promise.all([
     requireAgency(),
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
@@ -132,12 +134,17 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? countLeads(supabase, id) : Promise.resolve(null),
     // a aba Fontes também: os posts do Instagram são uma fonte (E1)
-    tab === "instagram" || (tab === "fontes" && igAllowed) ? supabase.from("instagram_channels").select("ig_user_id, username, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
+    tab === "instagram" || (tab === "fontes" && igAllowed) ? supabase.from("instagram_channels").select("ig_user_id, username, previous_username, username_changed_at, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
     tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
   // uma versão publicada do modelo (parte 3) não se edita: o editor é o do modelo
   if (bot.version_of) redirect(`/painel/bots/${bot.version_of}?tab=heranca`);
+  // o nome de usuário muda no Instagram sem aviso e os links ig.me levam o nome (E1): confere na Meta
+  // ao abrir a aba, no máximo uma vez por minuto (a consulta com a sessão já confirmou que o chatbot é da agência)
+  const renamed = igRow && !igRow.disconnected_at && !bot.is_demo ? await refreshInstagramUsername(createAdminClient(), id, { maxAgeMs: IG_USERNAME_PANEL_MS }).catch(() => null) : null;
+  const instagram = renamed && igRow ? { ...igRow, username: renamed.username, previous_username: renamed.previousUsername, username_changed_at: renamed.changedAt } : igRow;
+  const igRenamed = instagram ? renamedNotice(instagram) : null;
   // o derivado usa a base do modelo: as fontes prontas dele contam no teste ao vivo e no Publicar
   const readySources = bot.template_id ? await readySourceCount(createAdminClient(), { id, template_id: bot.template_id as string }) : (ownReady ?? 0);
   const clients = bot.is_demo || tab === "personalidade" || tab === "heranca" ? await getClientOptions(supabase, agency.id) : [];
@@ -783,6 +790,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">conectado</span>
                     <span className="display text-lg font-bold">@{instagram.username ?? instagram.ig_user_id}</span>
                   </div>
+                  {igRenamed && (
+                    <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+                      A conta mudou o nome no Instagram, de @{igRenamed.from} para @{igRenamed.to} (o BoaVoz percebeu a troca {relativeTime(igRenamed.at)}). O nome e os links com origem abaixo já estão atualizados; os links com o nome antigo (na bio, no QR impresso, nos anúncios) não abrem mais o direct: troque pelos novos.
+                    </p>
+                  )}
                   <p className="text-sm text-ink-2">Ligado {relativeTime(instagram.created_at)}. {bot.status === "live" ? "Mande uma DM para a conta para testar." : "O chatbot não está publicado: ele só responde no Instagram depois de clicar em “Publicar” no topo."}</p>
                   <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="instagram" connected />
                   <p className="text-xs text-muted">Se o assistente não responder, confira no Instagram da conta: Configurações → Mensagens e respostas a stories → Ferramentas conectadas → “Permitir acesso às mensagens”. O acesso é renovado sozinho a cada 60 dias.</p>

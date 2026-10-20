@@ -10,6 +10,7 @@ import { activeMembership, can } from "@/lib/team";
 import { botHasAi } from "@/lib/plans";
 import { deadline } from "@/lib/cron";
 import { requestInstagramSync, syncInstagramSource } from "@/lib/instagram-posts";
+import { igProfileUrl, postsSourceTitle } from "@/lib/instagram-links";
 
 // a leitura da fonte responde na hora; a classificação do portão (parte 6) roda depois, no mesmo tempo
 export const maxDuration = 300;
@@ -47,7 +48,7 @@ async function addInstagramSource(botId: string, title: string): Promise<Respons
   const handle = ch.username ?? ch.ig_user_id;
   const { data: source, error } = await admin
     .from("sources")
-    .insert({ bot_id: botId, kind: "instagram", title: title.slice(0, 120) || `Posts do Instagram (@${handle})`, url: ch.username ? `https://www.instagram.com/${ch.username}/` : null, status: "pending", sync_requested_at: new Date().toISOString() })
+    .insert({ bot_id: botId, kind: "instagram", title: title.slice(0, 120) || postsSourceTitle(handle), url: ch.username ? igProfileUrl(ch.username) : null, status: "pending", sync_requested_at: new Date().toISOString() })
     .select("id")
     .single();
   if (error?.code === "23505") return Response.json({ error: "already_exists", message: "Este chatbot já tem a fonte do Instagram: use “Atualizar agora” nela." }, { status: 409 });

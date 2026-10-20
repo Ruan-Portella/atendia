@@ -160,9 +160,9 @@ async function api<T>(path: string, token: string, init?: { method?: string; bod
   );
 }
 
-/** A conta profissional por trás do token: `user_id` é o id que chega nos webhooks. */
-export async function instagramMe(token: string): Promise<{ igUserId: string; username: string | null }> {
-  const me = await api<{ id?: string; user_id?: string; username?: string }>("me?fields=user_id,username", token);
+/** A conta profissional por trás do token: `user_id` é o id que chega nos webhooks (não muda com o nome). */
+export async function instagramMe(token: string, timeoutMs?: number): Promise<{ igUserId: string; username: string | null }> {
+  const me = await api<{ id?: string; user_id?: string; username?: string }>("me?fields=user_id,username", token, { timeoutMs });
   const igUserId = me.user_id ?? me.id;
   if (!igUserId) throw new InstagramError("o Instagram não informou a conta");
   return { igUserId: String(igUserId), username: me.username ?? null };

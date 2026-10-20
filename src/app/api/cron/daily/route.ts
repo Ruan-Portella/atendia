@@ -9,7 +9,7 @@ import { unlinkInactive } from "@/lib/pairing";
 import { reencryptHistory } from "@/lib/reencrypt";
 import { refreshReportDaily } from "@/lib/report-daily";
 import { sweepAttachments } from "@/lib/attachments";
-import { refreshInstagramTokens } from "@/lib/instagram-channel";
+import { refreshInstagramTokens, refreshInstagramUsernames } from "@/lib/instagram-channel";
 import { checkHealth } from "@/lib/health";
 import { notifyPlatform } from "@/lib/notify";
 import { sweepInbound } from "@/lib/inbound-queue";
@@ -81,6 +81,8 @@ async function daily() {
   });
   // o acesso ao Instagram vale 60 dias: renova antes de vencer
   const instagram = await run("tokens do Instagram", () => refreshInstagramTokens(db));
+  // o nome de usuário muda no Instagram sem aviso e os links ig.me levam o nome (E1): até 20 s
+  const igNames = await run("nomes do Instagram", () => refreshInstagramUsernames(db, deadline(20_000)));
   // custo de IA: totais do mês e limpeza dos registros com mais de 90 dias
   const aiUsage = await run("totais de IA", async () => {
     const { error } = await db.rpc("ai_usage_rollup");
@@ -113,5 +115,5 @@ async function daily() {
   // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
   const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, aiUsage, disk, sources, base, analysis };
 }
