@@ -3,6 +3,7 @@ import { queueChannelEvent } from "./platform-events";
 import { notifyAgencyOwner } from "./notify";
 import { seal, unseal } from "./secret-box";
 import { appUrl } from "./utils";
+import { syncIceBreakers } from "./instagram-direct";
 import { InstagramError, exchangeInstagramCode, instagramMe, isInstagramAccessError, refreshInstagramToken, subscribeInstagram } from "./instagram";
 
 /**
@@ -34,6 +35,8 @@ export async function connectInstagram(db: SupabaseClient, opts: { botId: string
   if (error) return { ok: false, message: "A conta foi autorizada, mas não deu para salvar. Tente de novo." };
   // webhooks: channel.connected
   await queueChannelEvent(db, opts.botId, "connected", { type: "instagram", igUserId: me.igUserId, username: me.username ?? null }, { at: new Date().toISOString() });
+  // perguntas prontas do direct (E1): as do chatbot vão para a conta nova
+  await syncIceBreakers(db, opts.botId, { onlyIfAny: true }).catch((e) => console.warn("instagram: perguntas prontas", (e as Error).message));
 
   const { data: bot } = await db.from("bots").select("name, client_name, agency_id").eq("id", opts.botId).maybeSingle();
   if (bot) {

@@ -56,6 +56,9 @@ import { satisfactionSummary } from "@/lib/satisfaction";
 import { detachFromTemplate, markTransferReviewed, resetDerivedField } from "../../actions";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, setPostPriceRule, updateBot } from "../../actions";
 import { PostPriceCard } from "@/components/post-price-card";
+import { IceBreakersCard, RefLinksCard, type RefLinkItem } from "@/components/instagram-direct-cards";
+import { addRefLink, removeRefLink, saveIceBreakers } from "@/app/painel/instagram/actions";
+import { iceBreakersOf } from "@/lib/instagram-direct";
 import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
@@ -135,6 +138,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   // o derivado usa a base do modelo: as fontes prontas dele contam no teste ao vivo e no Publicar
   const readySources = bot.template_id ? await readySourceCount(createAdminClient(), { id, template_id: bot.template_id as string }) : (ownReady ?? 0);
   const clients = bot.is_demo || tab === "personalidade" || tab === "heranca" ? await getClientOptions(supabase, agency.id) : [];
+  // aba Instagram (E1, parte 3a): os links ig.me com origem do chatbot
+  const refLinks = tab === "instagram" && !bot.is_demo ? (((await createAdminClient().from("instagram_ref_links").select("id, ref, label, note, created_at").eq("bot_id", id).order("created_at")).data ?? []) as RefLinkItem[]) : [];
   // modelo (D'): os derivados, na Herança; derivado: o nome do modelo, na faixa do topo
   const derivedList = isTemplate && tab === "heranca" ? (((await createAdminClient().from("bots").select("id, name, client_name, status").eq("template_id", id).order("created_at")).data ?? []) as DerivedItem[]) : [];
   // modelo (parte 3): as versões, quantos derivados a publicação afeta e se há mudança não publicada
@@ -798,6 +803,12 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <a href={`/api/instagram/connect?bot=${id}`} className="btn-ghost self-start">Conectar Instagram</a>
                   </ChannelAcceptGate>
                 </div>
+              )}
+              {!bot.is_demo && (
+                <>
+                  <IceBreakersCard questions={iceBreakersOf(bot)} syncedAt={bot.ig_ice_breakers_synced_at ?? null} error={bot.ig_ice_breakers_error ?? null} connected={Boolean(instagram && !instagram.disconnected_at)} save={saveIceBreakers.bind(null, id)} />
+                  <RefLinksCard username={instagram?.username ?? null} links={refLinks} hasIceBreakers={iceBreakersOf(bot).length > 0} add={addRefLink.bind(null, id)} remove={removeRefLink.bind(null, id)} />
+                </>
               )}
               {!bot.is_demo && <FailedSends botId={id} channel="instagram" />}
             </div>

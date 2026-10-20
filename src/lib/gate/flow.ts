@@ -2,7 +2,7 @@ import type { UIMessage } from "ai";
 import { searchBots } from "../bot-template";
 import { activeContext } from "../bot-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, requestHandoff, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
+import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, requestHandoff, retrieveContext, runChat, withRiskText, type BotRow, type InstagramChat } from "../chat";
 import { deliver } from "../send";
 import { deleteMessage, loadMessages } from "../messages";
 import { storeOnce } from "../whatsapp-inbound";
@@ -124,7 +124,7 @@ export interface GateIO {
   /** Anexo devolvido por uma ação (imagem ou documento pela URL): devolve o id da mensagem na Meta. */
   sendFile: (f: { kind: OutboundKind; url: string; filename: string | null }) => Promise<string | null>;
   /** Dados do contato para o runChat (nome do perfil no WhatsApp). */
-  chat: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: { igsid: string } };
+  chat: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: InstagramChat };
   historySize: number;
   /** Depois de lembrar o número pelo roteiro (no WhatsApp, liga a checagem de identidade da Meta). */
   onLinked?: () => Promise<void>;

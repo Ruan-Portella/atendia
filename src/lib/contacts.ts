@@ -229,6 +229,21 @@ export async function forgetBsuids(db: SupabaseClient, botId: string): Promise<v
 export const whatsappIdentityOf = (id: string): WhatsAppIdentity => (/[a-z]/i.test(id) ? { bsuid: id } : { phone: id });
 
 /** Quando chegou a última mensagem do próprio contato (janela de 24 h da Meta), ou null. */
+/**
+ * Origem do link ig.me (E1, parte 3a) aberto sem mensagem, numa conversa antiga: espera no contato
+ * até a próxima mensagem abrir a conversa nova (vale por 24 horas).
+ */
+export async function setContactOrigin(db: SupabaseClient, contactId: string, origin: { ref: string; label: string } | null): Promise<void> {
+  await db.from("contacts").update(origin ? { origin_ref: origin.ref, origin_label: origin.label, origin_at: new Date().toISOString() } : { origin_ref: null, origin_label: null, origin_at: null }).eq("id", contactId);
+}
+
+/** A origem que espera no contato (até 24 horas depois de aberto o link), ou null. */
+export async function pendingContactOrigin(db: SupabaseClient, contactId: string): Promise<{ ref: string; label: string } | null> {
+  const { data } = await db.from("contacts").select("origin_ref, origin_label, origin_at").eq("id", contactId).maybeSingle();
+  if (!data?.origin_ref || !data.origin_at || Date.now() - Date.parse(data.origin_at as string) > 86_400_000) return null;
+  return { ref: data.origin_ref as string, label: (data.origin_label as string | null) ?? (data.origin_ref as string) };
+}
+
 export async function contactLastInbound(db: SupabaseClient, contactId: string): Promise<string | null> {
   const { data } = await db.from("contacts").select("last_inbound_at").eq("id", contactId).maybeSingle();
   return (data?.last_inbound_at as string | null | undefined) ?? null;

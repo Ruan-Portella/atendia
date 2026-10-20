@@ -6,9 +6,10 @@ import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, r
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withoutAi, type Mode } from "./conversation-mode";
 import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
-import { instagramContact, touchInbound } from "./contacts";
+import { instagramContact, pendingContactOrigin, setContactOrigin, touchInbound } from "./contacts";
 import { DELETED_LABEL, deletedBeforeArrival } from "./instagram-edits";
 import { NO_CONTEXT, instagramContext, type IgContext } from "./instagram-context";
+import { originOf, refKind } from "./instagram-direct";
 import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage, updateMessages } from "./messages";
 import { maskCardNumbers } from "./routine-run";
@@ -89,10 +90,22 @@ export interface IgChannelRow extends IgChannel {
   disconnected_at?: string | null;
 }
 
-/** ref do link ig.me (pareamento, P2), venha na mensagem, no botão ou no evento de referral. */
+/** ref do link ig.me (pareamento, P2, ou origem, E1), venha na mensagem, no botão ou no evento de referral. */
 export const igRef = (ev: IgMessagingEvent): string | null => {
   const r = ev.referral?.ref ?? ev.message?.referral?.ref ?? ev.postback?.referral?.ref;
-  return r && /^[A-Za-z0-9]{4,32}$/.test(r) ? r : null;
+  return r && /^[A-Za-z0-9_=-]{1,64}$/.test(r) ? r : null;
+};
+
+/** O ref é um código de pareamento (P2): vira "Conectar REF". O resto é origem (E1). */
+const pairingRef = (ev: IgMessagingEvent): string | null => {
+  const r = igRef(ev);
+  return r && refKind(r) === "pairing" ? r : null;
+};
+
+/** O ref é a origem de um link ig.me da loja (E1, parte 3a). */
+const originRef = (ev: IgMessagingEvent): string | null => {
+  const r = igRef(ev);
+  return r && refKind(r) === "origin" ? r : null;
 };
 
 /**
@@ -122,7 +135,7 @@ const FOLLOW_UP_WAIT_MS = 3500;
 /** Conversa recente do contato com o chatbot (dentro da janela de 24 h). */
 async function recentConversation(db: SupabaseClient, botId: string, igsid: string, contactId: string | null = null): Promise<RecentConversation | null> {
   const since = new Date(Date.now() - RESUME_HOURS * 3_600_000).toISOString();
-  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, ai_paused_until, unavailable_notice_reason, contact_id, unseen_media_at, unseen_media_kind").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
+  const recent = () => db.from("conversations").select("id, takeover_at, handled_at, ai_paused_until, unavailable_notice_reason, contact_id, unseen_media_at, unseen_media_kind, origin_ref").eq("bot_id", botId).gt("last_message_at", since).order("last_message_at", { ascending: false }).limit(1);
   if (contactId) {
     const { data } = await recent().eq("contact_id", contactId).maybeSingle<RecentConversation>();
     if (data) return data;
@@ -145,6 +158,8 @@ interface RecentConversation extends UnseenMark {
   ai_paused_until?: string | null;
   /** Aviso de indisponível já enviado neste episódio (zera quando volta ao normal). */
   unavailable_notice_reason?: string | null;
+  /** Origem do link ig.me por onde a pessoa veio (E1). */
+  origin_ref?: string | null;
 }
 
 /** Manda a DM e guarda o id dela: o webhook ecoa as nossas mensagens, e assim o eco é ignorado. */
@@ -221,6 +236,21 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   // a pergunta pendente rearmada na volta da IA não é mensagem nova do contato
   if (contact && mode.storeInbound && !burst.every((q) => isRearmed(q.ev.message?.mid))) await touchInbound(db, contact);
 
+  // links ig.me com origem (E1, parte 3a): o ref que não é pareamento diz de onde a pessoa veio. Numa
+  // conversa recente, fica nela; sem conversa, espera no contato até a próxima mensagem abrir uma
+  const refNow = burst.map((q) => originRef(q.ev)).filter((r): r is string => r !== null).pop() ?? null;
+  const origin = refNow ? await originOf(db, bot.id, refNow) : null;
+  if (origin && conv) {
+    await db.from("conversations").update({ origin_ref: origin.ref, origin_label: origin.label }).eq("id", conv.id);
+    conv.origin_ref = origin.ref;
+  } else if (origin && contactId) await setContactOrigin(db, contactId, origin);
+  /** A origem da conversa nova: a deste link ou a que esperava no contato (que sai dele). */
+  const newOrigin = async () => {
+    const o = origin ?? (contactId ? await pendingContactOrigin(db, contactId) : null);
+    if (o && contactId) await setContactOrigin(db, contactId, null);
+    return o;
+  };
+
   const reply = (text: string) => send(db, ch, igsid, text);
   /** Texto pela camada única de envio: regra de estado na hora do envio e registro na conversa. */
   const say = (kind: SendKind, text: string, record: SendRecord, conversationId: string | null = conv?.id ?? null, quickReplies?: Array<{ title: string; payload: string }>) =>
@@ -264,8 +294,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
       texts.push(null);
       continue;
     }
-    // link ig.me com ?ref= aberto sem texto: fica na conversa como "Conectar REF"
-    const ref = igRef(q.ev);
+    // link ig.me com o código de pareamento aberto sem texto: fica na conversa como "Conectar REF"
+    const ref = pairingRef(q.ev);
     const typed = [igText(q.ev), contexts[i].text].filter(Boolean).join("\n") || (ref ? `Conectar ${ref}` : null);
     // número de cartão sai antes de gravar e antes da IA (também o dito no áudio)
     const t = (typed ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null;
@@ -287,7 +317,8 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   /** A conversa do contato, aberta sem contar na cota (a IA não vai responder nela agora). */
   const plainConversation = async (): Promise<string | null> => {
     if (!conv) {
-      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, contact_id: contactId, visitor_id: null, ...(await linkColumnsForContact(db, contactId)) }).select("id, takeover_at, handled_at").single<RecentConversation>();
+      const o = await newOrigin();
+      const { data } = await db.from("conversations").insert({ bot_id: bot.id, channel: "instagram", ig_id: igsid, contact_id: contactId, visitor_id: null, ...(o ? { origin_ref: o.ref, origin_label: o.label } : {}), ...(await linkColumnsForContact(db, contactId)) }).select("id, takeover_at, handled_at, origin_ref").single<RecentConversation>();
       conv = data;
     }
     return conv?.id ?? null;
@@ -338,6 +369,9 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     await systemReply(convId, optOutConfirmation("all", bot.client_name), [{ title: "Foi engano", payload: OPTOUT_UNDO }]);
   }
   if (handled.size === burst.length) return;
+  // link ig.me aberto sem mensagem (E1): a origem já foi guardada; não há o que gravar nem responder
+  for (const [i, q] of burst.entries()) if (!q.ev.message && !q.ev.postback && originRef(q.ev)) handled.add(i);
+  if (handled.size === burst.length) return;
 
   // degraus 1 e 2 (conta desconectada, suspensão pela BoaVoz): nada sai pelo canal, fora o aviso
   // da suspensão (uma vez); as mensagens ficam no painel
@@ -365,7 +399,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     },
     burst.map((q, i) => {
       if (handled.has(i)) return { text: null, buttonId: null };
-      const ref = igRef(q.ev);
+      const ref = pairingRef(q.ev);
       return { text: ref ? `Conectar ${ref}` : texts[i], buttonId: igButtonId(q.ev) };
     }),
   );
@@ -524,7 +558,12 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   }
 
   try {
-    conv ??= { id: await openConversation(db, bot, { channel: "instagram", igsid, contactId }), takeover_at: null, handled_at: null };
+    if (!conv) {
+      const o = await newOrigin();
+      conv = { id: await openConversation(db, bot, { channel: "instagram", igsid, contactId, origin: o }), takeover_at: null, handled_at: null, origin_ref: o?.ref ?? null };
+    }
+    // de onde a pessoa veio (link ig.me com origem), com a nota da loja sobre o link
+    const aiOrigin = origin ?? (conv.origin_ref ? await originOf(db, bot.id, conv.origin_ref) : null);
     // cota do mês: o atendimento deste contato (24 horas) abre antes de chamar a IA; sem vaga, lança
     // e cai no modo só humano (no catch)
     await requireAtendimento(db, bot, { channel: "instagram", contactKey: contactId ?? igsid, conversationId: conv.id });
@@ -559,7 +598,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
           if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
           return mid;
         },
-        chat: { instagram: { igsid } },
+        chat: { instagram: { igsid, origin: aiOrigin } },
         historySize: HISTORY,
         // passo de foto do roteiro (parte 2d): só com a leitura de fotos valendo agora
         photosOn,

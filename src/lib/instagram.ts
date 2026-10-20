@@ -158,11 +158,18 @@ export async function instagramMe(token: string): Promise<{ igUserId: string; us
 }
 
 /**
- * Inscreve o app nas mensagens da conta (sem isso o webhook não recebe as DMs dela) e nos toques
- * em botão de generic template (messaging_postbacks, parte 5d-2).
+ * Inscreve o app nas mensagens da conta (sem isso o webhook não recebe as DMs dela), nos toques
+ * em botão de generic template e nas perguntas prontas (messaging_postbacks, parte 5d-2) e no link
+ * ig.me aberto numa conversa que já existe (messaging_referral, E1). Se a Meta recusar o campo
+ * novo, fica a inscrição de antes (a conexão não pode cair por isso).
  */
 export async function subscribeInstagram(token: string) {
-  await api("me/subscribed_apps?subscribed_fields=messages,messaging_postbacks", token, { method: "POST" });
+  try {
+    await api("me/subscribed_apps?subscribed_fields=messages,messaging_postbacks,messaging_referral", token, { method: "POST" });
+  } catch (e) {
+    if (isInstagramAccessError(e)) throw e;
+    await api("me/subscribed_apps?subscribed_fields=messages,messaging_postbacks", token, { method: "POST" });
+  }
 }
 
 export async function unsubscribeInstagram(token: string) {
@@ -334,4 +341,20 @@ export async function instagramMedia(ch: IgChannel, o: { max: number; since: Dat
     after = page.paging?.next ? (page.paging.cursors?.after ?? null) : null;
   } while (after);
   return out;
+}
+
+/* ------------------------------------------------------------------ perguntas prontas (E1, parte 3a) */
+
+/**
+ * As perguntas prontas do direct (ice breakers, até 4): aparecem quando a pessoa abre a conversa
+ * pela primeira vez, no app (no computador, não). O toque chega como postback, com a pergunta no
+ * título e "ib:<n>" no payload. Lista vazia apaga as perguntas da conta.
+ */
+export async function setInstagramIceBreakers(ch: IgChannel, questions: string[]): Promise<void> {
+  const token = tokenOf(ch);
+  if (!questions.length) {
+    await api("me/messenger_profile", token, { method: "DELETE", body: { fields: ["ice_breakers"] } });
+    return;
+  }
+  await api("me/messenger_profile", token, { body: { platform: "instagram", ice_breakers: [{ call_to_actions: questions.slice(0, 4).map((question, i) => ({ question, payload: `ib:${i + 1}` })) }] } });
 }
