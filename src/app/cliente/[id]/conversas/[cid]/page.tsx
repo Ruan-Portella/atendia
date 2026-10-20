@@ -67,6 +67,7 @@ export default async function MemberConversationPage({ params }: PageProps<"/cli
             messages={allMessages}
             leads={leads.map((l) => ({ ...l, requests: l.requests.filter((r) => r.conversation_id === cid) }))}
             agentLabel={(m) => authorLabel(m, { view: "client", meId: member.memberId, meLegacy: email, agencyName })}
+            channel={conv.channel as string}
           />
         </div>
       </MessageScroller>

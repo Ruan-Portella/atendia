@@ -93,6 +93,12 @@ async function daily() {
     if (h.diskWarning) await notifyPlatform("Disco do banco acima de 70%", [`Uso: ${Math.round((h.diskRatio ?? 0) * 100)}% (${Math.round((h.diskBytes ?? 0) / 1024 / 1024)} MB).`, "Com 95% o Supabase deixa o banco só leitura e todos os bots param. Limpe dados antigos ou migre para o Pro."]);
     return { ratio: h.diskRatio };
   });
+  // registros das chamadas à API (D', parte 7): 30 dias
+  const apiLogs = await run("registros da API", async () => {
+    const { error, count } = await db.from("api_requests").delete({ count: "exact" }).lt("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString());
+    if (error) throw error;
+    return { apagados: count ?? 0 };
+  });
   // resumo ao dono das pessoas convidadas ao portal pela API (D', parte 4c)
   const invites = await run("convites pela API", () => apiInvitesDigest(db));
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
@@ -107,5 +113,5 @@ async function daily() {
   // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
   const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, monthClosed, invites, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

@@ -37,6 +37,7 @@ export const TRANSFER_TABLES: Record<string, { muda: boolean; por: string }> = {
   ai_usage: { muda: false, por: "medição de IA (histórico)" },
   ai_usage_monthly: { muda: false, por: "medição de IA (histórico)" },
   api_keys: { muda: false, por: "chaves da origem (deixam de alcançar o cliente)" },
+  api_requests: { muda: false, por: "registro das chamadas à API da origem (histórico, 30 dias)" },
   atendimentos: { muda: false, por: "uso já contado (os novos contam no destino)" },
   billing_changes: { muda: false, por: "cobrança da origem" },
   business_acceptances: { muda: false, por: "o aceite vale para a conta que recebeu; a nova precisa de outro" },

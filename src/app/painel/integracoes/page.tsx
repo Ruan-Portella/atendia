@@ -344,11 +344,15 @@ function pretty(text: string | null): string {
 async function LogsTab({ agencyId, botIds, botName, db }: { agencyId: string; botIds: string[]; botName: Map<string, string>; db: ReturnType<typeof createAdminClient> }) {
   const { data: actionRows } = botIds.length ? await db.from("actions").select("id, name, bot_id").in("bot_id", botIds) : { data: [] };
   const actionOf = new Map((actionRows ?? []).map((a) => [a.id as string, a]));
-  const [{ data: calls }, { data: hooks }] = await Promise.all([
+  const [{ data: calls }, { data: hooks }, { data: apiRows }, { data: keyRows }] = await Promise.all([
     actionOf.size ? db.from("action_calls").select("id, action_id, call_id, attempt, mode, status, http_status, duration_ms, created_at, request_enc, response_enc").in("action_id", [...actionOf.keys()]).order("created_at", { ascending: false }).limit(50) : Promise.resolve({ data: [] }),
     db.from("webhooks").select("id, name, active").eq("agency_id", agencyId),
+    // chamadas à API (D', parte 7): 30 dias, sem corpo
+    db.from("api_requests").select("id, api_key_id, method, path, status, error_code, duration_ms, replayed, created_at").eq("agency_id", agencyId).order("created_at", { ascending: false }).limit(100),
+    db.from("api_keys").select("id, name, prefix").eq("agency_id", agencyId),
   ]);
   const hookOf = new Map((hooks ?? []).map((h) => [h.id as string, h]));
+  const keyName = new Map((keyRows ?? []).map((k) => [k.id as string, `${k.name as string} (${k.prefix as string}…)`]));
   const { data: deliveries } = hookOf.size ? await db.from("webhook_deliveries").select("id, webhook_id, event_id, event_type, status, attempts, last_status, last_error, created_at, payload_enc, last_response_enc").in("webhook_id", [...hookOf.keys()]).order("created_at", { ascending: false }).limit(50) : { data: [] };
   // corpo e resposta abertos só aqui, para quem tem o segundo fator (os cabeçalhos nunca vão para o log)
   const callRows = await Promise.all(
@@ -360,6 +364,37 @@ async function LogsTab({ agencyId, botIds, botName, db }: { agencyId: string; bo
 
   return (
     <>
+      <section className="card flex flex-col gap-2 p-5">
+        <h2 className="font-semibold">Chamadas à API</h2>
+        <p className="text-xs text-muted">As últimas 100 dos últimos 30 dias, com a chave, o status e o código do erro. O corpo não fica guardado, e o endereço do contato no caminho aparece como {"{contact}"}.</p>
+        {apiRows?.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-xs">
+              <thead className="border-b border-line text-left text-muted">
+                <tr><th className="py-1.5 pr-3 font-semibold">Quando</th><th className="py-1.5 pr-3 font-semibold">Chave</th><th className="py-1.5 pr-3 font-semibold">Chamada</th><th className="py-1.5 pr-3 font-semibold">Resposta</th><th className="py-1.5 text-right font-semibold">Tempo</th></tr>
+              </thead>
+              <tbody>
+                {apiRows.map((r) => (
+                  <tr key={r.id as number} className="border-b border-line-2 last:border-0">
+                    <td className="py-1.5 pr-3 text-muted">{relativeTime(r.created_at as string)}</td>
+                    <td className="py-1.5 pr-3">{keyName.get(r.api_key_id as string) ?? "chave apagada"}</td>
+                    <td className="py-1.5 pr-3 font-mono">{r.method as string} {r.path as string}</td>
+                    <td className={`py-1.5 pr-3 font-semibold ${(r.status as number) < 400 ? "text-brand" : (r.status as number) >= 500 ? "text-danger" : "text-amber-ink"}`}>
+                      {r.status as number}
+                      {r.error_code ? ` · ${r.error_code as string}` : ""}
+                      {r.replayed ? " · repetida (Idempotency-Key)" : ""}
+                    </td>
+                    <td className="py-1.5 text-right tabular text-muted">{r.duration_ms !== null ? `${r.duration_ms as number} ms` : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-muted">Nenhuma chamada nos últimos 30 dias.</p>
+        )}
+      </section>
+
       <section className="card flex flex-col gap-2 p-5">
         <h2 className="font-semibold">Chamadas de ações</h2>
         <p className="text-xs text-muted">As últimas 50, com o corpo enviado e a resposta. Os cabeçalhos personalizados nunca entram no registro.</p>

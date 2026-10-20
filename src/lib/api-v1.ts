@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { after } from "next/server";
 import { hasPack } from "./entitlements";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "./supabase/admin";
@@ -142,6 +143,41 @@ export async function withIdempotency(api: ApiContext, req: Request, raw: string
 
 type Handler<P> = (req: Request, api: ApiContext, params: P) => Promise<Response>;
 
+/** O caminho como fica no registro: o endereço do contato (phone:, wa:, ig:, ext:) vira {contact}. Pura. */
+export function loggedPath(url: string): string {
+  const path = new URL(url).pathname.replace(/^\/api(?=\/v1\/)/, "");
+  return path
+    .split("/")
+    .map((seg) => (/^(phone|wa|ig|ext)(:|%3A)/i.test(seg) ? "{contact}" : seg))
+    .join("/")
+    .slice(0, 300);
+}
+
+/**
+ * Registro da chamada (D', parte 7), depois da resposta: a chave, o caminho sem o contato, o
+ * status, o código do erro e a duração. Sem corpo e sem query. Nunca derruba a chamada.
+ */
+async function logRequest(db: SupabaseClient, key: { id: string; agency_id: string }, req: Request, res: Response, started: number): Promise<void> {
+  let code: string | null = null;
+  if (res.status >= 400) {
+    try {
+      code = ((await res.clone().json()) as { error?: { code?: string } }).error?.code ?? null;
+    } catch {
+      code = null;
+    }
+  }
+  const row = { agency_id: key.agency_id, api_key_id: key.id, method: req.method, path: loggedPath(req.url), status: res.status, error_code: code, duration_ms: Date.now() - started, replayed: res.headers.get("Idempotent-Replayed") === "true" };
+  const write = async () => {
+    const { error } = await db.from("api_requests").insert(row);
+    if (error) console.error("api: registro não gravado", error.message);
+  };
+  try {
+    after(write);
+  } catch {
+    await write();
+  }
+}
+
 /** A rota que serve a mais de uma permissão confere a de cada campo (ex.: PATCH /v1/bots/{id}). */
 export function requirePermission(api: ApiContext, permission: ApiPermission): void {
   if (!api.key.permissions?.includes(permission)) throw new ApiError(403, "forbidden_scope", `A chave não tem a permissão ${permission}.`, { permission });
@@ -151,6 +187,13 @@ export function requirePermission(api: ApiContext, permission: ApiPermission): v
 export function withApiKey<P extends Record<string, string> = Record<string, never>>(permission: ApiPermission | readonly ApiPermission[], handler: Handler<P>) {
   const needed: readonly ApiPermission[] = typeof permission === "string" ? [permission] : permission;
   return async (req: Request, route: { params: Promise<P> }): Promise<Response> => {
+    const started = Date.now();
+    // a chave conferida: daqui em diante, toda resposta fica no registro
+    let logged: { db: SupabaseClient; key: { id: string; agency_id: string } } | null = null;
+    const done = async (res: Response) => {
+      if (logged) await logRequest(logged.db, logged.key, req, res, started).catch(() => undefined);
+      return res;
+    };
     try {
       if (isCustomHost(req.headers.get("host"))) return apiErrorResponse(404, "not_found", "A API do BoaVoz responde só em boavoz.com.");
       const raw = bearerKey(req.headers.get("authorization"));
@@ -158,23 +201,24 @@ export function withApiKey<P extends Record<string, string> = Record<string, nev
       const db = createAdminClient();
       const { data: key } = await db.from("api_keys").select(API_KEY_COLS).eq("key_hash", apiKeyHash(raw)).maybeSingle<ApiKeyRow>();
       if (!key || key.revoked_at) return apiErrorResponse(401, "invalid_api_key", "Chave inválida ou revogada.");
+      logged = { db, key: { id: key.id, agency_id: key.agency_id } };
       const limited = await firstExceeded(db, [{ key: `api:${key.id}`, ...RATE, message: "rate_limited" }]);
-      if (limited) return apiErrorResponse(429, "rate_limited", "Muitas requisições com esta chave. Tente de novo em instantes.", undefined, { "Retry-After": String(RATE.windowSeconds) });
+      if (limited) return await done(apiErrorResponse(429, "rate_limited", "Muitas requisições com esta chave. Tente de novo em instantes.", undefined, { "Retry-After": String(RATE.windowSeconds) }));
       if (!needed.some((p) => key.permissions.includes(p))) {
-        return apiErrorResponse(403, "forbidden_scope", needed.length === 1 ? `A chave não tem a permissão ${needed[0]}.` : `A chave não tem nenhuma das permissões ${needed.join(" ou ")}.`, { permission: needed.length === 1 ? needed[0] : [...needed] });
+        return await done(apiErrorResponse(403, "forbidden_scope", needed.length === 1 ? `A chave não tem a permissão ${needed[0]}.` : `A chave não tem nenhuma das permissões ${needed.join(" ou ")}.`, { permission: needed.length === 1 ? needed[0] : [...needed] }));
       }
       // a API é do pacote Integrações: sem ele, as chaves ficam guardadas e a API recusa
-      if (!(await hasPack(db, key.agency_id, "integracoes"))) return apiErrorResponse(403, "plan_not_allowed", "A API faz parte do pacote Integrações. Assine em Cobrança → Assinatura.", { pack: "integracoes" });
+      if (!(await hasPack(db, key.agency_id, "integracoes"))) return await done(apiErrorResponse(403, "plan_not_allowed", "A API faz parte do pacote Integrações. Assine em Cobrança → Assinatura.", { pack: "integracoes" }));
       if (!key.last_used_at || Date.now() - Date.parse(key.last_used_at) > TOUCH_MS) {
         void db.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", key.id).then(({ error }) => error && console.error("api: last_used_at", error.message));
       }
       const botIds = await scopeBotIds(db, key);
       const ctx = apiContext(db, { id: key.id, agency_id: key.agency_id, prefix: key.prefix, name: key.name, permissions: key.permissions, scope_type: key.scope_type, scope_client_id: key.scope_client_id }, botIds, key.scope_type === "all");
-      return await handler(req, ctx, await route.params);
+      return await done(await handler(req, ctx, await route.params));
     } catch (e) {
-      if (e instanceof ApiError) return apiErrorResponse(e.status, e.code, e.message, e.details, e.headers);
+      if (e instanceof ApiError) return await done(apiErrorResponse(e.status, e.code, e.message, e.details, e.headers));
       console.error("api v1:", e);
-      return apiErrorResponse(500, "internal_error", "Erro interno. Tente de novo; se continuar, fale com o suporte.");
+      return await done(apiErrorResponse(500, "internal_error", "Erro interno. Tente de novo; se continuar, fale com o suporte."));
     }
   };
 }

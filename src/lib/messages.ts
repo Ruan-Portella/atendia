@@ -300,3 +300,39 @@ export async function reconcileUncertain(db: SupabaseClient, refHash: string, ch
   if (error) throw new Error(`envio incerto: ${error.message}`);
   return Boolean(data?.length);
 }
+
+/* ------------------------------------------------------------------ envios que falharam (D', parte 7) */
+
+export interface FailedMessage {
+  id: number;
+  conversationId: string;
+  botId: string;
+  createdAt: string;
+  role: string;
+  content: string;
+  author: string | null;
+  failedAt: string | null;
+  errorCode: string | null;
+  blockedReason: string | null;
+}
+
+/** As mensagens destes chatbots que não saíram no canal (recusa do canal ou regra de estado), mais novas primeiro. */
+export async function failedMessages(db: SupabaseClient, o: { botIds: string[]; channel: "whatsapp" | "instagram"; since: string; limit?: number }): Promise<FailedMessage[]> {
+  if (!o.botIds.length) return [];
+  const { data, error } = await db.rpc("failed_messages", { p_bot_ids: o.botIds, p_channel: o.channel, p_since: o.since, p_limit: o.limit ?? 50 });
+  if (error) throw new Error(`envios que falharam: ${error.message}`);
+  return Promise.all(
+    ((data ?? []) as Array<Record<string, unknown>>).map(async (r) => ({
+      id: Number(r.id),
+      conversationId: String(r.conversation_id),
+      botId: String(r.bot_id),
+      createdAt: String(r.created_at),
+      role: String(r.role),
+      content: await openField("messages.content", String(r.content ?? "")),
+      author: (r.author_display_name as string | null) ?? (r.author as string | null) ?? null,
+      failedAt: (r.failed_at as string | null) ?? null,
+      errorCode: (r.error_code as string | null) ?? null,
+      blockedReason: (r.blocked_reason as string | null) ?? null,
+    })),
+  );
+}

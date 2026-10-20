@@ -1,16 +1,9 @@
 import { Fragment } from "react";
 import { asButtons, cardName, parseComponents } from "@/lib/components";
 import { parsePhotoReading, photoReadingLines } from "@/lib/photo-note";
+import { failureReason } from "@/lib/send-errors";
 
-/** Por que o canal recusou, nos erros mais comuns da Meta. */
-const FAILURE_TEXT: Record<string, string> = {
-  "131037": "o número ainda não tem o nome de exibição aprovado pela Meta (veja no WhatsApp Manager) e o contato não recebeu.",
-  "131047": "passaram 24 horas desde a última mensagem do contato; só um modelo aprovado pode reabrir a conversa.",
-  "131026": "o contato não pode receber (número sem WhatsApp ou aplicativo desatualizado).",
-  "131050": "o contato parou de receber promoções desta empresa pelo próprio WhatsApp.",
-  "131042": "a conta do WhatsApp está sem forma de pagamento na Meta.",
-};
-const failureText = (code: string | null | undefined) => (code && FAILURE_TEXT[code]) || "o canal recusou e o contato não recebeu.";
+
 
 export interface ThreadMessage {
   id: number;
@@ -148,10 +141,12 @@ interface Props {
   showSources?: boolean;
   /** Troca de contexto (pareamento, P2): separador antes da primeira mensagem do trecho novo. */
   contextChange?: { at: string; label: string } | null;
+  /** O canal da conversa: o motivo de "Não entregue" depende dele. */
+  channel?: string | null;
 }
 
 /** Conversa (visitante, assistente e atendentes) — painel, portal e área do cliente. */
-export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null }: Props) {
+export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null }: Props) {
   const changeAt = contextChange ? Date.parse(contextChange.at) : NaN;
   const firstAfter = Number.isNaN(changeAt) ? -1 : messages.findIndex((m) => m.created_at && Date.parse(m.created_at) >= changeAt);
   return (
@@ -201,7 +196,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
               </a>
             ) : null}
             {m.blocked_reason && <div className="mt-1.5 text-[11px] font-semibold text-amber-ink">Não enviada: {m.blocked_reason}. O contato não recebeu esta mensagem.</div>}
-            {m.failed_at && <div className="mt-1.5 text-[11px] font-semibold text-danger">Não entregue{m.error_code ? ` (erro ${m.error_code})` : ""}: {failureText(m.error_code)}</div>}
+            {m.failed_at && <div className="mt-1.5 text-[11px] font-semibold text-danger">Não entregue{m.error_code ? ` (erro ${m.error_code})` : ""}: {failureReason(m.error_code, channel ?? "whatsapp")}.</div>}
             {showSources && Array.isArray(m.sources) && m.sources.length > 0 && (
               <div className="mt-1.5 text-[11px] text-muted">Fontes: {(m.sources as Array<{ title?: string; url?: string }>).map((s) => s.title ?? s.url).join(" · ")}</div>
             )}

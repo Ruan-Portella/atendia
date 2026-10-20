@@ -189,6 +189,7 @@ export default async function ConversationPage({ params }: PageProps<"/painel/bo
             messages={allMessages}
             leads={leads.map((l) => ({ ...l, requests: l.requests.filter((r) => r.conversation_id === cid) }))}
             showSources
+            channel={conv.channel as string}
             contextChange={conv.context_since ? { at: conv.context_since as string, label: conv.context_display ? `contexto: ${conv.context_display as string}` : "sem conta conectada" } : null}
             agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}
           />

@@ -71,6 +71,9 @@ export default function ApiDocs() {
           <strong>Limite:</strong> 50 requisições a cada 5 segundos por chave. Passou disso: 429 <code>rate_limited</code> com <code>Retry-After</code>.
         </li>
         <li>
+          <strong>Registro:</strong> cada chamada com chave válida fica 30 dias em Integrações → Logs, com a chave, o caminho, o status, o código do erro e a duração. O corpo e a query não ficam guardados, e o endereço do contato no caminho aparece como <code>{"{contact}"}</code>.
+        </li>
+        <li>
           <strong>Paginação:</strong> <code>limit</code> de 1 a 100 (padrão 50) e <code>cursor</code> = o <code>next_cursor</code> da resposta anterior (null na última página).
         </li>
         <li>

@@ -59,6 +59,7 @@ import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
 import { UnansweredItem } from "@/components/unanswered-item";
+import { FailedSends } from "@/components/failed-sends";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { HandoffBadge } from "@/components/handoff-badge";
 import { handoffStatus } from "@/lib/handoff-status";
@@ -733,6 +734,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   </details>
                 </div>
               )}
+              {!bot.is_demo && <FailedSends botId={id} channel="whatsapp" />}
             </div>
           )}
 
@@ -788,6 +790,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   </ChannelAcceptGate>
                 </div>
               )}
+              {!bot.is_demo && <FailedSends botId={id} channel="instagram" />}
             </div>
           )}
 
