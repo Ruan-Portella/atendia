@@ -61,10 +61,12 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       this.rows = Array.isArray(r) ? r : [r];
       return this;
     }
-    upsert(r: MemRow, o?: { onConflict?: string }) {
+    ignoreDuplicates = false;
+    upsert(r: MemRow | MemRow[], o?: { onConflict?: string; ignoreDuplicates?: boolean }) {
       this.op = "upsert";
-      this.rows = [r];
+      this.rows = Array.isArray(r) ? r : [r];
       this.conflict = o?.onConflict ?? "id";
+      this.ignoreDuplicates = Boolean(o?.ignoreDuplicates);
       return this;
     }
     update(p: MemRow) {
@@ -167,13 +169,18 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
         return { data: out.map((r) => ({ ...r })), error: null };
       }
       if (this.op === "upsert") {
-        const r = this.rows[0];
-        // onConflict com várias colunas ("bot_id,media_id"): bate em todas
+        // onConflict com várias colunas ("bot_id,media_id"): bate em todas; ignoreDuplicates (ON
+        // CONFLICT DO NOTHING) deixa a linha que já existe e devolve só as novas
         const cols = this.conflict.split(",").map((c) => c.trim());
-        const hit = t.find((x) => cols.every((c) => x[c] === r[c]));
-        if (hit) Object.assign(hit, r);
-        else t.push({ ...r });
-        return { data: null, error: null };
+        const out: MemRow[] = [];
+        for (const r of this.rows) {
+          const hit = t.find((x) => cols.every((c) => x[c] === r[c]));
+          if (hit && this.ignoreDuplicates) continue;
+          if (hit) Object.assign(hit, r);
+          else t.push({ ...r });
+          out.push(hit ?? t[t.length - 1]);
+        }
+        return { data: out.map((r) => ({ ...r })), error: null };
       }
       let rows = t.filter((r) => this.filters.every((f) => f(r)));
       if (this.op === "update") {

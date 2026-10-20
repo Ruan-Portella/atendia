@@ -32,6 +32,16 @@ function offsetMs(tz: string, at: Date): number {
 /** Hora local (0 a 23) no fuso. */
 export const localHour = (tz: string | null | undefined, now = new Date()): number => wall(safe(tz), now).hour;
 
+/** Data e hora de parede no fuso do cliente (ano, mês, dia, hora, minuto, segundo). */
+export const wallClock = (tz: string | null | undefined, at: Date) => wall(safe(tz), at);
+
+/** Um horário de parede no fuso do cliente, em ms; o dia pode passar do fim do mês (32/10 vira 01/11). */
+export function atLocal(tz: string | null | undefined, year: number, month: number, day: number, hour: number, minute = 0): number {
+  const zone = safe(tz);
+  const local = Date.UTC(year, month - 1, day, hour, minute);
+  return local - offsetMs(zone, new Date(local));
+}
+
 /** Entre 20h e 8h: "enviar agora" pede confirmação. */
 export const isQuietHour = (hour: number): boolean => hour >= 20 || hour < 8;
 

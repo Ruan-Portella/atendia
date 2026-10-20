@@ -10,7 +10,7 @@ import { listTemplates, loadTemplateChannel, sendTemplate, type TemplateChannel 
 import { renderTemplate, templateBody, unsupportedReason, type Template } from "./template-text";
 import { channelMsgHash } from "./hash";
 import { saveMessage } from "./messages";
-import { metaPhoneHash, phoneHash, whatsappContact } from "./contacts";
+import { contactAppointment, metaPhoneHash, phoneHash, whatsappContact } from "./contacts";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 import { sendBlockedReason } from "./conversation-mode";
 import { aiBlockedReason, type AiBlockReason } from "./chat";
@@ -33,12 +33,15 @@ import { referencePrices } from "./whatsapp-usage";
  *     (conferida a cada tique e pelo aviso da Meta), modelo pausado ou reclassificado (a cada
  *     tique, pelos avisos message_template_status_update e template_category_update e pelo
  *     pricing.category dos status: lembrete cobrado como marketing).
+ *   - Réguas (leva Réguas, parte 2): a campanha da régua (regua_id) nunca termina e fica fora da
+ *     lista; o planejador (reguas.ts) põe os envios na fila dela, cada um com prazo (expires_at):
+ *     passou do prazo, vira "expired" e não sai.
  * Camada única: só este arquivo lê e grava campaign_sends (telefone e variáveis cifrados).
  */
 
 export type CampaignKind = "marketing" | "utility_reminder";
 export type CampaignStatus = "draft" | "scheduled" | "sending" | "paused" | "finished" | "canceled";
-export type SendStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "uncertain" | "skipped_no_consent" | "skipped_suppressed" | "skipped_no_age" | "skipped_contact_deleted" | "opted_out";
+export type SendStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "uncertain" | "skipped_no_consent" | "skipped_suppressed" | "skipped_no_age" | "skipped_contact_deleted" | "opted_out" | "expired";
 
 export const CAMPAIGN_STATUS_LABEL: Record<CampaignStatus, string> = { draft: "rascunho", scheduled: "agendada", sending: "enviando", paused: "pausada", finished: "terminada", canceled: "cancelada" };
 export const SEND_STATUS_LABEL: Record<SendStatus, string> = {
@@ -54,6 +57,7 @@ export const SEND_STATUS_LABEL: Record<SendStatus, string> = {
   skipped_no_age: "sem 18+ confirmado",
   skipped_contact_deleted: "contato apagado",
   opted_out: "parou o marketing na Meta",
+  expired: "passou da hora (a régua estava pausada ou o horário marcado chegou)",
 };
 
 /** Linha enviada sem resposta da Meta vira "uncertain" depois disto (nunca é reenviada sozinha). */
@@ -223,6 +227,87 @@ export async function setCampaignStatus(db: SupabaseClient, id: string, status: 
   return Boolean(data?.length);
 }
 
+/* ------------------------------------------------------------------ réguas (leva Réguas, parte 2) */
+
+export interface ReguaCampaign {
+  id: string;
+  status: CampaignStatus;
+  template_category: string;
+  pause_reason: string | null;
+}
+
+/** A campanha de cada régua, pelo id da régua. */
+export async function reguaCampaigns(db: SupabaseClient, reguaIds: string[]): Promise<Map<string, ReguaCampaign>> {
+  const out = new Map<string, ReguaCampaign>();
+  if (!reguaIds.length) return out;
+  const { data } = await db.from("campaigns").select("id, regua_id, status, template_category, pause_reason").in("regua_id", reguaIds);
+  for (const c of data ?? []) out.set(c.regua_id as string, { id: c.id as string, status: c.status as CampaignStatus, template_category: c.template_category as string, pause_reason: (c.pause_reason as string | null) ?? null });
+  return out;
+}
+
+/**
+ * Liga a régua: a campanha dela é criada na primeira vez; depois, troca o modelo e volta a enviar
+ * (a nota de qualidade de agora vira a referência). Devolve o id da campanha.
+ */
+export async function ensureReguaCampaign(db: SupabaseClient, r: { reguaId: string; agencyId: string; clientId: string | null; botId: string; name: string; template: { name: string; language: string; category: string }; createdBy: string | null }): Promise<string> {
+  const category = r.template.category.toUpperCase();
+  const kind: CampaignKind = category === "MARKETING" ? "marketing" : "utility_reminder";
+  const fields = { kind, name: r.name.slice(0, 120), template_name: r.template.name, template_language: r.template.language, template_category: category, status: "sending", pause_reason: null, quality_at_start: null, updated_at: new Date().toISOString() };
+  const { data: current } = await db.from("campaigns").select("id").eq("regua_id", r.reguaId).maybeSingle();
+  if (current) {
+    await db.from("campaigns").update(fields).eq("id", current.id);
+    return current.id as string;
+  }
+  const { data, error } = await db.from("campaigns").insert({ ...fields, agency_id: r.agencyId, client_id: r.clientId, bot_id: r.botId, regulated: false, audience: { regua: true }, created_by: r.createdBy, regua_id: r.reguaId }).select("id").single();
+  if (error || !data) throw new Error(`régua: ${error?.message ?? "campanha não gravada"}`);
+  return data.id as string;
+}
+
+/** Desliga a régua: a campanha para (o que estava na fila espera; passado o prazo, não sai mais). */
+export async function stopReguaCampaign(db: SupabaseClient, reguaId: string): Promise<void> {
+  await db.from("campaigns").update({ status: "paused", pause_reason: null, updated_at: new Date().toISOString() }).eq("regua_id", reguaId).in("status", ["scheduled", "sending", "paused"]);
+}
+
+/** Um envio de régua: o de uma campanha comum, com a hora e o prazo. */
+export interface ReguaRecipient extends NewRecipient {
+  sendAt: string;
+  expiresAt: string;
+}
+
+/** Põe os envios na fila da régua; quem já está nela para a mesma ocasião (dedupe_key) fica como estava. Devolve quantos entraram. */
+export async function queueReguaSends(db: SupabaseClient, campaignId: string, botId: string, rows: ReguaRecipient[]): Promise<number> {
+  if (!rows.length) return 0;
+  const scope = await scopeOfBot(botId);
+  let queued = 0;
+  for (let i = 0; i < rows.length; i += 300) {
+    const chunk = await Promise.all(
+      rows.slice(i, i + 300).map(async (r) => ({
+        campaign_id: campaignId,
+        contact_id: r.contactId,
+        dedupe_key: r.dedupeKey,
+        phone_enc: await sealNullable("campaign_sends.phone_enc", r.phone, scope),
+        phone_hash: phoneHash(r.phone),
+        status: "queued",
+        send_at: r.sendAt,
+        expires_at: r.expiresAt,
+        variables_enc: r.variables.length ? await sealNullable("campaign_sends.variables_enc", JSON.stringify(r.variables), scope) : null,
+      })),
+    );
+    const { data, error } = await db.from("campaign_sends").upsert(chunk, { onConflict: "campaign_id,dedupe_key", ignoreDuplicates: true }).select("id");
+    if (error) throw new Error(`régua: ${error.message}`);
+    queued += data?.length ?? 0;
+  }
+  return queued;
+}
+
+/** Telefones (hash) com envio de régua nestas campanhas desde a data: na fila, saindo ou enviado (uma régua por pessoa a cada 24 h). */
+export async function reguaRecentPhoneHashes(db: SupabaseClient, campaignIds: string[], since: string): Promise<Set<string>> {
+  if (!campaignIds.length) return new Set();
+  const { data, error } = await db.from("campaign_sends").select("phone_hash").in("campaign_id", campaignIds).in("status", ["queued", "sending", "sent", "delivered", "read", "uncertain"]).gte("send_at", since).limit(20_000);
+  if (error) throw new Error(`régua: ${error.message}`);
+  return new Set((data ?? []).map((r) => r.phone_hash as string));
+}
+
 /** Modelo reclassificado: o que o dono pode fazer (pedir revisão da categoria à Meta). */
 export const CATEGORY_REVIEW_HINT = "Se o modelo é mesmo de utilidade, peça revisão da categoria no Gerenciador do WhatsApp (Modelos de mensagem, abra o modelo e peça a revisão). Ou troque o texto por um sem promoção.";
 
@@ -320,6 +405,8 @@ interface CampaignRow {
   template_category: string;
   regulated: boolean;
   quality_at_start: string | null;
+  /** A campanha de uma régua: nunca termina; o envio fora do prazo vira "expired". */
+  regua_id?: string | null;
 }
 
 interface SendRow {
@@ -356,7 +443,7 @@ export async function runCampaignTick(db: SupabaseClient, o: { hasTime: () => bo
   result.uncertain = unsure?.length ?? 0;
   await db.from("campaigns").update({ status: "sending", updated_at: now.toISOString() }).eq("status", "scheduled").lte("scheduled_at", now.toISOString());
 
-  const { data: active } = await db.from("campaigns").select("id, agency_id, client_id, bot_id, kind, name, template_name, template_language, template_category, regulated, quality_at_start").eq("status", "sending").order("created_at").limit(20);
+  const { data: active } = await db.from("campaigns").select("id, agency_id, client_id, bot_id, kind, name, template_name, template_language, template_category, regulated, quality_at_start, regua_id").eq("status", "sending").order("created_at").limit(20);
   const standings = new Map<string, { tier: string | null; quality: string | null }>();
   for (const c of (active ?? []) as CampaignRow[]) {
     if (!o.hasTime()) break;
@@ -373,9 +460,11 @@ export async function runCampaignTick(db: SupabaseClient, o: { hasTime: () => bo
 
 async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: () => boolean; now: Date; standings: Map<string, { tier: string | null; quality: string | null }> }): Promise<{ sent: number; skipped: number; failed: number; paused: boolean; finished: boolean }> {
   const out = { sent: 0, skipped: 0, failed: 0, paused: false, finished: false };
+  // régua: o que passou do prazo (régua pausada, horário marcado que chegou) não sai mais
+  if (c.regua_id) await db.from("campaign_sends").update({ status: "expired", updated_at: o.now.toISOString() }).eq("campaign_id", c.id).eq("status", "queued").lt("expires_at", o.now.toISOString());
   // nada vencido (lembrete esperando a data da linha): só confere se terminou, sem chamar a Meta
   const { data: due } = await db.from("campaign_sends").select("id").eq("campaign_id", c.id).eq("status", "queued").lte("send_at", o.now.toISOString()).limit(1);
-  if (!due?.length) return { ...out, finished: await finishIfDone(db, c.id) };
+  if (!due?.length) return { ...out, finished: await finishIfDone(db, c) };
   const ch = await loadTemplateChannel(db, c.bot_id);
   if (!ch) {
     await pause(db, c, "o WhatsApp do chatbot foi desconectado");
@@ -449,7 +538,7 @@ async function sendCampaign(db: SupabaseClient, c: CampaignRow, o: { hasTime: ()
   }
   // contatos que receberam no mês (uso da agência; não é limite de plano)
   if (out.sent) await db.rpc("usage_add_campaign_contacts", { p_agency: c.agency_id, p_period: currentPeriodBR(o.now), p_n: out.sent });
-  if (!out.paused) out.finished = await finishIfDone(db, c.id);
+  if (!out.paused) out.finished = await finishIfDone(db, c);
   else await updateTotals(db, c.id);
   return out;
 }
@@ -469,6 +558,11 @@ async function sendRow(db: SupabaseClient, c: CampaignRow, row: SendRow, o: { ch
   if (!phone) {
     await set("skipped_contact_deleted");
     return "skipped_contact_deleted";
+  }
+  // lembrete de régua ("l:<contato>:<horário>"): o horário mudou ou saiu depois de entrar na fila
+  if (c.regua_id && row.dedupe_key.startsWith("l:") && row.contact_id && !(await sameAppointment(db, row.contact_id, row.dedupe_key))) {
+    await set("expired");
+    return "expired";
   }
   const variables = JSON.parse((await openNullable("campaign_sends.variables_enc", row.variables_enc)) ?? "[]") as string[];
   const target = { scope: o.scope, contact: phone };
@@ -517,6 +611,17 @@ async function sendRow(db: SupabaseClient, c: CampaignRow, row: SendRow, o: { ch
   return "sent";
 }
 
+/** O horário marcado gravado na chave do lembrete da régua ("l:<contato>:<horário>"), em ms. Pura. */
+export function appointmentOfKey(dedupeKey: string): number {
+  return Date.parse(dedupeKey.split(":").slice(2).join(":"));
+}
+
+/** O lembrete na fila ainda é do horário marcado do contato (não remarcado nem apagado)? */
+async function sameAppointment(db: SupabaseClient, contactId: string, dedupeKey: string): Promise<boolean> {
+  const current = await contactAppointment(db, contactId);
+  return Boolean(current) && Date.parse(current!) === appointmentOfKey(dedupeKey);
+}
+
 async function recordInConversation(db: SupabaseClient, bot: { id: string; agency_id: string }, phone: string, contactId: string | null, content: string, category: string, campaignName: string, wamid: string | null) {
   const contact = contactId ? { id: contactId } : await whatsappContact(db, bot, { phone });
   const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
@@ -539,10 +644,11 @@ async function updateTotals(db: SupabaseClient, id: string): Promise<Record<stri
   return totals;
 }
 
-/** Sem nada na fila nem enviando: a campanha termina (e os webhooks recebem campaign.finished). */
-async function finishIfDone(db: SupabaseClient, id: string): Promise<boolean> {
+/** Sem nada na fila nem enviando: a campanha termina (e os webhooks recebem campaign.finished). A da régua nunca termina. */
+async function finishIfDone(db: SupabaseClient, campaign: Pick<CampaignRow, "id" | "regua_id">): Promise<boolean> {
+  const id = campaign.id;
   const totals = await updateTotals(db, id);
-  if ((totals.queued ?? 0) > 0 || (totals.sending ?? 0) > 0) return false;
+  if (campaign.regua_id || (totals.queued ?? 0) > 0 || (totals.sending ?? 0) > 0) return false;
   const finishedAt = new Date().toISOString();
   const { data } = await db.from("campaigns").update({ status: "finished", finished_at: finishedAt }).eq("id", id).eq("status", "sending").select("id, bot_id, name, kind");
   const c = data?.[0];
@@ -665,7 +771,8 @@ export interface CampaignView {
  */
 export async function listCampaigns(db: SupabaseClient, botIds: string[], limit = 20): Promise<CampaignView[]> {
   if (!botIds.length) return [];
-  const { data } = await db.from("campaigns").select("id, bot_id, name, kind, status, pause_reason, template_name, scheduled_at, created_at, finished_at, totals, estimated_contacts, estimated_cost_cents").in("bot_id", botIds).order("created_at", { ascending: false }).limit(limit);
+  // as campanhas das réguas ficam na tela das réguas
+  const { data } = await db.from("campaigns").select("id, bot_id, name, kind, status, pause_reason, template_name, scheduled_at, created_at, finished_at, totals, estimated_contacts, estimated_cost_cents").in("bot_id", botIds).is("regua_id", null).order("created_at", { ascending: false }).limit(limit);
   const rows = (data ?? []) as CampaignView[];
   return Promise.all(rows.map(async (c) => ({ ...c, totals: ((await db.rpc("campaign_totals", { p_campaign: c.id })).data as Record<string, number> | null) ?? c.totals })));
 }
@@ -764,7 +871,7 @@ export function reportNumbers(r: CampaignReport) {
   const delivered = n("delivered") + read;
   const sent = n("sent") + delivered + n("uncertain");
   const optOuts = Object.values(r.optOut).reduce((a, b) => a + b, 0);
-  const skipped = n("skipped_no_consent") + n("skipped_suppressed") + n("skipped_no_age") + n("skipped_contact_deleted");
+  const skipped = n("skipped_no_consent") + n("skipped_suppressed") + n("skipped_no_age") + n("skipped_contact_deleted") + n("expired");
   return { sent, delivered, read, replied: r.replied, failed: n("failed"), optOuts, skipped, pending: n("queued") + n("sending"), uncertain: n("uncertain") };
 }
 
