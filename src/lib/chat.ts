@@ -38,6 +38,7 @@ import { identityPromptNote, type ChatIdentity } from "./widget-identity";
 import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
 import { endActiveRoutine, routineSession, type RoutineTurn } from "./routine-engine";
+import { DEFAULT_POST_RULE, isPostHit, postPriceNote, postPriceRuleOf, withPostAges, type PostPriceRule } from "./post-context";
 import type { IdentityPort } from "./routine-identity";
 
 export interface BotRow {
@@ -81,6 +82,9 @@ export interface BotRow {
   offer_remember_number?: boolean | null;
   /** Tamanho (null = sem tamanho) e cota sob medida da BoaVoz: sem tamanho de IA, nada de IA (botHasAi). */
   size?: string | null;
+  /** Regra do preço de post do Instagram (E1): citar a data (padrão), limite de dias ou sempre. */
+  post_price_rule?: string | null;
+  post_price_max_days?: number | null;
   quota_override?: number | null;
   /** Modo dados sensíveis: a IA não lê fotos (photo-note.photoReadingOn). */
   sensitive_mode?: boolean | null;
@@ -348,7 +352,8 @@ export const CHAT_TEMPERATURE = 0.3;
 
 export interface ContextHit {
   content: string;
-  metadata: { title?: string; url?: string };
+  /** Post do Instagram (E1): kind "instagram_post", com a data (posted_at) e o id do post. */
+  metadata: { title?: string; url?: string; kind?: string; posted_at?: string; ig_media_id?: string };
   similarity: number;
   /** Classificação do portão (parte 6): versão, frases com as categorias e o resumo. */
   gate_version?: string | null;
@@ -363,9 +368,10 @@ export function formatContext(hits: Array<Pick<ContextHit, "content" | "metadata
 
 /**
  * Trechos da base mais parecidos com a pergunta (busca exata no bot) e o texto do contexto. Com o
- * contexto ativo da conversa (D', parte 1), entram também as fontes com a etiqueta dele.
+ * contexto ativo da conversa (D', parte 1), entram também as fontes com a etiqueta dele. Post do
+ * Instagram (E1) chega com a idade no título e, na regra "limite", sem o preço se for velho.
  */
-export async function retrieveContext(db: SupabaseClient, botId: string, question: string, activeCtx: Record<string, unknown> | null = null, alsoBotId: string | null = null) {
+export async function retrieveContext(db: SupabaseClient, botId: string, question: string, activeCtx: Record<string, unknown> | null = null, alsoBotId: string | null = null, posts: PostPriceRule = DEFAULT_POST_RULE) {
   let context = "";
   const used: Array<{ title?: string; url?: string }> = [];
   let hits: ContextHit[] = [];
@@ -374,7 +380,7 @@ export async function retrieveContext(db: SupabaseClient, botId: string, questio
     const { embedding, usage } = await embedText(question);
     embeddingUsage = usage;
     const { data } = await db.rpc("match_chunks", { p_bot_id: botId, p_query: JSON.stringify(embedding), p_count: 6, p_min_similarity: 0.15, p_context: activeCtx, p_also_bot_id: alsoBotId });
-    hits = (data ?? []) as ContextHit[];
+    hits = withPostAges((data ?? []) as ContextHit[], posts);
     context = formatContext(hits);
     for (const r of hits) {
       const key = r.metadata?.url ?? r.metadata?.title;
@@ -383,6 +389,11 @@ export async function retrieveContext(db: SupabaseClient, botId: string, questio
     }
   }
   return { context, used, hits, embeddingUsage };
+}
+
+/** A regra do preço de post no prompt, só quando a base trouxe algum post do Instagram (E1). */
+export function postNoteFor(bot: Pick<BotRow, "post_price_rule" | "post_price_max_days">, hits: ContextHit[]): string | null {
+  return hits.some(isPostHit) ? postPriceNote(postPriceRuleOf(bot)) : null;
 }
 
 /** Regra do canal no prompt (WhatsApp com ou sem telefone, Instagram; o site não tem). */
@@ -780,7 +791,7 @@ export async function runChat(opts: {
   // 2. Recuperação de contexto
   const question = lastUserText(messages);
   const search = searchBots(bot);
-  const retrieval = opts.retrieval ?? (await retrieveContext(db, search.botId, question, activeContext(bot, opts.identity), search.alsoBotId));
+  const retrieval = opts.retrieval ?? (await retrieveContext(db, search.botId, question, activeContext(bot, opts.identity), search.alsoBotId, postPriceRuleOf(bot)));
   const { context, used, embeddingUsage } = retrieval;
 
   const leadEnabled = bot.lead_capture?.enabled !== false;
@@ -797,7 +808,7 @@ export async function runChat(opts: {
   // portão: a base sem os itens barrados para esta pessoa e as linhas do portão no prompt
   const gated = scopeLock ? gatePrompt(bot, retrieval, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [] };
   // regras primeiro (iguais em toda a plataforma: cache da OpenAI); o que é deste bot e desta conversa depois
-  const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: withDisplay(gated.context, bot.fixed_display), leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes, momentNotice: activeMomentNotice(bot) });
+  const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: withDisplay(gated.context, bot.fixed_display), leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes, momentNotice: activeMomentNotice(bot), postNote: postNoteFor(bot, retrieval.hits) });
   const convId = conversationId;
   // roteiros (B2'): as ferramentas, o bloco do passo atual e os botões do passo
   const routine = opts.routine

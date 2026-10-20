@@ -224,7 +224,8 @@ export function chunkText(text: string, size = 1200, overlap = 150): string[] {
 export interface SourceRow {
   id: string;
   bot_id: string;
-  kind: "site" | "page" | "pdf" | "text" | "faq";
+  /** instagram: os posts da conta conectada, lidos por instagram-posts.ts (não passa por aqui). */
+  kind: "site" | "page" | "pdf" | "text" | "faq" | "instagram";
   title: string;
   url: string | null;
   content: string | null;
@@ -247,6 +248,7 @@ export interface IngestOptions {
  * Usa o client com service role (roda em Route Handler ou Server Action).
  */
 export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuffer?: ArrayBuffer, opts: IngestOptions = {}): Promise<{ chunks: number; pages: number; unchanged?: boolean }> {
+  if (source.kind === "instagram") throw new Error("A fonte do Instagram é lida pela leitura dos posts (Atualizar agora).");
   if (!opts.background) await db.from("sources").update({ status: "pending", error: null }).eq("id", source.id);
   try {
     const docs: Array<{ text: string; meta: Record<string, unknown> }> = [];

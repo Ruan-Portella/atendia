@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -6,6 +7,9 @@ import { ingestSource, type SourceRow } from "@/lib/ingest";
 import { classifyLater } from "@/lib/gate/base";
 import { normalizeUrl } from "@/lib/utils";
 import { activeMembership, can } from "@/lib/team";
+import { botHasAi } from "@/lib/plans";
+import { deadline } from "@/lib/cron";
+import { requestInstagramSync, syncInstagramSource } from "@/lib/instagram-posts";
 
 // a leitura da fonte responde na hora; a classificação do portão (parte 6) roda depois, no mesmo tempo
 export const maxDuration = 300;
@@ -23,9 +27,38 @@ async function canEdit(supabase: Db): Promise<boolean> {
 
 const FORBIDDEN = { error: "forbidden", message: "O seu papel na equipe não altera a base de conhecimento." };
 
+/** A leitura dos posts logo depois da resposta (o que não couber, o tique de cada minuto continua). */
+function readPostsSoon(sourceId: string) {
+  const admin = createAdminClient();
+  after(() => syncInstagramSource(admin, sourceId, { hasTime: deadline(240_000) }).then(() => undefined, (e) => console.error("instagram: leitura dos posts", (e as Error).message)));
+}
+
 /**
- * Adiciona uma fonte ao bot e processa na hora.
- * multipart/form-data: kind=site|page|text|faq|pdf, url, title, content, file
+ * Posts do Instagram (E1, parte 1): uma fonte por chatbot com IA e com o Instagram conectado. A
+ * leitura vai em segundo plano (alguns minutos para 100 posts): a lista mostra o andamento.
+ */
+async function addInstagramSource(botId: string, title: string): Promise<Response> {
+  const admin = createAdminClient();
+  const { data: bot } = await admin.from("bots").select("id, is_demo, is_template, size, quota_override").eq("id", botId).maybeSingle();
+  if (!bot || bot.is_demo || bot.is_template) return Response.json({ error: "not_allowed", message: "Os posts do Instagram entram na base do chatbot de um cliente (não em demo nem em modelo)." }, { status: 400 });
+  if (!botHasAi(bot)) return Response.json({ error: "no_ai", message: "Os posts do Instagram só entram na base de chatbot com IA (tamanho P, M, G ou Volume)." }, { status: 400 });
+  const { data: ch } = await admin.from("instagram_channels").select("username, ig_user_id, disconnected_at, access_token_enc").eq("bot_id", botId).maybeSingle();
+  if (!ch || ch.disconnected_at || !ch.access_token_enc) return Response.json({ error: "instagram_disconnected", message: "Conecte o Instagram do cliente na aba Instagram antes de ler os posts." }, { status: 400 });
+  const handle = ch.username ?? ch.ig_user_id;
+  const { data: source, error } = await admin
+    .from("sources")
+    .insert({ bot_id: botId, kind: "instagram", title: title.slice(0, 120) || `Posts do Instagram (@${handle})`, url: ch.username ? `https://www.instagram.com/${ch.username}/` : null, status: "pending", sync_requested_at: new Date().toISOString() })
+    .select("id")
+    .single();
+  if (error?.code === "23505") return Response.json({ error: "already_exists", message: "Este chatbot já tem a fonte do Instagram: use “Atualizar agora” nela." }, { status: 409 });
+  if (error || !source) return Response.json({ error: "insert_failed", message: error?.message }, { status: 500 });
+  readPostsSoon(source.id);
+  return Response.json({ ok: true, sourceId: source.id, queued: true });
+}
+
+/**
+ * Adiciona uma fonte ao bot e processa na hora (os posts do Instagram, em segundo plano).
+ * multipart/form-data: kind=site|page|text|faq|pdf|instagram, url, title, content, file
  */
 export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sources">) {
   const { id: botId } = await ctx.params;
@@ -41,8 +74,9 @@ export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sourc
   if (!bot) return Response.json({ error: "not_found" }, { status: 404 });
 
   const form = await req.formData();
-  const kind = z.enum(["site", "page", "text", "faq", "pdf"]).parse(form.get("kind"));
+  const kind = z.enum(["site", "page", "text", "faq", "pdf", "instagram"]).parse(form.get("kind"));
   const title = String(form.get("title") ?? "").trim();
+  if (kind === "instagram") return addInstagramSource(botId, title);
   const rawUrl = String(form.get("url") ?? "");
   const content = String(form.get("content") ?? "");
   const file = form.get("file");
@@ -151,6 +185,13 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
   // Só renomeou: não precisa reler nada.
   const onlyTitle = changedKeys.length > 0 && changedKeys.every((k) => k === "title") && !pdfBuffer;
   if (onlyTitle) return Response.json({ ok: true, renamed: true });
+
+  // posts do Instagram: "Atualizar agora" pede a leitura (só os posts novos são lidos)
+  if (source.kind === "instagram") {
+    await requestInstagramSync(admin, source.id);
+    readPostsSoon(source.id);
+    return Response.json({ ok: true, queued: true });
+  }
 
   if (source.kind === "pdf" && !pdfBuffer) {
     return Response.json({ error: "pdf_reupload", message: "Para atualizar o conteúdo de um PDF, envie o arquivo de novo." }, { status: 400 });

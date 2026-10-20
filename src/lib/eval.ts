@@ -3,7 +3,8 @@ import { searchBots } from "./bot-template";
 import { activeContext, withDisplay } from "./bot-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
-import { CHAT_TEMPERATURE, ageAskRefusal, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
+import { CHAT_TEMPERATURE, ageAskRefusal, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, postNoteFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
+import { postPriceRuleOf } from "./post-context";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { isScopeRefusalText, isTextRefusal } from "./refusal-text";
 import { cardName, joinShownText, normalizeLink, normalizeOptions, optionsFromText, type MessageComponent } from "./components";
@@ -102,7 +103,7 @@ export function costLine(c: ReturnType<typeof costSummary>): string {
 
 export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question: string, opts: EvalOptions) {
   const search = searchBots(bot);
-  const [retrieval, exempt] = await Promise.all([retrieveContext(db, search.botId, question, activeContext(bot, null), search.alsoBotId), botGateExemptions(db, bot.id)]);
+  const [retrieval, exempt] = await Promise.all([retrieveContext(db, search.botId, question, activeContext(bot, null), search.alsoBotId, postPriceRuleOf(bot)), botGateExemptions(db, bot.id)]);
   if (retrieval.embeddingUsage?.tokens) opts.onUsage?.({ embeddingModel: retrieval.embeddingUsage.model, embeddingTokens: retrieval.embeddingUsage.tokens });
   const { context, hits } = retrieval;
   const phone = opts.foreign ? "14155550123" : "5521999990000";
@@ -143,6 +144,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         businessTopics: bot.business_topics,
         gateChannel: scopeLock ? (opts.channel as "whatsapp" | "instagram") : null,
         gateNotes: gated.gateNotes,
+        postNote: postNoteFor(bot, retrieval.hits),
       });
       const r = await generateText({
         model: chatModel(opts.model),

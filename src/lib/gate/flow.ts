@@ -31,6 +31,7 @@ import { INTERNAL_FALLBACK, stripInternal } from "../internal-guard";
 import { CATEGORIES, GATE_TEXTS } from "./rules";
 import { logGate } from "./log";
 import { applyConfirmedAction, cancelRoutineAction, routinePreTurn } from "../routine-engine";
+import { postPriceRuleOf } from "../post-context";
 
 /*
  * Portão nos canais da Meta (WhatsApp e Instagram), entre a fila e a IA: resposta da pergunta de
@@ -366,7 +367,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const age: AgeStatus = await getAge(db, who);
   // o contexto ativo (o pareamento ou o roteiro, com o fixo do chatbot por cima) escolhe as fontes com etiqueta
   const search = searchBots(bot);
-  const [retrieval, exempt] = await Promise.all([retrieveContext(db, search.botId, question, activeContext(bot, pairingIdentity ?? port.current()), search.alsoBotId), botGateExemptions(db, bot.id)]);
+  const [retrieval, exempt] = await Promise.all([retrieveContext(db, search.botId, question, activeContext(bot, pairingIdentity ?? port.current()), search.alsoBotId, postPriceRuleOf(bot)), botGateExemptions(db, bot.id)]);
   const entrance = await decideEntrance({
     text: question,
     channel,

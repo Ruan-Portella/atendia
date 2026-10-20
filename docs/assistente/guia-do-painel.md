@@ -130,6 +130,10 @@ As mensagens de modelo do WhatsApp são cobradas pela Meta, na forma de pagament
 
 Na aba Instagram do chatbot, a conexão é pelo login do próprio Instagram (não precisa de página do Facebook). O assistente responde as mensagens do Direct, entende post, reel e story compartilhados e lida com mensagem editada ou desfeita. A equipe responde pelo painel.
 
+## Posts do Instagram como fonte
+
+Com o Instagram conectado, a aba Base de conhecimento ganha o botão "Posts do Instagram": o BoaVoz lê os posts dos últimos 90 dias (até 100), com a legenda, a data e o link de cada um, e a IA descreve cada foto uma vez só (no carrossel, cada foto; no vídeo e no reel, a capa). A primeira leitura leva alguns minutos e a lista mostra o andamento. Depois, os posts novos entram sozinhos a cada 6 horas, ou na hora, pelo "Atualizar agora". Post apagado ou mais velho que 90 dias sai da base; legenda editada é relida. Stories não entram. Vale para chatbot com IA (P, M, G ou Volume). Logo abaixo da lista fica a regra do preço de post: por padrão, o assistente diz o preço citando a data do post ("no post de 12/08 estava R$ 89") e que vai confirmar a disponibilidade; dá para trocar para "não informar preço de post com mais de X dias" ou "sempre informar". Se o chatbot tiver uma ação de consulta de produto, preço ou estoque, ela vale mais que o post.
+
 ## Áudios e fotos
 
 No WhatsApp, os áudios do contato são transcritos e o assistente responde ao que foi falado. No WhatsApp e no Instagram, o assistente lê as fotos (uma descrição curta, que passa pelas regras do canal) e responde sobre elas; cada foto lida conta como uma resposta. Comprovante de pagamento, documento pessoal, cartão e foto de saúde nunca são lidos: o contato recebe um texto fixo e a equipe é avisada. No painel, embaixo de cada foto, aparece o que a IA viu.

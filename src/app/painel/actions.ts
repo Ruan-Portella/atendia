@@ -766,6 +766,20 @@ export async function setAutoRefresh(botId: string, formData: FormData): Promise
   return ok(enabled ? "O site será relido toda semana." : "Releitura automática desligada.");
 }
 
+/** Regra do preço de post do Instagram (E1, parte 1): citar a data (padrão), limite de dias ou sempre informar. */
+export async function setPostPriceRule(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const rule = String(formData.get("post_price_rule") ?? "");
+  if (rule !== "citar" && rule !== "limite" && rule !== "sempre") return fail("Escolha uma das opções.");
+  const days = Number(formData.get("post_price_max_days") ?? 30);
+  if (rule === "limite" && (!Number.isInteger(days) || days < 1 || days > 365)) return fail("Escolha de 1 a 365 dias.");
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("bots").update({ post_price_rule: rule, ...(rule === "limite" ? { post_price_max_days: days } : {}) }).eq("id", botId).select("id");
+  if (error || !data?.length) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(rule === "citar" ? "Pronto: o assistente cita a data do post e confirma a disponibilidade com a equipe." : rule === "limite" ? `Pronto: o preço de post com mais de ${days} dias não é informado.` : "Pronto: o assistente informa o preço do post, com a data.");
+}
+
 /** Pesquisa de satisfação do chatbot (Lançamento, parte 4): liga ou desliga. */
 export async function setSatisfactionSurvey(botId: string, formData: FormData): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);

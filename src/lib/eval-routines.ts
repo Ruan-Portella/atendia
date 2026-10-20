@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { generateText, stepCountIs, type UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
-import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, conversationHistory, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow, type ToolResultRow } from "./chat";
+import { CHAT_TEMPERATURE, chatCacheKey, channelNoteFor, chatTools, conversationHistory, gatePrompt, handoffPrompt, linkHostsFor, postNoteFor, refusalAck, retrieveContext, withRiskText, type BotRow, type ToolResultRow } from "./chat";
+import { postPriceRuleOf } from "./post-context";
 import { ACTIONS_PROMPT_NOTE, actionToolsFor, offeredMatch } from "./action-tools";
 import { readResponse, type ActionLevel, type ActionRow, type CallInput, type CallResult, type ParamsSchema } from "./actions";
 import { joinShownText, normalizeLink, normalizeOptions, optionsFromText, type MessageComponent, type OptionItem } from "./components";
@@ -429,7 +430,7 @@ async function conversation(r: Run, c: RoutineCaseFields & { id: string }): Prom
     const loaded = await conversationHistory(mem, conversationId, 12, 2000, (tables.conversations[0].context_since as string | null) ?? null);
     const history = idTurn.kind === "resume" ? historyUpTo(loaded, question) : loaded;
     const searched = photos ? `${question} ${t.foto ?? ""}` : question;
-    const retrieval = await retrieveContext(r.db, r.bot.id, searched);
+    const retrieval = await retrieveContext(r.db, r.bot.id, searched, null, null, postPriceRuleOf(r.bot));
     if (retrieval.embeddingUsage?.tokens) r.onUsage?.({ embeddingModel: retrieval.embeddingUsage.model, embeddingTokens: retrieval.embeddingUsage.tokens });
     const gateChannel = r.channel === "widget" ? null : r.channel;
     const gated = gateChannel ? gatePrompt(r.bot, retrieval, { channel: gateChannel, contactPhone: waPhone, gate: { age: null, exempt: r.exempt } }) : { context: retrieval.context, gateNotes: [], reminder: [] };
@@ -446,6 +447,7 @@ async function conversation(r: Run, c: RoutineCaseFields & { id: string }): Prom
       businessTopics: r.bot.business_topics,
       gateChannel,
       gateNotes: gated.gateNotes,
+      postNote: postNoteFor(r.bot, retrieval.hits),
     });
     const session = routineSession(mem, {
       bot: r.bot,

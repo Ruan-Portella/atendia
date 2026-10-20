@@ -25,6 +25,13 @@ describe("prompt do assistente", () => {
     expect(buildSystemPrompt(base)).toContain("Fonte dos fatos");
   });
 
+  it("regra do preço de post (E1): só com post na base, na parte de cada chatbot (o começo segue igual para o cache)", () => {
+    const withPost = buildPrompt({ ...base, postNote: "Preço que só aparece num post: diga o preço citando a data do post." });
+    expect(withPost.variable).toContain("POSTS DO INSTAGRAM NO CONTEXTO\n- Preço que só aparece num post");
+    expect(withPost.fixed).toBe(buildPrompt(base).fixed);
+    expect(buildSystemPrompt(base)).not.toContain("POSTS DO INSTAGRAM");
+  });
+
   it("nunca finge ser humano", () => {
     expect(buildSystemPrompt(base)).toContain("nunca finja ser humano");
   });

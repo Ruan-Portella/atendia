@@ -40,7 +40,7 @@ export default function SourcesApiDocs() {
       <Table
         head={["Campo", "Regra", "Erro"]}
         rows={[
-          [<code key="1">kind</code>, <><code>text</code>, <code>faq</code>, <code>page</code> (uma página) ou <code>pdf</code> (por URL). O site inteiro fica no painel.</>, <>400 <code>kind</code></>],
+          [<code key="1">kind</code>, <><code>text</code>, <code>faq</code>, <code>page</code> (uma página) ou <code>pdf</code> (por URL). O site inteiro e os posts do Instagram ficam no painel (na lista, aparecem como <code>site</code> e <code>instagram</code>).</>, <>400 <code>kind</code></>],
           [<code key="2">title</code>, "Opcional (até 120 caracteres). Sem ele: Texto, Perguntas frequentes, o domínio da página ou o nome do arquivo.", <>400 <code>title</code></>],
           [<code key="3">content</code>, <>Em <code>text</code> e <code>faq</code>: de 20 a 30 mil caracteres (o corpo vai até 32 KB). Para mais, um PDF por URL.</>, <>400 <code>content</code></>],
           [<code key="4">url</code>, <>Em <code>page</code> e <code>pdf</code>: http ou https. O PDF vai até 15 MB e precisa ter texto (PDF só de imagem não é lido).</>, <>400 <code>url</code>; 422 <code>source_unreadable</code> ou <code>source_too_large</code></>],

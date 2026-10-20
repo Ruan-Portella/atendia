@@ -284,3 +284,40 @@ export async function mediaPermalink(ch: IgChannel, mediaId: string): Promise<st
     return null;
   }
 }
+
+/* ------------------------------------------------------------------ posts (E1) */
+
+/** Um post do feed (ou um item do carrossel), como a API devolve. */
+export interface IgMedia {
+  id: string;
+  caption?: string;
+  media_type?: string;
+  media_url?: string;
+  /** Capa: só no vídeo e no reel. */
+  thumbnail_url?: string;
+  permalink?: string;
+  timestamp?: string;
+  children?: { data?: IgMedia[] };
+}
+
+const MEDIA_FIELDS = "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,children{id,media_type,media_url,thumbnail_url}";
+
+/**
+ * Os posts do feed da conta conectada, do mais novo ao mais antigo, até `max` ou até o primeiro
+ * mais velho que `since` (stories não vêm por aqui). Página a página (50 por vez), pelo cursor.
+ */
+export async function instagramMedia(ch: IgChannel, o: { max: number; since: Date }): Promise<IgMedia[]> {
+  const token = tokenOf(ch);
+  const out: IgMedia[] = [];
+  let after: string | null = null;
+  do {
+    const page: { data?: IgMedia[]; paging?: { cursors?: { after?: string }; next?: string } } = await api(`me/media?fields=${encodeURIComponent(MEDIA_FIELDS)}&limit=50${after ? `&after=${encodeURIComponent(after)}` : ""}`, token);
+    for (const m of page.data ?? []) {
+      if (m.timestamp && new Date(m.timestamp) < o.since) return out;
+      out.push(m);
+      if (out.length >= o.max) return out;
+    }
+    after = page.paging?.next ? (page.paging.cursors?.after ?? null) : null;
+  } while (after);
+  return out;
+}

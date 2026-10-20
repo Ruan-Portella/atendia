@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TEST_ANSWERS_FREE, num } from "@/lib/plans";
+import { TEST_ANSWERS_FREE, botHasAi, num } from "@/lib/plans";
 import { BotActions } from "@/components/integrations/bot-actions";
 import { FixedContextCard } from "@/components/integrations/fixed-context-card";
 import { TemplateInheritance, type DerivedItem } from "@/components/templates/template-inheritance";
@@ -54,7 +54,8 @@ import { EvolutionTable } from "@/components/evolution-table";
 import { botEvolution } from "@/lib/evolution";
 import { satisfactionSummary } from "@/lib/satisfaction";
 import { detachFromTemplate, markTransferReviewed, resetDerivedField } from "../../actions";
-import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
+import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, setPostPriceRule, updateBot } from "../../actions";
+import { PostPriceCard } from "@/components/post-price-card";
 import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
@@ -119,12 +120,13 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
     // as fontes com etiqueta de contexto (enviadas pela API, uma por cliente de um SaaS) ficam fora da lista: só a contagem
-    tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, refresh_error, created_by, updated_at").eq("bot_id", id).is("context", null).order("created_at") : none,
+    tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, refresh_error, created_by, updated_at, sync_total, sync_requested_at, last_refreshed_at").eq("bot_id", id).is("context", null).order("created_at") : none,
     tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).is("context", null).in("kind", ["text", "faq"]) : none,
     tab === "fontes" ? listUnanswered(supabase, { botIds: [id], limit: 10 }) : Promise.resolve(null),
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? countLeads(supabase, id) : Promise.resolve(null),
-    tab === "instagram" ? supabase.from("instagram_channels").select("ig_user_id, username, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
+    // a aba Fontes também: os posts do Instagram são uma fonte (E1)
+    tab === "instagram" || (tab === "fontes" && igAllowed) ? supabase.from("instagram_channels").select("ig_user_id, username, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
     tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
@@ -319,7 +321,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               {bot.template_id && !opens("base") ? (
                 <p className="max-w-[860px] text-sm text-muted">O modelo não libera base própria: este chatbot usa só a base do modelo.</p>
               ) : (
-                <SourcesManager botId={id} sources={sources} />
+                <SourcesManager
+                  botId={id}
+                  sources={sources}
+                  instagram={igAllowed && !bot.is_demo && !isTemplate ? { username: instagram?.username ?? instagram?.ig_user_id ?? null, connected: Boolean(instagram && !instagram.disconnected_at), withAi: botHasAi(bot) } : null}
+                />
               )}
               {taggedSources > 0 && (
                 <p className="max-w-[860px] rounded-lg bg-ground px-3 py-2 text-sm text-ink-2">
@@ -336,6 +342,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   clear={clearMomentNotice.bind(null, id)}
                 />
               )}
+              {sources.some((s) => s.kind === "instagram") && <PostPriceCard rule={bot.post_price_rule ?? "citar"} maxDays={bot.post_price_max_days ?? 30} save={setPostPriceRule.bind(null, id)} />}
               {!bot.is_demo && sources.some((s) => s.kind === "site" || s.kind === "page") && (
                 <ActionForm key={String(bot.auto_refresh)} action={setAutoRefresh.bind(null, id)} className="flex flex-wrap items-center gap-3 text-sm">
                   <label className="flex items-center gap-2"><input type="checkbox" name="auto_refresh" defaultChecked={bot.auto_refresh !== false} /> Reler o site do cliente automaticamente toda semana</label>
