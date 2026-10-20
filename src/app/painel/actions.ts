@@ -692,6 +692,19 @@ export async function setAutoRefresh(botId: string, formData: FormData): Promise
   return ok(enabled ? "O site será relido toda semana." : "Releitura automática desligada.");
 }
 
+/** Pesquisa de satisfação do chatbot (Lançamento, parte 4): liga ou desliga. */
+export async function setSatisfactionSurvey(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const on = formData.get("satisfaction_survey") === "on";
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("bots").update({ satisfaction_survey: on }).eq("id", botId).eq("is_demo", false).select("id");
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  if (!data?.length) return fail("Chatbot não encontrado.");
+  await auditPanel("bot.pesquisa", { type: "bot", id: botId }, { after: { satisfaction_survey: on } });
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(on ? "Pesquisa ligada: sai no fim do atendimento e depois de 30 minutos de conversa parada com a IA." : "Pesquisa de satisfação desligada.");
+}
+
 /** Aviso do momento do chatbot (Lançamento, parte 3): o texto com prazo que a IA usa quando perguntam. */
 export async function saveMomentNotice(botId: string, formData: FormData): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);

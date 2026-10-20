@@ -1,5 +1,6 @@
 import { handlePairing, linkColumnsForContact } from "./pairing";
 import { handleErasureRequest } from "./data-subject";
+import { handleSatisfactionReplies } from "./satisfaction";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, requestHandoff, type BotRow } from "./chat";
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withoutAi, type Mode } from "./conversation-mode";
@@ -359,6 +360,21 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     }),
   );
   for (const i of paired) handled.add(i);
+  if (handled.size === burst.length) return;
+
+  // pesquisa de satisfação (Lançamento, parte 4): a resposta rápida grava a nota
+  const survey = await handleSatisfactionReplies(
+    {
+      db,
+      conversation: plainConversation,
+      store: async (i, convId) => {
+        await storeOnce(db, convId, shown(i), burst[i].key);
+      },
+      reply: (convId, text) => systemReply(convId, text),
+    },
+    burst.map((q, i) => (handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: igButtonId(q.ev) })),
+  );
+  for (const i of survey) handled.add(i);
   if (handled.size === burst.length) return;
 
   // pedido do titular (LGPD): "apaga meus dados", a pergunta e a resposta (respostas rápidas ou

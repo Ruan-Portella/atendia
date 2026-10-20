@@ -41,7 +41,9 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { MarketingOptInForm } from "@/components/marketing-optin-form";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { saveMomentNotice, clearMomentNotice } from "../../actions";
+import { saveMomentNotice, clearMomentNotice, setSatisfactionSurvey } from "../../actions";
+import { SatisfactionCard } from "@/components/satisfaction-card";
+import { satisfactionSummary } from "@/lib/satisfaction";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
@@ -425,6 +427,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               </section>
               <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
             </ActionForm>
+          )}
+          {tab === "atendimento" && !bot.is_demo && (
+            <SatisfactionCard on={Boolean(bot.satisfaction_survey)} summary={await satisfactionSummary(createAdminClient(), [id], daysAgoIso(30))} save={setSatisfactionSurvey.bind(null, id)} />
           )}
 
           {tab === "conversas" && (

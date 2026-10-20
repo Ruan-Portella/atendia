@@ -4,12 +4,13 @@ import { deadline, isCronAuthorized, withCronLock } from "@/lib/cron";
 import { runCampaignTick } from "@/lib/campaigns";
 import { retryDueDeliveries } from "@/lib/webhooks";
 import { expireApiPauses } from "@/lib/api-pause";
+import { runIdleSurveys } from "@/lib/satisfaction";
 
 export const maxDuration = 60;
 
 /**
- * Tique dos envios: campanhas e lembretes (leva B3), as novas tentativas dos webhooks e as pausas
- * da integração que venceram (C pública). Quem chama é o pg_cron do Supabase, a cada minuto e só
+ * Tique dos envios: campanhas e lembretes (leva B3), as novas tentativas dos webhooks, as pausas
+ * da integração que venceram (C pública) e a pesquisa de satisfação das conversas paradas. Quem chama é o pg_cron do Supabase, a cada minuto e só
  * quando há o que fazer (migrações 0082, 0086, 0088 e 0089), com o mesmo CRON_SECRET da Vercel. Trava própria: dois tiques nunca rodam juntos;
  * o que não coube fica para o próximo minuto.
  */
@@ -24,7 +25,9 @@ export async function GET(req: Request) {
       const webhooks = hasTime() ? await retryDueDeliveries(db, { hasTime, limit: 200 }) : 0;
       // pausa da integração vencida: volta para a IA (que responde a pergunta pendente)
       const pauses = hasTime() ? await expireApiPauses(db, { hasTime }) : 0;
-      return { ...campaigns, webhooks, pauses };
+      // pesquisa de satisfação nas conversas com a IA paradas há 30 minutos (Lançamento, parte 4)
+      const surveys = hasTime() ? await runIdleSurveys(db, { hasTime }) : 0;
+      return { ...campaigns, webhooks, pauses, surveys };
     });
     return Response.json(result);
   } catch (e) {

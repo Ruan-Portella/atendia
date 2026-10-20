@@ -212,5 +212,9 @@ export async function release(admin: SupabaseClient, conversationId: string, who
   if (error) return fail("Não foi possível encerrar. Tente de novo.");
   // webhooks: handoff.returned com quem devolveu
   await queueHandoffReturned(admin, conversationId, { reason: "agent_resumed", agent: { id: who.id, name: who.name, type: who.type }, at });
+  // pesquisa de satisfação no fim do atendimento (se ligada no chatbot; nunca segura o encerramento)
+  await import("./satisfaction")
+    .then(({ sendSatisfactionSurvey }) => sendSatisfactionSurvey(admin, { conversationId, trigger: "equipe" }))
+    .catch((e) => console.error("pesquisa de satisfação no fim do atendimento", (e as Error).message));
   return ok("Atendimento encerrado. O assistente volta a responder esta conversa.");
 }

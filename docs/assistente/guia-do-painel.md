@@ -84,6 +84,10 @@ Na aba Captura de leads, a agência liga o pedido de contato: quando alguém que
 
 Todas as conversas ficam em Conversas, no cliente e em cada chatbot, com o estado: urgente, aguardando a equipe, assumida sem resposta, em atendimento. Alguém da equipe pode assumir a conversa (a IA para), responder pelo painel e devolver para a IA. Na aba Atendimento humano ficam o horário da equipe, o aviso de que é uma IA e o texto de fora do horário. O contato pode pedir "falar com uma pessoa" a qualquer momento.
 
+## Pesquisa de satisfação
+
+Na aba Atendimento humano do chatbot, dá para ligar a pesquisa de satisfação (vem desligada). No WhatsApp e no Instagram, o contato recebe "Como foi o seu atendimento hoje?" com os botões Ótimo, Regular e Ruim: quando a equipe encerra um atendimento e quando a conversa com o assistente fica parada por 30 minutos depois de uma resposta dele. Sai uma por conversa por dia, só dentro da janela de 24 horas (é mensagem de atendimento: a Meta não cobra), e nunca para quem pediu para sair. O toque grava a nota e o assistente agradece, sem responder ao toque. O resultado dos últimos 30 dias aparece na mesma aba: a porcentagem de Ótimo e quantas pesquisas foram respondidas.
+
 ## Chat do site (widget)
 
 O chat do site é instalado com o código da aba Instalação do chatbot (funciona em WordPress, Wix, Webflow, Shopify e qualquer HTML), ou pelo link de página própria. Ele guarda a conversa, mostra quando alguém da equipe entra e, quando a IA para (pausa, cota cheia, pagamento), mostra um formulário de contato que vira lead. Um app ou site com login pode identificar a pessoa (ChatWidget.identify), para o assistente saber quem é.

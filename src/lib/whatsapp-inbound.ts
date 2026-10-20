@@ -48,6 +48,7 @@ import { maskCardNumbers } from "./routine-run";
 import { endActiveRoutine } from "./routine-engine";
 import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
 import { assistantContext, handleTeamNotices } from "./team-whatsapp";
+import { handleSatisfactionReplies } from "./satisfaction";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
 const MEDIA_LABEL: Record<string, string> = {
@@ -408,6 +409,29 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     console.error("avisos: contexto do assistente", (e as Error).message);
     return null;
   });
+
+  // pesquisa de satisfação (Lançamento, parte 4): o toque em Ótimo, Regular ou Ruim grava a nota
+  const survey = await handleSatisfactionReplies(
+    {
+      db,
+      conversation: plainConversation,
+      store: (i, convId) => storeOnce(db, convId, shown(i), burst[i].key),
+      reply: async (convId, text) => {
+        if (!mode.canSend) return;
+        await deliver(db, {
+          botId: bot.id,
+          channel: "whatsapp",
+          conversationId: convId,
+          kind: "sistema",
+          record: { insert: { role: "assistant", content: text, author: SYSTEM_AUTHOR } },
+          transport: async () => (await reply(text)).messages?.[0]?.id ?? null,
+        });
+      },
+    },
+    burst.map((q, i) => (optOut.handled.has(i) ? { text: null, buttonId: null } : { text: texts[i], buttonId: q.msg.interactive?.button_reply?.id ?? null })),
+  );
+  for (const i of survey) optOut.handled.add(i);
+  if (optOut.handled.size === burst.length) return;
 
   // pedido do titular (LGPD): "apaga meus dados", a pergunta de confirmação e a resposta (botões
   // ou "sim" digitado), em qualquer degrau que envia; a IA não responde a essas mensagens
