@@ -26,6 +26,7 @@ const conflicts = (t: MemRow[], table: string, row: MemRow) =>
 /** Valores padrão das tabelas que o motor cria (como os defaults das migrações). */
 function defaultsOf(table: string, now: string): MemRow {
   if (table === "bots") return { public_key: randomUUID().replace(/-/g, "").slice(0, 24) };
+  if (table === "audit_log") return { created_at: now };
   if (table === "routine_runs") return { status: "active", attempts: 0, failing: false, variables_enc: null, end_reason: null, ended_at: null, held_result: null, idle_turns: 0, started_at: now };
   if (table === "contact_links") return { linked_at: now, unlinked_at: null, source: "pairing", identity_key_hash: null };
   return {};

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "550613ba-6863-52fd-81eb-9e687798e482",
     "name": "BoaVoz API v1",
-    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz`, selecione-o no canto superior direito e preencha `api_key`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).\n- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.\n- A pasta 11 (Fontes) pede a permissão `sources` na chave.\n- A pasta 12 (Lojas) pede a permissão `provisioning`, o pacote Plataforma e, para criar cliente, uma chave com escopo da conta inteira; preencha `template_id` com o id de um modelo.",
+    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz`, selecione-o no canto superior direito e preencha `api_key`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).\n- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.\n- A pasta 11 (Fontes) pede a permissão `sources` na chave.\n- A pasta 12 (Lojas) pede a permissão `provisioning`, o pacote Plataforma e, para criar cliente, uma chave com escopo da conta inteira; preencha `template_id` com o id de um modelo. A equipe do portal pede também a permissão `members` e o `member_email` (um e-mail seu: o convite chega nele).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -4269,6 +4269,122 @@
           ]
         },
         {
+          "name": "Convidar pessoa ao portal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{client_id}}/members",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{client_id}}",
+                "members"
+              ]
+            },
+            "description": "Pede a permissão **members** na chave (desmarcada por padrão). Dá acesso ao portal do cliente e manda o link por e-mail, com a marca da agência: preencha `member_email` com um e-mail seu. `role`: manager (gestor) ou agent (atendente, só as conversas). O mesmo e-mail devolve a pessoa (200). A chave fica registrada como quem convidou. Guarda o id em `member_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{member_email}}\",\n  \"role\": \"agent\",\n  \"display_name\": \"Carla\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 200\", () => pm.expect([201, 200]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const m = pm.response.json();",
+                  "  pm.environment.set(\"member_id\", m.id);",
+                  "  pm.test(\"convidada pela chave\", () => pm.expect(m.invited_by && m.invited_by.type).to.eql(\"api_key\"));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Equipe do cliente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/clients/{{client_id}}/members",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{client_id}}",
+                "members"
+              ]
+            },
+            "description": "As pessoas com acesso ao portal do cliente, com a chave que convidou cada uma (null: convite pelo painel)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"lista\", () => pm.expect(pm.response.json().data).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remover pessoa do portal",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/clients/{{client_id}}/members/{{member_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{client_id}}",
+                "members",
+                "{{member_id}}"
+              ]
+            },
+            "description": "Tira o acesso na hora: a sessão aberta perde o acesso na próxima página. Responde 204."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Chatbot sem Idempotency-Key",
           "request": {
             "method": "POST",
@@ -4566,6 +4682,11 @@
     },
     {
       "key": "channel_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "member_id",
       "value": "",
       "type": "string"
     }

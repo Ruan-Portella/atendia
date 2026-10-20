@@ -89,8 +89,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       ? supabase.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
       : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; last_message_at: string; visitor_seen_at: string | null; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; takeover_at: string | null; handled_at: string | null; handoff_urgent_at: string | null; last_contact_at: string | null; last_reply_at: string | null }> }),
     tab === "acesso" || (tab === "relatorio" && client.report_email)
-      ? supabase.from("client_members").select("id, email, role, display_name, last_login_at, created_at").eq("client_id", id).order("created_at")
-      : Promise.resolve({ data: [] as Array<{ id: string; email: string; role: string; display_name: string | null; last_login_at: string | null; created_at: string }> }),
+      ? supabase.from("client_members").select("id, email, role, display_name, last_login_at, created_at, invited_by_key").eq("client_id", id).order("created_at")
+      : Promise.resolve({ data: [] as Array<{ id: string; email: string; role: string; display_name: string | null; last_login_at: string | null; created_at: string; invited_by_key: string | null }> }),
   ]);
   const waitingCount = pending.filter((h) => handoffStatus(h)?.waiting).length;
 
@@ -325,7 +325,11 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               {(members ?? []).length === 0 && <p className="p-4 text-sm text-muted">Ninguém ainda.</p>}
               {(members ?? []).map((m) => (
                 <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-2 px-4 py-3 text-sm last:border-0">
-                  <span className="min-w-0 flex-1 truncate font-medium">{m.display_name ? `${m.display_name} · ` : ""}{m.email}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {m.display_name ? `${m.display_name} · ` : ""}
+                    {m.email}
+                    {m.invited_by_key ? <span className="font-normal text-muted"> · convidada pela API</span> : null}
+                  </span>
                   <ActionForm action={setClientMemberRole.bind(null, client.id, m.id)} className="flex items-center gap-1.5">
                     <select name="role" defaultValue={m.role} aria-label={`Papel de ${m.email}`} className="input w-auto py-1 text-xs">
                       <option value="manager">Gestor</option>

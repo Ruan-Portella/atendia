@@ -84,6 +84,8 @@ DOC_VALUES = {
     "store_external_id": "loja-42",
     "provisioned_bot_id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
     "channel_id": "chn_wa_109283746512345",
+    "member_email": "carla@pizzariadoze.com.br",
+    "member_id": "mbr_8f7e6d5c-4b3a-4291-8e7d-6c5b4a392817",
     "template_name": "pedido_saiu",
     "template_language": "pt_BR",
     "template_variable_1": "Ruan",
@@ -151,6 +153,15 @@ def sent(msg, conv=CONV):
 
 
 STORE_CLIENT = {"client_id": DOC_VALUES["client_id"], "external_id": "loja-42", "name": "Pizzaria do Zé", "compliance_status": "active"}
+MEMBER = {
+    "id": DOC_VALUES["member_id"],
+    "email": DOC_VALUES["member_email"],
+    "role": "agent",
+    "display_name": "Carla",
+    "last_login_at": None,
+    "created_at": "2026-10-19T16:20:41.208Z",
+    "invited_by": {"type": "api_key", "name": "Plataforma, produção", "prefix": "bv_live_7Hq2…"},
+}
 CHANNEL_WA = {
     "id": DOC_VALUES["channel_id"],
     "type": "whatsapp",
@@ -453,6 +464,12 @@ DOC_OF = {
     "Desconectar canal (de vez)": ex("provisionamento", "desconectar", "Desconectar de vez", 204),
     "Pausar chatbot": ex("provisionamento", "pausar", "Pausar o chatbot", 200, {"bot_id": DOC_VALUES["provisioned_bot_id"], "paused": True, "paused_at": "2026-10-19T16:02:18.774Z", "already_paused": False}),
     "Retomar chatbot": ex("provisionamento", "retomar", "Retomar (as medidas em vigor voltam em restrictions)", 200, {"bot_id": DOC_VALUES["provisioned_bot_id"], "paused": False, "was_paused": True, "restrictions": []}),
+    "Convidar pessoa ao portal": ex("provisionamento", "convidar", "Convidar alguém da loja para o portal", 201, {**MEMBER, "invite_email": "sent"}),
+    "Equipe do cliente": ex("provisionamento", "equipe", "A equipe do portal do cliente", 200, {"data": [
+        {"id": "mbr_1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "email": "dono@pizzariadoze.com.br", "role": "manager", "display_name": None, "last_login_at": "2026-10-18T20:11:09.000Z", "created_at": "2026-10-05T10:00:00.000Z", "invited_by": None},
+        MEMBER,
+    ]}),
+    "Remover pessoa do portal": ex("provisionamento", "remover", "Tirar o acesso ao portal", 204),
     "Chatbot com valores próprios": ex("provisionamento", "chatbot-proprio", "Com valores próprios nos campos que o modelo libera", 201, {
         "bot_id": "bot_7a9b1c3d-5e7f-4a2b-8c4d-6e8f0a2b4c6d",
         "widget_key": "8d3e1b0f6a2c4e5d7b9a1c3e",
@@ -1051,6 +1068,14 @@ SAVE_LINK = [
     "}",
 ]
 
+SAVE_MEMBER = [
+    "if (pm.response.code === 201 || pm.response.code === 200) {",
+    "  const m = pm.response.json();",
+    "  pm.environment.set(\"member_id\", m.id);",
+    "  pm.test(\"convidada pela chave\", () => pm.expect(m.invited_by && m.invited_by.type).to.eql(\"api_key\"));",
+    "}",
+]
+
 SAVE_PROVISIONED = [
     "if (pm.response.code === 201 || pm.response.code === 200) {",
     "  const b = pm.response.json();",
@@ -1153,6 +1178,16 @@ provisionamento = folder(
             desc="Tira só a pausa do dono. Medidas do BoaVoz e ordens da Meta continuam e voltam em `restrictions`. Sai o webhook bot.resumed.",
             tests=expect_status(200) + ['pm.test("retomado", () => pm.expect(pm.response.json().paused).to.eql(false));'],
         ),
+        req(
+            "Convidar pessoa ao portal",
+            "POST",
+            "clients/{{client_id}}/members",
+            body={"email": "{{member_email}}", "role": "agent", "display_name": "Carla"},
+            desc="Pede a permissão **members** na chave (desmarcada por padrão). Dá acesso ao portal do cliente e manda o link por e-mail, com a marca da agência: preencha `member_email` com um e-mail seu. `role`: manager (gestor) ou agent (atendente, só as conversas). O mesmo e-mail devolve a pessoa (200). A chave fica registrada como quem convidou. Guarda o id em `member_id`.",
+            tests=expect_status(201, 200) + SAVE_MEMBER,
+        ),
+        req("Equipe do cliente", "GET", "clients/{{client_id}}/members", desc="As pessoas com acesso ao portal do cliente, com a chave que convidou cada uma (null: convite pelo painel).", tests=expect_status(200) + ['pm.test("lista", () => pm.expect(pm.response.json().data).to.be.an("array"));']),
+        req("Remover pessoa do portal", "DELETE", "clients/{{client_id}}/members/{{member_id}}", desc="Tira o acesso na hora: a sessão aberta perde o acesso na próxima página. Responde 204.", tests=expect_status(204)),
         req("Chatbot sem Idempotency-Key", "POST", "bots", body={"client_id": "{{client_id}}", "template_id": "{{template_id}}"}, idem=False, desc="Criar chatbot pede a Idempotency-Key.", tests=expect_error(400, "invalid_request") + ['pm.test("aponta o cabeçalho", () => pm.expect(pm.response.json().error.details.field).to.eql("Idempotency-Key"));']),
         req("Modelo que não existe", "POST", "bots", body={"client_id": "{{client_id}}", "template_id": "bot_00000000-0000-4000-8000-000000000000"}, tests=expect_error(404, "not_found") + ['pm.test("aponta o modelo", () => pm.expect(pm.response.json().error.details.field).to.eql("template_id"));']),
         req("Cliente sem external_id", "POST", "clients", body={"name": "Pizzaria do Zé"}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o campo", () => pm.expect(pm.response.json().error.details.field).to.eql("external_id"));']),
@@ -1175,7 +1210,7 @@ collection = {
                 "- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).",
                 "- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.",
                 "- A pasta 11 (Fontes) pede a permissão `sources` na chave.",
-                "- A pasta 12 (Lojas) pede a permissão `provisioning`, o pacote Plataforma e, para criar cliente, uma chave com escopo da conta inteira; preencha `template_id` com o id de um modelo.",
+                "- A pasta 12 (Lojas) pede a permissão `provisioning`, o pacote Plataforma e, para criar cliente, uma chave com escopo da conta inteira; preencha `template_id` com o id de um modelo. A equipe do portal pede também a permissão `members` e o `member_email` (um e-mail seu: o convite chega nele).",
             ]
         ),
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
@@ -1208,7 +1243,7 @@ collection = {
 
 # Só o que é de cada pessoa fica no ambiente (importado uma vez e preenchido no Postman, nunca no Git).
 # O resto tem o valor-padrão dentro da coleção: reimportar a coleção não mexe no ambiente de ninguém.
-PERSONAL = {"base_url", "api_key", "vercel_bypass", "bot_id", "phone", "phone_sem_idade", "phone_fora_da_janela", "phone_para_apagar", "template_id"}
+PERSONAL = {"base_url", "api_key", "vercel_bypass", "bot_id", "phone", "phone_sem_idade", "phone_fora_da_janela", "phone_para_apagar", "template_id", "member_email"}
 
 env = {
     "id": str(uuid.uuid5(uuid.NAMESPACE_URL, "boavoz-env-dev")),
@@ -1254,6 +1289,8 @@ env = {
         {"key": "provisioned_bot_id", "value": "", "type": "default", "enabled": True},
         {"key": "connect_url", "value": "", "type": "default", "enabled": True},
         {"key": "channel_id", "value": "", "type": "default", "enabled": True},
+        {"key": "member_email", "value": "", "type": "default", "enabled": True},
+        {"key": "member_id", "value": "", "type": "default", "enabled": True},
     ],
     "_postman_variable_scope": "environment",
 }

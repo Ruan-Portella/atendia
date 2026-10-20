@@ -1398,6 +1398,89 @@
         "restrictions": []
       },
       "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "convidar",
+      "title": "Convidar alguém da loja para o portal",
+      "method": "POST",
+      "path": "clients/cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e/members",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "email": "carla@pizzariadoze.com.br",
+        "role": "agent",
+        "display_name": "Carla"
+      },
+      "status": 201,
+      "response": {
+        "id": "mbr_8f7e6d5c-4b3a-4291-8e7d-6c5b4a392817",
+        "email": "carla@pizzariadoze.com.br",
+        "role": "agent",
+        "display_name": "Carla",
+        "last_login_at": null,
+        "created_at": "2026-10-19T16:20:41.208Z",
+        "invited_by": {
+          "type": "api_key",
+          "name": "Plataforma, produção",
+          "prefix": "bv_live_7Hq2…"
+        },
+        "invite_email": "sent"
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "equipe",
+      "title": "A equipe do portal do cliente",
+      "method": "GET",
+      "path": "clients/cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e/members",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "mbr_1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "email": "dono@pizzariadoze.com.br",
+            "role": "manager",
+            "display_name": null,
+            "last_login_at": "2026-10-18T20:11:09.000Z",
+            "created_at": "2026-10-05T10:00:00.000Z",
+            "invited_by": null
+          },
+          {
+            "id": "mbr_8f7e6d5c-4b3a-4291-8e7d-6c5b4a392817",
+            "email": "carla@pizzariadoze.com.br",
+            "role": "agent",
+            "display_name": "Carla",
+            "last_login_at": null,
+            "created_at": "2026-10-19T16:20:41.208Z",
+            "invited_by": {
+              "type": "api_key",
+              "name": "Plataforma, produção",
+              "prefix": "bv_live_7Hq2…"
+            }
+          }
+        ]
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "remover",
+      "title": "Tirar o acesso ao portal",
+      "method": "DELETE",
+      "path": "clients/cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e/members/mbr_8f7e6d5c-4b3a-4291-8e7d-6c5b4a392817",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 204,
+      "response": null,
+      "binary": false
     }
   ]
 }

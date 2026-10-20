@@ -15,7 +15,7 @@ import { HeaderFields } from "@/components/integrations/action-fields";
 import { headerNames } from "@/lib/integrations-input";
 import { openField, openNullable } from "@/lib/field-cipher";
 import { unseal } from "@/lib/secret-box";
-import { createAgencyApiKey, createAgencyWebhook, deleteAgencyWebhook, redeliverAgencyDelivery, requeueAgencyFailures, revokeAgencyApiKey, setAgencyWebhookActive, testAgencyWebhook, updateAgencyWebhook } from "./actions";
+import { createAgencyApiKey, createAgencyWebhook, deleteAgencyWebhook, redeliverAgencyDelivery, removeKeyInvitees, requeueAgencyFailures, revokeAgencyApiKey, setAgencyWebhookActive, testAgencyWebhook, updateAgencyWebhook } from "./actions";
 
 export const metadata = { title: "Integrações" };
 // o Testar chama o endpoint (até 8 s) e salvar classifica a ação com IA
@@ -220,6 +220,10 @@ async function KeysTab({ agencyId, bots, botName }: { agencyId: string; bots: Bo
   ]);
   const keys = (keyRows ?? []) as unknown as Array<ApiKeyRow & { created_at: string; created_by: string | null }>;
   const clientName = new Map((clients ?? []).map((c) => [c.id as string, c.name as string]));
+  // quem cada chave convidou para o portal (D', parte 4c)
+  const { data: invited } = keys.length ? await db.from("client_members").select("invited_by_key").in("invited_by_key", keys.map((k) => k.id)) : { data: [] };
+  const invitees = new Map<string, number>();
+  for (const m of invited ?? []) invitees.set(m.invited_by_key as string, (invitees.get(m.invited_by_key as string) ?? 0) + 1);
   const scopeText = (k: ApiKeyRow) => (k.scope_type === "all" ? "todos os chatbots (inclusive os futuros)" : k.scope_type === "client" ? `cliente ${clientName.get(k.scope_client_id ?? "") ?? "?"} (inclusive os futuros)` : k.scope_bot_ids.map((b) => botName.get(b) ?? "?").join(", "));
   const allowed = API_PERMISSIONS;
 
@@ -239,6 +243,20 @@ async function KeysTab({ agencyId, bots, botName }: { agencyId: string; bots: Bo
               Criada {relativeTime(k.created_at)}
               {k.created_by ? ` por ${k.created_by}` : ""} · {k.last_used_at ? `último uso ${relativeTime(k.last_used_at)}` : "nunca usada"}
             </span>
+            {(invitees.get(k.id) ?? 0) > 0 && (
+              <span className="mt-1 flex flex-wrap items-center gap-x-2 text-xs">
+                {invitees.get(k.id)} {invitees.get(k.id) === 1 ? "pessoa convidada" : "pessoas convidadas"} ao portal por esta chave
+                <ConfirmAction
+                  action={removeKeyInvitees.bind(null, k.id)}
+                  title={`Remover as pessoas que a chave ${k.name} convidou?`}
+                  description={`${invitees.get(k.id)} ${invitees.get(k.id) === 1 ? "pessoa perde" : "pessoas perdem"} o acesso ao portal dos clientes na hora. Quem foi convidado pelo painel continua.`}
+                  confirmLabel="Remover todas"
+                  className="font-semibold text-danger hover:underline"
+                >
+                  Remover todas
+                </ConfirmAction>
+              </span>
+            )}
           </div>
           {!k.revoked_at && (
             <ConfirmAction action={revokeAgencyApiKey.bind(null, k.id)} title={`Revogar a chave ${k.name}?`} description="A próxima requisição com ela recebe 401. Não dá para desfazer: para voltar, crie outra chave." confirmLabel="Revogar" className="text-xs font-semibold text-danger hover:underline">

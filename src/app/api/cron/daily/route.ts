@@ -20,6 +20,7 @@ import { deleteStalePending } from "@/lib/acceptance";
 import { linkLegacyConversations } from "@/lib/contacts";
 import { runContinuousChecks } from "@/lib/continuous-check";
 import { runDueAccountDeletions } from "@/lib/account-deletion";
+import { apiInvitesDigest } from "@/lib/api-members";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
 export const maxDuration = 300;
@@ -92,6 +93,8 @@ async function daily() {
     if (h.diskWarning) await notifyPlatform("Disco do banco acima de 70%", [`Uso: ${Math.round((h.diskRatio ?? 0) * 100)}% (${Math.round((h.diskBytes ?? 0) / 1024 / 1024)} MB).`, "Com 95% o Supabase deixa o banco só leitura e todos os bots param. Limpe dados antigos ou migre para o Pro."]);
     return { ratio: h.diskRatio };
   });
+  // resumo ao dono das pessoas convidadas ao portal pela API (D', parte 4c)
+  const invites = await run("convites pela API", () => apiInvitesDigest(db));
   const sources = await run("releitura de sites", () => refreshSources(db, hasTime));
   // portão: trechos novos que não couberam depois da leitura e os de regras antigas
   const base = await run("classificação da base", () => classifyPending(db, { budgetMs: 180_000 }));
@@ -104,5 +107,5 @@ async function daily() {
   // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
   const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, monthClosed, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, invites, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, aiUsage, disk, sources, base, analysis };
 }

@@ -51,7 +51,8 @@ export default function ApiDocs() {
           [<code key="cp">campaigns</code>, <Link key="l" href="/docs/api/campanhas">Campanhas e lembretes, e registrar o aceite de novidades.</Link>],
           [<code key="p">pairing</code>, <Link key="l" href="/docs/api/pareamento">Pareamento: ligar o contato à conta dele no seu sistema.</Link>],
           [<code key="s">sources</code>, <Link key="l" href="/docs/api/fontes">Fontes de conhecimento: texto, página ou PDF, com o contexto de cada cliente.</Link>],
-          [<code key="pv">provisioning</code>, <Link key="l" href="/docs/api/provisionamento">Clientes e chatbots a partir de um modelo, com o contexto e os dados de cada loja (pacote Plataforma).</Link>],
+          [<code key="pv">provisioning</code>, <Link key="l" href="/docs/api/provisionamento">Clientes e chatbots a partir de um modelo, com o contexto e os dados de cada loja, links de conexão, canais e pausa (pacote Plataforma).</Link>],
+          [<code key="mb">members</code>, <Link key="l" href="/docs/api/provisionamento#equipe">A equipe do portal de cada cliente. Vem desmarcada: o portal mostra e exporta conversas.</Link>],
           [<code key="b">billing</code>, <Link key="l" href="/docs/api/cobranca">Uso, tamanho e excedente de cada chatbot, e o crédito da conta. Pode cobrar no cartão da assinatura: só o dono da conta cria chave com ela.</Link>],
         ]}
       />

@@ -13,7 +13,7 @@ export default function ProvisioningApiDocs() {
       title="Lojas pela API"
       intro="Para quem tem muitas lojas ou clientes parecidos, como uma plataforma de delivery: o seu sistema cria o cliente e o chatbot dele a partir de um modelo, sem passar pelo painel. Cada chatbot já nasce com a personalidade, as ações, os roteiros e a base do modelo, e com o contexto e os dados da loja."
     >
-      <Access permission="provisioning" platform extra={<>criar cliente pede uma chave com escopo da conta inteira; <code>size</code> e <code>overage</code> pedem também <code>billing</code></>} />
+      <Access permission="provisioning" platform extra={<>criar cliente pede uma chave com escopo da conta inteira; <code>size</code> e <code>overage</code> pedem também <code>billing</code>; a equipe do portal pede <code>members</code></>} />
       <Table
         head={["Rota", "O que faz"]}
         rows={[
@@ -24,6 +24,7 @@ export default function ProvisioningApiDocs() {
           [<Link key="5" href="#canais"><code>GET /v1/bots/{"{id}"}/channels</code></Link>, "Os canais da Meta do chatbot e o estado de cada um."],
           [<Link key="6" href="#desconectar"><code>DELETE /v1/bots/{"{id}"}/channels/{"{channel}"}</code></Link>, "Desconecta o canal de vez."],
           [<Link key="7" href="#pausar"><code>POST /v1/bots/{"{id}"}/pause</code>, <code>/resume</code></Link>, "Pausa e retoma a IA do chatbot em todos os canais."],
+          [<Link key="8" href="#equipe"><code>POST</code>, <code>GET /v1/clients/{"{id}"}/members</code>, <code>DELETE …/members/{"{member}"}</code></Link>, <>A equipe da loja no portal (permissão <code>members</code>).</>],
         ]}
       />
 
@@ -122,6 +123,35 @@ export default function ProvisioningApiDocs() {
       <p>
         Tira só a pausa do dono (feita pelo painel ou pela API) e sai o webhook <code>bot.resumed</code>. Medidas do BoaVoz e ordens da Meta continuam e voltam em <code>restrictions</code>, no mesmo formato do <code>compliance.changed</code>.
       </p>
+
+      <H2 id="equipe">Equipe do portal</H2>
+      <p>
+        A equipe da loja atende pelo portal do cliente (as conversas dela, com a marca da sua conta). Estas rotas pedem a permissão <code>members</code>, que vem desmarcada ao criar a chave: o portal mostra e exporta conversas, então <code>provisioning</code> sozinha não convida ninguém. A chave alcança os clientes do escopo dela.
+      </p>
+      <Route id="convidar" method="POST" path="/v1/clients/{id}/members" />
+      <Example page={E} id="convidar" />
+      <Table
+        head={["Campo", "Regra", "Erro"]}
+        rows={[
+          [<code key="1">email</code>, "Obrigatório: a pessoa recebe nele o link de acesso, com a marca da sua conta.", <>400 <code>email</code></>],
+          [<code key="2">role</code>, <>Obrigatório: <code>manager</code> (gestor: tudo o que a agência liberou no portal) ou <code>agent</code> (atendente: só as conversas).</>, <>400 <code>role</code></>],
+          [<code key="3">display_name</code>, "Opcional: o nome que o contato vê quando a pessoa assume a conversa (até 40 caracteres).", <>400 <code>display_name</code></>],
+        ]}
+      />
+      <p>
+        201 com a pessoa e <code>invite_email</code> (<code>sent</code> ou <code>failed</code>: o acesso fica criado mesmo se o e-mail falhar, e a pessoa pode pedir um link na entrada do portal). O mesmo e-mail no cliente devolve a pessoa que já existe, com 200, sem mudar o papel. Até 20 pessoas por cliente (<code>422 plan_limit_reached</code>).
+      </p>
+      <Note>
+        O BoaVoz guarda a chave que convidou cada pessoa. Ao revogar uma chave, a tela das chaves mostra quantas pessoas ela convidou, com &quot;remover todas&quot;. O dono da conta recebe por dia o resumo dos convites pela API e um alerta na hora quando eles passam de 20 em 24 horas.
+      </Note>
+      <Route id="equipe-lista" method="GET" path="/v1/clients/{id}/members" />
+      <Example page={E} id="equipe" />
+      <p>
+        <code>invited_by</code> é a chave que convidou (o nome e o começo dela), ou null para quem foi convidado pelo painel.
+      </p>
+      <Route id="remover" method="DELETE" path="/v1/clients/{id}/members/{member}" />
+      <Example page={E} id="remover" />
+      <p>Tira o acesso na hora: a sessão aberta perde o acesso na próxima página. Responde 204; a pessoa que não é do cliente, 404.</p>
 
       <NextSteps
         items={[

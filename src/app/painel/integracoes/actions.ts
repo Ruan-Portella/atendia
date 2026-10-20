@@ -206,6 +206,20 @@ export async function revokeAgencyApiKey(keyId: string): Promise<ActionResult> {
   return ok(`Chave ${key.prefix}… revogada: a próxima requisição com ela já recebe 401.`);
 }
 
+/** Tira o acesso ao portal de todas as pessoas que uma chave convidou pela API (D', parte 4c). */
+export async function removeKeyInvitees(keyId: string): Promise<ActionResult> {
+  const c = await integrationsContext();
+  if ("error" in c) return fail(c.error!);
+  const { data: key } = await c.db.from("api_keys").select("id, name, prefix").eq("id", String(keyId)).eq("agency_id", c.ctx.agency.id).maybeSingle();
+  if (!key) return fail("Chave não encontrada.");
+  const { data: removed, error } = await c.db.from("client_members").delete().eq("invited_by_key", key.id).select("id");
+  if (error) return fail("Não foi possível remover. Tente de novo.");
+  const n = removed?.length ?? 0;
+  await auditIntegration(c.ctx, "portal.convidados_da_chave_remover", { type: "api_key", id: key.id as string }, { chave: key.name, prefix: key.prefix, removidas: n });
+  done();
+  return ok(n ? `${n} ${n === 1 ? "pessoa perdeu" : "pessoas perderam"} o acesso ao portal na hora.` : "Ninguém para remover.");
+}
+
 /* ------------------------------------------------------------------ webhooks */
 
 /** Webhook novo: o segredo (whsec_) aparece uma vez. Um por chatbot no ar, no mínimo 2. */

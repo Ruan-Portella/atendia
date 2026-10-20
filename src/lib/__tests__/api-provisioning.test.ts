@@ -27,6 +27,9 @@ import { GET as GET_CHANNELS } from "../../app/api/v1/bots/[id]/channels/route";
 import { DELETE as DELETE_CHANNEL } from "../../app/api/v1/bots/[id]/channels/[channel]/route";
 import { POST as POST_PAUSE } from "../../app/api/v1/bots/[id]/pause/route";
 import { POST as POST_RESUME } from "../../app/api/v1/bots/[id]/resume/route";
+import { GET as GET_MEMBERS, POST as POST_MEMBER } from "../../app/api/v1/clients/[id]/members/route";
+import { DELETE as DELETE_MEMBER } from "../../app/api/v1/clients/[id]/members/[member]/route";
+import { apiInvitesDigest, parseMemberBody } from "../api-members";
 
 const A = "aaaaaaaa-0000-4000-8000-000000000001";
 const B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -44,9 +47,9 @@ let keys: Record<string, string>;
 let tables: Record<string, MemRow[]>;
 
 beforeEach(() => {
-  const k = { all: newApiKey(), billing: newApiKey(), client: newApiKey(), bots: newApiKey(), b: newApiKey() };
+  const k = { all: newApiKey(), billing: newApiKey(), client: newApiKey(), bots: newApiKey(), b: newApiKey(), members: newApiKey() };
   const key = (x: { prefix: string; hash: string }, id: string, agency: string, extra: MemRow) => ({ id, agency_id: agency, name: id, prefix: x.prefix, key_hash: x.hash, scope_type: "all", scope_bot_ids: [], scope_client_id: null, permissions: ["provisioning"], last_used_at: null, revoked_at: null, ...extra });
-  keys = { all: k.all.key, billing: k.billing.key, client: k.client.key, bots: k.bots.key, b: k.b.key };
+  keys = { all: k.all.key, billing: k.billing.key, client: k.client.key, bots: k.bots.key, b: k.b.key, members: k.members.key };
   tables = {
     api_keys: [
       key(k.all, "k-all", A, {}),
@@ -54,6 +57,7 @@ beforeEach(() => {
       key(k.client, "k-client", A, { scope_type: "client", scope_client_id: CLIENT_A1 }),
       key(k.bots, "k-bots", A, { scope_type: "bots", scope_bot_ids: [BOT_A1] }),
       key(k.b, "k-b", B, {}),
+      key(k.members, "k-members", A, { scope_type: "client", scope_client_id: CLIENT_A1, permissions: ["members"] }),
     ],
     // a conta B tem a API (Integrações), mas não o Plataforma
     agency_packs: [
@@ -79,6 +83,7 @@ beforeEach(() => {
     enforcement_actions: [],
     audit_log: [],
     idempotency_keys: [],
+    client_members: [{ id: "aaaaaaaa-0000-4000-8000-0000000000e1", client_id: CLIENT_A1, email: "gerente@pizzariadoze.com.br", role: "manager", display_name: null, last_login_at: null, created_at: "2026-10-01T12:00:00Z", invited_by_key: null }],
   };
   env.db = memoryDb(tables);
 });
@@ -338,5 +343,71 @@ describe("canais e pausa pela API (parte 4b)", () => {
     expect(tables.audit_log.filter((a) => a.action === "bot.pausar" || a.action === "bot.retomar").map((a) => a.action)).toEqual(["bot.pausar", "bot.retomar"]);
     const bad = await POST_PAUSE(call("POST", `bots/bot_${BOT_A1}/pause`, keys.all, { body: { notify_contacts: "sim" } }), route(BOT_A1));
     expect((await errorOf(bad)).details).toEqual({ field: "notify_contacts" });
+  });
+});
+
+describe("equipe do portal pela API (parte 4c)", () => {
+  const route = (id: string) => ({ params: Promise.resolve({ id: `cli_${id}` }) });
+  const invite = (key: string, client: string, body: unknown) => POST_MEMBER(call("POST", `clients/cli_${client}/members`, key, { body }), route(client));
+
+  it("convida com a chave registrada; o mesmo e-mail devolve a pessoa (200); a lista mostra quem convidou", async () => {
+    const r = await invite(keys.members, CLIENT_A1, { email: "Atendente@PizzariaDoZe.com.br", role: "agent", display_name: "Carla" });
+    expect(r.status).toBe(201);
+    const m = await r.json();
+    // sem RESEND_API_KEY nos testes, o e-mail não sai (o acesso fica criado)
+    expect(m).toMatchObject({ email: "atendente@pizzariadoze.com.br", role: "agent", display_name: "Carla", invited_by: { type: "api_key", name: "k-members" }, invite_email: "failed" });
+    expect(m.id).toMatch(/^mbr_/);
+    expect(tables.client_members.find((x) => x.email === "atendente@pizzariadoze.com.br")).toMatchObject({ invited_by_key: "k-members" });
+    expect(tables.audit_log.find((a) => a.action === "portal.pessoa_adicionar")).toMatchObject({ actor_type: "api_key", target_id: CLIENT_A1 });
+
+    const again = await invite(keys.members, CLIENT_A1, { email: "atendente@pizzariadoze.com.br", role: "manager" });
+    expect(again.status).toBe(200);
+    expect((await again.json()).role).toBe("agent");
+
+    const list = await (await GET_MEMBERS(call("GET", `clients/cli_${CLIENT_A1}/members`, keys.members), route(CLIENT_A1))).json();
+    expect(list.data.map((x: { email: string; invited_by: unknown }) => [x.email, x.invited_by])).toEqual([
+      ["gerente@pizzariadoze.com.br", null],
+      ["atendente@pizzariadoze.com.br", { type: "api_key", name: "k-members", prefix: expect.stringMatching(/…$/) }],
+    ]);
+  });
+
+  it("só com a permissão members; a chave do cliente não alcança outro; remover tira o acesso", async () => {
+    const noPerm = await invite(keys.all, CLIENT_A1, { email: "x@y.com.br", role: "agent" });
+    expect(await errorOf(noPerm)).toMatchObject({ code: "forbidden_scope", details: { permission: "members" } });
+    const other = await invite(keys.members, CLIENT_A2, { email: "x@y.com.br", role: "agent" });
+    expect(other.status).toBe(404);
+    const params = (member: string) => ({ params: Promise.resolve({ id: `cli_${CLIENT_A1}`, member }) });
+    const gone = await DELETE_MEMBER(call("DELETE", `clients/cli_${CLIENT_A1}/members/mbr_aaaaaaaa-0000-4000-8000-0000000000e1`, keys.members), params("mbr_aaaaaaaa-0000-4000-8000-0000000000e1"));
+    expect(gone.status).toBe(204);
+    expect(tables.client_members).toHaveLength(0);
+    const twice = await DELETE_MEMBER(call("DELETE", `clients/cli_${CLIENT_A1}/members/mbr_aaaaaaaa-0000-4000-8000-0000000000e1`, keys.members), params("mbr_aaaaaaaa-0000-4000-8000-0000000000e1"));
+    expect(twice.status).toBe(404);
+  });
+
+  it("limite de 20 pessoas por cliente e o corpo do convite", async () => {
+    for (let i = 0; i < 19; i++) tables.client_members.push({ id: `m-${i}`, client_id: CLIENT_A1, email: `p${i}@x.com.br`, role: "agent" });
+    const full = await invite(keys.members, CLIENT_A1, { email: "vinte-e-um@x.com.br", role: "agent" });
+    expect(full.status).toBe(422);
+    expect((await errorOf(full)).code).toBe("plan_limit_reached");
+    const field = (body: Record<string, unknown>) => {
+      try {
+        parseMemberBody(body);
+        return null;
+      } catch (e) {
+        return ((e as ApiError).details as { field: string }).field;
+      }
+    };
+    expect(field({ email: "não é e-mail", role: "agent" })).toBe("email");
+    expect(field({ email: "a@b.com", role: "admin" })).toBe("role");
+    expect(field({ email: "a@b.com", role: "agent", display_name: "x".repeat(41) })).toBe("display_name");
+    expect(field({ email: "a@b.com", role: "agent", phone: "55" })).toBe("phone");
+  });
+
+  it("o resumo do dia junta os convites pela API de cada conta", async () => {
+    await invite(keys.members, CLIENT_A1, { email: "um@x.com.br", role: "agent" });
+    await invite(keys.members, CLIENT_A1, { email: "dois@x.com.br", role: "manager" });
+    // um convite pelo painel não entra no resumo
+    tables.audit_log.push({ agency_id: A, action: "portal.pessoa_adicionar", actor_type: "user", created_at: new Date().toISOString(), after: { email: "painel@x.com.br" } });
+    expect(await apiInvitesDigest(env.db)).toEqual({ agencies: 1, invites: 2 });
   });
 });
