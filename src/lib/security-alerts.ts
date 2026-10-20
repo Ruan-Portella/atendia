@@ -18,6 +18,7 @@ export const SECURITY_ALERTS: Record<string, string> = {
   "webhook.editar": "Webhook alterado (URL, eventos, escopo ou cabeçalhos)",
   "suporte.liberar": "Acesso do suporte BoaVoz liberado",
   "canal.suspender": "Canal suspenso pela equipe BoaVoz",
+  "canal.desconectar_api": "Canal desconectado pela API",
   "seguranca.mfa_remover": "Segundo fator removido",
   "equipe.admin_novo": "Novo administrador na equipe",
   "conta.exclusao_pedida": "Exclusão da conta pedida",

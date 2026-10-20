@@ -8,7 +8,11 @@ import { memoryDb, type MemRow } from "../memory-db";
  * display do chatbot na IA. Banco em memória, com os índices únicos do external_id.
  */
 
-const env = vi.hoisted(() => ({ db: null as unknown as SupabaseClient }));
+const env = vi.hoisted(() => {
+  // o link de conexão guarda o token cifrado com a chave mestra (secret-box)
+  process.env.WHATSAPP_TOKEN_KEY ??= "chave-mestra-dos-testes-0123456789";
+  return { db: null as unknown as SupabaseClient };
+});
 vi.mock("../supabase/admin", () => ({ createAdminClient: () => env.db }));
 
 import { newApiKey } from "../api-keys";
@@ -18,6 +22,11 @@ import { ApiError } from "../api-v1";
 import { POST as POST_CLIENT } from "../../app/api/v1/clients/route";
 import { GET as GET_CLIENT } from "../../app/api/v1/clients/[id]/route";
 import { POST as POST_BOT } from "../../app/api/v1/bots/route";
+import { POST as POST_LINK } from "../../app/api/v1/bots/[id]/connect-links/route";
+import { GET as GET_CHANNELS } from "../../app/api/v1/bots/[id]/channels/route";
+import { DELETE as DELETE_CHANNEL } from "../../app/api/v1/bots/[id]/channels/[channel]/route";
+import { POST as POST_PAUSE } from "../../app/api/v1/bots/[id]/pause/route";
+import { POST as POST_RESUME } from "../../app/api/v1/bots/[id]/resume/route";
 
 const A = "aaaaaaaa-0000-4000-8000-000000000001";
 const B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -52,7 +61,7 @@ beforeEach(() => {
       { agency_id: A, pack: "plataforma", ends_at: null },
       { agency_id: B, pack: "integracoes", ends_at: null },
     ],
-    agencies: [{ id: A, billing_status: "trial" }],
+    agencies: [{ id: A, billing_status: "trial", features: ["whatsapp"] }],
     clients: [
       { id: CLIENT_A1, agency_id: A, name: "Pizzaria do Zé", site: null, external_id: "loja-1", created_at: "2026-10-01T12:00:00Z" },
       { id: CLIENT_A2, agency_id: A, name: "Sushi da Ana", site: null, external_id: null, created_at: "2026-10-02T12:00:00Z" },
@@ -61,10 +70,10 @@ beforeEach(() => {
     bots: [
       { id: T, agency_id: A, client_id: null, client_name: "Modelo", is_demo: false, is_template: true, version_of: null, published_bot_id: V1, template_unlocked: ["nome", "saudacao", "instrucoes"], ...TEMPLATE_FIELDS },
       { id: V1, agency_id: A, client_id: null, client_name: "Modelo", is_demo: false, is_template: true, version_of: T, template_unlocked: ["nome", "saudacao", "instrucoes"], ...TEMPLATE_FIELDS },
-      { id: BOT_A1, agency_id: A, client_id: CLIENT_A1, client_name: "Pizzaria do Zé", name: "Zé", status: "live", is_demo: false, is_template: false, version_of: null, external_id: "site", created_at: "2026-10-01T12:00:00Z" },
-      { id: BOT_A2, agency_id: A, client_id: CLIENT_A1, client_name: "Pizzaria do Zé", name: "Zé 2", status: "draft", is_demo: false, is_template: false, version_of: null, created_at: "2026-10-02T12:00:00Z" },
+      { id: BOT_A1, agency_id: A, client_id: CLIENT_A1, client_name: "Pizzaria do Zé", name: "Zé", status: "live", is_demo: false, is_template: false, version_of: null, external_id: "site", created_at: "2026-10-01T12:00:00Z", size: "M", quota_override: null, paused_at: null },
+      { id: BOT_A2, agency_id: A, client_id: CLIENT_A1, client_name: "Pizzaria do Zé", name: "Zé 2", status: "draft", is_demo: false, is_template: false, version_of: null, created_at: "2026-10-02T12:00:00Z", size: null, quota_override: null },
     ],
-    whatsapp_channels: [{ bot_id: BOT_A1, disconnected_at: null }],
+    whatsapp_channels: [{ id: "wa-1", bot_id: BOT_A1, phone_number_id: "1092", waba_id: "W1", display_phone: "+55 21 99999-0000", created_at: "2026-10-03T12:00:00Z", disconnected_at: null, disconnect_reason: null, payment_issue_at: null }],
     instagram_channels: [],
     business_compliance: [],
     enforcement_actions: [],
@@ -264,5 +273,70 @@ describe("display do chatbot na IA", () => {
     expect(withDisplay("[1] Cardápio\nCalabresa R$ 40", { nome: "Zé" })).toBe("[Dados deste atendimento, informados pela empresa]\nnome: Zé\n\n---\n\n[1] Cardápio\nCalabresa R$ 40");
     expect(withDisplay("", { nome: "Zé" })).toBe("[Dados deste atendimento, informados pela empresa]\nnome: Zé");
     expect(withDisplay("[1] x", null)).toBe("[1] x");
+  });
+});
+
+describe("canais e pausa pela API (parte 4b)", () => {
+  const route = (id: string) => ({ params: Promise.resolve({ id: `bot_${id}` }) });
+  const link = (key: string, id: string, body: unknown) => POST_LINK(call("POST", `bots/bot_${id}/connect-links`, key, { body }), route(id));
+
+  it("link de conexão: devolve o mesmo enquanto aberto; rotate troca; canal conectado não é erro", async () => {
+    const first = await link(keys.all, BOT_A1, { channel: "whatsapp" });
+    expect(first.status).toBe(200);
+    const a = await first.json();
+    expect(a).toMatchObject({ channel: "whatsapp", channel_connected: true, connected_channel: { id: "chn_wa_1092", display: "+55 21 99999-0000", status: "connected" } });
+    expect(a.url).toMatch(/\/conectar\/[A-Za-z0-9_-]{20,}$/);
+    const again = await (await link(keys.all, BOT_A1, { channel: "whatsapp" })).json();
+    expect(again.url).toBe(a.url);
+    const rotated = await (await link(keys.all, BOT_A1, { channel: "whatsapp", rotate: true })).json();
+    expect(rotated.url).not.toBe(a.url);
+    // o anterior deixou de valer: só o novo fica aberto
+    expect(tables.whatsapp_connect_links.filter((l) => l.bot_id === BOT_A1)).toHaveLength(1);
+    expect(tables.audit_log.filter((r) => r.action === "canal.link_gerar")).toHaveLength(2);
+  });
+
+  it("link: só com tamanho, só canal liberado na conta, nunca no modelo", async () => {
+    const unsized = await link(keys.all, BOT_A2, { channel: "whatsapp" });
+    expect(unsized.status).toBe(422);
+    expect((await errorOf(unsized)).code).toBe("bot_without_size");
+    const closed = await link(keys.all, BOT_A1, { channel: "instagram" });
+    expect(await errorOf(closed)).toMatchObject({ code: "feature_suspended", details: { feature: "channel", channel: "instagram" } });
+    const template = await link(keys.all, T, { channel: "whatsapp" });
+    expect(template.status).toBe(400);
+    const bad = await link(keys.all, BOT_A1, { channel: "sms" });
+    expect((await errorOf(bad)).details).toEqual({ field: "channel" });
+  });
+
+  it("canais: lista com o estado e o problema de pagamento; desconectar avisa o dono e some da lista", async () => {
+    tables.whatsapp_channels[0].payment_issue_at = "2026-10-18T10:00:00Z";
+    const list = await (await GET_CHANNELS(call("GET", `bots/bot_${BOT_A1}/channels`, keys.all), route(BOT_A1))).json();
+    expect(list.data).toEqual([
+      { id: "chn_wa_1092", type: "whatsapp", display: "+55 21 99999-0000", status: "connected", connected_at: "2026-10-03T12:00:00Z", disconnected_at: null, reason: null, issue: { code: "131042", message: "a conta do WhatsApp está sem forma de pagamento na Meta", since: "2026-10-18T10:00:00Z" } },
+    ]);
+    const params = (ch: string) => ({ params: Promise.resolve({ id: `bot_${BOT_A1}`, channel: ch }) });
+    const unknown = await DELETE_CHANNEL(call("DELETE", `bots/bot_${BOT_A1}/channels/chn_wa_999`, keys.all), params("chn_wa_999"));
+    expect(unknown.status).toBe(404);
+    const gone = await DELETE_CHANNEL(call("DELETE", `bots/bot_${BOT_A1}/channels/chn_wa_1092`, keys.all), params("chn_wa_1092"));
+    expect(gone.status).toBe(204);
+    expect(tables.whatsapp_channels).toHaveLength(0);
+    expect(tables.audit_log.find((r) => r.action === "canal.desconectar_api")).toMatchObject({ actor_type: "api_key", target_id: BOT_A1 });
+    // fora do escopo da chave: 403 (como toda rota de chatbot)
+    const scoped = await GET_CHANNELS(call("GET", `bots/bot_${BOT_A2}/channels`, keys.bots), route(BOT_A2));
+    expect(scoped.status).toBe(403);
+  });
+
+  it("pausa: grava a do dono pela API; de novo devolve o paused_at de antes; retomar traz as restrições", async () => {
+    const p1 = await (await POST_PAUSE(call("POST", `bots/bot_${BOT_A1}/pause`, keys.all, { body: { reason: "loja fechada para reforma", notify_contacts: true } }), route(BOT_A1))).json();
+    expect(p1).toMatchObject({ paused: true, already_paused: false });
+    expect(tables.bots.find((b) => b.id === BOT_A1)).toMatchObject({ paused_by: "API (k-all)", pause_reason: "loja fechada para reforma", pause_notify: true });
+    const p2 = await (await POST_PAUSE(call("POST", `bots/bot_${BOT_A1}/pause`, keys.all, { body: {} }), route(BOT_A1))).json();
+    expect(p2).toMatchObject({ paused_at: p1.paused_at, already_paused: true });
+    tables.enforcement_actions.push({ source: "boavoz", feature: "channel", channel: "instagram", agency_id: A, bot_id: BOT_A1, waba_id: null, lifted_at: null });
+    const r = await (await POST_RESUME(call("POST", `bots/bot_${BOT_A1}/resume`, keys.all), route(BOT_A1))).json();
+    expect(r).toEqual({ bot_id: `bot_${BOT_A1}`, paused: false, was_paused: true, restrictions: [{ type: "channel", channel: "instagram", source: "boavoz" }] });
+    expect(tables.bots.find((b) => b.id === BOT_A1)?.paused_at).toBeNull();
+    expect(tables.audit_log.filter((a) => a.action === "bot.pausar" || a.action === "bot.retomar").map((a) => a.action)).toEqual(["bot.pausar", "bot.retomar"]);
+    const bad = await POST_PAUSE(call("POST", `bots/bot_${BOT_A1}/pause`, keys.all, { body: { notify_contacts: "sim" } }), route(BOT_A1));
+    expect((await errorOf(bad)).details).toEqual({ field: "notify_contacts" });
   });
 });

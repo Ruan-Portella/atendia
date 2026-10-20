@@ -82,6 +82,8 @@ DOC_VALUES = {
     "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
     "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
     "store_external_id": "loja-42",
+    "provisioned_bot_id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+    "channel_id": "chn_wa_109283746512345",
     "template_name": "pedido_saiu",
     "template_language": "pt_BR",
     "template_variable_1": "Ruan",
@@ -149,6 +151,16 @@ def sent(msg, conv=CONV):
 
 
 STORE_CLIENT = {"client_id": DOC_VALUES["client_id"], "external_id": "loja-42", "name": "Pizzaria do Zé", "compliance_status": "active"}
+CHANNEL_WA = {
+    "id": DOC_VALUES["channel_id"],
+    "type": "whatsapp",
+    "display": "+55 11 99999-0000",
+    "status": "connected",
+    "connected_at": "2026-10-04T14:20:31.000Z",
+    "disconnected_at": None,
+    "reason": None,
+    "issue": None,
+}
 
 # Que requisição da coleção vira exemplo de qual página, com a resposta (pelo nome da requisição).
 DOC_OF = {
@@ -421,6 +433,26 @@ DOC_OF = {
         "display": {"nome": "Pizzaria do Zé, Centro", "horario": "terça a domingo, das 18h às 23h", "endereco": "Rua das Flores, 120"},
         "size_change": None,
     }),
+    "Link de conexão do WhatsApp": ex("provisionamento", "link", "O link de conexão do WhatsApp", 200, {
+        "url": "https://boavoz.com/conectar/q3Jx8vN0bT5kLm2Wc7rYp1sDf4Gh6Ak9",
+        "expires_at": "2026-10-26T15:31:07.512Z",
+        "channel": "whatsapp",
+        "channel_connected": True,
+        "connected_channel": CHANNEL_WA,
+    }),
+    "Canais do chatbot": ex("provisionamento", "canais", "Os canais do chatbot", 200, {"data": [CHANNEL_WA, {
+        "id": "chn_ig_17841400000000000",
+        "type": "instagram",
+        "display": "@pizzariadoze",
+        "status": "disconnected",
+        "connected_at": "2026-10-05T09:12:44.000Z",
+        "disconnected_at": "2026-10-18T22:40:03.000Z",
+        "reason": "a conta tirou o acesso do BoaVoz no Instagram",
+        "issue": None,
+    }]}),
+    "Desconectar canal (de vez)": ex("provisionamento", "desconectar", "Desconectar de vez", 204),
+    "Pausar chatbot": ex("provisionamento", "pausar", "Pausar o chatbot", 200, {"bot_id": DOC_VALUES["provisioned_bot_id"], "paused": True, "paused_at": "2026-10-19T16:02:18.774Z", "already_paused": False}),
+    "Retomar chatbot": ex("provisionamento", "retomar", "Retomar (as medidas em vigor voltam em restrictions)", 200, {"bot_id": DOC_VALUES["provisioned_bot_id"], "paused": False, "was_paused": True, "restrictions": []}),
     "Chatbot com valores próprios": ex("provisionamento", "chatbot-proprio", "Com valores próprios nos campos que o modelo libera", 201, {
         "bot_id": "bot_7a9b1c3d-5e7f-4a2b-8c4d-6e8f0a2b4c6d",
         "widget_key": "8d3e1b0f6a2c4e5d7b9a1c3e",
@@ -1011,6 +1043,14 @@ SAVE_CLIENT = [
     "}",
 ]
 
+SAVE_LINK = [
+    "if (pm.response.code === 200) {",
+    "  const l = pm.response.json();",
+    "  pm.environment.set(\"connect_url\", l.url);",
+    "  pm.test(\"link aberto\", () => pm.expect(l.url).to.include(\"/conectar/\"));",
+    "}",
+]
+
 SAVE_PROVISIONED = [
     "if (pm.response.code === 201 || pm.response.code === 200) {",
     "  const b = pm.response.json();",
@@ -1064,6 +1104,54 @@ provisionamento = folder(
             body={"client_id": "{{client_id}}", "template_id": "{{template_id}}", "external_id": "{{store_external_id}}-delivery", "context": {"loja_id": "42"}, "display": {"nome": "Pizzaria do Zé, delivery"}, "overrides": {"assistant_name": "Bia", "welcome": "Oi! Sou a Bia, do delivery do Zé. Quer ver o cardápio?"}},
             desc="Só nos campos que o modelo libera (aba Herança): campo travado volta 403 field_locked.",
             tests=expect_status(201, 200, 403),
+        ),
+        req(
+            "Link de conexão do WhatsApp",
+            "POST",
+            f"bots/{BOT}/connect-links",
+            body={"channel": "whatsapp"},
+            desc="O link aberto do chatbot no WhatsApp, ou um novo (vale 7 dias, uma conexão). Pedir de novo devolve o mesmo; só `rotate: true` troca. Com o canal já conectado, o link serve para conectar de novo (o número novo substitui o antigo). Chatbot sem tamanho: 422 bot_without_size. Guarda a URL em `connect_url`.",
+            tests=expect_status(200, 422) + SAVE_LINK,
+        ),
+        req(
+            "Link de novo (o mesmo)",
+            "POST",
+            f"bots/{BOT}/connect-links",
+            body={"channel": "whatsapp"},
+            desc="Enquanto o link estiver aberto, a resposta é a mesma URL.",
+            tests=expect_status(200, 422) + ['if (pm.response.code === 200) pm.test("o mesmo link", () => pm.expect(pm.response.json().url).to.eql(pm.variables.get("connect_url")));'],
+        ),
+        req("Canais do chatbot", "GET", f"bots/{BOT}/channels", desc="Os canais da Meta do chatbot, com o estado (conectado ou caído, com o motivo) e o problema em aberto (a conta do WhatsApp sem forma de pagamento). O `id` é o mesmo dos webhooks channel.*.", tests=expect_status(200) + ['pm.test("lista", () => pm.expect(pm.response.json().data).to.be.an("array"));']),
+        req(
+            "Desconectar canal (de vez)",
+            "DELETE",
+            f"bots/{BOT}/channels/{{{{channel_id}}}}",
+            desc="CUIDADO: desconecta de verdade o canal `channel_id` (preencha com um id de \"Canais do chatbot\"). Tira a inscrição e apaga o token; o número continua do negócio e nunca é descadastrado. Até 5 por hora por chave, e o dono recebe um alerta de segurança. Sem `channel_id`, volta 404.",
+            tests=expect_status(204, 404),
+        ),
+        req("Desconectar canal que não existe", "DELETE", f"bots/{BOT}/channels/chn_wa_0", tests=expect_error(404, "not_found")),
+        req(
+            "Pausar chatbot",
+            "POST",
+            "bots/{{provisioned_bot_id}}/pause",
+            body={"reason": "loja fechada para reforma", "notify_contacts": False},
+            desc="A pausa do dono (a mesma do painel): a IA para em todos os canais, os canais seguem conectados e as mensagens ficam para a equipe. Com `notify_contacts`, o contato recebe o aviso de indisponível uma vez por conversa. Sai o webhook bot.paused.",
+            tests=expect_status(200) + ['pm.test("pausado", () => pm.expect(pm.response.json().paused).to.eql(true));'],
+        ),
+        req(
+            "Pausar de novo (o mesmo paused_at)",
+            "POST",
+            "bots/{{provisioned_bot_id}}/pause",
+            body={},
+            desc="Já pausado: devolve o paused_at da pausa que vale, com `already_paused: true`.",
+            tests=expect_status(200) + ['pm.test("já estava", () => pm.expect(pm.response.json().already_paused).to.eql(true));'],
+        ),
+        req(
+            "Retomar chatbot",
+            "POST",
+            "bots/{{provisioned_bot_id}}/resume",
+            desc="Tira só a pausa do dono. Medidas do BoaVoz e ordens da Meta continuam e voltam em `restrictions`. Sai o webhook bot.resumed.",
+            tests=expect_status(200) + ['pm.test("retomado", () => pm.expect(pm.response.json().paused).to.eql(false));'],
         ),
         req("Chatbot sem Idempotency-Key", "POST", "bots", body={"client_id": "{{client_id}}", "template_id": "{{template_id}}"}, idem=False, desc="Criar chatbot pede a Idempotency-Key.", tests=expect_error(400, "invalid_request") + ['pm.test("aponta o cabeçalho", () => pm.expect(pm.response.json().error.details.field).to.eql("Idempotency-Key"));']),
         req("Modelo que não existe", "POST", "bots", body={"client_id": "{{client_id}}", "template_id": "bot_00000000-0000-4000-8000-000000000000"}, tests=expect_error(404, "not_found") + ['pm.test("aponta o modelo", () => pm.expect(pm.response.json().error.details.field).to.eql("template_id"));']),
@@ -1164,6 +1252,8 @@ env = {
         {"key": "store_external_id", "value": "loja-postman-1", "type": "default", "enabled": True},
         {"key": "client_id", "value": "", "type": "default", "enabled": True},
         {"key": "provisioned_bot_id", "value": "", "type": "default", "enabled": True},
+        {"key": "connect_url", "value": "", "type": "default", "enabled": True},
+        {"key": "channel_id", "value": "", "type": "default", "enabled": True},
     ],
     "_postman_variable_scope": "environment",
 }

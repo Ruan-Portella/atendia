@@ -33,7 +33,7 @@ const UTILITY_ORIGINS = ["cadastro", "contrato", "compra", "outro"] as const;
 
 const NO_PACK = () => new ApiError(403, "plan_not_allowed", "Clientes e chatbots pela API fazem parte do pacote Plataforma. Assine em Cobrança → Assinatura.", { pack: "plataforma" });
 
-async function requirePlatform(api: ApiContext) {
+export async function requirePlatform(api: ApiContext) {
   if (!(await hasPack(api.db, api.key.agency_id, "plataforma"))) throw NO_PACK();
 }
 
@@ -45,7 +45,7 @@ async function creationLimit(api: ApiContext, what: "clients" | "bots") {
 /** Quem fez, para as declarações e as versões do modelo: a chave (nunca o texto dela). */
 export const keyAuthor = (api: ApiContext) => `Chave da API "${api.key.name}" (${api.key.prefix}…)`;
 
-const meta = (req: Request) => ({ ip: clientIp(req), userAgent: req.headers.get("user-agent") });
+export const meta = (req: Request) => ({ ip: clientIp(req), userAgent: req.headers.get("user-agent") });
 
 /* ------------------------------------------------------------------ leitura do corpo (puras) */
 
@@ -57,7 +57,8 @@ export function parseExternalId(v: unknown, field = "external_id"): string {
   return t;
 }
 
-const only = (body: Record<string, unknown>, allowed: readonly string[]) => {
+/** Campo fora da lista: 400 apontando o campo. */
+export const only = (body: Record<string, unknown>, allowed: readonly string[]) => {
   const extra = Object.keys(body).find((k) => !allowed.includes(k));
   if (extra) throw invalidRequest(`Campo não aceito aqui: ${extra.slice(0, 40)}. Use ${allowed.join(", ")}.`, { field: extra.slice(0, 40) });
 };

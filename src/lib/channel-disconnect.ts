@@ -13,9 +13,9 @@ import { unseal } from "./secret-box";
 /** "Desconectar de vez" no channel.disconnected: quem desconectou. */
 const disconnectedBy = (via: Via) => ({
   code: "disconnected",
-  message: via === "cliente" ? "desconectado pela área do cliente" : via === "sem_tamanho" ? "desconectado: o chatbot ficou sem tamanho" : via === "conta_excluida" ? "desconectado: a conta foi excluída" : "desconectado pelo painel da agência",
+  message: via === "cliente" ? "desconectado pela área do cliente" : via === "sem_tamanho" ? "desconectado: o chatbot ficou sem tamanho" : via === "conta_excluida" ? "desconectado: a conta foi excluída" : via === "api" ? "desconectado pela API" : "desconectado pelo painel da agência",
 });
-type Via = "painel" | "cliente" | "sem_tamanho" | "conta_excluida";
+type Via = "painel" | "cliente" | "sem_tamanho" | "conta_excluida" | "api";
 
 /** WhatsApp: tira a inscrição do app na conta (o número de teste fica como está) e apaga a ligação. */
 export async function disconnectWhatsAppChannel(admin: SupabaseClient, botId: string, via: Via = "painel"): Promise<{ ok: boolean; wabaId: string | null; phone: string | null }> {

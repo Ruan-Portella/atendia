@@ -258,6 +258,19 @@ export async function complianceOf(db: SupabaseClient, clientIds: string[]): Pro
   return out;
 }
 
+/**
+ * As restrições em vigor de um chatbot (medidas do BoaVoz no chatbot ou na conta e ordens da Meta
+ * no número dele), como em compliance.changed: o que POST /v1/bots/{id}/resume não tira.
+ */
+export async function botRestrictions(db: SupabaseClient, bot: { id: string; agency_id: string }): Promise<Restriction[]> {
+  const { data: wa } = await db.from("whatsapp_channels").select("waba_id").eq("bot_id", bot.id).maybeSingle();
+  const waba = (wa?.waba_id as string | null | undefined) ?? null;
+  const filter = [`agency_id.eq.${bot.agency_id}`, `bot_id.eq.${bot.id}`, ...(waba ? [`waba_id.eq.${waba}`] : [])];
+  const { data } = await db.from("enforcement_actions").select("source, feature, channel, agency_id, bot_id, waba_id").is("lifted_at", null).or(filter.join(","));
+  const applies = (m: Record<string, unknown>) => (m.source === "boavoz" ? (m.bot_id ? m.bot_id === bot.id : m.agency_id === bot.agency_id) : Boolean(waba && m.waba_id === waba));
+  return restrictionsOf(((data ?? []) as Array<MeasureRow & Record<string, unknown>>).filter(applies));
+}
+
 /** Clientes que uma medida pode tocar: o do chatbot, os da agência ou os dos chatbots do número. */
 export async function clientsOfScope(db: SupabaseClient, s: { botId?: string | null; agencyId?: string | null; wabaId?: string | null }): Promise<string[]> {
   let botIds: string[] = [];

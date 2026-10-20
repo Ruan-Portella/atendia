@@ -1274,6 +1274,130 @@
         "size_change": null
       },
       "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "link",
+      "title": "O link de conexão do WhatsApp",
+      "method": "POST",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/connect-links",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "channel": "whatsapp"
+      },
+      "status": 200,
+      "response": {
+        "url": "https://boavoz.com/conectar/q3Jx8vN0bT5kLm2Wc7rYp1sDf4Gh6Ak9",
+        "expires_at": "2026-10-26T15:31:07.512Z",
+        "channel": "whatsapp",
+        "channel_connected": true,
+        "connected_channel": {
+          "id": "chn_wa_109283746512345",
+          "type": "whatsapp",
+          "display": "+55 11 99999-0000",
+          "status": "connected",
+          "connected_at": "2026-10-04T14:20:31.000Z",
+          "disconnected_at": null,
+          "reason": null,
+          "issue": null
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "canais",
+      "title": "Os canais do chatbot",
+      "method": "GET",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/channels",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "chn_wa_109283746512345",
+            "type": "whatsapp",
+            "display": "+55 11 99999-0000",
+            "status": "connected",
+            "connected_at": "2026-10-04T14:20:31.000Z",
+            "disconnected_at": null,
+            "reason": null,
+            "issue": null
+          },
+          {
+            "id": "chn_ig_17841400000000000",
+            "type": "instagram",
+            "display": "@pizzariadoze",
+            "status": "disconnected",
+            "connected_at": "2026-10-05T09:12:44.000Z",
+            "disconnected_at": "2026-10-18T22:40:03.000Z",
+            "reason": "a conta tirou o acesso do BoaVoz no Instagram",
+            "issue": null
+          }
+        ]
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "desconectar",
+      "title": "Desconectar de vez",
+      "method": "DELETE",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/channels/chn_wa_109283746512345",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 204,
+      "response": null,
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "pausar",
+      "title": "Pausar o chatbot",
+      "method": "POST",
+      "path": "bots/bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b/pause",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "reason": "loja fechada para reforma",
+        "notify_contacts": false
+      },
+      "status": 200,
+      "response": {
+        "bot_id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+        "paused": true,
+        "paused_at": "2026-10-19T16:02:18.774Z",
+        "already_paused": false
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "retomar",
+      "title": "Retomar (as medidas em vigor voltam em restrictions)",
+      "method": "POST",
+      "path": "bots/bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b/resume",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": null,
+      "status": 200,
+      "response": {
+        "bot_id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+        "paused": false,
+        "was_paused": true,
+        "restrictions": []
+      },
+      "binary": false
     }
   ]
 }

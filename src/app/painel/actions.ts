@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { sizeRequiredBlock } from "@/lib/free-account";
-import { queueBotPauseEvent, queueChannelEvent, queueConsentEvent, trackCompliance } from "@/lib/platform-events";
+import { queueChannelEvent, queueConsentEvent, trackCompliance } from "@/lib/platform-events";
 import { resumeConversationAi } from "@/lib/api-pause";
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
@@ -64,7 +64,7 @@ import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
 import { OVERRIDE_FIELDS, applyTemplate, derivedPatch, setDerivedOverride, unlockedFields, type OverrideField } from "@/lib/bot-template";
-import { endBotRoutineRuns } from "@/lib/routine-engine";
+import { pauseBotNow, resumeBotNow } from "@/lib/bot-pause";
 import { firstExceeded } from "@/lib/rate-limit";
 import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
 import { currentPeriodBR, getClientReport, newPortalToken, periodLabel, reportLink, sendReportEmail, shiftPeriod } from "@/lib/report";
@@ -471,19 +471,15 @@ export async function pauseBot(botId: string, formData: FormData): Promise<Actio
   const { email } = await requireAgency();
   const supabase = await createClient();
   const reason = text(formData.get("reason")).slice(0, 200) || null;
-  const pausedAt = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("bots")
-    .update({ paused_at: pausedAt, paused_by: `painel (${email})`, pause_reason: reason, pause_notify: formData.get("notify") === "on" })
-    .eq("id", botId)
-    .is("paused_at", null)
-    .select("id");
-  if (error) return fail("Não foi possível pausar. Tente de novo.");
-  if (!data?.length) return fail("Este chatbot já está pausado.");
-  // webhooks: bot.paused (o motivo vai como o dono escreveu)
-  await queueBotPauseEvent(createAdminClient(), botId, { paused: true, pausedAt, at: pausedAt, by: "panel", reason });
-  // roteiros em andamento acabam: a IA parou (B2')
-  await endBotRoutineRuns(createAdminClient(), botId, "handoff");
+  let r: Awaited<ReturnType<typeof pauseBotNow>>;
+  try {
+    // a mesma pausa da API (bot-pause.ts): webhook bot.paused e roteiros em andamento encerrados
+    r = await pauseBotNow(supabase, createAdminClient(), botId, { by: "panel", byLabel: `painel (${email})`, reason, notify: formData.get("notify") === "on" });
+  } catch {
+    return fail("Não foi possível pausar. Tente de novo.");
+  }
+  if (!r) return fail("Chatbot não encontrado.");
+  if (r.already) return fail("Este chatbot já está pausado.");
   await auditPanel("bot.pausar", { type: "bot", id: botId }, { after: { reason, notify: formData.get("notify") === "on" } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("IA pausada. As próximas mensagens ficam para a sua equipe responder.");
@@ -492,11 +488,12 @@ export async function pauseBot(botId: string, formData: FormData): Promise<Actio
 export async function resumeBot(botId: string): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
-  const { data: before } = await supabase.from("bots").select("paused_at").eq("id", botId).maybeSingle();
-  const { data: resumed, error } = await supabase.from("bots").update({ paused_at: null, paused_by: null, pause_reason: null, pause_notify: false }).eq("id", botId).not("paused_at", "is", null).select("id");
-  if (error) return fail("Não foi possível retomar. Tente de novo.");
-  // webhooks: bot.resumed, só se estava pausado (a chave é a pausa que terminou)
-  if (resumed?.length && before?.paused_at) await queueBotPauseEvent(createAdminClient(), botId, { paused: false, pausedAt: before.paused_at as string, at: new Date().toISOString(), by: "panel" });
+  try {
+    // webhooks: bot.resumed, só se estava pausado
+    await resumeBotNow(supabase, createAdminClient(), botId, "panel");
+  } catch {
+    return fail("Não foi possível retomar. Tente de novo.");
+  }
   await auditPanel("bot.retomar", { type: "bot", id: botId });
   revalidatePath(`/painel/bots/${botId}`);
   return ok("IA retomada. O assistente volta a responder a partir da próxima mensagem.");

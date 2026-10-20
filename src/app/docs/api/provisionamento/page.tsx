@@ -20,6 +20,10 @@ export default function ProvisioningApiDocs() {
           [<Link key="1" href="#criar-cliente"><code>POST /v1/clients</code></Link>, <>Cria o cliente (a loja). O <code>external_id</code> torna idempotente.</>],
           [<Link key="2" href="#ler-cliente"><code>GET /v1/clients/{"{id}"}</code></Link>, "Os dados do cliente, os chatbots dele e a conformidade."],
           [<Link key="3" href="#criar-chatbot"><code>POST /v1/bots</code></Link>, "Cria o chatbot da loja a partir de um modelo, com o contexto, os dados da loja e os valores próprios."],
+          [<Link key="4" href="#link"><code>POST /v1/bots/{"{id}"}/connect-links</code></Link>, "O link para a loja conectar o WhatsApp ou o Instagram dela."],
+          [<Link key="5" href="#canais"><code>GET /v1/bots/{"{id}"}/channels</code></Link>, "Os canais da Meta do chatbot e o estado de cada um."],
+          [<Link key="6" href="#desconectar"><code>DELETE /v1/bots/{"{id}"}/channels/{"{channel}"}</code></Link>, "Desconecta o canal de vez."],
+          [<Link key="7" href="#pausar"><code>POST /v1/bots/{"{id}"}/pause</code>, <code>/resume</code></Link>, "Pausa e retoma a IA do chatbot em todos os canais."],
         ]}
       />
 
@@ -35,7 +39,7 @@ export default function ProvisioningApiDocs() {
           <Link href="#criar-chatbot"><code>POST /v1/bots</code></Link> com o cliente, o modelo, o <code>context</code> (por exemplo <code>{'{"loja_id": "42"}'}</code>, que vai para as ações) e o <code>display</code> (o nome e o horário da loja, para a IA).
         </li>
         <li>
-          O chat do site da loja usa o <code>widget_key</code> da resposta no código do widget (<code>data-key</code>). O WhatsApp e o Instagram a loja conecta pelo link de conexão, no painel.
+          O chat do site da loja usa o <code>widget_key</code> da resposta no código do widget (<code>data-key</code>). Para o WhatsApp e o Instagram, peça o <Link href="#link">link de conexão</Link> e mostre no painel da loja: ela abre e conecta com a conta dela na Meta.
         </li>
       </ol>
       <Note>
@@ -86,6 +90,38 @@ export default function ProvisioningApiDocs() {
       <Note>
         O que o chatbot herda do modelo muda quando você publica o modelo de novo; o <code>context</code>, o <code>display</code> e os canais são sempre do chatbot. No painel, o contexto e os dados da loja ficam na aba Ações do chatbot.
       </Note>
+
+      <Route id="link" method="POST" path="/v1/bots/{id}/connect-links" />
+      <Example page={E} id="link" />
+      <p>
+        <code>channel</code> é <code>whatsapp</code> ou <code>instagram</code>. Enquanto houver um link aberto (vale 7 dias e serve para uma conexão), pedir de novo devolve o mesmo; <code>rotate: true</code> cria outro e o anterior deixa de valer. A página do link sai com a marca da sua conta, no domínio do BoaVoz (a Meta só abre o login nos domínios do app), e antes da conexão pede o aceite do próprio negócio. Com o canal já conectado, o link serve para conectar de novo: o número novo substitui o antigo (<code>channel_connected</code> e <code>connected_channel</code> dizem o que está conectado agora).
+      </p>
+      <p>
+        Como no painel, o canal pede um chatbot com tamanho (sem ele, <code>422 bot_without_size</code>), e o canal precisa estar liberado na conta (senão, <code>403 feature_suspended</code>). O modelo não tem canais (400).
+      </p>
+
+      <Route id="canais" method="GET" path="/v1/bots/{id}/channels" />
+      <Example page={E} id="canais" />
+      <p>
+        Cada canal com o <code>id</code> (o mesmo dos webhooks <code>channel.*</code>), o número ou o @ da conta, o <code>status</code> (<code>connected</code> ou <code>disconnected</code>, quando caiu, com o motivo em <code>reason</code>) e o problema em aberto em <code>issue</code> (hoje, a conta do WhatsApp sem forma de pagamento na Meta, código 131042). O chat do site vale sempre e não aparece aqui.
+      </p>
+
+      <Route id="desconectar" method="DELETE" path="/v1/bots/{id}/channels/{channel}" />
+      <Example page={E} id="desconectar" />
+      <p>
+        É o &quot;desconectar de vez&quot; do painel: o BoaVoz deixa de receber as mensagens daquela conta e apaga o acesso. Nada muda na Meta: o número e a conta continuam do negócio, e o número nunca é descadastrado. As conversas antigas ficam. Até 5 desconexões por hora com a mesma chave (<code>429 rate_limited</code>), e o dono da conta recebe um alerta de segurança em cada uma. Para parar a IA sem desconectar, use a <Link href="#pausar">pausa</Link>.
+      </p>
+
+      <Route id="pausar" method="POST" path="/v1/bots/{id}/pause" />
+      <Example page={E} id="pausar" />
+      <p>
+        A mesma pausa do botão de emergência do painel: a IA e os envios param em todos os canais, os canais continuam conectados e as mensagens continuam gravadas, para a equipe responder pelo painel e pelo portal. Serve para loja fechada, contrato suspenso ou inadimplência com a sua plataforma. <code>reason</code> (até 200 caracteres) vai no webhook <code>bot.paused</code>; com <code>notify_contacts: true</code>, o contato recebe o aviso de atendimento indisponível uma vez por conversa. Já pausado: devolve o <code>paused_at</code> da pausa que vale, com <code>already_paused: true</code>.
+      </p>
+      <Route id="retomar" method="POST" path="/v1/bots/{id}/resume" />
+      <Example page={E} id="retomar" />
+      <p>
+        Tira só a pausa do dono (feita pelo painel ou pela API) e sai o webhook <code>bot.resumed</code>. Medidas do BoaVoz e ordens da Meta continuam e voltam em <code>restrictions</code>, no mesmo formato do <code>compliance.changed</code>.
+      </p>
 
       <NextSteps
         items={[

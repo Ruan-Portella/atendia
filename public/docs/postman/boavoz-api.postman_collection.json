@@ -3934,6 +3934,341 @@
           ]
         },
         {
+          "name": "Link de conexão do WhatsApp",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/connect-links",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "connect-links"
+              ]
+            },
+            "description": "O link aberto do chatbot no WhatsApp, ou um novo (vale 7 dias, uma conexão). Pedir de novo devolve o mesmo; só `rotate: true` troca. Com o canal já conectado, o link serve para conectar de novo (o número novo substitui o antigo). Chatbot sem tamanho: 422 bot_without_size. Guarda a URL em `connect_url`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"whatsapp\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200 ou 422\", () => pm.expect([200, 422]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const l = pm.response.json();",
+                  "  pm.environment.set(\"connect_url\", l.url);",
+                  "  pm.test(\"link aberto\", () => pm.expect(l.url).to.include(\"/conectar/\"));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Link de novo (o mesmo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/connect-links",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "connect-links"
+              ]
+            },
+            "description": "Enquanto o link estiver aberto, a resposta é a mesma URL.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"whatsapp\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200 ou 422\", () => pm.expect([200, 422]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) pm.test(\"o mesmo link\", () => pm.expect(pm.response.json().url).to.eql(pm.variables.get(\"connect_url\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Canais do chatbot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/channels",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "channels"
+              ]
+            },
+            "description": "Os canais da Meta do chatbot, com o estado (conectado ou caído, com o motivo) e o problema em aberto (a conta do WhatsApp sem forma de pagamento). O `id` é o mesmo dos webhooks channel.*."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"lista\", () => pm.expect(pm.response.json().data).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Desconectar canal (de vez)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/channels/{{channel_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "channels",
+                "{{channel_id}}"
+              ]
+            },
+            "description": "CUIDADO: desconecta de verdade o canal `channel_id` (preencha com um id de \"Canais do chatbot\"). Tira a inscrição e apaga o token; o número continua do negócio e nunca é descadastrado. Até 5 por hora por chave, e o dono recebe um alerta de segurança. Sem `channel_id`, volta 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204 ou 404\", () => pm.expect([204, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Desconectar canal que não existe",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/channels/chn_wa_0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "channels",
+                "chn_wa_0"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"erro not_found\", () => pm.expect(pm.response.json().error.code).to.eql(\"not_found\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pausar chatbot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{provisioned_bot_id}}/pause",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{provisioned_bot_id}}",
+                "pause"
+              ]
+            },
+            "description": "A pausa do dono (a mesma do painel): a IA para em todos os canais, os canais seguem conectados e as mensagens ficam para a equipe. Com `notify_contacts`, o contato recebe o aviso de indisponível uma vez por conversa. Sai o webhook bot.paused.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"loja fechada para reforma\",\n  \"notify_contacts\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"pausado\", () => pm.expect(pm.response.json().paused).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pausar de novo (o mesmo paused_at)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{provisioned_bot_id}}/pause",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{provisioned_bot_id}}",
+                "pause"
+              ]
+            },
+            "description": "Já pausado: devolve o paused_at da pausa que vale, com `already_paused: true`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"já estava\", () => pm.expect(pm.response.json().already_paused).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retomar chatbot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{provisioned_bot_id}}/resume",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{provisioned_bot_id}}",
+                "resume"
+              ]
+            },
+            "description": "Tira só a pausa do dono. Medidas do BoaVoz e ordens da Meta continuam e voltam em `restrictions`. Sai o webhook bot.resumed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"retomado\", () => pm.expect(pm.response.json().paused).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Chatbot sem Idempotency-Key",
           "request": {
             "method": "POST",
@@ -4221,6 +4556,16 @@
     },
     {
       "key": "provisioned_bot_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "connect_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "channel_id",
       "value": "",
       "type": "string"
     }

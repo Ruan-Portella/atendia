@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { appUrl } from "./utils";
+import { seal, unseal } from "./secret-box";
 
 /**
  * Link de conexão do WhatsApp: a agência gera e manda ao cliente, que abre sem conta nem login e
@@ -25,9 +26,30 @@ export async function createConnectLink(db: SupabaseClient, botId: string, chann
   const token = randomBytes(24).toString("base64url");
   const expiresAt = new Date(Date.now() + LINK_DAYS * 86_400_000).toISOString();
   await db.from("whatsapp_connect_links").delete().eq("bot_id", botId).eq("channel", channel).is("used_at", null);
-  const { error } = await db.from("whatsapp_connect_links").insert({ token_hash: hashToken(token), bot_id: botId, expires_at: expiresAt, channel });
+  // o token cifrado (parte 4b da D'): a API devolve o mesmo link enquanto ele estiver aberto
+  const { error } = await db.from("whatsapp_connect_links").insert({ token_hash: hashToken(token), token_enc: seal(token), bot_id: botId, expires_at: expiresAt, channel });
   if (error) throw new Error("não foi possível criar o link");
   return { token, url: connectLinkUrl(token), expiresAt };
+}
+
+/** O link aberto (não usado, dentro do prazo) do chatbot e do canal, se o token estiver guardado. */
+export async function openConnectLink(db: SupabaseClient, botId: string, channel: LinkChannel, now = Date.now()): Promise<{ url: string; expiresAt: string } | null> {
+  const { data } = await db
+    .from("whatsapp_connect_links")
+    .select("token_enc, expires_at")
+    .eq("bot_id", botId)
+    .eq("channel", channel)
+    .is("used_at", null)
+    .gt("expires_at", new Date(now).toISOString())
+    .order("expires_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data?.token_enc) return null;
+  try {
+    return { url: connectLinkUrl(unseal(String(data.token_enc))), expiresAt: String(data.expires_at) };
+  } catch {
+    return null;
+  }
 }
 
 export type LinkState = "open" | "used" | "expired";
