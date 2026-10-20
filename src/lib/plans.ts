@@ -95,6 +95,8 @@ export const OVERAGE_PRICE_BRL = 0.35;
 export const CREDIT_MIN_BRL = 50;
 export const CREDIT_MAX_BRL = 50_000;
 export const CREDIT_SHORTCUTS_BRL = [50, 100, 250, 500] as const;
+/** Compra de crédito pelo Pix: o limite padrão da Stripe é o equivalente a US$ 3.000 por pagamento, e R$ 10.000 fica abaixo. */
+export const PIX_MAX_BRL = 10_000;
 export const CREDIT_VALID_MONTHS = 12;
 /** Aviso de saldo baixo: abaixo de 20% da última compra. */
 export const CREDIT_LOW_SHARE = 0.2;

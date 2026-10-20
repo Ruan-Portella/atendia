@@ -35,7 +35,7 @@ Um atendimento é a conversa com um contato durante 24 horas, contadas a partir 
 
 ## Excedente e crédito
 
-O excedente é opcional e ligado por chatbot, em Cobrança → Uso. Com ele ligado, quando a cota acaba o chatbot continua atendendo e cada atendimento a mais custa R$ 0,35, pago com o crédito pré-pago da conta. O crédito é comprado em Cobrança → Crédito (mínimo de R$ 50) e vale 12 meses. Dá para pôr um teto de gasto por chatbot e ligar a recarga automática.
+O excedente é opcional e ligado por chatbot, em Cobrança → Uso. Com ele ligado, quando a cota acaba o chatbot continua atendendo e cada atendimento a mais custa R$ 0,35, pago com o crédito pré-pago da conta. O crédito é comprado em Cobrança → Crédito (mínimo de R$ 50), no cartão da assinatura ou pelo Pix (até R$ 10.000 por compra), e vale 12 meses. Pelo Pix, abre a página de pagamento da Stripe, que pede o CPF ou CNPJ de quem paga e mostra o QR e o copia e cola; o código vale 1 hora, e o crédito entra quando o banco confirma (avisamos por e-mail). A recarga automática usa só o cartão. Dá para pôr um teto de gasto por chatbot e ligar a recarga automática.
 
 ## Pacotes da conta
 
@@ -46,7 +46,7 @@ Os pacotes valem para a agência toda, um de cada por mês:
 
 ## Assinatura, fatura e cancelamento
 
-A assinatura é feita em Cobrança, com cartão, pela Stripe. A fatura sai no dia 1º. Subir o tamanho de um chatbot vale na hora, com cobrança proporcional aos dias que faltam no mês; descer o tamanho ou tirar um chatbot vale a partir do dia 1º seguinte. O cancelamento fica agendado para o fim do período pago, e dá para reativar antes disso. As faturas ficam em Cobrança.
+A assinatura é feita em Cobrança, com cartão, pela Stripe. Assinatura por Pix não tem: a Stripe não oferece o Pix automático para empresa brasileira, então o Pix serve só para comprar crédito. A fatura sai no dia 1º. Subir o tamanho de um chatbot vale na hora, com cobrança proporcional aos dias que faltam no mês; descer o tamanho ou tirar um chatbot vale a partir do dia 1º seguinte. O cancelamento fica agendado para o fim do período pago, e dá para reativar antes disso. As faturas ficam em Cobrança.
 
 ## Pagamento atrasado
 

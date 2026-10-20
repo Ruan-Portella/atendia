@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { appliedBotRow, monthBoundsBR, type BillingTarget } from "./billing";
 import { audit } from "./audit";
 import { applyUpgrade, syncSubscriptionSafe, voidPendingUpgrades } from "./billing-sync";
-import { applyCredit } from "./billing-credit";
+import { applyCredit, applyPixCredit, voidPixCredit } from "./billing-credit";
 import { endApiPauses } from "./api-pause";
 import { classifyGainedAi } from "./gate/base";
 import { disconnectUnsized } from "./free-account";
@@ -17,7 +17,8 @@ import { appUrl } from "./utils";
  * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), inclusive a
  * subida paga numa fatura avulsa; a situação da assinatura acompanha (pagamento atrasado pausa a
  * IA até pagar, 18/10); item mexido fora do BoaVoz volta ao que o BoaVoz guarda; e o fim da
- * assinatura tira o tamanho dos chatbots e desconecta os canais (a configuração fica guardada). Erro do banco vira exceção: o webhook
+ * assinatura tira o tamanho dos chatbots e desconecta os canais (a configuração fica guardada). O
+ * crédito pago pelo Pix (Lançamento, parte 6) entra quando a Stripe confirma. Erro do banco vira exceção: o webhook
  * devolve 500 e a Stripe entrega de novo (tudo aqui pode rodar mais de uma vez).
  */
 
@@ -110,12 +111,25 @@ export async function endSubscription(db: SupabaseClient, customer: string): Pro
 
 export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event): Promise<void> {
   switch (event.type) {
-    case "checkout.session.completed": {
+    case "checkout.session.completed":
+    case "checkout.session.async_payment_succeeded": {
       const s = event.data.object;
       const changeId = s.metadata?.changeId;
-      if (!changeId || s.mode !== "subscription" || s.payment_status === "unpaid") break;
-      const sub = typeof s.subscription === "string" ? s.subscription : (s.subscription?.id ?? null);
-      await applyCheckout(db, changeId, sub);
+      if (!changeId || s.payment_status === "unpaid") break;
+      if (s.mode === "subscription") {
+        const sub = typeof s.subscription === "string" ? s.subscription : (s.subscription?.id ?? null);
+        await applyCheckout(db, changeId, sub);
+      } else if (s.mode === "payment") {
+        // crédito pago pelo Pix
+        await applyPixCredit(db, changeId);
+      }
+      break;
+    }
+    case "checkout.session.expired":
+    case "checkout.session.async_payment_failed": {
+      // o Pix venceu sem pagamento: a compra fica anulada
+      const s = event.data.object;
+      if (s.mode === "payment" && s.metadata?.changeId) await voidPixCredit(db, s.metadata.changeId);
       break;
     }
     case "customer.subscription.created":

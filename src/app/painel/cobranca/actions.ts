@@ -10,7 +10,7 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { choiceLabel, monthBoundsBR, packChargeCents, packsRemovedWith, parseTarget, renewalLabel, targetMonthlyCents, type BillingTarget } from "@/lib/billing";
 import { syncSubscriptionSafe, voidPendingUpgrades } from "@/lib/billing-sync";
 import { BillingOpError, changeSize, chargeUpgrade, type BillingActor, type SizeChange, type SubscribedAccount } from "@/lib/billing-ops";
-import { parseAutoRecharge, parseCreditBrl, purchaseCredit } from "@/lib/billing-credit";
+import { parseAutoRecharge, parseCreditBrl, pixAmountProblem, purchaseCredit, startPixCredit } from "@/lib/billing-credit";
 import { billingEnabled, catalogPrices, checkoutTiming, ensureStripeCustomer, stripe, subscriptionItems } from "@/lib/stripe";
 import { unpaidInvoices } from "@/lib/billing-view";
 import { emitOverageChanged } from "@/lib/billing-events";
@@ -224,7 +224,11 @@ export async function changePack(pack: string, on: boolean): Promise<ActionResul
 
 /* ------------------------------------------------------------------ crédito do excedente (parte 4c) */
 
-/** Compra crédito no cartão da assinatura (R$ 50 a R$ 50.000, válido por 12 meses, sem reembolso). */
+/**
+ * Compra crédito (R$ 50 a R$ 50.000, válido por 12 meses, sem reembolso): no cartão da assinatura,
+ * cobrado na hora, ou pelo Pix (até R$ 10.000), na página de pagamento da Stripe; o crédito do Pix
+ * entra quando a Stripe confirma (webhook).
+ */
 export async function buyCredit(fd: FormData): Promise<ActionResult> {
   const s = await subscribed();
   if ("error" in s) return fail(s.error);
@@ -232,6 +236,18 @@ export async function buyCredit(fd: FormData): Promise<ActionResult> {
   const raw = String(fd.get("amount") ?? "") === "outro" ? String(fd.get("other") ?? "") : String(fd.get("amount") ?? "");
   const cents = parseCreditBrl(raw);
   if (cents === null) return fail(`Escolha um valor de ${brlCents(50)} a ${brlCents(50_000)}, em reais inteiros.`);
+  if (fd.get("via") === "pix") {
+    const problem = pixAmountProblem(cents);
+    if (problem) return fail(problem);
+    let pixUrl: string;
+    try {
+      pixUrl = await startPixCredit(createAdminClient(), { id: ctx.agency.id, stripe_customer_id: s.customer }, cents, ctx.userId);
+    } catch (e) {
+      console.error("crédito: pix", e);
+      return fail("Não foi possível abrir o Pix agora. Tente de novo em instantes.");
+    }
+    redirect(pixUrl);
+  }
   let url: string | null = null;
   try {
     const r = await purchaseCredit(createAdminClient(), { id: ctx.agency.id, stripe_customer_id: s.customer, stripe_subscription_id: s.subscription }, cents, "compra", ctx.userId);

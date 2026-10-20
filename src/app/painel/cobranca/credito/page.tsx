@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requirePermission } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, brlCents, num } from "@/lib/plans";
+import { CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, PIX_MAX_BRL, brlCents, num } from "@/lib/plans";
 import { OVERAGE_PRICE_CENTS, creditBalance } from "@/lib/billing-credit";
 import { monthBoundsBR } from "@/lib/billing";
 import { billingEnabled } from "@/lib/stripe";
@@ -23,10 +23,11 @@ const isExpired = (iso: string) => Date.parse(iso) <= Date.now();
 /**
  * Cobrança → Crédito (revisão de preços, parte 4c): o saldo pré-pago que paga o excedente (R$ 0,35
  * por atendimento além da cota de um chatbot), a compra, a recarga automática, os lotes (12 meses,
- * o que vence antes sai primeiro) e o uso do mês por chatbot.
+ * o que vence antes sai primeiro) e o uso do mês por chatbot. Pelo Pix (Lançamento, parte 6), a
+ * Stripe volta para cá com ?pix=ok, e o crédito entra quando ela confirma.
  */
-export default async function CreditoPage() {
-  const { agency, bots } = await requirePermission("billing");
+export default async function CreditoPage({ searchParams }: PageProps<"/painel/cobranca/credito">) {
+  const [{ agency, bots }, sp] = await Promise.all([requirePermission("billing"), searchParams]);
   const db = createAdminClient();
   const { period, start } = monthBoundsBR();
   const [balance, { data: lots }, { data: used }] = await Promise.all([
@@ -60,9 +61,14 @@ export default async function CreditoPage() {
         <Kpi label="Vence primeiro" value={open[0] ? brlCents(Number(open[0].remaining_cents) / 100) : "—"} sub={open[0] ? `em ${dateBR(open[0].expires_at as string)}` : "nenhum crédito ativo"} />
       </div>
 
+      {sp.pix === "ok" && (
+        <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">
+          Pix enviado. O crédito entra assim que a Stripe confirma o pagamento, em geral em segundos: se o saldo ainda não mudou, recarregue a página daqui a pouco. Também avisamos por e-mail.
+        </p>
+      )}
       {!subscribed && (
         <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
-          O crédito é cobrado no cartão da assinatura. <Link href="/painel/cobranca" className="font-semibold underline">Assine um tamanho</Link> antes de comprar.
+          O crédito paga o excedente dos chatbots com tamanho. <Link href="/painel/cobranca" className="font-semibold underline">Assine um tamanho</Link> antes de comprar.
         </p>
       )}
       {subscribed && overageBots.length === 0 && (
@@ -73,7 +79,7 @@ export default async function CreditoPage() {
 
       <section className="card mt-6 p-5">
         <h2 className="text-lg font-bold">Comprar crédito</h2>
-        <p className="mt-1 text-sm text-muted">A partir de {brlCents(CREDIT_MIN_BRL)}, cobrado na hora no cartão da assinatura.</p>
+        <p className="mt-1 text-sm text-muted">A partir de {brlCents(CREDIT_MIN_BRL)}: no cartão da assinatura, cobrado na hora, ou pelo Pix (até {brlCents(PIX_MAX_BRL)}), na página de pagamento da Stripe, com o QR e o copia e cola. O código Pix vale 1 hora, e o crédito entra quando o banco confirma.</p>
         <div className="mt-3">
           <CreditBuyForm enabled={billingEnabled && subscribed} />
         </div>

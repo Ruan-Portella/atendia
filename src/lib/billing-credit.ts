@@ -1,17 +1,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { creditEventData, emitCreditAlert } from "./billing-events";
-import { CREDIT_LOW_SHARE, CREDIT_MAX_BRL, CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, brlCents } from "./plans";
+import { CREDIT_LOW_SHARE, CREDIT_MAX_BRL, CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, PIX_MAX_BRL, brlCents } from "./plans";
 import { monthBoundsBR } from "./billing";
 import { chargeNow } from "./billing-sync";
 import { notifyAgencyOwner } from "./notify";
 import { audit, type AuditActor } from "./audit";
+import { stripe } from "./stripe";
 import { appUrl } from "./utils";
 
 /*
  * Crédito pré-pago do excedente (revisão de preços, parte 4c). Cada atendimento a mais desconta
  * R$ 0,35 do saldo da conta, na abertura do atendimento (open_atendimento, migração 0098). O
  * crédito é comprado antes, no cartão da assinatura (lotes de 12 meses), à mão ou pela recarga
- * automática. Sem saldo, os chatbots que dependem do excedente entram no modo só humano.
+ * automática, ou pelo Pix (Lançamento, parte 6). Sem saldo, os chatbots que dependem do excedente
+ * entram no modo só humano.
  */
 
 export const OVERAGE_PRICE_CENTS = Math.round(OVERAGE_PRICE_BRL * 100);
@@ -79,7 +81,7 @@ export function parseAutoRecharge(fd: FormData): AutoRecharge | { error: string 
 }
 
 /** E-mails do crédito. Função pura. */
-export function creditEmail(kind: "baixo" | "acabou" | "recarga" | "recarga_falhou" | "limite", o: { balanceCents: number; amountCents?: number; payUrl?: string | null; autoOn: boolean; creditUrl: string }): [string, string[]] {
+export function creditEmail(kind: "baixo" | "acabou" | "recarga" | "recarga_falhou" | "limite" | "pix", o: { balanceCents: number; amountCents?: number; payUrl?: string | null; autoOn: boolean; creditUrl: string }): [string, string[]] {
   const saldo = brlCents(o.balanceCents / 100);
   const buy = `Comprar crédito ou ajustar a recarga automática: ${o.creditUrl}`;
   switch (kind) {
@@ -100,6 +102,8 @@ export function creditEmail(kind: "baixo" | "acabou" | "recarga" | "recarga_falh
         "A recarga automática do crédito não foi paga",
         [`O cartão da assinatura recusou a recarga automática de ${brlCents((o.amountCents ?? 0) / 100)}. Saldo: ${saldo}.`, "", o.payUrl ? `Pague a fatura para o crédito entrar: ${o.payUrl}` : "Atualize o cartão em Cobrança → Assinatura → Pagamento e faturas.", "", buy],
       ];
+    case "pix":
+      return [`Crédito de ${brlCents((o.amountCents ?? 0) / 100)} recebido pelo Pix`, [`O Pix de ${brlCents((o.amountCents ?? 0) / 100)} foi confirmado e o crédito do excedente entrou. Saldo agora: ${saldo}. O crédito vale 12 meses.`, "", buy]];
     case "limite":
       return [
         "Recarga automática parada pelo limite do mês",
@@ -129,6 +133,68 @@ export async function purchaseCredit(db: SupabaseClient, agency: { id: string; s
   const balance = await applyCredit(db, change.id as string, source);
   await audit(db, { agencyId: agency.id, actorType: actor?.type ?? (createdBy ? "user" : "system"), actorId: actor?.id ?? createdBy, action: source === "recarga" ? "credito.recarga" : "credito.comprar", targetType: "agency", targetId: agency.id, after: { valor_centavos: amountCents } });
   return { status: "paid", balanceCents: balance ?? (await creditBalance(db, agency.id)) };
+}
+
+/* ------------------------------------------------------------------ Pix (Lançamento, parte 6) */
+
+/*
+ * Pix na compra de crédito (19/10/2026). Conta brasileira na Stripe só tem o Pix avulso (sem Pix
+ * Automático e sem Pix na fatura), então a assinatura e a recarga automática seguem no cartão. A
+ * página de pagamento da Stripe pede o CPF ou CNPJ de quem paga e mostra o QR e o copia e cola; o
+ * crédito entra quando a Stripe confirma (webhook), uma vez só.
+ */
+
+/** Validade do código Pix. */
+export const PIX_EXPIRES_SECONDS = 3600;
+
+/** O valor passa do que o Pix aceita? Pura. */
+export function pixAmountProblem(cents: number): string | null {
+  return cents > PIX_MAX_BRL * 100 ? `Pelo Pix, até ${brlCents(PIX_MAX_BRL)} por compra. Para mais, use o cartão ou faça mais de uma compra.` : null;
+}
+
+/** Abre o pagamento por Pix na Stripe: grava a compra e devolve o endereço da página de pagamento. */
+export async function startPixCredit(db: SupabaseClient, agency: { id: string; stripe_customer_id: string }, amountCents: number, createdBy: string | null): Promise<string> {
+  if (!stripe) throw new Error("Stripe não configurado.");
+  const { data: change, error } = await db.from("billing_changes").insert({ agency_id: agency.id, kind: "credit", target: { credito_centavos: amountCents, via: "pix" }, amount_cents: amountCents, created_by: createdBy }).select("id").single();
+  if (error || !change) throw new Error(error?.message ?? "compra não gravada");
+  const metadata = { agencyId: agency.id, changeId: change.id as string };
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    customer: agency.stripe_customer_id,
+    client_reference_id: agency.id,
+    line_items: [{ quantity: 1, price_data: { currency: "brl", unit_amount: amountCents, product_data: { name: "Crédito do excedente", description: "Válido por 12 meses, não reembolsável" } } }],
+    payment_method_types: ["pix"],
+    payment_method_options: { pix: { expires_after_seconds: PIX_EXPIRES_SECONDS } },
+    payment_intent_data: { description: `Crédito do excedente (${brlCents(amountCents / 100)}), válido por 12 meses`, metadata },
+    metadata,
+    success_url: appUrl("/painel/cobranca/credito?pix=ok"),
+    cancel_url: appUrl("/painel/cobranca/credito"),
+    locale: "pt-BR",
+  });
+  await db.from("billing_changes").update({ stripe_ref: session.id }).eq("id", change.id);
+  if (!session.url) throw new Error("Checkout sem URL");
+  return session.url;
+}
+
+/** O Pix confirmado pela Stripe: o crédito entra (uma vez só), com a auditoria e o e-mail ao dono. */
+export async function applyPixCredit(db: SupabaseClient, changeId: string, apply = applyCredit): Promise<number | null> {
+  const { data: change } = await db.from("billing_changes").select("agency_id, kind, amount_cents, created_by").eq("id", changeId).maybeSingle();
+  if (!change || change.kind !== "credit") return null;
+  const balance = await apply(db, changeId, "compra");
+  if (balance === null) return null;
+  const agencyId = change.agency_id as string;
+  const amountCents = Number(change.amount_cents) || 0;
+  const createdBy = (change.created_by as string | null) ?? null;
+  await audit(db, { agencyId, actorType: createdBy ? "user" : "system", actorId: createdBy, action: "credito.comprar", targetType: "agency", targetId: agencyId, after: { valor_centavos: amountCents, via: "pix" } });
+  const [subject, lines] = creditEmail("pix", { balanceCents: balance, amountCents, autoOn: false, creditUrl: appUrl("/painel/cobranca/credito") });
+  await notifyAgencyOwner(db, agencyId, subject, lines).catch(() => false);
+  return balance;
+}
+
+/** O Pix venceu sem pagamento (ou a página de pagamento expirou): a compra fica anulada. */
+export async function voidPixCredit(db: SupabaseClient, changeId: string): Promise<boolean> {
+  const { data } = await db.from("billing_changes").update({ status: "void" }).eq("id", changeId).eq("kind", "credit").eq("status", "pending").select("id");
+  return Boolean(data?.length);
 }
 
 /**

@@ -33,7 +33,8 @@ const CATALOG = [
   { lookup: "boavoz_plataforma", name: "BoaVoz · Plataforma", amount: 19900, meta: { kind: "pack", pack: "plataforma" }, desc: "Lojas pela API, chatbot modelo e identificação em todas as lojas" },
 ];
 const WEBHOOK_URL = `${base}/api/stripe/webhook`;
-const WEBHOOK_EVENTS = ["checkout.session.completed", "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted", "invoice.paid", "invoice.payment_failed"];
+// o crédito pelo Pix (Lançamento, parte 6) entra no completed ou no async_payment_succeeded; o Pix vencido anula a compra
+const WEBHOOK_EVENTS = ["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired", "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted", "invoice.paid", "invoice.payment_failed"];
 
 const account = await stripe.accounts.retrieve();
 console.log("conta:", account.settings?.dashboard?.display_name ?? "(sem nome)", "·", account.country, account.default_currency, "·", key.includes("_live_") ? "LIVE" : "teste");
