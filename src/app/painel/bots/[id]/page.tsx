@@ -53,7 +53,7 @@ import { SatisfactionCard } from "@/components/satisfaction-card";
 import { EvolutionTable } from "@/components/evolution-table";
 import { botEvolution } from "@/lib/evolution";
 import { satisfactionSummary } from "@/lib/satisfaction";
-import { detachFromTemplate, resetDerivedField } from "../../actions";
+import { detachFromTemplate, markTransferReviewed, resetDerivedField } from "../../actions";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
@@ -261,6 +261,19 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               className="ml-auto text-xs font-semibold text-brand hover:underline"
             >
               Desligar do modelo
+            </ConfirmAction>
+          )}
+        </div>
+      )}
+
+      {bot.transfer_review_at && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-amber-soft px-4 py-3 text-sm text-amber-ink sm:px-5 md:px-7">
+          <span className="min-w-0">
+            <strong>Este chatbot veio de outra conta</strong> ({new Date(bot.transfer_review_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}). Confira antes de seguir: as ações estão desligadas, sem segredo e sem cabeçalhos (aba Ações); o destino do atendimento humano (aba Atendimento humano); o aviso de leads; o excedente, desligado; e as campanhas pausadas. O negócio precisa fazer o aceite do canal de novo para os dados irem para os seus webhooks e a sua API.
+          </span>
+          {canConfig && (
+            <ConfirmAction action={markTransferReviewed.bind(null, id)} title="Tudo conferido?" description="A faixa sai deste chatbot. As ações continuam como estão (desligadas até você ligar cada uma)." confirmLabel="Marcar como conferido" danger={false} className="ml-auto text-xs font-semibold underline">
+              Marcar como conferido
             </ConfirmAction>
           )}
         </div>

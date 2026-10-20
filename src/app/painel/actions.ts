@@ -499,6 +499,17 @@ export async function resumeBot(botId: string): Promise<ActionResult> {
   return ok("IA retomada. O assistente volta a responder a partir da próxima mensagem.");
 }
 
+/** Tira a faixa "veio de outra conta" (D', parte 5): quem cuida da configuração conferiu o chatbot. */
+export async function markTransferReviewed(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("bots").update({ transfer_review_at: null }).eq("id", botId).not("transfer_review_at", "is", null).select("id");
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  if (data?.length) await auditPanel("bot.transferencia_revisada", { type: "bot", id: botId });
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Pronto: a faixa saiu.");
+}
+
 /** Converte uma demo em chatbot de verdade (mantém a base de conhecimento), ligado a um cliente. */
 export async function convertDemo(botId: string, formData: FormData): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);

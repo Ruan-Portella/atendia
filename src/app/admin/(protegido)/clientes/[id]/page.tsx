@@ -7,6 +7,7 @@ import { SupportConversations } from "@/components/admin/support-conversations";
 import { ContinuousChecks } from "@/components/admin/continuous-checks";
 import { BotSizeForm } from "@/components/admin/bot-size-form";
 import { BillingCard } from "@/components/admin/billing-card";
+import { ClientTransferForm } from "@/components/admin/client-transfer-form";
 import { nextMonthTarget } from "@/lib/billing-sync";
 import { creditBalance } from "@/lib/billing-credit";
 import { targetMonthlyCents } from "@/lib/billing";
@@ -52,6 +53,12 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
     botChunkCounts(botIds),
   ]);
   const conv30 = new Map(convCounts);
+  // transferência de cliente (D', parte 5): os clientes desta conta e as transferências que a tocaram
+  const [{ data: clientRows }, { data: transferRows }] = await Promise.all([
+    db.from("clients").select("id, name").eq("agency_id", id).order("name"),
+    db.from("client_transfers").select("id, client_name, from_agency_id, to_agency_id, requested_by, done_by, created_at").or(`from_agency_id.eq.${id},to_agency_id.eq.${id}`).order("created_at", { ascending: false }).limit(10),
+  ]);
+  const agencyName = new Map((await getAgencies()).map((a) => [a.id, a.name]));
   const waBy = new Map((wa ?? []).map((w) => [w.bot_id as string, w]));
   const igBy = new Map((ig ?? []).map((i) => [i.bot_id as string, i]));
 
@@ -110,6 +117,11 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
       <AgencyFeatures agencyId={id} features={agency.features} />
       <ChannelSuspension agencyId={id} bots={(bots ?? []).filter((b) => !b.is_demo).map((b) => ({ id: b.id as string, label: `${b.name} · ${b.client_name}` }))} measures={measures} />
       <ContinuousChecks {...continuous} testAllowed={false} agencyView />
+      <ClientTransferForm
+        agencyId={id}
+        clients={(clientRows ?? []).map((c) => ({ id: c.id as string, name: c.name as string }))}
+        transfers={(transferRows ?? []).map((t) => ({ id: Number(t.id), client_name: t.client_name as string, from: agencyName.get(t.from_agency_id as string) ?? "conta excluída", to: agencyName.get(t.to_agency_id as string) ?? "conta excluída", requested_by: t.requested_by as string, done_by: t.done_by as string, created_at: t.created_at as string }))}
+      />
 
       <section className="card overflow-x-auto">
         <h2 className="px-5 pt-4 text-lg font-bold">Chatbots</h2>

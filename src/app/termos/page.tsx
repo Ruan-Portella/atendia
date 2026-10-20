@@ -68,6 +68,9 @@ export default function TermsPage() {
           <li>Cada cliente define por quanto tempo os dados ficam guardados (6, 12 ou 24 meses, ou menos no modo dados sensíveis) e pode exportar as conversas, os contatos e os leads a qualquer momento; na saída de um cliente, entregue ou apague os dados dele.</li>
           <li>Os pedidos de exclusão feitos pelos contatos no chat chegam em Segurança e devem ser atendidos no prazo da lei.</li>
           <li>Nossa equipe de suporte só lê conversas com a sua autorização, dada em Segurança por 24 horas e com motivo; cada leitura fica registrada.</li>
+          <li>
+            Como o negócio é o controlador, ele pode pedir à {brand} para levar o cliente dele, com os chatbots, as conversas, os contatos e a base, para outra conta (outra agência ou a conta do próprio negócio), também quando a agência não responde. A {brand} faz a mudança a pedido do negócio e avisa as duas contas. Um chatbot criado de um modelo da sua conta vai como chatbot comum, com uma cópia da configuração do modelo que ele usava (personalidade, instruções, roteiros e a base comum); as ações vão desligadas e sem os segredos. A auditoria, o uso já contado e a cobrança até a mudança ficam com a sua conta.
+          </li>
         </ul>
       </Section>
 

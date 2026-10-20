@@ -27,6 +27,8 @@ import { cronsScheduledHere } from "@/lib/backoffice-ops";
 import { deadline, withCronLock } from "@/lib/cron";
 import { costText, createCampaign, estimateFor, runCampaignTick, setCampaignStatus, templateProblem } from "@/lib/campaigns";
 import { whatsappContact } from "@/lib/contacts";
+import { transferClient } from "@/lib/client-transfer";
+import { getAgencies } from "@/lib/backoffice";
 import { canonicalPhone } from "@/lib/phone";
 import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
@@ -976,3 +978,36 @@ export async function refreshAssistantBase(): Promise<ActionResult> {
   return r.ok ? ok(r.lines.join("\n")) : fail(r.lines.join("\n"));
 }
 
+/* ------------------------------------------------------------------ transferência de cliente (D', parte 5) */
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Leva um cliente (com os chatbots, as conversas, os contatos e a base) para outra conta, a pedido
+ * do negócio. A conta de destino vai pelo id ou pelo e-mail do dono. Não tem desfazer: para voltar,
+ * transfere de novo (e a revisão recomeça).
+ */
+export async function transferClientAction(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const clientId = text(fd.get("client_id"));
+  const to = text(fd.get("to")).toLowerCase();
+  const requestedBy = text(fd.get("requested_by"));
+  const reason = text(fd.get("reason")).slice(0, 1000) || null;
+  if (!UUID.test(clientId)) return fail("Escolha o cliente.");
+  if (requestedBy.length < 3) return fail("Diga quem pediu, do lado do negócio (nome e como pediu): fica registrado.");
+  if (fd.get("confirm") !== "on") return fail("Confirme que o pedido veio do próprio negócio.");
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (transferiu o cliente ${clientId} para ${to})`);
+  const agencies = await getAgencies();
+  const dest = UUID.test(to) ? agencies.find((a) => a.id === to) : agencies.find((a) => a.email?.toLowerCase() === to);
+  if (!dest) return fail("Conta de destino não encontrada: use o id da conta ou o e-mail do dono.");
+  const db = createAdminClient();
+  const { data: client } = await db.from("clients").select("id, name").eq("id", clientId).eq("agency_id", agencyId).maybeSingle();
+  if (!client) return fail("Cliente não encontrado nesta conta.");
+  let r: Awaited<ReturnType<typeof transferClient>>;
+  try {
+    r = await transferClient(db, { clientId, toAgencyId: dest.id, requestedBy, doneBy: s.email, reason });
+  } catch (e) {
+    return fail(`A transferência não foi feita: ${(e as Error).message}`);
+  }
+  revalidatePath("/admin", "layout");
+  return ok(`${client.name} foi para ${dest.name} com ${r.botIds.length} chatbot${r.botIds.length === 1 ? "" : "s"}. Os dois donos receberam o aviso; a conta nova vê o que revisar em cada chatbot.`);
+}

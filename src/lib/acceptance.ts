@@ -89,9 +89,15 @@ export async function getCompliance(db: SupabaseClient, clientId: string): Promi
   };
 }
 
-/** Aceite confirmado deste negócio, neste canal, na versão atual? */
+/**
+ * Aceite confirmado deste negócio, neste canal, na versão atual, para a conta dona do cliente agora?
+ * O aceite (que inclui mandar os dados para a agência ou a plataforma) vale para a conta que o
+ * recebeu: depois de uma transferência (D', parte 5), a conta nova precisa de outro.
+ */
 export async function hasAcceptance(db: SupabaseClient, clientId: string, channel: AcceptanceChannel): Promise<boolean> {
-  const { data } = await db.from("business_acceptances").select("id").eq("client_id", clientId).eq("channel", channel).eq("version", ACCEPTANCE_VERSION).eq("status", "confirmed").limit(1);
+  const { data: client } = await db.from("clients").select("agency_id").eq("id", clientId).maybeSingle();
+  if (!client) return false;
+  const { data } = await db.from("business_acceptances").select("id").eq("client_id", clientId).eq("agency_id", client.agency_id).eq("channel", channel).eq("version", ACCEPTANCE_VERSION).eq("status", "confirmed").limit(1);
   return Boolean(data?.length);
 }
 
