@@ -197,6 +197,10 @@ Cada pessoa da equipe pode receber os avisos da conta no próprio WhatsApp, pelo
 
 Só o dono exclui a conta, em Segurança, Excluir a conta (com o segundo fator e o nome da conta digitado). A exclusão acontece 7 dias depois do pedido: até lá, tudo funciona, o painel mostra a data numa faixa e o dono pode desistir na mesma tela. Na data, saem os clientes, os chatbots, as conversas, os contatos, os leads, os arquivos e a equipe; o WhatsApp e o Instagram são desconectados (os números e as contas continuam dos negócios). A assinatura para de renovar no pedido e é cancelada na exclusão, sem reembolso do mês em curso, e o crédito que sobrar se perde. A auditoria fica por 1 ano e os registros de acesso por 6 meses.
 
+## Roadmap e sugestões
+
+No menu Roadmap do painel fica o que estamos fazendo e o que vem por aí, em quatro colunas (Ideias, Vamos fazer, Fazendo e Pronto), sem datas: a ordem muda com o que os clientes pedem. Qualquer pessoa da equipe curte o que mais quer (uma curtida por pessoa; tocar de novo desfaz) e manda ideias. A gente lê todas: as que entram aparecem em Ideias já com a curtida de quem mandou, e uma ideia parecida com outra é juntada a ela. Em "Suas ideias", você vê o que aconteceu com cada uma. O roadmap também fica aberto, sem login, em boavoz.com/roadmap.
+
 ## Sobre este assistente
 
 Este assistente é a própria BoaVoz atendendo pelo BoaVoz: um chatbot como os que a agência cria para os clientes. Ele responde sobre o painel e, para quem confirmou o número, sobre a conta (os chatbots, o tamanho e o uso do mês), sem mudar nada na conta. Para falar com alguém da equipe BoaVoz, é só pedir "falar com uma pessoa". As mesmas respostas estão na central de ajuda, em boavoz.com/ajuda (o menu Ajuda do painel), uma página por assunto.

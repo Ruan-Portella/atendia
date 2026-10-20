@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Sparkles, Palette, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug, LifeBuoy } from "lucide-react";
+import { Users, Sparkles, Palette, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug, LifeBuoy, Milestone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type AgencyRole, type Permission } from "@/lib/roles";
 
@@ -17,6 +17,7 @@ const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Perm
   { href: "/painel/cobranca", label: "Cobrança", icon: CreditCard, perm: "billing" },
   { href: "/painel/perfil", label: "Meu perfil", icon: CircleUser, perm: "attend" },
   // a central de ajuda é pública (Lançamento, parte 2): sai do painel
+  { href: "/painel/roadmap", label: "Roadmap", icon: Milestone, perm: "attend" },
   { href: "/ajuda", label: "Ajuda", icon: LifeBuoy, perm: "attend" },
 ];
 

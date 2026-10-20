@@ -49,6 +49,7 @@ export function LegalFooter() {
         <Link href="/uso-aceitavel">Uso aceitável</Link>
         <Link href="/seguranca">Segurança</Link>
         <Link href="/exclusao-de-dados">Exclusão de dados</Link>
+        <Link href="/roadmap">Roadmap</Link>
         <a href={`mailto:${company.email}`}>{company.email}</a>
       </nav>
     </footer>
