@@ -50,6 +50,7 @@ export default function ApiDocs() {
           [<code key="ct">contacts</code>, <Link key="l" href="/docs/api/contatos">Contatos, leads, etiquetas, idade e o pedido de exclusão do titular.</Link>],
           [<code key="cp">campaigns</code>, <Link key="l" href="/docs/api/campanhas">Campanhas e lembretes, e registrar o aceite de novidades.</Link>],
           [<code key="p">pairing</code>, <Link key="l" href="/docs/api/pareamento">Pareamento: ligar o contato à conta dele no seu sistema.</Link>],
+          [<code key="s">sources</code>, <Link key="l" href="/docs/api/fontes">Fontes de conhecimento: texto, página ou PDF, com o contexto de cada cliente.</Link>],
           [<code key="b">billing</code>, <Link key="l" href="/docs/api/cobranca">Uso, tamanho e excedente de cada chatbot, e o crédito da conta. Pode cobrar no cartão da assinatura: só o dono da conta cria chave com ela.</Link>],
         ]}
       />
@@ -121,6 +122,7 @@ export default function ApiDocs() {
           { href: "/docs/api/contatos", title: "Contatos e leads", text: "Sincronizar contatos, etiquetas, idade, leads e o pedido do titular." },
           { href: "/docs/api/campanhas", title: "Campanhas e aceite", text: "Campanhas de novidades, lembretes e o aceite de novidades." },
           { href: "/docs/api/pareamento", title: "Pareamento", text: "Ligar o contato à conta dele no seu sistema." },
+          { href: "/docs/api/fontes", title: "Fontes", text: "Texto, página ou PDF, e o documento de cada cliente com o contexto." },
           { href: "/docs/api/cobranca", title: "Cobrança", text: "Uso do mês, tamanho, excedente e crédito." },
         ]}
       />

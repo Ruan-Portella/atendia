@@ -1,4 +1,5 @@
 import { generateText, stepCountIs } from "ai";
+import { activeContext } from "./bot-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
 import { CHAT_TEMPERATURE, ageAskRefusal, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
@@ -99,7 +100,7 @@ export function costLine(c: ReturnType<typeof costSummary>): string {
 }
 
 export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question: string, opts: EvalOptions) {
-  const [retrieval, exempt] = await Promise.all([retrieveContext(db, bot.id, question), botGateExemptions(db, bot.id)]);
+  const [retrieval, exempt] = await Promise.all([retrieveContext(db, bot.id, question, activeContext(bot, null)), botGateExemptions(db, bot.id)]);
   if (retrieval.embeddingUsage?.tokens) opts.onUsage?.({ embeddingModel: retrieval.embeddingUsage.model, embeddingTokens: retrieval.embeddingUsage.tokens });
   const { context, hits } = retrieval;
   const phone = opts.foreign ? "14155550123" : "5521999990000";

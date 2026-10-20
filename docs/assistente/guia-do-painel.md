@@ -174,7 +174,9 @@ Os lembretes de utilidade (consulta amanhã, pedido pronto, vencimento) são env
 Com o pacote Integrações:
 - Ações: o assistente consulta o sistema do cliente (pedido, agenda, estoque, segunda via) e executa operações (criar pedido, agendar, cancelar) só depois do Confirmar do contato. Ficam na aba Ações do chatbot.
 - Webhooks: o sistema do cliente recebe os eventos (mensagem recebida, lead, pedido de atendente, fim de roteiro e outros), com assinatura, novas tentativas e reenvio. Ficam em Integrações → Webhooks.
-- API: conversas, mensagens (texto, imagem, documento, modelo e botões), contatos, leads, campanhas, lembretes e uso, com chave em Integrações → Chaves de API.
+- API: conversas, mensagens (texto, imagem, documento, modelo e botões), contatos, leads, campanhas, lembretes, uso e fontes de conhecimento, com chave em Integrações → Chaves de API.
+- Contexto fixo: na aba Ações, cada chatbot pode ter um contexto fixo (por exemplo a loja de uma plataforma, {"loja_id": "42"}), que vai em toda chamada de ação, por cima do contexto do token ou do pareamento. Só o dono ou um administrador muda, com o segundo fator, e o dono recebe o alerta.
+- Fontes por contexto: pela API, cada fonte pode ter um contexto (por exemplo o cliente de um SaaS). Ela só vale nas conversas daquele contexto, passa pelo portão e não refaz a análise do chatbot. No painel, a base mostra só quantas são.
 A documentação completa fica em boavoz.com/docs.
 
 ## Roteiros

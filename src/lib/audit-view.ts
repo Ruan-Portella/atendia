@@ -44,6 +44,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "bot.aviso_momento": "Aviso do momento posto no ar",
   "bot.pesquisa": "Pesquisa de satisfação ligada ou desligada",
   "bot.aviso_momento_apagar": "Aviso do momento tirado",
+  "bot.contexto_fixo": "Contexto fixo do chatbot alterado",
   "bot.retomar": "Chatbot retomado",
   "bot.novidades": "Oferta de novidades no WhatsApp alterada",
   "campanha.criar": "Campanha criada",

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { TEST_ANSWERS_FREE, num } from "@/lib/plans";
 import { BotActions } from "@/components/integrations/bot-actions";
+import { FixedContextCard } from "@/components/integrations/fixed-context-card";
+import { saveFixedContext } from "@/app/painel/integracoes/actions";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
@@ -103,8 +105,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     requireAgency(),
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
-    tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, refresh_error, created_by, updated_at").eq("bot_id", id).order("created_at") : none,
-    tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).in("kind", ["text", "faq"]) : none,
+    // as fontes com etiqueta de contexto (enviadas pela API, uma por cliente de um SaaS) ficam fora da lista: só a contagem
+    tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, refresh_error, created_by, updated_at").eq("bot_id", id).is("context", null).order("created_at") : none,
+    tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).is("context", null).in("kind", ["text", "faq"]) : none,
     tab === "fontes" ? listUnanswered(supabase, { botIds: [id], limit: 10 }) : Promise.resolve(null),
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? countLeads(supabase, id) : Promise.resolve(null),
@@ -122,6 +125,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const handoff = (bot.human_handoff ?? {}) as HumanHandoff;
   // pedidos fora do assunto (trava de escopo): separados das perguntas sem resposta; tabela interna,
   // lida com a service role depois de a sessão confirmar o dono do chatbot
+  const taggedSources = tab === "fontes" ? ((await supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).not("context", "is", null)).count ?? 0) : 0;
   const refusals = tab === "fontes" && !bot.is_demo
     ? await listRefusals(createAdminClient(), { botId: id, since: daysAgoIso(30), limit: 10 })
     : [];
@@ -229,6 +233,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <p className="text-sm text-muted">Tudo que {bot.name} sabe vem daqui. Ele não inventa o que não está nas fontes.</p>
               </div>
               <SourcesManager botId={id} sources={sources} />
+              {taggedSources > 0 && (
+                <p className="max-w-[860px] rounded-lg bg-ground px-3 py-2 text-sm text-ink-2">
+                  Mais {num(taggedSources)} fonte{taggedSources === 1 ? "" : "s"} por contexto, enviada{taggedSources === 1 ? "" : "s"} pela API: cada uma vale só nas conversas do contexto dela (o cliente do sistema, a loja). A lista e a remoção ficam na API (<Link href="/docs/api/fontes" className="underline">Fontes</Link>).
+                </p>
+              )}
               {!bot.is_demo && (
                 <MomentNoticeCard
                   notice={activeMomentNotice(bot)}
@@ -661,6 +670,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   </p>
                 )}
                 <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
+                <FixedContextCard value={bot.fixed_context} manage={manageActions} save={saveFixedContext.bind(null, id)} />
               </>
             ))}
 

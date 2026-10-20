@@ -1,4 +1,5 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type UIMessage, type UIMessageChunk } from "ai";
+import { activeContext } from "./bot-context";
 import { activeMomentNotice } from "./moment-notice";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -41,6 +42,8 @@ import type { IdentityPort } from "./routine-identity";
 export interface BotRow {
   id: string;
   agency_id: string;
+  /** Contexto fixo (D', parte 1): vai para as ações e escolhe as fontes com etiqueta; a IA não vê. */
+  fixed_context?: Record<string, unknown> | null;
   client_id?: string | null;
   name: string;
   client_name: string;
@@ -349,8 +352,11 @@ export function formatContext(hits: Array<Pick<ContextHit, "content" | "metadata
   return hits.map((r, i) => `[${i + 1}] ${r.metadata?.title ? r.metadata.title + "\n" : ""}${r.content}`).join("\n\n---\n\n");
 }
 
-/** Trechos da base mais parecidos com a pergunta (busca exata no bot) e o texto do contexto. */
-export async function retrieveContext(db: SupabaseClient, botId: string, question: string) {
+/**
+ * Trechos da base mais parecidos com a pergunta (busca exata no bot) e o texto do contexto. Com o
+ * contexto ativo da conversa (D', parte 1), entram também as fontes com a etiqueta dele.
+ */
+export async function retrieveContext(db: SupabaseClient, botId: string, question: string, activeCtx: Record<string, unknown> | null = null) {
   let context = "";
   const used: Array<{ title?: string; url?: string }> = [];
   let hits: ContextHit[] = [];
@@ -358,7 +364,7 @@ export async function retrieveContext(db: SupabaseClient, botId: string, questio
   if (question) {
     const { embedding, usage } = await embedText(question);
     embeddingUsage = usage;
-    const { data } = await db.rpc("match_chunks", { p_bot_id: botId, p_query: JSON.stringify(embedding), p_count: 6, p_min_similarity: 0.15 });
+    const { data } = await db.rpc("match_chunks", { p_bot_id: botId, p_query: JSON.stringify(embedding), p_count: 6, p_min_similarity: 0.15, p_context: activeCtx });
     hits = (data ?? []) as ContextHit[];
     context = formatContext(hits);
     for (const r of hits) {
@@ -764,7 +770,7 @@ export async function runChat(opts: {
 
   // 2. Recuperação de contexto
   const question = lastUserText(messages);
-  const retrieval = opts.retrieval ?? (await retrieveContext(db, bot.id, question));
+  const retrieval = opts.retrieval ?? (await retrieveContext(db, bot.id, question, activeContext(bot, opts.identity)));
   const { context, used, embeddingUsage } = retrieval;
 
   const leadEnabled = bot.lead_capture?.enabled !== false;

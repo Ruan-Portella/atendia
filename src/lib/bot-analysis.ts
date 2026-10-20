@@ -157,10 +157,11 @@ export async function analyzeBot(db: SupabaseClient, botId: string, opts: { forc
   }
   if (!opts.force && !botHasAi(bot)) return { status: "ignorado" };
   const [{ data: sources }, { count: unclassified }, { data: classified }, { data: sample }, { data: routines }] = await Promise.all([
-    db.from("sources").select("title, url").eq("bot_id", botId).eq("status", "ready").order("created_at").limit(50),
-    db.from("chunks").select("id", { count: "exact", head: true }).eq("bot_id", botId).or(`gate_version.is.null,gate_version.neq."${BASE_GATE_VERSION}"`),
-    db.from("chunks").select("gate_segments").eq("bot_id", botId).not("gate_segments", "is", null).limit(2000),
-    db.from("chunks").select("content").eq("bot_id", botId).order("id").limit(6),
+    // as fontes com etiqueta de contexto (documentos de cada cliente de um SaaS, D') ficam fora da análise
+    db.from("sources").select("title, url").eq("bot_id", botId).eq("status", "ready").is("context", null).order("created_at").limit(50),
+    db.from("chunks").select("id", { count: "exact", head: true }).eq("bot_id", botId).is("context", null).or(`gate_version.is.null,gate_version.neq."${BASE_GATE_VERSION}"`),
+    db.from("chunks").select("gate_segments").eq("bot_id", botId).is("context", null).not("gate_segments", "is", null).limit(2000),
+    db.from("chunks").select("content").eq("bot_id", botId).is("context", null).order("id").limit(6),
     db.from("routines").select("name, when_to_use, steps").eq("bot_id", botId).eq("active", true).order("name"),
   ]);
   if (!sources?.length) {

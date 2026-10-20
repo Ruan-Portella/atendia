@@ -166,7 +166,7 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
   let failed = 0;
   let lastId = 0;
   while (Date.now() - started < opts.budgetMs - 20_000) {
-    let q = db.from("chunks").select("id, bot_id, content, bots!inner(client_name, agency_id, is_demo, size, quota_override)").or(pendingFilter).eq("bots.is_demo", false).or(AI_BOTS_FILTER, { referencedTable: "bots" }).gt("id", lastId).order("id").limit(PAGE);
+    let q = db.from("chunks").select("id, bot_id, content, context, bots!inner(client_name, agency_id, is_demo, size, quota_override)").or(pendingFilter).eq("bots.is_demo", false).or(AI_BOTS_FILTER, { referencedTable: "bots" }).gt("id", lastId).order("id").limit(PAGE);
     if (opts.botId) q = q.eq("bot_id", opts.botId);
     const { data: rows, error } = await q;
     if (error) throw new Error(`classificação da base: ${error.message}`);
@@ -184,7 +184,8 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
             const { error: upd } = await db.from("chunks").update({ gate_version: BASE_GATE_VERSION, gate_segments: r.segments, gate_categories: r.categories }).eq("id", row.id);
             if (upd) throw new Error(upd.message);
             classified += 1;
-            if (r.categories.length) foundByBot.set(row.bot_id as string, new Set([...(foundByBot.get(row.bot_id as string) ?? []), ...r.categories]));
+            // a fonte com etiqueta de contexto só passa pelo portão: não reagenda a análise do bot (D')
+            if (r.categories.length && !row.context) foundByBot.set(row.bot_id as string, new Set([...(foundByBot.get(row.bot_id as string) ?? []), ...r.categories]));
           } catch (e) {
             failed += 1;
             console.error("classificação da base: trecho não classificado", row.id, (e as Error).message);

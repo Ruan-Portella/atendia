@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "550613ba-6863-52fd-81eb-9e687798e482",
     "name": "BoaVoz API v1",
-    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).\n- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.",
+    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).\n- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.\n- A pasta 11 (Fontes) pede a permissão `sources` na chave.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -3419,6 +3419,244 @@
           ]
         }
       ]
+    },
+    {
+      "name": "11. Fontes",
+      "description": "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, uma página ou um PDF por URL. Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
+      "item": [
+        {
+          "name": "Fonte de texto com contexto",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/sources",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "sources"
+              ]
+            },
+            "description": "Vale só nas conversas com `workspace_id` igual a `ws_abc` no contexto. Guarda o id em `source_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"text\",\n  \"title\": \"Regulamento do Condomínio Jardim\",\n  \"content\": \"Mudanças só de segunda a sábado, das 8h às 18h, com aviso de 48 horas à portaria. O salão de festas é reservado pelo aplicativo, com até 30 dias de antecedência.\",\n  \"context\": {\n    \"workspace_id\": \"ws_abc\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const s = pm.response.json();",
+                  "  pm.environment.set(\"source_id\", s.id);",
+                  "  pm.test(\"fonte lida\", () => pm.expect(s.status).to.eql(\"ready\"));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fonte PDF por URL",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/sources",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "sources"
+              ]
+            },
+            "description": "Sem `context`: vale em todas as conversas do chatbot (e a análise do bot roda de novo). O PDF vai até 15 MB; um PDF só de imagem volta 422 source_unreadable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"pdf\",\n  \"url\": \"{{pdf_url}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fontes de um contexto",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/sources?context={\"workspace_id\":\"ws_abc\"}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "sources"
+              ],
+              "query": [
+                {
+                  "key": "context",
+                  "value": "{\"workspace_id\":\"ws_abc\"}"
+                },
+                {
+                  "key": "tagged",
+                  "value": "false",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Só as fontes com essa etiqueta. Sem `context`, todas (as mais novas primeiro); `tagged=false` lista só as gerais."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"lista\", () => pm.expect(pm.response.json().data).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Apagar fonte",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/sources/{{source_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "sources",
+                "{{source_id}}"
+              ]
+            },
+            "description": "Tira a fonte e os trechos dela. Responde 204."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fonte sem conteúdo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/sources",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "sources"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"text\",\n  \"content\": \"curto\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta o campo\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"content\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
@@ -3540,6 +3778,16 @@
     {
       "key": "bot_size",
       "value": "",
+      "type": "string"
+    },
+    {
+      "key": "source_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pdf_url",
+      "value": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
       "type": "string"
     }
   ]

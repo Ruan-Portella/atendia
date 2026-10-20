@@ -960,6 +960,122 @@
         "balance_brl": 137.5
       },
       "binary": false
+    },
+    {
+      "page": "fontes",
+      "id": "texto",
+      "title": "Texto que vale só num contexto",
+      "method": "POST",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/sources",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "kind": "text",
+        "title": "Regulamento do Condomínio Jardim",
+        "content": "Mudanças só de segunda a sábado, das 8h às 18h, com aviso de 48 horas à portaria. O salão de festas é reservado pelo aplicativo, com até 30 dias de antecedência.",
+        "context": {
+          "workspace_id": "ws_abc"
+        }
+      },
+      "status": 201,
+      "response": {
+        "id": "src_3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90",
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "kind": "text",
+        "title": "Regulamento do Condomínio Jardim",
+        "url": null,
+        "status": "ready",
+        "chunks": 2,
+        "pages": 1,
+        "error": null,
+        "context": {
+          "workspace_id": "ws_abc"
+        },
+        "created_at": "2026-10-19T15:10:42.118Z"
+      },
+      "binary": false
+    },
+    {
+      "page": "fontes",
+      "id": "pdf",
+      "title": "PDF por URL (vale em todas as conversas)",
+      "method": "POST",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/sources",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "kind": "pdf",
+        "url": "https://condominio.exemplo.com.br/docs/regulamento.pdf"
+      },
+      "status": 201,
+      "response": {
+        "id": "src_7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d",
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "kind": "pdf",
+        "title": "regulamento.pdf",
+        "url": "https://condominio.exemplo.com.br/docs/regulamento.pdf",
+        "status": "ready",
+        "chunks": 1,
+        "pages": 1,
+        "error": null,
+        "context": null,
+        "created_at": "2026-10-19T15:11:05.402Z"
+      },
+      "binary": false
+    },
+    {
+      "page": "fontes",
+      "id": "listar",
+      "title": "As fontes de um contexto",
+      "method": "GET",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/sources",
+      "query": [
+        [
+          "context",
+          "{\"workspace_id\":\"ws_abc\"}"
+        ]
+      ],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "src_3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90",
+            "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "kind": "text",
+            "title": "Regulamento do Condomínio Jardim",
+            "url": null,
+            "status": "ready",
+            "chunks": 2,
+            "pages": 1,
+            "error": null,
+            "context": {
+              "workspace_id": "ws_abc"
+            },
+            "created_at": "2026-10-19T15:10:42.118Z"
+          }
+        ],
+        "next_cursor": null
+      },
+      "binary": false
+    },
+    {
+      "page": "fontes",
+      "id": "apagar",
+      "title": "Apagar uma fonte",
+      "method": "DELETE",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/sources/src_3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 204,
+      "response": null,
+      "binary": false
     }
   ]
 }

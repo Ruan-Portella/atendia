@@ -16,6 +16,7 @@ import { REGULATED_WINDOW_MS } from "./gate/payment";
 import { logGate } from "./gate/log";
 import { INTERNAL_RULE, internalTerms } from "./internal-guard";
 import type { ChatIdentity } from "./widget-identity";
+import { activeContext } from "./bot-context";
 import { boundParams, schemaWithout, type RoutineVariables } from "./routine-run";
 
 /*
@@ -102,7 +103,8 @@ export async function loadBotActions(db: SupabaseClient, botId: string): Promise
 }
 
 export interface CallerInput {
-  bot: { id: string };
+  /** fixed_context: o contexto fixo do chatbot (D', parte 1), por cima do da identidade. */
+  bot: { id: string; fixed_context?: unknown };
   conversationId: string;
   channel: "widget" | "demo" | "painel" | "whatsapp" | "instagram";
   waPhone: string | null;
@@ -132,11 +134,13 @@ export async function callerFor(db: SupabaseClient, i: CallerInput): Promise<Cal
     age_confirmed: tokenAge ?? (i.age === "sim" ? true : i.age === "nao" ? false : null),
     age_confirmed_source: tokenAge !== null ? "company" : i.age ? (source ?? "chat") : null,
   };
+  // o contexto fixo do chatbot (origem bot) vai por cima do da identidade: a loja do chatbot não muda pelo token
+  const data = activeContext(i.bot, i.identity);
   return {
     level,
-    hasContext: Boolean(i.identity?.context),
+    hasContext: Boolean(data),
     contact,
-    context: i.identity?.context ? { source: i.identity.source, data: i.identity.context } : null,
+    context: data ? { source: i.identity?.context ? i.identity.source : "bot", data } : null,
     gateChannel,
     regulatedAt: (conv?.regulated_at as string | null | undefined) ?? null,
   };

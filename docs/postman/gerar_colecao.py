@@ -77,6 +77,8 @@ DOC_VALUES = {
     "media_id": "med_6f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
     "campaign_id": "cmp_2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
     "link_id": "lnk_4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f8a",
+    "source_id": "src_3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90",
+    "pdf_url": "https://condominio.exemplo.com.br/docs/regulamento.pdf",
     "template_name": "pedido_saiu",
     "template_language": "pt_BR",
     "template_variable_1": "Ruan",
@@ -341,6 +343,52 @@ DOC_OF = {
         "auto_recharge": {"enabled": False, "below_brl": None, "amount_brl": None, "month_limit_brl": None},
     }),
     "Comprar R$ 50 de crédito (cobra)": ex("cobranca", "comprar", "Comprar crédito (cobra no cartão da assinatura)", 201, {"status": "paid", "amount_brl": 50, "balance_brl": 137.5}),
+    # /docs/api/fontes
+    "Fonte de texto com contexto": ex("fontes", "texto", "Texto que vale só num contexto", 201, {
+        "id": DOC_VALUES["source_id"],
+        "bot_id": DOC_VALUES["bot_id"],
+        "kind": "text",
+        "title": "Regulamento do Condomínio Jardim",
+        "url": None,
+        "status": "ready",
+        "chunks": 2,
+        "pages": 1,
+        "error": None,
+        "context": {"workspace_id": "ws_abc"},
+        "created_at": "2026-10-19T15:10:42.118Z",
+    }),
+    "Fonte PDF por URL": ex("fontes", "pdf", "PDF por URL (vale em todas as conversas)", 201, {
+        "id": "src_7b6a5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d",
+        "bot_id": DOC_VALUES["bot_id"],
+        "kind": "pdf",
+        "title": "regulamento.pdf",
+        "url": "https://condominio.exemplo.com.br/docs/regulamento.pdf",
+        "status": "ready",
+        "chunks": 1,
+        "pages": 1,
+        "error": None,
+        "context": None,
+        "created_at": "2026-10-19T15:11:05.402Z",
+    }),
+    "Fontes de um contexto": ex("fontes", "listar", "As fontes de um contexto", 200, {
+        "data": [
+            {
+                "id": DOC_VALUES["source_id"],
+                "bot_id": DOC_VALUES["bot_id"],
+                "kind": "text",
+                "title": "Regulamento do Condomínio Jardim",
+                "url": None,
+                "status": "ready",
+                "chunks": 2,
+                "pages": 1,
+                "error": None,
+                "context": {"workspace_id": "ws_abc"},
+                "created_at": "2026-10-19T15:10:42.118Z",
+            }
+        ],
+        "next_cursor": None,
+    }),
+    "Apagar fonte": ex("fontes", "apagar", "Apagar uma fonte", 204),
 }
 USED = set()
 
@@ -871,6 +919,47 @@ cobranca = folder(
     ],
 )
 
+SAVE_SOURCE = [
+    "if (pm.response.code === 201) {",
+    "  const s = pm.response.json();",
+    "  pm.environment.set(\"source_id\", s.id);",
+    "  pm.test(\"fonte lida\", () => pm.expect(s.status).to.eql(\"ready\"));",
+    "}",
+]
+
+fontes = folder(
+    "11. Fontes",
+    "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, uma página ou um PDF por URL. Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
+    [
+        req(
+            "Fonte de texto com contexto",
+            "POST",
+            f"bots/{BOT}/sources",
+            body={"kind": "text", "title": "Regulamento do Condomínio Jardim", "content": "Mudanças só de segunda a sábado, das 8h às 18h, com aviso de 48 horas à portaria. O salão de festas é reservado pelo aplicativo, com até 30 dias de antecedência.", "context": {"workspace_id": "ws_abc"}},
+            desc="Vale só nas conversas com `workspace_id` igual a `ws_abc` no contexto. Guarda o id em `source_id`.",
+            tests=expect_status(201) + SAVE_SOURCE,
+        ),
+        req(
+            "Fonte PDF por URL",
+            "POST",
+            f"bots/{BOT}/sources",
+            body={"kind": "pdf", "url": "{{pdf_url}}"},
+            desc="Sem `context`: vale em todas as conversas do chatbot (e a análise do bot roda de novo). O PDF vai até 15 MB; um PDF só de imagem volta 422 source_unreadable.",
+            tests=expect_status(201),
+        ),
+        req(
+            "Fontes de um contexto",
+            "GET",
+            f"bots/{BOT}/sources",
+            query=[("context", '{"workspace_id":"ws_abc"}', False), ("tagged", "false", True), ("limit", "50", True)],
+            desc="Só as fontes com essa etiqueta. Sem `context`, todas (as mais novas primeiro); `tagged=false` lista só as gerais.",
+            tests=expect_status(200) + ['pm.test("lista", () => pm.expect(pm.response.json().data).to.be.an("array"));'],
+        ),
+        req("Apagar fonte", "DELETE", f"bots/{BOT}/sources/{{{{source_id}}}}", desc="Tira a fonte e os trechos dela. Responde 204.", tests=expect_status(204)),
+        req("Fonte sem conteúdo", "POST", f"bots/{BOT}/sources", body={"kind": "text", "content": "curto"}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o campo", () => pm.expect(pm.response.json().error.details.field).to.eql("content"));']),
+    ],
+)
+
 collection = {
     "info": {
         "_postman_id": str(uuid.uuid5(uuid.NAMESPACE_URL, "boavoz-api-v1")),
@@ -886,6 +975,7 @@ collection = {
                 "- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.",
                 "- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).",
                 "- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.",
+                "- A pasta 11 (Fontes) pede a permissão `sources` na chave.",
             ]
         ),
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
@@ -913,7 +1003,7 @@ collection = {
             ),
         },
     ],
-    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas, componentes, cobranca],
+    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas, componentes, cobranca, fontes],
 }
 
 # Só o que é de cada pessoa fica no ambiente (importado uma vez e preenchido no Postman, nunca no Git).
@@ -956,6 +1046,8 @@ env = {
         {"key": "pairing_code", "value": "", "type": "default", "enabled": True},
         {"key": "pairing_link", "value": "", "type": "default", "enabled": True},
         {"key": "bot_size", "value": "", "type": "default", "enabled": True},
+        {"key": "source_id", "value": "", "type": "default", "enabled": True},
+        {"key": "pdf_url", "value": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", "type": "default", "enabled": True},
     ],
     "_postman_variable_scope": "environment",
 }

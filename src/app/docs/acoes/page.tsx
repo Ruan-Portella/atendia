@@ -114,7 +114,7 @@ export default function ActionsDocs() {
           [<code key="7">bot</code>, <>O chatbot (<code>bot_…</code>).</>],
           [<code key="8">conversation</code>, <>Id (<code>conv_…</code>) e canal: <code>whatsapp</code>, <code>instagram</code> ou <code>widget</code> (o chat do site).</>],
           [<code key="9">contact</code>, "Quem está falando (veja Nível do contato)."],
-          [<code key="10">context</code>, <>O contexto da conversa (por exemplo, a loja, o workspace ou a conta), <code>{`{source, data}`}</code>, ou null. <code key="s">source</code>: <code>token</code> (o site), <code>pairing</code> (o pareamento) ou <code>routine</code> (a conta que a identificação pelo roteiro escolheu). Vai só para as ações: a IA não vê.</>],
+          [<code key="10">context</code>, <>O contexto da conversa (por exemplo, a loja, o workspace ou a conta), <code>{`{source, data}`}</code>, ou null. <code key="s">source</code>: <code>token</code> (o site), <code>pairing</code> (o pareamento), <code>routine</code> (a conta que a identificação pelo roteiro escolheu) ou <code>bot</code> (só o contexto fixo do chatbot, da aba Ações). O contexto fixo vai sempre em <code>data</code>, por cima dos outros: a loja do chatbot não muda pelo token. Vai só para as ações: a IA não vê.</>],
         ]}
       />
 

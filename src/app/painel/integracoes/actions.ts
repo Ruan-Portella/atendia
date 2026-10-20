@@ -16,6 +16,7 @@ import { createWebhook, redeliver, requeueFailed, sendWebhookTest, updateWebhook
 import { deadline } from "@/lib/cron";
 import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
+import { parseFixedContext } from "@/lib/bot-context";
 
 /*
  * Integrações no painel da agência (C pública, parte 1a): dono e administrador, com o segundo
@@ -88,6 +89,33 @@ export async function saveBotAction(botId: string, actionId: string | null, fd: 
   await auditIntegration(c.ctx, actionId ? "acoes.editar" : "acoes.criar", { type: "bot", id: bot.id as string }, { name: input.name, url: input.url, tipo: input.type, previa: input.supports_preview, so_no_roteiro: input.routine_only, creates_order: createsOrder, ...(h.headers === undefined ? {} : { cabecalhos: h.headers ? Object.keys(h.headers) : [] }) });
   done(bot.id as string);
   return ok(actionSavedMessage(input.name, input, createsOrder));
+}
+
+/**
+ * O contexto fixo do chatbot (D', parte 1): vai em toda chamada de ação e escolhe as fontes com
+ * etiqueta. Vazio tira. A auditoria guarda só as chaves.
+ */
+export async function saveFixedContext(botId: string, fd: FormData): Promise<ActionResult> {
+  const c = await integrationsContext();
+  if ("error" in c) return fail(c.error!);
+  const bot = await scopedBot(botId);
+  if (!bot) return fail("Chatbot não encontrado.");
+  const raw = text(fd.get("fixed_context"));
+  let parsed: unknown = null;
+  if (raw) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return fail('O contexto fixo precisa ser um JSON, como {"loja_id": "42"}.');
+    }
+  }
+  const v = parseFixedContext(parsed);
+  if ("error" in v) return fail(v.error);
+  const { error } = await c.db.from("bots").update({ fixed_context: v.value }).eq("id", bot.id as string);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditIntegration(c.ctx, "bot.contexto_fixo", { type: "bot", id: bot.id as string }, { chaves: v.value ? Object.keys(v.value) : [] });
+  done(bot.id as string);
+  return ok(v.value ? "Contexto fixo salvo: vai em toda chamada de ação deste chatbot." : "Contexto fixo tirado.");
 }
 
 /** Ação de um chatbot do escopo de quem está logado. */
