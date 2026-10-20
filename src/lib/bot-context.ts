@@ -9,6 +9,8 @@
  *   vê o contexto.
  * - Etiqueta de uma fonte: pares chave e valor; a fonte vale quando o contexto ativo tem todos eles
  *   com o mesmo valor e o mesmo tipo (a mesma regra do banco: `contexto @> etiqueta`).
+ * - Display do chatbot (parte 4a): o que a IA sabe da loja (nome, horário, endereço), no mesmo
+ *   formato do contexto fixo. Vai para a IA como o primeiro trecho da base e não vai para as ações.
  *
  * Funções puras.
  */
@@ -27,9 +29,9 @@ const VALUE_MAX = 200;
  * Objeto plano com chaves de letras, números, "_", "." e "-" (até 64) e valores texto (até 200),
  * número ou booleano. Vazio ou null: null (sem contexto).
  */
-export function parseFlatContext(raw: unknown, o: { maxKeys: number; maxBytes: number; what: string }): { value: FlatContext | null } | { error: string } {
+export function parseFlatContext(raw: unknown, o: { maxKeys: number; maxBytes: number; what: string; example?: string }): { value: FlatContext | null } | { error: string } {
   if (raw === null || raw === undefined || raw === "") return { value: null };
-  if (typeof raw !== "object" || Array.isArray(raw)) return { error: `O ${o.what} deve ser um objeto JSON, como {"loja_id": "42"}.` };
+  if (typeof raw !== "object" || Array.isArray(raw)) return { error: `O ${o.what} deve ser um objeto JSON, como ${o.example ?? '{"loja_id": "42"}'}.` };
   const entries = Object.entries(raw as Record<string, unknown>);
   if (!entries.length) return { value: null };
   if (entries.length > o.maxKeys) return { error: `O ${o.what} vai até ${o.maxKeys} chaves.` };
@@ -51,6 +53,8 @@ export function parseFlatContext(raw: unknown, o: { maxKeys: number; maxBytes: n
 
 export const parseFixedContext = (raw: unknown) => parseFlatContext(raw, { maxKeys: FIXED_CONTEXT_MAX_KEYS, maxBytes: 2048, what: "contexto fixo" });
 export const parseSourceTag = (raw: unknown) => parseFlatContext(raw, { maxKeys: SOURCE_TAG_MAX_KEYS, maxBytes: 1024, what: "contexto da fonte" });
+/** Display do chatbot: as mesmas regras do contexto fixo (até 10 chaves e 2 KB). */
+export const parseBotDisplay = (raw: unknown) => parseFlatContext(raw, { maxKeys: FIXED_CONTEXT_MAX_KEYS, maxBytes: 2048, what: "display", example: '{"nome": "Pizzaria do Zé, Centro"}' });
 
 /** O que veio do banco (jsonb) como objeto, ou null. */
 export function asContext(v: unknown): Record<string, unknown> | null {
@@ -84,3 +88,17 @@ export const contextInput = (c: unknown) => {
   const o = asContext(c);
   return o ? JSON.stringify(o, null, 2) : "";
 };
+
+/** O display como o primeiro trecho da base: a IA consulta como dado, com a mesma regra dos outros. */
+export function displayContext(display: unknown): string {
+  const o = asContext(display);
+  if (!o) return "";
+  const lines = Object.entries(o).map(([k, v]) => `${k.replace(/[_.-]+/g, " ")}: ${String(v)}`);
+  return ["[Dados deste atendimento, informados pela empresa]", ...lines].join("\n");
+}
+
+/** O contexto da IA com o display na frente (no mesmo formato dos trechos da busca). */
+export function withDisplay(context: string, display: unknown): string {
+  const d = displayContext(display);
+  return d ? [d, context].filter(Boolean).join("\n\n---\n\n") : context;
+}

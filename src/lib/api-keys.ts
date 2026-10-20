@@ -69,7 +69,8 @@ export function apiKeyProblem(i: { name: string; scope: ApiKeyScope; permissions
 
 /** Bots (não demo) da agência que a chave alcança agora: o escopo "cliente" e "todos" incluem os futuros. */
 export async function scopeBotIds(db: SupabaseClient, key: Pick<ApiKeyRow, "agency_id" | "scope_type" | "scope_bot_ids" | "scope_client_id">): Promise<string[]> {
-  let q = db.from("bots").select("id").eq("agency_id", key.agency_id).eq("is_demo", false);
+  // as versões publicadas de um modelo (D', parte 3) são cópias fixas: nenhuma chave alcança
+  let q = db.from("bots").select("id").eq("agency_id", key.agency_id).eq("is_demo", false).is("version_of", null);
   if (key.scope_type === "bots") q = q.in("id", key.scope_bot_ids.length ? key.scope_bot_ids : ["00000000-0000-0000-0000-000000000000"]);
   else if (key.scope_type === "client") q = q.eq("client_id", key.scope_client_id ?? "00000000-0000-0000-0000-000000000000");
   const { data, error } = await q;

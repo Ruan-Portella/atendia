@@ -200,11 +200,23 @@ export async function createTemplate(db: SupabaseClient, o: { agencyId: string; 
 
 /**
  * Cria um chatbot derivado do modelo para um cliente, já com os campos herdados. O contexto fixo
- * (a loja) e o site vêm de quem cria; o resto, do modelo.
+ * (a loja) e o site vêm de quem cria; o resto, do modelo. Pela API (parte 4a), também o id no
+ * sistema da plataforma, o display e os valores próprios nos campos que o modelo libera (quem chama
+ * confere o que está liberado).
  */
 export async function createDerivedBot(
   db: SupabaseClient,
-  o: { agencyId: string; templateId: string; client: { id: string; name: string; site: string | null }; fixedContext?: Record<string, unknown> | null; publishedBy?: string },
+  o: {
+    agencyId: string;
+    templateId: string;
+    client: { id: string; name: string; site: string | null };
+    fixedContext?: Record<string, unknown> | null;
+    fixedDisplay?: Record<string, unknown> | null;
+    externalId?: string | null;
+    overrides?: Partial<Record<OverrideField, unknown>> | null;
+    extraInstructions?: string | null;
+    publishedBy?: string;
+  },
 ): Promise<string> {
   const { data: t } = await db.from("bots").select(`${TEMPLATE_COLS}, published_bot_id`).eq("id", o.templateId).eq("agency_id", o.agencyId).eq("is_template", true).is("version_of", null).maybeSingle<TemplateRow & { published_bot_id: string | null }>();
   if (!t) throw new Error("modelo não encontrado");
@@ -223,6 +235,10 @@ export async function createDerivedBot(
       appearance: t.appearance ?? {},
       human_handoff: { widget_button: true },
       fixed_context: o.fixedContext ?? null,
+      fixed_display: o.fixedDisplay ?? null,
+      external_id: o.externalId ?? null,
+      overrides: o.overrides ?? {},
+      extra_instructions: o.extraInstructions ?? null,
       config_bot_id: configBot,
     })
     .select("id")

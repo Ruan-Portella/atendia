@@ -19,6 +19,7 @@ export interface DerivedItem {
  * chatbot deste modelo" (um por cliente ou loja, com o contexto fixo opcional).
  */
 export function TemplateInheritance({
+  templateId,
   unlocked,
   derived,
   clients,
@@ -29,6 +30,8 @@ export function TemplateInheritance({
   currentVersionId,
   restoreVersion,
 }: {
+  /** O id do modelo, para o POST /v1/bots (D', parte 4a). */
+  templateId: string;
   unlocked: TemplateField[];
   derived: DerivedItem[];
   clients: ClientOption[];
@@ -127,6 +130,9 @@ export function TemplateInheritance({
             </div>
             <SubmitButton className="btn-primary self-start" pendingLabel="Criando…">Criar chatbot</SubmitButton>
           </ActionForm>
+          <p className="text-xs text-muted">
+            Pela API (pacote Plataforma): <code>POST /v1/bots</code> com <code className="select-all">{`"template_id": "bot_${templateId}"`}</code>, um cliente criado por <code>POST /v1/clients</code> e o contexto e os dados de cada loja. Veja em <Link href="/docs/api/provisionamento" className="font-semibold text-brand underline">Lojas pela API</Link>.
+          </p>
         </section>
       )}
     </div>

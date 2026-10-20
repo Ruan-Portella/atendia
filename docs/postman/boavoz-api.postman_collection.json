@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "550613ba-6863-52fd-81eb-9e687798e482",
     "name": "BoaVoz API v1",
-    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).\n- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.\n- A pasta 11 (Fontes) pede a permissão `sources` na chave.",
+    "description": "Requisições da API pública do BoaVoz (C pública), com testes automáticos.\n\n**Antes de começar:** importe também o ambiente `BoaVoz dev`, selecione-o no canto superior direito e preencha `api_key`, `vercel_bypass`, `bot_id` e `phone`.\n\n- A autenticação (Bearer) e o cabeçalho da proteção da Vercel saem do ambiente, em todas as requisições.\n- As listagens guardam os ids no ambiente: rode \"Listar conversas\" primeiro.\n- Erros vêm no formato `{\"error\": {\"code\", \"message\", \"details\"}}` e aparecem no Console do Postman.\n- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).\n- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.\n- A pasta 11 (Fontes) pede a permissão `sources` na chave.\n- A pasta 12 (Lojas) pede a permissão `provisioning`, o pacote Plataforma e, para criar cliente, uma chave com escopo da conta inteira; preencha `template_id` com o id de um modelo.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -3657,6 +3657,425 @@
           ]
         }
       ]
+    },
+    {
+      "name": "12. Lojas (provisionamento)",
+      "description": "Clientes (as lojas) e os chatbots deles a partir de um modelo, pelo seu sistema (permissão **provisioning**, pacote **Plataforma**). Criar cliente pede uma chave com escopo da conta inteira. Preencha `template_id` no ambiente com o id do modelo (aba Herança do modelo, no painel). Rodar de novo não cria outro: o `external_id` devolve o que já existe, com 200.",
+      "item": [
+        {
+          "name": "Criar cliente (loja)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients"
+              ]
+            },
+            "description": "201 na primeira vez; 200 com o mesmo cliente quando o `external_id` já existe na conta. Guarda o id em `client_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pizzaria do Zé\",\n  \"external_id\": \"{{store_external_id}}\",\n  \"site\": \"pizzariadoze.com.br\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 200\", () => pm.expect([201, 200]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const c = pm.response.json();",
+                  "  pm.environment.set(\"client_id\", c.client_id);",
+                  "  pm.test(\"cliente ativo\", () => pm.expect(c.compliance_status).to.eql(\"active\"));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Criar cliente de novo (mesmo external_id)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients"
+              ]
+            },
+            "description": "O mesmo `external_id`, sem Idempotency-Key (com a mesma chave, a resposta guardada voltaria igual): devolve o mesmo cliente (200), sem criar outro e sem mudar nada.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pizzaria do Zé\",\n  \"external_id\": \"{{store_external_id}}\",\n  \"site\": \"pizzariadoze.com.br\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"o mesmo cliente\", () => pm.expect(pm.response.json().client_id).to.eql(pm.variables.get(\"client_id\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cliente com a declaração de lembretes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients"
+              ]
+            },
+            "description": "A declaração de consentimento para lembretes (a mesma do painel, aba Campanhas do cliente), feita junto. A chave fica como autora.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Clínica Sorriso\",\n  \"external_id\": \"{{store_external_id}}-lembretes\",\n  \"utility_consent\": {\n    \"source\": \"contrato\",\n    \"text\": \"Cláusula 7 do contrato: o paciente aceita lembretes de consulta pelo WhatsApp.\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 200\", () => pm.expect([201, 200]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ler cliente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/clients/{{client_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{client_id}}"
+              ]
+            },
+            "description": "Os dados, os chatbots que a chave alcança (com os canais da Meta conectados) e a conformidade, com as restrições em vigor."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"chatbots\", () => pm.expect(pm.response.json().bots).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Criar chatbot do modelo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots"
+              ]
+            },
+            "description": "O chatbot da loja, com o que o modelo tem (personalidade, instruções, ações, roteiros e base). O `context` vai para as ações e escolhe as fontes da loja; o `display` é o que a IA sabe dela. Nasce sem tamanho, como no painel. Guarda o id em `provisioned_bot_id`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"template_id\": \"{{template_id}}\",\n  \"external_id\": \"{{store_external_id}}-site\",\n  \"context\": {\n    \"loja_id\": \"42\"\n  },\n  \"display\": {\n    \"nome\": \"Pizzaria do Zé, Centro\",\n    \"horario\": \"terça a domingo, das 18h às 23h\",\n    \"endereco\": \"Rua das Flores, 120\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 200\", () => pm.expect([201, 200]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const b = pm.response.json();",
+                  "  pm.environment.set(\"provisioned_bot_id\", b.bot_id);",
+                  "  pm.test(\"chatbot do modelo\", () => pm.expect(b.template_id).to.eql(pm.variables.get(\"template_id\")));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chatbot com valores próprios",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots"
+              ]
+            },
+            "description": "Só nos campos que o modelo libera (aba Herança): campo travado volta 403 field_locked.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"template_id\": \"{{template_id}}\",\n  \"external_id\": \"{{store_external_id}}-delivery\",\n  \"context\": {\n    \"loja_id\": \"42\"\n  },\n  \"display\": {\n    \"nome\": \"Pizzaria do Zé, delivery\"\n  },\n  \"overrides\": {\n    \"assistant_name\": \"Bia\",\n    \"welcome\": \"Oi! Sou a Bia, do delivery do Zé. Quer ver o cardápio?\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201 ou 200 ou 403\", () => pm.expect([201, 200, 403]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chatbot sem Idempotency-Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots"
+              ]
+            },
+            "description": "Criar chatbot pede a Idempotency-Key.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"template_id\": \"{{template_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta o cabeçalho\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"Idempotency-Key\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Modelo que não existe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"template_id\": \"bot_00000000-0000-4000-8000-000000000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"erro not_found\", () => pm.expect(pm.response.json().error.code).to.eql(\"not_found\"));",
+                  "pm.test(\"aponta o modelo\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"template_id\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cliente sem external_id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pizzaria do Zé\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta o campo\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"external_id\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
@@ -3788,6 +4207,21 @@
     {
       "key": "pdf_url",
       "value": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "type": "string"
+    },
+    {
+      "key": "store_external_id",
+      "value": "loja-postman-1",
+      "type": "string"
+    },
+    {
+      "key": "client_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "provisioned_bot_id",
+      "value": "",
       "type": "string"
     }
   ]

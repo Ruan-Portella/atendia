@@ -62,6 +62,13 @@ export interface BotPatch {
 export function parseBotPatch(body: Record<string, unknown>): BotPatch {
   const extra = Object.keys(body).find((k) => k !== "size" && k !== "volume_packs" && k !== "overage");
   if (extra) throw invalidRequest(`Campo não aceito aqui: ${extra}. Use size, volume_packs e overage.`, { field: extra });
+  const out = parseBillingFields(body);
+  if (!out.size && !out.overage) throw invalidRequest("Mande size (e volume_packs no Volume) e/ou overage.");
+  return out;
+}
+
+/** size e overage do corpo, quando vierem (o PATCH e o POST /v1/bots). Função pura. */
+export function parseBillingFields(body: Record<string, unknown>): BotPatch {
   const out: BotPatch = {};
   if ("size" in body) {
     const size = body.size;
@@ -88,7 +95,6 @@ export function parseBotPatch(body: Record<string, unknown>): BotPatch {
     }
     out.overage = { enabled, capBrl: cap === undefined ? undefined : cap === null ? null : Math.round(cap * 100) / 100 };
   }
-  if (!out.size && !out.overage) throw invalidRequest("Mande size (e volume_packs no Volume) e/ou overage.");
   return out;
 }
 
@@ -108,35 +114,54 @@ export async function patchBot(req: Request, api: ApiContext, rawBotId: string):
     throw invalidRequest("Idempotency-Key é obrigatório para trocar o tamanho (subir cobra na hora, no cartão da assinatura).", { field: "Idempotency-Key" });
   }
   return withIdempotency(api, req, raw, async () => {
-    const agency = await agencyOf(api);
-    let sizeChange: ReturnType<typeof sizeChangeJson> | null = null;
-    try {
-      if (patch.size) {
-        const account = subscribedAccount(agency);
-        if (!account) throw new ApiError(422, "subscription_required", NO_SUBSCRIPTION);
-        const r = await changeSize(api.db, account, botId, patch.size, actorOf(api));
-        if (r.status === "payment_required") {
-          return { status: 402, body: errorBody("payment_required", "O cartão da assinatura foi recusado ou pede autenticação. O novo tamanho vale quando a fatura for paga.", { amount_brl: r.amountCents / 100, invoice_url: r.url }) };
-        }
-        if (r.status === "paid_meanwhile") throw new ApiError(409, "conflict", "Uma subida anterior deste chatbot acabou de ser paga e já valeu. Confira o uso e mande de novo, se precisar.");
-        sizeChange = sizeChangeJson(r);
-      }
-      if (patch.overage) {
-        let capBrl = patch.overage.capBrl;
-        if (capBrl === undefined) {
-          const { data: b } = await api.db.from("bots").select("overage_cap_brl").eq("id", botId).maybeSingle();
-          capBrl = b?.overage_cap_brl === null || b?.overage_cap_brl === undefined ? null : Number(b.overage_cap_brl);
-        }
-        await setOverage(api.db, api.key.agency_id, botId, { enabled: patch.overage.enabled, capBrl }, actorOf(api));
-      }
-    } catch (e) {
-      if (e instanceof BillingOpError) throw opError(e);
-      throw e;
-    }
+    const r = await applyBotBilling(api, botId, patch);
+    if ("paymentRequired" in r) return r.paymentRequired;
     const usage = await botUsage(api.db, api.key.agency_id, botId);
     if (!usage) throw notFound();
-    return { status: 200, body: { ...usage, size_change: sizeChange } };
+    return { status: 200, body: { ...usage, size_change: r.sizeChange } };
   });
+}
+
+/** Antes de criar o chatbot com tamanho (POST /v1/bots): a conta precisa de assinatura. */
+export async function assertCanBill(api: ApiContext, patch: BotPatch): Promise<void> {
+  if (patch.size && !subscribedAccount(await agencyOf(api))) throw new ApiError(422, "subscription_required", NO_SUBSCRIPTION);
+}
+
+/**
+ * Tamanho e excedente de um chatbot (PATCH e POST /v1/bots), com as regras do painel. O 402 volta
+ * como resposta guardável pela Idempotency-Key, com os detalhes a mais (o POST manda o bot_id).
+ */
+export async function applyBotBilling(
+  api: ApiContext,
+  botId: string,
+  patch: BotPatch,
+  details: Record<string, unknown> = {},
+): Promise<{ paymentRequired: { status: number; body: unknown } } | { sizeChange: ReturnType<typeof sizeChangeJson> | null }> {
+  let sizeChange: ReturnType<typeof sizeChangeJson> | null = null;
+  try {
+    if (patch.size) {
+      const account = subscribedAccount(await agencyOf(api));
+      if (!account) throw new ApiError(422, "subscription_required", NO_SUBSCRIPTION);
+      const r = await changeSize(api.db, account, botId, patch.size, actorOf(api));
+      if (r.status === "payment_required") {
+        return { paymentRequired: { status: 402, body: errorBody("payment_required", "O cartão da assinatura foi recusado ou pede autenticação. O novo tamanho vale quando a fatura for paga.", { amount_brl: r.amountCents / 100, invoice_url: r.url, ...details }) } };
+      }
+      if (r.status === "paid_meanwhile") throw new ApiError(409, "conflict", "Uma subida anterior deste chatbot acabou de ser paga e já valeu. Confira o uso e mande de novo, se precisar.");
+      sizeChange = sizeChangeJson(r);
+    }
+    if (patch.overage) {
+      let capBrl = patch.overage.capBrl;
+      if (capBrl === undefined) {
+        const { data: b } = await api.db.from("bots").select("overage_cap_brl").eq("id", botId).maybeSingle();
+        capBrl = b?.overage_cap_brl === null || b?.overage_cap_brl === undefined ? null : Number(b.overage_cap_brl);
+      }
+      await setOverage(api.db, api.key.agency_id, botId, { enabled: patch.overage.enabled, capBrl }, actorOf(api));
+    }
+  } catch (e) {
+    if (e instanceof BillingOpError) throw opError(e);
+    throw e;
+  }
+  return { sizeChange };
 }
 
 /* ------------------------------------------------------------------ crédito */

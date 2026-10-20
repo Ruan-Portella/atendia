@@ -83,7 +83,7 @@ export default function WebhooksDocs() {
           [<code key="t">type</code>, "O evento (tabela abaixo)."],
           [<code key="c">created_at</code>, "Quando o fato aconteceu. A ordem de chegada não é garantida (novas tentativas chegam depois): use este campo para ordenar."],
           [<code key="b">bot</code>, <>O chatbot, com o nome; null nos eventos da conta (<code>account.*</code>).</>],
-          [<code key="cl">client</code>, "O cliente (o negócio) do chatbot, ou null."],
+          [<code key="cl">client</code>, <>O cliente (o negócio) do chatbot, ou null. O <code>external_id</code> é o id dele no seu sistema, quando ele foi criado pela <Link href="/docs/api/provisionamento">API</Link> (senão, null).</>],
           [<code key="cv">conversation</code>, "A conversa e o canal, ou null nos eventos sem conversa."],
           [<code key="ct">contact</code>, <>Quem é: ids do canal (<code>phone</code>, <code>whatsapp_user_id</code>, <code>instagram_id</code>) e o nome, nunca o conteúdo da conversa. null nos eventos sem contato.</>],
           [<code key="d">data</code>, "O que aconteceu."],

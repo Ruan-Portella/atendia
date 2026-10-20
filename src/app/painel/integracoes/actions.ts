@@ -16,7 +16,7 @@ import { createWebhook, redeliver, requeueFailed, sendWebhookTest, updateWebhook
 import { deadline } from "@/lib/cron";
 import { actionInputFromForm, actionSavedMessage, headersColumn, headersFromForm, scopeFromForm, webhookInputFromForm } from "@/lib/integrations-input";
 import { ComponentProblem, parseComponentInput } from "@/lib/component-input";
-import { parseFixedContext } from "@/lib/bot-context";
+import { parseBotDisplay, parseFixedContext } from "@/lib/bot-context";
 
 /*
  * Integrações no painel da agência (C pública, parte 1a): dono e administrador, com o segundo
@@ -100,22 +100,29 @@ export async function saveFixedContext(botId: string, fd: FormData): Promise<Act
   if ("error" in c) return fail(c.error!);
   const bot = await scopedBot(botId);
   if (!bot) return fail("Chatbot não encontrado.");
-  const raw = text(fd.get("fixed_context"));
-  let parsed: unknown = null;
-  if (raw) {
+  const json = (name: string, example: string): { value: unknown } | { error: string } => {
+    const raw = text(fd.get(name));
+    if (!raw) return { value: null };
     try {
-      parsed = JSON.parse(raw);
+      return { value: JSON.parse(raw) };
     } catch {
-      return fail('O contexto fixo precisa ser um JSON, como {"loja_id": "42"}.');
+      return { error: `Precisa ser um JSON, como ${example}.` };
     }
-  }
-  const v = parseFixedContext(parsed);
+  };
+  const rawContext = json("fixed_context", '{"loja_id": "42"}');
+  if ("error" in rawContext) return fail(`Contexto fixo: ${rawContext.error}`);
+  const v = parseFixedContext(rawContext.value);
   if ("error" in v) return fail(v.error);
-  const { error } = await c.db.from("bots").update({ fixed_context: v.value }).eq("id", bot.id as string);
+  // os dados da loja para a IA (display, parte 4a) vêm no mesmo formulário
+  const rawDisplay = json("fixed_display", '{"nome": "Pizzaria do Zé, Centro"}');
+  if ("error" in rawDisplay) return fail(`Dados da loja: ${rawDisplay.error}`);
+  const d = parseBotDisplay(rawDisplay.value);
+  if ("error" in d) return fail(d.error);
+  const { error } = await c.db.from("bots").update({ fixed_context: v.value, fixed_display: d.value }).eq("id", bot.id as string);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
-  await auditIntegration(c.ctx, "bot.contexto_fixo", { type: "bot", id: bot.id as string }, { chaves: v.value ? Object.keys(v.value) : [] });
+  await auditIntegration(c.ctx, "bot.contexto_fixo", { type: "bot", id: bot.id as string }, { chaves: v.value ? Object.keys(v.value) : [], display: d.value ? Object.keys(d.value) : [] });
   done(bot.id as string);
-  return ok(v.value ? "Contexto fixo salvo: vai em toda chamada de ação deste chatbot." : "Contexto fixo tirado.");
+  return ok(v.value || d.value ? "Salvo: o contexto vai em toda chamada de ação deste chatbot, e os dados da loja, para a IA." : "Contexto fixo e dados da loja tirados.");
 }
 
 /** Ação de um chatbot do escopo de quem está logado. */

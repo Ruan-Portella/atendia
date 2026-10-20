@@ -137,7 +137,7 @@ export function Example({ page, id }: { page: string; id: string }) {
 }
 
 /** O que a chave precisa para as rotas da página: a permissão e o pacote da conta. */
-export function Access({ permission, extra }: { permission: string; extra?: ReactNode }) {
+export function Access({ permission, extra, platform = false }: { permission: string; extra?: ReactNode; platform?: boolean }) {
   return (
     <div className="grid gap-2 rounded-xl border border-line bg-white px-4 py-3 text-[14px] sm:grid-cols-[auto_1fr] sm:gap-x-4">
       <span className="font-semibold text-ink">Permissão da chave</span>
@@ -146,9 +146,15 @@ export function Access({ permission, extra }: { permission: string; extra?: Reac
         {extra && <> · {extra}</>}
       </span>
       <span className="font-semibold text-ink">Pacote</span>
-      <span>
-        {PACKS.integracoes.name} (R$ {PACKS.integracoes.priceBrl} por mês, por conta). Sem ele, a API responde <code>403 plan_not_allowed</code>.
-      </span>
+      {platform ? (
+        <span>
+          {PACKS.integracoes.name} (R$ {PACKS.integracoes.priceBrl}) e {PACKS.plataforma.name} (R$ {PACKS.plataforma.priceBrl}), por mês, por conta. Sem eles, a API responde <code>403 plan_not_allowed</code>.
+        </span>
+      ) : (
+        <span>
+          {PACKS.integracoes.name} (R$ {PACKS.integracoes.priceBrl} por mês, por conta). Sem ele, a API responde <code>403 plan_not_allowed</code>.
+        </span>
+      )}
     </div>
   );
 }

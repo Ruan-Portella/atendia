@@ -66,7 +66,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   // a RLS limita os dados à agência logada
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
-    supabase.from("clients").select("id, name, site, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, name, site, external_id, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
@@ -104,6 +104,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             <h1 className="truncate text-2xl font-bold sm:text-[28px]">{client.name}</h1>
             <p className="truncate text-sm text-muted">
               {client.site ? <a href={/^https?:\/\//.test(client.site) ? client.site : `https://${client.site}`} target="_blank" rel="noopener" className="hover:underline">{client.site.replace(/^https?:\/\//, "")}</a> : "sem site"} · cliente desde {new Date(client.created_at).toLocaleDateString("pt-BR")}
+              {client.external_id ? <> · no sistema da plataforma: <code>{client.external_id}</code></> : null}
             </p>
           </div>
           {canConfig && <Link href={`/painel/bots/novo?cliente=${client.id}`} className="btn-primary w-full sm:w-auto"><Plus size={15} />Novo chatbot</Link>}

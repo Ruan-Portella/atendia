@@ -43,6 +43,7 @@ export const DOCS_GROUPS = [
       { href: "/docs/api/campanhas", title: "Campanhas e aceite" },
       { href: "/docs/api/pareamento", title: "Pareamento" },
       { href: "/docs/api/fontes", title: "Fontes" },
+      { href: "/docs/api/provisionamento", title: "Lojas pela API" },
       { href: "/docs/api/cobranca", title: "Cobrança" },
     ],
   },

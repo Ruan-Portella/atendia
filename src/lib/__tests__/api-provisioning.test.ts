@@ -1,0 +1,268 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { memoryDb, type MemRow } from "../memory-db";
+
+/*
+ * API de provisionamento (D', parte 4a): POST /v1/clients, POST /v1/bots do modelo e GET
+ * /v1/clients/{id}, com o escopo da chave, o pacote Plataforma, a idempotência pelo external_id e o
+ * display do chatbot na IA. Banco em memória, com os índices únicos do external_id.
+ */
+
+const env = vi.hoisted(() => ({ db: null as unknown as SupabaseClient }));
+vi.mock("../supabase/admin", () => ({ createAdminClient: () => env.db }));
+
+import { newApiKey } from "../api-keys";
+import { parseClientBody, parseOverrides } from "../api-provisioning";
+import { displayContext, withDisplay } from "../bot-context";
+import { ApiError } from "../api-v1";
+import { POST as POST_CLIENT } from "../../app/api/v1/clients/route";
+import { GET as GET_CLIENT } from "../../app/api/v1/clients/[id]/route";
+import { POST as POST_BOT } from "../../app/api/v1/bots/route";
+
+const A = "aaaaaaaa-0000-4000-8000-000000000001";
+const B = "bbbbbbbb-0000-4000-8000-000000000002";
+const CLIENT_A1 = "aaaaaaaa-0000-4000-8000-0000000000c1";
+const CLIENT_A2 = "aaaaaaaa-0000-4000-8000-0000000000c2";
+const CLIENT_B1 = "bbbbbbbb-0000-4000-8000-0000000000c1";
+const BOT_A1 = "aaaaaaaa-0000-4000-8000-0000000000a1";
+const BOT_A2 = "aaaaaaaa-0000-4000-8000-0000000000a2";
+const T = "aaaaaaaa-0000-4000-8000-0000000000f1";
+const V1 = "aaaaaaaa-0000-4000-8000-0000000000f2";
+
+const TEMPLATE_FIELDS = { name: "Duda", persona: { tone: "simpático", welcome: "Olá! Sou {assistente}, da {empresa}.", instructions: "Fale do cardápio do dia." }, appearance: { color: "#c0392b", suggested_questions: ["Qual o cardápio?"] }, human_handoff: { widget_button: true }, business_topics: null };
+
+let keys: Record<string, string>;
+let tables: Record<string, MemRow[]>;
+
+beforeEach(() => {
+  const k = { all: newApiKey(), billing: newApiKey(), client: newApiKey(), bots: newApiKey(), b: newApiKey() };
+  const key = (x: { prefix: string; hash: string }, id: string, agency: string, extra: MemRow) => ({ id, agency_id: agency, name: id, prefix: x.prefix, key_hash: x.hash, scope_type: "all", scope_bot_ids: [], scope_client_id: null, permissions: ["provisioning"], last_used_at: null, revoked_at: null, ...extra });
+  keys = { all: k.all.key, billing: k.billing.key, client: k.client.key, bots: k.bots.key, b: k.b.key };
+  tables = {
+    api_keys: [
+      key(k.all, "k-all", A, {}),
+      key(k.billing, "k-billing", A, { permissions: ["provisioning", "billing"] }),
+      key(k.client, "k-client", A, { scope_type: "client", scope_client_id: CLIENT_A1 }),
+      key(k.bots, "k-bots", A, { scope_type: "bots", scope_bot_ids: [BOT_A1] }),
+      key(k.b, "k-b", B, {}),
+    ],
+    // a conta B tem a API (Integrações), mas não o Plataforma
+    agency_packs: [
+      { agency_id: A, pack: "integracoes", ends_at: null },
+      { agency_id: A, pack: "plataforma", ends_at: null },
+      { agency_id: B, pack: "integracoes", ends_at: null },
+    ],
+    agencies: [{ id: A, billing_status: "trial" }],
+    clients: [
+      { id: CLIENT_A1, agency_id: A, name: "Pizzaria do Zé", site: null, external_id: "loja-1", created_at: "2026-10-01T12:00:00Z" },
+      { id: CLIENT_A2, agency_id: A, name: "Sushi da Ana", site: null, external_id: null, created_at: "2026-10-02T12:00:00Z" },
+      { id: CLIENT_B1, agency_id: B, name: "Outra conta", site: null, external_id: null },
+    ],
+    bots: [
+      { id: T, agency_id: A, client_id: null, client_name: "Modelo", is_demo: false, is_template: true, version_of: null, published_bot_id: V1, template_unlocked: ["nome", "saudacao", "instrucoes"], ...TEMPLATE_FIELDS },
+      { id: V1, agency_id: A, client_id: null, client_name: "Modelo", is_demo: false, is_template: true, version_of: T, template_unlocked: ["nome", "saudacao", "instrucoes"], ...TEMPLATE_FIELDS },
+      { id: BOT_A1, agency_id: A, client_id: CLIENT_A1, client_name: "Pizzaria do Zé", name: "Zé", status: "live", is_demo: false, is_template: false, version_of: null, external_id: "site", created_at: "2026-10-01T12:00:00Z" },
+      { id: BOT_A2, agency_id: A, client_id: CLIENT_A1, client_name: "Pizzaria do Zé", name: "Zé 2", status: "draft", is_demo: false, is_template: false, version_of: null, created_at: "2026-10-02T12:00:00Z" },
+    ],
+    whatsapp_channels: [{ bot_id: BOT_A1, disconnected_at: null }],
+    instagram_channels: [],
+    business_compliance: [],
+    enforcement_actions: [],
+    audit_log: [],
+    idempotency_keys: [],
+  };
+  env.db = memoryDb(tables);
+});
+
+const call = (method: string, path: string, key: string | null, o: { body?: unknown; idem?: string } = {}) =>
+  new Request(`http://localhost/api/v1/${path}`, {
+    method,
+    headers: { host: "localhost", ...(key ? { authorization: `Bearer ${key}` } : {}), ...(o.idem ? { "idempotency-key": o.idem } : {}) },
+    body: o.body === undefined ? undefined : JSON.stringify(o.body),
+  });
+const noParams = { params: Promise.resolve({}) };
+const errorOf = async (r: Response) => ((await r.json()) as { error: { code: string; details?: Record<string, unknown> } }).error;
+
+describe("POST /v1/clients", () => {
+  it("cria o cliente (201) e o mesmo external_id devolve o mesmo (200), sem um segundo", async () => {
+    const body = { name: "Hamburgueria do Léo", external_id: "loja-42", site: "hamburgueriadoleo.com.br" };
+    const r = await POST_CLIENT(call("POST", "clients", keys.all, { body }), noParams);
+    expect(r.status).toBe(201);
+    const created = await r.json();
+    expect(created).toMatchObject({ external_id: "loja-42", name: "Hamburgueria do Léo", compliance_status: "active" });
+    expect(created.client_id).toMatch(/^cli_[0-9a-f-]{36}$/);
+    const row = tables.clients.find((c) => c.external_id === "loja-42");
+    expect(row).toMatchObject({ agency_id: A, site: "https://hamburgueriadoleo.com.br/" });
+    expect(tables.audit_log.map((a) => a.action)).toEqual(["cliente.criar"]);
+
+    const again = await POST_CLIENT(call("POST", "clients", keys.all, { body: { ...body, name: "Outro nome" } }), noParams);
+    expect(again.status).toBe(200);
+    expect((await again.json()).client_id).toBe(created.client_id);
+    expect(tables.clients.filter((c) => c.external_id === "loja-42")).toHaveLength(1);
+  });
+
+  it("a declaração de lembretes vai junto, com a chave como autor", async () => {
+    const r = await POST_CLIENT(call("POST", "clients", keys.all, { body: { name: "Clínica Sorriso", external_id: "c-9", utility_consent: { source: "contrato", text: "Cláusula 7 do contrato: o paciente aceita lembretes de consulta pelo WhatsApp." } } }), noParams);
+    expect(r.status).toBe(201);
+    const row = tables.clients.find((c) => c.external_id === "c-9");
+    expect(row).toMatchObject({ utility_consent_origin: "contrato", utility_consent_by: expect.stringContaining('Chave da API "k-all"') });
+    expect(tables.audit_log.map((a) => a.action)).toEqual(["cliente.criar", "cliente.lembretes_declarar"]);
+  });
+
+  it("só com chave da conta inteira e com o pacote Plataforma", async () => {
+    const scoped = await POST_CLIENT(call("POST", "clients", keys.client, { body: { name: "X Lanches", external_id: "x" } }), noParams);
+    expect(scoped.status).toBe(403);
+    expect((await errorOf(scoped)).code).toBe("forbidden_scope");
+    const noPack = await POST_CLIENT(call("POST", "clients", keys.b, { body: { name: "X Lanches", external_id: "x" } }), noParams);
+    expect(noPack.status).toBe(403);
+    expect(await errorOf(noPack)).toMatchObject({ code: "plan_not_allowed", details: { pack: "plataforma" } });
+    expect(tables.clients).toHaveLength(3);
+  });
+
+  it("corpo: nome, external_id, site, campos desconhecidos e a declaração", () => {
+    const field = (body: Record<string, unknown>) => {
+      try {
+        parseClientBody(body);
+        return null;
+      } catch (e) {
+        return ((e as ApiError).details as { field: string }).field;
+      }
+    };
+    expect(field({ name: "Z", external_id: "a" })).toBe("name");
+    expect(field({ name: "Zé Lanches" })).toBe("external_id");
+    expect(field({ name: "Zé Lanches", external_id: "a\nb" })).toBe("external_id");
+    expect(field({ name: "Zé Lanches", external_id: "a", site: "não é site" })).toBe("site");
+    expect(field({ name: "Zé Lanches", external_id: "a", instagram: "@ze" })).toBe("instagram");
+    expect(field({ name: "Zé Lanches", external_id: "a", utility_consent: { source: "contrato", text: "curto" } })).toBe("utility_consent.text");
+    expect(field({ name: "Zé Lanches", external_id: "a", utility_consent: { source: "whatsapp", text: "x".repeat(30) } })).toBe("utility_consent.source");
+    expect(parseClientBody({ name: "  Zé   Lanches ", external_id: " loja-7 " })).toEqual({ name: "Zé Lanches", externalId: "loja-7", site: null, utilityConsent: null });
+  });
+});
+
+describe("POST /v1/bots", () => {
+  const body = (o: Record<string, unknown> = {}) => ({ client_id: `cli_${CLIENT_A1}`, template_id: `bot_${T}`, external_id: "loja-1-site", context: { loja_id: "42" }, display: { nome: "Pizzaria do Zé, Centro", horario: "terça a domingo, das 18h às 23h" }, ...o });
+
+  it("cria o derivado da versão publicada, com o contexto, o display e os valores próprios liberados", async () => {
+    const r = await POST_BOT(call("POST", "bots", keys.all, { idem: "k1", body: body({ overrides: { assistant_name: "Bia", extra_instructions: "Aos domingos, rodízio." } }) }), noParams);
+    expect(r.status).toBe(201);
+    const out = await r.json();
+    expect(out).toMatchObject({ client_id: `cli_${CLIENT_A1}`, external_id: "loja-1-site", template_id: `bot_${T}`, name: "Bia", context: { loja_id: "42" }, display: { nome: "Pizzaria do Zé, Centro" }, size_change: null });
+    expect(out.widget_key).toMatch(/^[0-9a-f]{24}$/);
+    const bot = tables.bots.find((b) => `bot_${b.id}` === out.bot_id)!;
+    expect(bot).toMatchObject({ template_id: T, config_bot_id: V1, client_name: "Pizzaria do Zé", overrides: { nome: "Bia" }, extra_instructions: "Aos domingos, rodízio.", fixed_context: { loja_id: "42" } });
+    expect((bot.persona as { instructions: string }).instructions).toBe("Fale do cardápio do dia.\n\nAos domingos, rodízio.");
+    expect((bot.persona as { welcome: string }).welcome).toBe("Olá! Sou Bia, da Pizzaria do Zé.");
+    expect(tables.audit_log.find((a) => a.action === "modelo.derivar")).toMatchObject({ actor_type: "api_key", target_id: bot.id });
+  });
+
+  it("idempotente: a mesma Idempotency-Key repete a resposta; o mesmo external_id devolve o mesmo chatbot (200)", async () => {
+    const first = await (await POST_BOT(call("POST", "bots", keys.all, { idem: "k1", body: body() }), noParams)).json();
+    const replay = await POST_BOT(call("POST", "bots", keys.all, { idem: "k1", body: body() }), noParams);
+    expect(replay.headers.get("Idempotent-Replayed")).toBe("true");
+    expect((await replay.json()).bot_id).toBe(first.bot_id);
+    const again = await POST_BOT(call("POST", "bots", keys.all, { idem: "k2", body: body({ display: { nome: "outro" } }) }), noParams);
+    expect(again.status).toBe(200);
+    const out = await again.json();
+    expect(out.bot_id).toBe(first.bot_id);
+    // o que já existe não muda: para mudar, o PATCH
+    expect(out.display).toEqual({ nome: "Pizzaria do Zé, Centro", horario: "terça a domingo, das 18h às 23h" });
+    expect(tables.bots.filter((b) => b.template_id === T)).toHaveLength(1);
+    const conflict = await POST_BOT(call("POST", "bots", keys.all, { idem: "k1", body: body({ external_id: "outro" }) }), noParams);
+    expect((await errorOf(conflict)).code).toBe("idempotency_conflict");
+  });
+
+  it("Idempotency-Key obrigatória, campo travado pelo modelo, modelo de outra conta e size sem billing", async () => {
+    const noKey = await POST_BOT(call("POST", "bots", keys.all, { body: body() }), noParams);
+    expect(await errorOf(noKey)).toMatchObject({ code: "invalid_request", details: { field: "Idempotency-Key" } });
+    const locked = await POST_BOT(call("POST", "bots", keys.all, { idem: "k3", body: body({ overrides: { appearance: { color: "#000000" } } }) }), noParams);
+    expect(locked.status).toBe(403);
+    expect(await errorOf(locked)).toMatchObject({ code: "field_locked", details: { field: "overrides.appearance" } });
+    const noTemplate = await POST_BOT(call("POST", "bots", keys.all, { idem: "k4", body: body({ template_id: `bot_${BOT_A1}` }) }), noParams);
+    expect(noTemplate.status).toBe(404);
+    expect((await errorOf(noTemplate)).details).toEqual({ field: "template_id" });
+    const noBilling = await POST_BOT(call("POST", "bots", keys.all, { idem: "k5", body: body({ size: "M" }) }), noParams);
+    expect(await errorOf(noBilling)).toMatchObject({ code: "forbidden_scope", details: { permission: "billing" } });
+    // com billing, mas sem assinatura: nada é criado antes de recusar
+    const noSub = await POST_BOT(call("POST", "bots", keys.billing, { idem: "k6", body: body({ size: "M" }) }), noParams);
+    expect(noSub.status).toBe(422);
+    expect((await errorOf(noSub)).code).toBe("subscription_required");
+    expect(tables.bots.filter((b) => b.template_id === T)).toHaveLength(0);
+  });
+
+  it("escopo: chave de chatbots não cria; chave do cliente só no cliente dela; cliente de outra conta é 404", async () => {
+    const bots = await POST_BOT(call("POST", "bots", keys.bots, { idem: "k1", body: body() }), noParams);
+    expect((await errorOf(bots)).code).toBe("forbidden_scope");
+    const other = await POST_BOT(call("POST", "bots", keys.client, { idem: "k1", body: body({ client_id: `cli_${CLIENT_A2}` }) }), noParams);
+    expect(other.status).toBe(404);
+    const foreign = await POST_BOT(call("POST", "bots", keys.all, { idem: "k1", body: body({ client_id: `cli_${CLIENT_B1}` }) }), noParams);
+    expect(foreign.status).toBe(404);
+    const mine = await POST_BOT(call("POST", "bots", keys.client, { idem: "k2", body: body() }), noParams);
+    expect(mine.status).toBe(201);
+  });
+});
+
+describe("GET /v1/clients/{id}", () => {
+  const get = (key: string, id: string) => GET_CLIENT(call("GET", `clients/cli_${id}`, key), { params: Promise.resolve({ id: `cli_${id}` }) });
+
+  it("os dados, os chatbots com os canais da Meta e a conformidade", async () => {
+    const r = await get(keys.all, CLIENT_A1);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({
+      id: `cli_${CLIENT_A1}`,
+      external_id: "loja-1",
+      name: "Pizzaria do Zé",
+      site: null,
+      created_at: "2026-10-01T12:00:00Z",
+      utility_consent: null,
+      bots: [
+        { id: `bot_${BOT_A1}`, external_id: "site", name: "Zé", status: "live", paused: false, template_id: null, channels: ["whatsapp"] },
+        { id: `bot_${BOT_A2}`, external_id: null, name: "Zé 2", status: "draft", paused: false, template_id: null, channels: [] },
+      ],
+      compliance: { status: "active", restrictions: [], reason_summary: "Sem restrições em vigor.", next_step: null },
+    });
+  });
+
+  it("o escopo da chave: o cliente dela, ou os chatbots da lista; fora disso, 404", async () => {
+    expect((await get(keys.client, CLIENT_A2)).status).toBe(404);
+    expect((await get(keys.all, CLIENT_B1)).status).toBe(404);
+    const viaBots = await (await get(keys.bots, CLIENT_A1)).json();
+    expect(viaBots.bots.map((b: { id: string }) => b.id)).toEqual([`bot_${BOT_A1}`]);
+    expect((await get(keys.bots, CLIENT_A2)).status).toBe(404);
+    const bad = await GET_CLIENT(call("GET", "clients/123", keys.all), { params: Promise.resolve({ id: "123" }) });
+    expect(bad.status).toBe(404);
+  });
+});
+
+describe("valores próprios pela API", () => {
+  const o = { unlocked: ["nome", "saudacao", "aparencia", "anuncio", "instrucoes"] as never, templateAppearance: { color: "#c0392b", suggested_questions: ["Qual o cardápio?"] }, clientName: "Pizzaria do Zé" };
+
+  it("a aparência vale por cima da do modelo, com as iniciais do cliente", () => {
+    expect(parseOverrides({ appearance: { position: "left" } }, o).overrides.aparencia).toEqual({ color: "#c0392b", suggested_questions: ["Qual o cardápio?"], avatar_text: "PD", position: "left" });
+  });
+
+  it("as regras do painel: o anúncio pede {atendente}, a cor é #rrggbb, campo desconhecido é 400", () => {
+    const code = (raw: unknown) => {
+      try {
+        parseOverrides(raw, o);
+        return "ok";
+      } catch (e) {
+        return `${(e as ApiError).status} ${((e as ApiError).details as { field: string }).field}`;
+      }
+    };
+    expect(code({ handoff_notice: "Oi, sou da equipe." })).toBe("400 overrides.handoff_notice");
+    expect(code({ handoff_notice: "Oi, sou {atendente}, da equipe." })).toBe("ok");
+    expect(code({ appearance: { color: "vermelho" } })).toBe("400 overrides.appearance.color");
+    expect(code({ tone: "sério" })).toBe("400 overrides.tone");
+    expect(code({ welcome: "" })).toBe("400 overrides.welcome");
+    expect(parseOverrides({ extra_instructions: "  " }, o)).toEqual({ overrides: {}, extraInstructions: null });
+  });
+});
+
+describe("display do chatbot na IA", () => {
+  it("vira o primeiro trecho da base, no mesmo formato dos outros", () => {
+    expect(displayContext({ nome: "Pizzaria do Zé, Centro", horario_de_entrega: "18h às 23h" })).toBe("[Dados deste atendimento, informados pela empresa]\nnome: Pizzaria do Zé, Centro\nhorario de entrega: 18h às 23h");
+    expect(withDisplay("[1] Cardápio\nCalabresa R$ 40", { nome: "Zé" })).toBe("[Dados deste atendimento, informados pela empresa]\nnome: Zé\n\n---\n\n[1] Cardápio\nCalabresa R$ 40");
+    expect(withDisplay("", { nome: "Zé" })).toBe("[Dados deste atendimento, informados pela empresa]\nnome: Zé");
+    expect(withDisplay("[1] x", null)).toBe("[1] x");
+  });
+});

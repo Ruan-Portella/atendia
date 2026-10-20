@@ -553,6 +553,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
           {tab === "heranca" && isTemplate && (
             <TemplateInheritance
+              templateId={id}
               unlocked={unlockedFields(bot)}
               derived={derivedList}
               clients={clients}
@@ -794,7 +795,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 ) : (
                   <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
                 )}
-                <FixedContextCard value={bot.fixed_context} manage={manageActions} save={saveFixedContext.bind(null, id)} />
+                {!isTemplate && <FixedContextCard value={bot.fixed_context} display={bot.fixed_display} manage={manageActions} save={saveFixedContext.bind(null, id)} />}
               </>
             ))}
 

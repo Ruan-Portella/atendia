@@ -1,6 +1,6 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type UIMessage, type UIMessageChunk } from "ai";
 import { searchBots } from "./bot-template";
-import { activeContext } from "./bot-context";
+import { activeContext, withDisplay } from "./bot-context";
 import { activeMomentNotice } from "./moment-notice";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -45,6 +45,8 @@ export interface BotRow {
   agency_id: string;
   /** Contexto fixo (D', parte 1): vai para as ações e escolhe as fontes com etiqueta; a IA não vê. */
   fixed_context?: Record<string, unknown> | null;
+  /** Display (D', parte 4a): o que a IA sabe da loja (nome, horário), como o primeiro trecho da base. */
+  fixed_display?: Record<string, unknown> | null;
   /** Bot modelo (D', parte 2a): o derivado usa as ações, os roteiros e a base do modelo. */
   is_template?: boolean | null;
   template_id?: string | null;
@@ -795,7 +797,7 @@ export async function runChat(opts: {
   // portão: a base sem os itens barrados para esta pessoa e as linhas do portão no prompt
   const gated = scopeLock ? gatePrompt(bot, retrieval, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [] };
   // regras primeiro (iguais em toda a plataforma: cache da OpenAI); o que é deste bot e desta conversa depois
-  const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: gated.context, leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes, momentNotice: activeMomentNotice(bot) });
+  const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: withDisplay(gated.context, bot.fixed_display), leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes, momentNotice: activeMomentNotice(bot) });
   const convId = conversationId;
   // roteiros (B2'): as ferramentas, o bloco do passo atual e os botões do passo
   const routine = opts.routine

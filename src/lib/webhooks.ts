@@ -249,12 +249,14 @@ export async function emitEvent(
   const targets = await webhookTargets(db, e.bot.agency_id, e.type, e.bot);
   if (!targets.length) return;
   const id = eventId(e.type, e.key);
+  // o id do cliente no sistema da plataforma (D', parte 4a), quando ela criou pela API
+  const { data: client } = e.bot.client_id ? await db.from("clients").select("external_id").eq("id", e.bot.client_id).maybeSingle() : { data: null };
   const envelope = {
     id,
     type: e.type,
     created_at: e.createdAt,
     bot: { id: `bot_${e.bot.id}`, name: e.bot.name },
-    client: e.bot.client_id ? { id: `cli_${e.bot.client_id}`, external_id: null } : null,
+    client: e.bot.client_id ? { id: `cli_${e.bot.client_id}`, external_id: (client?.external_id as string | null | undefined) ?? null } : null,
     conversation: e.conversation ? { id: `conv_${e.conversation.id}`, channel: e.conversation.channel } : null,
     contact: e.contact,
     data: e.data,

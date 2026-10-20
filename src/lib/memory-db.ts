@@ -14,8 +14,18 @@ const EMBED_FK: Record<string, string> = { routines: "routine_id", agency_member
 
 export type MemRow = Record<string, unknown>;
 
+/** Índices únicos que os testes conferem (null não conflita, como no Postgres). */
+const UNIQUE: Record<string, string[][]> = {
+  idempotency_keys: [["api_key_id", "key"]],
+  clients: [["agency_id", "external_id"]],
+  bots: [["client_id", "external_id"]],
+};
+const conflicts = (t: MemRow[], table: string, row: MemRow) =>
+  (UNIQUE[table] ?? []).some((cols) => cols.every((c) => row[c] !== null && row[c] !== undefined) && t.some((x) => cols.every((c) => x[c] === row[c])));
+
 /** Valores padrão das tabelas que o motor cria (como os defaults das migrações). */
 function defaultsOf(table: string, now: string): MemRow {
+  if (table === "bots") return { public_key: randomUUID().replace(/-/g, "").slice(0, 24) };
   if (table === "routine_runs") return { status: "active", attempts: 0, failing: false, variables_enc: null, end_reason: null, ended_at: null, held_result: null, idle_turns: 0, started_at: now };
   if (table === "contact_links") return { linked_at: now, unlinked_at: null, source: "pairing", identity_key_hash: null };
   return {};
@@ -68,6 +78,10 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       this.filters.push((r) => r[c] === v);
       return this;
     }
+    match(o: MemRow) {
+      for (const [c, v] of Object.entries(o)) this.eq(c, v);
+      return this;
+    }
     neq(c: string, v: unknown) {
       this.filters.push((r) => r[c] !== v);
       return this;
@@ -100,14 +114,17 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       if (op === "is") this.filters.push((r) => (r[c] ?? null) !== v);
       return this;
     }
-    /** "a.is.null,b.neq.x,c.not.is.null": basta um bater. */
+    /** "a.is.null,b.neq.x,c.not.is.null,d.in.(x,y)": basta um bater. */
     or(expr: string) {
-      const parts = expr.split(",").map((p) => {
-        const m = /^([a-z_]+)\.(not\.)?(eq|neq|is)\.(.*)$/.exec(p.trim());
+      // vírgulas dentro de in.(...) não separam
+      const pieces = expr.match(/[^,(]+(?:\([^)]*\))?/g) ?? [];
+      const parts = pieces.map((p) => {
+        const m = /^([a-z_]+)\.(not\.)?(eq|neq|is|in)\.(.*)$/.exec(p.trim());
         if (!m) throw new Error(`banco em memória: or("${p}") não suportado`);
         const [, col, not, op, raw] = m;
         const v = raw === "null" ? null : raw;
-        const hit = (r: MemRow) => (op === "neq" ? (r[col] ?? null) !== v : (r[col] ?? null) === v);
+        const list = op === "in" ? raw.replace(/^\(|\)$/g, "").split(",") : [];
+        const hit = (r: MemRow) => (op === "in" ? list.includes(String(r[col])) : op === "neq" ? (r[col] ?? null) !== v : (r[col] ?? null) === v);
         return not ? (r: MemRow) => !hit(r) : hit;
       });
       this.filters.push((r) => parts.some((f) => f(r)));
@@ -141,6 +158,7 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
           const row: MemRow = { id: randomUUID(), ...defaultsOf(this.table, stamp()), ...r };
           // um roteiro ativo por conversa (o índice único parcial da migração 0107)
           if (this.table === "routine_runs" && t.some((x) => x.conversation_id === row.conversation_id && x.status === "active")) return { data: null, error: { message: "duplicate key value violates unique constraint" } };
+          if (conflicts(t, this.table, row)) return { data: null, error: { message: "duplicate key value violates unique constraint" } };
           t.push(row);
           out.push(row);
         }

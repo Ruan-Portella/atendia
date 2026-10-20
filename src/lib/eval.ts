@@ -1,6 +1,6 @@
 import { generateText, stepCountIs } from "ai";
 import { searchBots } from "./bot-template";
-import { activeContext } from "./bot-context";
+import { activeContext, withDisplay } from "./bot-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
 import { CHAT_TEMPERATURE, ageAskRefusal, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
@@ -134,7 +134,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         assistantName: bot.name,
         clientName: bot.client_name,
         persona: bot.persona ?? {},
-        context: gated.context,
+        context: withDisplay(gated.context, bot.fixed_display),
         leadCapture: bot.lead_capture?.enabled !== false,
         agentMessages: [],
         channelNote,

@@ -79,6 +79,9 @@ DOC_VALUES = {
     "link_id": "lnk_4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f8a",
     "source_id": "src_3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90",
     "pdf_url": "https://condominio.exemplo.com.br/docs/regulamento.pdf",
+    "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+    "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "store_external_id": "loja-42",
     "template_name": "pedido_saiu",
     "template_language": "pt_BR",
     "template_variable_1": "Ruan",
@@ -144,6 +147,8 @@ WIDGET = DOC_VALUES["widget_conversation_id"]
 def sent(msg, conv=CONV):
     return {"message_id": msg, "conversation_id": conv, "status": "sent"}
 
+
+STORE_CLIENT = {"client_id": DOC_VALUES["client_id"], "external_id": "loja-42", "name": "Pizzaria do Zé", "compliance_status": "active"}
 
 # Que requisição da coleção vira exemplo de qual página, com a resposta (pelo nome da requisição).
 DOC_OF = {
@@ -389,6 +394,44 @@ DOC_OF = {
         "next_cursor": None,
     }),
     "Apagar fonte": ex("fontes", "apagar", "Apagar uma fonte", 204),
+    # /docs/api/provisionamento
+    "Criar cliente (loja)": ex("provisionamento", "cliente", "Criar o cliente (a loja)", 201, STORE_CLIENT),
+    "Criar cliente de novo (mesmo external_id)": ex("provisionamento", "cliente-de-novo", "O mesmo external_id devolve o mesmo cliente", 200, STORE_CLIENT),
+    "Cliente com a declaração de lembretes": ex("provisionamento", "cliente-lembretes", "Cliente com a declaração de lembretes", 201, {**STORE_CLIENT, "client_id": "cli_6c3d9f2b-8e4a-4b7c-8d9f-2a3b4c5d6e7f", "external_id": "loja-42-lembretes", "name": "Clínica Sorriso"}),
+    "Ler cliente": ex("provisionamento", "ler-cliente", "Os dados, os chatbots e a conformidade do cliente", 200, {
+        "id": DOC_VALUES["client_id"],
+        "external_id": "loja-42",
+        "name": "Pizzaria do Zé",
+        "site": "https://pizzariadoze.com.br/",
+        "created_at": "2026-10-19T15:20:11.042Z",
+        "utility_consent": None,
+        "bots": [
+            {"id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b", "external_id": "loja-42-site", "name": "Duda", "status": "draft", "paused": False, "template_id": DOC_VALUES["template_id"], "channels": ["whatsapp"]},
+        ],
+        "compliance": {"status": "active", "restrictions": [], "reason_summary": "Sem restrições em vigor.", "next_step": None},
+    }),
+    "Criar chatbot do modelo": ex("provisionamento", "chatbot", "Criar o chatbot da loja a partir do modelo", 201, {
+        "bot_id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+        "widget_key": "5f0c2a9e7b1d3c4e6a8b0d2f",
+        "client_id": DOC_VALUES["client_id"],
+        "external_id": "loja-42-site",
+        "template_id": DOC_VALUES["template_id"],
+        "name": "Duda",
+        "context": {"loja_id": "42"},
+        "display": {"nome": "Pizzaria do Zé, Centro", "horario": "terça a domingo, das 18h às 23h", "endereco": "Rua das Flores, 120"},
+        "size_change": None,
+    }),
+    "Chatbot com valores próprios": ex("provisionamento", "chatbot-proprio", "Com valores próprios nos campos que o modelo libera", 201, {
+        "bot_id": "bot_7a9b1c3d-5e7f-4a2b-8c4d-6e8f0a2b4c6d",
+        "widget_key": "8d3e1b0f6a2c4e5d7b9a1c3e",
+        "client_id": DOC_VALUES["client_id"],
+        "external_id": "loja-42-delivery",
+        "template_id": DOC_VALUES["template_id"],
+        "name": "Bia",
+        "context": {"loja_id": "42"},
+        "display": {"nome": "Pizzaria do Zé, delivery"},
+        "size_change": None,
+    }),
 }
 USED = set()
 
@@ -960,6 +1003,74 @@ fontes = folder(
     ],
 )
 
+SAVE_CLIENT = [
+    "if (pm.response.code === 201 || pm.response.code === 200) {",
+    "  const c = pm.response.json();",
+    "  pm.environment.set(\"client_id\", c.client_id);",
+    "  pm.test(\"cliente ativo\", () => pm.expect(c.compliance_status).to.eql(\"active\"));",
+    "}",
+]
+
+SAVE_PROVISIONED = [
+    "if (pm.response.code === 201 || pm.response.code === 200) {",
+    "  const b = pm.response.json();",
+    "  pm.environment.set(\"provisioned_bot_id\", b.bot_id);",
+    "  pm.test(\"chatbot do modelo\", () => pm.expect(b.template_id).to.eql(pm.variables.get(\"template_id\")));",
+    "}",
+]
+
+provisionamento = folder(
+    "12. Lojas (provisionamento)",
+    "Clientes (as lojas) e os chatbots deles a partir de um modelo, pelo seu sistema (permissão **provisioning**, pacote **Plataforma**). Criar cliente pede uma chave com escopo da conta inteira. Preencha `template_id` no ambiente com o id do modelo (aba Herança do modelo, no painel). Rodar de novo não cria outro: o `external_id` devolve o que já existe, com 200.",
+    [
+        req(
+            "Criar cliente (loja)",
+            "POST",
+            "clients",
+            body={"name": "Pizzaria do Zé", "external_id": "{{store_external_id}}", "site": "pizzariadoze.com.br"},
+            desc="201 na primeira vez; 200 com o mesmo cliente quando o `external_id` já existe na conta. Guarda o id em `client_id`.",
+            tests=expect_status(201, 200) + SAVE_CLIENT,
+        ),
+        req(
+            "Criar cliente de novo (mesmo external_id)",
+            "POST",
+            "clients",
+            body={"name": "Pizzaria do Zé", "external_id": "{{store_external_id}}", "site": "pizzariadoze.com.br"},
+            idem=False,
+            desc="O mesmo `external_id`, sem Idempotency-Key (com a mesma chave, a resposta guardada voltaria igual): devolve o mesmo cliente (200), sem criar outro e sem mudar nada.",
+            tests=expect_status(200) + ['pm.test("o mesmo cliente", () => pm.expect(pm.response.json().client_id).to.eql(pm.variables.get("client_id")));'],
+        ),
+        req(
+            "Cliente com a declaração de lembretes",
+            "POST",
+            "clients",
+            body={"name": "Clínica Sorriso", "external_id": "{{store_external_id}}-lembretes", "utility_consent": {"source": "contrato", "text": "Cláusula 7 do contrato: o paciente aceita lembretes de consulta pelo WhatsApp."}},
+            desc="A declaração de consentimento para lembretes (a mesma do painel, aba Campanhas do cliente), feita junto. A chave fica como autora.",
+            tests=expect_status(201, 200),
+        ),
+        req("Ler cliente", "GET", "clients/{{client_id}}", desc="Os dados, os chatbots que a chave alcança (com os canais da Meta conectados) e a conformidade, com as restrições em vigor.", tests=expect_status(200) + ['pm.test("chatbots", () => pm.expect(pm.response.json().bots).to.be.an("array"));']),
+        req(
+            "Criar chatbot do modelo",
+            "POST",
+            "bots",
+            body={"client_id": "{{client_id}}", "template_id": "{{template_id}}", "external_id": "{{store_external_id}}-site", "context": {"loja_id": "42"}, "display": {"nome": "Pizzaria do Zé, Centro", "horario": "terça a domingo, das 18h às 23h", "endereco": "Rua das Flores, 120"}},
+            desc="O chatbot da loja, com o que o modelo tem (personalidade, instruções, ações, roteiros e base). O `context` vai para as ações e escolhe as fontes da loja; o `display` é o que a IA sabe dela. Nasce sem tamanho, como no painel. Guarda o id em `provisioned_bot_id`.",
+            tests=expect_status(201, 200) + SAVE_PROVISIONED,
+        ),
+        req(
+            "Chatbot com valores próprios",
+            "POST",
+            "bots",
+            body={"client_id": "{{client_id}}", "template_id": "{{template_id}}", "external_id": "{{store_external_id}}-delivery", "context": {"loja_id": "42"}, "display": {"nome": "Pizzaria do Zé, delivery"}, "overrides": {"assistant_name": "Bia", "welcome": "Oi! Sou a Bia, do delivery do Zé. Quer ver o cardápio?"}},
+            desc="Só nos campos que o modelo libera (aba Herança): campo travado volta 403 field_locked.",
+            tests=expect_status(201, 200, 403),
+        ),
+        req("Chatbot sem Idempotency-Key", "POST", "bots", body={"client_id": "{{client_id}}", "template_id": "{{template_id}}"}, idem=False, desc="Criar chatbot pede a Idempotency-Key.", tests=expect_error(400, "invalid_request") + ['pm.test("aponta o cabeçalho", () => pm.expect(pm.response.json().error.details.field).to.eql("Idempotency-Key"));']),
+        req("Modelo que não existe", "POST", "bots", body={"client_id": "{{client_id}}", "template_id": "bot_00000000-0000-4000-8000-000000000000"}, tests=expect_error(404, "not_found") + ['pm.test("aponta o modelo", () => pm.expect(pm.response.json().error.details.field).to.eql("template_id"));']),
+        req("Cliente sem external_id", "POST", "clients", body={"name": "Pizzaria do Zé"}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o campo", () => pm.expect(pm.response.json().error.details.field).to.eql("external_id"));']),
+    ],
+)
+
 collection = {
     "info": {
         "_postman_id": str(uuid.uuid5(uuid.NAMESPACE_URL, "boavoz-api-v1")),
@@ -976,6 +1087,7 @@ collection = {
                 "- A API faz parte do pacote Integrações da conta: sem ele, toda requisição volta `403 plan_not_allowed` (a chave continua guardada).",
                 "- A pasta 10 (Cobrança) pede a permissão `billing` na chave; trocar para um tamanho maior e comprar crédito cobram no cartão da assinatura.",
                 "- A pasta 11 (Fontes) pede a permissão `sources` na chave.",
+                "- A pasta 12 (Lojas) pede a permissão `provisioning`, o pacote Plataforma e, para criar cliente, uma chave com escopo da conta inteira; preencha `template_id` com o id de um modelo.",
             ]
         ),
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
@@ -1003,12 +1115,12 @@ collection = {
             ),
         },
     ],
-    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas, componentes, cobranca, fontes],
+    "item": [conversas, pausa, mensagens, modelos, contatos, erros, exclusao, campanhas, componentes, cobranca, fontes, provisionamento],
 }
 
 # Só o que é de cada pessoa fica no ambiente (importado uma vez e preenchido no Postman, nunca no Git).
 # O resto tem o valor-padrão dentro da coleção: reimportar a coleção não mexe no ambiente de ninguém.
-PERSONAL = {"base_url", "api_key", "vercel_bypass", "bot_id", "phone", "phone_sem_idade", "phone_fora_da_janela", "phone_para_apagar"}
+PERSONAL = {"base_url", "api_key", "vercel_bypass", "bot_id", "phone", "phone_sem_idade", "phone_fora_da_janela", "phone_para_apagar", "template_id"}
 
 env = {
     "id": str(uuid.uuid5(uuid.NAMESPACE_URL, "boavoz-env-dev")),
@@ -1048,6 +1160,10 @@ env = {
         {"key": "bot_size", "value": "", "type": "default", "enabled": True},
         {"key": "source_id", "value": "", "type": "default", "enabled": True},
         {"key": "pdf_url", "value": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", "type": "default", "enabled": True},
+        {"key": "template_id", "value": "bot_", "type": "default", "enabled": True},
+        {"key": "store_external_id", "value": "loja-postman-1", "type": "default", "enabled": True},
+        {"key": "client_id", "value": "", "type": "default", "enabled": True},
+        {"key": "provisioned_bot_id", "value": "", "type": "default", "enabled": True},
     ],
     "_postman_variable_scope": "environment",
 }

@@ -1076,6 +1076,204 @@
       "status": 204,
       "response": null,
       "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "cliente",
+      "title": "Criar o cliente (a loja)",
+      "method": "POST",
+      "path": "clients",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "name": "Pizzaria do Zé",
+        "external_id": "loja-42",
+        "site": "pizzariadoze.com.br"
+      },
+      "status": 201,
+      "response": {
+        "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+        "external_id": "loja-42",
+        "name": "Pizzaria do Zé",
+        "compliance_status": "active"
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "cliente-de-novo",
+      "title": "O mesmo external_id devolve o mesmo cliente",
+      "method": "POST",
+      "path": "clients",
+      "query": [],
+      "headers": {},
+      "body": {
+        "name": "Pizzaria do Zé",
+        "external_id": "loja-42",
+        "site": "pizzariadoze.com.br"
+      },
+      "status": 200,
+      "response": {
+        "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+        "external_id": "loja-42",
+        "name": "Pizzaria do Zé",
+        "compliance_status": "active"
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "cliente-lembretes",
+      "title": "Cliente com a declaração de lembretes",
+      "method": "POST",
+      "path": "clients",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "name": "Clínica Sorriso",
+        "external_id": "loja-42-lembretes",
+        "utility_consent": {
+          "source": "contrato",
+          "text": "Cláusula 7 do contrato: o paciente aceita lembretes de consulta pelo WhatsApp."
+        }
+      },
+      "status": 201,
+      "response": {
+        "client_id": "cli_6c3d9f2b-8e4a-4b7c-8d9f-2a3b4c5d6e7f",
+        "external_id": "loja-42-lembretes",
+        "name": "Clínica Sorriso",
+        "compliance_status": "active"
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "ler-cliente",
+      "title": "Os dados, os chatbots e a conformidade do cliente",
+      "method": "GET",
+      "path": "clients/cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+        "external_id": "loja-42",
+        "name": "Pizzaria do Zé",
+        "site": "https://pizzariadoze.com.br/",
+        "created_at": "2026-10-19T15:20:11.042Z",
+        "utility_consent": null,
+        "bots": [
+          {
+            "id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+            "external_id": "loja-42-site",
+            "name": "Duda",
+            "status": "draft",
+            "paused": false,
+            "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+            "channels": [
+              "whatsapp"
+            ]
+          }
+        ],
+        "compliance": {
+          "status": "active",
+          "restrictions": [],
+          "reason_summary": "Sem restrições em vigor.",
+          "next_step": null
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "chatbot",
+      "title": "Criar o chatbot da loja a partir do modelo",
+      "method": "POST",
+      "path": "bots",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+        "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        "external_id": "loja-42-site",
+        "context": {
+          "loja_id": "42"
+        },
+        "display": {
+          "nome": "Pizzaria do Zé, Centro",
+          "horario": "terça a domingo, das 18h às 23h",
+          "endereco": "Rua das Flores, 120"
+        }
+      },
+      "status": 201,
+      "response": {
+        "bot_id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+        "widget_key": "5f0c2a9e7b1d3c4e6a8b0d2f",
+        "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+        "external_id": "loja-42-site",
+        "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        "name": "Duda",
+        "context": {
+          "loja_id": "42"
+        },
+        "display": {
+          "nome": "Pizzaria do Zé, Centro",
+          "horario": "terça a domingo, das 18h às 23h",
+          "endereco": "Rua das Flores, 120"
+        },
+        "size_change": null
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "chatbot-proprio",
+      "title": "Com valores próprios nos campos que o modelo libera",
+      "method": "POST",
+      "path": "bots",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+        "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        "external_id": "loja-42-delivery",
+        "context": {
+          "loja_id": "42"
+        },
+        "display": {
+          "nome": "Pizzaria do Zé, delivery"
+        },
+        "overrides": {
+          "assistant_name": "Bia",
+          "welcome": "Oi! Sou a Bia, do delivery do Zé. Quer ver o cardápio?"
+        }
+      },
+      "status": 201,
+      "response": {
+        "bot_id": "bot_7a9b1c3d-5e7f-4a2b-8c4d-6e8f0a2b4c6d",
+        "widget_key": "8d3e1b0f6a2c4e5d7b9a1c3e",
+        "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+        "external_id": "loja-42-delivery",
+        "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        "name": "Bia",
+        "context": {
+          "loja_id": "42"
+        },
+        "display": {
+          "nome": "Pizzaria do Zé, delivery"
+        },
+        "size_change": null
+      },
+      "binary": false
     }
   ]
 }

@@ -51,6 +51,7 @@ export default function ApiDocs() {
           [<code key="cp">campaigns</code>, <Link key="l" href="/docs/api/campanhas">Campanhas e lembretes, e registrar o aceite de novidades.</Link>],
           [<code key="p">pairing</code>, <Link key="l" href="/docs/api/pareamento">Pareamento: ligar o contato à conta dele no seu sistema.</Link>],
           [<code key="s">sources</code>, <Link key="l" href="/docs/api/fontes">Fontes de conhecimento: texto, página ou PDF, com o contexto de cada cliente.</Link>],
+          [<code key="pv">provisioning</code>, <Link key="l" href="/docs/api/provisionamento">Clientes e chatbots a partir de um modelo, com o contexto e os dados de cada loja (pacote Plataforma).</Link>],
           [<code key="b">billing</code>, <Link key="l" href="/docs/api/cobranca">Uso, tamanho e excedente de cada chatbot, e o crédito da conta. Pode cobrar no cartão da assinatura: só o dono da conta cria chave com ela.</Link>],
         ]}
       />
@@ -72,7 +73,7 @@ export default function ApiDocs() {
           <strong>Paginação:</strong> <code>limit</code> de 1 a 100 (padrão 50) e <code>cursor</code> = o <code>next_cursor</code> da resposta anterior (null na última página).
         </li>
         <li>
-          <strong>Idempotency-Key</strong> (opcional nos envios; obrigatória em campanhas, na troca de tamanho e na compra de crédito): vale 24 horas por chave de API. A mesma chave com o mesmo corpo devolve a resposta guardada, sem fazer de novo, com o cabeçalho <code>Idempotent-Replayed: true</code>; com outro corpo, 409 <code>idempotency_conflict</code>. Erro de validação, 429 e 5xx não ficam guardados: dá para repetir com a mesma chave.
+          <strong>Idempotency-Key</strong> (opcional nos envios; obrigatória em campanhas, na criação de chatbot, na troca de tamanho e na compra de crédito): vale 24 horas por chave de API. A mesma chave com o mesmo corpo devolve a resposta guardada, sem fazer de novo, com o cabeçalho <code>Idempotent-Replayed: true</code>; com outro corpo, 409 <code>idempotency_conflict</code>. Erro de validação, 429 e 5xx não ficam guardados: dá para repetir com a mesma chave.
         </li>
       </ul>
       <H3 id="contato">Endereço do contato</H3>
@@ -101,8 +102,9 @@ export default function ApiDocs() {
           ["400", <code key="1">invalid_request</code>, <>Campo com problema; <code>details.field</code> aponta qual.</>],
           ["401", <code key="2">invalid_api_key</code>, "Chave ausente, inválida ou revogada."],
           ["402", <><code>payment_required</code>, <code>payment_overdue</code></>, <>O cartão da assinatura recusou a cobrança (<code>details.invoice_url</code> é a fatura para pagar; vale quando ela for paga), ou o último pagamento da assinatura está em aberto.</>],
-          ["403", <code key="3">forbidden_scope</code>, "A chave não tem a permissão da rota, o chatbot está fora do escopo dela (ou, no crédito, ela não vale para a conta inteira)."],
-          ["403", <><code>plan_not_allowed</code>, <code>feature_suspended</code></>, "A conta não tem o pacote do recurso (a API e a identificação são do pacote Integrações), ele está suspenso na conta, o canal está suspenso, ou o negócio ainda não fez o aceite do canal."],
+          ["403", <code key="3">forbidden_scope</code>, "A chave não tem a permissão da rota, o chatbot está fora do escopo dela (ou, no crédito e na criação de cliente, ela não vale para a conta inteira)."],
+          ["403", <code key="fl">field_locked</code>, "O campo do chatbot é travado pelo modelo dele (só os campos que o modelo libera aceitam valor próprio)."],
+          ["403", <><code>plan_not_allowed</code>, <code>feature_suspended</code></>, "A conta não tem o pacote do recurso (a API e a identificação são do pacote Integrações; clientes e chatbots pela API, do Plataforma), ele está suspenso na conta, o canal está suspenso, ou o negócio ainda não fez o aceite do canal."],
           ["404", <code key="5">not_found</code>, "Não existe ou está fora do escopo da chave."],
           ["409", <><code>idempotency_conflict</code>, <code>conflict</code></>, "Idempotency-Key repetida com outro corpo (ou a primeira ainda está em andamento); ou uma subida anterior do chatbot acabou de ser paga (confira e mande de novo)."],
           ["410", <code key="7">media_gone</code>, "O arquivo passou do prazo de guarda ou foi apagado."],
@@ -123,6 +125,7 @@ export default function ApiDocs() {
           { href: "/docs/api/campanhas", title: "Campanhas e aceite", text: "Campanhas de novidades, lembretes e o aceite de novidades." },
           { href: "/docs/api/pareamento", title: "Pareamento", text: "Ligar o contato à conta dele no seu sistema." },
           { href: "/docs/api/fontes", title: "Fontes", text: "Texto, página ou PDF, e o documento de cada cliente com o contexto." },
+          { href: "/docs/api/provisionamento", title: "Lojas pela API", text: "Clientes e chatbots a partir de um modelo, pelo seu sistema." },
           { href: "/docs/api/cobranca", title: "Cobrança", text: "Uso do mês, tamanho, excedente e crédito." },
         ]}
       />

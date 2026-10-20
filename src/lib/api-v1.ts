@@ -42,7 +42,8 @@ const TOUCH_MS = 60_000;
 export interface ApiContext {
   /** Service role: use só com os bots de `botIds` (as funções de leitura recebem a lista). */
   db: SupabaseClient;
-  key: Pick<ApiKeyRow, "id" | "agency_id" | "prefix" | "name">;
+  /** A chave; as permissões e o escopo vão junto para as rotas que olham mais de uma permissão ou o cliente. */
+  key: Pick<ApiKeyRow, "id" | "agency_id" | "prefix" | "name"> & Partial<Pick<ApiKeyRow, "permissions" | "scope_type" | "scope_client_id">>;
   /** Bots que a chave alcança agora (não demo, da agência da chave). */
   botIds: string[];
   /** A chave vale para a conta inteira (o crédito e outros fatos da conta exigem isso). */
@@ -160,7 +161,7 @@ export function withApiKey<P extends Record<string, string> = Record<string, nev
         void db.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", key.id).then(({ error }) => error && console.error("api: last_used_at", error.message));
       }
       const botIds = await scopeBotIds(db, key);
-      const ctx = apiContext(db, { id: key.id, agency_id: key.agency_id, prefix: key.prefix, name: key.name }, botIds, key.scope_type === "all");
+      const ctx = apiContext(db, { id: key.id, agency_id: key.agency_id, prefix: key.prefix, name: key.name, permissions: key.permissions, scope_type: key.scope_type, scope_client_id: key.scope_client_id }, botIds, key.scope_type === "all");
       return await handler(req, ctx, await route.params);
     } catch (e) {
       if (e instanceof ApiError) return apiErrorResponse(e.status, e.code, e.message, e.details, e.headers);
