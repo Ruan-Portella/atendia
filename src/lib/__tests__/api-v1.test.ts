@@ -52,7 +52,7 @@ function memoryDb(tables: Record<string, Row[]>) {
 const env = vi.hoisted(() => ({ db: null as unknown as SupabaseClient }));
 vi.mock("../supabase/admin", () => ({ createAdminClient: () => env.db }));
 
-import { apiKeyHash, apiKeyProblem, looksLikeApiKey, newApiKey } from "../api-keys";
+import { API_PERMISSIONS, apiKeyHash, apiKeyProblem, looksLikeApiKey, newApiKey } from "../api-keys";
 import { apiContext, bearerKey, withApiKey } from "../api-v1";
 import { adultOn, parseAgeBody } from "../api-age";
 import { parseContactAddress, phoneHash } from "../contacts";
@@ -279,6 +279,19 @@ describe("corpo e endereço do contato", () => {
     expect(() => parseAgeBody({ origin: "cadastro" }, now)).toThrow(/age_verified/);
     expect(() => parseAgeBody({ age_verified: "sim", origin: "cadastro" }, now)).toThrow(/true ou false/);
     expect(() => parseAgeBody({ age_verified: true, birth_date: "2015-01-01", origin: "cadastro" }, now)).toThrow(/não bate/);
+  });
+});
+
+describe("permissões das chaves no banco", () => {
+  it("a lista do banco (a última migração que define api_keys_permissions_check) é a de API_PERMISSIONS", () => {
+    const dir = join(__dirname, "..", "..", "..", "supabase", "migrations");
+    let last: string[] | null = null;
+    for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql")).sort()) {
+      const sql = readFileSync(join(dir, f), "utf8");
+      for (const m of sql.matchAll(/permissions <@ array\[([^\]]*)\]/g)) last = [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
+    }
+    expect(last, "nenhuma migração define a lista de permissões").not.toBeNull();
+    expect([...last!].sort()).toEqual([...API_PERMISSIONS].sort());
   });
 });
 
