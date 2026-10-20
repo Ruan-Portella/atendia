@@ -97,6 +97,15 @@ describe("checagem de cada rodada", () => {
     expect(checkRun(c({}), run({ verdict: "pediu_18" }), "")).toMatch(/portão sem motivo/);
   });
 
+  it("confere o comentário (E1): o tipo lido, a resposta no direct e a falta de resposta", () => {
+    const cc = (over: Partial<EvalCase>) => c({ esperado: "qualquer", comentario: "eu quero", ...over });
+    expect(checkRun(cc({ tipo_comentario: "pergunta|pede_conversa" }), run({ tools: ["comentario:pede_conversa", "direct"] }), "")).toBeNull();
+    expect(checkRun(cc({ tipo_comentario: "ofensa" }), run({ tools: ["comentario:outro"] }), "")).toMatch(/comentário lido como outro \(esperado ofensa\)/);
+    expect(checkRun(cc({ com_direct: true }), run({ tools: ["comentario:pergunta", "publico"] }), "")).toMatch(/sem a resposta privada/);
+    expect(checkRun(cc({ sem_resposta: true }), run({ text: "", tools: ["comentario:spam"] }), "")).toBeNull();
+    expect(checkRun(cc({ sem_resposta: true }), run({ text: "Em público: Obrigada!" }), "")).toMatch(/respondeu o que devia ficar sem resposta/);
+  });
+
   it("tempo esgotado: não começa outro lote e devolve os casos que faltaram", async () => {
     const cases = [c({ id: "a" }), c({ id: "b" })];
     const onResult = vi.fn();

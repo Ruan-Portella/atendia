@@ -144,7 +144,7 @@ export interface CommentPost {
  * A resposta da IA a um comentário que vai ser respondido, já limpa e conferida pelo portão (cada
  * lado é null quando não sai). null quando a chamada falha.
  */
-export async function writeCommentReply(db: SupabaseClient, bot: BotRow, o: { kind: CommentKind; comment: string; post: CommentPost | null; onUsage?: (u: UsageTokens) => void }): Promise<{ publica: string | null; privada: string | null } | null> {
+export async function writeCommentReply(db: SupabaseClient, bot: BotRow, o: { kind: CommentKind; comment: string; post: CommentPost | null; onUsage?: (u: UsageTokens) => void }): Promise<{ publica: string | null; privada: string | null; context: string } | null> {
   const search = searchBots(bot);
   const question = `${o.comment} ${o.post?.caption?.slice(0, 200) ?? ""}`.trim();
   const retrieval = await retrieveContext(db, search.botId, question, activeContext(bot, null), search.alsoBotId, postPriceRuleOf(bot));
@@ -180,8 +180,9 @@ export async function writeCommentReply(db: SupabaseClient, bot: BotRow, o: { ki
     });
     o.onUsage?.(usageFrom(r.response?.modelId ?? model, r.totalUsage));
     const publica = gateSafe(cleanPublicReply(r.output.publica));
-    const privada = o.kind === "pede_conversa" ? gateSafe(cleanPrivateReply(r.output.privada)) : null;
-    return { publica, privada };
+    // pergunta que a base não responde vira conversa no direct (o prompt manda): a privada vale também
+    const privada = o.kind !== "elogio" ? gateSafe(cleanPrivateReply(r.output.privada)) : null;
+    return { publica, privada, context: [gated.context, ...postLines].join("\n") };
   } catch (e) {
     console.error("comentário: resposta da IA falhou", e instanceof Error ? e.message : e);
     return null;

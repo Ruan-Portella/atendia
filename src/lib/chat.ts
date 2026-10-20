@@ -394,9 +394,16 @@ export async function retrieveContext(db: SupabaseClient, botId: string, questio
   return { context, used, hits, embeddingUsage };
 }
 
-/** A regra do preço de post no prompt, só quando a base trouxe algum post do Instagram (E1). */
-export function postNoteFor(bot: Pick<BotRow, "post_price_rule" | "post_price_max_days">, hits: ContextHit[]): string | null {
-  return hits.some(isPostHit) ? postPriceNote(postPriceRuleOf(bot)) : null;
+/** A linha do contexto do Instagram com um post ou story da loja (E1, parte 2). */
+const STORE_MEDIA_LINE = /📎 (Post|Reel) da loja compartilhado|📎 Respondendo a um story da loja/;
+
+/**
+ * A regra do preço de post no prompt (E1): quando a base trouxe algum post do Instagram, ou quando
+ * a mensagem traz o post ou o story da loja de que a pessoa fala.
+ */
+export function postNoteFor(bot: Pick<BotRow, "post_price_rule" | "post_price_max_days">, hits: ContextHit[], question = ""): string | null {
+  if (hits.some(isPostHit)) return postPriceNote(postPriceRuleOf(bot));
+  return STORE_MEDIA_LINE.test(question) ? postPriceNote(postPriceRuleOf(bot), { shared: true }) : null;
 }
 
 /** A origem do link ig.me (E1, parte 3a) para a IA, com a nota da loja sobre o link. Pura. */
@@ -822,7 +829,7 @@ export async function runChat(opts: {
   // portão: a base sem os itens barrados para esta pessoa e as linhas do portão no prompt
   const gated = scopeLock ? gatePrompt(bot, retrieval, { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, gate: opts.gate }) : { context, gateNotes: [], reminder: [] };
   // regras primeiro (iguais em toda a plataforma: cache da OpenAI); o que é deste bot e desta conversa depois
-  const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: withDisplay(gated.context, bot.fixed_display), leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes, momentNotice: activeMomentNotice(bot), postNote: postNoteFor(bot, retrieval.hits) });
+  const prompt = buildPrompt({ assistantName: bot.name, clientName: bot.client_name, persona: bot.persona ?? {}, context: withDisplay(gated.context, bot.fixed_display), leadCapture: leadEnabled, agentMessages, channelNote, ...handoffPrompt(bot), scopeLock, businessTopics: bot.business_topics, gateChannel: scopeLock ? (channel as "whatsapp" | "instagram") : null, widgetWithWhatsapp, gateNotes: gated.gateNotes, momentNotice: activeMomentNotice(bot), postNote: postNoteFor(bot, retrieval.hits, question) });
   const convId = conversationId;
   // roteiros (B2'): as ferramentas, o bloco do passo atual e os botões do passo
   const routine = opts.routine

@@ -11,6 +11,7 @@ import { DELETED_LABEL, deletedBeforeArrival } from "./instagram-edits";
 import { NO_CONTEXT, instagramContext, type IgContext } from "./instagram-context";
 import { originOf, refKind } from "./instagram-direct";
 import { directKeywordReply } from "./instagram-keywords";
+import { postPriceRuleOf } from "./post-context";
 import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage, updateMessages } from "./messages";
 import { maskCardNumbers } from "./routine-run";
@@ -285,7 +286,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   // descrito agora; o de outra conta e a marcação em story entram como foto do contato. A
   // referência fica na mensagem. Sem IA (ou pagamento em aberto, ou dados sensíveis), nada é descrito
   const describeStore = canReadPhotos() && botHasAi(bot) && !aiOff && !bot.sensitive_mode;
-  const contexts: IgContext[] = await Promise.all(burst.map((q) => (deleted.has(q.key) ? NO_CONTEXT : instagramContext(db, { bot, ch, ev: q.ev, describe: describeStore }))));
+  const contexts: IgContext[] = await Promise.all(burst.map((q) => (deleted.has(q.key) ? NO_CONTEXT : instagramContext(db, { bot, ch, ev: q.ev, describe: describeStore, postRule: postPriceRuleOf(bot) }))));
   const refs = contexts.map((c) => c.ref);
   const unknown = burst.flatMap((q) => (q.ev.message?.attachments ?? []).map((a) => a.type ?? "?")).filter((t) => !IG_MEDIA_LABEL[t] && t !== "image" && t !== "audio");
   if (unknown.length) console.log("instagram: anexos não reconhecidos", unknown);

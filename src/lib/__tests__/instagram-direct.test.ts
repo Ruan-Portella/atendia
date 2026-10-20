@@ -115,3 +115,15 @@ describe("links ig.me com origem", () => {
     expect(channelNoteFor({ instagram: { igsid: "1" } })).not.toContain("pelo link");
   });
 });
+
+describe("a regra do preço de post na conversa", () => {
+  it("vem com post na base, ou com o post ou story da loja na mensagem", async () => {
+    const { postNoteFor } = await import("../chat");
+    const bot = { post_price_rule: "citar", post_price_max_days: 30 };
+    expect(postNoteFor(bot, [])).toBeNull();
+    expect(postNoteFor(bot, [], "📎 Post da loja compartilhado (de 12/08/2026): \"Vestido\".\nquanto?")).toContain("A linha com 📎");
+    expect(postNoteFor(bot, [], "📎 Respondendo a um story da loja. O story: vestido.")).toContain("A linha com 📎");
+    expect(postNoteFor(bot, [], "📎 Post compartilhado do Instagram: \"Look\"")).toBeNull();
+    expect(postNoteFor(bot, [{ content: "x", metadata: { kind: "instagram_post", posted_at: "2026-10-01T10:00:00Z" }, similarity: 1 }])).toContain("Post do Instagram de");
+  });
+});

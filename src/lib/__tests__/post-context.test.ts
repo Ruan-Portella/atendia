@@ -51,6 +51,8 @@ describe("a regra do chatbot", () => {
     expect(limit).toContain("mais de 20 dias");
     expect(limit).toContain(OLD_PRICE);
     expect(postPriceNote({ rule: "sempre", maxDays: 30 })).toContain("pode informar");
+    // o post ou story compartilhado na mensagem (📎) também ganha a regra
+    expect(postPriceNote(DEFAULT_POST_RULE, { shared: true })).toContain("A linha com 📎 na mensagem traz o post ou o story da loja");
     // a ação de estoque vale mais que o post, em qualquer regra
     for (const rule of ["citar", "limite", "sempre"] as const) expect(postPriceNote({ rule, maxDays: 30 })).toContain("vale mais que o post");
   });

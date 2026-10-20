@@ -18,7 +18,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Política de Privacidade"
-      updatedAt="19 de outubro de 2026"
+      updatedAt="20 de outubro de 2026"
       intro={`Esta política explica quais dados pessoais a ${brand} trata, para quê, com quem compartilha, por quanto tempo guarda e como você exerce seus direitos, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).`}
     >
       <Section title="1. Quem somos">
@@ -41,7 +41,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Cadastro:</strong> nome, e-mail, nome da agência, logo, cores, telefone de suporte e dados de acesso.</li>
           <li><strong>Pagamento:</strong> tamanhos e pacotes assinados, crédito comprado, histórico de cobranças e identificadores do meio de pagamento. Os dados do cartão são tratados diretamente pela Stripe; não os armazenamos.</li>
-          <li><strong>Conteúdo dos assistentes:</strong> páginas de sites, documentos e textos enviados para formar a base de conhecimento.</li>
+          <li><strong>Conteúdo dos assistentes:</strong> páginas de sites, documentos e textos enviados para formar a base de conhecimento e, quando a empresa escolhe, os posts do Instagram dela (legenda, data, link e uma descrição curta de cada foto feita por IA; a imagem não é guardada).</li>
           <li><strong>Conversas:</strong> mensagens trocadas com os assistentes e com atendentes humanos, data e hora, canal e um identificador técnico do visitante.</li>
           <li><strong>Arquivos recebidos:</strong> fotos, áudios, vídeos e documentos que o contato envia pelo WhatsApp ou pelo Instagram (até 16 MB), guardados para a empresa ver no histórico da conversa.</li>
           <li>
@@ -80,6 +80,12 @@ export default function PrivacyPage() {
           Quando o contato desfaz uma mensagem no Instagram, apagamos o conteúdo e os arquivos dela assim que a Meta avisa; fica só o registro, sem conteúdo, de que a mensagem existiu, para não gravá-la de novo se ela chegar outra vez.
         </p>
         <p>
+          Quando o contato responde a um story da empresa ou compartilha um post dela, o story ou o post é descrito por IA no momento da mensagem, para o assistente saber de que produto se trata (a descrição fica guardada por 30 dias; a imagem, não). O post ou o story de outra conta que o contato envia, e o story em que ele marca a empresa, são tratados como uma foto enviada por ele (veja &quot;Leitura de fotos&quot;). Quando a empresa usa links do Instagram com origem (por exemplo, o link da bio ou de um QR impresso), guardamos de qual link a pessoa abriu a conversa.
+        </p>
+        <p>
+          Quando a empresa liga as respostas aos comentários dos posts, recebemos os comentários feitos nos posts dela, com o nome de usuário de quem comentou. Guardamos o comentário (cifrado) e o que o assistente respondeu (em público ou por mensagem direta) por 90 dias, para a empresa ver no painel. Comentários com ofensa ou spam não são respondidos.
+        </p>
+        <p>
           Usamos esses dados somente para responder as mensagens com o assistente da empresa, permitir o atendimento humano e mostrar o histórico no painel. Não vendemos esses dados, não os usamos para publicidade nem para treinar modelos de IA. A empresa pode desconectar a conta no painel ou nas configurações do Instagram (Apps e sites); com isso, o token é apagado.
         </p>
       </Section>
@@ -107,7 +113,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Supabase</strong>: banco de dados, autenticação, fila e arquivos (Brasil, região de São Paulo).</li>
           <li><strong>Vercel</strong>: hospedagem da aplicação (funções na região de São Paulo).</li>
-          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento, transcrevem áudios e descrevem as fotos enviadas pelos contatos (a OpenAI). Pelos termos de uso das APIs, não usam os dados para treinar modelos.</li>
+          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento, transcrevem áudios e descrevem as fotos enviadas pelos contatos e as fotos dos posts e stories da empresa no Instagram (a OpenAI). Pelos termos de uso das APIs, não usam os dados para treinar modelos.</li>
           <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp e no Instagram, quando a empresa conecta esses canais.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>
@@ -149,6 +155,7 @@ export default function PrivacyPage() {
           </li>
           <li><strong>Ficha do contato e resposta de maioridade:</strong> apagadas quando o contato fica parado pelo prazo acima, sem conversa nem vínculo ativo.</li>
           <li><strong>Registros técnicos de integrações</strong> (chamadas de ações e entregas de webhooks): 30 dias.</li>
+          <li><strong>Instagram:</strong> comentários recebidos e as respostas, 90 dias; descrições de stories e posts lidos no momento da mensagem, 30 dias; os posts lidos como base de conhecimento ficam enquanto estiverem entre os 100 mais novos dos últimos 90 dias.</li>
           <li><strong>Auditoria da conta</strong> (sem conteúdo de conversas): 1 ano.</li>
           <li><strong>Registros de acesso ao painel e à área do cliente</strong> (IP, data e hora): 6 meses, como exige o Marco Civil da Internet.</li>
           <li>

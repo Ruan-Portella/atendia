@@ -70,9 +70,11 @@ describe("as chamadas", () => {
   });
 
   it("a resposta com a base e o post: só a pública na pergunta", async () => {
-    fake.outputs = [{ publica: "Tem sim! O vestido vai do P ao GG 😊 https://loja.com", privada: "não devia sair" }];
+    fake.outputs = [{ publica: "Tem sim! O vestido vai do P ao GG 😊 https://loja.com", privada: "" }];
     const r = await writeCommentReply(db, bot, { kind: "pergunta", comment: "tem no M?", post: { caption: "Vestido midi floral", postedAt: "2026-10-12T15:00:00.000Z", photos: ["Vestido azul."], permalink: null } });
-    expect(r).toEqual({ publica: "Tem sim! O vestido vai do P ao GG 😊", privada: null });
+    expect(r).toMatchObject({ publica: "Tem sim! O vestido vai do P ao GG 😊", privada: null });
+    // o contexto volta para a avaliação conferir os valores
+    expect(r?.context).toContain("Vestido midi floral: tamanhos P ao GG");
     const prompt = fake.prompts[0];
     expect(prompt).toContain("POST DO COMENTÁRIO (de 12/10/2026)");
     expect(prompt).toContain("Vestido midi floral: tamanhos P ao GG");
@@ -80,10 +82,17 @@ describe("as chamadas", () => {
     expect(prompt).toContain("REGRA DOS POSTS");
   });
 
+  it("pergunta que a base não responde: vira conversa no direct; elogio nunca leva privada", async () => {
+    fake.outputs = [{ publica: "Te chamei no direct!", privada: "Oi! Vou confirmar a entrega em Manaus com a equipe." }];
+    expect(await writeCommentReply(db, bot, { kind: "pergunta", comment: "entregam em Manaus?", post: null })).toMatchObject({ privada: "Oi! Vou confirmar a entrega em Manaus com a equipe." });
+    fake.outputs = [{ publica: "Obrigada! 💛", privada: "Oi!" }];
+    expect(await writeCommentReply(db, bot, { kind: "elogio", comment: "lindo!", post: null })).toMatchObject({ publica: "Obrigada! 💛", privada: null });
+  });
+
   it("pede conversa: a privada no direct e a pública curta; a que não passa no portão não sai", async () => {
     fake.outputs = [{ publica: "Te chamei no direct! 😊", privada: "Oi! Vi seu comentário no vestido. Qual tamanho você usa?" }];
-    expect(await writeCommentReply(db, bot, { kind: "pede_conversa", comment: "quero comprar", post: null })).toEqual({ publica: "Te chamei no direct! 😊", privada: "Oi! Vi seu comentário no vestido. Qual tamanho você usa?" });
+    expect(await writeCommentReply(db, bot, { kind: "pede_conversa", comment: "quero comprar", post: null })).toMatchObject({ publica: "Te chamei no direct! 😊", privada: "Oi! Vi seu comentário no vestido. Qual tamanho você usa?" });
     fake.outputs = [{ publica: "Te chamei no direct!", privada: "Temos cerveja gelada também, por R$ 8." }];
-    expect(await writeCommentReply(db, bot, { kind: "pede_conversa", comment: "quero comprar", post: null })).toEqual({ publica: "Te chamei no direct!", privada: null });
+    expect(await writeCommentReply(db, bot, { kind: "pede_conversa", comment: "quero comprar", post: null })).toMatchObject({ publica: "Te chamei no direct!", privada: null });
   });
 });

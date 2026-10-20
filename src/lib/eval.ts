@@ -144,7 +144,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         businessTopics: bot.business_topics,
         gateChannel: scopeLock ? (opts.channel as "whatsapp" | "instagram") : null,
         gateNotes: gated.gateNotes,
-        postNote: postNoteFor(bot, retrieval.hits),
+        postNote: postNoteFor(bot, retrieval.hits, question),
       });
       const r = await generateText({
         model: chatModel(opts.model),

@@ -6,7 +6,7 @@ import { describePostPhoto, isReel, photoLine, postImageUrls } from "./instagram
 import type { IgMessagingEvent } from "./instagram-inbound";
 import { fetchIgImage } from "./media-capture";
 import { imageMimeOf } from "./photo-note";
-import { postDate } from "./post-context";
+import { maskPrices, postAgeDays, postDate, type PostPriceRule } from "./post-context";
 
 /*
  * Contexto do Instagram no direct (E1, parte 2; spec Peça 9): o story ou o post de que a pessoa fala
@@ -52,8 +52,12 @@ export interface StoreMedia {
   postedAt: string | null;
 }
 
-/** O post da loja compartilhado, como a IA lê. Pura. */
-export function storePostText(m: StoreMedia): string {
+/**
+ * O post da loja compartilhado, como a IA lê. Na regra "limite", o post mais velho que o limite
+ * chega sem o preço (na legenda e nas fotos), como na base. Pura.
+ */
+export function storePostText(m: StoreMedia, rule?: PostPriceRule, now = Date.now()): string {
+  if (rule?.rule === "limite" && m.postedAt && postAgeDays(m.postedAt, now) > rule.maxDays) m = { ...m, caption: m.caption ? maskPrices(m.caption) : m.caption, photos: m.photos.map(maskPrices) };
   const what = m.kind === "reel" ? "Reel" : "Post";
   const when = m.postedAt ? ` (de ${postDate(m.postedAt)})` : "";
   const caption = m.caption?.trim() ? `: "${m.caption.trim().slice(0, CAPTION_MAX)}"` : " (sem legenda)";
@@ -89,6 +93,8 @@ interface Who {
   ch: IgChannel;
   /** A IA pode descrever o que é da loja agora (chatbot com IA, sem pagamento em aberto, fora do modo dados sensíveis). */
   describe: boolean;
+  /** A regra do preço de post do chatbot (o post velho compartilhado perde o preço na regra "limite"). */
+  postRule?: PostPriceRule;
 }
 
 /** As fotos da loja (até 3 por post, em paralelo), descritas com a leitura dos posts. */
@@ -135,13 +141,13 @@ async function storyContext(db: SupabaseClient, w: Who, story: { id?: string; ur
 /** O post ou reel compartilhado: da loja (lido na fonte ou agora, pela API) ou de outra conta. */
 async function postContext(db: SupabaseClient, w: Who, shared: SharedRef): Promise<IgContext> {
   const known = shared.id ? await knownMedia(db, w.bot.id, shared.id) : null;
-  if (known) return { text: storePostText(known), ref: { ...shared, permalink: known.permalink }, photoUrl: null, seen: true };
+  if (known) return { text: storePostText(known, w.postRule), ref: { ...shared, permalink: known.permalink }, photoUrl: null, seen: true };
   const m: IgMedia | null = shared.id ? await instagramMediaById(w.ch, shared.id) : null;
   if (m) {
     const photos = w.describe ? await describeStoreImages(db, w, postImageUrls(m)) : [];
     const media: StoreMedia = { kind: isReel(m) ? "reel" : "post", caption: m.caption ?? shared.title, photos, permalink: m.permalink ?? null, postedAt: m.timestamp ? new Date(m.timestamp).toISOString() : null };
     if (shared.id && photos.some(Boolean)) await saveNote(db, w.bot.id, shared.id, media);
-    return { text: storePostText(media), ref: { ...shared, permalink: media.permalink }, photoUrl: null, seen: Boolean(media.caption?.trim() || photos.some(Boolean)) };
+    return { text: storePostText(media, w.postRule), ref: { ...shared, permalink: media.permalink }, photoUrl: null, seen: Boolean(media.caption?.trim() || photos.some(Boolean)) };
   }
   // de outra conta: a legenda, e a imagem do post como foto do contato
   return { text: sharedText(shared), ref: shared, photoUrl: shared.url, seen: false };

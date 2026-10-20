@@ -89,10 +89,13 @@ export function withPostAges<T extends { content: string; metadata: PostHitMeta;
   });
 }
 
-/** A regra do preço de post no prompt (só quando a base trouxe algum post). Pura. */
-export function postPriceNote(rule: PostPriceRule): string {
+/**
+ * A regra do preço de post no prompt: quando a base trouxe algum post, ou quando a mensagem traz o
+ * post ou o story da loja de que a pessoa fala (a linha com 📎, `shared`). Pura.
+ */
+export function postPriceNote(rule: PostPriceRule, o: { shared?: boolean } = {}): string {
   const action = "Se houver uma ação para consultar produto, preço ou estoque, use-a: ela vale mais que o post.";
-  const where = 'Os trechos que começam com "Post do Instagram de" são posts da loja, com a data em que foram publicados.';
+  const where = o.shared ? "A linha com 📎 na mensagem traz o post ou o story da loja de que a pessoa fala, com a data em que foi publicado: use o que ela mostra." : 'Os trechos que começam com "Post do Instagram de" são posts da loja, com a data em que foram publicados.';
   if (rule.rule === "sempre") return `${where} Preço que só aparece num post: pode informar, citando a data do post (ex.: "no post de 12/08 está R$ 89"). ${action}`;
   const cite = `Preço que só aparece num post: diga o preço citando a data do post (ex.: "no post de 12/08 estava R$ 89") e diga que vai confirmar a disponibilidade com a equipe. Nunca diga que o produto está disponível só porque está num post.`;
   if (rule.rule === "limite") return `${where} Em post com mais de ${rule.maxDays} dias o preço aparece como "${OLD_PRICE}": não informe preço desse post; diga que confirma o valor com a equipe. ${cite} ${action}`;

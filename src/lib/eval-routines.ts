@@ -447,7 +447,7 @@ async function conversation(r: Run, c: RoutineCaseFields & { id: string }): Prom
       businessTopics: r.bot.business_topics,
       gateChannel,
       gateNotes: gated.gateNotes,
-      postNote: postNoteFor(r.bot, retrieval.hits),
+      postNote: postNoteFor(r.bot, retrieval.hits, searched),
     });
     const session = routineSession(mem, {
       bot: r.bot,

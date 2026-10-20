@@ -61,6 +61,14 @@ describe("o texto do contexto", () => {
     expect(storePostText({ kind: "reel", caption: null, photos: [], permalink: null, postedAt: null })).toBe("📎 Reel da loja compartilhado (sem legenda).");
   });
 
+  it("na regra limite, o post velho compartilhado chega sem o preço", () => {
+    const old = { kind: "post" as const, caption: "Vestido R$ 129,90", photos: ['Vestido azul. Texto na foto: "R$ 129,90".'], permalink: null, postedAt: "2026-08-12T15:00:00.000Z" };
+    const now = Date.parse("2026-10-20T12:00:00-03:00");
+    expect(storePostText(old, { rule: "limite", maxDays: 30 }, now)).not.toContain("129");
+    expect(storePostText(old, { rule: "limite", maxDays: 90 }, now)).toContain("R$ 129,90");
+    expect(storePostText(old, { rule: "citar", maxDays: 30 }, now)).toContain("R$ 129,90");
+  });
+
   it("story respondido: com a descrição, ou o pedido para dizer o produto", () => {
     expect(storyReplyText("Vestido azul.")).toContain("O story (descrição automática do BoaVoz");
     expect(storyReplyText(null)).toContain("peça para a pessoa dizer o produto");
