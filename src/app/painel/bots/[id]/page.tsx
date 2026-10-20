@@ -3,8 +3,10 @@ import { TEST_ANSWERS_FREE, num } from "@/lib/plans";
 import { BotActions } from "@/components/integrations/bot-actions";
 import { FixedContextCard } from "@/components/integrations/fixed-context-card";
 import { TemplateInheritance, type DerivedItem } from "@/components/templates/template-inheritance";
+import { InheritedList } from "@/components/templates/inherited-list";
 import { createDerivedAction, setTemplateUnlockedAction } from "@/app/painel/modelos/actions";
-import { unlockedFields } from "@/lib/bot-template";
+import { OVERRIDE_FIELDS, TEMPLATE_FIELD_LABEL, unlockedFields, type OverrideField, type TemplateField as InheritField } from "@/lib/bot-template";
+import type { Persona } from "@/lib/ai";
 import { saveFixedContext } from "@/app/painel/integracoes/actions";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
 import { notFound } from "next/navigation";
@@ -51,6 +53,7 @@ import { SatisfactionCard } from "@/components/satisfaction-card";
 import { EvolutionTable } from "@/components/evolution-table";
 import { botEvolution } from "@/lib/evolution";
 import { satisfactionSummary } from "@/lib/satisfaction";
+import { detachFromTemplate, resetDerivedField } from "../../actions";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
@@ -127,7 +130,14 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const clients = bot.is_demo || tab === "personalidade" || tab === "heranca" ? await getClientOptions(supabase, agency.id) : [];
   // modelo (D'): os derivados, na Herança; derivado: o nome do modelo, na faixa do topo
   const derivedList = isTemplate && tab === "heranca" ? (((await createAdminClient().from("bots").select("id, name, client_name, status").eq("template_id", id).order("created_at")).data ?? []) as DerivedItem[]) : [];
-  const templateName = bot.template_id ? (((await createAdminClient().from("bots").select("name").eq("id", bot.template_id).maybeSingle()).data?.name as string | undefined) ?? "modelo") : null;
+  const templateRow = bot.template_id
+    ? ((await createAdminClient().from("bots").select("name, persona, business_topics, template_unlocked").eq("id", bot.template_id).maybeSingle()).data as { name: string; persona: Persona | null; business_topics: string | null; template_unlocked: string[] | null } | null)
+    : null;
+  const templateName = bot.template_id ? (templateRow?.name ?? "modelo") : null;
+  // derivado (D', parte 2c): o que o modelo libera e o que já tem valor próprio
+  const opens = (f: InheritField) => !templateRow || unlockedFields(templateRow).includes(f);
+  const owns = (f: OverrideField) => Boolean(templateRow) && Object.prototype.hasOwnProperty.call((bot.overrides as Record<string, unknown> | null) ?? {}, f);
+  const ownFields = templateRow ? ([...OVERRIDE_FIELDS.filter(owns), ...(bot.extra_instructions ? ["instrucoes" as const] : [])] as InheritField[]) : [];
   const textOf = new Map(((sourceTexts ?? []) as Array<{ id: string; content: string | null }>).map((t) => [t.id, t.content]));
   const sources: SourceItem[] = ((sourceMeta ?? []) as Array<Omit<SourceItem, "content">>).map((s) => ({ ...s, content: textOf.get(s.id) ?? null }));
 
@@ -215,9 +225,20 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
       {templateName && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-brand-soft px-4 py-3 text-sm text-brand sm:px-5 md:px-7">
-          <span>
+          <span className="min-w-0">
             Este chatbot segue o modelo <Link href={`/painel/bots/${bot.template_id}?tab=heranca`} className="font-semibold underline">{templateName}</Link>: a personalidade, as instruções, as ações, os roteiros e a base comum vêm dele.
           </span>
+          {canConfig && (
+            <ConfirmAction
+              action={detachFromTemplate.bind(null, id)}
+              title="Desligar do modelo?"
+              description="Este chatbot fica com uma cópia das ações, dos roteiros e da base do modelo e para de receber as mudanças dele. Não dá para ligar de novo."
+              confirmLabel="Desligar do modelo"
+              className="ml-auto text-xs font-semibold text-brand hover:underline"
+            >
+              Desligar do modelo
+            </ConfirmAction>
+          )}
         </div>
       )}
 
@@ -254,7 +275,12 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <h2 className="text-[22px] font-bold">Base de conhecimento</h2>
                 <p className="text-sm text-muted">Tudo que {bot.name} sabe vem daqui. Ele não inventa o que não está nas fontes.</p>
               </div>
-              <SourcesManager botId={id} sources={sources} />
+              {bot.template_id && <InheritedList kind="fontes" templateId={bot.template_id} templateName={templateName ?? "modelo"} />}
+              {bot.template_id && !opens("base") ? (
+                <p className="max-w-[860px] text-sm text-muted">O modelo não libera base própria: este chatbot usa só a base do modelo.</p>
+              ) : (
+                <SourcesManager botId={id} sources={sources} />
+              )}
               {taggedSources > 0 && (
                 <p className="max-w-[860px] rounded-lg bg-ground px-3 py-2 text-sm text-ink-2">
                   Mais {num(taggedSources)} fonte{taggedSources === 1 ? "" : "s"} por contexto, enviada{taggedSources === 1 ? "" : "s"} pela API: cada uma vale só nas conversas do contexto dela (o cliente do sistema, a loja). A lista e a remoção ficam na API (<Link href="/docs/api/fontes" className="underline">Fontes</Link>).
@@ -313,25 +339,57 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "personalidade" && (
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Personalidade</h2><p className="text-sm text-muted">Como o assistente se apresenta e fala.</p></div>
-              <div><label htmlFor="name" className="label">Nome do assistente</label><input id="name" name="name" required minLength={2} maxLength={40} defaultValue={bot.name} className="input" /></div>
+              {templateRow && <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">O tom, as instruções e os assuntos do negócio vêm do modelo {templateRow.name}. Os campos travados mudam só no modelo.</p>}
+              <div><label htmlFor="name" className="label">Nome do assistente{templateRow ? (owns("nome") ? " (deste chatbot)" : " (do modelo)") : ""}</label><input id="name" name="name" required minLength={2} maxLength={40} defaultValue={bot.name} disabled={!opens("nome")} className="input disabled:opacity-60" /></div>
               {!bot.is_demo && !bot.is_template && <ClientPicker clients={clients} defaultClientId={bot.client_id} suggestedName={bot.client_id ? "" : bot.client_name} idPrefix="pers" />}
               <div><label htmlFor="client_site" className="label">Site onde o chatbot fica</label><input id="client_site" name="client_site" maxLength={200} defaultValue={bot.client_site ?? ""} className="input" /></div>
-              <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" maxLength={200} defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
-              <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas</label><input id="welcome" name="welcome" maxLength={300} defaultValue={persona.welcome ?? ""} className="input" /></div>
-              <div><label htmlFor="instructions" className="label">Instruções extras (o que sempre dizer, o que nunca dizer)</label><textarea id="instructions" name="instructions" rows={5} maxLength={4000} defaultValue={persona.instructions ?? ""} className="input" placeholder="Ex.: Sempre ofereça a avaliação gratuita. Nunca prometa desconto." /></div>
+              {templateRow ? (
+                <div><span className="label">Tom de voz (do modelo)</span><p className="text-sm text-ink-2">{templateRow.persona?.tone ?? "—"}</p></div>
+              ) : (
+                <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" maxLength={200} defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
+              )}
+              <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas{templateRow ? (owns("saudacao") ? " (deste chatbot)" : " (do modelo)") : ""}</label><input id="welcome" name="welcome" maxLength={300} defaultValue={persona.welcome ?? ""} disabled={!opens("saudacao")} className="input disabled:opacity-60" /></div>
+              {templateRow ? (
+                <>
+                  <div><span className="label">Instruções (do modelo)</span><p className="whitespace-pre-wrap rounded-lg bg-ground px-3 py-2 text-sm text-ink-2">{templateRow.persona?.instructions?.trim() || "Nenhuma."}</p></div>
+                  {opens("instrucoes") && <div><label htmlFor="extra_instructions" className="label">Instruções extras deste chatbot (somadas às do modelo)</label><textarea id="extra_instructions" name="extra_instructions" rows={4} maxLength={4000} defaultValue={bot.extra_instructions ?? ""} className="input" /></div>}
+                </>
+              ) : (
+                <div><label htmlFor="instructions" className="label">Instruções extras (o que sempre dizer, o que nunca dizer)</label><textarea id="instructions" name="instructions" rows={5} maxLength={4000} defaultValue={persona.instructions ?? ""} className="input" placeholder="Ex.: Sempre ofereça a avaliação gratuita. Nunca prometa desconto." /></div>
+              )}
+              {templateRow ? (
+                <div><span className="label">Assuntos do negócio (do modelo)</span><p className="text-sm text-ink-2">{templateRow.business_topics?.trim() || "Nenhum além do negócio."}</p></div>
+              ) : (
               <div>
                 <label htmlFor="business_topics" className="label">Assuntos do negócio (WhatsApp e Instagram)</label>
                 <textarea id="business_topics" name="business_topics" rows={3} maxLength={1000} defaultValue={bot.business_topics ?? ""} className="input" placeholder="Ex.: cuidados com os dentes, dicas de escovação, como funciona o plano odontológico." />
                 <p className="mt-1 text-xs text-muted">No WhatsApp e no Instagram, o assistente conversa só sobre o negócio (regra da Meta contra assistentes de uso geral). Aqui você amplia os assuntos próximos que ele pode tratar. Fazer o trabalho pela pessoa (redação, tradução, programação) ou executar o serviço que a empresa vende continua bloqueado. No chat do site não há essa trava.</p>
               </div>
+              )}
               {bot.client_id && <p className="text-xs text-muted">O nome do cliente e quanto você cobra ficam no <Link href={`/painel/clientes/${bot.client_id}?tab=dados`} className="font-semibold text-brand hover:underline">painel do cliente</Link>.</p>}
               <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
             </ActionForm>
           )}
 
+          {templateRow && ownFields.length > 0 && (tab === "personalidade" || tab === "aparencia" || tab === "atendimento") && (
+            <section className="flex max-w-[640px] flex-col gap-2 rounded-xl border border-line bg-panel px-4 py-3 text-sm">
+              <span className="font-semibold">Valores próprios deste chatbot</span>
+              {ownFields.map((f) => (
+                <div key={f} className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-ink-2">{TEMPLATE_FIELD_LABEL[f]}{opens(f) ? "" : " (travado no modelo: vale o do modelo)"}</span>
+                  <ActionForm action={resetDerivedField.bind(null, id, f)}>
+                    <SubmitButton className="text-xs font-semibold text-brand hover:underline" pendingLabel="Voltando…">Voltar ao modelo</SubmitButton>
+                  </ActionForm>
+                </div>
+              ))}
+            </section>
+          )}
+
           {tab === "aparencia" && (
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Aparência e marca</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"} nunca aparece.</p></div>
+              {!opens("aparencia") && <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">A aparência vem do modelo {templateRow?.name}: muda só lá.</p>}
+              <fieldset disabled={!opens("aparencia")} className="contents">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><label htmlFor="color" className="label">Cor principal</label><input id="color" name="color" type="color" defaultValue={color} className="input h-11 p-1" /></div>
                 <div><label htmlFor="avatar_text" className="label">Iniciais do avatar</label><input id="avatar_text" name="avatar_text" maxLength={2} defaultValue={appearance.avatar_text ?? initials(bot.client_name)} className="input" /></div>
@@ -342,7 +400,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <p className="mb-3 text-xs text-muted">Vale para o widget já instalado em até um minuto; não precisa trocar o código.</p>
                 <WidgetPositionPicker position={appearance.position === "left" ? "left" : "right"} offset={Number(appearance.offset ?? 20)} color={color} />
               </div>
-              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+              </fieldset>
+              {opens("aparencia") && <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>}
             </ActionForm>
           )}
 
@@ -413,12 +472,13 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 </div>
                 <TemplateField
                   id="entry_notice"
-                  label="Entrada: começo da primeira mensagem de quem assumir"
+                  label={`Entrada: começo da primeira mensagem de quem assumir${templateRow ? (owns("anuncio") ? " (deste chatbot)" : " (do modelo)") : ""}`}
                   hint="Variáveis: {atendente} (o nome de exibição de quem assumiu, obrigatório) e {empresa}. A prévia usa o seu nome."
                   defaultValue={handoff.entry_notice ?? DEFAULT_ENTRY_NOTICE}
                   fallback={DEFAULT_ENTRY_NOTICE}
                   vars={{ atendente: attendantOf(member).name, empresa: bot.client_name }}
                   maxLength={300}
+                  disabled={!opens("anuncio")}
                 />
                 <TemplateField
                   id="back_notice"
@@ -690,7 +750,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             </div>
           )}
 
-          {tab === "roteiros" && <BotRoutines botId={id} integrations={integrations} />}
+          {tab === "roteiros" && (bot.template_id ? <InheritedList kind="roteiros" templateId={bot.template_id} templateName={templateName ?? "modelo"} /> : <BotRoutines botId={id} integrations={integrations} />)}
 
           {tab === "acoes" &&
             (bot.is_demo ? (
@@ -702,7 +762,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     Você pode cadastrar as ações e conferir cada uma pelo botão Testar. A IA só usa as ações na conversa com o pacote Integrações (<Link href="/painel/cobranca" className="underline">Cobrança → Assinatura</Link>).
                   </p>
                 )}
-                <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
+                {bot.template_id ? (
+                  <InheritedList kind="acoes" templateId={bot.template_id} templateName={templateName ?? "modelo"} />
+                ) : (
+                  <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
+                )}
                 <FixedContextCard value={bot.fixed_context} manage={manageActions} save={saveFixedContext.bind(null, id)} />
               </>
             ))}

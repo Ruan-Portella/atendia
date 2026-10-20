@@ -238,3 +238,57 @@ export async function setDerivedOverride(db: SupabaseClient, bot: { id: string; 
   if (error) throw new Error(`derivado: valor não salvo (${error.message})`);
   await applyTemplate(db, bot.template_id, [bot.id]);
 }
+
+/** O que o derivado tem agora nos campos que podem ser próprios (para saber o que mudou). */
+export interface DerivedCurrent {
+  name: string;
+  welcome: string | null;
+  appearance: Record<string, unknown> | null;
+  entryNotice: string | null;
+  overrides: Record<string, unknown> | null;
+}
+
+const appearanceKey = (a: Record<string, unknown> | null | undefined) =>
+  JSON.stringify([a?.color ?? null, a?.avatar_text ?? null, a?.suggested_questions ?? [], a?.position ?? "right", Number(a?.offset ?? 20)]);
+
+/**
+ * O que o formulário do painel grava num derivado (D', parte 2c). O que o modelo libera vira valor
+ * próprio (overrides), mas só o que mudou: salvar a aba sem mexer num campo não corta a herança
+ * dele. As instruções extras vão para a coluna delas. O tom, as instruções e os assuntos do
+ * negócio vêm sempre do modelo e saem do patch, assim como o anúncio (a propagação grava). Pura.
+ */
+export function derivedPatch(patch: Record<string, unknown>, form: Record<string, string>, unlocked: TemplateField[], current: DerivedCurrent): Record<string, unknown> {
+  const out = { ...patch };
+  const ov: Record<string, unknown> = { ...(current.overrides ?? {}) };
+  const open = (f: TemplateField) => unlocked.includes(f);
+  const has = (f: OverrideField) => Object.prototype.hasOwnProperty.call(current.overrides ?? {}, f);
+  const keep = (f: OverrideField, value: unknown, same: boolean) => {
+    if (!open(f)) return;
+    if (has(f) || !same) ov[f] = value;
+  };
+  if ("name" in out) {
+    keep("nome", out.name, out.name === current.name);
+    delete out.name;
+  }
+  if ("welcome" in form) {
+    const w = form.welcome.trim();
+    keep("saudacao", w, w === (current.welcome ?? ""));
+  }
+  delete out.persona;
+  delete out.business_topics;
+  if ("extra_instructions" in form && open("instrucoes")) out.extra_instructions = form.extra_instructions.trim().slice(0, 4000) || null;
+  if ("appearance" in out) {
+    const a = out.appearance as Record<string, unknown>;
+    keep("aparencia", a, appearanceKey(a) === appearanceKey(current.appearance));
+    delete out.appearance;
+  }
+  if ("human_handoff" in out) {
+    const h = { ...(out.human_handoff as Record<string, unknown>) };
+    const notice = typeof h.entry_notice === "string" ? h.entry_notice : "";
+    keep("anuncio", notice || null, notice === (current.entryNotice ?? ""));
+    delete h.entry_notice;
+    out.human_handoff = h;
+  }
+  out.overrides = ov;
+  return out;
+}

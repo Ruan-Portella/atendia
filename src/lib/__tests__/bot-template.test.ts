@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { memoryDb, type MemRow } from "../memory-db";
-import { applyTemplate, asBotAction, configBotId, createDerivedBot, derivedColumns, searchBots, setDerivedOverride, setTemplateUnlocked, type DerivedRow, type TemplateRow } from "../bot-template";
+import { applyTemplate, asBotAction, configBotId, createDerivedBot, derivedColumns, derivedPatch, searchBots, setDerivedOverride, setTemplateUnlocked, type DerivedRow, type TemplateRow } from "../bot-template";
 import type { ActionRow } from "../actions";
 
 const AGENCY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -92,5 +92,23 @@ describe("bot modelo: a herança", () => {
     // desfazer: segue o modelo
     await setDerivedOverride(db, { id, template_id: T, overrides: row().overrides as Record<string, unknown> }, "nome", undefined);
     expect(row()).toMatchObject({ name: "Duda", overrides: {} });
+  });
+
+  it("salvar a aba do derivado: só o que mudou vira valor próprio; o travado e o que vem do modelo saem", () => {
+    const current = { name: "Duda", welcome: "Olá! Sou Duda, da Pizzaria do Zé.", appearance: { color: "#c0392b", avatar_text: "PD", suggested_questions: [], position: "right", offset: 20 }, entryNotice: null, overrides: {} };
+    // nada mudou (só o site): nada vira próprio
+    expect(derivedPatch({ name: "Duda", client_site: "zepizza.com.br" }, { welcome: "Olá! Sou Duda, da Pizzaria do Zé." }, ["nome", "saudacao"], current)).toEqual({ client_site: "zepizza.com.br", overrides: {} });
+    // mudou o nome e a saudação; o tom e os assuntos do modelo saem do patch
+    const changed = derivedPatch({ name: "Zé Bot", persona: { tone: "sério" }, business_topics: "x" }, { welcome: "E aí!", extra_instructions: " Aos domingos, rodízio. " }, ["nome", "saudacao", "instrucoes"], current);
+    expect(changed).toEqual({ overrides: { nome: "Zé Bot", saudacao: "E aí!" }, extra_instructions: "Aos domingos, rodízio." });
+    // travado: ignorado
+    expect(derivedPatch({ name: "Zé Bot" }, {}, ["saudacao"], current)).toEqual({ overrides: {} });
+    // aparência igual não vira própria; o anúncio sai do atendimento (a propagação grava) e o resto fica
+    expect(derivedPatch({ appearance: { ...current.appearance }, human_handoff: { entry_notice: null, hours: { mon: ["9:00", "18:00"] } } }, { handoff: "1" }, ["aparencia", "anuncio"], current)).toEqual({
+      human_handoff: { hours: { mon: ["9:00", "18:00"] } },
+      overrides: {},
+    });
+    // já próprio: o valor novo substitui, mesmo igual ao atual
+    expect(derivedPatch({ name: "Zé Bot" }, {}, ["nome"], { ...current, name: "Zé Bot", overrides: { nome: "Zé Bot" } })).toEqual({ overrides: { nome: "Zé Bot" } });
   });
 });

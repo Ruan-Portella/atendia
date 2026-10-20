@@ -11,6 +11,7 @@ export function TemplateField({
   fallback,
   vars,
   maxLength,
+  disabled = false,
 }: {
   id: string;
   label: string;
@@ -20,13 +21,15 @@ export function TemplateField({
   fallback: string;
   vars: Record<string, string>;
   maxLength: number;
+  /** Travado (o anúncio de um chatbot derivado, quando o modelo não libera). */
+  disabled?: boolean;
 }) {
   const [value, setValue] = useState(defaultValue);
   const preview = Object.entries(vars).reduce((t, [k, v]) => t.replaceAll(`{${k}}`, v), value.trim() || fallback);
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="label">{label}</label>
-      <textarea id={id} name={id} value={value} onChange={(e) => setValue(e.target.value)} maxLength={maxLength} rows={2} className="input resize-y" />
+      <textarea id={id} name={id} value={value} onChange={(e) => setValue(e.target.value)} maxLength={maxLength} rows={2} disabled={disabled} className="input resize-y disabled:opacity-60" />
       <p className="text-xs text-muted">{hint}</p>
       <div className="rounded-lg bg-ground px-3 py-2 text-sm">
         <span className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">Prévia </span>

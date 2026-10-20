@@ -63,7 +63,7 @@ import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
-import { applyTemplate } from "@/lib/bot-template";
+import { OVERRIDE_FIELDS, applyTemplate, derivedPatch, setDerivedOverride, unlockedFields, type OverrideField } from "@/lib/bot-template";
 import { endBotRoutineRuns } from "@/lib/routine-engine";
 import { firstExceeded } from "@/lib/rate-limit";
 import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
@@ -343,18 +343,76 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
     if ("error" in regulated) return fail(regulated.error);
     patch.regulated_channel = regulated.value;
   }
-  if (!Object.keys(patch).length) return fail("Nada para salvar.");
+  if (!Object.keys(patch).length && !("extra_instructions" in f) && !("welcome" in f)) return fail("Nada para salvar.");
 
-  const { error, count } = await supabase.from("bots").update(patch, { count: "exact" }).eq("id", botId);
+  // chatbot derivado (D', parte 2c): o que o modelo libera e mudou vira valor próprio; o resto vem do modelo
+  const { data: kind } = await supabase.from("bots").select("template_id, name, persona, appearance, human_handoff, overrides").eq("id", botId).maybeSingle();
+  let toSave: Record<string, unknown> = patch;
+  if (kind?.template_id) {
+    const { data: t } = await createAdminClient().from("bots").select("template_unlocked").eq("id", kind.template_id).maybeSingle();
+    toSave = derivedPatch(patch, f, unlockedFields({ template_unlocked: (t?.template_unlocked as string[] | null) ?? [] }), {
+      name: kind.name as string,
+      welcome: ((kind.persona as { welcome?: string } | null)?.welcome as string | undefined) ?? null,
+      appearance: (kind.appearance as Record<string, unknown> | null) ?? null,
+      entryNotice: ((kind.human_handoff as { entry_notice?: string } | null)?.entry_notice as string | undefined) ?? null,
+      overrides: (kind.overrides as Record<string, unknown> | null) ?? {},
+    });
+  }
+
+  const { error, count } = await supabase.from("bots").update(toSave, { count: "exact" }).eq("id", botId);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   if (!count) return fail("Chatbot não encontrado.");
   // mudar as instruções ou os "Assuntos do negócio" dispara de novo a análise do bot (agrupada, ~10 min)
   if ("persona" in patch || "business_topics" in patch) await markAnalysisDue(createAdminClient(), botId);
-  // bot modelo (D'): a mudança vai para os derivados na hora
+  // bot modelo (D'): a mudança vai para os derivados na hora; derivado: o modelo de novo, com os valores próprios
   const { data: saved } = await supabase.from("bots").select("is_template").eq("id", botId).maybeSingle();
   const spread = saved?.is_template ? await applyTemplate(createAdminClient(), botId) : 0;
+  if (kind?.template_id) await applyTemplate(createAdminClient(), kind.template_id as string, [botId]);
   revalidatePath("/painel", "layout");
   return ok(spread ? `Alterações salvas e aplicadas em ${spread} chatbot${spread === 1 ? "" : "s"} derivado${spread === 1 ? "" : "s"}.` : "Alterações salvas.");
+}
+
+/**
+ * Derivado (D', parte 2c): desliga do modelo. Fica com uma cópia das ações, dos roteiros e da base
+ * do modelo e para de receber as mudanças dele (detach_from_template, migração 0122).
+ */
+export async function detachFromTemplate(botId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id, template_id").eq("id", botId).maybeSingle();
+  if (!bot?.template_id) return fail("Este chatbot não segue um modelo.");
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("detach_from_template", { p_bot: bot.id });
+  if (error || !data) {
+    console.error("derivado: desligar do modelo", error?.message);
+    return fail("Não foi possível desligar do modelo. Tente de novo.");
+  }
+  await markAnalysisDue(admin, bot.id as string);
+  await auditPanel("modelo.desligar", { type: "bot", id: bot.id as string }, { before: { modelo: bot.template_id } });
+  revalidatePath("/painel", "layout");
+  return ok("Pronto: o chatbot agora é independente, com uma cópia das ações, dos roteiros e da base do modelo.");
+}
+
+/** Derivado (D', parte 2c): o campo volta a seguir o modelo (o valor próprio sai; nas instruções, as extras). */
+export async function resetDerivedField(botId: string, field: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id, template_id, overrides").eq("id", botId).maybeSingle();
+  if (!bot?.template_id) return fail("Chatbot não encontrado.");
+  const admin = createAdminClient();
+  try {
+    if (field === "instrucoes") {
+      await admin.from("bots").update({ extra_instructions: null }).eq("id", bot.id);
+      await applyTemplate(admin, bot.template_id as string, [bot.id as string]);
+    } else if ((OVERRIDE_FIELDS as readonly string[]).includes(field)) {
+      await setDerivedOverride(admin, { id: bot.id as string, template_id: bot.template_id as string, overrides: (bot.overrides as Record<string, unknown> | null) ?? {} }, field as OverrideField, undefined);
+    } else return fail("Campo desconhecido.");
+  } catch (e) {
+    console.error("derivado: voltar ao modelo", e);
+    return fail("Não foi possível voltar ao modelo. Tente de novo.");
+  }
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Pronto: este campo voltou a seguir o modelo.");
 }
 
 /**
