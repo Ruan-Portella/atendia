@@ -17,6 +17,7 @@ export default function DocsHome() {
           { href: "/docs/guias/agencia", title: "Para agências", text: "Do cadastro ao chat no site e no WhatsApp do cliente, com a sua marca." },
           { href: "/docs/guias/negocio", title: "Para o seu negócio", text: "O assistente do seu negócio no site, no WhatsApp e no Instagram." },
           { href: "/docs/guias/dev", title: "Para devs", text: "A chave, a primeira mensagem pela API e os eventos no seu sistema." },
+          { href: "/docs/guias/plataforma", title: "Para plataformas", text: "Um modelo e um chatbot por loja, criado pelo seu sistema." },
         ]}
       />
 
@@ -29,6 +30,8 @@ export default function DocsHome() {
           [<Link key="m" href="/docs/mensagens-ricas">Mensagens ricas</Link>, "Botões, lista, link e carrossel, num formato só, convertidos para cada canal. Um botão pode chamar uma ação direto, sem a IA."],
           [<Link key="w" href="/docs/webhooks">Webhooks</Link>, "Seu sistema fica sabendo na hora: mensagem recebida ou enviada, lead, pedido de atendente, aceite de novidades e mais."],
           [<Link key="api" href="/docs/api">API</Link>, "Enviar mensagens e campanhas, ler conversas, leads e contatos, pausar a IA numa conversa."],
+          [<Link key="p" href="/docs/api/provisionamento">Lojas pela API</Link>, "Para plataformas: o cliente e o chatbot de cada loja a partir de um modelo, com o link de conexão, a equipe, a pausa e o uso."],
+          [<Link key="ap" href="/docs/apps">Chat dentro de apps</Link>, "O chat do site numa webview do seu app, com a pessoa identificada."],
         ]}
       />
 

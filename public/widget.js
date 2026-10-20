@@ -14,6 +14,10 @@
  *   ChatWidget.setContext(token)   // troca de workspace: abre uma conversa nova no novo contexto
  *   ChatWidget.logout()            // só limpa a tela; a proteção da conversa não depende dele
  * getToken é chamado ao abrir e 5 minutos antes de o token vencer.
+ *
+ * Dentro de um app (webview): mode "fullscreen" (ou data-mode="fullscreen") abre o chat já aberto,
+ * ocupando a tela toda, sem o botão; o X do chat chama onClose (o app fecha a webview).
+ *   window.ChatWidgetConfig = { mode: "fullscreen", getToken: ..., onClose: () => ... };
  */
 (function () {
   if (window.__cwLoaded) return;
@@ -40,6 +44,7 @@
   var attrPos = s.getAttribute("data-position") || src.searchParams.get("position") || cfg.position;
   var attrOffset = s.getAttribute("data-offset") || src.searchParams.get("offset") || cfg.offset;
   var getToken = typeof cfg.getToken === "function" ? cfg.getToken : null;
+  var fullscreen = (s.getAttribute("data-mode") || src.searchParams.get("mode") || cfg.mode) === "fullscreen";
 
   var color = attrColor || "#1f4e3d";
   var side = attrPos === "left" ? "left" : "right";
@@ -59,7 +64,9 @@
       "#cw-root .cw-badge{position:fixed;bottom:" + (offset + 40) + "px;" + side + ":" + (offset - 2) + "px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#e5484d;color:#fff;font:700 11px/20px system-ui,-apple-system,sans-serif;text-align:center;z-index:2147483001;box-shadow:0 0 0 2px #fff;display:none;box-sizing:border-box}" +
       "#cw-root .cw-preview{position:fixed;bottom:" + (offset + 70) + "px;" + side + ":" + offset + "px;max-width:260px;background:#fff;color:#1b1f1d;border-radius:14px;padding:10px 30px 10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.18);font:13px/1.4 system-ui,-apple-system,sans-serif;z-index:2147483000;cursor:pointer;display:none;box-sizing:border-box}" +
       "#cw-root .cw-preview b{display:block;font-size:12px;margin-bottom:2px}" +
-      "#cw-root .cw-preview-x{position:absolute;top:6px;right:6px;width:20px;height:20px;border:0;background:transparent;color:#8a938e;cursor:pointer;font-size:16px;line-height:20px;padding:0}";
+      "#cw-root .cw-preview-x{position:absolute;top:6px;right:6px;width:20px;height:20px;border:0;background:transparent;color:#8a938e;cursor:pointer;font-size:16px;line-height:20px;padding:0}" +
+      // dentro de um app: o chat ocupa a tela toda, sem o botão
+      (fullscreen ? "#cw-root .cw-frame{inset:0;top:0;left:0;right:0;bottom:0;width:100%;height:100%;max-height:100%;border-radius:0;box-shadow:none}" : "");
     document.head.appendChild(css);
 
     var root = document.createElement("div");
@@ -153,7 +160,12 @@
     window.addEventListener("message", function (e) {
       if (e.origin !== origin) return;
       var d = e.data;
-      if (d === "chat-widget:close") { set(false); return; }
+      if (d === "chat-widget:close") {
+        // no app, o X do chat devolve ao app (que fecha a webview)
+        if (fullscreen) { if (typeof cfg.onClose === "function") cfg.onClose(); return; }
+        set(false);
+        return;
+      }
       if (!d || typeof d !== "object") return;
       if (d.type === "chat-widget:conversation") flag(Boolean(d.active));
       if (d.type === "chat-widget:token-request") sendToken("chat-widget:token");
@@ -167,15 +179,18 @@
     });
 
     root.appendChild(frame);
-    root.appendChild(bubble);
-    root.appendChild(btn);
-    root.appendChild(badge);
+    if (!fullscreen) {
+      root.appendChild(bubble);
+      root.appendChild(btn);
+      root.appendChild(badge);
+    }
 
     try {
       var since = Number(localStorage.getItem(convFlag));
       if (since && Date.now() - since < 6 * 3600 * 1000) load(); // mesma janela de RESUME_HOURS
     } catch {}
     document.body.appendChild(root);
+    if (fullscreen) set(true);
 
     window.ChatWidget = {
       open: function () { set(true); },

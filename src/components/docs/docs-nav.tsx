@@ -16,6 +16,7 @@ export const DOCS_GROUPS = [
       { href: "/docs/guias/agencia", title: "Guia para agências" },
       { href: "/docs/guias/negocio", title: "Guia para o seu negócio" },
       { href: "/docs/guias/dev", title: "Guia para devs" },
+      { href: "/docs/guias/plataforma", title: "Guia para plataformas" },
     ],
   },
   {
@@ -27,6 +28,7 @@ export const DOCS_GROUPS = [
       { href: "/docs/mensagens-ricas", title: "Mensagens ricas" },
       { href: "/docs/webhooks", title: "Webhooks" },
       { href: "/docs/identificar-usuarios", title: "Identificar usuários" },
+      { href: "/docs/apps", title: "Chat dentro de apps" },
       { href: "/docs/campanhas", title: "Campanhas e consentimento" },
       { href: "/docs/conceitos", title: "Conceitos" },
       { href: "/docs/seguranca", title: "Segurança" },
@@ -48,10 +50,6 @@ export const DOCS_GROUPS = [
     ],
   },
 ] as const;
-
-/** O que ainda vai entrar (sem link até a página existir). */
-// Plataformas (bot modelo, provisionamento, webview): leva D'
-export const DOCS_SOON = ["Plataformas"] as const;
 
 /** Menu da documentação: coluna com grupos no computador, faixa que rola para o lado no celular. */
 export function DocsNav() {
@@ -88,14 +86,6 @@ export function DocsNav() {
           })}
         </div>
       ))}
-      <div className="hidden flex-col gap-1 lg:flex">
-        <span className="px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Em breve</span>
-        {DOCS_SOON.map((t) => (
-          <span key={t} className="px-3 py-1 text-sm text-muted">
-            {t}
-          </span>
-        ))}
-      </div>
     </nav>
   );
 }

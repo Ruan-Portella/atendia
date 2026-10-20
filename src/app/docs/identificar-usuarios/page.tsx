@@ -76,6 +76,7 @@ export default function IdentityDocs() {
         rows={[
           ["Chat do site", "Token assinado pelo seu servidor, entregue ao widget.", "A pessoa já está logada no seu site."],
           ["WhatsApp e Instagram", "Pareamento: seu sistema gera um código, a pessoa manda “Conectar ABC123” para o chatbot.", "Ligar o número (ou a conta do Instagram) à conta dela, uma vez."],
+          ["Dentro de um app", <>O mesmo token do site, numa webview com o chat em tela cheia (<Link key="a" href="/docs/apps">Chat dentro de apps</Link>).</>, "A pessoa está logada no seu app."],
         ]}
       />
       <p>
