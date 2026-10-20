@@ -188,6 +188,16 @@ Na aba Campanhas do cliente, a agência manda um modelo de mensagem para um púb
 
 Os lembretes de utilidade (consulta amanhã, pedido pronto, vencimento) são enviados por planilha: cada linha é um envio, na data e na hora dela, com um modelo de utilidade aprovado. A agência informa o fuso e declara que os contatos aceitaram receber esses lembretes.
 
+## Réguas
+
+Em Campanhas → Réguas (ou pelo botão Réguas na aba Campanhas do cliente), cada chatbot com o WhatsApp conectado tem cinco réguas, mensagens automáticas que saem sozinhas:
+- Aniversário: no dia do aniversário do contato, na hora escolhida.
+- Faz tempo que você não vem: quando passam N dias (padrão 30) da última visita registrada ou, sem ela, da última mensagem do contato.
+- Pós-atendimento: N horas (padrão 48) depois da visita registrada ou da conversa encerrada pela equipe.
+- Lembrete antes do horário: N horas (padrão 24) antes do horário marcado, nunca depois dele. Horário marcado em cima da hora recebe o lembrete na hora.
+- Sem resposta: N dias (padrão 2) depois da última mensagem da loja (IA ou equipe) que o contato não respondeu. Mensagem de campanha ou de régua não conta.
+As datas vêm da ficha do contato ("Datas para as réguas"), da planilha de contatos ou da API. Cada régua usa um modelo da Meta: o BoaVoz sugere o texto (dá para editar), manda para análise, e a régua só liga com o modelo aprovado. Aniversário e "faz tempo" são promoção e só vão para quem aceitou novidades. Lembrete, pós-atendimento e sem resposta são de utilidade: sem a declaração de consentimento do cliente para lembretes, só vão para quem já escreveu ao chatbot. Os envios saem das 8h às 20h no fuso do cliente, no máximo uma régua por pessoa a cada 24 horas (o lembrete primeiro), e respeitam o SAIR e o limite do número. Se a nota do número cair ou a Meta mudar a categoria do modelo, a régua pausa e o dono recebe um e-mail; o envio que passou da hora por causa da pausa não sai mais. A tela mostra a estimativa dos próximos 30 dias (pessoas e custo na Meta) e os números do que já saiu.
+
 ## Integrações: ações, webhooks e API
 
 Com o pacote Integrações:
