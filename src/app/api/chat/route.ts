@@ -94,6 +94,8 @@ export async function POST(req: Request) {
     const { data: own } = await (await createClient()).from("bots").select("id").eq("id", bot.id).maybeSingle();
     if (!own) channel = "widget";
   }
+  // o bot modelo (D') só responde no teste do painel: quem atende são os derivados
+  if (bot.is_template && channel !== "painel") return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
   if (bot.status !== "live" && !bot.is_demo && channel !== "painel") {
     return Response.json({ error: "bot_offline", message: "Este assistente ainda não foi publicado." }, { status: 403, headers: CORS_HEADERS });
   }

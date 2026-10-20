@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { configBotId, ofConfigBot } from "./bot-template";
 import { needsConfirmation, paramsHash, paramsProblems, type ActionRow } from "./actions";
 import { confirmButtonId } from "./action-confirm";
 import { createRef } from "./button-refs";
@@ -167,7 +168,8 @@ export function componentTexts(c: ComponentInput): string[] {
 }
 
 export interface MaterializeInput {
-  bot: { id: string };
+  /** template_id: no derivado, as ações do modelo (D', parte 2a). */
+  bot: { id: string; template_id?: string | null };
   conversationId: string;
   /** Portão dos canais da Meta: botão de pedido com item barrado não vai. null no site. */
   gate: { channel: "whatsapp" | "instagram"; contactPhone: string | null; exempt?: GateCategory[] } | null;
@@ -192,8 +194,8 @@ export async function materializeComponent(db: SupabaseClient, c: ComponentInput
 
   let actions: Map<string, ActionRow> | null = null;
   if (all.some((b) => b.action)) {
-    const { data } = await db.from("actions").select("*").eq("bot_id", i.bot.id);
-    actions = new Map(((data ?? []) as ActionRow[]).map((a) => [a.name, a]));
+    const { data } = await db.from("actions").select("*").eq("bot_id", configBotId(i.bot));
+    actions = new Map(((data ?? []) as ActionRow[]).map((row) => [row.name, ofConfigBot(row, i.bot)]));
   }
   const map = i.gate && all.some((b) => b.action) ? await conversationIdMap(db, i.conversationId) : {};
 

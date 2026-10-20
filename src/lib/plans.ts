@@ -70,6 +70,8 @@ export function botHasAi(bot: { size?: unknown; quota_override?: unknown }): boo
 
 /** Filtro do PostgREST para os chatbots com IA (tamanho de IA ou cota sob medida). */
 export const AI_BOTS_FILTER = `size.in.(${AI_SIZES.join(",")}),quota_override.not.is.null`;
+/** Os chatbots cuja base o portão classifica: os com IA e os modelos (a base do modelo é a dos derivados, D'). */
+export const CLASSIFIED_BOTS_FILTER = `${AI_BOTS_FILTER},is_template.eq.true`;
 
 /** Conta grátis: respostas de teste da IA (teste ao vivo do painel e demos) enquanto não há assinatura. */
 export const TEST_ANSWERS_FREE = 50;

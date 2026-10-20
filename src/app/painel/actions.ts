@@ -63,6 +63,7 @@ import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
+import { applyTemplate } from "@/lib/bot-template";
 import { endBotRoutineRuns } from "@/lib/routine-engine";
 import { firstExceeded } from "@/lib/rate-limit";
 import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
@@ -349,8 +350,11 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   if (!count) return fail("Chatbot não encontrado.");
   // mudar as instruções ou os "Assuntos do negócio" dispara de novo a análise do bot (agrupada, ~10 min)
   if ("persona" in patch || "business_topics" in patch) await markAnalysisDue(createAdminClient(), botId);
+  // bot modelo (D'): a mudança vai para os derivados na hora
+  const { data: saved } = await supabase.from("bots").select("is_template").eq("id", botId).maybeSingle();
+  const spread = saved?.is_template ? await applyTemplate(createAdminClient(), botId) : 0;
   revalidatePath("/painel", "layout");
-  return ok("Alterações salvas.");
+  return ok(spread ? `Alterações salvas e aplicadas em ${spread} chatbot${spread === 1 ? "" : "s"} derivado${spread === 1 ? "" : "s"}.` : "Alterações salvas.");
 }
 
 /**

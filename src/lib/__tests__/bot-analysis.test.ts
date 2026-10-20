@@ -38,7 +38,9 @@ describe("análise do bot", () => {
   });
 
   it("fonte nova: reagenda só se aparecer categoria proibida que a última análise não tinha", async () => {
-    const update = vi.fn(() => ({ eq: () => ({ eq: async () => ({ error: null }) }) }));
+    // reagendar marca o chatbot (id e is_demo) e os derivados dele, se for um modelo (template_id)
+    const marked: string[] = [];
+    const update = vi.fn(() => ({ eq: (col: string) => (marked.push(col), { eq: async () => ({ error: null }), then: (r: (v: { error: null }) => void) => r({ error: null }) }) }));
     const db = (labels: unknown) =>
       ({
         from: (t: string) =>
@@ -51,6 +53,6 @@ describe("análise do bot", () => {
     await flagNewProhibited(db(known), "b1", ["tabaco"]); // já conhecida
     expect(update).not.toHaveBeenCalled();
     await flagNewProhibited(db(known), "b1", ["armas"]);
-    expect(update).toHaveBeenCalledTimes(1);
+    expect(marked).toEqual(["id", "template_id"]);
   });
 });

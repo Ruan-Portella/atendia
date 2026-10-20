@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { searchBots } from "../bot-template";
 import { activeContext } from "../bot-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, requestHandoff, retrieveContext, runChat, withRiskText, type BotRow } from "../chat";
@@ -364,7 +365,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   // 2. portão da entrada (o "Não" sempre vence: a idade é lida de novo depois do setAge)
   const age: AgeStatus = await getAge(db, who);
   // o contexto ativo (o pareamento ou o roteiro, com o fixo do chatbot por cima) escolhe as fontes com etiqueta
-  const [retrieval, exempt] = await Promise.all([retrieveContext(db, bot.id, question, activeContext(bot, pairingIdentity ?? port.current())), botGateExemptions(db, bot.id)]);
+  const search = searchBots(bot);
+  const [retrieval, exempt] = await Promise.all([retrieveContext(db, search.botId, question, activeContext(bot, pairingIdentity ?? port.current()), search.alsoBotId), botGateExemptions(db, bot.id)]);
   const entrance = await decideEntrance({
     text: question,
     channel,

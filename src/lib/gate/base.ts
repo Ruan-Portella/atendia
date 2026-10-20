@@ -8,7 +8,7 @@ import { lmipCheck } from "./lmip-check";
 import { BASE_GATE_VERSION, CATEGORIES, effectiveLevel, type GateCategory, type GateChannel } from "./rules";
 import type { AgeStatus } from "./age";
 import { flagNewProhibited } from "../bot-analysis";
-import { AI_BOTS_FILTER, botHasAi } from "../plans";
+import { CLASSIFIED_BOTS_FILTER, botHasAi } from "../plans";
 
 /*
  * Portão, parte 6: a base de cada empresa classificada por IA, uma vez por trecho (depois da
@@ -166,7 +166,7 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
   let failed = 0;
   let lastId = 0;
   while (Date.now() - started < opts.budgetMs - 20_000) {
-    let q = db.from("chunks").select("id, bot_id, content, context, bots!inner(client_name, agency_id, is_demo, size, quota_override)").or(pendingFilter).eq("bots.is_demo", false).or(AI_BOTS_FILTER, { referencedTable: "bots" }).gt("id", lastId).order("id").limit(PAGE);
+    let q = db.from("chunks").select("id, bot_id, content, context, bots!inner(client_name, agency_id, is_demo, size, quota_override, is_template)").or(pendingFilter).eq("bots.is_demo", false).or(CLASSIFIED_BOTS_FILTER, { referencedTable: "bots" }).gt("id", lastId).order("id").limit(PAGE);
     if (opts.botId) q = q.eq("bot_id", opts.botId);
     const { data: rows, error } = await q;
     if (error) throw new Error(`classificação da base: ${error.message}`);
@@ -196,7 +196,7 @@ export async function classifyPending(db: SupabaseClient, opts: { botId?: string
     }
   }
   for (const [botId, cats] of foundByBot) await flagNewProhibited(db, botId, [...cats]).catch((e) => console.error("análise do bot:", (e as Error).message));
-  let rq = db.from("chunks").select("id, bots!inner(is_demo, size, quota_override)", { count: "exact", head: true }).or(pendingFilter).eq("bots.is_demo", false).or(AI_BOTS_FILTER, { referencedTable: "bots" });
+  let rq = db.from("chunks").select("id, bots!inner(is_demo, size, quota_override, is_template)", { count: "exact", head: true }).or(pendingFilter).eq("bots.is_demo", false).or(CLASSIFIED_BOTS_FILTER, { referencedTable: "bots" });
   if (opts.botId) rq = rq.eq("bot_id", opts.botId);
   const { count } = await rq;
   return { classified, failed, remaining: count ?? 0 };

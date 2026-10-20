@@ -46,7 +46,7 @@ export async function emitMonthClosed(db: SupabaseClient, o: { now?: Date } = {}
   let emitted = 0;
   for (const agencyId of await agenciesWithWebhooks(db)) {
     const [{ data: bots, error }, { data: totals, error: totalsError }] = await Promise.all([
-      db.from("bots").select("id, size, volume_packs, quota_override, prorated_month, prorated_quota").eq("agency_id", agencyId).eq("is_demo", false),
+      db.from("bots").select("id, size, volume_packs, quota_override, prorated_month, prorated_quota").eq("agency_id", agencyId).eq("is_demo", false).eq("is_template", false),
       db.rpc("bot_month_atendimentos", { p_agency_id: agencyId, p_month_start: prev.start.toISOString(), p_month_end: prev.end.toISOString() }),
     ]);
     if (error || totalsError) throw new Error(`fechamento do mês: ${(error ?? totalsError)!.message}`);

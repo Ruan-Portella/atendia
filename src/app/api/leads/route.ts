@@ -29,7 +29,8 @@ export async function POST(req: Request) {
 
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("public_key", d.key).maybeSingle<BotRow>();
-  if (!bot) return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
+  // o bot modelo (D') não recebe contato: quem atende são os derivados
+  if (!bot || bot.is_template) return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
   // canal suspenso pela BoaVoz (regra de estado, degrau 2): nem o formulário recebe contato
   if (await isChannelSuspended(db, bot, "widget")) return Response.json({ error: "channel_suspended", message: SUSPENDED_NOTICE }, { status: 403, headers: CORS_HEADERS });
   const exceeded = await firstExceeded(db, [

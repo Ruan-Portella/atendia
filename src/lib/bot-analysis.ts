@@ -1,4 +1,5 @@
 import { sealNullable, scopeOfBot } from "./field-cipher";
+import { configBotId, searchBots } from "./bot-template";
 import { createHash } from "node:crypto";
 import { generateText } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -135,8 +136,12 @@ export interface ClientProfile {
 
 /** Empurra a análise deste chatbot para daqui a ~10 minutos (várias mudanças seguidas viram uma análise só). */
 export async function markAnalysisDue(db: SupabaseClient, botId: string): Promise<void> {
-  const { error } = await db.from("bots").update({ analysis_due_at: new Date(Date.now() + ANALYSIS_DELAY_MS).toISOString() }).eq("id", botId).eq("is_demo", false);
+  const due = { analysis_due_at: new Date(Date.now() + ANALYSIS_DELAY_MS).toISOString() };
+  const { error } = await db.from("bots").update(due).eq("id", botId).eq("is_demo", false);
   if (error) console.error("análise do bot: não agendou", error.message);
+  // no modelo (D'), os derivados também: a base, os roteiros e a persona deles vêm dele
+  const { error: derived } = await db.from("bots").update(due).eq("template_id", botId);
+  if (derived) console.error("análise do bot: derivados não agendados", derived.message);
 }
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -150,19 +155,22 @@ export type AnalysisStatus = "feita" | "igual" | "sem_base" | "aguardando_classi
  */
 export async function analyzeBot(db: SupabaseClient, botId: string, opts: { force?: boolean } = {}): Promise<{ status: AnalysisStatus; pending?: boolean }> {
   const clearDue = () => db.from("bots").update({ analysis_due_at: null }).eq("id", botId);
-  const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name, client_name, persona, business_topics, is_demo, size, quota_override").eq("id", botId).maybeSingle();
+  const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name, client_name, persona, business_topics, is_demo, size, quota_override, template_id, own_base").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) {
     if (bot) await clearDue();
     return { status: "ignorado" };
   }
   if (!opts.force && !botHasAi(bot)) return { status: "ignorado" };
+  // no derivado (D'), a base do modelo e a própria (se o modelo libera); os roteiros, do modelo
+  const search = searchBots(bot);
+  const baseBots = [search.botId, search.alsoBotId].filter((v): v is string => Boolean(v));
   const [{ data: sources }, { count: unclassified }, { data: classified }, { data: sample }, { data: routines }] = await Promise.all([
     // as fontes com etiqueta de contexto (documentos de cada cliente de um SaaS, D') ficam fora da análise
-    db.from("sources").select("title, url").eq("bot_id", botId).eq("status", "ready").is("context", null).order("created_at").limit(50),
-    db.from("chunks").select("id", { count: "exact", head: true }).eq("bot_id", botId).is("context", null).or(`gate_version.is.null,gate_version.neq."${BASE_GATE_VERSION}"`),
-    db.from("chunks").select("gate_segments").eq("bot_id", botId).is("context", null).not("gate_segments", "is", null).limit(2000),
-    db.from("chunks").select("content").eq("bot_id", botId).is("context", null).order("id").limit(6),
-    db.from("routines").select("name, when_to_use, steps").eq("bot_id", botId).eq("active", true).order("name"),
+    db.from("sources").select("title, url").in("bot_id", baseBots).eq("status", "ready").is("context", null).order("created_at").limit(50),
+    db.from("chunks").select("id", { count: "exact", head: true }).in("bot_id", baseBots).is("context", null).or(`gate_version.is.null,gate_version.neq."${BASE_GATE_VERSION}"`),
+    db.from("chunks").select("gate_segments").in("bot_id", baseBots).is("context", null).not("gate_segments", "is", null).limit(2000),
+    db.from("chunks").select("content").in("bot_id", baseBots).is("context", null).order("id").limit(6),
+    db.from("routines").select("name, when_to_use, steps").eq("bot_id", configBotId(bot)).eq("active", true).order("name"),
   ]);
   if (!sources?.length) {
     await clearDue();

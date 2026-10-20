@@ -48,7 +48,7 @@ export function subscriptionDiff(current: SubscriptionItemLike[], want: Partial<
 /** O que a conta vai pagar no próximo mês: tamanho de cada chatbot (com a troca agendada) e pacotes que ficam. */
 export async function nextMonthTarget(db: SupabaseClient, agencyId: string): Promise<BillingTarget> {
   const [botsRes, packsRes] = await Promise.all([
-    db.from("bots").select("id, size, volume_packs, pending_size, pending_volume_packs").eq("agency_id", agencyId).eq("is_demo", false).is("quota_override", null),
+    db.from("bots").select("id, size, volume_packs, pending_size, pending_volume_packs").eq("agency_id", agencyId).eq("is_demo", false).eq("is_template", false).is("quota_override", null),
     db.from("agency_packs").select("pack, ends_at").eq("agency_id", agencyId),
   ]);
   const bots = must(botsRes).data;

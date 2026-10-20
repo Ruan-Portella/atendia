@@ -36,7 +36,7 @@ export async function startCheckout(fd: FormData): Promise<ActionResult> {
   const unpaid = await unpaidInvoices(ctx.agency.stripe_customer_id);
   if (unpaid.length) return fail(`Há ${unpaid.length === 1 ? "uma fatura" : `${unpaid.length} faturas`} da assinatura anterior sem pagamento (${brlCents(unpaid.reduce((t, i) => t + i.totalCents, 0) / 100)}). Pague nesta tela para assinar de novo.`);
   const db = createAdminClient();
-  const { data: bots } = await db.from("bots").select("id").eq("agency_id", ctx.agency.id).eq("is_demo", false).is("quota_override", null);
+  const { data: bots } = await db.from("bots").select("id").eq("agency_id", ctx.agency.id).eq("is_demo", false).eq("is_template", false).is("quota_override", null);
   const target = parseTarget(fd, (bots ?? []).map((b) => b.id as string));
   if ("error" in target) return fail(target.error);
   if (!target.bots.some((b) => b.size)) return fail("Escolha o tamanho de pelo menos um chatbot.");

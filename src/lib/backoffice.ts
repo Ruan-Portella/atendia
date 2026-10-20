@@ -369,7 +369,7 @@ export const getAgencies = cache(async (): Promise<AgencyRow[]> => {
     db.rpc("admin_agency_stats", { p_period: period, p_month_start: monthStartBR(period).toISOString() }),
     ownerEmails(),
     // a cota é de cada chatbot: a da agência é a soma
-    db.from("bots").select("agency_id, size, volume_packs, quota_override").eq("is_demo", false),
+    db.from("bots").select("agency_id, size, volume_packs, quota_override").eq("is_demo", false).eq("is_template", false),
   ]);
   const { data: packRows } = await db.from("agency_packs").select("agency_id, pack, ends_at");
   if (error) throw new Error(`agências: ${error.message}`);

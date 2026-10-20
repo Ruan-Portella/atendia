@@ -1,4 +1,5 @@
 import { jsonSchema, tool, type Tool } from "ai";
+import { configBotId, ofConfigBot } from "./bot-template";
 import { hasPack } from "./entitlements";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callAction, needsConfirmation, paramsProblems, reaches, type ActionIdentity, type ActionLevel, type ActionRow, type CallContact, type CallInput, type CallResult } from "./actions";
@@ -85,8 +86,9 @@ export function contactLevel(channel: string, waPhone: string | null): ActionLev
  * Ações que a IA deste bot pode receber agora: ativas, com o pacote Integrações na conta (sem ele,
  * ficam guardadas e o botão Testar do painel continua funcionando).
  */
-export async function loadBotActions(db: SupabaseClient, botId: string): Promise<ActionRow[]> {
-  const { data, error } = await db.from("actions").select("*, bots!inner(agency_id)").eq("bot_id", botId).eq("active", true).order("name");
+export async function loadBotActions(db: SupabaseClient, bot: { id: string; template_id?: string | null }): Promise<ActionRow[]> {
+  // no derivado, as ações do modelo (D', parte 2a), vistas como do derivado
+  const { data, error } = await db.from("actions").select("*, bots!inner(agency_id)").eq("bot_id", configBotId(bot)).eq("active", true).order("name");
   if (error) {
     console.error("ações: não carregaram", error.message);
     return [];
@@ -98,13 +100,14 @@ export async function loadBotActions(db: SupabaseClient, botId: string): Promise
   return rows.map((r) => {
     const a: Record<string, unknown> = { ...r };
     delete a.bots;
-    return a as unknown as ActionRow;
+    return ofConfigBot(a as unknown as ActionRow, bot);
   });
 }
 
+
 export interface CallerInput {
   /** fixed_context: o contexto fixo do chatbot (D', parte 1), por cima do da identidade. */
-  bot: { id: string; fixed_context?: unknown };
+  bot: { id: string; fixed_context?: unknown; template_id?: string | null };
   conversationId: string;
   channel: "widget" | "demo" | "painel" | "whatsapp" | "instagram";
   waPhone: string | null;
@@ -324,7 +327,7 @@ export const offeredByRoutine = (a: Pick<ActionRow, "name" | "routine_only">, ro
 
 /** Ferramentas acao_<nome> para esta resposta (vazio se o bot não tem ações). */
 export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): Promise<Record<string, Tool>> {
-  const all = i.simulated ? i.simulated.actions : await loadBotActions(db, i.bot.id);
+  const all = i.simulated ? i.simulated.actions : await loadBotActions(db, i.bot);
   if (!all.length) return {};
   let caller = await callerFor(db, i);
   // roteiro (parte 2c): a ação do passo pode identificar a pessoa no meio da vez; as chamadas

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { asBotAction } from "./bot-template";
 import { generateText } from "ai";
 import { callAction, needsConfirmation, paramsHash, reaches, type ActionLevel, type ActionRow, type CallContact, type CallResult, type Confirmation, type ParamsSchema } from "./actions";
 import { cancelRef, claimRef, createRef, getRef, refCallId, reopenRef, setRefStatus, supersedeOpenRefs, uncertainRef, type ButtonRef, type RefStatus } from "./button-refs";
@@ -320,7 +321,8 @@ export async function openConfirmation(db: SupabaseClient, i: OpenInput): Promis
 /* ------------------------------------------------------------------ o clique */
 
 export interface ClickInput {
-  bot: { id: string };
+  /** template_id: no derivado, as ações do modelo valem como dele (D', parte 2a). */
+  bot: { id: string; template_id?: string | null };
   conversationId: string;
   /** Id do botão tocado (WhatsApp, Instagram ou site). */
   buttonId: string | null;
@@ -397,7 +399,7 @@ async function execute(db: SupabaseClient, i: ClickInput, ref: ButtonRef, from: 
 
   // no clique, tudo de novo: a ação, o nível do contato e o contexto
   const { data } = await db.from("actions").select("*").eq("id", ref.action_id).maybeSingle();
-  const action = data as ActionRow | null;
+  const action = data ? asBotAction(data as ActionRow, i.bot) : null;
   const caller = await i.caller();
   if (!action || !stillCallable(action, caller, ref.kind)) {
     if (!mine) await setRefStatus(db, ref.id, "failed");
@@ -429,7 +431,7 @@ async function execute(db: SupabaseClient, i: ClickInput, ref: ButtonRef, from: 
 async function executeAgain(db: SupabaseClient, i: ClickInput, ref: ButtonRef): Promise<ClickResult> {
   if (ref.status !== "open" || Date.parse(ref.expires_at) <= Date.now()) return fixed(CONFIRM_TEXTS.buttonExpired);
   const { data } = await db.from("actions").select("*").eq("id", ref.action_id).maybeSingle();
-  const action = data as ActionRow | null;
+  const action = data ? asBotAction(data as ActionRow, i.bot) : null;
   const caller = await i.caller();
   if (!action || !stillCallable(action, caller, "action")) return fixed(CONFIRM_TEXTS.refused);
   const limited = await firstExceeded(db, [{ key: `acao:${i.conversationId}:m`, max: 15, windowSeconds: 60, message: "rate_limited" }]);

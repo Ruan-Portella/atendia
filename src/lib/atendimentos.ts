@@ -318,7 +318,7 @@ export interface BotQuotaStatus {
  */
 export async function botQuotaStatus(db: SupabaseClient, agencyId: string, period = currentPeriodBR()): Promise<BotQuotaStatus[]> {
   const [{ data: bots, error }, { data: counts, error: countError }, credit] = await Promise.all([
-    db.from("bots").select("id, name, client_id, client_name, size, volume_packs, quota_override, overage_enabled, overage_cap_brl, overage_suspended_reason, overage_suspended_until, pending_size, pending_volume_packs, pending_from, prorated_month, prorated_quota").eq("agency_id", agencyId).eq("is_demo", false).order("created_at"),
+    db.from("bots").select("id, name, client_id, client_name, size, volume_packs, quota_override, overage_enabled, overage_cap_brl, overage_suspended_reason, overage_suspended_until, pending_size, pending_volume_packs, pending_from, prorated_month, prorated_quota").eq("agency_id", agencyId).eq("is_demo", false).eq("is_template", false).order("created_at"),
     db.rpc("bot_month_atendimentos", { p_agency_id: agencyId, p_month_start: monthStartBR(period).toISOString() }),
     creditBalance(db, agencyId),
   ]);

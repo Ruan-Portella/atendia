@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { configBotId } from "./bot-template";
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 import { openNullable, sealField, scopeOfConversation } from "./field-cipher";
@@ -419,7 +420,8 @@ export const noRoutineTurn = (conversationId: string | null = null): RoutineTurn
 export async function routinePreTurn(
   db: SupabaseClient,
   i: {
-    bot: { id: string; agency_id: string };
+    /** template_id: no derivado, os roteiros do modelo (D', parte 2a). */
+    bot: { id: string; agency_id: string; template_id?: string | null };
     conversationId: string | null;
     texts: string[];
     buttonId: string | null;
@@ -437,7 +439,7 @@ export async function routinePreTurn(
     checkPhoto?: (asked: string, seen: string) => Promise<PhotoVerdict>;
   },
 ): Promise<RoutineTurn> {
-  const { data: rows } = await db.from("routines").select("*").eq("bot_id", i.bot.id).eq("active", true).order("name");
+  const { data: rows } = await db.from("routines").select("*").eq("bot_id", configBotId(i.bot)).eq("active", true).order("name");
   const all = (rows ?? []) as unknown as RoutineRow[];
   const integrations = all.some(routineUsesActions) ? await hasPack(db, i.bot.agency_id, "integracoes") : true;
   const available = all.filter((r) => integrations || !routineUsesActions(r));

@@ -45,6 +45,8 @@ export interface ActionRow {
   headers_enc: string | null;
   active: boolean;
   creates_order: boolean | null;
+  /** Ação do modelo num derivado (D', parte 2a): a chamada sai com o id do derivado e assina com o segredo do modelo. */
+  signing_bot_id?: string;
 }
 
 export interface ParamsSchema {
@@ -403,7 +405,7 @@ export async function callAction(db: SupabaseClient, action: ActionRow, i: CallI
   const attempt = ((previous?.[0]?.attempt as number | undefined) ?? 0) + 1;
 
   const body = JSON.stringify(callBody(action, callId, { ...i, mode }));
-  const secrets = action.secret_enc ? [unseal(action.secret_enc)] : await botActionSecrets(db, action.bot_id);
+  const secrets = action.secret_enc ? [unseal(action.secret_enc)] : await botActionSecrets(db, action.signing_bot_id ?? action.bot_id);
   const custom = action.headers_enc ? (JSON.parse(unseal(action.headers_enc)) as Record<string, string>) : {};
   const started = Date.now();
   let result: CallResult;

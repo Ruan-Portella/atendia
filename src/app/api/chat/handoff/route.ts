@@ -36,7 +36,8 @@ export async function POST(req: Request) {
 
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("public_key", key).maybeSingle<BotRow>();
-  if (!bot) return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
+  // o bot modelo (D') não atende: só o teste do painel
+  if (!bot || (bot.is_template && parsed.data.channel !== "painel")) return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
   let channel = parsed.data.channel;
   if (channel === "painel") {
     const { data: own } = await (await createClient()).from("bots").select("id").eq("id", bot.id).maybeSingle();
