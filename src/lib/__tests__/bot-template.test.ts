@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { memoryDb, type MemRow } from "../memory-db";
-import { applyTemplate, asBotAction, configBotId, createDerivedBot, derivedColumns, derivedPatch, searchBots, setDerivedOverride, setTemplateUnlocked, type DerivedRow, type TemplateRow } from "../bot-template";
+import { applyTemplate, asBotAction, configBotId, createDerivedBot, derivedColumns, derivedPatch, hasUnpublished, searchBots, setDerivedOverride, setTemplateUnlocked, type DerivedRow, type TemplateRow } from "../bot-template";
 import type { ActionRow } from "../actions";
 
 const AGENCY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -60,6 +60,12 @@ describe("bot modelo: a herança", () => {
 
   it("as ações, os roteiros e a base do derivado vêm do modelo", () => {
     expect(configBotId({ id: D, template_id: T })).toBe(T);
+    // com versão publicada (parte 3), as ações e os roteiros vêm dela; a assinatura, do modelo
+    const V = "44444444-4444-4444-8444-444444444444";
+    expect(configBotId({ id: D, template_id: T, config_bot_id: V })).toBe(V);
+    expect(asBotAction({ id: "act2", bot_id: V, name: "buscar_cardapio" } as ActionRow, { id: D, template_id: T, config_bot_id: V })).toMatchObject({ bot_id: D, signing_bot_id: T });
+    // a ação do rascunho (ou de uma versão antiga) não vale no derivado
+    expect(asBotAction({ id: "act3", bot_id: T, name: "nova" } as ActionRow, { id: D, template_id: T, config_bot_id: V })).toBeNull();
     expect(configBotId({ id: D })).toBe(D);
     expect(searchBots({ id: D, template_id: T, own_base: true })).toEqual({ botId: D, alsoBotId: T });
     expect(searchBots({ id: D, template_id: T, own_base: false })).toEqual({ botId: T, alsoBotId: null });
@@ -71,11 +77,12 @@ describe("bot modelo: a herança", () => {
   });
 
   it("criar o derivado, travar um campo e guardar ou desfazer o valor próprio propagam na hora", async () => {
-    const t: Record<string, MemRow[]> = { bots: [{ ...template(), agency_id: AGENCY, is_template: true }] };
+    // a versão publicada em vigor (parte 3): aqui, o próprio modelo (o banco em memória não publica)
+    const t: Record<string, MemRow[]> = { bots: [{ ...template(), agency_id: AGENCY, is_template: true, version_of: null, published_bot_id: T }] };
     const db = memoryDb(t);
     const id = await createDerivedBot(db, { agencyId: AGENCY, templateId: T, client: { id: CLIENT, name: "Pizzaria do Zé", site: null }, fixedContext: { loja_id: "42" } });
     const row = () => t.bots.find((b) => b.id === id)!;
-    expect(row()).toMatchObject({ template_id: T, client_id: CLIENT, fixed_context: { loja_id: "42" }, name: "Duda" });
+    expect(row()).toMatchObject({ template_id: T, config_bot_id: T, client_id: CLIENT, fixed_context: { loja_id: "42" }, name: "Duda" });
     expect((row().persona as { welcome: string }).welcome).toBe("Olá! Sou Duda, da Pizzaria do Zé.");
 
     await setDerivedOverride(db, { id, template_id: T, overrides: (row().overrides as Record<string, unknown>) ?? {} }, "nome", "Zé Bot");
@@ -110,5 +117,12 @@ describe("bot modelo: a herança", () => {
     });
     // já próprio: o valor novo substitui, mesmo igual ao atual
     expect(derivedPatch({ name: "Zé Bot" }, {}, ["nome"], { ...current, name: "Zé Bot", overrides: { nome: "Zé Bot" } })).toEqual({ overrides: { nome: "Zé Bot" } });
+  });
+
+  it("mudanças não publicadas: o rascunho mudou depois da versão em vigor", () => {
+    expect(hasUnpublished(null, null)).toBe(true);
+    expect(hasUnpublished(null, { publishedAt: "2026-10-19T12:00:00.000Z" })).toBe(false);
+    expect(hasUnpublished("2026-10-19T11:00:00.000Z", { publishedAt: "2026-10-19T12:00:00.000Z" })).toBe(false);
+    expect(hasUnpublished("2026-10-19T13:00:00.000Z", { publishedAt: "2026-10-19T12:00:00.000Z" })).toBe(true);
   });
 });

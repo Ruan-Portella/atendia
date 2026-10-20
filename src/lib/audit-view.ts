@@ -49,6 +49,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "modelo.liberar": "O que os derivados podem mudar foi alterado",
   "modelo.derivar": "Chatbot criado a partir de um modelo",
   "modelo.desligar": "Chatbot desligado do modelo",
+  "modelo.publicar": "Modelo publicado (versão nova)",
+  "modelo.voltar_versao": "Derivados voltaram para uma versão anterior do modelo",
   "bot.retomar": "Chatbot retomado",
   "bot.novidades": "Oferta de novidades no WhatsApp alterada",
   "campanha.criar": "Campanha criada",

@@ -364,12 +364,11 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   if (!count) return fail("Chatbot não encontrado.");
   // mudar as instruções ou os "Assuntos do negócio" dispara de novo a análise do bot (agrupada, ~10 min)
   if ("persona" in patch || "business_topics" in patch) await markAnalysisDue(createAdminClient(), botId);
-  // bot modelo (D'): a mudança vai para os derivados na hora; derivado: o modelo de novo, com os valores próprios
+  // bot modelo (D', parte 3): a mudança fica no rascunho até publicar; derivado: o modelo de novo, com os valores próprios
   const { data: saved } = await supabase.from("bots").select("is_template").eq("id", botId).maybeSingle();
-  const spread = saved?.is_template ? await applyTemplate(createAdminClient(), botId) : 0;
   if (kind?.template_id) await applyTemplate(createAdminClient(), kind.template_id as string, [botId]);
   revalidatePath("/painel", "layout");
-  return ok(spread ? `Alterações salvas e aplicadas em ${spread} chatbot${spread === 1 ? "" : "s"} derivado${spread === 1 ? "" : "s"}.` : "Alterações salvas.");
+  return ok(saved?.is_template ? "Salvo no rascunho do modelo. Os chatbots derivados recebem quando você publicar." : "Alterações salvas.");
 }
 
 /**

@@ -4,12 +4,12 @@ import { BotActions } from "@/components/integrations/bot-actions";
 import { FixedContextCard } from "@/components/integrations/fixed-context-card";
 import { TemplateInheritance, type DerivedItem } from "@/components/templates/template-inheritance";
 import { InheritedList } from "@/components/templates/inherited-list";
-import { createDerivedAction, setTemplateUnlockedAction } from "@/app/painel/modelos/actions";
-import { OVERRIDE_FIELDS, TEMPLATE_FIELD_LABEL, unlockedFields, type OverrideField, type TemplateField as InheritField } from "@/lib/bot-template";
+import { createDerivedAction, publishTemplateAction, setTemplateUnlockedAction, restoreVersionAction } from "@/app/painel/modelos/actions";
+import { OVERRIDE_FIELDS, TEMPLATE_FIELD_LABEL, hasUnpublished, templateVersions, unlockedFields, type OverrideField, type TemplateField as InheritField } from "@/lib/bot-template";
 import type { Persona } from "@/lib/ai";
 import { saveFixedContext } from "@/app/painel/integracoes/actions";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { attendantOf, can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
@@ -127,9 +127,16 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
+  // uma versão publicada do modelo (parte 3) não se edita: o editor é o do modelo
+  if (bot.version_of) redirect(`/painel/bots/${bot.version_of}?tab=heranca`);
   const clients = bot.is_demo || tab === "personalidade" || tab === "heranca" ? await getClientOptions(supabase, agency.id) : [];
   // modelo (D'): os derivados, na Herança; derivado: o nome do modelo, na faixa do topo
   const derivedList = isTemplate && tab === "heranca" ? (((await createAdminClient().from("bots").select("id, name, client_name, status").eq("template_id", id).order("created_at")).data ?? []) as DerivedItem[]) : [];
+  // modelo (parte 3): as versões, quantos derivados a publicação afeta e se há mudança não publicada
+  const versions = isTemplate ? await templateVersions(createAdminClient(), id) : [];
+  const derivedCount = isTemplate ? ((await createAdminClient().from("bots").select("id", { count: "exact", head: true }).eq("template_id", id)).count ?? 0) : 0;
+  const currentVersion = versions.find((v) => v.id === bot.published_bot_id) ?? null;
+  const unpublished = isTemplate && hasUnpublished(bot.draft_changed_at, currentVersion);
   const templateRow = bot.template_id
     ? ((await createAdminClient().from("bots").select("name, persona, business_topics, template_unlocked").eq("id", bot.template_id).maybeSingle()).data as { name: string; persona: Persona | null; business_topics: string | null; template_unlocked: string[] | null } | null)
     : null;
@@ -185,6 +192,23 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         {canConfig && <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
           {demoUrl && <CopyButton text={demoUrl} label="Copiar link da demo" className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && !bot.is_template && <CopyButton text={embedSnippet} label="Copiar código" className="btn-ghost flex-1 sm:flex-none" />}
+          {bot.is_template && (
+            <>
+              <span className={`self-center text-xs font-semibold ${unpublished ? "text-amber-ink" : "text-muted"}`}>
+                {unpublished ? "Mudanças não publicadas" : currentVersion ? `Versão ${currentVersion.number} publicada` : "Ainda sem versão"}
+              </span>
+              <ConfirmAction
+                action={publishTemplateAction.bind(null, id)}
+                title="Publicar o modelo?"
+                description={derivedCount ? `Afeta ${derivedCount} chatbot${derivedCount === 1 ? "" : "s"} derivado${derivedCount === 1 ? "" : "s"}: ${derivedCount === 1 ? "ele passa" : "eles passam"} a usar o rascunho atual (personalidade, instruções, assuntos, ações e roteiros). Dá para voltar a uma versão anterior na aba Herança.` : "Nenhum chatbot derivado ainda: a versão fica pronta para os próximos."}
+                confirmLabel="Publicar"
+                danger={false}
+                className={unpublished ? "btn-primary flex-1 sm:flex-none" : "btn-ghost flex-1 sm:flex-none"}
+              >
+                Publicar
+              </ConfirmAction>
+            </>
+          )}
           {!bot.is_demo && bot.status === "live" && !bot.paused_at && <BotPauseButton action={pauseBot.bind(null, id)} className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && !bot.is_template && (
             <ActionForm action={setBotStatus.bind(null, id, bot.status === "live" ? "draft" : "live")}>
@@ -275,7 +299,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <h2 className="text-[22px] font-bold">Base de conhecimento</h2>
                 <p className="text-sm text-muted">Tudo que {bot.name} sabe vem daqui. Ele não inventa o que não está nas fontes.</p>
               </div>
-              {bot.template_id && <InheritedList kind="fontes" templateId={bot.template_id} templateName={templateName ?? "modelo"} />}
+              {bot.template_id && <InheritedList kind="fontes" templateId={bot.template_id} configId={bot.template_id} templateName={templateName ?? "modelo"} />}
               {bot.template_id && !opens("base") ? (
                 <p className="max-w-[860px] text-sm text-muted">O modelo não libera base própria: este chatbot usa só a base do modelo.</p>
               ) : (
@@ -535,6 +559,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               manage={canConfig && member.scope === "all" && packs.includes("plataforma")}
               saveUnlocked={setTemplateUnlockedAction.bind(null, id)}
               createDerived={createDerivedAction.bind(null, id)}
+              versions={versions}
+              currentVersionId={bot.published_bot_id ?? null}
+              restoreVersion={restoreVersionAction.bind(null, id)}
             />
           )}
 
@@ -750,7 +777,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             </div>
           )}
 
-          {tab === "roteiros" && (bot.template_id ? <InheritedList kind="roteiros" templateId={bot.template_id} templateName={templateName ?? "modelo"} /> : <BotRoutines botId={id} integrations={integrations} />)}
+          {tab === "roteiros" && (bot.template_id ? <InheritedList kind="roteiros" templateId={bot.template_id} configId={bot.config_bot_id ?? bot.template_id} templateName={templateName ?? "modelo"} /> : <BotRoutines botId={id} integrations={integrations} />)}
 
           {tab === "acoes" &&
             (bot.is_demo ? (
@@ -763,7 +790,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   </p>
                 )}
                 {bot.template_id ? (
-                  <InheritedList kind="acoes" templateId={bot.template_id} templateName={templateName ?? "modelo"} />
+                  <InheritedList kind="acoes" templateId={bot.template_id} configId={bot.config_bot_id ?? bot.template_id} templateName={templateName ?? "modelo"} />
                 ) : (
                   <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
                 )}

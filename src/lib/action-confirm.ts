@@ -322,7 +322,7 @@ export async function openConfirmation(db: SupabaseClient, i: OpenInput): Promis
 
 export interface ClickInput {
   /** template_id: no derivado, as ações do modelo valem como dele (D', parte 2a). */
-  bot: { id: string; template_id?: string | null };
+  bot: { id: string; template_id?: string | null; config_bot_id?: string | null };
   conversationId: string;
   /** Id do botão tocado (WhatsApp, Instagram ou site). */
   buttonId: string | null;

@@ -69,21 +69,26 @@ export function keepsOwn(t: Pick<TemplateRow, "template_unlocked">, d: Pick<Deri
   return unlockedFields(t).includes(f) && Object.prototype.hasOwnProperty.call(d.overrides ?? {}, f);
 }
 
-/** O chatbot de onde vêm as ações, os roteiros e a base comum: o modelo, no derivado. Pura. */
-export const configBotId = (bot: { id: string; template_id?: string | null }) => bot.template_id ?? bot.id;
+/**
+ * O chatbot de onde vêm as ações e os roteiros: no derivado, a versão publicada em vigor do modelo
+ * (config_bot_id, parte 3); antes da primeira versão, o próprio modelo. Pura.
+ */
+export const configBotId = (bot: { id: string; template_id?: string | null; config_bot_id?: string | null }) => bot.config_bot_id ?? bot.template_id ?? bot.id;
 
 /**
  * A ação vista como do chatbot: a do modelo, num derivado, vai com o id do derivado (a cifra do
  * registro é a do cliente dele) e assina com o segredo do modelo. De outro chatbot: null. Pura.
  */
-export function asBotAction(row: ActionRow, bot: { id: string; template_id?: string | null }): ActionRow | null {
+export function asBotAction(row: ActionRow, bot: { id: string; template_id?: string | null; config_bot_id?: string | null }): ActionRow | null {
   if (row.bot_id === bot.id) return row;
-  if (bot.template_id && row.bot_id === bot.template_id) return { ...row, bot_id: bot.id, signing_bot_id: row.bot_id };
+  // a ação de uma versão que não vale mais: o botão já não vale (republicar encerra as confirmações abertas)
+  if (bot.template_id && row.bot_id === configBotId(bot)) return { ...row, bot_id: bot.id, signing_bot_id: bot.template_id };
   return null;
 }
 
 /** Ação lida pela consulta do chatbot (ou do modelo, no derivado): no derivado, vista como dele. Pura. */
-export function ofConfigBot(row: ActionRow, bot: { id: string; template_id?: string | null }): ActionRow {
+export function ofConfigBot(row: ActionRow, bot: { id: string; template_id?: string | null; config_bot_id?: string | null }): ActionRow {
+  // o segredo é sempre o do modelo (trocar o segredo vale na hora, sem publicar)
   return bot.template_id ? { ...row, bot_id: bot.id, signing_bot_id: bot.template_id } : row;
 }
 
@@ -142,8 +147,11 @@ export function derivedColumns(t: TemplateRow, d: DerivedRow): DerivedColumns {
  * de cada mudança do modelo, na criação do derivado e em cada valor próprio salvo ou desfeito.
  */
 export async function applyTemplate(db: SupabaseClient, templateId: string, onlyIds?: string[]): Promise<number> {
-  const { data: t } = await db.from("bots").select(TEMPLATE_COLS).eq("id", templateId).eq("is_template", true).maybeSingle<TemplateRow>();
-  if (!t) return 0;
+  const { data: draft } = await db.from("bots").select(`${TEMPLATE_COLS}, published_bot_id`).eq("id", templateId).eq("is_template", true).maybeSingle<TemplateRow & { published_bot_id: string | null }>();
+  if (!draft) return 0;
+  // os derivados recebem a versão publicada em vigor (parte 3); o que o modelo libera vale na hora
+  const { data: version } = draft.published_bot_id ? await db.from("bots").select(TEMPLATE_COLS).eq("id", draft.published_bot_id).maybeSingle<TemplateRow>() : { data: null };
+  const t: TemplateRow = version ? { ...version, template_unlocked: draft.template_unlocked } : draft;
   let q = db.from("bots").select(DERIVED_COLS).eq("template_id", templateId);
   if (onlyIds) q = q.in("id", onlyIds);
   const { data: rows, error } = await q;
@@ -196,10 +204,12 @@ export async function createTemplate(db: SupabaseClient, o: { agencyId: string; 
  */
 export async function createDerivedBot(
   db: SupabaseClient,
-  o: { agencyId: string; templateId: string; client: { id: string; name: string; site: string | null }; fixedContext?: Record<string, unknown> | null },
+  o: { agencyId: string; templateId: string; client: { id: string; name: string; site: string | null }; fixedContext?: Record<string, unknown> | null; publishedBy?: string },
 ): Promise<string> {
-  const { data: t } = await db.from("bots").select(TEMPLATE_COLS).eq("id", o.templateId).eq("agency_id", o.agencyId).eq("is_template", true).maybeSingle<TemplateRow>();
+  const { data: t } = await db.from("bots").select(`${TEMPLATE_COLS}, published_bot_id`).eq("id", o.templateId).eq("agency_id", o.agencyId).eq("is_template", true).is("version_of", null).maybeSingle<TemplateRow & { published_bot_id: string | null }>();
   if (!t) throw new Error("modelo não encontrado");
+  // o derivado usa sempre uma versão publicada: a primeira nasce aqui, se o modelo nunca publicou
+  const configBot = t.published_bot_id ?? (await publishVersion(db, o.templateId, o.publishedBy ?? "BoaVoz (primeira versão)"));
   const { data, error } = await db
     .from("bots")
     .insert({
@@ -213,6 +223,7 @@ export async function createDerivedBot(
       appearance: t.appearance ?? {},
       human_handoff: { widget_button: true },
       fixed_context: o.fixedContext ?? null,
+      config_bot_id: configBot,
     })
     .select("id")
     .single();
@@ -291,4 +302,46 @@ export function derivedPatch(patch: Record<string, unknown>, form: Record<string
   }
   out.overrides = ov;
   return out;
+}
+
+/* ------------------------------------------------------------------ versões (parte 3) */
+
+/** Publica o rascunho do modelo como versão nova (cópia fixa); os derivados apontam para ela. Devolve o id da versão. */
+export async function publishVersion(db: SupabaseClient, templateId: string, by: string): Promise<string> {
+  const { data, error } = await db.rpc("publish_template", { p_template: templateId, p_by: by });
+  if (error || !data) throw new Error(`modelo: versão não publicada (${error?.message ?? "sem id"})`);
+  return String(data);
+}
+
+/** Publica e aplica nos derivados: devolve a versão e quantos derivados mudaram. */
+export async function publishTemplate(db: SupabaseClient, templateId: string, by: string): Promise<{ versionId: string; changed: number }> {
+  const versionId = await publishVersion(db, templateId, by);
+  return { versionId, changed: await applyTemplate(db, templateId) };
+}
+
+/** Volta os derivados para uma versão anterior (só o ponteiro: as versões não mudam). */
+export async function applyTemplateVersion(db: SupabaseClient, templateId: string, versionId: string): Promise<number | null> {
+  const { data, error } = await db.rpc("use_template_version", { p_template: templateId, p_version: versionId });
+  if (error) throw new Error(`modelo: versão não aplicada (${error.message})`);
+  if (!data) return null;
+  return applyTemplate(db, templateId);
+}
+
+export interface TemplateVersion {
+  id: string;
+  number: number;
+  publishedAt: string;
+  publishedBy: string | null;
+}
+
+/** As versões publicadas do modelo, a mais nova primeiro. */
+export async function templateVersions(db: SupabaseClient, templateId: string): Promise<TemplateVersion[]> {
+  const { data } = await db.from("bots").select("id, version_number, published_at, published_by").eq("version_of", templateId).order("version_number", { ascending: false }).limit(50);
+  return (data ?? []).map((v) => ({ id: String(v.id), number: Number(v.version_number), publishedAt: String(v.published_at), publishedBy: (v.published_by as string | null) ?? null }));
+}
+
+/** O rascunho tem mudanças que os derivados ainda não receberam? Pura. */
+export function hasUnpublished(draftChangedAt: string | null | undefined, version: Pick<TemplateVersion, "publishedAt"> | null): boolean {
+  if (!version) return true;
+  return Boolean(draftChangedAt && Date.parse(draftChangedAt) > Date.parse(version.publishedAt));
 }

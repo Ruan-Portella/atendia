@@ -22,7 +22,7 @@ export default async function TemplatesPage() {
   const [{ data: templates }, { data: derived }] =
     allowed
       ? await Promise.all([
-          supabase.from("bots").select("id, name, updated_at").eq("is_template", true).order("created_at"),
+          supabase.from("bots").select("id, name, updated_at").eq("is_template", true).is("version_of", null).order("created_at"),
           createAdminClient().from("bots").select("template_id").eq("agency_id", agency.id).not("template_id", "is", null),
         ])
       : [{ data: [] }, { data: [] }];

@@ -421,7 +421,7 @@ export async function routinePreTurn(
   db: SupabaseClient,
   i: {
     /** template_id: no derivado, os roteiros do modelo (D', parte 2a). */
-    bot: { id: string; agency_id: string; template_id?: string | null };
+    bot: { id: string; agency_id: string; template_id?: string | null; config_bot_id?: string | null };
     conversationId: string | null;
     texts: string[];
     buttonId: string | null;

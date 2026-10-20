@@ -169,7 +169,7 @@ export function componentTexts(c: ComponentInput): string[] {
 
 export interface MaterializeInput {
   /** template_id: no derivado, as ações do modelo (D', parte 2a). */
-  bot: { id: string; template_id?: string | null };
+  bot: { id: string; template_id?: string | null; config_bot_id?: string | null };
   conversationId: string;
   /** Portão dos canais da Meta: botão de pedido com item barrado não vai. null no site. */
   gate: { channel: "whatsapp" | "instagram"; contactPhone: string | null; exempt?: GateCategory[] } | null;

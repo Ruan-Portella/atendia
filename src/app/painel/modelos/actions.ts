@@ -11,7 +11,7 @@ import { audit, requestMeta } from "@/lib/audit";
 import { assistantName, clientFields, text } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { parseFixedContext } from "@/lib/bot-context";
-import { TEMPLATE_FIELDS, createDerivedBot, createTemplate, setTemplateUnlocked } from "@/lib/bot-template";
+import { TEMPLATE_FIELDS, createDerivedBot, createTemplate, publishTemplate, setTemplateUnlocked, applyTemplateVersion } from "@/lib/bot-template";
 
 /*
  * Modelos de chatbot (D', parte 2b): só com o pacote Plataforma, para quem cuida da configuração e
@@ -37,7 +37,7 @@ async function auditTemplate(ctx: Ctx, action: string, id: string, after: Record
 
 /** O modelo da conta (confere a agência e se é modelo). */
 async function ownTemplate(db: ReturnType<typeof createAdminClient>, agencyId: string, id: string) {
-  const { data } = await db.from("bots").select("id, name").eq("id", String(id)).eq("agency_id", agencyId).eq("is_template", true).maybeSingle();
+  const { data } = await db.from("bots").select("id, name").eq("id", String(id)).eq("agency_id", agencyId).eq("is_template", true).is("version_of", null).maybeSingle();
   return data;
 }
 
@@ -113,7 +113,7 @@ export async function createDerivedAction(templateId: string, fd: FormData): Pro
   }
   let id: string;
   try {
-    id = await createDerivedBot(c.db, { agencyId: c.ctx.agency.id, templateId: t.id as string, client, fixedContext: ctxValue.value });
+    id = await createDerivedBot(c.db, { agencyId: c.ctx.agency.id, templateId: t.id as string, client, fixedContext: ctxValue.value, publishedBy: c.ctx.email });
   } catch (e) {
     console.error("modelos: criar derivado", e);
     return fail("Não foi possível criar o chatbot. Tente de novo.");
@@ -121,4 +121,43 @@ export async function createDerivedAction(templateId: string, fd: FormData): Pro
   await auditTemplate(c.ctx, "modelo.derivar", id, { modelo: t.id, cliente: client.id, contexto: ctxValue.value ? Object.keys(ctxValue.value) : [] });
   revalidatePath("/painel", "layout");
   redirect(`/painel/bots/${id}`);
+}
+
+/** Publica o rascunho do modelo: versão nova, e os derivados passam a usar ela (parte 3). */
+export async function publishTemplateAction(templateId: string): Promise<ActionResult> {
+  const c = await templatesContext();
+  if ("error" in c) return fail(c.error!);
+  const t = await ownTemplate(c.db, c.ctx.agency.id, templateId);
+  if (!t) return fail("Modelo não encontrado.");
+  let r: { versionId: string; changed: number };
+  try {
+    r = await publishTemplate(c.db, t.id as string, c.ctx.email);
+  } catch (e) {
+    console.error("modelos: publicar", e);
+    return fail("Não foi possível publicar. Tente de novo.");
+  }
+  const { data: v } = await c.db.from("bots").select("version_number").eq("id", r.versionId).maybeSingle();
+  await auditTemplate(c.ctx, "modelo.publicar", t.id as string, { versao: v?.version_number ?? null, derivados_mudaram: r.changed });
+  revalidatePath("/painel", "layout");
+  return ok(`Versão ${v?.version_number ?? ""} publicada.${r.changed ? ` ${r.changed} chatbot${r.changed === 1 ? "" : "s"} derivado${r.changed === 1 ? "" : "s"} já ${r.changed === 1 ? "recebeu" : "receberam"}.` : ""}`);
+}
+
+/** Volta os derivados para uma versão publicada antes (o rascunho não muda). */
+export async function restoreVersionAction(templateId: string, versionId: string): Promise<ActionResult> {
+  const c = await templatesContext();
+  if ("error" in c) return fail(c.error!);
+  const t = await ownTemplate(c.db, c.ctx.agency.id, templateId);
+  if (!t) return fail("Modelo não encontrado.");
+  let changed: number | null;
+  try {
+    changed = await applyTemplateVersion(c.db, t.id as string, String(versionId));
+  } catch (e) {
+    console.error("modelos: voltar versão", e);
+    return fail("Não foi possível voltar a versão. Tente de novo.");
+  }
+  if (changed === null) return fail("Versão não encontrada.");
+  const { data: v } = await c.db.from("bots").select("version_number").eq("id", String(versionId)).maybeSingle();
+  await auditTemplate(c.ctx, "modelo.voltar_versao", t.id as string, { versao: v?.version_number ?? null });
+  revalidatePath("/painel", "layout");
+  return ok(`Os derivados voltaram para a versão ${v?.version_number ?? ""}.`);
 }

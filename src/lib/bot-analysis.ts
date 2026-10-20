@@ -155,7 +155,7 @@ export type AnalysisStatus = "feita" | "igual" | "sem_base" | "aguardando_classi
  */
 export async function analyzeBot(db: SupabaseClient, botId: string, opts: { force?: boolean } = {}): Promise<{ status: AnalysisStatus; pending?: boolean }> {
   const clearDue = () => db.from("bots").update({ analysis_due_at: null }).eq("id", botId);
-  const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name, client_name, persona, business_topics, is_demo, size, quota_override, template_id, own_base").eq("id", botId).maybeSingle();
+  const { data: bot } = await db.from("bots").select("id, agency_id, client_id, name, client_name, persona, business_topics, is_demo, size, quota_override, template_id, config_bot_id, own_base").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) {
     if (bot) await clearDue();
     return { status: "ignorado" };

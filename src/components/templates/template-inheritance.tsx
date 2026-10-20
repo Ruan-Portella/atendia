@@ -5,7 +5,7 @@ import { ClientPicker } from "@/components/client-picker";
 import { Status } from "@/components/status";
 import type { ActionResult } from "@/lib/action-result";
 import type { ClientOption } from "@/lib/panel";
-import { TEMPLATE_FIELDS, TEMPLATE_FIELD_LABEL, type TemplateField } from "@/lib/bot-template";
+import { TEMPLATE_FIELDS, TEMPLATE_FIELD_LABEL, type TemplateField, type TemplateVersion } from "@/lib/bot-template";
 
 export interface DerivedItem {
   id: string;
@@ -25,6 +25,9 @@ export function TemplateInheritance({
   manage,
   saveUnlocked,
   createDerived,
+  versions,
+  currentVersionId,
+  restoreVersion,
 }: {
   unlocked: TemplateField[];
   derived: DerivedItem[];
@@ -32,6 +35,10 @@ export function TemplateInheritance({
   manage: boolean;
   saveUnlocked: (fd: FormData) => Promise<ActionResult>;
   createDerived: (fd: FormData) => Promise<ActionResult>;
+  /** As versões publicadas (parte 3), a mais nova primeiro, e a que os derivados usam. */
+  versions: TemplateVersion[];
+  currentVersionId: string | null;
+  restoreVersion: (versionId: string) => Promise<ActionResult>;
 }) {
   return (
     <div className="flex max-w-[860px] flex-col gap-5">
@@ -72,6 +79,37 @@ export function TemplateInheritance({
                   {d.name} · {d.client_name}
                 </Link>
                 <Status status={d.status} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="card flex flex-col gap-3 p-5">
+        <div>
+          <h3 className="text-base font-bold">Versões publicadas</h3>
+          <p className="text-sm text-muted">O que você muda no modelo fica no rascunho, e o teste ao vivo usa ele. Os derivados só recebem ao publicar (o botão no topo). A base de conhecimento e o que vem pela API valem na hora.</p>
+        </div>
+        {versions.length === 0 ? (
+          <p className="text-sm text-muted">Nenhuma versão ainda: a primeira sai ao publicar ou ao criar o primeiro derivado.</p>
+        ) : (
+          <ul className="flex flex-col">
+            {versions.map((v) => (
+              <li key={v.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-2 py-2 text-sm last:border-0">
+                <span className="font-semibold">Versão {v.number}</span>
+                <span className="text-muted">
+                  {new Date(v.publishedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}
+                  {v.publishedBy ? ` · ${v.publishedBy}` : ""}
+                </span>
+                {v.id === currentVersionId ? (
+                  <span className="ml-auto rounded-full bg-brand-soft px-2 py-0.5 text-xs font-semibold text-brand">em uso</span>
+                ) : (
+                  manage && (
+                    <ActionForm action={restoreVersion.bind(null, v.id)} className="ml-auto">
+                      <SubmitButton className="text-xs font-semibold text-brand hover:underline" pendingLabel="Voltando…">Usar esta versão</SubmitButton>
+                    </ActionForm>
+                  )
+                )}
               </li>
             ))}
           </ul>

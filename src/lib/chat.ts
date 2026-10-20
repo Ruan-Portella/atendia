@@ -48,6 +48,8 @@ export interface BotRow {
   /** Bot modelo (D', parte 2a): o derivado usa as ações, os roteiros e a base do modelo. */
   is_template?: boolean | null;
   template_id?: string | null;
+  /** A versão publicada do modelo em vigor (parte 3): as ações e os roteiros do derivado vêm dela. */
+  config_bot_id?: string | null;
   own_base?: boolean | null;
   client_id?: string | null;
   name: string;
