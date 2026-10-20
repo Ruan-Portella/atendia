@@ -11,11 +11,12 @@ import { contactActiveLinkId, contactLastInbound, contactPhone, externalIdHash, 
 import { normalizeGateText } from "./gate/payment";
 import type { ChatIdentity } from "./widget-identity";
 import { emitLinkEvent } from "./webhooks";
+import { igMeLink } from "./instagram-links";
 
 /*
  * Pareamento no WhatsApp e no Instagram (P2, spec "Peça 4"): o SaaS gera um código
  * (POST /v1/pairings) e manda a pessoa ao link (wa.me/<número>?text=Conectar ABC123 ou
- * ig.me/<usuário>?ref=ABC123, ou o código digitado no direct). O contato fica vinculado à conta
+ * ig.me/m/<usuário>?ref=ABC123, ou o código digitado no direct). O contato fica vinculado à conta
  * dela (external_id) e a um contexto (workspace); a IA vê só o display, e as ações recebem o
  * nível usuario e o contexto. Regras:
  * - código de 6 caracteres sem letras ambíguas, uso único, 10 minutos;
@@ -154,13 +155,13 @@ export interface PairingInput {
   apiKeyId: string | null;
 }
 
-/** Link que abre a conversa já com o código: wa.me (texto pronto) ou ig.me (ref). Função pura. */
+/** Link que abre a conversa já com o código: wa.me (texto pronto) ou ig.me/m (ref, o mesmo formato dos links com origem). Função pura. */
 export function pairingLink(channel: PairingChannel, target: { phone?: string | null; username?: string | null }, code: string): string | null {
   if (channel === "whatsapp") {
     const digits = (target.phone ?? "").replace(/\D/g, "");
     return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(`Conectar ${code}`)}` : null;
   }
-  return target.username ? `https://ig.me/${encodeURIComponent(target.username)}?ref=${code}` : null;
+  return target.username ? igMeLink(target.username, code) : null;
 }
 
 /** Gera o código (10 minutos, uso único). */

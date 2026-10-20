@@ -122,7 +122,7 @@ export async function POST(req: Request) {
           continue;
         }
         const echo = Boolean(ev.message?.is_echo);
-        // link ig.me/<usuário>?ref=CODIGO aberto numa conversa que já existe: chega sem mensagem (pareamento, P2)
+        // link ig.me/m/<usuário>?ref=CODIGO aberto numa conversa que já existe: chega sem mensagem (pareamento, P2)
         const ref = !echo && !ev.message && !ev.postback ? igRef(ev) : null;
         const mid = ev.message?.mid ?? ev.postback?.mid ?? (ref && ev.sender?.id ? `ref:${ev.sender.id}:${ev.timestamp ?? 0}:${ref}` : undefined);
         // DM apagada e evento sem id não têm o que tratar

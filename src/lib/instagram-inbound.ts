@@ -77,11 +77,11 @@ export interface IgMessagingEvent {
     /** Resposta a um story da loja (E1, parte 2): o id e o link (que vence) do story. */
     reply_to?: { mid?: string; story?: { id?: string; url?: string } };
     quick_reply?: { payload?: string };
-    /** Primeira mensagem depois de abrir um link ig.me/<usuário>?ref=… */
+    /** Primeira mensagem depois de abrir um link ig.me/m/<usuário>?ref=… */
     referral?: { ref?: string };
   };
   postback?: { mid?: string; title?: string; payload?: string; referral?: { ref?: string } };
-  /** A pessoa abriu um link ig.me/<usuário>?ref=… numa conversa que já existe (messaging_referral). */
+  /** A pessoa abriu um link ig.me/m/<usuário>?ref=… numa conversa que já existe (messaging_referral). */
   referral?: { ref?: string; source?: string; type?: string };
   /** A pessoa editou uma DM já enviada (webhook message_edit). */
   message_edit?: { mid?: string; text?: string; num_edit?: number | string };

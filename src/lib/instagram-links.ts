@@ -26,12 +26,13 @@ export function refFromLabel(label: string): string {
 }
 
 /**
- * O link para a bio, o QR e o anúncio: ig.me/<conta>?ref=<origem>, como na documentação da API do
- * Instagram com login do Instagram (a de mensagens mostra também ig.me/m/<conta>). Leva o nome da
- * conta: se a conta troca o nome, o link antigo para. Abre no app do Instagram; no computador, o
- * Instagram não abre links ig.me. Pura.
+ * O link do direct com o ref (origem da bio, do QR e do anúncio, ou o código do pareamento):
+ * ig.me/m/<conta>?ref=<ref>, como na documentação de mensagens do Instagram. No celular, em
+ * 20/10/2026, só ele abriu o direct; o ig.me/<conta>?ref= da página da API com login do Instagram
+ * abre o app sem ir para a conversa. Leva o nome da conta: se a conta troca o nome, o link antigo
+ * para. No computador, o Instagram não abre links ig.me. Pura.
  */
-export const igMeLink = (username: string, ref: string) => `https://ig.me/${encodeURIComponent(username)}?ref=${encodeURIComponent(ref)}`;
+export const igMeLink = (username: string, ref: string) => `https://ig.me/m/${encodeURIComponent(username)}?ref=${encodeURIComponent(ref)}`;
 
 /** O perfil da conta (o link da fonte dos posts). Pura. */
 export const igProfileUrl = (username: string) => `https://www.instagram.com/${encodeURIComponent(username)}/`;

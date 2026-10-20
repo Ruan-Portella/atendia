@@ -92,8 +92,8 @@ describe("links ig.me com origem", () => {
   });
 
   it("o link da bio, do QR e do anúncio", () => {
-    // o formato da documentação da API do Instagram com login do Instagram
-    expect(igMeLink("lojadaana", "qr-do-balcao")).toBe("https://ig.me/lojadaana?ref=qr-do-balcao");
+    // com o /m/: no celular, só esse formato abriu o direct (20/10); sem ele, o app abre fora da conversa
+    expect(igMeLink("lojadaana", "qr-do-balcao")).toBe("https://ig.me/m/lojadaana?ref=qr-do-balcao");
   });
 
   it("a origem cadastrada vem com o nome e a nota; a desconhecida, só com o ref", async () => {

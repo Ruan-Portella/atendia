@@ -113,7 +113,7 @@ describe("comandos do pareamento", () => {
 
   it("links: wa.me com o texto pronto, ig.me com o ref", () => {
     expect(pairingLink("whatsapp", { phone: "+55 21 3333-4444" }, "ABC234")).toBe("https://wa.me/552133334444?text=Conectar%20ABC234");
-    expect(pairingLink("instagram", { username: "fintrabr" }, "ABC234")).toBe("https://ig.me/fintrabr?ref=ABC234");
+    expect(pairingLink("instagram", { username: "fintrabr" }, "ABC234")).toBe("https://ig.me/m/fintrabr?ref=ABC234");
     expect(pairingLink("instagram", { username: null }, "ABC234")).toBeNull();
   });
 

@@ -10,7 +10,7 @@ import { ICE_BREAKERS_MAX, ICE_BREAKER_MAX, REF_LABEL_MAX, REF_NOTE_MAX, refFrom
  *  - perguntas prontas (ice breakers): até 4 perguntas que aparecem quando a pessoa abre o direct
  *    pela primeira vez (só no app); o toque chega como mensagem e a IA responde. Gravadas no chatbot
  *    e na conta da Meta (messenger_profile), de novo a cada conexão;
- *  - links ig.me com origem: ig.me/<conta>?ref=<origem> para a bio, o QR impresso e o anúncio. O
+ *  - links ig.me com origem: ig.me/m/<conta>?ref=<origem> para a bio, o QR impresso e o anúncio. O
  *    ref chega no webhook e diz à IA e ao painel de onde a pessoa veio. Em conversa nova, a Meta só
  *    manda o ref quando a conta tem perguntas prontas. O ref de 6 letras do alfabeto do pareamento
  *    (P2) continua sendo pareamento.
