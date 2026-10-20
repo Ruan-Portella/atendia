@@ -85,6 +85,9 @@ export interface BotRow {
   /** Regra do preço de post do Instagram (E1): citar a data (padrão), limite de dias ou sempre. */
   post_price_rule?: string | null;
   post_price_max_days?: number | null;
+  /** IA nos comentários do Instagram (E1, parte 4b): off, todos os posts ou os escolhidos. */
+  ig_comments_ai?: string | null;
+  ig_comments_ai_media_ids?: string[] | null;
   quota_override?: number | null;
   /** Modo dados sensíveis: a IA não lê fotos (photo-note.photoReadingOn). */
   sensitive_mode?: boolean | null;

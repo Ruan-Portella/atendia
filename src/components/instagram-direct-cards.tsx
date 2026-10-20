@@ -244,3 +244,44 @@ export function KeywordsCard({ keywords, commentsOn, posts, save, remove }: { ke
     </div>
   );
 }
+
+/** IA nos comentários (parte 4b): desligada, em todos os posts ou nos escolhidos. */
+export function CommentsAiForm({ mode, mediaIds, posts, withAi, save }: { mode: string; mediaIds: string[] | null; posts: PostChoice[]; withAi: boolean; save: Save }) {
+  const [choice, setChoice] = useState(mode);
+  return (
+    <ActionForm action={save} className="flex flex-col gap-2 rounded-xl bg-ground p-3">
+      <div className="text-sm font-semibold">IA nos comentários sem palavra-chave</div>
+      <p className="text-xs text-muted">A IA responde em público as perguntas que a base responde, agradece os elogios e manda a resposta privada no direct quando a pessoa quer comprar ou falar com alguém. Ofensa e spam ficam sem resposta, e item proibido ou 18+ nunca é citado. Cada resposta da IA conta como uma resposta do atendimento.</p>
+      {!withAi && <p className="text-xs text-amber-ink">Vale para chatbot com IA (tamanho P, M, G ou Volume).</p>}
+      <fieldset className="flex flex-col gap-1.5 text-sm" disabled={!withAi}>
+        <legend className="sr-only">Onde a IA responde</legend>
+        {[
+          ["off", "desligada"],
+          ["todos", "em todos os posts"],
+          ["escolhidos", "nos posts escolhidos"],
+        ].map(([v, label]) => (
+          <label key={v} className="flex items-center gap-2">
+            <input type="radio" name="mode" value={v} checked={choice === v} onChange={() => setChoice(v)} disabled={v === "escolhidos" && !posts.length} /> {label}
+            {v === "escolhidos" && !posts.length && <span className="text-xs text-muted">(leia os posts na aba Base de conhecimento)</span>}
+          </label>
+        ))}
+        {choice === "escolhidos" && (
+          <div className="ml-6 flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-line bg-panel p-2">
+            {posts.map((p) => (
+              <label key={p.media_id} className="flex items-start gap-2 text-xs">
+                <input type="checkbox" name="media_ids" value={p.media_id} defaultChecked={mediaIds?.includes(p.media_id)} className="mt-0.5" />
+                <span className="min-w-0">
+                  <span className="text-muted">{new Date(p.posted_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} · </span>
+                  {p.caption?.trim().slice(0, 90) || "(sem legenda)"}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+      </fieldset>
+      <SubmitButton pendingLabel="Salvando…" className="btn-ghost self-start" disabled={!withAi}>
+        Salvar
+      </SubmitButton>
+    </ActionForm>
+  );
+}

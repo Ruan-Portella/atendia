@@ -146,6 +146,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "instagram.palavra_chave": "Palavra-chave do Instagram criada",
   "instagram.palavra_chave_editar": "Palavra-chave do Instagram alterada",
   "instagram.palavra_chave_removida": "Palavra-chave do Instagram removida",
+  "instagram.ia_comentarios": "IA nos comentários do Instagram alterada",
   "conta.exclusao_pedida": "Exclusão da conta pedida (7 dias para desistir)",
   "conta.exclusao_cancelada": "Exclusão da conta cancelada",
   "conta.excluida": "Conta excluída",

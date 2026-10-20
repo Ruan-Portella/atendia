@@ -57,7 +57,7 @@ import { detachFromTemplate, markTransferReviewed, resetDerivedField } from "../
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, setPostPriceRule, updateBot } from "../../actions";
 import { PostPriceCard } from "@/components/post-price-card";
 import { IceBreakersCard, KeywordsCard, RefLinksCard, type KeywordItem, type PostChoice, type RefLinkItem } from "@/components/instagram-direct-cards";
-import { addRefLink, removeKeyword, removeRefLink, saveIceBreakers, saveKeyword } from "@/app/painel/instagram/actions";
+import { addRefLink, removeKeyword, removeRefLink, saveCommentsAi, saveIceBreakers, saveKeyword } from "@/app/painel/instagram/actions";
 import { commentsEnabled } from "@/lib/instagram";
 import { InstagramCommentsCard } from "@/components/instagram-comments-card";
 import { listComments, type CommentItem } from "@/lib/instagram-comments";
@@ -824,7 +824,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   <IceBreakersCard questions={iceBreakersOf(bot)} syncedAt={bot.ig_ice_breakers_synced_at ?? null} error={bot.ig_ice_breakers_error ?? null} connected={Boolean(instagram && !instagram.disconnected_at)} save={saveIceBreakers.bind(null, id)} />
                   <RefLinksCard username={instagram?.username ?? null} links={refLinks} hasIceBreakers={iceBreakersOf(bot).length > 0} add={addRefLink.bind(null, id)} remove={removeRefLink.bind(null, id)} />
                   <KeywordsCard keywords={keywords} commentsOn={commentsOn} posts={postChoices} save={saveKeyword.bind(null, id)} remove={removeKeyword.bind(null, id)} />
-                  <InstagramCommentsCard enabled={commentsOn} comments={comments} posts={postsById} />
+                  <InstagramCommentsCard enabled={commentsOn} comments={comments} posts={postsById} ai={{ mode: bot.ig_comments_ai ?? "off", mediaIds: bot.ig_comments_ai_media_ids ?? null, posts: postChoices, withAi: botHasAi(bot), save: saveCommentsAi.bind(null, id) }} />
                 </>
               )}
               {!bot.is_demo && <FailedSends botId={id} channel="instagram" />}

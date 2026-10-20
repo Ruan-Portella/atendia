@@ -43,7 +43,7 @@ const CAPTION_MAX = 600;
 const PHOTOS_IN_TEXT = 3;
 
 /** Um post ou story da loja já descrito (da fonte do Instagram ou guardado na hora). */
-interface StoreMedia {
+export interface StoreMedia {
   kind: "post" | "reel" | "story";
   caption: string | null;
   /** Uma descrição por foto, na ordem (vazia: não deu para descrever). */
@@ -72,6 +72,10 @@ export function storyReplyText(description: string | null): string {
 const splitPhotos = (description: string | null) => (description ?? "").split("\n");
 
 /** O post já lido na fonte do Instagram do chatbot, ou o post ou story guardado na hora. */
+export async function storeMedia(db: SupabaseClient, botId: string, mediaId: string): Promise<StoreMedia | null> {
+  return knownMedia(db, botId, mediaId);
+}
+
 async function knownMedia(db: SupabaseClient, botId: string, mediaId: string): Promise<StoreMedia | null> {
   const { data: post } = await db.from("instagram_posts").select("caption, description, permalink, posted_at, is_reel").eq("bot_id", botId).eq("media_id", mediaId).limit(1).maybeSingle();
   if (post) return { kind: post.is_reel ? "reel" : "post", caption: (post.caption as string | null) ?? null, photos: splitPhotos(post.description as string | null), permalink: (post.permalink as string | null) ?? null, postedAt: (post.posted_at as string | null) ?? null };

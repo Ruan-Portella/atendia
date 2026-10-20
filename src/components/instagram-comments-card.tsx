@@ -1,5 +1,7 @@
 import type { CommentItem } from "@/lib/instagram-comments";
+import type { ActionResult } from "@/lib/action-result";
 import { relativeTime } from "@/lib/utils";
+import { CommentsAiForm, type PostChoice } from "@/components/instagram-direct-cards";
 
 /*
  * Comentários dos posts na aba Instagram (E1, parte 4a): cada comentário que chegou e o que o
@@ -16,7 +18,7 @@ const ACTION_LABEL: Record<CommentItem["action"], string> = {
   erro: "não foi respondido",
 };
 
-export function InstagramCommentsCard({ enabled, comments, posts }: { enabled: boolean; comments: CommentItem[]; posts: Record<string, { caption: string | null; posted_at: string }> }) {
+export function InstagramCommentsCard({ enabled, comments, posts, ai }: { enabled: boolean; comments: CommentItem[]; posts: Record<string, { caption: string | null; posted_at: string }>; ai?: { mode: string; mediaIds: string[] | null; posts: PostChoice[]; withAi: boolean; save: (fd: FormData) => Promise<ActionResult> } }) {
   if (!enabled) {
     return (
       <div className="card flex flex-col gap-1.5 p-5">
@@ -33,6 +35,7 @@ export function InstagramCommentsCard({ enabled, comments, posts }: { enabled: b
           Os comentários que chegaram e o que o assistente fez. A palavra-chave no comentário manda a resposta privada no direct (uma por comentário, até 7 dias depois dele; para quem não segue a conta, ela cai em <strong>Solicitações de mensagem</strong>) e, se você quiser, uma resposta pública. Se a conta foi conectada antes, conecte o Instagram de novo para dar a permissão dos comentários.
         </p>
       </div>
+      {ai && <CommentsAiForm mode={ai.mode} mediaIds={ai.mediaIds} posts={ai.posts} withAi={ai.withAi} save={ai.save} />}
       {comments.length === 0 ? (
         <p className="rounded-lg bg-ground px-3 py-2 text-sm text-muted">Nenhum comentário ainda.</p>
       ) : (

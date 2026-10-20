@@ -29,6 +29,15 @@ vi.mock("../instagram", async (orig) => {
 const saved = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 vi.mock("../messages", () => ({ saveMessage: vi.fn(async (_db: unknown, m: Record<string, unknown>) => (saved.push(m), 1)) }));
 vi.mock("../contacts", async (orig) => ({ ...(await orig<typeof import("../contacts")>()), instagramContact: vi.fn(async () => ({ id: "contato-ana" })) }));
+// a IA nos comentários (parte 4b): a classificação, a resposta, a pausa e a cota
+const ia = vi.hoisted(() => ({ kind: "pergunta" as string | null, reply: { publica: "Tem sim, do P ao GG 😊", privada: null as string | null } as { publica: string | null; privada: string | null } | null, blocked: null as string | null, quotaBlocked: false, classified: 0, quotaCalls: 0 }));
+vi.mock("../comment-ai", async (orig) => ({
+  ...(await orig<typeof import("../comment-ai")>()),
+  classifyComment: vi.fn(async () => (ia.classified++, ia.kind)),
+  writeCommentReply: vi.fn(async () => ia.reply),
+}));
+vi.mock("../chat", async (orig) => ({ ...(await orig<typeof import("../chat")>()), aiBlockedReason: vi.fn(async () => ia.blocked) }));
+vi.mock("../atendimentos", () => ({ openAtendimento: vi.fn(async () => (ia.quotaCalls++, { blocked: ia.quotaBlocked ? "quota_exceeded" : null, isNew: true, id: "at1", overage: false })) }));
 
 import { InstagramError } from "../instagram";
 import { commentAction, handleInstagramComment, listComments } from "../instagram-comments";
@@ -114,6 +123,65 @@ describe("o que não é respondido", () => {
     meta.failPrivate = new InstagramError("(#10) Application does not have permission for this action", 10);
     expect(await handleInstagramComment(db, ch, comment("c1", "eu quero"))).toBe("publica");
     expect(String(tables.instagram_comments[0].error)).toContain("conecte o Instagram de novo");
+  });
+});
+
+describe("a IA nos comentários (parte 4b)", () => {
+  beforeEach(() => {
+    Object.assign(ia, { kind: "pergunta", reply: { publica: "Tem sim, do P ao GG 😊", privada: null }, blocked: null, quotaBlocked: false, classified: 0, quotaCalls: 0 });
+    Object.assign(tables.bots[0], { size: "P", quota_override: null, client_name: "Loja da Ana", ig_comments_ai: "todos", ig_comments_ai_media_ids: null });
+  });
+
+  it("pergunta: a resposta pública, contando como resposta do atendimento", async () => {
+    expect(await handleInstagramComment(db, ch, comment("c1", "tem no M?"))).toBe("publica");
+    expect(meta.publicReplies).toEqual([{ comment: "c1", text: "Tem sim, do P ao GG 😊" }]);
+    expect(meta.privateReplies).toEqual([]);
+    expect(tables.instagram_comments[0]).toMatchObject({ action: "publica", reason: "IA: pergunta" });
+    expect(ia.quotaCalls).toBe(1);
+  });
+
+  it("pede conversa: a resposta privada no direct e a pública", async () => {
+    Object.assign(ia, { kind: "pede_conversa", reply: { publica: "Te chamei no direct! 😊", privada: "Oi! Qual tamanho você usa?" } });
+    expect(await handleInstagramComment(db, ch, comment("c1", "quero comprar"))).toBe("privada_publica");
+    expect(meta.privateReplies).toEqual([{ comment: "c1", text: "Oi! Qual tamanho você usa?" }]);
+  });
+
+  it("ofensa e spam: sem resposta e sem gastar a cota", async () => {
+    ia.kind = "ofensa";
+    expect(await handleInstagramComment(db, ch, comment("c1", "loja horrível"))).toBe("nenhuma");
+    expect(tables.instagram_comments[0].reason).toBe("IA: ofensa (sem resposta)");
+    expect(ia.quotaCalls).toBe(0);
+    expect(meta.publicReplies).toEqual([]);
+  });
+
+  it("a palavra-chave vem antes da IA; post fora dos escolhidos fica sem resposta", async () => {
+    expect(await handleInstagramComment(db, ch, comment("c1", "eu quero"))).toBe("privada_publica");
+    expect(ia.classified).toBe(0);
+    Object.assign(tables.bots[0], { ig_comments_ai: "escolhidos", ig_comments_ai_media_ids: ["18200"] });
+    expect(await handleInstagramComment(db, ch, comment("c2", "tem no M?", "ig-bia", "18999"))).toBe("nenhuma");
+    expect(ia.classified).toBe(0);
+  });
+
+  it("nem chama a IA: item restrito no comentário, IA pausada, chatbot sem IA ou sem cota", async () => {
+    expect(await handleInstagramComment(db, ch, comment("c1", "vocês têm cerveja?"))).toBe("ignorado");
+    expect(String(tables.instagram_comments[0].reason)).toContain("item que não pode ser oferecido");
+    ia.blocked = "past_due";
+    expect(await handleInstagramComment(db, ch, comment("c2", "tem no M?", "ig-bia"))).toBe("ignorado");
+    ia.blocked = null;
+    tables.bots[0].size = "atendimento";
+    expect(await handleInstagramComment(db, ch, comment("c3", "tem no M?", "ig-caio"))).toBe("ignorado");
+    expect(ia.classified).toBe(0);
+    tables.bots[0].size = "P";
+    ia.quotaBlocked = true;
+    expect(await handleInstagramComment(db, ch, comment("c4", "tem no M?", "ig-dani"))).toBe("ignorado");
+    expect(String(tables.instagram_comments[3].reason)).toContain("sem atendimentos neste mês");
+    expect(meta.publicReplies).toEqual([]);
+  });
+
+  it("a resposta que não passou no portão não sai", async () => {
+    ia.reply = { publica: null, privada: null };
+    expect(await handleInstagramComment(db, ch, comment("c1", "tem no M?"))).toBe("erro");
+    expect(String(tables.instagram_comments[0].reason)).toContain("conferência do portão");
   });
 });
 

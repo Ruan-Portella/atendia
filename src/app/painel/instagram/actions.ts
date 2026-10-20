@@ -10,6 +10,7 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { ICE_BREAKERS_MAX, REF_LINKS_MAX, parseIceBreakers, parseRefLink, syncIceBreakers } from "@/lib/instagram-direct";
 import { KEYWORDS_PER_BOT, keywordConflict, parseKeywordInput, type KeywordRow } from "@/lib/instagram-keywords";
 import { commentsEnabled } from "@/lib/instagram";
+import { botHasAi } from "@/lib/plans";
 
 /*
  * O direct do Instagram na aba Instagram do chatbot (E1, partes 3a e 3b): as perguntas prontas, os
@@ -112,4 +113,24 @@ export async function removeKeyword(botId: string, fd: FormData): Promise<Action
   await auditIg(ctx, "instagram.palavra_chave_removida", { palavras: data[0].words });
   revalidatePath(`/painel/bots/${ctx.botId}`);
   return ok("Palavra-chave removida.");
+}
+
+/** IA nos comentários (parte 4b): desligada, em todos os posts ou nos escolhidos. */
+export async function saveCommentsAi(botId: string, fd: FormData): Promise<ActionResult> {
+  const ctx = await context(botId);
+  if (!ctx) return fail(DENIED);
+  if (!commentsEnabled()) return fail("Os comentários chegam quando a Meta aprovar a permissão.");
+  const mode = String(fd.get("mode") ?? "off");
+  if (mode !== "off" && mode !== "todos" && mode !== "escolhidos") return fail("Escolha uma das opções.");
+  const ids = [...new Set(fd.getAll("media_ids").map(String).filter((id) => /^\d+$/.test(id)))];
+  if (mode === "escolhidos" && !ids.length) return fail("Escolha pelo menos um post (ou todos os posts).");
+  if (ids.length > 100) return fail("Até 100 posts.");
+  const db = createAdminClient();
+  const { data: bot } = await db.from("bots").select("size, quota_override").eq("id", ctx.botId).maybeSingle();
+  if (mode !== "off" && !botHasAi(bot ?? {})) return fail("A IA nos comentários vale para chatbot com IA (tamanho P, M, G ou Volume).");
+  const { error } = await db.from("bots").update({ ig_comments_ai: mode, ig_comments_ai_media_ids: mode === "escolhidos" ? ids : null }).eq("id", ctx.botId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditIg(ctx, "instagram.ia_comentarios", { modo: mode, posts: mode === "escolhidos" ? ids.length : null });
+  revalidatePath(`/painel/bots/${ctx.botId}`);
+  return ok(mode === "off" ? "A IA não responde mais os comentários." : mode === "todos" ? "Pronto: a IA responde os comentários de todos os posts." : `Pronto: a IA responde os comentários de ${ids.length} post${ids.length === 1 ? "" : "s"}.`);
 }
