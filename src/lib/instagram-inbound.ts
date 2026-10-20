@@ -7,7 +7,8 @@ import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withou
 import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { instagramContact, touchInbound } from "./contacts";
-import { DELETED_LABEL, deletedBeforeArrival, sharedRef, sharedText } from "./instagram-edits";
+import { DELETED_LABEL, deletedBeforeArrival } from "./instagram-edits";
+import { NO_CONTEXT, instagramContext, type IgContext } from "./instagram-context";
 import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage, updateMessages } from "./messages";
 import { maskCardNumbers } from "./routine-run";
@@ -18,10 +19,10 @@ import { OPTOUT_UNDO, isOptOutKeyword, optOutConfirmation, queueUndoEvents, revo
 import { canReadPhotos, canTranscribe, transcribeAudio } from "./ai";
 import { fixedPhotoReply, photoReadingOn, photoSeen, withHandoffNotice, type PhotoReading } from "./photo-note";
 import { readBurstPhotos } from "./photo-reading";
-import { fetchIgMedia } from "./media-capture";
+import { fetchIgImage, fetchIgMedia } from "./media-capture";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
-import { instagramTyping, isInstagramAccessError, mediaPermalink, sendInstagramAttachment, sendInstagramTemplate, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
+import { instagramTyping, isInstagramAccessError, sendInstagramAttachment, sendInstagramTemplate, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { answerWithGate, gateButtons } from "./gate/flow";
 import { choicesOf, instagramCarouselText, instagramLinkText, instagramPlan, instagramTemplate, type MessageComponent } from "./components";
@@ -69,7 +70,9 @@ export interface IgMessagingEvent {
     is_deleted?: boolean;
     is_unsupported?: boolean;
     /** Anexos: mídia, e post (ig_post) ou reel (ig_reel) compartilhado, com o id e a legenda. */
-    attachments?: Array<{ type?: string; payload?: { url?: string; title?: string; id?: string; reel_video_id?: string } }>;
+    attachments?: Array<{ type?: string; payload?: { url?: string; title?: string; id?: string; ig_post_media_id?: string; reel_video_id?: string } }>;
+    /** Resposta a um story da loja (E1, parte 2): o id e o link (que vence) do story. */
+    reply_to?: { mid?: string; story?: { id?: string; url?: string } };
     quick_reply?: { payload?: string };
     /** Primeira mensagem depois de abrir um link ig.me/<usuário>?ref=… */
     referral?: { ref?: string };
@@ -109,6 +112,9 @@ export function igMediaLabel(ev: IgMessagingEvent): string {
   if (IG_MEDIA_LABEL[type]) return IG_MEDIA_LABEL[type];
   return type ? `(anexo do Instagram: ${type})` : "(mensagem sem texto)";
 }
+
+/** Mídia do contexto que a leitura de fotos lê (post ou story de outra conta, marcação em story). */
+const CONTEXT_PHOTO_TYPES = new Set(["ig_post", "post", "share", "ig_reel", "reel", "ig_story", "story", "story_mention"]);
 
 /** Depois de um post, reel ou mídia sem texto, a pessoa costuma mandar o comentário em outra DM, logo atrás. */
 const FOLLOW_UP_WAIT_MS = 3500;
@@ -244,9 +250,12 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   };
   // DM desfeita antes de chegar (o aviso veio primeiro): grava já apagada e não responde
   const deleted = await deletedBeforeArrival(db, burst.map((q) => q.key));
-  // post ou reel compartilhado: o assistente lê a legenda; a referência fica na mensagem
-  const refs = burst.map((q) => sharedRef(q.ev));
-  await Promise.all(refs.map(async (r) => r?.id && (r.permalink = await mediaPermalink(ch, r.id))));
+  // o story ou o post de que a pessoa fala (E1, parte 2): o da loja vem da fonte do Instagram ou é
+  // descrito agora; o de outra conta e a marcação em story entram como foto do contato. A
+  // referência fica na mensagem. Sem IA (ou pagamento em aberto, ou dados sensíveis), nada é descrito
+  const describeStore = canReadPhotos() && botHasAi(bot) && !aiOff && !bot.sensitive_mode;
+  const contexts: IgContext[] = await Promise.all(burst.map((q) => (deleted.has(q.key) ? NO_CONTEXT : instagramContext(db, { bot, ch, ev: q.ev, describe: describeStore }))));
+  const refs = contexts.map((c) => c.ref);
   const unknown = burst.flatMap((q) => (q.ev.message?.attachments ?? []).map((a) => a.type ?? "?")).filter((t) => !IG_MEDIA_LABEL[t] && t !== "image" && t !== "audio");
   if (unknown.length) console.log("instagram: anexos não reconhecidos", unknown);
   const texts: Array<string | null> = [];
@@ -257,7 +266,7 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     }
     // link ig.me com ?ref= aberto sem texto: fica na conversa como "Conectar REF"
     const ref = igRef(q.ev);
-    const typed = [igText(q.ev), refs[i] ? sharedText(refs[i]!) : null].filter(Boolean).join("\n") || (ref ? `Conectar ${ref}` : null);
+    const typed = [igText(q.ev), contexts[i].text].filter(Boolean).join("\n") || (ref ? `Conectar ${ref}` : null);
     // número de cartão sai antes de gravar e antes da IA (também o dito no áudio)
     const t = (typed ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null;
     texts.push(t === null ? null : maskCardNumbers(t).text);
@@ -428,7 +437,10 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     ? burst.flatMap((q, i) => {
         if (handled.has(i) || deleted.has(q.key)) return [];
         const urls = (q.ev.message?.attachments ?? []).filter((a) => a.type === "image" && a.payload?.url).map((a) => a.payload!.url!);
-        return urls.length ? [{ index: i, key: q.key, fetchers: urls.map((url) => async () => (await fetchIgMedia(url))?.data ?? null) }] : [];
+        // a mídia do contato no contexto (E1): lida como foto, se for imagem (vídeo nem é baixado)
+        const extra = contexts[i].photoUrl;
+        const fetchers = [...urls.map((url) => async () => (await fetchIgMedia(url))?.data ?? null), ...(extra ? [() => fetchIgImage(extra)] : [])];
+        return fetchers.length ? [{ index: i, key: q.key, fetchers }] : [];
       })
     : [];
   if (photoSlots.length) {
@@ -458,9 +470,11 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   const burstUnseen =
     burst
       .map((q, i) => {
-        if (handled.has(i) || deleted.has(q.key)) return null;
+        // o post da loja, o story respondido e a marcação: o assistente sabe do que se trata
+        if (handled.has(i) || deleted.has(q.key) || contexts[i].seen) return null;
         const atts = q.ev.message?.attachments;
-        return igUnseenKind(photoSeen(photos.get(i)) ? atts?.filter((a) => a.type !== "image") : atts);
+        // a foto lida vale também para a mídia do contexto (o post ou o story de outra conta)
+        return igUnseenKind(photoSeen(photos.get(i)) ? atts?.filter((a) => a.type !== "image" && !CONTEXT_PHOTO_TYPES.has(a.type ?? "")) : atts);
       })
       .filter((k) => k !== null)
       .pop() ?? null;

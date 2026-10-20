@@ -42,6 +42,8 @@ export async function applyRetention(db: SupabaseClient, hasTime: () => boolean 
   await db.from("webhook_deliveries").delete().lt("created_at", daysAgoIso(30));
   // registro das chamadas de ações (Integrações): 30 dias
   await db.from("action_calls").delete().lt("created_at", daysAgoIso(30));
+  // stories e posts da loja lidos na hora no direct (E1): 30 dias
+  await db.from("instagram_media_notes").delete().lt("created_at", daysAgoIso(30));
   // roteiros (B2'): o que está sem mensagem do contato há 24 horas acaba (as variáveis saem); os
   // encerrados, só com o passo e o motivo, ficam 13 meses para os números por roteiro
   await sweepRoutineTimeouts(db);

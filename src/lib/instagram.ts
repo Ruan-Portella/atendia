@@ -303,6 +303,20 @@ export interface IgMedia {
 const MEDIA_FIELDS = "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,children{id,media_type,media_url,thumbnail_url}";
 
 /**
+ * Um post, reel ou story pelo id (parte 2: o compartilhado no direct, o story respondido). Só dá
+ * para ler a mídia da própria conta conectada: de outra conta, a Meta recusa e volta null.
+ */
+export async function instagramMediaById(ch: IgChannel, mediaId: string): Promise<IgMedia | null> {
+  if (!/^\d+$/.test(mediaId)) return null;
+  try {
+    const m = await api<IgMedia>(`${mediaId}?fields=${encodeURIComponent(MEDIA_FIELDS)}`, tokenOf(ch));
+    return m?.id ? m : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Os posts do feed da conta conectada, do mais novo ao mais antigo, até `max` ou até o primeiro
  * mais velho que `since` (stories não vêm por aqui). Página a página (50 por vez), pelo cursor.
  */

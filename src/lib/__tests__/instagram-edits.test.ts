@@ -13,7 +13,7 @@ describe("post e reel compartilhados", () => {
     expect(sharedRef({ message: { mid: "m1", attachments: [{ type: "image", payload: { url: "https://x" } }] } })).toBeNull();
     // story encaminhado: só a imagem, sem legenda
     expect(sharedRef({ message: { mid: "m1", attachments: [{ type: "ig_story", payload: { url: "https://x/s" } }] } })).toMatchObject({ kind: "story", url: "https://x/s", title: null });
-    expect(sharedText({ kind: "story", id: null, url: null, title: null })).toBe("📎 Story compartilhado do Instagram (o assistente não vê a imagem)");
+    expect(sharedText({ kind: "story", id: null, url: null, title: null })).toBe("📎 Story de outra conta, encaminhado pela pessoa");
   });
 
   it("o assistente lê a legenda (cortada); sem legenda, diz que não tem", () => {

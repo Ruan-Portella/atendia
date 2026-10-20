@@ -405,7 +405,7 @@ export function channelNoteFor(opts: { whatsapp?: { waId: string; profileName?: 
     : wa
     ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil do WhatsApp dela é "${wa.profileName}", mas pode não ser o nome real: não chame a pessoa por ele; quando for registrar o contato, pergunte se pode usar esse nome (ex.: "Posso anotar seu nome como ${wa.profileName}?").` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
     : opts.instagram
-      ? "A conversa é pelo Direct do Instagram: a conta da pessoa já é conhecida, então para registrar o contato basta o nome (peça o WhatsApp só se ela quiser deixar). O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio."
+      ? "A conversa é pelo Direct do Instagram: a conta da pessoa já é conhecida, então para registrar o contato basta o nome (peça o WhatsApp só se ela quiser deixar). O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio. Linhas com 📎 são o contexto do Instagram (o story ou o post de que a pessoa fala): responda sobre ele; preço que só aparece no post segue a regra dos posts. Se a pessoa marcou a loja num story, agradeça em uma frase, com simpatia, e ofereça ajuda."
       : undefined;
 }
 

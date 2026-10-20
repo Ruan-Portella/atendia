@@ -167,7 +167,9 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       }
       if (this.op === "upsert") {
         const r = this.rows[0];
-        const hit = t.find((x) => x[this.conflict] === r[this.conflict]);
+        // onConflict com várias colunas ("bot_id,media_id"): bate em todas
+        const cols = this.conflict.split(",").map((c) => c.trim());
+        const hit = t.find((x) => cols.every((c) => x[c] === r[c]));
         if (hit) Object.assign(hit, r);
         else t.push({ ...r });
         return { data: null, error: null };

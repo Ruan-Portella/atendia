@@ -6,8 +6,8 @@ import { canReadPhotos, embedTexts, modelCallOptions, visionModel, visionModelId
 import { recordAiUsage, recordAiUsageMany, usageFrom, type UsageTokens } from "./ai-usage";
 import { chunkText } from "./ingest";
 import { classifyLater } from "./gate/base";
-import { fetchIgMedia } from "./media-capture";
-import { DESCRIPTION_MAX, PHOTO_MAX_BYTES, PHOTO_TEXT_MAX, cleanPhotoText, imageMimeOf } from "./photo-note";
+import { fetchIgImage } from "./media-capture";
+import { DESCRIPTION_MAX, PHOTO_TEXT_MAX, cleanPhotoText, imageMimeOf } from "./photo-note";
 import { botHasAi } from "./plans";
 import { postTitle } from "./post-context";
 import { InstagramError, instagramMedia, isInstagramAccessError, type IgChannel, type IgMedia } from "./instagram";
@@ -134,10 +134,9 @@ async function describePost(m: IgMedia, companyName: string, usage: UsageTokens[
   return Promise.all(
     postImageUrls(m).map(async (url) => {
       try {
-        const data = (await fetchIgMedia(url))?.data ?? null;
-        if (!data || data.byteLength > PHOTO_MAX_BYTES) return "";
-        const mime = imageMimeOf(data);
-        if (!mime) return "";
+        const data = await fetchIgImage(url);
+        const mime = data ? imageMimeOf(data) : null;
+        if (!data || !mime) return "";
         return photoLine(await describePostPhoto(data, mime, { companyName, onUsage: (u) => usage.push(u) }));
       } catch (e) {
         console.error("instagram: foto do post não descrita", e instanceof Error ? e.message : e);

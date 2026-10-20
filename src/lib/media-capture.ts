@@ -3,6 +3,7 @@ import { findMessage } from "./messages";
 import { MAX_ATTACHMENT_BYTES, hasAttachments, storeAttachment } from "./attachments";
 import { downloadMedia } from "./whatsapp";
 import { safeFetch } from "./safe-fetch";
+import { PHOTO_MAX_BYTES, imageMimeOf } from "./photo-note";
 import type { ChannelRow, QueuedMessage } from "./whatsapp-inbound";
 import type { IgMessagingEvent } from "./instagram-inbound";
 
@@ -52,6 +53,22 @@ export async function fetchIgMedia(url: string): Promise<{ data: Uint8Array; mim
   const data = new Uint8Array(await res.arrayBuffer());
   if (data.byteLength > MAX_ATTACHMENT_BYTES) return null;
   return { data, mime: res.headers.get("content-type") ?? "application/octet-stream" };
+}
+
+/**
+ * Uma imagem do CDN do Instagram (foto de post, capa, story): JPEG, PNG ou WEBP de até 5 MB,
+ * conferida pelos primeiros bytes. Vídeo ou arquivo grande nem é baixado (o tipo e o tamanho vêm
+ * no cabeçalho). null quando não é uma foto que dê para ler; lança só em falha de rede.
+ */
+export async function fetchIgImage(url: string): Promise<Uint8Array | null> {
+  const { res } = await safeFetch(url, { signal: AbortSignal.timeout(15_000) });
+  const type = res.headers.get("content-type") ?? "";
+  if (!res.ok || (type && !type.startsWith("image/")) || Number(res.headers.get("content-length") ?? 0) > PHOTO_MAX_BYTES) {
+    await res.body?.cancel();
+    return null;
+  }
+  const data = new Uint8Array(await res.arrayBuffer());
+  return data.byteLength <= PHOTO_MAX_BYTES && imageMimeOf(data) ? data : null;
 }
 
 export async function captureInstagramMedia(db: SupabaseClient, botId: string, burst: Array<{ key: string; ev: IgMessagingEvent }>): Promise<number> {

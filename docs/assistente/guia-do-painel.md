@@ -128,7 +128,7 @@ As mensagens de modelo do WhatsApp são cobradas pela Meta, na forma de pagament
 
 ## Instagram Direct
 
-Na aba Instagram do chatbot, a conexão é pelo login do próprio Instagram (não precisa de página do Facebook). O assistente responde as mensagens do Direct, entende post, reel e story compartilhados e lida com mensagem editada ou desfeita. A equipe responde pelo painel.
+Na aba Instagram do chatbot, a conexão é pelo login do próprio Instagram (não precisa de página do Facebook). O assistente responde as mensagens do Direct e lida com mensagem editada ou desfeita. Quando a pessoa responde a um story da loja, o BoaVoz descreve o story na hora (ele some em 24 horas) e a IA responde sabendo de que produto se trata. Post ou reel da loja compartilhado chega com a legenda, a data e as fotos já lidas na fonte do Instagram. Post e story de outra conta e a marcação da loja no story de alguém contam como foto do contato; na marcação, a IA agradece e oferece ajuda. A equipe responde pelo painel.
 
 ## Posts do Instagram como fonte
 

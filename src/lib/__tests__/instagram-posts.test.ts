@@ -29,7 +29,7 @@ vi.mock("../ai", async (orig) => ({
 }));
 vi.mock("../instagram", async (orig) => ({ ...(await orig<typeof import("../instagram")>()), instagramMedia: vi.fn(async () => fake.media) }));
 // um JPEG: os primeiros bytes bastam para o tipo
-vi.mock("../media-capture", () => ({ fetchIgMedia: vi.fn(async () => ({ data: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(60).fill(1)]), mime: "image/jpeg" })) }));
+vi.mock("../media-capture", () => ({ fetchIgImage: vi.fn(async () => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(60).fill(1)])) }));
 
 import { isReel, photoLine, postImageUrls, postText, readableMedia, syncInstagramSource } from "../instagram-posts";
 
