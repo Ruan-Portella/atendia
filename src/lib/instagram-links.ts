@@ -24,5 +24,8 @@ export function refFromLabel(label: string): string {
   return slugify(label).slice(0, 40).replace(/-+$/, "");
 }
 
-/** O link para a bio, o QR e o anúncio. Pura. */
-export const igMeLink = (username: string, ref: string) => `https://ig.me/m/${encodeURIComponent(username)}?ref=${encodeURIComponent(ref)}`;
+/**
+ * O link para a bio, o QR e o anúncio: ig.me/<conta>?ref=<origem> (o formato da Meta; o /m/ é do
+ * Messenger). Abre no app do Instagram; no computador, o Instagram não abre links ig.me. Pura.
+ */
+export const igMeLink = (username: string, ref: string) => `https://ig.me/${encodeURIComponent(username)}?ref=${encodeURIComponent(ref)}`;

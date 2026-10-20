@@ -92,7 +92,8 @@ describe("links ig.me com origem", () => {
   });
 
   it("o link da bio, do QR e do anúncio", () => {
-    expect(igMeLink("lojadaana", "qr-do-balcao")).toBe("https://ig.me/m/lojadaana?ref=qr-do-balcao");
+    // o formato da Meta para o Instagram (o /m/ é do Messenger e dá "página não disponível")
+    expect(igMeLink("lojadaana", "qr-do-balcao")).toBe("https://ig.me/lojadaana?ref=qr-do-balcao");
   });
 
   it("a origem cadastrada vem com o nome e a nota; a desconhecida, só com o ref", async () => {

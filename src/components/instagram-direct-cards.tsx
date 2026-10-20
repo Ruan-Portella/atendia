@@ -59,7 +59,7 @@ export function RefLinksCard({ username, links, hasIceBreakers, add, remove }: {
     <div className="card flex flex-col gap-3 p-5">
       <div>
         <div className="font-semibold">Links com origem</div>
-        <p className="text-sm text-muted">Um link do direct para cada lugar (bio, QR do balcão, anúncio): o painel mostra de onde a pessoa veio e o assistente sabe disso. Para o QR impresso, gere o código com o link no app que preferir.</p>
+        <p className="text-sm text-muted">Um link do direct para cada lugar (bio, QR do balcão, anúncio): o painel mostra de onde a pessoa veio e o assistente sabe disso. O link abre o direct no app do Instagram, no celular (no computador, o Instagram não abre links ig.me). Para o QR impresso, gere o código com o link no app que preferir.</p>
       </div>
       {!hasIceBreakers && <p className="rounded-lg bg-amber-soft px-3 py-2 text-xs text-amber-ink">Em conversa nova, a Meta só manda a origem quando a conta tem perguntas prontas. Cadastre as perguntas acima para não perder a origem de quem chega pela primeira vez.</p>}
       {links.length > 0 && (
