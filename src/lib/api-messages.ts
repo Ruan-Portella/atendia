@@ -31,6 +31,7 @@ import { firstExceeded } from "./rate-limit";
 import { UNSIZED_API_SENDS, isUnsized } from "./free-account";
 import { API_PAUSE_DEFAULT_MINUTES } from "./api-pause";
 import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type ApiContext } from "./api-v1";
+import { learnLater } from "./learning";
 
 /*
  * POST /v1/messages (C pública, parte 3b; permissão messages; spec Peça 3 e "Formatos de payload"):
@@ -583,6 +584,8 @@ async function sendToWidget(api: ApiContext, p: Extract<SendBody, { target: "wid
   const content = [prefix, p.text].filter(Boolean).join("\n") || (p.file ? fileLabel(p.file) : "");
   const rec = record(api, p, content, prefix, null, component).insert;
   const id = await saveMessage(db, { conversation_id: conv.id, ...rec }, { touch: "equipe", deferEvent: Boolean(file) });
+  // aprendizado (D', parte 6): a resposta da integração pode virar rascunho para a base
+  if (id && p.text) learnLater(db, { conversationId: conv.id, text: p.text, author: p.agentName ?? "Integração" });
   if (id && file) {
     await keepCopy(db, { botId: conv.bot_id, conversationId: conv.id, messageId: id, channel: "widget", file });
     await queueMessageEvent(db, id, { conversation_id: conv.id, ...rec }, { withMedia: true });

@@ -41,6 +41,7 @@ const fixedRecord = (content: string): SendRecord => ({ insert: { role: "assista
 
 export { IG_APP_AUTHOR } from "./authors";
 import { IG_APP_AUTHOR } from "./authors";
+import { learnLater } from "./learning";
 
 const IG_MEDIA_LABEL: Record<string, string> = {
   image: "📷 (foto)",
@@ -599,4 +600,6 @@ export async function handleInstagramEcho(db: SupabaseClient, ch: IgChannelRow, 
   await saveMessage(db, { conversation_id: conv.id, role: "agent", content, author: IG_APP_AUTHOR, inbound_key: key }, { touch: "equipe" });
   // a equipe respondeu pelo app: o roteiro em andamento acaba (B2')
   await endActiveRoutine(db, conv.id, "handoff");
+  // aprendizado (D', parte 6)
+  learnLater(db, { conversationId: conv.id, text: content, author: "quem respondeu pelo app do Instagram" });
 }

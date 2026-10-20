@@ -71,7 +71,7 @@ interface Bucket {
   calls: number;
 }
 
-const KIND_LABEL: Record<string, string> = { resposta: "Respostas", leitura: "Leitura de fontes", transcricao: "Áudio (transcrição)", foto: "Fotos (leitura)", classificacao: "Classificação (portão e risco)", avaliacao: "Avaliações da IA (testes do backoffice)", analise: "Análise do bot (conformidade)" };
+const KIND_LABEL: Record<string, string> = { resposta: "Respostas", leitura: "Leitura de fontes", transcricao: "Áudio (transcrição)", foto: "Fotos (leitura)", classificacao: "Classificação (portão e risco)", avaliacao: "Avaliações da IA (testes do backoffice)", analise: "Análise do bot (conformidade)", aprendizado: "Aprendizado (sugestões para a base)" };
 export const kindLabel = (k: string) => KIND_LABEL[k] ?? k;
 
 /** Agrupa as linhas do banco por tipo, modelo, canal e agência; resposta média e % de cache. */

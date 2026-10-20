@@ -10,6 +10,7 @@ import { send as sendInstagram } from "./instagram-inbound";
 import { sendBlockedReason } from "./conversation-mode";
 import { deliver, type SendRecord } from "./send";
 import { saveMessage, touchConversation } from "./messages";
+import { learnLater } from "./learning";
 import { attendantAuthor, type Attendant } from "./authors";
 import { humanAgentEnabled } from "./presence";
 import { renderEntryNotice, type HumanHandoff } from "./handoff-hours";
@@ -123,6 +124,8 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
     }
   }
   await touchConversation(admin, conversationId);
+  // aprendizado (D', parte 6): no WhatsApp e no Instagram, a camada de envio já cuidou
+  if (sent === "widget") learnLater(admin, { conversationId, text: content, author: who.name });
   return ok("Enviada. O visitante vê em alguns segundos.");
 }
 

@@ -49,7 +49,7 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
                 {qs.length ? `${qs.length} pergunta${qs.length > 1 ? "s" : ""} que ${bot.name} não soube responder` : `Nenhuma pergunta sem resposta. ${bot.name} está dando conta!`}
               </div>
               {qs.map((q) => (
-                <UnansweredItem key={q.id} question={q.question} answer={memberAnswer.bind(null, id, bot.id, q.id)} dismiss={memberDismiss.bind(null, id, bot.id, q.id)} />
+                <UnansweredItem key={q.id} question={q.question} answer={memberAnswer.bind(null, id, bot.id, q.id)} dismiss={memberDismiss.bind(null, id, bot.id, q.id)} suggestion={q.suggestion} suggestedBy={q.suggestedBy} />
               ))}
             </div>
             <MomentNoticeCard

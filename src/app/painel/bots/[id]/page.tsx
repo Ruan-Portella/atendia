@@ -344,7 +344,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <div className="flex flex-col gap-2.5 rounded-xl border border-[#efd9a9] bg-amber-soft px-[18px] py-4">
                   <div className="text-sm font-semibold text-amber-ink">{unanswered.length} pergunta{unanswered.length > 1 ? "s" : ""} que {bot.name} não soube responder</div>
                   {unanswered.map((u) => (
-                    <UnansweredItem key={u.id} question={u.question} answer={answerUnanswered.bind(null, u.id, id)} dismiss={resolveUnanswered.bind(null, u.id, id)} />
+                    <UnansweredItem key={u.id} question={u.question} answer={answerUnanswered.bind(null, u.id, id)} dismiss={resolveUnanswered.bind(null, u.id, id)} suggestion={u.suggestion} suggestedBy={u.suggestedBy} />
                   ))}
                   <p className="text-xs text-muted">Clique em “Responder” e escreva o que o assistente deve dizer: ele aprende na hora.</p>
                 </div>

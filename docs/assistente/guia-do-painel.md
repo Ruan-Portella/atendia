@@ -74,7 +74,7 @@ Na aba Base de conhecimento do chatbot (e em Ensinar o assistente, na área do c
 
 ## Perguntas sem resposta
 
-Quando o assistente não acha a resposta na base, ele diz que não tem a informação, oferece deixar o contato e registra a pergunta. Essas perguntas ficam na aba Base de conhecimento: é só responder por lá que o assistente passa a saber (a resposta vira FAQ). É o jeito mais rápido de completar a base nos primeiros dias.
+Quando o assistente não acha a resposta na base, ele diz que não tem a informação, oferece deixar o contato e registra a pergunta. Essas perguntas ficam na aba Base de conhecimento: é só responder por lá que o assistente passa a saber (a resposta vira FAQ). É o jeito mais rápido de completar a base nos primeiros dias. Se alguém da equipe já respondeu a pessoa na conversa (pelo painel, pela área do cliente, pelo celular, pelo app do Instagram ou pela API), o BoaVoz sugere a entrada da base a partir dessa resposta, sem os dados da pessoa: a sugestão aparece embaixo da pergunta, com "Aprovar e pôr na base" e "Editar e responder". Resposta que só vale para aquela pessoa (o pedido ou o horário dela) não vira sugestão, e nada entra na base sem alguém aprovar.
 
 ## Personalidade e instruções
 

@@ -33,6 +33,7 @@ export type CipherField =
   | "leads.instagram_enc"
   | "leads.requests_enc"
   | "unanswered.question"
+  | "unanswered.suggestion_enc"
   | "scope_refusals.request"
   | "contact_links.external_id_enc"
   | "contact_links.context_enc"

@@ -57,17 +57,37 @@ export async function recordUnanswered(db: SupabaseClient, botId: string, conver
   await db.from("conversations").update({ needs_human: true }).eq("id", conversationId);
 }
 
+/** Sugestão do aprendizado (D', parte 6): a entrada da base a partir da resposta da equipe na conversa. */
+export interface LearningSuggestion {
+  question: string;
+  answer: string;
+}
+
 export interface UnansweredQuestion {
   id: string;
   bot_id: string;
   question: string;
   created_at: string;
+  /** A resposta que a equipe deu na conversa, como rascunho para a base (null: ainda não). */
+  suggestion: LearningSuggestion | null;
+  suggestedBy: string | null;
+}
+
+/** A sugestão guardada (cifrada), aberta; o que não abre ou não tem a forma certa, null. */
+async function openSuggestion(value: unknown): Promise<LearningSuggestion | null> {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const j = JSON.parse(await openField("unanswered.suggestion_enc", value)) as Partial<LearningSuggestion>;
+    return typeof j.question === "string" && typeof j.answer === "string" ? { question: j.question, answer: j.answer } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Perguntas pendentes destes chatbots (sem botIds: de todos, para o backoffice), mais novas primeiro. */
 export async function listUnanswered(db: SupabaseClient, opts: { botIds?: string[]; limit: number }): Promise<UnansweredQuestion[]> {
   if (opts.botIds && !opts.botIds.length) return [];
-  let q = db.from("unanswered").select("id, bot_id, question, created_at").eq("resolved", false);
+  let q = db.from("unanswered").select("id, bot_id, question, created_at, suggestion_enc, suggested_by").eq("resolved", false);
   if (opts.botIds) q = q.in("bot_id", opts.botIds);
   const { data } = await q.order("created_at", { ascending: false }).limit(opts.limit);
   return Promise.all(
@@ -76,8 +96,23 @@ export async function listUnanswered(db: SupabaseClient, opts: { botIds?: string
       bot_id: r.bot_id as string,
       question: await openField("unanswered.question", String(r.question)),
       created_at: r.created_at as string,
+      suggestion: await openSuggestion(r.suggestion_enc),
+      suggestedBy: (r.suggested_by as string | null) ?? null,
     })),
   );
+}
+
+/** Aprendizado: as perguntas pendentes desta conversa, ainda sem sugestão, desde o corte (as mais antigas primeiro). */
+export async function pendingWithoutSuggestion(db: SupabaseClient, conversationId: string, since: string, limit = 5): Promise<Array<{ id: string; botId: string; question: string }>> {
+  const { data } = await db.from("unanswered").select("id, bot_id, question").eq("conversation_id", conversationId).eq("resolved", false).is("suggestion_enc", null).gt("created_at", since).order("created_at").limit(limit);
+  return Promise.all(((data ?? []) as Array<Record<string, unknown>>).map(async (r) => ({ id: r.id as string, botId: r.bot_id as string, question: await openField("unanswered.question", String(r.question)) })));
+}
+
+/** Aprendizado: guarda a sugestão na pergunta (cifrada com a chave do cliente); só se ainda não tiver. */
+export async function saveSuggestion(db: SupabaseClient, o: { id: string; botId: string; suggestion: LearningSuggestion; author: string | null }): Promise<boolean> {
+  const sealed = await sealField("unanswered.suggestion_enc", JSON.stringify(o.suggestion), await scopeOfBot(o.botId));
+  const { data, error } = await db.from("unanswered").update({ suggestion_enc: sealed, suggested_at: new Date().toISOString(), suggested_by: o.author?.slice(0, 80) ?? null }).eq("id", o.id).is("suggestion_enc", null).select("id");
+  return !error && Boolean(data?.length);
 }
 
 /** Tira a pergunta da lista (respondida ou ignorada); botId limita ao chatbot. */

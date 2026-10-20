@@ -49,6 +49,7 @@ import { endActiveRoutine } from "./routine-engine";
 import { clearUnseen, markUnseen, recentUnseen, unseenMediaText, waUnseenKind, type UnseenMark } from "./unseen-media";
 import { assistantContext, handleTeamNotices } from "./team-whatsapp";
 import { handleSatisfactionReplies } from "./satisfaction";
+import { learnLater } from "./learning";
 
 /** Como uma mensagem sem texto aparece no painel (quando o assistente está quieto). */
 const MEDIA_LABEL: Record<string, string> = {
@@ -826,4 +827,6 @@ export async function handleEcho(db: SupabaseClient, channel: ChannelRow, echo: 
   await saveMessage(db, { conversation_id: conv.id, role: "agent", content, author: PHONE_AUTHOR, inbound_key: key }, { touch: "equipe" });
   // a equipe respondeu pelo celular: o roteiro em andamento acaba (B2')
   await endActiveRoutine(db, conv.id, "handoff");
+  // aprendizado (D', parte 6)
+  if (echo.text?.body?.trim()) learnLater(db, { conversationId: conv.id, text: echo.text.body.trim(), author: "quem respondeu pelo celular" });
 }
