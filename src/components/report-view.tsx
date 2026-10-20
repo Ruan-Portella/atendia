@@ -7,6 +7,8 @@ import { num } from "@/lib/plans";
 import { DailyBars } from "@/components/daily-bars";
 import { PrintButton } from "@/components/print-button";
 import { listLeads, type Lead } from "@/lib/leads";
+import { botEvolution } from "@/lib/evolution";
+import { EvolutionTable } from "@/components/evolution-table";
 
 export const brandColor = (c: string) => (/^#[0-9a-f]{6}$/i.test(c) ? c : "#1f4e3d");
 
@@ -52,6 +54,8 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
         db.from("conversations").select("id, bot_id, started_at, message_count, handoff_requested_at").in("bot_id", botIds).gte("started_at", from).lt("started_at", to).order("started_at", { ascending: false }).limit(50),
       ])
     : [[] as Lead[], { data: [] }];
+  // sem dado pessoal: aparece também no link do relatório
+  const evolution = await botEvolution(db, botIds, { until: period });
 
   const color = brandColor(report.agency.brand_color);
   const month = periodLabel(period);
@@ -131,6 +135,14 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
       <section className="card flex flex-col gap-3 p-4 sm:p-5">
         <h2 className="text-base font-bold">Conversas por dia</h2>
         <DailyBars days={report.daily} color={color} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-base font-bold">Evolução</h2>
+          <p className="text-sm text-muted">Os 6 meses até {month}: quanto o assistente resolveu sem a equipe, quanto tempo a equipe levou para assumir quem pediu atendimento e a satisfação de quem respondeu à pesquisa.</p>
+        </div>
+        <EvolutionTable months={evolution} color={color} />
       </section>
 
       {!people && (

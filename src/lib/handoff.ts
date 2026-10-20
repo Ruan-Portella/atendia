@@ -14,6 +14,7 @@ import { attendantAuthor, type Attendant } from "./authors";
 import { humanAgentEnabled } from "./presence";
 import { renderEntryNotice, type HumanHandoff } from "./handoff-hours";
 import { endActiveRoutine } from "./routine-engine";
+import { leadWaiting } from "./handoff-status";
 
 /**
  * Atendimento humano: as mesmas operações para a agência (painel) e para o cliente final
@@ -52,7 +53,11 @@ export const ALREADY_YOURS = "Você já está atendendo esta conversa.";
  * lugar"), troca quem estava; `previous` diz quem era, para a auditoria.
  */
 export async function takeOver(admin: SupabaseClient, conversationId: string, who: Attendant, opts: { force?: boolean } = {}): Promise<TakeOverResult> {
-  const { data: before } = await admin.from("conversations").select(HOLDER_COLS).eq("id", conversationId).maybeSingle<Holder>();
+  const { data: before } = await admin
+    .from("conversations")
+    .select(`${HOLDER_COLS}, bot_id, handoff_requested_at, lead_waiting_at`)
+    .eq("id", conversationId)
+    .maybeSingle<Holder & { bot_id: string; handoff_requested_at: string | null; lead_waiting_at: string | null }>();
   if (!before) return fail("Conversa não encontrada.");
   if (holdsConversation(before, who.id)) return ok(ALREADY_YOURS);
   const now = new Date().toISOString();
@@ -68,6 +73,11 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
     const { data: current } = await admin.from("conversations").select(HOLDER_COLS).eq("id", conversationId).maybeSingle<Holder>();
     if (current && holdsConversation(current, who.id)) return ok(ALREADY_YOURS);
     return fail(`${current ? otherName(current) : "Outra pessoa da equipe"} já está atendendo esta conversa.`);
+  }
+  // o tempo até a equipe assumir, para a Evolução: só o primeiro a assumir um pedido de atendente
+  // em aberto (o pedido deixado não conta, nem trocar quem atende); a medida não segura o atendimento
+  if (before.handoff_requested_at && !before.takeover_at && !before.handled_at && !leadWaiting(before)) {
+    await Promise.resolve(admin.from("handoff_waits").insert({ bot_id: before.bot_id, requested_at: before.handoff_requested_at, assumed_at: now })).catch(() => undefined);
   }
   // roteiro em andamento acaba: a equipe assumiu (B2')
   await endActiveRoutine(admin, conversationId, "handoff");

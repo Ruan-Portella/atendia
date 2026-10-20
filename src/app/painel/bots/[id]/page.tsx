@@ -43,6 +43,8 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
 import { saveMomentNotice, clearMomentNotice, setSatisfactionSurvey } from "../../actions";
 import { SatisfactionCard } from "@/components/satisfaction-card";
+import { EvolutionTable } from "@/components/evolution-table";
+import { botEvolution } from "@/lib/evolution";
 import { satisfactionSummary } from "@/lib/satisfaction";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, updateBot } from "../../actions";
 import { BotPauseButton } from "@/components/bot-pause";
@@ -70,6 +72,7 @@ const TABS = [
   ["roteiros", "Roteiros"],
   ["acoes", "Ações"],
   ["conversas", "Conversas"],
+  ["evolucao", "Evolução"],
   ["whatsapp", "WhatsApp"],
   ["instagram", "Instagram"],
   ["instalacao", "Instalação"],
@@ -192,7 +195,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         </div>
       )}
 
-      <div className="grid flex-1 lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]">
+      {/* a aba Evolução (a tabela) usa a largura toda, sem o teste ao vivo */}
+      <div className={`grid flex-1 ${tab === "evolucao" ? "lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]" : "lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]"}`}>
         {/* no desktop as abas ficam presas no topo ao rolar; a linha divisória fica no conteúdo */}
         <nav className="flex flex-row items-center gap-1 overflow-x-auto border-b border-line px-3 py-2 [scrollbar-width:none] lg:sticky lg:top-0 lg:max-h-dvh lg:flex-col lg:items-stretch lg:self-start lg:overflow-y-auto lg:border-b-0 lg:p-3.5">
           {tabs.map(([key, label]) => (
@@ -432,6 +436,16 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             <SatisfactionCard on={Boolean(bot.satisfaction_survey)} summary={await satisfactionSummary(createAdminClient(), [id], daysAgoIso(30))} save={setSatisfactionSurvey.bind(null, id)} />
           )}
 
+          {tab === "evolucao" && (
+            <section className="flex flex-col gap-4">
+              <div>
+                <h2 className="text-[22px] font-bold">Evolução</h2>
+                <p className="max-w-[720px] text-sm text-muted">Os últimos 6 meses deste chatbot: quanto o assistente resolveu sem a equipe, quanto foi para a equipe, quanto tempo a equipe levou para assumir quem pediu atendimento (a mediana) e a satisfação de quem respondeu à pesquisa.{bot.client_id && !bot.is_demo ? " O cliente vê a mesma tabela no relatório, com os chatbots dele somados." : ""}</p>
+              </div>
+              <EvolutionTable months={await botEvolution(createAdminClient(), [id])} />
+            </section>
+          )}
+
           {tab === "conversas" && (
             <>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -669,7 +683,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
         </section>
 
-        <aside className="hidden border-l border-line bg-[#ecebe4] p-5 lg:block">
+        {tab !== "evolucao" && <aside className="hidden border-l border-line bg-[#ecebe4] p-5 lg:block">
           {/* o fundo ocupa a coluna inteira; o chat de teste acompanha a rolagem */}
           <div className="sticky top-5 flex flex-col gap-3">
             <div className="flex items-center justify-between text-xs">
@@ -687,7 +701,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               )}
             </div>
           </div>
-        </aside>
+        </aside>}
 
         {/* abaixo de lg o teste ao vivo abre por um botão flutuante */}
         <ChatPreviewSheet disabledReason={!readySources ? "Adicione uma fonte para testar o assistente." : null}>

@@ -34,7 +34,10 @@ export function clientGuide(access: GuideAccess, names: { agency: string; client
       id: "relatorio",
       title: "Relatório",
       show: access.manager,
-      paragraphs: [`A página inicial mostra como o assistente de ${names.client} está indo: as conversas, os leads e quanto ele resolveu sem a equipe.`],
+      paragraphs: [
+        `A página inicial mostra como o assistente de ${names.client} está indo: as conversas, os leads e quanto ele resolveu sem a equipe.`,
+        "Mais abaixo, a Evolução mostra os últimos 6 meses, mês a mês: quanto o assistente resolveu sozinho, quanto tempo a equipe levou para assumir quem pediu atendimento e a satisfação de quem respondeu à pesquisa.",
+      ],
     },
     access.handoff
       ? {

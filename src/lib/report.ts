@@ -95,7 +95,8 @@ async function whatsappMonth(db: SupabaseClient, botIds: string[], period: strin
 
 const EMPTY: Summary = { conversations: 0, needsHuman: 0, leads: 0, visitorMessages: 0 };
 
-async function summary(db: SupabaseClient, botIds: string[], period: string): Promise<Summary> {
+/** Os totais de um mês (conversas, pedidos de atendente, leads, mensagens) dos chatbots. */
+export async function monthSummary(db: SupabaseClient, botIds: string[], period: string): Promise<Summary> {
   if (!botIds.length) return EMPTY;
   const { from, to } = periodRange(period);
   const { data } = await db.rpc("bots_summary", { p_bot_ids: botIds, p_from: from, p_to: to });
@@ -117,8 +118,8 @@ export async function getClientReport(db: SupabaseClient, clientId: string, peri
   const ids = (bots ?? []).map((b) => b.id);
   const { from, to } = periodRange(period);
   const [current, previous, daily, whatsapp] = await Promise.all([
-    summary(db, ids, period),
-    summary(db, ids, shiftPeriod(period, -1)),
+    monthSummary(db, ids, period),
+    monthSummary(db, ids, shiftPeriod(period, -1)),
     ids.length ? db.rpc("bots_daily", { p_bot_ids: ids, p_from: from, p_to: to }).then((r) => (r.data ?? []) as ClientReport["daily"]) : Promise.resolve([]),
     whatsappMonth(db, ids, period),
   ]);

@@ -147,7 +147,11 @@ O cliente da agência entra pela área do cliente com um link enviado por e-mail
 
 ## Relatório mensal
 
-Todo mês sai por e-mail o relatório do atendimento, com um link público que mostra só números (conversas, atendimentos, leads), sem conteúdo das conversas. O relatório fica também na aba Relatório e portal do cliente.
+Todo mês sai por e-mail o relatório do atendimento, com um link público que mostra só números (conversas, atendimentos, leads e a evolução dos últimos 6 meses), sem conteúdo das conversas. O relatório fica também na aba Relatório e portal do cliente.
+
+## Evolução mês a mês
+
+Na aba Evolução de cada chatbot, uma tabela com os últimos 6 meses: as conversas, quantas o assistente resolveu sem a equipe (com a porcentagem), quantas foram para a equipe, quanto tempo a equipe levou para assumir quem pediu atendimento (a mediana, do pedido até alguém assumir; o pedido deixado fora do horário não entra), a satisfação (a porcentagem de Ótimo entre as respostas da pesquisa) e os contatos capturados. Um traço quer dizer que não houve aquilo no mês. O cliente vê a mesma tabela no relatório (no link e na área do cliente), com os chatbots dele somados, até o mês que estiver aberto. Serve para mostrar ao cliente, mês a mês, o resultado do assistente.
 
 ## Marca e domínio
 
