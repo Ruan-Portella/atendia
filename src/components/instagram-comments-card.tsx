@@ -32,7 +32,7 @@ export function InstagramCommentsCard({ enabled, comments, posts, ai }: { enable
       <div>
         <div className="font-semibold">Comentários dos posts</div>
         <p className="text-sm text-muted">
-          Os comentários que chegaram e o que o assistente fez. A palavra-chave no comentário manda a resposta privada no direct (uma por comentário, até 7 dias depois dele; para quem não segue a conta, ela cai em <strong>Solicitações de mensagem</strong>) e, se você quiser, uma resposta pública. Se a conta foi conectada antes, conecte o Instagram de novo para dar a permissão dos comentários.
+          Os comentários que chegaram e o que o assistente fez. A palavra-chave no comentário manda a mensagem no direct de quem comentou (a resposta privada: uma por comentário, até 7 dias depois dele; para quem não segue a conta, ela cai em <strong>Solicitações de mensagem</strong>) e, se você quiser, uma resposta pública. Se a conta foi conectada antes, conecte o Instagram de novo para dar a permissão dos comentários.
         </p>
       </div>
       {ai && <CommentsAiForm mode={ai.mode} mediaIds={ai.mediaIds} posts={ai.posts} withAi={ai.withAi} save={ai.save} />}

@@ -131,10 +131,20 @@ export interface PostChoice {
   posted_at: string;
 }
 
-/** Os campos de uma palavra-chave (nova ou existente). */
+/**
+ * Os campos de uma palavra-chave (nova ou existente). Com os comentários, o direct e os comentários
+ * ficam em blocos separados: as duas respostas chegam no direct da pessoa, e no teste de 20/10 a
+ * mensagem para quem comentou foi parar na resposta do direct.
+ */
 function KeywordFields({ k, commentsOn, posts }: { k: KeywordItem | null; commentsOn: boolean; posts: PostChoice[] }) {
   const [scope, setScope] = useState(k?.media_ids ? "escolhidos" : "todos");
   const prefix = k ? k.id : "novo";
+  const dmField = (label: string) => (
+    <div>
+      <label htmlFor={`kw-dm-${prefix}`} className="label">{label}</label>
+      <textarea id={`kw-dm-${prefix}`} name="dm_reply" rows={3} maxLength={REPLY_MAX} defaultValue={k?.dm_reply ?? ""} placeholder="Oi! A tabela de preços está aqui: …" className="input" />
+    </div>
+  );
   return (
     <>
       {k && <input type="hidden" name="id" value={k.id} />}
@@ -142,41 +152,46 @@ function KeywordFields({ k, commentsOn, posts }: { k: KeywordItem | null; commen
         <label htmlFor={`kw-words-${prefix}`} className="label">Palavras (separadas por vírgula)</label>
         <input id={`kw-words-${prefix}`} name="words" required defaultValue={k?.words.join(", ") ?? ""} placeholder="preço, eu quero" className="input" />
       </div>
-      <div>
-        <label htmlFor={`kw-dm-${prefix}`} className="label">Resposta pronta no direct (quando a pessoa manda só a palavra)</label>
-        <textarea id={`kw-dm-${prefix}`} name="dm_reply" rows={3} maxLength={REPLY_MAX} defaultValue={k?.dm_reply ?? ""} placeholder="Oi! A tabela de preços está aqui: …" className="input" />
-      </div>
+      {!commentsOn && dmField("Resposta pronta no direct (quando a pessoa manda só a palavra)")}
       {commentsOn && (
         <>
-          <div>
-            <label htmlFor={`kw-cr-${prefix}`} className="label">Resposta privada ao comentário (vai no direct; uma por comentário, até 7 dias)</label>
-            <textarea id={`kw-cr-${prefix}`} name="comment_reply" rows={3} maxLength={REPLY_MAX} defaultValue={k?.comment_reply ?? ""} placeholder="Oi! Te mandei os detalhes por aqui 😊" className="input" />
-          </div>
-          <div>
-            <label htmlFor={`kw-cp-${prefix}`} className="label">Resposta pública no comentário (opcional, curta)</label>
-            <input id={`kw-cp-${prefix}`} name="comment_public" maxLength={PUBLIC_REPLY_MAX} defaultValue={k?.comment_public ?? ""} placeholder="Te chamei no direct!" className="input" />
-          </div>
-          <fieldset className="flex flex-col gap-1.5 text-sm">
-            <legend className="label">Nos comentários de</legend>
-            <label className="flex items-center gap-2">
-              <input type="radio" name="posts" value="todos" checked={scope === "todos"} onChange={() => setScope("todos")} /> todos os posts
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="radio" name="posts" value="escolhidos" checked={scope === "escolhidos"} onChange={() => setScope("escolhidos")} disabled={!posts.length} /> posts escolhidos{!posts.length && <span className="text-xs text-muted"> (leia os posts na aba Base de conhecimento)</span>}
-            </label>
-            {scope === "escolhidos" && (
-              <div className="ml-6 flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-line p-2">
-                {posts.map((p) => (
-                  <label key={p.media_id} className="flex items-start gap-2 text-xs">
-                    <input type="checkbox" name="media_ids" value={p.media_id} defaultChecked={k?.media_ids?.includes(p.media_id)} className="mt-0.5" />
-                    <span className="min-w-0">
-                      <span className="text-muted">{new Date(p.posted_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} · </span>
-                      {p.caption?.trim().slice(0, 90) || "(sem legenda)"}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
+          <fieldset className="flex flex-col gap-2 rounded-xl border border-line p-3">
+            <legend className="px-1 text-sm font-semibold">Quando a pessoa manda a palavra no direct</legend>
+            {dmField("Resposta pronta (quando a mensagem é só a palavra; vazio, não responde no direct)")}
+          </fieldset>
+          <fieldset className="flex flex-col gap-2 rounded-xl border border-line p-3">
+            <legend className="px-1 text-sm font-semibold">Quando a pessoa comenta a palavra num post</legend>
+            <div>
+              <label htmlFor={`kw-cr-${prefix}`} className="label">Mensagem no direct de quem comentou (uma por comentário, até 7 dias depois dele)</label>
+              <textarea id={`kw-cr-${prefix}`} name="comment_reply" rows={3} maxLength={REPLY_MAX} defaultValue={k?.comment_reply ?? ""} placeholder="Oi! Te mandei os detalhes por aqui 😊" className="input" />
+            </div>
+            <div>
+              <label htmlFor={`kw-cp-${prefix}`} className="label">Resposta pública no comentário (opcional, curta)</label>
+              <input id={`kw-cp-${prefix}`} name="comment_public" maxLength={PUBLIC_REPLY_MAX} defaultValue={k?.comment_public ?? ""} placeholder="Te chamei no direct!" className="input" />
+              <p className="mt-1 text-xs text-muted">Se ela diz que chamou a pessoa no direct, escreva também a mensagem acima.</p>
+            </div>
+            <fieldset className="flex flex-col gap-1.5 text-sm">
+              <legend className="label">Nos comentários de</legend>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="posts" value="todos" checked={scope === "todos"} onChange={() => setScope("todos")} /> todos os posts
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="posts" value="escolhidos" checked={scope === "escolhidos"} onChange={() => setScope("escolhidos")} disabled={!posts.length} /> posts escolhidos{!posts.length && <span className="text-xs text-muted"> (leia os posts na aba Base de conhecimento)</span>}
+              </label>
+              {scope === "escolhidos" && (
+                <div className="ml-6 flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-line p-2">
+                  {posts.map((p) => (
+                    <label key={p.media_id} className="flex items-start gap-2 text-xs">
+                      <input type="checkbox" name="media_ids" value={p.media_id} defaultChecked={k?.media_ids?.includes(p.media_id)} className="mt-0.5" />
+                      <span className="min-w-0">
+                        <span className="text-muted">{new Date(p.posted_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} · </span>
+                        {p.caption?.trim().slice(0, 90) || "(sem legenda)"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </fieldset>
           </fieldset>
         </>
       )}
@@ -197,7 +212,7 @@ export function KeywordsCard({ keywords, commentsOn, posts, save, remove }: { ke
       <div>
         <div className="font-semibold">Palavras-chave</div>
         <p className="text-sm text-muted">
-          A pessoa manda só a palavra no direct (ex.: PREÇO) e recebe a resposta pronta da loja, sem IA.{commentsOn ? " Nos comentários, a palavra dispara a resposta privada no direct (para quem não segue a conta, ela cai em Solicitações) e, se quiser, uma resposta pública." : ""} Para começar um roteiro pela palavra, cadastre a palavra no próprio roteiro (aba Roteiros).
+          A pessoa manda só a palavra no direct (ex.: PREÇO) e recebe a resposta pronta da loja, sem IA.{commentsOn ? " Nos comentários, a palavra manda uma mensagem no direct de quem comentou (para quem não segue a conta, ela cai em Solicitações) e, se quiser, uma resposta pública no post." : ""} Para começar um roteiro pela palavra, cadastre a palavra no próprio roteiro (aba Roteiros).
         </p>
       </div>
       {keywords.length > 0 && (

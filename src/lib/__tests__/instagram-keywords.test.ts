@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { memoryDb, type MemRow } from "../memory-db";
-import { commentKeyword, directKeywordReply, keywordConflict, matchesComment, matchesDirect, parseKeywordInput } from "../instagram-keywords";
+import { commentKeyword, directKeywordReply, keywordConflict, matchesComment, matchesDirect, parseKeywordInput, promisesDirect } from "../instagram-keywords";
 
 /*
  * Palavras-chave do Instagram (E1, parte 3b): o formulário (palavras normalizadas, item restrito,
@@ -46,6 +46,19 @@ describe("o formulário", () => {
     expect(parseKeywordInput({ words: "eu quero", comment_reply: "Oi!", comment_public: "Te chamei!", posts: "escolhidos", media_ids: ["18100", "x", "18100"] }, { comments: true })).toEqual({ words: ["eu quero"], dm_reply: null, comment_reply: "Oi!", comment_public: "Te chamei!", media_ids: ["18100"] });
     expect(parseKeywordInput({ words: "eu quero", comment_reply: "Oi!", posts: "escolhidos", media_ids: [] }, { comments: true })).toMatchObject({ error: expect.stringContaining("Escolha pelo menos um post") });
     expect(parseKeywordInput({ words: "eu quero", comment_reply: "Oi!", posts: "todos", media_ids: ["18100"] }, { comments: true })).toMatchObject({ media_ids: null });
+  });
+
+  it("a resposta pública que diz que chamou no direct só salva com a mensagem para quem comentou (teste de 20/10)", () => {
+    // a mensagem foi parar na resposta do direct: o comentário receberia só o "te chamei"
+    expect(parseKeywordInput({ words: "eu quero", dm_reply: "Oi! Qual tamanho você quer?", comment_public: "Te chamei no direct 😊", posts: "todos" }, { comments: true })).toMatchObject({ error: expect.stringContaining("a mensagem no direct de quem comentou está vazia") });
+    expect(parseKeywordInput({ words: "eu quero", comment_reply: "Oi! Qual tamanho você quer?", comment_public: "Te chamei no direct 😊", posts: "todos" }, { comments: true })).toMatchObject({ dm_reply: null, comment_reply: "Oi! Qual tamanho você quer?", comment_public: "Te chamei no direct 😊" });
+    // convidar para o direct, sem dizer que chamou, vale sem a mensagem
+    expect(parseKeywordInput({ words: "eu quero", comment_public: "Chama no direct que a gente te ajuda!", posts: "todos" }, { comments: true })).toMatchObject({ comment_public: "Chama no direct que a gente te ajuda!" });
+  });
+
+  it("o que conta como dizer que chamou a pessoa no direct", () => {
+    for (const t of ["Te chamei no direct 😊", "Te chamei!", "Enviei no seu DM", "Olha o direct 😉", "Te mandei uma mensagem", "Respondemos no inbox", "Te chamo no privado"]) expect(promisesDirect(t), t).toBe(true);
+    for (const t of ["Chama no direct que te ajudo", "Obrigada! 😍", "Me chama no pv", "Responde no direct", "Lindo, né?"]) expect(promisesDirect(t), t).toBe(false);
   });
 });
 

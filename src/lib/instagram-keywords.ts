@@ -42,6 +42,18 @@ function storeText(v: unknown, max: number, field: string): string | null | { er
 }
 
 /**
+ * A resposta pública diz que a loja já chamou (ou vai chamar) a pessoa no direct ("te chamei no
+ * direct", "olha o DM"), em vez de só convidar ("chama no direct"). Sem a mensagem para quem
+ * comentou, ninguém seria chamado: no teste de 20/10, a mensagem foi parar na resposta do direct. Pura.
+ */
+export function promisesDirect(publicReply: string): boolean {
+  const t = normalizeKeyword(publicReply);
+  if (/\bte (chamei|chamamos|chamo)\b/.test(t)) return true;
+  const dm = /\b(direct|dm|inbox|privado|pv|mensagem|mensagens|msg)\b/.test(t);
+  return dm && /\b(chamei|chamamos|mandei|mandamos|enviei|enviamos|respondi|respondemos|olha|olhe|veja|confere|confira|cheque|checa)\b/.test(t);
+}
+
+/**
  * A palavra-chave do formulário. Os campos dos comentários só valem com os comentários ligados
  * (sem eles, ficam como estavam: `keep`). Pura.
  */
@@ -56,10 +68,11 @@ export function parseKeywordInput(raw: { words: unknown; dm_reply?: unknown; com
   let comment_public = o.keep?.comment_public ?? null;
   let media_ids = o.keep?.media_ids ?? null;
   if (o.comments) {
-    const priv = storeText(raw.comment_reply, REPLY_MAX, "A resposta privada do comentário");
+    const priv = storeText(raw.comment_reply, REPLY_MAX, "A mensagem no direct de quem comentou");
     if (priv && typeof priv === "object") return priv;
-    const pub = storeText(raw.comment_public, PUBLIC_REPLY_MAX, "A resposta pública do comentário");
+    const pub = storeText(raw.comment_public, PUBLIC_REPLY_MAX, "A resposta pública no comentário");
     if (pub && typeof pub === "object") return pub;
+    if (pub && !priv && promisesDirect(pub)) return { error: "A resposta pública diz que chamou a pessoa no direct, mas a mensagem no direct de quem comentou está vazia: escreva essa mensagem (ou tire o direct da resposta pública)." };
     comment_reply = priv;
     comment_public = pub;
     const ids = [...new Set((raw.media_ids ?? []).map(text).filter((id) => /^\d+$/.test(id)))];
@@ -67,7 +80,7 @@ export function parseKeywordInput(raw: { words: unknown; dm_reply?: unknown; com
     if (ids.length > KEYWORD_POSTS_MAX) return { error: `Até ${KEYWORD_POSTS_MAX} posts por palavra-chave.` };
     media_ids = raw.posts === "escolhidos" ? ids : null;
   }
-  if (!dm && !comment_reply && !comment_public) return { error: o.comments ? "Escreva a resposta do direct, a do comentário ou as duas." : "Escreva a resposta pronta do direct." };
+  if (!dm && !comment_reply && !comment_public) return { error: o.comments ? "Escreva pelo menos uma resposta, no direct ou no comentário." : "Escreva a resposta pronta do direct." };
   return { words, dm_reply: dm, comment_reply, comment_public, media_ids };
 }
 
