@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { can } from "@/lib/team";
 import { IMPORT_MAX_ROWS } from "@/lib/contact-import";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { ContactImport } from "@/components/contact-import";
 import { importClientContacts } from "../../../../actions";
 
@@ -20,13 +21,17 @@ const COLUMNS: Array<[string, string]> = [
   ["aceite_data", "Data do aceite (ex.: 10/09/2026). Obrigatório com o aceite."],
   ["aceite_texto", "Opcional. O texto aceito; sem ele, vale o texto que você escrever na importação."],
   ["idade", "Opcional. sim (18 anos ou mais) ou não."],
-  ["nascimento", "Opcional, no lugar da idade. Só serve para calcular o 18+ e não é guardada."],
-  ["idade_origem", "Como a empresa sabe a idade (ex.: documento conferido). Obrigatório com idade ou nascimento."],
+  ["nascimento", "Opcional, no lugar da idade (com idade_origem, calcula o 18+). Fica só o dia e o mês, como aniversário; o ano não é guardado."],
+  ["idade_origem", "Como a empresa sabe a idade (ex.: documento conferido). Obrigatório com idade, e com nascimento para valer o 18+."],
+  ["aniversario", "Opcional, para as réguas. Dia e mês (ex.: 21/10)."],
+  ["ultima_visita", "Opcional, para as réguas. A última visita ou compra (ex.: 05/10/2026)."],
+  ["agendamento", "Opcional, para as réguas. O próximo horário marcado, no fuso do cliente (ex.: 20/12/2026 14:30)."],
 ];
 
 /**
  * Cliente → Contatos → Importar planilha (leva B3, parte 2b): contatos do WhatsApp com o aceite de
- * novidades (origem e data) e a idade informada pela empresa.
+ * novidades (origem e data), a idade informada pela empresa e as datas das réguas (leva Réguas,
+ * parte 1), com o horário marcado lido no fuso do cliente.
  */
 export default async function ImportContactsPage({ params }: PageProps<"/painel/clientes/[id]/contatos/importar">) {
   const [{ id }, { role }] = await Promise.all([params, requireAgency()]);
@@ -34,7 +39,7 @@ export default async function ImportContactsPage({ params }: PageProps<"/painel/
   const supabase = await createClient();
   // a RLS limita os chatbots ao cliente e ao escopo de quem está logado
   const [{ data: client }, { data: bots }] = await Promise.all([
-    supabase.from("clients").select("id, name").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, name, timezone").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name").eq("client_id", id).eq("is_demo", false).order("created_at"),
   ]);
   if (!client) notFound();
@@ -50,7 +55,7 @@ export default async function ImportContactsPage({ params }: PageProps<"/painel/
         <h1 className="text-2xl font-bold sm:text-[28px]">Importar contatos</h1>
         <p className="text-sm text-muted">
           Traga os contatos que o cliente já tem, com o aceite de novidades e a idade, quando ele tiver. Até {IMPORT_MAX_ROWS.toLocaleString("pt-BR")} por planilha. Telefone que já existe no
-          chatbot é completado (nome vazio e etiquetas novas), nunca duplicado.
+          chatbot é completado (nome vazio, etiquetas novas e as datas das réguas), nunca duplicado.
         </p>
       </div>
 
@@ -75,7 +80,7 @@ export default async function ImportContactsPage({ params }: PageProps<"/painel/
       </section>
 
       {withWhatsApp.length ? (
-        <ContactImport clientId={id} bots={withWhatsApp} action={importClientContacts} />
+        <ContactImport clientId={id} bots={withWhatsApp} timezone={(client.timezone as string | null) ?? DEFAULT_TIMEZONE} action={importClientContacts} />
       ) : (
         <p className="card p-5 text-sm text-muted">Nenhum chatbot deste cliente tem o WhatsApp conectado. Conecte o número primeiro: os contatos e os aceites valem para ele.</p>
       )}

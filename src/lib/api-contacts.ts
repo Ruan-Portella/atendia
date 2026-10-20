@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { apiContacts, apiContactsPage, normalizeTags, parseContactAddress, setContactTags, whatsappContact, type ApiContact, type ApiContactRow } from "./contacts";
+import { apiContacts, apiContactsByIds, apiContactsPage, normalizeTags, parseContactAddress, setContactDates, setContactTags, whatsappContact, type ApiContact, type ApiContactRow, type ContactDates } from "./contacts";
+import { APPOINTMENT_MAX_DAYS, monthDay } from "./contact-import";
 import { apiLeadsPage, type Lead } from "./leads";
 import { consentStatesMany, recordConsent, revokeConsents, whatsappScopeOfBot, type ConsentState } from "./marketing-consent";
 import { activeSuppressions, activeSuppressionsMany, suppressionScope, type SuppressionKind } from "./suppression";
@@ -25,6 +26,8 @@ import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type
  *   existe, mas não tira ninguém do descadastro (só um novo sim da própria pessoa, no chat)
  * - DELETE /v1/contacts/{contact}?bot_id= (contacts) → 202 {request_id}: pedido do titular já
  *   confirmado, apagado pela rotina única de exclusão, com contact.deleted
+ * - PATCH /v1/contacts/{contact} {bot_id, birthday, last_visit_at, appointment_at} (contacts): as
+ *   datas das réguas (leva Réguas, parte 1); pelo telefone, cria o contato do WhatsApp que não existe
  */
 
 const CHANNELS = ["widget", "whatsapp", "instagram"] as const;
@@ -71,6 +74,10 @@ export function contactApiObject(c: ApiContactRow, x: ContactExtras) {
     // promoções: só no WhatsApp; opted_out = o que a pessoa pediu para não receber (SAIR, botão, Meta)
     consent: c.channel === "widget" ? null : { marketing: c.channel === "whatsapp" ? (x.consent ?? "none") : null, opted_out: x.optedOut },
     age_confirmed: x.age === "sim" ? true : x.age === "nao" ? false : null,
+    // as datas das réguas: o aniversário só com o mês e o dia ("MM-DD")
+    birthday: c.birthday,
+    last_visit_at: c.last_visit_at,
+    appointment_at: c.appointment_at,
     first_inbound_at: c.first_inbound_at,
     last_inbound_at: c.last_inbound_at,
     created_at: c.created_at,
@@ -142,6 +149,76 @@ export async function putContactTags(req: Request, api: ApiContext, rawContact: 
   for (const c of contacts) await setContactTags(api.db, c.id, [botId], tags);
   await audit(api.db, { agencyId: api.key.agency_id, actorType: "api_key", actorId: api.key.id, action: "contato.etiquetas", targetType: "contact", targetId: contacts[0].id, after: { tags, contatos: contacts.length }, ip: clientIp(req), userAgent: req.headers.get("user-agent") });
   return Response.json({ data: contacts.map((c) => ({ id: `ctc_${c.id}`, tags })) });
+}
+
+/* ------------------------------------------------------------------ PATCH /v1/contacts/{contact} */
+
+/** O aniversário pela API: "MM-DD" ou a data inteira "AAAA-MM-DD" (o ano não fica). Pura. */
+export function birthdayFromApi(raw: string): string | null {
+  const m = raw.trim().match(/^(?:\d{4}-)?(\d{2})-(\d{2})$/);
+  return m ? monthDay(Number(m[1]), Number(m[2])) : null;
+}
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_TIME_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/;
+
+/**
+ * As datas das réguas no corpo: birthday ("MM-DD" ou "AAAA-MM-DD"), last_visit_at (data, ou data e
+ * hora com fuso, no passado) e appointment_at (data e hora com fuso, até um ano à frente). null
+ * apaga; o campo que não vem não muda. Pura.
+ */
+export function parseContactDatesBody(body: Record<string, unknown>, now = Date.now()): Partial<ContactDates> {
+  const out: Partial<ContactDates> = {};
+  const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  if ("birthday" in body) {
+    const b = body.birthday === null ? null : birthdayFromApi(text(body.birthday));
+    if (body.birthday !== null && !b) throw invalidRequest("birthday deve ser MM-DD (ex.: 10-21) ou a data inteira AAAA-MM-DD (o ano não é guardado).", { field: "birthday" });
+    out.birthday = b;
+  }
+  if ("last_visit_at" in body) {
+    if (body.last_visit_at === null) out.last_visit_at = null;
+    else {
+      const raw = text(body.last_visit_at);
+      const at = DATE_ONLY.test(raw) ? Date.parse(`${raw}T12:00:00-03:00`) : DATE_TIME_ZONE.test(raw) ? Date.parse(raw) : Number.NaN;
+      if (Number.isNaN(at)) throw invalidRequest("last_visit_at deve ser uma data (AAAA-MM-DD) ou data e hora ISO 8601 com fuso.", { field: "last_visit_at" });
+      if (at > now + 5 * 60_000) throw invalidRequest("last_visit_at não pode ser no futuro.", { field: "last_visit_at" });
+      out.last_visit_at = new Date(at).toISOString();
+    }
+  }
+  if ("appointment_at" in body) {
+    if (body.appointment_at === null) out.appointment_at = null;
+    else {
+      const raw = text(body.appointment_at);
+      const at = DATE_TIME_ZONE.test(raw) ? Date.parse(raw) : Number.NaN;
+      if (Number.isNaN(at)) throw invalidRequest("appointment_at deve ser data e hora ISO 8601 com fuso (ex.: 2026-10-21T14:30:00-03:00).", { field: "appointment_at" });
+      if (at < now - 5 * 60_000) throw invalidRequest("appointment_at já passou.", { field: "appointment_at" });
+      if (at > now + APPOINTMENT_MAX_DAYS * 86_400_000) throw invalidRequest("appointment_at vale até um ano à frente.", { field: "appointment_at" });
+      out.appointment_at = new Date(at).toISOString();
+    }
+  }
+  if (!Object.keys(out).length) throw invalidRequest("Envie pelo menos um campo: birthday, last_visit_at ou appointment_at.", { field: "birthday" });
+  return out;
+}
+
+export async function patchContactApi(req: Request, api: ApiContext, rawContact: string): Promise<Response> {
+  const { body } = await readJsonBody(req);
+  const botId = api.requireBot(body.bot_id);
+  const dates = parseContactDatesBody(body);
+  const addr = contactParam(rawContact);
+  let ids = (await apiContacts(api.db, [botId], addr)).map((c) => c.id);
+  // o horário e o aniversário chegam antes da primeira mensagem: pelo telefone, cria o contato do WhatsApp
+  if (!ids.length && addr.kind === "phone") {
+    const { data: bot } = await api.db.from("bots").select("id, agency_id").eq("id", botId).maybeSingle();
+    const created = bot ? await whatsappContact(api.db, { id: botId, agency_id: bot.agency_id as string }, { phone: addr.phone }) : null;
+    if (created) ids = [created.id];
+  }
+  if (!ids.length) throw notFound();
+  const changed = await setContactDates(api.db, ids, [botId], dates);
+  // na auditoria, só os campos que mudaram (as datas são dados do contato)
+  await audit(api.db, { agencyId: api.key.agency_id, actorType: "api_key", actorId: api.key.id, action: "contato.datas", targetType: "contact", targetId: ids[0], after: { campos: Object.keys(dates), contatos: changed.length }, ip: clientIp(req), userAgent: req.headers.get("user-agent") });
+  const rows = await apiContactsByIds(api.db, changed, [botId]);
+  const extras = await extrasOf(api.db, rows);
+  return Response.json({ data: rows.map((c) => contactApiObject(c, extras.get(c.id) ?? NO_EXTRAS)) });
 }
 
 /* ------------------------------------------------------------------ GET /v1/leads */

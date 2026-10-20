@@ -250,6 +250,9 @@ DOC_OF = {
                 "tags": ["vip"],
                 "consent": {"marketing": "granted", "opted_out": []},
                 "age_confirmed": None,
+                "birthday": "10-21",
+                "last_visit_at": "2026-10-05T15:00:00.000Z",
+                "appointment_at": None,
                 "first_inbound_at": "2026-10-02T13:10:44.000Z",
                 "last_inbound_at": "2026-10-19T14:58:02.117Z",
                 "created_at": "2026-10-02T13:10:44.000Z",
@@ -259,6 +262,31 @@ DOC_OF = {
         "next_cursor": None,
     }),
     "Etiquetas do contato": ex("contatos", "etiquetas", "Trocar as etiquetas", 200, {"data": [{"id": DOC_VALUES["whatsapp_contact"], "tags": ["vip", "postman"]}]}),
+    "Datas do contato (réguas)": ex("contatos", "datas", "Gravar o aniversário, a última visita e o próximo horário", 200, {
+        "data": [
+            {
+                "id": DOC_VALUES["whatsapp_contact"],
+                "bot_id": DOC_VALUES["bot_id"],
+                "channel": "whatsapp",
+                "name": "Ruan",
+                "email": None,
+                "phone": "5511999990000",
+                "whatsapp_user_id": None,
+                "instagram_id": None,
+                "external_id": None,
+                "tags": ["vip", "postman"],
+                "consent": {"marketing": "granted", "opted_out": []},
+                "age_confirmed": None,
+                "birthday": "10-21",
+                "last_visit_at": "2026-10-05T15:00:00.000Z",
+                "appointment_at": "2026-12-20T17:30:00.000Z",
+                "first_inbound_at": "2026-10-02T13:10:44.000Z",
+                "last_inbound_at": "2026-10-19T14:58:02.117Z",
+                "created_at": "2026-10-02T13:10:44.000Z",
+                "updated_at": "2026-10-20T15:00:00.000Z",
+            }
+        ]
+    }),
     "Idade confirmada pela empresa": ex("contatos", "idade", "A empresa confirma a idade", 200, {"age_confirmed": True, "age_confirmed_source": "company"}),
     "Leads": ex("contatos", "leads", "Listar os leads", 200, {
         "data": [
@@ -714,7 +742,7 @@ contatos = folder(
             "GET",
             "contacts",
             query=[("limit", "20", False), ("channel", "whatsapp", True), ("tag", "vip", True), ("since", "2026-10-01T00:00:00Z", True), ("bot_id", BOT, True)],
-            desc="Na ordem da última alteração (para sincronizar: guarde o `updated_at` do último e use em `since`). Cada contato vem com etiquetas, consentimento (`consent.marketing` e `consent.opted_out`) e `age_confirmed`.",
+            desc="Na ordem da última alteração (para sincronizar: guarde o `updated_at` do último e use em `since`). Cada contato vem com etiquetas, consentimento (`consent.marketing` e `consent.opted_out`), `age_confirmed` e as datas das réguas (`birthday`, `last_visit_at` e `appointment_at`).",
             tests=expect_status(200)
             + [
                 "const data = pm.response.json().data || [];",
@@ -730,6 +758,14 @@ contatos = folder(
             body={"bot_id": BOT, "tags": ["vip", "postman"]},
             desc="Troca todas as etiquetas (lista vazia apaga). Com `ext:<id>`, vale para todos os contatos do bot com aquele id externo.",
             tests=expect_status(200),
+        ),
+        req(
+            "Datas do contato (réguas)",
+            "PATCH",
+            "contacts/phone:{{phone}}",
+            body={"bot_id": BOT, "birthday": "10-21", "last_visit_at": "2026-10-05", "appointment_at": "2026-12-20T14:30:00-03:00"},
+            desc="As datas que as réguas usam: `birthday` (MM-DD; com a data inteira, o ano não é guardado), `last_visit_at` (a última visita ou compra, no passado) e `appointment_at` (o próximo horário marcado, com fuso, até um ano à frente). O campo que não vem não muda; `null` apaga. Pelo telefone, cria o contato do WhatsApp que ainda não existe. Ajuste `appointment_at` para uma data futura.",
+            tests=expect_status(200) + ['const c = (pm.response.json().data || [])[0] || {}; console.log("aniversário:", c.birthday, "visita:", c.last_visit_at, "horário:", c.appointment_at);'],
         ),
         req(
             "Aceite de novidades (sim)",

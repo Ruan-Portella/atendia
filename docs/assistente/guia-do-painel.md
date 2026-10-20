@@ -178,7 +178,7 @@ Em Marca e domínio, a agência põe o logo, as cores e o nome que aparecem no p
 
 ## Contatos
 
-Na aba Contatos do cliente ficam as pessoas que conversaram pelo WhatsApp, com busca, etiquetas, o aceite de novidades e a resposta de 18+. Dá para importar uma planilha de contatos, informando se cada um aceitou receber novidades.
+Na aba Contatos do cliente ficam as pessoas que conversaram pelo WhatsApp, com busca, etiquetas, o aceite de novidades e a resposta de 18+. Dá para importar uma planilha de contatos, informando se cada um aceitou receber novidades. Cada contato do WhatsApp também tem as datas que as réguas (mensagens automáticas) usam: o aniversário (só o dia e o mês), a última visita ou compra e o próximo horário marcado, no fuso do cliente. Elas vêm da ficha do contato ("Datas para as réguas"), das colunas aniversario, ultima_visita e agendamento da planilha (a data de nascimento também dá o aniversário, sem o ano) ou da API (PATCH /v1/contacts/{contact}).
 
 ## Campanhas no WhatsApp
 

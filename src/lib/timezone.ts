@@ -54,5 +54,12 @@ export function localInputToIso(value: string, tz: string | null | undefined): s
   return new Date(local - offsetMs(zone, new Date(local))).toISOString();
 }
 
+/** ISO no formato do campo datetime-local, no fuso do cliente ("2026-10-09T14:30"). */
+export function isoToLocalInput(iso: string, tz: string | null | undefined): string {
+  const w = wall(safe(tz), new Date(iso));
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${w.year}-${p(w.month)}-${p(w.day)}T${p(w.hour)}:${p(w.minute)}`;
+}
+
 /** Data e hora para mostrar no fuso do cliente ("09/10/2026 08:00"). */
 export const formatInZone = (iso: string, tz: string | null | undefined) => new Date(iso).toLocaleString("pt-BR", { timeZone: safe(tz), dateStyle: "short", timeStyle: "short" });

@@ -1214,7 +1214,7 @@
                 }
               ]
             },
-            "description": "Na ordem da última alteração (para sincronizar: guarde o `updated_at` do último e use em `since`). Cada contato vem com etiquetas, consentimento (`consent.marketing` e `consent.opted_out`) e `age_confirmed`."
+            "description": "Na ordem da última alteração (para sincronizar: guarde o `updated_at` do último e use em `since`). Cada contato vem com etiquetas, consentimento (`consent.marketing` e `consent.opted_out`), `age_confirmed` e as datas das réguas (`birthday`, `last_visit_at` e `appointment_at`)."
           },
           "event": [
             {
@@ -1271,6 +1271,50 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Datas do contato (réguas)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/contacts/phone:{{phone}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "phone:{{phone}}"
+              ]
+            },
+            "description": "As datas que as réguas usam: `birthday` (MM-DD; com a data inteira, o ano não é guardado), `last_visit_at` (a última visita ou compra, no passado) e `appointment_at` (o próximo horário marcado, com fuso, até um ano à frente). O campo que não vem não muda; `null` apaga. Pelo telefone, cria o contato do WhatsApp que ainda não existe. Ajuste `appointment_at` para uma data futura.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot_id\": \"{{bot_id}}\",\n  \"birthday\": \"10-21\",\n  \"last_visit_at\": \"2026-10-05\",\n  \"appointment_at\": \"2026-12-20T14:30:00-03:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const c = (pm.response.json().data || [])[0] || {}; console.log(\"aniversário:\", c.birthday, \"visita:\", c.last_visit_at, \"horário:\", c.appointment_at);"
                 ]
               }
             }

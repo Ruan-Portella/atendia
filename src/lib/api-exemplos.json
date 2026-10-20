@@ -456,6 +456,9 @@
               "opted_out": []
             },
             "age_confirmed": null,
+            "birthday": "10-21",
+            "last_visit_at": "2026-10-05T15:00:00.000Z",
+            "appointment_at": null,
             "first_inbound_at": "2026-10-02T13:10:44.000Z",
             "last_inbound_at": "2026-10-19T14:58:02.117Z",
             "created_at": "2026-10-02T13:10:44.000Z",
@@ -490,6 +493,54 @@
               "vip",
               "postman"
             ]
+          }
+        ]
+      },
+      "binary": false
+    },
+    {
+      "page": "contatos",
+      "id": "datas",
+      "title": "Gravar o aniversário, a última visita e o próximo horário",
+      "method": "PATCH",
+      "path": "contacts/phone:5511999990000",
+      "query": [],
+      "headers": {},
+      "body": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "birthday": "10-21",
+        "last_visit_at": "2026-10-05",
+        "appointment_at": "2026-12-20T14:30:00-03:00"
+      },
+      "status": 200,
+      "response": {
+        "data": [
+          {
+            "id": "ctc_9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+            "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "channel": "whatsapp",
+            "name": "Ruan",
+            "email": null,
+            "phone": "5511999990000",
+            "whatsapp_user_id": null,
+            "instagram_id": null,
+            "external_id": null,
+            "tags": [
+              "vip",
+              "postman"
+            ],
+            "consent": {
+              "marketing": "granted",
+              "opted_out": []
+            },
+            "age_confirmed": null,
+            "birthday": "10-21",
+            "last_visit_at": "2026-10-05T15:00:00.000Z",
+            "appointment_at": "2026-12-20T17:30:00.000Z",
+            "first_inbound_at": "2026-10-02T13:10:44.000Z",
+            "last_inbound_at": "2026-10-19T14:58:02.117Z",
+            "created_at": "2026-10-02T13:10:44.000Z",
+            "updated_at": "2026-10-20T15:00:00.000Z"
           }
         ]
       },

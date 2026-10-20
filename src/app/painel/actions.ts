@@ -54,9 +54,10 @@ import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retenti
 import { audit, requestMeta } from "@/lib/audit";
 import { BillingOpError, setOverage } from "@/lib/billing-ops";
 import { channelMsgHash } from "@/lib/hash";
-import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactDates, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { carryWhatsAppPreferences, consentHistory, consentStateOf, recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
-import { IMPORT_MAX_ROWS, validateImportRows, type ImportError, type RawImportRow } from "@/lib/contact-import";
+import { IMPORT_MAX_ROWS, contactDatesFromForm, validateImportRows, type ImportError, type RawImportRow } from "@/lib/contact-import";
 import { setCompanyAgesBulk } from "@/lib/gate/age";
 import { deleteLeads, findLeadsByContact, leadIdsOfConversations } from "@/lib/leads";
 import { markUnansweredResolved } from "@/lib/unanswered";
@@ -1703,6 +1704,29 @@ export async function saveContactTags(clientId: string, contactId: string, formD
   return ok("Etiquetas salvas.");
 }
 
+/** O fuso do cliente (o horário marcado e as réguas são lidos nele). */
+async function clientTimezone(clientId: string): Promise<string> {
+  const { data } = await createAdminClient().from("clients").select("timezone").eq("id", clientId).maybeSingle();
+  return (data?.timezone as string | null) ?? DEFAULT_TIMEZONE;
+}
+
+/**
+ * As datas das réguas pela ficha do contato (leva Réguas, parte 1): o aniversário (dia e mês), a
+ * última visita e o próximo horário, lido no fuso do cliente. Campo vazio apaga.
+ */
+export async function saveContactDates(clientId: string, contactId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const found = await clientContact(clientId, contactId);
+  if (!found) return fail("Contato não encontrado.");
+  const dates = contactDatesFromForm({ birthday: text(formData.get("birthday")), lastVisit: text(formData.get("last_visit")), appointment: text(formData.get("appointment")) }, await clientTimezone(clientId));
+  if ("error" in dates) return fail(dates.error);
+  await setContactDates(createAdminClient(), [contactId], found.botIds, dates);
+  // na auditoria, só quais datas ficaram preenchidas (são dados do contato)
+  await auditPanel("contato.datas", { type: "contact", id: contactId }, { after: { preenchidas: Object.entries(dates).filter(([, v]) => v).map(([k]) => k) } });
+  revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
+  return ok("Datas salvas.");
+}
+
 /** Versão do registro de aceite feito pelo painel (a prova guarda qual foi). */
 const PANEL_CONSENT_VERSION = "painel-1";
 
@@ -1770,7 +1794,7 @@ export async function importClientContacts(clientId: string, input: { botId: str
   const { data: wa } = await db.from("whatsapp_channels").select("waba_id").eq("bot_id", bot.id).is("disconnected_at", null).maybeSingle();
   if (!wa) return { ok: false, message: "Conecte o WhatsApp deste chatbot antes de importar: os aceites valem para o número dele." };
 
-  const { valid, errors } = validateImportRows(input.rows.map((r) => ({ ...r, line: Number(r.line) || 0 })));
+  const { valid, errors } = validateImportRows(input.rows.map((r) => ({ ...r, line: Number(r.line) || 0 })), new Date(), await clientTimezone(clientId));
   if (!valid.length) return { ok: true, created: 0, updated: 0, consents: 0, consentsSkipped: 0, ages: 0, agesSkipped: 0, errors };
   const sheetText = text(input.consentText).slice(0, 600);
   const withConsent = valid.filter((r) => r.consent);
@@ -1781,7 +1805,7 @@ export async function importClientContacts(clientId: string, input: { botId: str
 
   const { email } = await requireAgency();
   const owner = { id: bot.id as string, agency_id: bot.agency_id as string };
-  const contacts = await importWhatsAppContacts(db, owner, valid.map((r) => ({ phone: r.phone, name: r.name, tags: r.tags })));
+  const contacts = await importWhatsAppContacts(db, owner, valid.map((r) => ({ phone: r.phone, name: r.name, tags: r.tags, birthday: r.birthday, lastVisitAt: r.lastVisitAt, appointmentAt: r.appointmentAt })));
   const wabaId = (wa.waba_id as string | null) ?? null;
   const scope = suppressionScope({ wabaId, botId: owner.id });
   const consents = await recordImportedConsents(

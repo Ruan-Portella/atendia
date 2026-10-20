@@ -8,10 +8,12 @@ import { contactForPanel } from "@/lib/contacts";
 import { CONSENT_LABEL, SOURCE_LABEL, consentHistory, consentStateOf } from "@/lib/marketing-consent";
 import { activeSuppressions, suppressionScope } from "@/lib/suppression";
 import { relativeTime } from "@/lib/utils";
+import { birthdayLabel } from "@/lib/contact-import";
+import { CLIENT_TIMEZONES, DEFAULT_TIMEZONE, isoToLocalInput } from "@/lib/timezone";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { recordContactConsent, revokeContactConsent, saveContactTags } from "../../../../actions";
+import { recordContactConsent, revokeContactConsent, saveContactDates, saveContactTags } from "../../../../actions";
 
 export const metadata = { title: "Contato" };
 
@@ -21,7 +23,8 @@ const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: 
 /**
  * Cliente → Contatos → um contato (leva B3): canal, etiquetas, o histórico de novidades com a prova
  * (origem, data, texto aceito e revogação) e as conversas. A agência registra pelo painel um aceite
- * coletado fora do chat; ele não desfaz um SAIR.
+ * coletado fora do chat; ele não desfaz um SAIR. As datas das réguas (leva Réguas, parte 1), só no
+ * WhatsApp: o aniversário, a última visita e o próximo horário, no fuso do cliente.
  */
 export default async function ContactPage({ params }: PageProps<"/painel/clientes/[id]/contatos/[contactId]">) {
   const [{ id, contactId }, { role }] = await Promise.all([params, requireAgency()]);
@@ -29,7 +32,7 @@ export default async function ContactPage({ params }: PageProps<"/painel/cliente
   const supabase = await createClient();
   // a RLS limita os chatbots ao cliente e ao escopo de quem está logado
   const [{ data: client }, { data: bots }] = await Promise.all([
-    supabase.from("clients").select("id, name").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, name, timezone").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name").eq("client_id", id).eq("is_demo", false),
   ]);
   if (!client) notFound();
@@ -54,6 +57,8 @@ export default async function ContactPage({ params }: PageProps<"/painel/cliente
   const { data: conversations } = await supabase.from("conversations").select("id, bot_id, started_at, last_message_at, message_count, channel").eq("contact_id", contactId).order("last_message_at", { ascending: false }).limit(20);
   const title = contact.name ?? (contact.phone ? `+${contact.phone}` : contact.instagram ? `Instagram ${contact.instagram}` : "Sem nome");
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const tz = (client.timezone as string | null) ?? DEFAULT_TIMEZONE;
+  const tzLabel = CLIENT_TIMEZONES.find((t) => t.id === tz)?.label ?? "Brasília";
 
   return (
     <div className="flex max-w-[860px] flex-col gap-5">
@@ -78,6 +83,28 @@ export default async function ContactPage({ params }: PageProps<"/painel/cliente
           <SubmitButton className="btn-primary shrink-0">Salvar</SubmitButton>
         </div>
       </ActionForm>
+
+      {contact.channel === "whatsapp" && (
+        <ActionForm action={saveContactDates.bind(null, id, contactId)} className="card flex flex-col gap-3 p-5">
+          <h2 className="font-semibold">Datas para as réguas</h2>
+          <p className="text-xs text-muted">As mensagens automáticas do WhatsApp usam estas datas: o aniversário (só o dia e o mês), a última visita ou compra e o próximo horário marcado. Também vêm da planilha de contatos e da API. Campo vazio apaga a data.</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <label htmlFor="contato-aniversario" className="label">Aniversário (dia/mês)</label>
+              <input id="contato-aniversario" name="birthday" defaultValue={birthdayLabel(contact.birthday)} maxLength={10} placeholder="21/10" className="input" />
+            </div>
+            <div>
+              <label htmlFor="contato-visita" className="label">Última visita ou compra</label>
+              <input id="contato-visita" name="last_visit" type="date" max={today} defaultValue={contact.last_visit_at ? new Date(contact.last_visit_at).toLocaleDateString("en-CA", { timeZone: tz }) : ""} className="input" />
+            </div>
+            <div>
+              <label htmlFor="contato-horario" className="label">Próximo horário ({tzLabel})</label>
+              <input id="contato-horario" name="appointment" type="datetime-local" defaultValue={contact.appointment_at ? isoToLocalInput(contact.appointment_at, tz) : ""} className="input" />
+            </div>
+          </div>
+          <SubmitButton className="btn-primary self-start">Salvar datas</SubmitButton>
+        </ActionForm>
+      )}
 
       {contact.channel === "whatsapp" && (
         <section className="card flex flex-col gap-3 p-5">

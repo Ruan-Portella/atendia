@@ -1,6 +1,8 @@
 import { canonicalPhone } from "./phone";
-import { headerKey, parseCsv, parseSheetDate } from "./contact-import";
+import { headerKey, parseCsv, parseSheetDate, parseSheetTime } from "./contact-import";
 import { localInputToIso } from "./timezone";
+
+export { parseSheetTime };
 
 /*
  * Planilha de lembretes de utilidade (leva B3, parte 5; spec Peça 7): uma linha = um envio, com o
@@ -61,15 +63,6 @@ export function reminderRowsFromCsv(text: string): { rows: RawReminderRow[]; has
     return r;
   });
   return { rows, hasPhone: keys.some((k) => FIELDS[k] === "phone"), hasDate: keys.some((k) => FIELDS[k] === "date"), unknown };
-}
-
-/** "14:30", "9:05", "14h30", "14h", "1430" → [14, 30]. Pura. */
-export function parseSheetTime(raw: string): [number, number] | null {
-  const m = /^(\d{1,2})(?:[:hH.]?(\d{2}))?\s*(?:h|hs|min)?$/.exec(raw.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = m[2] ? Number(m[2]) : 0;
-  return h <= 23 && min <= 59 ? [h, min] : null;
 }
 
 export interface ReminderRow {

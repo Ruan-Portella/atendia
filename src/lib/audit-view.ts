@@ -73,6 +73,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "conformidade.verificar": "Verificação contínua rodada pela BoaVoz",
   "conformidade.resolver_sinal": "Sinal da verificação contínua revisado pela BoaVoz",
   "contato.etiquetas": "Etiquetas de contato alteradas",
+  "contato.datas": "Datas das réguas do contato alteradas (painel ou API)",
   "contato.importar": "Planilha de contatos importada",
   "contato.consentimento": "Aceite de novidades registrado (painel ou API)",
   "contato.consentimento_revogar": "Aceite de novidades revogado (painel ou API)",

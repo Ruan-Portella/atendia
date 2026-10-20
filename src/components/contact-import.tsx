@@ -13,7 +13,7 @@ const MAX_SEND_BYTES = 900_000;
  * Importar planilha (leva B3, parte 2b): o navegador lê o CSV e mostra a prévia (válidas, com
  * aceite, com idade e os erros por linha); o servidor confere de novo e grava.
  */
-export function ContactImport({ clientId, bots, action }: { clientId: string; bots: Array<{ id: string; name: string }>; action: (clientId: string, input: { botId: string; rows: RawImportRow[]; consentText: string; consentTerms: boolean; ageTerms: boolean }) => Promise<ImportContactsResult> }) {
+export function ContactImport({ clientId, bots, timezone, action }: { clientId: string; bots: Array<{ id: string; name: string }>; timezone: string; action: (clientId: string, input: { botId: string; rows: RawImportRow[]; consentText: string; consentTerms: boolean; ageTerms: boolean }) => Promise<ImportContactsResult> }) {
   const [botId, setBotId] = useState(bots[0]?.id ?? "");
   const [fileName, setFileName] = useState<string | null>(null);
   const [rows, setRows] = useState<RawImportRow[]>([]);
@@ -24,10 +24,11 @@ export function ContactImport({ clientId, bots, action }: { clientId: string; bo
   const [result, setResult] = useState<ImportContactsResult | null>(null);
   const [pending, start] = useTransition();
 
-  const preview = useMemo(() => validateImportRows(rows), [rows]);
+  const preview = useMemo(() => validateImportRows(rows, new Date(), timezone), [rows, timezone]);
   const withConsent = preview.valid.filter((r) => r.consent).length;
   const needsText = preview.valid.some((r) => r.consent && !r.consent.text);
   const withAge = preview.valid.filter((r) => r.age).length;
+  const withDates = preview.valid.filter((r) => r.birthday || r.lastVisitAt || r.appointmentAt).length;
   const ready = Boolean(botId) && preview.valid.length > 0 && (!withConsent || consentTerms) && (!needsText || consentText.trim().length >= 10) && (!withAge || ageTerms);
 
   async function onFile(file: File | undefined) {
@@ -101,7 +102,7 @@ export function ContactImport({ clientId, bots, action }: { clientId: string; bo
       {rows.length > 0 && (
         <div className="flex flex-col gap-3">
           <div className="rounded-xl bg-ground p-3 text-sm">
-            <strong>{fileName}</strong>: {rows.length} linhas · <strong>{preview.valid.length}</strong> prontas para importar · {withConsent} com aceite de novidades · {withAge} com idade
+            <strong>{fileName}</strong>: {rows.length} linhas · <strong>{preview.valid.length}</strong> prontas para importar · {withConsent} com aceite de novidades · {withAge} com idade{withDates > 0 && ` · ${withDates} com datas para as réguas`}
             {preview.errors.length > 0 && <span className="text-amber-ink"> · {preview.errors.length} com problema (ficam de fora)</span>}
           </div>
           {preview.errors.length > 0 && <ErrorList errors={preview.errors} />}
@@ -122,7 +123,7 @@ export function ContactImport({ clientId, bots, action }: { clientId: string; bo
           {withAge > 0 && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" checked={ageTerms} onChange={(e) => setAgeTerms(e.target.checked)} className="mt-1" />
-              <span>A empresa responde pela idade informada. A data de nascimento só serve para calcular o 18+ e não é guardada; se a pessoa disse no chat que não tem 18 anos, vale o que ela disse.</span>
+              <span>A empresa responde pela idade informada. Da data de nascimento, o ano só serve para calcular o 18+ e não é guardado; se a pessoa disse no chat que não tem 18 anos, vale o que ela disse.</span>
             </label>
           )}
           {result && !result.ok && <p className="text-sm text-danger" role="alert">{result.message}</p>}

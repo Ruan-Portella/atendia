@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { isAdultOn, parseCsv, parseSheetDate, rowsFromCsv, validateImportRows, type RawImportRow } from "../contact-import";
 
 const today = new Date("2026-10-07T15:00:00Z");
-const row = (o: Partial<RawImportRow>): RawImportRow => ({ line: 2, phone: "", name: "", tags: "", consentOrigin: "", consentDate: "", consentText: "", age: "", ageOrigin: "", birth: "", ...o });
+const row = (o: Partial<RawImportRow>): RawImportRow => ({ line: 2, phone: "", name: "", tags: "", consentOrigin: "", consentDate: "", consentText: "", age: "", ageOrigin: "", birth: "", birthday: "", lastVisit: "", appointment: "", ...o });
 
 describe("planilha de contatos: leitura", () => {
   it("separador ; ou , e aspas com separador, aspas e quebra de linha dentro", () => {

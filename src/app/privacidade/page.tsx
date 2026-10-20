@@ -10,7 +10,9 @@ export const metadata = { title: "Política de Privacidade" };
  * autorização e subcontratados. Só entra aqui o que já existe: encerramento com carência e o prazo
  * dos backups (depois do Supabase Pro) entram quando existirem. Leva B3 (06/10/2026): a prova do
  * consentimento para novidades; o envio de campanhas entra com a tela de campanhas. Avisos no
- * WhatsApp (19/10/2026): o número da pessoa da equipe, com o aceite confirmado no WhatsApp.
+ * WhatsApp (19/10/2026): o número da pessoa da equipe, com o aceite confirmado no WhatsApp. Réguas
+ * (20/10/2026): as datas do contato informadas pela empresa (aniversário sem o ano, última visita e
+ * próximo horário).
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -47,7 +49,7 @@ export default function PrivacyPage() {
           <li>
             <strong>Leitura de fotos:</strong> quando o assistente tem IA, a foto que o contato envia pelo WhatsApp ou pelo Instagram é lida em baixa resolução, e uma descrição curta do que ela mostra passa a fazer parte da conversa. A descrição não identifica pessoas e não copia links, e-mails nem números longos. Comprovantes de pagamento, documentos pessoais, cartões e fotos de saúde não são descritos. No modo dados sensíveis, nenhuma foto é lida.
           </li>
-          <li><strong>Contato:</strong> telefone ou identificador do WhatsApp e do Instagram, nome de perfil e, quando a empresa identifica o cliente dela no chat, o identificador informado por ela. Quando o contato pede um item regulamentado (como bebida alcoólica), guardamos a resposta à pergunta de maioridade.</li>
+          <li><strong>Contato:</strong> telefone ou identificador do WhatsApp e do Instagram, nome de perfil e, quando a empresa identifica o cliente dela no chat, o identificador informado por ela. Quando o contato pede um item regulamentado (como bebida alcoólica), guardamos a resposta à pergunta de maioridade. Quando a empresa informa (pela planilha, pelo painel ou pela API), também o dia e o mês do aniversário (o ano não é guardado), a data da última visita ou compra e o próximo horário marcado, usados nas mensagens automáticas do WhatsApp que a empresa liga.</li>
           <li><strong>Leads:</strong> nome, telefone, e-mail e o interesse, quando a pessoa decide informá-los.</li>
           <li>
             <strong>WhatsApp da equipe para avisos:</strong> quando uma pessoa da equipe de uma agência põe o número dela no painel, guardamos o número (cifrado), a confirmação que ela faz pelo botão na mensagem que chega no WhatsApp, quais avisos ela quer receber e o sinal de identidade do WhatsApp que a Meta envia (para parar os avisos se o número mudar de aparelho ou de dono). O número só é usado para os avisos da conta e para o assistente da {brand} conversar com ela por lá. Os avisos não levam o conteúdo das conversas. As pessoas dos clientes da agência nunca recebem mensagens da {brand}.
@@ -153,7 +155,7 @@ export default function PrivacyPage() {
           <li>
             <strong>Conversas, arquivos recebidos, leads e perguntas:</strong> 12 meses após a última mensagem, ou 6 ou 24 meses, se a empresa atendida escolher (cada empresa tem o seu prazo; sem escolha, vale o padrão da conta que a atende). Quando o prazo diminui, a mudança só vale 30 dias depois do aviso, com opção de exportar. Em assistentes com o modo dados sensíveis, o prazo escolhido pela empresa, de 7 a 90 dias, e arquivos recebidos por até 30 dias.
           </li>
-          <li><strong>Ficha do contato e resposta de maioridade:</strong> apagadas quando o contato fica parado pelo prazo acima, sem conversa nem vínculo ativo.</li>
+          <li><strong>Ficha do contato (com as datas informadas pela empresa) e resposta de maioridade:</strong> apagadas quando o contato fica parado pelo prazo acima, sem conversa nem vínculo ativo.</li>
           <li><strong>Registros técnicos de integrações</strong> (chamadas de ações e entregas de webhooks): 30 dias.</li>
           <li><strong>Instagram:</strong> comentários recebidos e as respostas, 90 dias; descrições de stories e posts lidos no momento da mensagem, 30 dias; os posts lidos como base de conhecimento ficam enquanto estiverem entre os 100 mais novos dos últimos 90 dias.</li>
           <li><strong>Auditoria da conta</strong> (sem conteúdo de conversas): 1 ano.</li>
