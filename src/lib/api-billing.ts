@@ -106,9 +106,9 @@ export function sizeChangeJson(r: Exclude<SizeChange, { status: "payment_require
   return { status: r.status, size: r.size, volume_packs: r.volumePacks, charged_brl: r.deferred ? 0 : r.amountCents / 100, next_invoice_brl: r.deferred ? r.amountCents / 100 : 0 };
 }
 
-export async function patchBot(req: Request, api: ApiContext, rawBotId: string): Promise<Response> {
+export async function patchBot(req: Request, api: ApiContext, rawBotId: string, read?: { raw: string; body: Record<string, unknown> }): Promise<Response> {
   const botId = api.requireBot(rawBotId);
-  const { raw, body } = await readJsonBody(req);
+  const { raw, body } = read ?? (await readJsonBody(req));
   const patch = parseBotPatch(body);
   if (patch.size && !req.headers.get("idempotency-key")?.trim()) {
     throw invalidRequest("Idempotency-Key é obrigatório para trocar o tamanho (subir cobra na hora, no cartão da assinatura).", { field: "Idempotency-Key" });

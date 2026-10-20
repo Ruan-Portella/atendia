@@ -1481,6 +1481,159 @@
       "status": 204,
       "response": null,
       "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "editar",
+      "title": "Mudar o display, a saudação e o horário",
+      "method": "PATCH",
+      "path": "bots/bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+      "query": [],
+      "headers": {},
+      "body": {
+        "display": {
+          "nome": "Pizzaria do Zé, Centro",
+          "horario": "terça a domingo, das 18h às 23h"
+        },
+        "overrides": {
+          "welcome": "Oi! Sou a Duda, do Zé. Quer ver o cardápio de hoje?"
+        },
+        "business_hours": {
+          "sun": [
+            "18:00",
+            "23:00"
+          ],
+          "tue": [
+            "18:00",
+            "23:00"
+          ],
+          "wed": [
+            "18:00",
+            "23:00"
+          ],
+          "thu": [
+            "18:00",
+            "23:00"
+          ],
+          "fri": [
+            "18:00",
+            "23:30"
+          ],
+          "sat": [
+            "18:00",
+            "23:30"
+          ]
+        }
+      },
+      "status": 200,
+      "response": {
+        "bot_id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+        "name": "Duda",
+        "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+        "external_id": "loja-42-site",
+        "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        "widget_key": "5f0c2a9e7b1d3c4e6a8b0d2f",
+        "display": {
+          "nome": "Pizzaria do Zé, Centro",
+          "horario": "terça a domingo, das 18h às 23h"
+        },
+        "overrides": {
+          "welcome": "Oi! Sou a Duda, do Zé. Quer ver o cardápio de hoje?"
+        },
+        "business_hours": {
+          "sun": [
+            "18:00",
+            "23:00"
+          ],
+          "mon": null,
+          "tue": [
+            "18:00",
+            "23:00"
+          ],
+          "wed": [
+            "18:00",
+            "23:00"
+          ],
+          "thu": [
+            "18:00",
+            "23:00"
+          ],
+          "fri": [
+            "18:00",
+            "23:30"
+          ],
+          "sat": [
+            "18:00",
+            "23:30"
+          ]
+        },
+        "handoff_destination": {
+          "email": null,
+          "phone": "(11) 3333-4444",
+          "site": null,
+          "form_url": null,
+          "address": null
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "provisionamento",
+      "id": "uso",
+      "title": "O uso do mês por cliente e chatbot",
+      "method": "GET",
+      "path": "usage",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "month": "2026-10",
+        "clients": [
+          {
+            "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
+            "external_id": "loja-42",
+            "name": "Pizzaria do Zé",
+            "atendimentos": 412,
+            "messages": 3180,
+            "campaign_contacts": 250,
+            "meta_billed": {
+              "marketing": 250,
+              "utility": 40
+            },
+            "meta_cost_estimate_brl": 88.9,
+            "bots": [
+              {
+                "bot_id": "bot_2e4f6a8c-1b3d-4e5f-9a7b-8c9d0e1f2a3b",
+                "external_id": "loja-42-site",
+                "name": "Duda",
+                "atendimentos": 412,
+                "messages": 3180,
+                "campaign_contacts": 250,
+                "meta_billed": {
+                  "marketing": 250,
+                  "utility": 40
+                },
+                "meta_cost_estimate_brl": 88.9
+              }
+            ]
+          }
+        ],
+        "account": {
+          "atendimentos": 412,
+          "messages": 3180,
+          "campaign_contacts": 250,
+          "meta_billed": {
+            "marketing": 250,
+            "utility": 40
+          },
+          "meta_cost_estimate_brl": 88.9,
+          "overage_atendimentos": 12,
+          "overage_value_brl": 4.2,
+          "credit_balance_brl": 87.5
+        }
+      },
+      "binary": false
     }
   ]
 }

@@ -142,8 +142,14 @@ export async function withIdempotency(api: ApiContext, req: Request, raw: string
 
 type Handler<P> = (req: Request, api: ApiContext, params: P) => Promise<Response>;
 
-/** Invólucro de toda rota de /api/v1. */
-export function withApiKey<P extends Record<string, string> = Record<string, never>>(permission: ApiPermission, handler: Handler<P>) {
+/** A rota que serve a mais de uma permissão confere a de cada campo (ex.: PATCH /v1/bots/{id}). */
+export function requirePermission(api: ApiContext, permission: ApiPermission): void {
+  if (!api.key.permissions?.includes(permission)) throw new ApiError(403, "forbidden_scope", `A chave não tem a permissão ${permission}.`, { permission });
+}
+
+/** Invólucro de toda rota de /api/v1. Com uma lista de permissões, basta uma (a rota confere o resto). */
+export function withApiKey<P extends Record<string, string> = Record<string, never>>(permission: ApiPermission | readonly ApiPermission[], handler: Handler<P>) {
+  const needed: readonly ApiPermission[] = typeof permission === "string" ? [permission] : permission;
   return async (req: Request, route: { params: Promise<P> }): Promise<Response> => {
     try {
       if (isCustomHost(req.headers.get("host"))) return apiErrorResponse(404, "not_found", "A API do BoaVoz responde só em boavoz.com.");
@@ -154,7 +160,9 @@ export function withApiKey<P extends Record<string, string> = Record<string, nev
       if (!key || key.revoked_at) return apiErrorResponse(401, "invalid_api_key", "Chave inválida ou revogada.");
       const limited = await firstExceeded(db, [{ key: `api:${key.id}`, ...RATE, message: "rate_limited" }]);
       if (limited) return apiErrorResponse(429, "rate_limited", "Muitas requisições com esta chave. Tente de novo em instantes.", undefined, { "Retry-After": String(RATE.windowSeconds) });
-      if (!key.permissions.includes(permission)) return apiErrorResponse(403, "forbidden_scope", `A chave não tem a permissão ${permission}.`, { permission });
+      if (!needed.some((p) => key.permissions.includes(p))) {
+        return apiErrorResponse(403, "forbidden_scope", needed.length === 1 ? `A chave não tem a permissão ${needed[0]}.` : `A chave não tem nenhuma das permissões ${needed.join(" ou ")}.`, { permission: needed.length === 1 ? needed[0] : [...needed] });
+      }
       // a API é do pacote Integrações: sem ele, as chaves ficam guardadas e a API recusa
       if (!(await hasPack(db, key.agency_id, "integracoes"))) return apiErrorResponse(403, "plan_not_allowed", "A API faz parte do pacote Integrações. Assine em Cobrança → Assinatura.", { pack: "integracoes" });
       if (!key.last_used_at || Date.now() - Date.parse(key.last_used_at) > TOUCH_MS) {

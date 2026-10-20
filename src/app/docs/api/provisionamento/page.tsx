@@ -20,10 +20,12 @@ export default function ProvisioningApiDocs() {
           [<Link key="1" href="#criar-cliente"><code>POST /v1/clients</code></Link>, <>Cria o cliente (a loja). O <code>external_id</code> torna idempotente.</>],
           [<Link key="2" href="#ler-cliente"><code>GET /v1/clients/{"{id}"}</code></Link>, "Os dados do cliente, os chatbots dele e a conformidade."],
           [<Link key="3" href="#criar-chatbot"><code>POST /v1/bots</code></Link>, "Cria o chatbot da loja a partir de um modelo, com o contexto, os dados da loja e os valores próprios."],
+          [<Link key="9" href="#editar"><code>PATCH /v1/bots/{"{id}"}</code></Link>, "Muda os dados da loja, os valores próprios, o horário e o destino do atendimento."],
           [<Link key="4" href="#link"><code>POST /v1/bots/{"{id}"}/connect-links</code></Link>, "O link para a loja conectar o WhatsApp ou o Instagram dela."],
           [<Link key="5" href="#canais"><code>GET /v1/bots/{"{id}"}/channels</code></Link>, "Os canais da Meta do chatbot e o estado de cada um."],
           [<Link key="6" href="#desconectar"><code>DELETE /v1/bots/{"{id}"}/channels/{"{channel}"}</code></Link>, "Desconecta o canal de vez."],
           [<Link key="7" href="#pausar"><code>POST /v1/bots/{"{id}"}/pause</code>, <code>/resume</code></Link>, "Pausa e retoma a IA do chatbot em todos os canais."],
+          [<Link key="10" href="#uso"><code>GET /v1/usage</code></Link>, "O uso do mês por cliente e chatbot."],
           [<Link key="8" href="#equipe"><code>POST</code>, <code>GET /v1/clients/{"{id}"}/members</code>, <code>DELETE …/members/{"{member}"}</code></Link>, <>A equipe da loja no portal (permissão <code>members</code>).</>],
         ]}
       />
@@ -92,6 +94,21 @@ export default function ProvisioningApiDocs() {
         O que o chatbot herda do modelo muda quando você publica o modelo de novo; o <code>context</code>, o <code>display</code> e os canais são sempre do chatbot. No painel, o contexto e os dados da loja ficam na aba Ações do chatbot.
       </Note>
 
+      <Route id="editar" method="PATCH" path="/v1/bots/{id}" />
+      <Example page={E} id="editar" />
+      <Table
+        head={["Campo", "Regra", "Erro"]}
+        rows={[
+          [<code key="1">display</code>, <>Os dados da loja para a IA, como no <Link href="#criar-chatbot">POST</Link>; null tira.</>, <>400 <code>display</code></>],
+          [<code key="2">overrides</code>, <>Só no chatbot criado de um modelo e só nos campos que o modelo libera (os mesmos do POST); null volta ao valor do modelo. A aparência parte da que o chatbot tem agora.</>, <>403 <code>field_locked</code>; 400 <code>overrides…</code></>],
+          [<code key="3">business_hours</code>, <>O horário do atendimento humano, de <code>sun</code> a <code>sat</code>: <code>[&quot;18:00&quot;, &quot;23:00&quot;]</code> ou null (fechado), no horário de Brasília. Substitui o horário inteiro; null tira. Fora dele, o assistente diz quando a equipe volta.</>, <>400 <code>business_hours.…</code></>],
+          [<code key="4">handoff_destination</code>, <>Os outros jeitos de falar com a equipe, que o assistente oferece quando a pessoa pede um atendente: <code>email</code>, <code>phone</code>, <code>site</code>, <code>form_url</code> e <code>address</code>. Só muda o que vier; null tira. Toda troca manda um alerta de segurança ao dono da conta.</>, <>400 <code>handoff_destination.…</code></>],
+        ]}
+      />
+      <p>
+        Permissão <code>provisioning</code>; a resposta é o chatbot. O tamanho e o excedente (<code>size</code>, <code>overage</code>) vão no mesmo <code>PATCH</code>, com a permissão <code>billing</code>, em outro pedido (os dois juntos: 400), como na <Link href="/docs/api/cobranca">Cobrança</Link>. O contexto fixo, o modelo, as ações, os roteiros e a publicação ficam no painel: o que muda para onde vão os dados fica com quem cuida da conta. O modelo não aceita este <code>PATCH</code> (ele muda no painel e chega aos derivados ao publicar).
+      </p>
+
       <Route id="link" method="POST" path="/v1/bots/{id}/connect-links" />
       <Example page={E} id="link" />
       <p>
@@ -122,6 +139,15 @@ export default function ProvisioningApiDocs() {
       <Example page={E} id="retomar" />
       <p>
         Tira só a pausa do dono (feita pelo painel ou pela API) e sai o webhook <code>bot.resumed</code>. Medidas do BoaVoz e ordens da Meta continuam e voltam em <code>restrictions</code>, no mesmo formato do <code>compliance.changed</code>.
+      </p>
+
+      <Route id="uso" method="GET" path="/v1/usage" />
+      <Example page={E} id="uso" />
+      <p>
+        O uso de um mês (<code>month</code>, como <code>2026-10</code>; sem ele, o mês atual, no calendário de São Paulo) por cliente e chatbot do escopo da chave, com os filtros <code>client_id</code> e <code>bot_id</code>: os atendimentos (a unidade da cota: cada 24 horas em que a IA respondeu um contato), as mensagens, os contatos que receberam campanha ou lembrete (não contam na cota) e as mensagens do WhatsApp cobradas pela Meta, com o custo estimado pelo preço de referência. O custo da Meta é só informativo: a Meta cobra direto do negócio. O custo de IA não aparece (é do BoaVoz).
+      </p>
+      <p>
+        Com chave da conta inteira e sem filtro, vem também <code>account</code>: os totais da conta, os atendimentos a mais (excedente) do mês, o valor deles e o saldo de crédito.
       </p>
 
       <H2 id="equipe">Equipe do portal</H2>

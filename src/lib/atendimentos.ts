@@ -379,11 +379,13 @@ export interface BotMonthUsage {
   messages: number;
   /** Mensagens do WhatsApp cobradas pela Meta, por categoria. */
   metaBilled: Record<string, number>;
+  /** Contatos que receberam campanha ou lembrete no mês (não contam na cota). */
+  campaignContacts: number;
 }
 
-/** Uso do mês por chatbot (Cobrança → Uso e custo). Service role; quem chama já conferiu a agência. */
+/** Uso do mês por chatbot (Cobrança → Uso e custo e GET /v1/usage), sem os modelos. Service role; quem chama já conferiu a agência. */
 export async function agencyMonthUsage(db: SupabaseClient, agencyId: string, period = currentPeriodBR()): Promise<BotMonthUsage[]> {
-  const { data, error } = await db.rpc("agency_month_usage", { p_agency_id: agencyId, p_month_start: monthStartBR(period).toISOString(), p_period: period });
+  const { data, error } = await db.rpc("agency_month_usage", { p_agency_id: agencyId, p_month_start: monthStartBR(period).toISOString(), p_period: period, p_month_end: monthStartBR(shiftPeriod(period, 1)).toISOString() });
   if (error) throw new Error(`uso do mês: ${error.message}`);
   return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
     botId: r.bot_id as string,
@@ -391,5 +393,6 @@ export async function agencyMonthUsage(db: SupabaseClient, agencyId: string, per
     atendimentos: Number(r.atendimentos) || 0,
     messages: Number(r.messages) || 0,
     metaBilled: Object.fromEntries(Object.entries((r.meta_billed as Record<string, unknown>) ?? {}).map(([k, v]) => [k, Number(v) || 0])),
+    campaignContacts: Number(r.campaign_contacts) || 0,
   }));
 }

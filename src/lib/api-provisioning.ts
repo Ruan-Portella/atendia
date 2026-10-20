@@ -1,14 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type ApiContext } from "./api-v1";
-import { applyBotBilling, assertCanBill, parseBillingFields } from "./api-billing";
+import { ApiError, invalidRequest, notFound, readJsonBody, requirePermission, withIdempotency, type ApiContext } from "./api-v1";
+import { applyBotBilling, assertCanBill, parseBillingFields, patchBot } from "./api-billing";
 import { hasPack } from "./entitlements";
 import { audit } from "./audit";
 import { clientIp, firstExceeded } from "./rate-limit";
 import { asContext, parseBotDisplay, parseFixedContext } from "./bot-context";
 import { complianceOf, complianceSummary } from "./platform-events";
-import { TEMPLATE_COLS, createDerivedBot, unlockedFields, type OverrideField, type TemplateField, type TemplateRow } from "./bot-template";
-import { entryNoticeProblem } from "./handoff-hours";
-import { assistantName } from "./validation";
+import { TEMPLATE_COLS, applyTemplate, createDerivedBot, unlockedFields, type OverrideField, type TemplateField, type TemplateRow } from "./bot-template";
+import { entryNoticeProblem, type BusinessHours } from "./handoff-hours";
+import { assistantName, isEmail } from "./validation";
 import { initials, normalizeUrl } from "./utils";
 
 /*
@@ -157,7 +157,8 @@ function parseAppearance(v: unknown, field: string, o: { templateAppearance: Rec
   const a = v as Record<string, unknown>;
   const extra = Object.keys(a).find((k) => !["color", "avatar_text", "suggested_questions", "position", "offset"].includes(k));
   if (extra) throw invalidRequest(`${field}.${extra.slice(0, 40)} não existe.`, { field: `${field}.${extra.slice(0, 40)}` });
-  const base: Record<string, unknown> = { ...(o.templateAppearance ?? {}), avatar_text: initials(o.clientName) };
+  // as iniciais do cliente quando a aparência de partida não tem (a do modelo nunca tem)
+  const base: Record<string, unknown> = { avatar_text: initials(o.clientName), ...(o.templateAppearance ?? {}) };
   if (a.color !== undefined) {
     if (typeof a.color !== "string" || !COLOR.test(a.color)) throw invalidRequest(`${field}.color é uma cor como #1f4e3d.`, { field: `${field}.color` });
     base.color = a.color;
@@ -383,5 +384,192 @@ export async function postBot(req: Request, api: ApiContext): Promise<Response> 
         size_change: sizeChange,
       },
     };
+  });
+}
+
+/* ------------------------------------------------------------------ PATCH /v1/bots/{id} (parte 4d) */
+
+const BILLING_FIELDS = ["size", "volume_packs", "overage"];
+const BOT_FIELDS = ["display", "overrides", "business_hours", "handoff_destination"];
+
+/**
+ * PATCH /v1/bots/{id}: a cobrança (size e overage, permissão billing, a resposta é o uso) ou o
+ * chatbot (display, overrides, business_hours e handoff_destination, permissão provisioning, a
+ * resposta é o chatbot). Os dois juntos no mesmo pedido: 400.
+ */
+export async function patchBotAny(req: Request, api: ApiContext, rawBotId: string): Promise<Response> {
+  const read = await readJsonBody(req);
+  const billing = Object.keys(read.body).some((k) => BILLING_FIELDS.includes(k));
+  const bot = Object.keys(read.body).some((k) => BOT_FIELDS.includes(k));
+  if (billing && bot) throw invalidRequest("Mande a cobrança (size, volume_packs, overage) e os dados do chatbot em pedidos separados: as respostas são diferentes.");
+  if (billing) {
+    requirePermission(api, "billing");
+    return patchBot(req, api, rawBotId, read);
+  }
+  requirePermission(api, "provisioning");
+  return patchBotFields(req, api, rawBotId, read);
+}
+
+const KEY_OF_FIELD: Record<OverrideField, string> = { nome: "assistant_name", saudacao: "welcome", aparencia: "appearance", anuncio: "handoff_notice" };
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DESTINATION_KEYS = ["email", "phone", "site", "form_url", "address"] as const;
+type DestinationKey = (typeof DESTINATION_KEYS)[number];
+
+/** overrides do PATCH: null volta ao modelo; o resto, com as regras do POST. Pura. */
+export function parseOverridesPatch(raw: unknown, o: { unlocked: TemplateField[]; templateAppearance: Record<string, unknown> | null; clientName: string }): OverridesInput & { reset: OverrideField[] } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalidRequest("overrides deve ser um objeto.", { field: "overrides" });
+  const reset: OverrideField[] = [];
+  const rest: Record<string, unknown> = {};
+  let extraReset = false;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (v !== null || !isOverrideKey(k)) {
+      rest[k] = v;
+      continue;
+    }
+    if (!o.unlocked.includes(OVERRIDE_KEYS[k])) throw new ApiError(403, "field_locked", `O modelo não libera ${k} para os chatbots derivados.`, { field: `overrides.${k}` });
+    if (k === "extra_instructions") extraReset = true;
+    else reset.push(OVERRIDE_KEYS[k] as OverrideField);
+  }
+  const parsed = parseOverrides(rest, o);
+  return { overrides: parsed.overrides, extraInstructions: parsed.extraInstructions !== undefined ? parsed.extraInstructions : extraReset ? null : undefined, reset };
+}
+
+/** business_hours: {sun..sat: ["09:00", "18:00"] | null}; null (ou tudo fechado) tira o horário. Pura. */
+export function parseBusinessHours(raw: unknown): BusinessHours | null {
+  if (raw === null) return null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalidRequest('business_hours deve ser um objeto como {"mon": ["09:00", "18:00"]} (sun a sat; null para fechado).', { field: "business_hours" });
+  const out: BusinessHours = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const day = (DAY_KEYS as readonly string[]).indexOf(k);
+    if (day < 0) throw invalidRequest(`business_hours.${k.slice(0, 20)} não existe: use sun, mon, tue, wed, thu, fri e sat.`, { field: `business_hours.${k.slice(0, 20)}` });
+    if (v === null) continue;
+    const ok = Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "string" && HHMM.test(x)) && (v[0] as string) < (v[1] as string);
+    if (!ok) throw invalidRequest(`business_hours.${k} é ["HH:MM", "HH:MM"], com a abertura antes do fechamento (horário de Brasília).`, { field: `business_hours.${k}` });
+    out[String(day) as keyof BusinessHours] = [v[0] as string, v[1] as string];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** handoff_destination: os outros jeitos de falar com a equipe (null tira cada um), como no painel. */
+async function parseHandoffDestination(db: SupabaseClient, botId: string, raw: unknown): Promise<Partial<Record<DestinationKey, string | null>>> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalidRequest("handoff_destination deve ser um objeto {email, phone, site, form_url, address}.", { field: "handoff_destination" });
+  const out: Partial<Record<DestinationKey, string | null>> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(DESTINATION_KEYS as readonly string[]).includes(k)) throw invalidRequest(`handoff_destination.${k.slice(0, 20)} não existe: use ${DESTINATION_KEYS.join(", ")}.`, { field: `handoff_destination.${k.slice(0, 20)}` });
+    const key = k as DestinationKey;
+    const field = `handoff_destination.${key}`;
+    if (v === null || v === "") {
+      out[key] = null;
+      continue;
+    }
+    if (typeof v !== "string") throw invalidRequest(`${field} deve ser texto ou null.`, { field });
+    const t = v.trim();
+    if (key === "email") {
+      if (!isEmail(t) || t.length > 200) throw invalidRequest(`${field} inválido.`, { field });
+      out.email = t.toLowerCase();
+    } else if (key === "site" || key === "form_url") {
+      const u = t.length <= 300 ? normalizeUrl(t) : null;
+      if (!u) throw invalidRequest(`${field} precisa ser um endereço, como pizzariadoze.com.br/contato.`, { field });
+      out[key] = u;
+    } else if (key === "phone") {
+      const digits = t.replace(/\D/g, "");
+      if (digits.length < 10 || t.length > 30) throw invalidRequest(`${field} precisa do DDD, como (21) 3333-4444.`, { field });
+      // fora da coexistência, o número do próprio chatbot é atendido pelo chatbot
+      const { data: wa } = await db.from("whatsapp_channels").select("display_phone, coexistence").eq("bot_id", botId).maybeSingle();
+      const botDigits = String(wa?.display_phone ?? "").replace(/\D/g, "");
+      if (botDigits && !wa?.coexistence && (botDigits.endsWith(digits) || digits.endsWith(botDigits))) throw invalidRequest(`${field} é o número do WhatsApp do próprio chatbot: informe outro telefone da equipe.`, { field });
+      out.phone = t;
+    } else {
+      out.address = t.slice(0, 200);
+    }
+  }
+  return out;
+}
+
+const BOT_VIEW_COLS = "id, name, client_id, external_id, template_id, public_key, fixed_display, overrides, extra_instructions, human_handoff";
+
+/** O chatbot como o PATCH devolve (o que a plataforma muda pela API). */
+export function botFieldsJson(b: Record<string, unknown>) {
+  const ov = (b.overrides ?? {}) as Record<string, unknown>;
+  const h = (b.human_handoff ?? {}) as Record<string, unknown>;
+  const hours = (h.hours ?? null) as BusinessHours | null;
+  return {
+    bot_id: `bot_${b.id}`,
+    name: b.name,
+    client_id: b.client_id ? `cli_${b.client_id}` : null,
+    external_id: b.external_id ?? null,
+    template_id: b.template_id ? `bot_${b.template_id}` : null,
+    widget_key: b.public_key,
+    display: asContext(b.fixed_display),
+    // só no derivado: os valores próprios guardados (vale o que o modelo libera agora)
+    overrides: b.template_id
+      ? { ...Object.fromEntries(Object.entries(ov).filter(([k]) => k in KEY_OF_FIELD).map(([k, v]) => [KEY_OF_FIELD[k as OverrideField], v])), ...(b.extra_instructions ? { extra_instructions: b.extra_instructions } : {}) }
+      : null,
+    business_hours: hours ? Object.fromEntries(DAY_KEYS.map((d, i) => [d, hours[String(i) as keyof BusinessHours] ?? null])) : null,
+    handoff_destination: Object.fromEntries(DESTINATION_KEYS.map((k) => [k, (h[k] as string | null | undefined) ?? null])),
+  };
+}
+
+async function patchBotFields(req: Request, api: ApiContext, rawBotId: string, read: { raw: string; body: Record<string, unknown> }): Promise<Response> {
+  await requirePlatform(api);
+  const botId = api.requireBot(rawBotId);
+  const { raw, body } = read;
+  only(body, BOT_FIELDS);
+  if (!Object.keys(body).length) throw invalidRequest(`Mande ${BOT_FIELDS.join(", ")} (ou, com a permissão billing, size e overage).`);
+  return withIdempotency(api, req, raw, async () => {
+    const db = api.db;
+    const { data: bot } = await db.from("bots").select(`${BOT_VIEW_COLS}, client_name, is_template, appearance`).eq("id", botId).maybeSingle();
+    if (!bot) throw notFound();
+    if (bot.is_template) throw invalidRequest("O modelo muda no painel (e chega aos derivados ao publicar).", { field: "id" });
+    const patch: Record<string, unknown> = {};
+    const changed: string[] = [];
+    if ("display" in body) {
+      const d = parseBotDisplay(body.display);
+      if ("error" in d) throw invalidRequest(d.error, { field: "display" });
+      patch.fixed_display = d.value;
+      changed.push("display");
+    }
+    let reapply = false;
+    if ("overrides" in body) {
+      if (!bot.template_id) throw invalidRequest("overrides vale só para chatbot criado de um modelo; nos outros, o painel muda tudo.", { field: "overrides" });
+      const { data: t } = await db.from("bots").select(TEMPLATE_COLS).eq("id", bot.template_id).maybeSingle<TemplateRow>();
+      if (!t) throw new Error("modelo do derivado não encontrado");
+      // a aparência parte da que o chatbot tem agora
+      const own = parseOverridesPatch(body.overrides, { unlocked: unlockedFields(t), templateAppearance: (bot.appearance as Record<string, unknown> | null) ?? t.appearance, clientName: String(bot.client_name) });
+      const next = { ...((bot.overrides ?? {}) as Record<string, unknown>) };
+      for (const f of own.reset) delete next[f];
+      Object.assign(next, own.overrides);
+      patch.overrides = next;
+      if (own.extraInstructions !== undefined) patch.extra_instructions = own.extraInstructions;
+      reapply = true;
+      changed.push("overrides");
+    }
+    let destination: { before: Record<string, unknown>; after: Record<string, unknown> } | null = null;
+    if ("business_hours" in body || "handoff_destination" in body) {
+      const h: Record<string, unknown> = { ...((bot.human_handoff ?? {}) as Record<string, unknown>) };
+      if ("business_hours" in body) {
+        h.hours = parseBusinessHours(body.business_hours);
+        changed.push("business_hours");
+      }
+      if ("handoff_destination" in body) {
+        const dest = await parseHandoffDestination(db, botId, body.handoff_destination);
+        const before = Object.fromEntries(Object.keys(dest).map((k) => [k, h[k] ?? null]));
+        Object.assign(h, dest);
+        if (JSON.stringify(before) !== JSON.stringify(dest)) destination = { before, after: dest };
+        changed.push("handoff_destination");
+      }
+      patch.human_handoff = h;
+    }
+    const { error } = await db.from("bots").update(patch).eq("id", botId);
+    if (error) throw new Error(`chatbot não salvo: ${error.message}`);
+    // os valores próprios valem pela propagação do modelo (a mesma do painel)
+    if (reapply) await applyTemplate(db, String(bot.template_id), [botId]);
+    const who = { agencyId: api.key.agency_id, actorType: "api_key" as const, actorId: api.key.id, targetType: "bot", targetId: botId, ...meta(req) };
+    await audit(db, { ...who, action: "bot.editar_api", after: { campos: changed } });
+    // para onde a pessoa é mandada quando quer falar com a equipe: alerta de segurança ao dono
+    if (destination) await audit(db, { ...who, action: "bot.destino_atendimento_api", before: destination.before, after: destination.after });
+    const { data: saved } = await db.from("bots").select(BOT_VIEW_COLS).eq("id", botId).single();
+    return { status: 200, body: botFieldsJson(saved ?? {}) };
   });
 }

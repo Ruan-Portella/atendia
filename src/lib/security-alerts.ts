@@ -19,6 +19,7 @@ export const SECURITY_ALERTS: Record<string, string> = {
   "suporte.liberar": "Acesso do suporte BoaVoz liberado",
   "canal.suspender": "Canal suspenso pela equipe BoaVoz",
   "canal.desconectar_api": "Canal desconectado pela API",
+  "bot.destino_atendimento_api": "Destino do atendimento humano trocado pela API (para onde a pessoa vai quando quer falar com a equipe)",
   "seguranca.mfa_remover": "Segundo fator removido",
   "equipe.admin_novo": "Novo administrador na equipe",
   "conta.exclusao_pedida": "Exclusão da conta pedida",

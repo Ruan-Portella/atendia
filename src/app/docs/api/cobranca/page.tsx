@@ -42,7 +42,7 @@ export default function BillingApiDocs() {
 
       <Route id="tamanho" method="PATCH" path="/v1/bots/{id}" />
       <p>
-        A regra é a do painel. Subir de tamanho vale na hora e cobra a diferença proporcional até o dia 1º no cartão da assinatura (abaixo de R$ 1, ela vai para a fatura do dia 1º); descer ou tirar o tamanho fica agendado para o dia 1º (<code>size_change.status</code> <code>scheduled</code>), e mandar o tamanho atual cancela o agendado.
+        Com <code>size</code>, <code>volume_packs</code> e <code>overage</code> (permissão <code>billing</code>), a resposta é o uso do chatbot. O mesmo <code>PATCH</code> muda os dados do chatbot com a permissão <code>provisioning</code> (<Link href="/docs/api/provisionamento#editar">Lojas pela API</Link>), em outro pedido. A regra é a do painel. Subir de tamanho vale na hora e cobra a diferença proporcional até o dia 1º no cartão da assinatura (abaixo de R$ 1, ela vai para a fatura do dia 1º); descer ou tirar o tamanho fica agendado para o dia 1º (<code>size_change.status</code> <code>scheduled</code>), e mandar o tamanho atual cancela o agendado.
       </p>
       <Example page={E} id="excedente" />
       <Code lang="http · trocar o tamanho" code={PATCH_SIZE} />

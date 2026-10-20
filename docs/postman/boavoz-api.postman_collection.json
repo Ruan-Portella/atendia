@@ -4385,6 +4385,226 @@
           ]
         },
         {
+          "name": "Mudar os dados do chatbot",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{provisioned_bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{provisioned_bot_id}}"
+              ]
+            },
+            "description": "Permissão provisioning. O `display`, os valores próprios nos campos que o modelo libera (null volta ao modelo; campo travado: 403 field_locked), o horário do atendimento humano (sun a sat, horário de Brasília; null tira) e o destino do atendimento. A resposta é o chatbot. size e overage (permissão billing) vão em outro pedido.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"display\": {\n    \"nome\": \"Pizzaria do Zé, Centro\",\n    \"horario\": \"terça a domingo, das 18h às 23h\"\n  },\n  \"overrides\": {\n    \"welcome\": \"Oi! Sou a Duda, do Zé. Quer ver o cardápio de hoje?\"\n  },\n  \"business_hours\": {\n    \"sun\": [\n      \"18:00\",\n      \"23:00\"\n    ],\n    \"tue\": [\n      \"18:00\",\n      \"23:00\"\n    ],\n    \"wed\": [\n      \"18:00\",\n      \"23:00\"\n    ],\n    \"thu\": [\n      \"18:00\",\n      \"23:00\"\n    ],\n    \"fri\": [\n      \"18:00\",\n      \"23:30\"\n    ],\n    \"sat\": [\n      \"18:00\",\n      \"23:30\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200 ou 403\", () => pm.expect([200, 403]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) pm.test(\"display salvo\", () => pm.expect(pm.response.json().display.nome).to.eql(\"Pizzaria do Zé, Centro\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Saudação de volta ao modelo",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{provisioned_bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{provisioned_bot_id}}"
+              ]
+            },
+            "description": "null tira o valor próprio: o chatbot volta a usar a saudação do modelo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overrides\": {\n    \"welcome\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200 ou 403\", () => pm.expect([200, 403]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Destino do atendimento (avisa o dono)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{provisioned_bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{provisioned_bot_id}}"
+              ]
+            },
+            "description": "Os outros jeitos de falar com a equipe, que o assistente oferece quando a pessoa pede um atendente. Toda troca pela API manda um alerta de segurança ao dono da conta.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"handoff_destination\": {\n    \"phone\": \"(11) 3333-4444\",\n    \"email\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cobrança e chatbot juntos",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{provisioned_bot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{provisioned_bot_id}}"
+              ]
+            },
+            "description": "Um ou outro por pedido: as respostas são diferentes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overage\": {\n    \"enabled\": false\n  },\n  \"display\": {\n    \"nome\": \"x\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Uso do mês",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/usage",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "usage"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-10",
+                  "disabled": true
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "disabled": true
+                },
+                {
+                  "key": "bot_id",
+                  "value": "{{provisioned_bot_id}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Por cliente e chatbot do escopo da chave: atendimentos, mensagens, contatos em campanhas e o custo estimado da Meta (sem o custo de IA). Com chave da conta inteira e sem filtro, também `account` (o excedente do mês e o saldo de crédito). Sem `month`, o mês atual."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"clientes\", () => pm.expect(pm.response.json().clients).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Chatbot sem Idempotency-Key",
           "request": {
             "method": "POST",

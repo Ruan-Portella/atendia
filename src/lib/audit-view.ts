@@ -55,6 +55,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "bot.novidades": "Oferta de novidades no WhatsApp alterada",
   "campanha.criar": "Campanha criada",
   "cliente.criar": "Cliente criado",
+  "bot.editar_api": "Chatbot alterado pela API (display, valores próprios, horário ou destino)",
   "portal.convidados_da_chave_remover": "Pessoas convidadas por uma chave de API removidas do portal",
   "cliente.fuso": "Fuso horário do cliente alterado",
   "cliente.lembretes_declarar": "Declaração de consentimento para lembretes registrada",

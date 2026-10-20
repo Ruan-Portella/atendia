@@ -30,6 +30,9 @@ import { POST as POST_RESUME } from "../../app/api/v1/bots/[id]/resume/route";
 import { GET as GET_MEMBERS, POST as POST_MEMBER } from "../../app/api/v1/clients/[id]/members/route";
 import { DELETE as DELETE_MEMBER } from "../../app/api/v1/clients/[id]/members/[member]/route";
 import { apiInvitesDigest, parseMemberBody } from "../api-members";
+import { parseBusinessHours } from "../api-provisioning";
+import { PATCH as PATCH_BOT } from "../../app/api/v1/bots/[id]/route";
+import { GET as GET_USAGE } from "../../app/api/v1/usage/route";
 
 const A = "aaaaaaaa-0000-4000-8000-000000000001";
 const B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -409,5 +412,81 @@ describe("equipe do portal pela API (parte 4c)", () => {
     // um convite pelo painel não entra no resumo
     tables.audit_log.push({ agency_id: A, action: "portal.pessoa_adicionar", actor_type: "user", created_at: new Date().toISOString(), after: { email: "painel@x.com.br" } });
     expect(await apiInvitesDigest(env.db)).toEqual({ agencies: 1, invites: 2 });
+  });
+});
+
+describe("PATCH do chatbot e uso do mês (parte 4d)", () => {
+  const route = (id: string) => ({ params: Promise.resolve({ id: `bot_${id}` }) });
+  const patch = (key: string, id: string, body: unknown) => PATCH_BOT(call("PATCH", `bots/bot_${id}`, key, { body }), route(id));
+  const derived = async () => {
+    const r = await (await POST_BOT(call("POST", "bots", keys.all, { idem: "k-d", body: { client_id: `cli_${CLIENT_A1}`, template_id: `bot_${T}`, external_id: "loja-1-site", overrides: { assistant_name: "Bia" } } }), noParams)).json();
+    return String(r.bot_id).slice(4);
+  };
+
+  it("display, valores próprios (null volta ao modelo), horário e destino; o destino avisa o dono", async () => {
+    const id = await derived();
+    const r = await patch(keys.all, id, {
+      display: { nome: "Pizzaria do Zé, Centro" },
+      overrides: { assistant_name: null, welcome: "Oi! Quer ver o cardápio de hoje?" },
+      business_hours: { tue: ["18:00", "23:00"], sun: null },
+      handoff_destination: { phone: "(21) 3333-4444", email: "Equipe@PizzariaDoZe.com.br" },
+    });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({
+      bot_id: `bot_${id}`,
+      name: "Duda",
+      display: { nome: "Pizzaria do Zé, Centro" },
+      overrides: { welcome: "Oi! Quer ver o cardápio de hoje?" },
+      business_hours: { sun: null, mon: null, tue: ["18:00", "23:00"], wed: null, thu: null, fri: null, sat: null },
+      handoff_destination: { email: "equipe@pizzariadoze.com.br", phone: "(21) 3333-4444", site: null, form_url: null, address: null },
+    });
+    const row = tables.bots.find((b) => b.id === id)!;
+    expect((row.persona as { welcome: string }).welcome).toBe("Oi! Quer ver o cardápio de hoje?");
+    expect(row.overrides).toEqual({ saudacao: "Oi! Quer ver o cardápio de hoje?" });
+    expect(tables.audit_log.filter((a) => a.target_id === id).map((a) => a.action)).toEqual(["modelo.derivar", "bot.editar_api", "bot.destino_atendimento_api"]);
+    // o mesmo destino de novo não é troca: sem alerta
+    await patch(keys.all, id, { handoff_destination: { phone: "(21) 3333-4444" } });
+    expect(tables.audit_log.filter((a) => a.action === "bot.destino_atendimento_api")).toHaveLength(1);
+  });
+
+  it("campo travado, chatbot comum, cobrança e chatbot juntos, e a permissão de cada um", async () => {
+    const id = await derived();
+    const locked = await patch(keys.all, id, { overrides: { appearance: null } });
+    expect(await errorOf(locked)).toMatchObject({ code: "field_locked", details: { field: "overrides.appearance" } });
+    const plain = await patch(keys.all, BOT_A1, { overrides: { welcome: "Oi" } });
+    expect((await errorOf(plain)).details).toEqual({ field: "overrides" });
+    const mixed = await patch(keys.billing, BOT_A1, { size: "M", display: { nome: "x" } });
+    expect(mixed.status).toBe(400);
+    const noBilling = await patch(keys.all, BOT_A1, { overage: { enabled: false } });
+    expect(await errorOf(noBilling)).toMatchObject({ code: "forbidden_scope", details: { permission: "billing" } });
+    const ok = await patch(keys.all, BOT_A1, { display: null, business_hours: null });
+    expect(await ok.json()).toMatchObject({ display: null, business_hours: null, overrides: null });
+  });
+
+  it("horário: dias sun a sat, abertura antes do fechamento", () => {
+    expect(parseBusinessHours({ mon: ["09:00", "18:00"], sat: ["09:00", "13:00"] })).toEqual({ "1": ["09:00", "18:00"], "6": ["09:00", "13:00"] });
+    expect(parseBusinessHours({ mon: null })).toBeNull();
+    for (const bad of [{ seg: ["09:00", "18:00"] }, { mon: ["18:00", "09:00"] }, { mon: ["9h", "18h"] }, ["09:00"]]) expect(() => parseBusinessHours(bad)).toThrow();
+  });
+
+  it("uso do mês por cliente e chatbot, no escopo da chave, com os campos da conta só na chave da conta", async () => {
+    const base = env.db;
+    const rows = [
+      { bot_id: BOT_A1, client_id: CLIENT_A1, atendimentos: 120, messages: 900, meta_billed: { marketing: 10, utility: 20 }, campaign_contacts: 30 },
+      { bot_id: BOT_A2, client_id: CLIENT_A1, atendimentos: 5, messages: 40, meta_billed: {}, campaign_contacts: 0 },
+    ];
+    env.db = { from: base.from.bind(base), rpc: async (fn: string, args: unknown) => (fn === "agency_month_usage" ? { data: rows, error: null } : fn === "bot_month_atendimentos" ? { data: [{ bot_id: BOT_A1, total: 130, overage: 10 }], error: null } : fn === "credit_balance" ? { data: 8750, error: null } : base.rpc(fn, args as never)) } as unknown as SupabaseClient;
+    const all = await (await GET_USAGE(call("GET", "usage?month=2026-10", keys.all), noParams)).json();
+    expect(all.month).toBe("2026-10");
+    expect(all.clients).toHaveLength(1);
+    expect(all.clients[0]).toMatchObject({ client_id: `cli_${CLIENT_A1}`, external_id: "loja-1", atendimentos: 125, messages: 940, campaign_contacts: 30, meta_billed: { marketing: 10, utility: 20 }, meta_cost_estimate_brl: 4.2 });
+    expect(all.clients[0].bots.map((b: { bot_id: string; atendimentos: number }) => [b.bot_id, b.atendimentos])).toEqual([[`bot_${BOT_A1}`, 120], [`bot_${BOT_A2}`, 5]]);
+    expect(all.account).toMatchObject({ atendimentos: 125, overage_atendimentos: 10, overage_value_brl: 3.5, credit_balance_brl: 87.5 });
+    // chave de chatbots: só o dela, e sem os campos da conta
+    const scoped = await (await GET_USAGE(call("GET", "usage", keys.bots), noParams)).json();
+    expect(scoped.clients[0].bots.map((b: { bot_id: string }) => b.bot_id)).toEqual([`bot_${BOT_A1}`]);
+    expect(scoped.account).toBeUndefined();
+    const bad = await GET_USAGE(call("GET", "usage?month=2026-13", keys.all), noParams);
+    expect((await errorOf(bad)).details).toEqual({ field: "month" });
   });
 });
