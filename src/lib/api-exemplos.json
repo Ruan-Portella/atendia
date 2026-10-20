@@ -1220,6 +1220,7 @@
         "external_id": "loja-42-site",
         "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
         "name": "Duda",
+        "status": "live",
         "context": {
           "loja_id": "42"
         },
@@ -1265,6 +1266,7 @@
         "external_id": "loja-42-delivery",
         "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
         "name": "Bia",
+        "status": "live",
         "context": {
           "loja_id": "42"
         },

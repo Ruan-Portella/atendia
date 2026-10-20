@@ -99,17 +99,24 @@ export function onboardingSteps(input: { bots: OnboardingBot[]; hasLogo: boolean
 export async function getOnboarding(supabase: SupabaseClient, agency: { id: string; logo_url: string | null; profile?: AccountProfile | null }, opts: { admin: SupabaseClient; packs: PackId[] }): Promise<OnboardingStep[]> {
   const { data } = await supabase
     .from("bots")
-    .select("id, status, installed_at, sources(count), conversations(count)")
+    .select("id, status, installed_at, template_id, sources(count), conversations(count)")
     .eq("agency_id", agency.id)
     .eq("is_demo", false)
+    .eq("is_template", false)
     .eq("sources.status", "ready")
     .eq("conversations.channel", "painel");
   const count = (v: unknown) => (Array.isArray(v) ? Number((v[0] as { count?: number } | undefined)?.count ?? 0) : 0);
-  const bots: OnboardingBot[] = ((data ?? []) as Array<{ id: string; status: string; installed_at: string | null; sources: unknown; conversations: unknown }>).map((b) => ({
+  const rows = (data ?? []) as Array<{ id: string; status: string; installed_at: string | null; template_id: string | null; sources: unknown; conversations: unknown }>;
+  // o derivado (D') usa a base do modelo: as fontes prontas dele contam (o modelo só aparece no admin)
+  const templateIds = [...new Set(rows.map((b) => b.template_id).filter((t): t is string => Boolean(t)))];
+  const { data: templateSources } = templateIds.length ? await opts.admin.from("sources").select("bot_id").in("bot_id", templateIds).eq("status", "ready") : { data: [] };
+  const templateReady = new Map<string, number>();
+  for (const r of (templateSources ?? []) as Array<{ bot_id: string }>) templateReady.set(r.bot_id, (templateReady.get(r.bot_id) ?? 0) + 1);
+  const bots: OnboardingBot[] = rows.map((b) => ({
     id: b.id,
     status: b.status,
     installed_at: b.installed_at,
-    readySources: count(b.sources),
+    readySources: count(b.sources) + (b.template_id ? (templateReady.get(b.template_id) ?? 0) : 0),
     testConversations: count(b.conversations),
   }));
 

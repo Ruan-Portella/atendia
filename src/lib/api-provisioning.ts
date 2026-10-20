@@ -6,7 +6,7 @@ import { audit } from "./audit";
 import { clientIp, firstExceeded } from "./rate-limit";
 import { asContext, parseBotDisplay, parseFixedContext } from "./bot-context";
 import { complianceOf, complianceSummary } from "./platform-events";
-import { TEMPLATE_COLS, applyTemplate, createDerivedBot, unlockedFields, type OverrideField, type TemplateField, type TemplateRow } from "./bot-template";
+import { TEMPLATE_COLS, applyTemplate, createDerivedBot, readySourceCount, unlockedFields, type OverrideField, type TemplateField, type TemplateRow } from "./bot-template";
 import { entryNoticeProblem, type BusinessHours } from "./handoff-hours";
 import { assistantName, isEmail } from "./validation";
 import { initials, normalizeUrl } from "./utils";
@@ -338,8 +338,11 @@ export async function postBot(req: Request, api: ApiContext): Promise<Response> 
     let created = false;
     if (!botId) {
       await creationLimit(api, "bots");
+      // nasce no ar quando o modelo tem fonte pronta (a regra do Publicar do painel): a loja já atende
+      const live = (await readySourceCount(db, { id: template.id })) > 0;
       try {
         botId = await createDerivedBot(db, {
+          live,
           agencyId: api.key.agency_id,
           templateId: template.id,
           client: { id: String(client.id), name: String(client.name), site: (client.site as string | null) ?? null },
@@ -368,7 +371,7 @@ export async function postBot(req: Request, api: ApiContext): Promise<Response> 
       if ("paymentRequired" in r) return r.paymentRequired;
       sizeChange = r.sizeChange;
     }
-    const { data: bot } = await db.from("bots").select("id, name, public_key, external_id, fixed_context, fixed_display, template_id").eq("id", botId).single();
+    const { data: bot } = await db.from("bots").select("id, name, status, public_key, external_id, fixed_context, fixed_display, template_id").eq("id", botId).single();
     if (!bot) throw new Error("chatbot criado e não encontrado");
     return {
       status: created ? 201 : 200,
@@ -379,6 +382,7 @@ export async function postBot(req: Request, api: ApiContext): Promise<Response> 
         external_id: bot.external_id ?? null,
         template_id: bot.template_id ? `bot_${bot.template_id}` : null,
         name: bot.name,
+        status: bot.status,
         context: asContext(bot.fixed_context),
         display: asContext(bot.fixed_display),
         size_change: sizeChange,

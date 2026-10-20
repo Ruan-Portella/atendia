@@ -172,6 +172,15 @@ describe("POST /v1/bots", () => {
     expect(tables.audit_log.find((a) => a.action === "modelo.derivar")).toMatchObject({ actor_type: "api_key", target_id: bot.id });
   });
 
+  it("nasce no ar quando o modelo tem fonte pronta (a regra do Publicar); sem fonte, em rascunho", async () => {
+    const draft = await (await POST_BOT(call("POST", "bots", keys.all, { idem: "s1", body: body({ external_id: "sem-fonte" }) }), noParams)).json();
+    expect(tables.bots.find((b) => `bot_${b.id}` === draft.bot_id)?.status).not.toBe("live");
+    tables.sources = [{ id: "src-1", bot_id: T, status: "ready" }];
+    const live = await (await POST_BOT(call("POST", "bots", keys.all, { idem: "s2", body: body({ external_id: "com-fonte" }) }), noParams)).json();
+    expect(live.status).toBe("live");
+    expect(tables.bots.find((b) => `bot_${b.id}` === live.bot_id)?.status).toBe("live");
+  });
+
   it("idempotente: a mesma Idempotency-Key repete a resposta; o mesmo external_id devolve o mesmo chatbot (200)", async () => {
     const first = await (await POST_BOT(call("POST", "bots", keys.all, { idem: "k1", body: body() }), noParams)).json();
     const replay = await POST_BOT(call("POST", "bots", keys.all, { idem: "k1", body: body() }), noParams);

@@ -3858,7 +3858,7 @@
                 "bots"
               ]
             },
-            "description": "O chatbot da loja, com o que o modelo tem (personalidade, instruções, ações, roteiros e base). O `context` vai para as ações e escolhe as fontes da loja; o `display` é o que a IA sabe dela. Nasce sem tamanho, como no painel. Guarda o id em `provisioned_bot_id`.",
+            "description": "O chatbot da loja, com o que o modelo tem (personalidade, instruções, ações, roteiros e base). O `context` vai para as ações e escolhe as fontes da loja; o `display` é o que a IA sabe dela. Nasce no ar quando o modelo tem fonte pronta (senão, em rascunho) e sem tamanho, como no painel. Guarda o id em `provisioned_bot_id`.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"template_id\": \"{{template_id}}\",\n  \"external_id\": \"{{store_external_id}}-site\",\n  \"context\": {\n    \"loja_id\": \"42\"\n  },\n  \"display\": {\n    \"nome\": \"Pizzaria do Zé, Centro\",\n    \"horario\": \"terça a domingo, das 18h às 23h\",\n    \"endereco\": \"Rua das Flores, 120\"\n  }\n}",

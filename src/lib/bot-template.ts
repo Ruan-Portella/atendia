@@ -98,6 +98,18 @@ export function searchBots(bot: { id: string; template_id?: string | null; own_b
   return bot.own_base === false ? { botId: bot.template_id, alsoBotId: null } : { botId: bot.id, alsoBotId: bot.template_id };
 }
 
+/**
+ * Fontes prontas que o chatbot usa: as dele e, no derivado, as do modelo (a base comum). É o que
+ * libera o teste ao vivo, o Publicar e a análise. Service role: o modelo só aparece pela sessão para
+ * quem vê a conta inteira, e quem chama já conferiu o chatbot.
+ */
+export async function readySourceCount(db: SupabaseClient, bot: { id: string; template_id?: string | null }): Promise<number> {
+  const ids = bot.template_id ? [bot.id, bot.template_id] : [bot.id];
+  const { count, error } = await db.from("sources").select("id", { count: "exact", head: true }).in("bot_id", ids).eq("status", "ready");
+  if (error) throw new Error(`fontes prontas: ${error.message}`);
+  return count ?? 0;
+}
+
 /** {empresa} e {assistente} na saudação do modelo viram os do derivado. Pura. */
 export const fillWelcome = (text: string | undefined, o: { company: string; assistant: string }) =>
   text ? text.replaceAll("{empresa}", o.company).replaceAll("{assistente}", o.assistant) : text;
@@ -216,6 +228,8 @@ export async function createDerivedBot(
     overrides?: Partial<Record<OverrideField, unknown>> | null;
     extraInstructions?: string | null;
     publishedBy?: string;
+    /** Já no ar (a API, quando o modelo tem fonte pronta); o painel cria em rascunho e publica no botão. */
+    live?: boolean;
   },
 ): Promise<string> {
   const { data: t } = await db.from("bots").select(`${TEMPLATE_COLS}, published_bot_id`).eq("id", o.templateId).eq("agency_id", o.agencyId).eq("is_template", true).is("version_of", null).maybeSingle<TemplateRow & { published_bot_id: string | null }>();
@@ -240,6 +254,7 @@ export async function createDerivedBot(
       overrides: o.overrides ?? {},
       extra_instructions: o.extraInstructions ?? null,
       config_bot_id: configBot,
+      ...(o.live ? { status: "live" } : {}),
     })
     .select("id")
     .single();

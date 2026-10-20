@@ -5,7 +5,7 @@ import { FixedContextCard } from "@/components/integrations/fixed-context-card";
 import { TemplateInheritance, type DerivedItem } from "@/components/templates/template-inheritance";
 import { InheritedList } from "@/components/templates/inherited-list";
 import { createDerivedAction, publishTemplateAction, setTemplateUnlockedAction, restoreVersionAction } from "@/app/painel/modelos/actions";
-import { OVERRIDE_FIELDS, TEMPLATE_FIELD_LABEL, hasUnpublished, templateVersions, unlockedFields, type OverrideField, type TemplateField as InheritField } from "@/lib/bot-template";
+import { OVERRIDE_FIELDS, TEMPLATE_FIELD_LABEL, hasUnpublished, readySourceCount, templateVersions, unlockedFields, type OverrideField, type TemplateField as InheritField } from "@/lib/bot-template";
 import type { Persona } from "@/lib/ai";
 import { saveFixedContext } from "@/app/painel/integracoes/actions";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
@@ -114,7 +114,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
   // inteiros) não vem mais: só o de textos/FAQs, que o modal de edição precisa.
   const none = Promise.resolve({ data: null, count: null });
-  const [{ agency }, { data: bot }, { count: readySources }, { data: sourceMeta }, { data: sourceTexts }, unanswered, { data: conversations }, leadCount, { data: instagram }, { data: whatsapp }] = await Promise.all([
+  const [{ agency }, { data: bot }, { count: ownReady }, { data: sourceMeta }, { data: sourceTexts }, unanswered, { data: conversations }, leadCount, { data: instagram }, { data: whatsapp }] = await Promise.all([
     requireAgency(),
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
@@ -130,6 +130,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   if (!bot) notFound();
   // uma versão publicada do modelo (parte 3) não se edita: o editor é o do modelo
   if (bot.version_of) redirect(`/painel/bots/${bot.version_of}?tab=heranca`);
+  // o derivado usa a base do modelo: as fontes prontas dele contam no teste ao vivo e no Publicar
+  const readySources = bot.template_id ? await readySourceCount(createAdminClient(), { id, template_id: bot.template_id as string }) : (ownReady ?? 0);
   const clients = bot.is_demo || tab === "personalidade" || tab === "heranca" ? await getClientOptions(supabase, agency.id) : [];
   // modelo (D'): os derivados, na Herança; derivado: o nome do modelo, na faixa do topo
   const derivedList = isTemplate && tab === "heranca" ? (((await createAdminClient().from("bots").select("id, name, client_name, status").eq("template_id", id).order("created_at")).data ?? []) as DerivedItem[]) : [];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { memoryDb, type MemRow } from "../memory-db";
-import { applyTemplate, asBotAction, configBotId, createDerivedBot, derivedColumns, derivedPatch, hasUnpublished, searchBots, setDerivedOverride, setTemplateUnlocked, type DerivedRow, type TemplateRow } from "../bot-template";
+import { applyTemplate, asBotAction, configBotId, createDerivedBot, derivedColumns, derivedPatch, hasUnpublished, readySourceCount, searchBots, setDerivedOverride, setTemplateUnlocked, type DerivedRow, type TemplateRow } from "../bot-template";
 import type { ActionRow } from "../actions";
 
 const AGENCY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -124,5 +124,21 @@ describe("bot modelo: a herança", () => {
     expect(hasUnpublished(null, { publishedAt: "2026-10-19T12:00:00.000Z" })).toBe(false);
     expect(hasUnpublished("2026-10-19T11:00:00.000Z", { publishedAt: "2026-10-19T12:00:00.000Z" })).toBe(false);
     expect(hasUnpublished("2026-10-19T13:00:00.000Z", { publishedAt: "2026-10-19T12:00:00.000Z" })).toBe(true);
+  });
+});
+
+describe("bot modelo: a base que o derivado usa", () => {
+  it("as fontes prontas do derivado contam as do modelo (o teste ao vivo, o Publicar e a análise)", async () => {
+    const db = memoryDb({
+      sources: [
+        { id: "s1", bot_id: T, status: "ready" },
+        { id: "s2", bot_id: T, status: "error" },
+        { id: "s3", bot_id: D, status: "ready" },
+        { id: "s4", bot_id: "outro", status: "ready" },
+      ],
+    });
+    expect(await readySourceCount(db, { id: D, template_id: T })).toBe(2);
+    expect(await readySourceCount(db, { id: "sem-fonte", template_id: T })).toBe(1);
+    expect(await readySourceCount(db, { id: D })).toBe(1);
   });
 });

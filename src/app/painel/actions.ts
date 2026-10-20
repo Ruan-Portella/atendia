@@ -63,7 +63,7 @@ import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
 import { analyzeBot, markAnalysisDue } from "@/lib/bot-analysis";
-import { OVERRIDE_FIELDS, applyTemplate, derivedPatch, setDerivedOverride, unlockedFields, type OverrideField } from "@/lib/bot-template";
+import { OVERRIDE_FIELDS, applyTemplate, derivedPatch, readySourceCount, setDerivedOverride, unlockedFields, type OverrideField } from "@/lib/bot-template";
 import { pauseBotNow, resumeBotNow } from "@/lib/bot-pause";
 import { firstExceeded } from "@/lib/rate-limit";
 import { ensureResumeTemplate, createTemplate, deleteTemplate, formParams, templateName, lines, listSendable, loadTemplateChannel, renderTemplate, sendTemplate, validateTemplate, type TemplateChannel } from "@/lib/whatsapp-templates";
@@ -451,8 +451,10 @@ export async function setBotStatus(botId: string, status: "live" | "draft"): Pro
   if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
   if (status === "live") {
-    const { count } = await supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("status", "ready");
-    if (!count) return fail("Adicione pelo menos uma fonte pronta antes de publicar.");
+    // o chatbot da sessão (o escopo da pessoa); no derivado, a base do modelo também conta
+    const { data: own } = await supabase.from("bots").select("id, template_id").eq("id", botId).maybeSingle();
+    if (!own) return fail("Chatbot não encontrado.");
+    if (!(await readySourceCount(createAdminClient(), { id: own.id as string, template_id: (own.template_id as string | null) ?? null }))) return fail("Adicione pelo menos uma fonte pronta antes de publicar.");
   }
   const { error } = await supabase.from("bots").update({ status }).eq("id", botId);
   if (error) return fail("Não foi possível mudar o status. Tente de novo.");
@@ -987,10 +989,10 @@ export async function requestGateReview(conversationId: string, category: string
 export async function analyzeBotNow(botId: string): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);
   const supabase = await createClient();
-  const { data: bot } = await supabase.from("bots").select("id, persona, is_demo").eq("id", botId).maybeSingle();
+  const { data: bot } = await supabase.from("bots").select("id, persona, is_demo, template_id").eq("id", botId).maybeSingle();
   if (!bot || bot.is_demo) return fail("Chatbot não encontrado.");
-  const { count } = await supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("status", "ready");
-  const problem = analysisContentProblem(count ?? 0, (bot.persona as { instructions?: string } | null)?.instructions);
+  const count = await readySourceCount(createAdminClient(), { id: botId, template_id: (bot.template_id as string | null) ?? null });
+  const problem = analysisContentProblem(count, (bot.persona as { instructions?: string } | null)?.instructions);
   if (problem) return fail(problem);
   const admin = createAdminClient();
   const exceeded = await firstExceeded(admin, [{ key: `analise:${botId}`, max: 3, windowSeconds: 3600, message: "Muitas análises seguidas. Tente de novo daqui a pouco." }]);
