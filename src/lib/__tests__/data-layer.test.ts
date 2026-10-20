@@ -36,6 +36,8 @@ const OWNER: Record<string, string> = {
   button_refs: "lib/button-refs.ts",
   // número da equipe para os avisos no WhatsApp: cifrado
   team_whatsapp: "lib/team-whatsapp.ts",
+  // comentários do Instagram (E1, parte 4a): o texto e as respostas cifrados
+  instagram_comments: "lib/instagram-comments.ts",
 };
 
 describe("camada única de mensagens e contatos", () => {

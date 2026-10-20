@@ -10,6 +10,7 @@ import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, isPaymentError, mark
 import { handleInstagramBurst, handleInstagramEcho, type IgChannelRow, type IgMessagingEvent } from "./instagram-inbound";
 import { isInstagramAccessError } from "./instagram";
 import { handleInstagramDelete, handleInstagramEdit } from "./instagram-edits";
+import { handleInstagramComment, type IgComment } from "./instagram-comments";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { captureInstagramMedia, captureWhatsAppMedia } from "./media-capture";
 import { processGroup, sweepInbound, type Group, type GroupHandler, type InboundEvent } from "./inbound-queue";
@@ -41,7 +42,7 @@ export type WaPayload =
   // avisos da conta que mexem com campanhas: qualidade do número, situação e categoria do modelo
   | { type: "notice"; wabaId?: string; field: string; value: Record<string, unknown> };
 
-export type IgPayload = { type: "msg" | "echo" | "edit" | "delete"; igUserId: string; ev: IgMessagingEvent };
+export type IgPayload = { type: "msg" | "echo" | "edit" | "delete"; igUserId: string; ev: IgMessagingEvent } | { type: "comment"; igUserId: string; comment: IgComment };
 
 /* ------------------------------------------------------------------ WhatsApp */
 
@@ -161,6 +162,8 @@ const instagramGroup: GroupHandler = async (db, events) => {
       if (e.payload.type === "edit") await handleInstagramEdit(db, e.payload.ev);
       else if (e.payload.type === "delete") console.log("instagram: mensagem desfeita pelo contato", await handleInstagramDelete(db, e.payload.ev));
     }
+    // comentários dos posts (E1, parte 4), depois das mensagens (a resposta do direct não espera)
+    for (const e of all) if (e.payload.type === "comment") await handleInstagramComment(db, ch, e.payload.comment);
   } catch (err) {
     if (isInstagramAccessError(err)) return void (await markInstagramDisconnected(db, { column: "ig_user_id", value: igUserId }, IG_TOKEN_REJECTED));
     throw err;

@@ -28,7 +28,7 @@ export interface ThreadMessage {
   edited_at?: string | null;
   deleted_at?: string | null;
   /** Post ou reel do Instagram compartilhado pelo contato. */
-  channel_ref?: { kind?: string; url?: string | null; permalink?: string | null } | null;
+  channel_ref?: { kind?: string; url?: string | null; permalink?: string | null; title?: string | null } | null;
   created_at?: string;
   /** Arquivos que o contato mandou (guardados cifrados; abertos pela rota /api/files). */
   attachments?: Array<{ id: string; mime: string; size: number; doc_type: string; filename: string | null }>;
@@ -185,6 +185,8 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
             {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
             {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} />)}
             {!m.deleted_at && m.role === "user" && <PhotoReadingView json={m.photo_reading_enc} />}
+            {/* resposta privada a um comentário (E1, parte 4): o comentário que começou a conversa */}
+            {!m.deleted_at && m.channel_ref?.kind === "comment" && <div className="mt-1 text-[11px] opacity-80">Resposta ao comentário{m.channel_ref.title ? ` “${m.channel_ref.title}”` : ""}</div>}
             {!m.deleted_at && m.channel_ref?.permalink && /^https:\/\//i.test(m.channel_ref.permalink) ? (
               <a href={m.channel_ref.permalink} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[11px] underline opacity-80">
                 Abrir {m.channel_ref.kind === "reel" ? "o reel" : "o post"} no Instagram

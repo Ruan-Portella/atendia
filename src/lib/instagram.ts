@@ -25,6 +25,9 @@ export const IG_SCOPES = ["instagram_business_basic", "instagram_business_manage
  * uma revisão própria da Meta. INSTAGRAM_COMMENTS=1 liga (na dev, com as contas testadoras do app).
  */
 export const commentsEnabled = () => process.env.INSTAGRAM_COMMENTS === "1";
+
+/** As permissões pedidas no login: a dos comentários só com eles ligados. */
+export const igScopes = (): string[] => (commentsEnabled() ? [...IG_SCOPES, "instagram_business_manage_comments"] : IG_SCOPES);
 /** Limite da Meta para o texto de uma DM. */
 const MAX_BYTES = 1000;
 
@@ -87,7 +90,7 @@ export function authorizeUrl(state: string): string {
     client_id: process.env.INSTAGRAM_APP_ID ?? "",
     redirect_uri: instagramRedirectUri(),
     response_type: "code",
-    scope: IG_SCOPES.join(","),
+    scope: igScopes().join(","),
     state,
     // entra com a conta profissional do Instagram (não com o Facebook)
     enable_fb_login: "false",
@@ -165,16 +168,22 @@ export async function instagramMe(token: string): Promise<{ igUserId: string; us
 
 /**
  * Inscreve o app nas mensagens da conta (sem isso o webhook não recebe as DMs dela), nos toques
- * em botão de generic template e nas perguntas prontas (messaging_postbacks, parte 5d-2) e no link
- * ig.me aberto numa conversa que já existe (messaging_referral, E1). Se a Meta recusar o campo
- * novo, fica a inscrição de antes (a conexão não pode cair por isso).
+ * em botão de generic template e nas perguntas prontas (messaging_postbacks, parte 5d-2), no link
+ * ig.me aberto numa conversa que já existe (messaging_referral, E1) e, com eles ligados, nos
+ * comentários (E1, parte 4). Se a Meta recusar um campo novo (a conta sem a permissão dos
+ * comentários, por exemplo), fica a inscrição de antes: a conexão não pode cair por isso.
  */
 export async function subscribeInstagram(token: string) {
-  try {
-    await api("me/subscribed_apps?subscribed_fields=messages,messaging_postbacks,messaging_referral", token, { method: "POST" });
-  } catch (e) {
-    if (isInstagramAccessError(e)) throw e;
-    await api("me/subscribed_apps?subscribed_fields=messages,messaging_postbacks", token, { method: "POST" });
+  const base = ["messages", "messaging_postbacks"];
+  const tries = [[...base, "messaging_referral", ...(commentsEnabled() ? ["comments"] : [])], [...base, "messaging_referral"], base];
+  for (const [i, fields] of tries.entries()) {
+    if (i > 0 && fields.length === tries[i - 1].length) continue;
+    try {
+      await api(`me/subscribed_apps?subscribed_fields=${fields.join(",")}`, token, { method: "POST" });
+      return;
+    } catch (e) {
+      if (isInstagramAccessError(e) || i === tries.length - 1) throw e;
+    }
   }
 }
 
@@ -363,4 +372,25 @@ export async function setInstagramIceBreakers(ch: IgChannel, questions: string[]
     return;
   }
   await api("me/messenger_profile", token, { body: { platform: "instagram", ice_breakers: [{ call_to_actions: questions.slice(0, 4).map((question, i) => ({ question, payload: `ib:${i + 1}` })) }] } });
+}
+
+/* ------------------------------------------------------------------ comentários (E1, parte 4) */
+
+/** Falta a permissão dos comentários (a conta foi conectada antes, ou a Meta ainda não aprovou). */
+export const isCommentsPermissionError = (e: unknown) => e instanceof InstagramError && (e.code === 10 || e.code === 200 || e.code === 3);
+
+/**
+ * Resposta privada a um comentário: uma mensagem no direct de quem comentou, uma vez por
+ * comentário e até 7 dias depois dele (para quem não segue a conta, cai em Solicitações). Só dá
+ * para mandar outra depois que a pessoa responder. Devolve o IGSID da pessoa e o id da mensagem.
+ */
+export async function sendCommentPrivateReply(ch: IgChannel, commentId: string, text: string): Promise<{ recipientId: string | null; messageId: string | null }> {
+  const r = await api<{ recipient_id?: string; message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { comment_id: commentId }, message: { text: fitDm(text) } } });
+  return { recipientId: r.recipient_id ?? null, messageId: r.message_id ?? null };
+}
+
+/** Resposta pública no próprio comentário (vira um comentário da loja). Devolve o id dele. */
+export async function replyToComment(ch: IgChannel, commentId: string, text: string): Promise<string | null> {
+  const r = await api<{ id?: string }>(`${commentId}/replies`, tokenOf(ch), { body: { message: text.trim().slice(0, 300) } });
+  return r.id ?? null;
 }

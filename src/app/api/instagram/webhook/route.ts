@@ -5,12 +5,14 @@ import { igRef, type IgChannelRow, type IgMessagingEvent } from "@/lib/instagram
 import { acceptInbound, type Group } from "@/lib/inbound-queue";
 import { processAfterWebhook, type IgPayload } from "@/lib/inbound-process";
 import { deadline } from "@/lib/cron";
+import { commentsEnabled } from "@/lib/instagram";
+import type { IgComment } from "@/lib/instagram-comments";
 
 export const maxDuration = 60;
 
 interface WebhookBody {
   object?: string;
-  entry?: Array<{ id?: string; time?: number; messaging?: IgMessagingEvent[]; changes?: Array<{ field?: string; value?: IgMessagingEvent }> }>;
+  entry?: Array<{ id?: string; time?: number; messaging?: IgMessagingEvent[]; changes?: Array<{ field?: string; value?: unknown }> }>;
 }
 
 /**
@@ -18,8 +20,14 @@ interface WebhookBody {
  * "Testar" do painel e algumas contas). Juntamos os dois no mesmo formato.
  */
 function messagingEvents(entry: NonNullable<WebhookBody["entry"]>[number]): IgMessagingEvent[] {
-  const fromChanges = (entry.changes ?? []).filter((c) => c.field === "messages" && c.value).map((c) => c.value!);
+  const fromChanges = (entry.changes ?? []).filter((c) => c.field === "messages" && c.value).map((c) => c.value as IgMessagingEvent);
   return [...(entry.messaging ?? []), ...fromChanges];
+}
+
+/** Comentários dos posts (E1, parte 4): o campo "comments" das mudanças, com eles ligados. */
+function commentEvents(entry: NonNullable<WebhookBody["entry"]>[number]): IgComment[] {
+  if (!commentsEnabled()) return [];
+  return (entry.changes ?? []).filter((c) => c.field === "comments" && c.value).map((c) => c.value as IgComment);
 }
 
 type Channel = IgChannelRow & { disconnected_at: string | null };
@@ -85,7 +93,7 @@ export async function POST(req: Request) {
     return new Response("ok");
   }
 
-  const entries = (body.entry ?? []).map((e) => ({ ...e, messaging: messagingEvents(e) })).filter((e) => e.id && e.messaging.length);
+  const entries = (body.entry ?? []).map((e) => ({ ...e, messaging: messagingEvents(e), comments: commentEvents(e) })).filter((e) => e.id && (e.messaging.length || e.comments.length));
   if (!entries.length) console.log("instagram: webhook sem mensagens", shape(body));
   if (!entries.length) return new Response("ok");
 
@@ -125,6 +133,12 @@ export async function POST(req: Request) {
         const g = await acceptInbound(db, { key: `ig:${echo ? "echo" : "msg"}:${mid}`, source: "instagram", kind: echo ? "echo" : "msg", botId: ch.bot_id, contact, payload });
         if (g) groups.push(g);
         else console.log("instagram: evento repetido ignorado", mid);
+      }
+      // comentários dos posts (E1, parte 4): na fila, por quem comentou (o da própria conta não)
+      for (const c of entry.comments) {
+        if (!c.id || !c.from?.id || c.from.id === ch.ig_user_id) continue;
+        const g = await acceptInbound(db, { key: `ig:comment:${c.id}`, source: "instagram", kind: "comment", botId: ch.bot_id, contact: c.from.id, payload: { type: "comment", igUserId: ch.ig_user_id, comment: c } satisfies IgPayload });
+        if (g) groups.push(g);
       }
     }
   } catch (e) {

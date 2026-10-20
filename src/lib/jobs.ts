@@ -5,6 +5,7 @@ import { applyRetentionTerms } from "./retention";
 import { purgeCampaignData } from "./campaigns";
 import { deleteExpiredRefs } from "./button-refs";
 import { sweepRoutineTimeouts } from "./routine-engine";
+import { purgeOldComments } from "./instagram-comments";
 
 /**
  * Tarefas diárias (rodam juntas em /api/cron/daily: o plano Hobby da Vercel só permite 2 crons).
@@ -42,8 +43,9 @@ export async function applyRetention(db: SupabaseClient, hasTime: () => boolean 
   await db.from("webhook_deliveries").delete().lt("created_at", daysAgoIso(30));
   // registro das chamadas de ações (Integrações): 30 dias
   await db.from("action_calls").delete().lt("created_at", daysAgoIso(30));
-  // stories e posts da loja lidos na hora no direct (E1): 30 dias
+  // stories e posts da loja lidos na hora no direct (E1): 30 dias; comentários do Instagram: 90 dias
   await db.from("instagram_media_notes").delete().lt("created_at", daysAgoIso(30));
+  await purgeOldComments(db);
   // roteiros (B2'): o que está sem mensagem do contato há 24 horas acaba (as variáveis saem); os
   // encerrados, só com o passo e o motivo, ficam 13 meses para os números por roteiro
   await sweepRoutineTimeouts(db);

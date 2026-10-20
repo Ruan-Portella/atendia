@@ -59,6 +59,8 @@ import { PostPriceCard } from "@/components/post-price-card";
 import { IceBreakersCard, KeywordsCard, RefLinksCard, type KeywordItem, type PostChoice, type RefLinkItem } from "@/components/instagram-direct-cards";
 import { addRefLink, removeKeyword, removeRefLink, saveIceBreakers, saveKeyword } from "@/app/painel/instagram/actions";
 import { commentsEnabled } from "@/lib/instagram";
+import { InstagramCommentsCard } from "@/components/instagram-comments-card";
+import { listComments, type CommentItem } from "@/lib/instagram-comments";
 import { iceBreakersOf } from "@/lib/instagram-direct";
 import { BotPauseButton } from "@/components/bot-pause";
 import { BotRoutines } from "@/components/routines/bot-routines";
@@ -150,6 +152,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         commentsOn ? createAdminClient().from("instagram_posts").select("media_id, caption, posted_at").eq("bot_id", id).order("posted_at", { ascending: false }).limit(100).then((r) => (r.data ?? []) as PostChoice[]) : Promise.resolve([] as PostChoice[]),
       ])
     : [[] as RefLinkItem[], [] as KeywordItem[], [] as PostChoice[]];
+  // os comentários que chegaram (E1, parte 4a), com os posts para mostrar onde
+  const comments: CommentItem[] = igTab && commentsOn ? await listComments(createAdminClient(), id) : [];
+  const postsById = Object.fromEntries(postChoices.map((p) => [p.media_id, { caption: p.caption, posted_at: p.posted_at }]));
   // modelo (D'): os derivados, na Herança; derivado: o nome do modelo, na faixa do topo
   const derivedList = isTemplate && tab === "heranca" ? (((await createAdminClient().from("bots").select("id, name, client_name, status").eq("template_id", id).order("created_at")).data ?? []) as DerivedItem[]) : [];
   // modelo (parte 3): as versões, quantos derivados a publicação afeta e se há mudança não publicada
@@ -819,6 +824,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   <IceBreakersCard questions={iceBreakersOf(bot)} syncedAt={bot.ig_ice_breakers_synced_at ?? null} error={bot.ig_ice_breakers_error ?? null} connected={Boolean(instagram && !instagram.disconnected_at)} save={saveIceBreakers.bind(null, id)} />
                   <RefLinksCard username={instagram?.username ?? null} links={refLinks} hasIceBreakers={iceBreakersOf(bot).length > 0} add={addRefLink.bind(null, id)} remove={removeRefLink.bind(null, id)} />
                   <KeywordsCard keywords={keywords} commentsOn={commentsOn} posts={postChoices} save={saveKeyword.bind(null, id)} remove={removeKeyword.bind(null, id)} />
+                  <InstagramCommentsCard enabled={commentsOn} comments={comments} posts={postsById} />
                 </>
               )}
               {!bot.is_demo && <FailedSends botId={id} channel="instagram" />}

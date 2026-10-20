@@ -19,6 +19,7 @@ const UNIQUE: Record<string, string[][]> = {
   idempotency_keys: [["api_key_id", "key"]],
   clients: [["agency_id", "external_id"]],
   bots: [["client_id", "external_id"]],
+  instagram_comments: [["bot_id", "comment_id"]],
 };
 const conflicts = (t: MemRow[], table: string, row: MemRow) =>
   (UNIQUE[table] ?? []).some((cols) => cols.every((c) => row[c] !== null && row[c] !== undefined) && t.some((x) => cols.every((c) => x[c] === row[c])));
