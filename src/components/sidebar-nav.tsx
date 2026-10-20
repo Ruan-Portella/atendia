@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Sparkles, Palette, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug, LifeBuoy, Milestone } from "lucide-react";
+import { Users, Sparkles, Palette, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug, LifeBuoy, Milestone, LayoutTemplate } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type AgencyRole, type Permission } from "@/lib/roles";
 
 /** Itens do menu e quem vê cada um (equipe, leva B1'). */
-const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Permission; also?: string }> = [
+/** pack: só aparece com o pacote (os modelos de chatbot, D', são do Plataforma). */
+const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Permission; also?: string; pack?: string }> = [
   { href: "/painel/clientes", label: "Clientes", icon: Users, perm: "attend", also: "/painel/bots" },
   { href: "/painel/integracoes", label: "Integrações", icon: Plug, perm: "integrations" },
   { href: "/painel/demos", label: "Demos", icon: Sparkles, perm: "config" },
+  { href: "/painel/modelos", label: "Modelos", icon: LayoutTemplate, perm: "config", pack: "plataforma" },
   { href: "/painel/marca", label: "Marca e domínio", icon: Palette, perm: "brand" },
   { href: "/painel/equipe", label: "Equipe", icon: UsersRound, perm: "team" },
   { href: "/painel/seguranca", label: "Segurança", icon: ShieldCheck, perm: "security" },
@@ -22,11 +24,11 @@ const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Perm
 ];
 
 /** Navegação do painel (menu deslizante no celular/tablet, sidebar no desktop). */
-export function SidebarNav({ role, onNavigate }: { role: AgencyRole; onNavigate?: () => void }) {
+export function SidebarNav({ role, packs = [], onNavigate }: { role: AgencyRole; packs?: string[]; onNavigate?: () => void }) {
   const path = usePathname();
   return (
     <nav className="flex flex-col gap-1">
-      {ITEMS.filter((i) => can(role, i.perm)).map(({ href, label, icon: Icon, also }) => {
+      {ITEMS.filter((i) => can(role, i.perm) && (!i.pack || packs.includes(i.pack))).map(({ href, label, icon: Icon, also }) => {
         // chatbots moram dentro do cliente, então o editor de bot acende "Clientes"
         const active = path.startsWith(href) || (also ? path.startsWith(also) : false);
         return (

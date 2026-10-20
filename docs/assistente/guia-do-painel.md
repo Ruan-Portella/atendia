@@ -52,6 +52,10 @@ A assinatura é feita em Cobrança, com cartão, pela Stripe. Assinatura por Pix
 
 Se o pagamento da assinatura falhar, a IA fica pausada em todos os chatbots até a fatura ser paga: as mensagens continuam chegando em Conversas para a equipe responder. Para resolver, pague a fatura em aberto ou troque o cartão em Cobrança. Para assinar de novo, primeiro paga a fatura em aberto.
 
+## Modelos de chatbot
+
+Com o pacote Plataforma, o menu Modelos junta o que vários chatbots têm em comum: a personalidade, as instruções, os assuntos do negócio, as ações, os roteiros e a base de conhecimento. Cada chatbot criado do modelo (na aba Herança do modelo, um por cliente ou por loja, com o contexto fixo opcional) recebe as mudanças do modelo na hora. O modelo decide o que cada derivado pode mudar: o nome do assistente, a saudação, a aparência, o anúncio dos atendentes, instruções extras (somadas às do modelo) e uma base própria. Na saudação do modelo, {empresa} vira o nome do cliente de cada derivado e {assistente}, o nome do assistente. O modelo não atende ninguém: não tem canais, tamanho nem cobrança, e o teste ao vivo dele fica no painel. Um modelo com derivados não pode ser excluído.
+
 ## Demos para prospects
 
 Em Demos, a agência gera uma demonstração do chatbot de um possível cliente a partir do site dele, para mostrar antes de fechar. Cada demo vale 14 dias e responde até 50 vezes. A conta grátis gera até 3 demos por mês; com assinatura, até 20. A demo tem um link próprio e conta as visitas.

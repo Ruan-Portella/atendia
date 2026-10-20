@@ -5,6 +5,7 @@ export function Status({ status }: { status: string }) {
     draft: ["Rascunho", "#8a938e"],
     training: ["Treinando", "#2a6fd6"],
     error: ["Erro", "#b23a3a"],
+    template: ["Modelo", "#4f6bb3"],
   };
   const [label, color] = map[status] ?? [status, "#8a938e"];
   return (

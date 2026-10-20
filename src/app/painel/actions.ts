@@ -471,6 +471,9 @@ export async function deleteBot(botId: string, redirectTo?: string): Promise<Act
   const supabase = await createClient();
   const { data: own } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
   if (!own) return fail("Chatbot não encontrado.");
+  // bot modelo (D'): com derivados, não sai (antes de apagar qualquer arquivo)
+  const { count: derived } = await createAdminClient().from("bots").select("id", { count: "exact", head: true }).eq("template_id", botId);
+  if (derived) return fail(`Este modelo tem ${derived} chatbot${derived === 1 ? "" : "s"} derivado${derived === 1 ? "" : "s"}. Exclua ${derived === 1 ? "o derivado" : "os derivados"} antes.`);
   // o bot leva junto conversas, mensagens e conexões (cascata); reaplicar apaga o bot de novo
   await logDeletion(createAdminClient(), "bots", [botId]);
   // arquivos no Storage (o Supabase não apaga objeto por SQL): os recebidos e os PDFs das fontes

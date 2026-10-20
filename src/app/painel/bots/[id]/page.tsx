@@ -2,6 +2,9 @@ import Link from "next/link";
 import { TEST_ANSWERS_FREE, num } from "@/lib/plans";
 import { BotActions } from "@/components/integrations/bot-actions";
 import { FixedContextCard } from "@/components/integrations/fixed-context-card";
+import { TemplateInheritance, type DerivedItem } from "@/components/templates/template-inheritance";
+import { createDerivedAction, setTemplateUnlockedAction } from "@/app/painel/modelos/actions";
+import { unlockedFields } from "@/lib/bot-template";
 import { saveFixedContext } from "@/app/painel/integracoes/actions";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
 import { notFound } from "next/navigation";
@@ -78,8 +81,11 @@ const TABS = [
   ["whatsapp", "WhatsApp"],
   ["instagram", "Instagram"],
   ["instalacao", "Instalação"],
+  ["heranca", "Herança"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
+/** O bot modelo (D', parte 2b) não atende: só a configuração comum e a Herança. */
+const TEMPLATE_TABS = new Set<string>(["fontes", "personalidade", "aparencia", "atendimento", "roteiros", "acoes", "heranca"]);
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
   const [{ id }, sp, { agency: owner, role, member, packs }] = await Promise.all([params, searchParams, requireAgency()]);
@@ -89,7 +95,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const access = await channelAccessOf(createAdminClient(), owner);
   const waAllowed = access.whatsapp === "liberado";
   const igAllowed = access.instagram === "liberado";
-  const tabs = TABS.filter(([t]) => (canConfig || t === "conversas") && (t === "whatsapp" ? waAllowed : t === "instagram" ? igAllowed : true));
+  // bot modelo (D', parte 2b): só as abas da configuração comum, mais a Herança (que os outros não têm)
+  const { data: kind } = await (await createClient()).from("bots").select("is_template").eq("id", id).maybeSingle();
+  const isTemplate = Boolean(kind?.is_template);
+  const tabs = TABS.filter(([t]) => (canConfig || t === "conversas") && (t === "whatsapp" ? waAllowed : t === "instagram" ? igAllowed : true) && (isTemplate ? TEMPLATE_TABS.has(t) : t !== "heranca"));
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : canConfig ? "fontes" : "conversas") as Tab;
   // Ações (C pública): dono e administrador mexem com o segundo fator; o editor só vê. Cadastrar e
   // testar não precisa do pacote; a IA só usa as ações com o Integrações
@@ -115,7 +124,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
-  const clients = bot.is_demo || tab === "personalidade" ? await getClientOptions(supabase, agency.id) : [];
+  const clients = bot.is_demo || tab === "personalidade" || tab === "heranca" ? await getClientOptions(supabase, agency.id) : [];
+  // modelo (D'): os derivados, na Herança; derivado: o nome do modelo, na faixa do topo
+  const derivedList = isTemplate && tab === "heranca" ? (((await createAdminClient().from("bots").select("id, name, client_name, status").eq("template_id", id).order("created_at")).data ?? []) as DerivedItem[]) : [];
+  const templateName = bot.template_id ? (((await createAdminClient().from("bots").select("name").eq("id", bot.template_id).maybeSingle()).data?.name as string | undefined) ?? "modelo") : null;
   const textOf = new Map(((sourceTexts ?? []) as Array<{ id: string; content: string | null }>).map((t) => [t.id, t.content]));
   const sources: SourceItem[] = ((sourceMeta ?? []) as Array<Omit<SourceItem, "content">>).map((s) => ({ ...s, content: textOf.get(s.id) ?? null }));
 
@@ -149,7 +161,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   return (
     <div className="-mx-4 -my-5 flex min-h-full flex-col sm:-mx-6 sm:-my-7 lg:-mx-9">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-7 md:py-3.5">
-        {bot.client_id ? (
+        {bot.is_template ? (
+          <Link href="/painel/modelos" className="text-sm font-semibold text-muted">← Modelos</Link>
+        ) : bot.client_id ? (
           <Link href={`/painel/clientes/${bot.client_id}`} className="max-w-[40vw] truncate text-sm font-semibold text-muted">← {bot.client_name}</Link>
         ) : (
           <Link href={bot.is_demo ? "/painel/demos" : "/painel/clientes"} className="text-sm font-semibold text-muted">← {bot.is_demo ? "Demos" : "Clientes"}</Link>
@@ -157,12 +171,12 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         <span className="hidden text-line sm:inline">/</span>
         <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: color }}>{appearance.avatar_text ?? initials(bot.client_name)}</span>
         <span className="display min-w-0 truncate text-base font-bold sm:text-lg">{bot.name} · {bot.client_name}</span>
-        <Status status={bot.is_demo ? "demo" : bot.status} />
+        <Status status={bot.is_template ? "template" : bot.is_demo ? "demo" : bot.status} />
         {canConfig && <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
           {demoUrl && <CopyButton text={demoUrl} label="Copiar link da demo" className="btn-ghost flex-1 sm:flex-none" />}
-          {!bot.is_demo && <CopyButton text={embedSnippet} label="Copiar código" className="btn-ghost flex-1 sm:flex-none" />}
+          {!bot.is_demo && !bot.is_template && <CopyButton text={embedSnippet} label="Copiar código" className="btn-ghost flex-1 sm:flex-none" />}
           {!bot.is_demo && bot.status === "live" && !bot.paused_at && <BotPauseButton action={pauseBot.bind(null, id)} className="btn-ghost flex-1 sm:flex-none" />}
-          {!bot.is_demo && (
+          {!bot.is_demo && !bot.is_template && (
             <ActionForm action={setBotStatus.bind(null, id, bot.status === "live" ? "draft" : "live")}>
               <SubmitButton pendingLabel={bot.status === "live" ? "Tirando do ar…" : "Publicando…"} className={bot.status === "live" ? "btn-ghost" : "btn-primary"} disabled={!readySources && bot.status !== "live"} title={!readySources ? "Adicione pelo menos uma fonte" : ""}>
                 {bot.status === "live" ? "Tirar do ar" : "Publicar"}
@@ -199,6 +213,14 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         </div>
       )}
 
+      {templateName && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-brand-soft px-4 py-3 text-sm text-brand sm:px-5 md:px-7">
+          <span>
+            Este chatbot segue o modelo <Link href={`/painel/bots/${bot.template_id}?tab=heranca`} className="font-semibold underline">{templateName}</Link>: a personalidade, as instruções, as ações, os roteiros e a base comum vêm dele.
+          </span>
+        </div>
+      )}
+
       {/* a aba Evolução (a tabela) usa a largura toda, sem o teste ao vivo */}
       <div className={`grid flex-1 ${tab === "evolucao" ? "lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]" : "lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]"}`}>
         {/* no desktop as abas ficam presas no topo ao rolar; a linha divisória fica no conteúdo */}
@@ -211,7 +233,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {canConfig && <div className="ml-auto shrink-0 lg:ml-0 lg:mt-3 lg:border-t lg:border-line-2 lg:pt-3">
             <ConfirmAction
               action={deleteBot.bind(null, id, bot.client_id ? `/painel/clientes/${bot.client_id}` : bot.is_demo ? "/painel/demos" : "/painel/clientes")}
-              title={`Excluir ${bot.is_demo ? "esta demo" : "este chatbot"}?`}
+              title={`Excluir ${bot.is_template ? "este modelo" : bot.is_demo ? "esta demo" : "este chatbot"}?`}
               description={
                 <>
                   <strong className="text-ink">{bot.name} · {bot.client_name}</strong> será apagado com a base de conhecimento, as conversas e os leads.{bot.status === "live" ? " O balão some do site do cliente na hora, sem precisar mexer no código dele." : ""} Não tem desfazer.
@@ -220,7 +242,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               confirmLabel="Excluir definitivamente"
               className="px-3 text-xs font-medium text-danger hover:underline"
             >
-              Excluir {bot.is_demo ? "demo" : "chatbot"}
+              Excluir {bot.is_template ? "modelo" : bot.is_demo ? "demo" : "chatbot"}
             </ConfirmAction>
           </div>}
         </nav>
@@ -292,7 +314,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
               <div><h2 className="text-[22px] font-bold">Personalidade</h2><p className="text-sm text-muted">Como o assistente se apresenta e fala.</p></div>
               <div><label htmlFor="name" className="label">Nome do assistente</label><input id="name" name="name" required minLength={2} maxLength={40} defaultValue={bot.name} className="input" /></div>
-              {!bot.is_demo && <ClientPicker clients={clients} defaultClientId={bot.client_id} suggestedName={bot.client_id ? "" : bot.client_name} idPrefix="pers" />}
+              {!bot.is_demo && !bot.is_template && <ClientPicker clients={clients} defaultClientId={bot.client_id} suggestedName={bot.client_id ? "" : bot.client_name} idPrefix="pers" />}
               <div><label htmlFor="client_site" className="label">Site onde o chatbot fica</label><input id="client_site" name="client_site" maxLength={200} defaultValue={bot.client_site ?? ""} className="input" /></div>
               <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" maxLength={200} defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
               <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas</label><input id="welcome" name="welcome" maxLength={300} defaultValue={persona.welcome ?? ""} className="input" /></div>
@@ -443,6 +465,17 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
           {tab === "atendimento" && !bot.is_demo && (
             <SatisfactionCard on={Boolean(bot.satisfaction_survey)} summary={await satisfactionSummary(createAdminClient(), [id], daysAgoIso(30))} save={setSatisfactionSurvey.bind(null, id)} />
+          )}
+
+          {tab === "heranca" && isTemplate && (
+            <TemplateInheritance
+              unlocked={unlockedFields(bot)}
+              derived={derivedList}
+              clients={clients}
+              manage={canConfig && member.scope === "all" && packs.includes("plataforma")}
+              saveUnlocked={setTemplateUnlockedAction.bind(null, id)}
+              createDerived={createDerivedAction.bind(null, id)}
+            />
           )}
 
           {tab === "evolucao" && (

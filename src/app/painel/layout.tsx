@@ -20,7 +20,7 @@ import { company } from "@/lib/company";
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {
-  const { agency, usage, quota, bots, role, member } = await requireAgency();
+  const { agency, usage, quota, bots, role, member, packs } = await requireAgency();
   // primeiro acesso (Entrada e docs, parte 1): o dono diz como vai usar o BoaVoz antes do painel
   if (role === "owner" && !agency.profile) redirect("/comecar");
   const accountLabel = agency.billing_status === "past_due" ? "Pagamento atrasado" : agency.billing_status === "active" ? "Assinatura" : "Conta grátis";
@@ -43,6 +43,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     <PanelShell
       agency={{ name: agency.name, logo_url: agency.logo_url, brand_color: agency.brand_color, initials: initials(agency.name) }}
       role={role}
+      packs={packs}
       accountLabel={accountLabel}
       usage={usage}
       limit={quota}

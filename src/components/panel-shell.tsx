@@ -11,6 +11,8 @@ interface Props {
   agency: { name: string; logo_url: string | null; brand_color: string; initials: string };
   /** papel de quem está logado: o menu e o bloco de uso seguem o que ele pode ver */
   role: AgencyRole;
+  /** Pacotes da conta: o menu mostra o que depende deles (os modelos, do Plataforma). */
+  packs?: string[];
   /** "Conta grátis", "Assinatura" ou "Pagamento atrasado". */
   accountLabel: string;
   usage: number;
@@ -26,7 +28,7 @@ interface Props {
  *  - celular e tablet (< lg): barra no topo com botão hambúrguer + menu lateral deslizante;
  *  - desktop (lg+): sidebar completa.
  */
-export function PanelShell({ agency, role, accountLabel, usage, limit, usageLabel, children, notices }: Props) {
+export function PanelShell({ agency, role, packs = [], accountLabel, usage, limit, usageLabel, children, notices }: Props) {
   const [open, setOpen] = useState(false);
   const pct = Math.min(100, Math.round((usage / Math.max(1, limit)) * 100));
 
@@ -84,7 +86,7 @@ export function PanelShell({ agency, role, accountLabel, usage, limit, usageLabe
               {brandBlock}
               <button type="button" onClick={() => setOpen(false)} aria-label="Fechar" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[#262c29]"><X size={18} /></button>
             </div>
-            <SidebarNav role={role} onNavigate={() => setOpen(false)} />
+            <SidebarNav role={role} packs={packs} onNavigate={() => setOpen(false)} />
             <div className="mt-auto flex flex-col gap-2">{usageBlock}{signOut}</div>
           </aside>
         </div>
@@ -94,7 +96,7 @@ export function PanelShell({ agency, role, accountLabel, usage, limit, usageLabe
       {/* altura da tela e presa no topo: em página longa ela não estica junto com o conteúdo */}
       <aside className={cn("hidden w-60 shrink-0 flex-col gap-1.5 bg-ink p-4 text-ground lg:sticky lg:top-0 lg:flex lg:h-dvh lg:overflow-y-auto")}>
         <div className="pb-4 pt-1">{brandBlock}</div>
-        <SidebarNav role={role} />
+        <SidebarNav role={role} packs={packs} />
         <div className="mt-auto">{usageBlock}</div>
         {signOut}
       </aside>
