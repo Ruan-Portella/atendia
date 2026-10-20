@@ -63,7 +63,7 @@ export async function syncIceBreakers(db: SupabaseClient, botId: string, o: { on
     await db.from("bots").update({ ig_ice_breakers_synced_at: new Date().toISOString(), ig_ice_breakers_error: null }).eq("id", botId);
     return { synced: true, error: null };
   } catch (e) {
-    const error = `O Instagram não aceitou as perguntas: ${e instanceof InstagramError ? e.message : "erro desconhecido"}`.slice(0, 300);
+    const error = `O Instagram não aceitou as perguntas: ${e instanceof InstagramError ? e.message : "erro desconhecido"}`.slice(0, 900);
     await db.from("bots").update({ ig_ice_breakers_error: error }).eq("id", botId);
     return { synced: false, error };
   }

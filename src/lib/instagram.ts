@@ -102,12 +102,14 @@ export function authorizeUrl(state: string): string {
 /* ------------------------------------------------------------------ tokens */
 
 async function json<T>(res: Response): Promise<T> {
-  const data = (await res.json().catch(() => ({}))) as T & { error?: { message?: string; code?: number; error_subcode?: number } | string; error_message?: string; code?: number };
+  const data = (await res.json().catch(() => ({}))) as T & { error?: { message?: string; code?: number; error_subcode?: number; error_user_title?: string; error_user_msg?: string } | string; error_message?: string; code?: number };
   if (!res.ok) {
     const err = typeof data.error === "object" ? data.error : null;
-    const message = err?.message ?? data.error_message ?? (typeof data.error === "string" ? data.error : "");
+    const base = err?.message ?? data.error_message ?? (typeof data.error === "string" ? data.error : "");
+    // o detalhe que a Meta às vezes manda (qual campo e por quê): "Invalid parameter" sozinho não diz
+    const detail = [err?.error_user_title, err?.error_user_msg].filter((t) => t && t !== base).join(": ");
     console.error("instagram: API", res.status, JSON.stringify(data));
-    throw new InstagramError(message || `Instagram API ${res.status}`, err?.code ?? data.code, err?.error_subcode);
+    throw new InstagramError([base || `Instagram API ${res.status}`, detail].filter(Boolean).join(" — "), err?.code ?? data.code, err?.error_subcode);
   }
   return data;
 }
@@ -365,13 +367,35 @@ export async function instagramMedia(ch: IgChannel, o: { max: number; since: Dat
  * pela primeira vez, no app (no computador, não). O toque chega como postback, com a pergunta no
  * título e "ib:<n>" no payload. Lista vazia apaga as perguntas da conta.
  */
-export async function setInstagramIceBreakers(ch: IgChannel, questions: string[]): Promise<void> {
+export async function setInstagramIceBreakers(ch: IgChannel, questions: string[]): Promise<string> {
   const token = tokenOf(ch);
   if (!questions.length) {
     await api("me/messenger_profile", token, { method: "DELETE", body: { fields: ["ice_breakers"] } });
-    return;
+    return "apagadas";
   }
-  await api("me/messenger_profile", token, { body: { platform: "instagram", ice_breakers: [{ call_to_actions: questions.slice(0, 4).map((question, i) => ({ question, payload: `ib:${i + 1}` })) }] } });
+  const actions = questions.slice(0, 4).map((question, i) => ({ question, payload: `ib:${i + 1}` }));
+  // o formato da documentação primeiro; na dev (20/10) a Meta recusou com "Invalid parameter", então
+  // seguem as variações conhecidas da API de mensagens: o locale "default", o id da conta no lugar
+  // de "me" e o formato antigo (sem call_to_actions). A primeira aceita vale.
+  const attempts: Array<{ name: string; path: string; body: unknown }> = [
+    { name: "documentação", path: "me/messenger_profile", body: { platform: "instagram", ice_breakers: [{ call_to_actions: actions }] } },
+    { name: "locale default", path: "me/messenger_profile", body: { platform: "instagram", ice_breakers: [{ call_to_actions: actions, locale: "default" }] } },
+    { name: "id da conta", path: `${ch.ig_user_id}/messenger_profile`, body: { platform: "instagram", ice_breakers: [{ call_to_actions: actions, locale: "default" }] } },
+    { name: "formato antigo", path: "me/messenger_profile", body: { platform: "instagram", ice_breakers: actions } },
+  ];
+  const refused: string[] = [];
+  for (const a of attempts) {
+    try {
+      await api(a.path, token, { body: a.body });
+      if (refused.length) console.warn("instagram: perguntas prontas aceitas no formato", a.name, "depois de", refused);
+      return a.name;
+    } catch (e) {
+      // só o parâmetro recusado tenta o próximo formato; token, permissão e limite sobem na hora
+      if (!(e instanceof InstagramError) || e.code !== 100) throw e;
+      refused.push(`${a.name}: ${e.message}${e.subcode ? ` (${e.subcode})` : ""}`);
+    }
+  }
+  throw new InstagramError(`nenhum formato foi aceito (${refused.join("; ")})`, 100);
 }
 
 /* ------------------------------------------------------------------ comentários (E1, parte 4) */
