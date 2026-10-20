@@ -19,6 +19,12 @@ import type { InstagramElement } from "./components";
 const VERSION = process.env.INSTAGRAM_GRAPH_VERSION ?? "v26.0";
 const GRAPH = `https://graph.instagram.com/${VERSION}`;
 export const IG_SCOPES = ["instagram_business_basic", "instagram_business_manage_messages"];
+
+/**
+ * Comentários (E1, parte 4): pedem a permissão instagram_business_manage_comments, que precisa de
+ * uma revisão própria da Meta. INSTAGRAM_COMMENTS=1 liga (na dev, com as contas testadoras do app).
+ */
+export const commentsEnabled = () => process.env.INSTAGRAM_COMMENTS === "1";
 /** Limite da Meta para o texto de uma DM. */
 const MAX_BYTES = 1000;
 

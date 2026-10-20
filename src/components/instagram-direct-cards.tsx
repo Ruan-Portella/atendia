@@ -6,12 +6,12 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { CopyButton } from "@/components/copy-button";
 import type { ActionResult } from "@/lib/action-result";
-import { ICE_BREAKERS_MAX, ICE_BREAKER_MAX, REF_LABEL_MAX, REF_NOTE_MAX, igMeLink, refFromLabel } from "@/lib/instagram-links";
+import { ICE_BREAKERS_MAX, ICE_BREAKER_MAX, PUBLIC_REPLY_MAX, REF_LABEL_MAX, REF_NOTE_MAX, REPLY_MAX, igMeLink, refFromLabel } from "@/lib/instagram-links";
 import { relativeTime } from "@/lib/utils";
 
 /*
- * O direct do Instagram na aba Instagram (E1, parte 3a): as perguntas prontas (ice breakers) e os
- * links ig.me com origem para a bio, o QR impresso e o anúncio.
+ * O direct do Instagram na aba Instagram (E1, partes 3a e 3b): as perguntas prontas (ice breakers),
+ * os links ig.me com origem para a bio, o QR impresso e o anúncio, e as palavras-chave.
  */
 
 type Save = (formData: FormData) => Promise<ActionResult>;
@@ -110,6 +110,137 @@ export function RefLinksCard({ username, links, hasIceBreakers, add, remove }: {
           Criar link
         </SubmitButton>
       </ActionForm>
+    </div>
+  );
+}
+
+export interface KeywordItem {
+  id: string;
+  words: string[];
+  dm_reply: string | null;
+  comment_reply: string | null;
+  comment_public: string | null;
+  media_ids: string[] | null;
+  active: boolean;
+}
+
+/** Um post da fonte do Instagram, para escolher onde a palavra vale nos comentários. */
+export interface PostChoice {
+  media_id: string;
+  caption: string | null;
+  posted_at: string;
+}
+
+/** Os campos de uma palavra-chave (nova ou existente). */
+function KeywordFields({ k, commentsOn, posts }: { k: KeywordItem | null; commentsOn: boolean; posts: PostChoice[] }) {
+  const [scope, setScope] = useState(k?.media_ids ? "escolhidos" : "todos");
+  const prefix = k ? k.id : "novo";
+  return (
+    <>
+      {k && <input type="hidden" name="id" value={k.id} />}
+      <div>
+        <label htmlFor={`kw-words-${prefix}`} className="label">Palavras (separadas por vírgula)</label>
+        <input id={`kw-words-${prefix}`} name="words" required defaultValue={k?.words.join(", ") ?? ""} placeholder="preço, eu quero" className="input" />
+      </div>
+      <div>
+        <label htmlFor={`kw-dm-${prefix}`} className="label">Resposta pronta no direct (quando a pessoa manda só a palavra)</label>
+        <textarea id={`kw-dm-${prefix}`} name="dm_reply" rows={3} maxLength={REPLY_MAX} defaultValue={k?.dm_reply ?? ""} placeholder="Oi! A tabela de preços está aqui: …" className="input" />
+      </div>
+      {commentsOn && (
+        <>
+          <div>
+            <label htmlFor={`kw-cr-${prefix}`} className="label">Resposta privada ao comentário (vai no direct; uma por comentário, até 7 dias)</label>
+            <textarea id={`kw-cr-${prefix}`} name="comment_reply" rows={3} maxLength={REPLY_MAX} defaultValue={k?.comment_reply ?? ""} placeholder="Oi! Te mandei os detalhes por aqui 😊" className="input" />
+          </div>
+          <div>
+            <label htmlFor={`kw-cp-${prefix}`} className="label">Resposta pública no comentário (opcional, curta)</label>
+            <input id={`kw-cp-${prefix}`} name="comment_public" maxLength={PUBLIC_REPLY_MAX} defaultValue={k?.comment_public ?? ""} placeholder="Te chamei no direct!" className="input" />
+          </div>
+          <fieldset className="flex flex-col gap-1.5 text-sm">
+            <legend className="label">Nos comentários de</legend>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="posts" value="todos" checked={scope === "todos"} onChange={() => setScope("todos")} /> todos os posts
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="posts" value="escolhidos" checked={scope === "escolhidos"} onChange={() => setScope("escolhidos")} disabled={!posts.length} /> posts escolhidos{!posts.length && <span className="text-xs text-muted"> (leia os posts na aba Base de conhecimento)</span>}
+            </label>
+            {scope === "escolhidos" && (
+              <div className="ml-6 flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-line p-2">
+                {posts.map((p) => (
+                  <label key={p.media_id} className="flex items-start gap-2 text-xs">
+                    <input type="checkbox" name="media_ids" value={p.media_id} defaultChecked={k?.media_ids?.includes(p.media_id)} className="mt-0.5" />
+                    <span className="min-w-0">
+                      <span className="text-muted">{new Date(p.posted_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} · </span>
+                      {p.caption?.trim().slice(0, 90) || "(sem legenda)"}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
+        </>
+      )}
+      {k && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="hidden" name="has_active" value="1" />
+          <input type="checkbox" name="active" value="on" defaultChecked={k.active} /> ligada
+        </label>
+      )}
+    </>
+  );
+}
+
+export function KeywordsCard({ keywords, commentsOn, posts, save, remove }: { keywords: KeywordItem[]; commentsOn: boolean; posts: PostChoice[]; save: Save; remove: Save }) {
+  const [adding, setAdding] = useState(false);
+  return (
+    <div className="card flex flex-col gap-3 p-5">
+      <div>
+        <div className="font-semibold">Palavras-chave</div>
+        <p className="text-sm text-muted">
+          A pessoa manda só a palavra no direct (ex.: PREÇO) e recebe a resposta pronta da loja, sem IA.{commentsOn ? " Nos comentários, a palavra dispara a resposta privada no direct (para quem não segue a conta, ela cai em Solicitações) e, se quiser, uma resposta pública." : ""} Para começar um roteiro pela palavra, cadastre a palavra no próprio roteiro (aba Roteiros).
+        </p>
+      </div>
+      {keywords.length > 0 && (
+        <ul className="flex flex-col divide-y divide-line-2 rounded-xl border border-line">
+          {keywords.map((k) => (
+            <li key={k.id} className="px-3 py-2.5 text-sm">
+              <details>
+                <summary className="flex cursor-pointer flex-wrap items-center gap-1.5">
+                  {k.words.map((w) => (
+                    <span key={w} className="rounded-full bg-ground px-2 py-0.5 text-xs font-semibold">{w}</span>
+                  ))}
+                  {!k.active && <span className="text-xs text-muted">desligada</span>}
+                  <span className="ml-auto text-xs text-muted">{[k.dm_reply && "direct", (k.comment_reply || k.comment_public) && "comentários"].filter(Boolean).join(" e ")}</span>
+                </summary>
+                <ActionForm action={save} className="mt-3 flex flex-col gap-2">
+                  <KeywordFields k={k} commentsOn={commentsOn} posts={posts} />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <SubmitButton pendingLabel="Salvando…" className="btn-ghost">Salvar</SubmitButton>
+                  </div>
+                </ActionForm>
+                <ActionForm action={remove} success="Palavra-chave removida." className="mt-2">
+                  <input type="hidden" name="id" value={k.id} />
+                  <SubmitButton pendingLabel="Removendo…" className="flex items-center gap-1 text-xs font-medium text-danger hover:underline">
+                    <Trash2 size={13} />
+                    Remover
+                  </SubmitButton>
+                </ActionForm>
+              </details>
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding ? (
+        <ActionForm action={save} onSuccess={() => setAdding(false)} className="flex flex-col gap-2 rounded-xl bg-ground p-3">
+          <KeywordFields k={null} commentsOn={commentsOn} posts={posts} />
+          <div className="flex items-center gap-3">
+            <SubmitButton pendingLabel="Salvando…" className="btn-ghost">Criar palavra-chave</SubmitButton>
+            <button type="button" onClick={() => setAdding(false)} className="text-sm text-muted">Cancelar</button>
+          </div>
+        </ActionForm>
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className="btn-ghost self-start">Nova palavra-chave</button>
+      )}
     </div>
   );
 }

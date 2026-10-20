@@ -10,6 +10,7 @@ import { instagramContact, pendingContactOrigin, setContactOrigin, touchInbound 
 import { DELETED_LABEL, deletedBeforeArrival } from "./instagram-edits";
 import { NO_CONTEXT, instagramContext, type IgContext } from "./instagram-context";
 import { originOf, refKind } from "./instagram-direct";
+import { directKeywordReply } from "./instagram-keywords";
 import { requireAtendimento } from "./atendimentos";
 import { findMessage, saveMessage, updateMessages } from "./messages";
 import { maskCardNumbers } from "./routine-run";
@@ -554,6 +555,17 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
   if (before.state === "sent") return;
   if (before.state === "unsent") {
     await say("ia", before.content, { update: before.id });
+    return;
+  }
+
+  // palavra-chave do Instagram (E1, parte 3b): a mensagem que é só a palavra recebe a resposta
+  // pronta da loja, sem IA (não abre atendimento)
+  const keywordText = !q.ev.message?.attachments?.length && !igButtonId(q.ev) ? await directKeywordReply(db, bot.id, igText(q.ev)) : null;
+  if (keywordText) {
+    const convId = await plainConversation();
+    if (!convId) return;
+    await storeAll(convId);
+    await say("ia", keywordText, fixedRecord(keywordText), convId);
     return;
   }
 

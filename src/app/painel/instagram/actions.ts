@@ -8,10 +8,12 @@ import { audit, requestMeta } from "@/lib/audit";
 import { can } from "@/lib/team";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { ICE_BREAKERS_MAX, REF_LINKS_MAX, parseIceBreakers, parseRefLink, syncIceBreakers } from "@/lib/instagram-direct";
+import { KEYWORDS_PER_BOT, keywordConflict, parseKeywordInput, type KeywordRow } from "@/lib/instagram-keywords";
+import { commentsEnabled } from "@/lib/instagram";
 
 /*
- * O direct do Instagram na aba Instagram do chatbot (E1, parte 3a): as perguntas prontas e os
- * links ig.me com origem. Quem configura o chatbot (dono, administrador e editor) mexe; cada
+ * O direct do Instagram na aba Instagram do chatbot (E1, partes 3a e 3b): as perguntas prontas, os
+ * links ig.me com origem e as palavras-chave. Quem configura o chatbot (dono, administrador e editor) mexe; cada
  * mudança vai para a auditoria.
  */
 
@@ -72,4 +74,42 @@ export async function removeRefLink(botId: string, fd: FormData): Promise<Action
   await auditIg(ctx, "instagram.link_origem_removido", { ref: data[0].ref });
   revalidatePath(`/painel/bots/${ctx.botId}`);
   return ok("Link removido. Quem abrir o link antigo chega sem a origem.");
+}
+
+/** Uma palavra-chave (nova, ou a do id): as palavras e as respostas do direct e dos comentários. */
+export async function saveKeyword(botId: string, fd: FormData): Promise<ActionResult> {
+  const ctx = await context(botId);
+  if (!ctx) return fail(DENIED);
+  const db = createAdminClient();
+  const id = String(fd.get("id") ?? "") || null;
+  const { data: current } = id ? await db.from("instagram_keywords").select("comment_reply, comment_public, media_ids").eq("id", id).eq("bot_id", ctx.botId).maybeSingle() : { data: null };
+  if (id && !current) return fail("Palavra-chave não encontrada.");
+  const input = parseKeywordInput(
+    { words: fd.get("words"), dm_reply: fd.get("dm_reply"), comment_reply: fd.get("comment_reply"), comment_public: fd.get("comment_public"), posts: fd.get("posts"), media_ids: fd.getAll("media_ids") },
+    { comments: commentsEnabled(), keep: (current as Pick<KeywordRow, "comment_reply" | "comment_public" | "media_ids"> | null) ?? undefined },
+  );
+  if ("error" in input) return fail(input.error);
+  const conflict = await keywordConflict(db, ctx.botId, input.words, id);
+  if (conflict) return fail(conflict);
+  if (!id) {
+    const { count } = await db.from("instagram_keywords").select("id", { count: "exact", head: true }).eq("bot_id", ctx.botId);
+    if ((count ?? 0) >= KEYWORDS_PER_BOT) return fail(`Até ${KEYWORDS_PER_BOT} palavras-chave por chatbot.`);
+  }
+  // nova: ligada; na edição, o que a caixa "ligada" disser
+  const row = { ...input, active: fd.get("has_active") ? fd.get("active") === "on" : true };
+  const { error } = id ? await db.from("instagram_keywords").update(row).eq("id", id).eq("bot_id", ctx.botId) : await db.from("instagram_keywords").insert({ ...row, bot_id: ctx.botId });
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditIg(ctx, id ? "instagram.palavra_chave_editar" : "instagram.palavra_chave", { palavras: input.words, direct: Boolean(input.dm_reply), comentario: Boolean(input.comment_reply || input.comment_public) });
+  revalidatePath(`/painel/bots/${ctx.botId}`);
+  return ok(id ? "Palavra-chave salva." : "Palavra-chave criada.");
+}
+
+export async function removeKeyword(botId: string, fd: FormData): Promise<ActionResult> {
+  const ctx = await context(botId);
+  if (!ctx) return fail(DENIED);
+  const { data, error } = await createAdminClient().from("instagram_keywords").delete().eq("id", String(fd.get("id") ?? "")).eq("bot_id", ctx.botId).select("words");
+  if (error || !data?.length) return fail("Palavra-chave não encontrada.");
+  await auditIg(ctx, "instagram.palavra_chave_removida", { palavras: data[0].words });
+  revalidatePath(`/painel/bots/${ctx.botId}`);
+  return ok("Palavra-chave removida.");
 }
