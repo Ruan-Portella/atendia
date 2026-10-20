@@ -12,6 +12,9 @@ export function ClientCampaigns({ clientId, clientName, bots }: { clientId: stri
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-[640px] text-sm text-muted">Promoções para quem aceitou receber novidades e lembretes de utilidade por planilha, pelo WhatsApp de {clientName}.</p>
         <div className="flex flex-wrap gap-2">
+          <Link href={`/painel/campanhas/reguas?cliente=${clientId}`} className="btn-ghost">
+            Réguas
+          </Link>
           <Link href={`/painel/campanhas/nova?cliente=${clientId}&tipo=lembrete`} className="btn-ghost">
             Novo lembrete
           </Link>

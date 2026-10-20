@@ -24,9 +24,14 @@ export default async function CampaignsPage() {
             Todas as campanhas e lembretes dos seus clientes, num lugar só. Cada cliente também tem a aba Campanhas, com os dele, o fuso e a declaração para lembretes.
           </p>
         </div>
-        <Link href="/painel/campanhas/nova" className="btn-primary">
-          Nova campanha
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/painel/campanhas/reguas" className="btn-ghost">
+            Réguas
+          </Link>
+          <Link href="/painel/campanhas/nova" className="btn-primary">
+            Nova campanha
+          </Link>
+        </div>
       </div>
 
       <CampaignBoard bots={(bots ?? []).map((b) => ({ id: b.id as string, name: b.name as string, client_name: b.client_name as string, client_id: (b.client_id as string | null) ?? null }))} showClient limits />

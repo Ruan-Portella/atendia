@@ -1,8 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { reguaContacts, whatsappPhonesOf, phoneHash, type ReguaContact, type ReguaSearch } from "./contacts";
-import { queueReguaSends, reguaCampaigns, reguaRecentPhoneHashes, type ReguaRecipient } from "./campaigns";
+import { reguaContactCount, reguaContacts, whatsappPhonesOf, phoneHash, type ReguaContact, type ReguaSearch } from "./contacts";
+import { campaignReport, ensureReguaCampaign, queueReguaSends, reguaCampaigns, reguaRecentPhoneHashes, reportNumbers, stopReguaCampaign, type ReguaRecipient } from "./campaigns";
+import { referencePrices } from "./whatsapp-usage";
 import { loadMessages } from "./messages";
 import { DEFAULT_TIMEZONE, atLocal, wallClock } from "./timezone";
+import { REGUA_CATEGORY, REGUA_DELAY, REGUA_EXAMPLES, REGUA_KINDS, REGUA_LABEL, reguaTemplateBody, reguaTemplateName, reguaTemplateProblem, reguaTemplateState, type ReguaKind, type ReguaTemplateState } from "./regua-kinds";
+import { createTemplate, listTemplates, type TemplateChannel } from "./whatsapp-templates";
+import { TEMPLATE_LANGUAGE, type Template } from "./template-text";
+import { templateGate } from "./campaign-audience";
+import type { GateCategory } from "./gate/rules";
+
+export { REGUA_DELAY, REGUA_KINDS, REGUA_LABEL, type ReguaKind } from "./regua-kinds";
 
 /*
  * Réguas (leva Réguas; spec "Próximos passos", depois do MVP): mensagens automáticas do WhatsApp em
@@ -21,28 +29,6 @@ import { DEFAULT_TIMEZONE, atLocal, wallClock } from "./timezone";
  * de importância (o lembrete primeiro). O lembrete de utilidade sem a declaração de consentimento
  * do cliente só vai para quem já escreveu ao chatbot (a regra dos lembretes da B3).
  */
-
-export type ReguaKind = "aniversario" | "sumido" | "pos_atendimento" | "lembrete" | "sem_resposta";
-
-/** Na ordem de importância: numa mesma rodada, a pessoa recebe a primeira régua que couber. */
-export const REGUA_KINDS: ReguaKind[] = ["lembrete", "aniversario", "pos_atendimento", "sem_resposta", "sumido"];
-
-export const REGUA_LABEL: Record<ReguaKind, string> = {
-  aniversario: "Aniversário",
-  sumido: "Faz tempo que você não vem",
-  pos_atendimento: "Pós-atendimento",
-  lembrete: "Lembrete antes do horário",
-  sem_resposta: "Sem resposta",
-};
-
-/** O prazo de cada régua: a unidade, o padrão e os limites (o aniversário não tem prazo). */
-export const REGUA_DELAY: Record<ReguaKind, { unit: "dias" | "horas"; default: number; min: number; max: number } | null> = {
-  aniversario: null,
-  sumido: { unit: "dias", default: 30, min: 7, max: 365 },
-  pos_atendimento: { unit: "horas", default: 48, min: 1, max: 168 },
-  lembrete: { unit: "horas", default: 24, min: 1, max: 72 },
-  sem_resposta: { unit: "dias", default: 2, min: 1, max: 30 },
-};
 
 /** O envio sai das 8h às 20h, no fuso do cliente. */
 export const SEND_FROM = 8;
@@ -285,4 +271,174 @@ export async function planReguas(db: SupabaseClient, o: { hasTime: () => boolean
     }
   }
   return result;
+}
+
+/* ------------------------------------------------------------------ painel (partes 3 e 4) */
+
+const REGUA_COLS = "id, agency_id, client_id, bot_id, kind, active, template_name, template_language, delay_value, send_hour, planned_at, updated_at";
+
+export interface Regua extends ReguaRow {
+  active: boolean;
+  template_name: string | null;
+  template_language: string;
+  updated_at: string;
+}
+
+/** As réguas de um chatbot, pelo tipo (a que ainda não existe fica de fora: a tela mostra o padrão). */
+export async function botReguas(db: SupabaseClient, botId: string): Promise<Map<ReguaKind, Regua>> {
+  const { data } = await db.from("reguas").select(REGUA_COLS).eq("bot_id", botId);
+  return new Map(((data ?? []) as Regua[]).map((r) => [r.kind, r]));
+}
+
+/** A régua do chatbot e do tipo; na primeira vez, criada desligada, com o prazo padrão. */
+export async function ensureRegua(db: SupabaseClient, bot: { id: string; agency_id: string; client_id: string | null }, kind: ReguaKind, by: string | null): Promise<Regua> {
+  const current = (await botReguas(db, bot.id)).get(kind);
+  if (current) return current;
+  const { data, error } = await db.from("reguas").insert({ agency_id: bot.agency_id, client_id: bot.client_id, bot_id: bot.id, kind, active: false, delay_value: REGUA_DELAY[kind]?.default ?? null, send_hour: 9, created_by: by }).select(REGUA_COLS).single();
+  // duas abas ao mesmo tempo: a outra criou primeiro
+  if (error || !data) {
+    const again = (await botReguas(db, bot.id)).get(kind);
+    if (again) return again;
+    throw new Error(`régua: ${error?.message ?? "não gravada"}`);
+  }
+  return data as Regua;
+}
+
+/**
+ * O modelo pronto da régua (parte 3): confere o texto (as regras da Meta, as variáveis que o
+ * planejador manda e o portão: item proibido, bebida e remédio não entram em régua, que não pergunta
+ * a idade), cria na Meta com um nome novo e guarda na régua. Um modelo que já estava aprovado
+ * continua em uso até o novo ser aprovado e a régua ser ligada de novo. Erro da Meta sobe.
+ */
+export async function submitReguaTemplate(db: SupabaseClient, o: { regua: Pick<Regua, "id" | "kind">; ch: TemplateChannel; body: string; exempt?: readonly GateCategory[] }): Promise<{ ok: true; name: string } | { ok: false; message: string }> {
+  const body = o.body.trim();
+  const problem = reguaTemplateProblem(o.regua.kind, body);
+  if (problem) return { ok: false, message: problem };
+  const gate = templateGate(body, o.exempt ?? []);
+  if (gate.prohibited.length) return { ok: false, message: `O texto cita um item que não pode ser oferecido pelo WhatsApp (${gate.prohibited.join(", ")}).` };
+  if (gate.regulated.length) return { ok: false, message: `A régua não confere a idade de quem recebe: tire do texto o que é só para maiores (${gate.regulated.join(", ")}).` };
+  const name = reguaTemplateName(o.regua.kind, (await listTemplates(o.ch)).map((t) => t.name));
+  await createTemplate(o.ch, { name, category: REGUA_CATEGORY[o.regua.kind], body, examples: REGUA_EXAMPLES[o.regua.kind] });
+  await db.from("reguas").update({ template_name: name, template_language: TEMPLATE_LANGUAGE, updated_at: new Date().toISOString() }).eq("id", o.regua.id);
+  return { ok: true, name };
+}
+
+/** O prazo e a hora da régua (dentro dos limites do tipo). Devolve o problema, ou null. */
+export async function saveReguaSettings(db: SupabaseClient, regua: Pick<Regua, "id" | "kind">, s: { delay: number | null; sendHour: number | null }): Promise<string | null> {
+  const limits = REGUA_DELAY[regua.kind];
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), planned_at: null };
+  if (limits) {
+    if (!Number.isInteger(s.delay) || s.delay! < limits.min || s.delay! > limits.max) return `O prazo vai de ${limits.min} a ${limits.max} ${limits.unit}.`;
+    patch.delay_value = s.delay;
+  }
+  if (s.sendHour !== null) {
+    if (!Number.isInteger(s.sendHour) || s.sendHour < 8 || s.sendHour > 19) return "A hora do envio vai das 8h às 19h.";
+    patch.send_hour = s.sendHour;
+  }
+  await db.from("reguas").update(patch).eq("id", regua.id);
+  return null;
+}
+
+/**
+ * Até quantas pessoas a régua alcança nos próximos 30 dias, antes do aceite, do SAIR e da regra de
+ * uma régua por dia. Pós-atendimento e sem resposta usam os últimos 30 dias como referência.
+ */
+export async function estimateRegua(db: SupabaseClient, botId: string, kind: ReguaKind, delay: number | null, tz: string, now = Date.now()): Promise<number> {
+  const n = delay ?? REGUA_DELAY[kind]?.default ?? 1;
+  const count = (by: ReguaSearch) => reguaContactCount(db, botId, by);
+  const month = 30 * DAY;
+  if (kind === "aniversario") {
+    const days = new Set<string>();
+    for (let i = 0; i < 30; i++) for (const md of birthdaysOn(now + i * DAY, tz)) days.add(md);
+    return count({ birthdays: [...days] });
+  }
+  if (kind === "sumido") {
+    const range: [string, string] = [iso(now - n * DAY), iso(now - n * DAY + month)];
+    return (await count({ lastVisit: range })) + (await count({ lastInboundNoVisit: range }));
+  }
+  if (kind === "lembrete") return count({ appointment: [iso(now), iso(now + month)] });
+  if (kind === "pos_atendimento") {
+    const { count: closed } = await db.from("conversations").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("channel", "whatsapp").gte("handled_at", iso(now - month)).not("contact_id", "is", null);
+    return (await count({ lastVisit: [iso(now - month), iso(now)] })) + (closed ?? 0);
+  }
+  const { data } = await db.from("conversations").select("last_reply_at, last_contact_at").eq("bot_id", botId).eq("channel", "whatsapp").gte("last_reply_at", iso(now - month)).not("contact_id", "is", null).limit(5000);
+  return ((data ?? []) as Array<{ last_reply_at: string; last_contact_at: string | null }>).filter((c) => c.last_contact_at && Date.parse(c.last_contact_at) < Date.parse(c.last_reply_at)).length;
+}
+
+/** Na tela, as réguas na ordem da spec. */
+export const REGUA_DISPLAY: ReguaKind[] = ["aniversario", "sumido", "pos_atendimento", "lembrete", "sem_resposta"];
+
+export interface ReguaPanelItem {
+  kind: ReguaKind;
+  regua: Regua | null;
+  delay: number | null;
+  sendHour: number;
+  template: ReguaTemplateState;
+  /** O texto para a caixa de edição: o do modelo na Meta, ou o sugerido. */
+  draft: string;
+  state: "desligada" | "ligada" | "pausada";
+  pauseReason: string | null;
+  /** O modelo que a campanha da régua usa (um novo pode estar em análise). */
+  inUse: string | null;
+  numbers: ReturnType<typeof reportNumbers> | null;
+  estimate: { people: number; costBrl: number };
+}
+
+/** O que a tela das réguas mostra de cada régua do chatbot. A lista de modelos da Meta é lida uma vez. */
+export async function reguasPanel(db: SupabaseClient, o: { botId: string; company: string; ch: TemplateChannel | null; tz: string; now?: number }): Promise<{ items: ReguaPanelItem[]; templatesError: string | null }> {
+  const reguas = await botReguas(db, o.botId);
+  const campaigns = await reguaCampaigns(db, [...reguas.values()].map((r) => r.id));
+  let templates: Template[] = [];
+  let templatesError: string | null = null;
+  if (o.ch) {
+    try {
+      templates = await listTemplates(o.ch);
+    } catch (e) {
+      templatesError = (e as Error).message;
+    }
+  }
+  const prices = referencePrices();
+  const items = await Promise.all(
+    REGUA_DISPLAY.map(async (kind): Promise<ReguaPanelItem> => {
+      const regua = reguas.get(kind) ?? null;
+      const campaign = regua ? campaigns.get(regua.id) : undefined;
+      const template = reguaTemplateState(kind, templates, regua?.template_name ?? null);
+      const delay = regua?.delay_value ?? REGUA_DELAY[kind]?.default ?? null;
+      const people = await estimateRegua(db, o.botId, kind, delay, o.tz, o.now);
+      const price = prices[(template.category ?? REGUA_CATEGORY[kind]).toLowerCase()] ?? prices.marketing;
+      return {
+        kind,
+        regua,
+        delay,
+        sendHour: regua?.send_hour ?? 9,
+        template,
+        draft: template.body ?? reguaTemplateBody(kind, o.company),
+        state: !regua?.active ? "desligada" : campaign?.status === "sending" ? "ligada" : "pausada",
+        pauseReason: regua?.active && campaign?.status !== "sending" ? (campaign?.pause_reason ?? null) : null,
+        inUse: campaign?.template_name ?? null,
+        numbers: campaign ? reportNumbers(await campaignReport(db, campaign.id)) : null,
+        estimate: { people, costBrl: Math.round(people * price * 100) / 100 },
+      };
+    }),
+  );
+  return { items, templatesError };
+}
+
+/**
+ * Liga a régua com o modelo dela aprovado na Meta (a campanha é criada ou volta a enviar, com o
+ * modelo novo, se mudou) ou desliga (o que estava na fila espera; passado o prazo, não sai). Ligar
+ * sem o modelo aprovado devolve o motivo.
+ */
+export async function setReguaActive(db: SupabaseClient, o: { regua: Regua; on: boolean; ch: TemplateChannel | null; by: string | null }): Promise<string | null> {
+  if (!o.on) {
+    await db.from("reguas").update({ active: false, updated_at: new Date().toISOString() }).eq("id", o.regua.id);
+    await stopReguaCampaign(db, o.regua.id);
+    return null;
+  }
+  if (!o.ch) return "Conecte o WhatsApp do chatbot: as réguas saem pelo número dele.";
+  const state = reguaTemplateState(o.regua.kind, await listTemplates(o.ch), o.regua.template_name);
+  if (state.status !== "aprovado") return state.status === "ausente" ? "Crie o modelo da régua antes de ligar." : `O modelo da régua ainda não está aprovado pela Meta (${state.label}).`;
+  await ensureReguaCampaign(db, { reguaId: o.regua.id, agencyId: o.regua.agency_id, clientId: o.regua.client_id, botId: o.regua.bot_id, name: `Régua ${REGUA_LABEL[o.regua.kind]}`, template: { name: o.regua.template_name!, language: o.regua.template_language, category: state.category ?? REGUA_CATEGORY[o.regua.kind] }, createdBy: o.by });
+  await db.from("reguas").update({ active: true, planned_at: null, updated_at: new Date().toISOString() }).eq("id", o.regua.id);
+  return null;
 }

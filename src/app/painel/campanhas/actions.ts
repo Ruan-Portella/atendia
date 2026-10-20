@@ -16,6 +16,8 @@ import { EXCLUSION_LABEL, REMINDER_EXCLUSION_LABEL, buildMarketingAudience, buil
 import { DEFAULT_TIMEZONE, formatInZone, isClientTimezone, isQuietHour, localHour, localInputToIso, nextEightAm } from "@/lib/timezone";
 import { REMINDER_MAX_ROWS, busiestDay, validateReminderRows, type RawReminderRow, type ReminderError } from "@/lib/reminder-sheet";
 import { text } from "@/lib/validation";
+import { ensureRegua, saveReguaSettings, setReguaActive, submitReguaTemplate } from "@/lib/reguas";
+import { REGUA_DELAY, REGUA_HAS_SEND_HOUR, REGUA_KINDS, REGUA_LABEL, type ReguaKind } from "@/lib/regua-kinds";
 
 /*
  * Campanhas pelo painel (leva B3, parte 4a): dono, administrador e editor, nos chatbots do escopo
@@ -446,4 +448,66 @@ export async function revokeUtilityConsent(clientId: string): Promise<ActionResu
   await auditClient(c.ctx, "cliente.lembretes_revogar", c.client.id as string, { before: { origem: before.utility_consent_origin, texto: before.utility_consent_text, por: before.utility_consent_by, em: before.utility_consent_at } });
   revalidatePath(`/painel/clientes/${c.client.id}`);
   return ok("Declaração revogada. Lembretes novos só vão para quem já falou com o chatbot; os já agendados seguem.");
+}
+
+/* ------------------------------------------------------------------ réguas (leva Réguas, partes 3 e 4) */
+
+const reguaKindOf = (raw: string): ReguaKind | null => ((REGUA_KINDS as string[]).includes(raw) ? (raw as ReguaKind) : null);
+
+/** A régua de um chatbot do escopo, com o WhatsApp conectado (criada desligada na primeira vez). */
+async function reguaContext(botId: string, rawKind: string) {
+  const kind = reguaKindOf(rawKind);
+  if (!kind) return { error: "Régua desconhecida." } as const;
+  const c = await campaignContext();
+  if ("error" in c) return { error: c.error ?? DENIED } as const;
+  const b = await campaignBot(botId);
+  if (!b) return { error: "Chatbot não encontrado, ou sem o WhatsApp conectado." } as const;
+  const regua = await ensureRegua(b.admin, { id: b.bot.id as string, agency_id: b.bot.agency_id as string, client_id: (b.bot.client_id as string | null) ?? null }, kind, c.ctx.email);
+  return { ...c, ...b, regua };
+}
+
+async function auditRegua(r: { admin: ReturnType<typeof createAdminClient>; ctx: { agency: { id: string }; userId: string }; bot: { id: unknown }; regua: { kind: ReguaKind } }, action: string, after: Record<string, unknown> = {}) {
+  await audit(r.admin, { agencyId: r.ctx.agency.id, actorType: "user", actorId: r.ctx.userId, action, targetType: "bot", targetId: r.bot.id as string, after: { regua: REGUA_LABEL[r.regua.kind], ...after }, ...(await requestMeta()) });
+}
+
+/** O modelo da régua: o texto sugerido ou editado vai para a Meta (com um nome novo, se já havia um). */
+export async function reguaTemplateAction(botId: string, kind: string, fd: FormData): Promise<ActionResult> {
+  const r = await reguaContext(botId, kind);
+  if ("error" in r) return fail(r.error ?? DENIED);
+  try {
+    const res = await submitReguaTemplate(r.admin, { regua: r.regua, ch: r.ch, body: String(fd.get("body") ?? ""), exempt: r.exempt });
+    if (!res.ok) return fail(res.message);
+    await auditRegua(r, "regua.modelo", { modelo: res.name });
+  } catch (e) {
+    return fail(`A Meta recusou o modelo: ${metaMessage(e)}`);
+  }
+  revalidatePath("/painel/campanhas/reguas");
+  return ok("Modelo enviado para a Meta. A análise costuma sair em minutos: recarregue a página para ver.");
+}
+
+/** O prazo e a hora do envio da régua. */
+export async function reguaSettingsAction(botId: string, kind: string, fd: FormData): Promise<ActionResult> {
+  const r = await reguaContext(botId, kind);
+  if ("error" in r) return fail(r.error ?? DENIED);
+  const num = (k: string) => (fd.get(k) === null || text(fd.get(k)) === "" ? null : Number(fd.get(k)));
+  const problem = await saveReguaSettings(r.admin, r.regua, { delay: REGUA_DELAY[r.regua.kind] ? num("delay") : null, sendHour: REGUA_HAS_SEND_HOUR[r.regua.kind] ? num("send_hour") : null });
+  if (problem) return fail(problem);
+  await auditRegua(r, "regua.ajustes", { prazo: num("delay"), hora: num("send_hour") });
+  revalidatePath("/painel/campanhas/reguas");
+  return ok("Régua salva.");
+}
+
+/** Liga (com o modelo aprovado; também retoma a pausada e troca para o modelo novo) ou desliga a régua. */
+export async function reguaToggleAction(botId: string, kind: string, on: boolean): Promise<ActionResult> {
+  const r = await reguaContext(botId, kind);
+  if ("error" in r) return fail(r.error ?? DENIED);
+  try {
+    const problem = await setReguaActive(r.admin, { regua: r.regua, on, ch: r.ch, by: r.ctx.email });
+    if (problem) return fail(problem);
+  } catch (e) {
+    return fail(`Não deu para conferir o modelo na Meta: ${metaMessage(e)}`);
+  }
+  await auditRegua(r, on ? "regua.ligar" : "regua.desligar");
+  revalidatePath("/painel/campanhas/reguas");
+  return ok(on ? "Régua ligada: ela olha os contatos a cada hora e envia das 8h às 20h." : "Régua desligada.");
 }

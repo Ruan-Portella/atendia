@@ -232,6 +232,7 @@ export async function setCampaignStatus(db: SupabaseClient, id: string, status: 
 export interface ReguaCampaign {
   id: string;
   status: CampaignStatus;
+  template_name: string;
   template_category: string;
   pause_reason: string | null;
 }
@@ -240,8 +241,8 @@ export interface ReguaCampaign {
 export async function reguaCampaigns(db: SupabaseClient, reguaIds: string[]): Promise<Map<string, ReguaCampaign>> {
   const out = new Map<string, ReguaCampaign>();
   if (!reguaIds.length) return out;
-  const { data } = await db.from("campaigns").select("id, regua_id, status, template_category, pause_reason").in("regua_id", reguaIds);
-  for (const c of data ?? []) out.set(c.regua_id as string, { id: c.id as string, status: c.status as CampaignStatus, template_category: c.template_category as string, pause_reason: (c.pause_reason as string | null) ?? null });
+  const { data } = await db.from("campaigns").select("id, regua_id, status, template_name, template_category, pause_reason").in("regua_id", reguaIds);
+  for (const c of data ?? []) out.set(c.regua_id as string, { id: c.id as string, status: c.status as CampaignStatus, template_name: c.template_name as string, template_category: c.template_category as string, pause_reason: (c.pause_reason as string | null) ?? null });
   return out;
 }
 

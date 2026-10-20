@@ -843,17 +843,28 @@ export interface ReguaContact extends ContactDates {
 /** Quem a régua procura: o aniversário do dia, a última visita, a última mensagem de quem não tem visita ou o horário marcado, num intervalo [de, até]. */
 export type ReguaSearch = { birthdays: string[] } | { lastVisit: [string, string] } | { lastInboundNoVisit: [string, string] } | { appointment: [string, string] };
 
-/** Contatos do WhatsApp do chatbot (com telefone) para uma régua (leva Réguas, parte 2). */
-export async function reguaContacts(db: SupabaseClient, botId: string, by: ReguaSearch, limit = 2000): Promise<ReguaContact[]> {
-  let q = db.from("contacts").select("id, name, phone_enc, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at").eq("bot_id", botId).eq("channel", "whatsapp").not("phone_enc", "is", null);
+/** Os contatos do WhatsApp do chatbot (com telefone) que a régua procura. */
+function reguaQuery(db: SupabaseClient, botId: string, by: ReguaSearch, columns: string, count?: { count: "exact"; head: true }) {
+  let q = db.from("contacts").select(columns, count).eq("bot_id", botId).eq("channel", "whatsapp").not("phone_enc", "is", null);
   if ("birthdays" in by) q = q.in("birthday", by.birthdays);
   else if ("lastVisit" in by) q = q.gte("last_visit_at", by.lastVisit[0]).lte("last_visit_at", by.lastVisit[1]);
   else if ("lastInboundNoVisit" in by) q = q.is("last_visit_at", null).gte("last_inbound_at", by.lastInboundNoVisit[0]).lte("last_inbound_at", by.lastInboundNoVisit[1]);
   else q = q.gte("appointment_at", by.appointment[0]).lte("appointment_at", by.appointment[1]);
-  const { data, error } = await q.limit(limit);
+  return q;
+}
+
+/** Quantos contatos a régua acharia (a estimativa da tela das réguas). */
+export async function reguaContactCount(db: SupabaseClient, botId: string, by: ReguaSearch): Promise<number> {
+  const { count } = await reguaQuery(db, botId, by, "id", { count: "exact", head: true });
+  return count ?? 0;
+}
+
+/** Contatos do WhatsApp do chatbot (com telefone) para uma régua (leva Réguas, parte 2). */
+export async function reguaContacts(db: SupabaseClient, botId: string, by: ReguaSearch, limit = 2000): Promise<ReguaContact[]> {
+  const { data, error } = await reguaQuery(db, botId, by, "id, name, phone_enc, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at").limit(limit);
   if (error) throw new Error(`contatos da régua: ${error.message}`);
   const rows = await Promise.all(
-    ((data ?? []) as Array<Record<string, unknown>>).map(async (r) => ({
+    ((data ?? []) as unknown as Array<Record<string, unknown>>).map(async (r) => ({
       id: r.id as string,
       phone: (await openNullable("contacts.phone_enc", r.phone_enc)) ?? "",
       name: (r.name as string | null) ?? null,
