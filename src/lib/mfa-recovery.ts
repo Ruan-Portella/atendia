@@ -185,8 +185,11 @@ export async function requestRecovery(db: SupabaseClient, r: RecoveryRequester, 
   // o índice único dos pedidos em aberto segura dois cliques ao mesmo tempo
   if (error) return { ok: false, problem: error.code === "23505" ? "aberto" : "erro" };
   const brand = await brandOf(db, r.agencyId);
-  const [subject, lines] = recoveryRequestEmail({ area: r.area, agencyName: brand.name, link: recoveryLink(r.area, token, brand) });
+  const link = recoveryLink(r.area, token, brand);
+  const [subject, lines] = recoveryRequestEmail({ area: r.area, agencyName: brand.name, link });
   await sendAsAgency(voice(r.area, brand.name).from, r.email, subject, lines).catch(() => false);
+  // sem a Resend (a dev), o e-mail não sai: o link vai para o log do servidor, para o teste; com a chave (a produção), nunca
+  if (!process.env.RESEND_API_KEY) console.warn(`[segundo fator] sem a Resend: o link de confirmação de ${r.email} é ${link}`);
   await audit(db, { agencyId: r.agencyId, ...actorOf({ area: r.area, user_id: r.userId, email: r.email }), action: "seguranca.mfa_recuperar_pedir", targetType: r.area === "cliente" ? "client" : "agency", targetId: r.clientId ?? r.agencyId, after: { area: r.area }, ip: o.ip ?? null, userAgent: o.userAgent ?? null });
   return { ok: true };
 }
