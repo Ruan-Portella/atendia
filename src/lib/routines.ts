@@ -67,6 +67,8 @@ export interface RoutineInput {
   steps: RoutineStep[];
   active: boolean;
   template: RoutineTemplateId | null;
+  /** O setor da equipe quando o roteiro passa a conversa (Caixa de entrada, parte 4), pelo nome. */
+  handoff_sector?: string | null;
 }
 
 export interface RoutineRow extends RoutineInput {
@@ -196,6 +198,7 @@ export function routineInputFromJson(raw: string): RoutineInput | { error: strin
     steps,
     active: j.active !== false,
     template,
+    handoff_sector: str(j.handoff_sector, 41).trim() || null,
   };
 }
 
@@ -252,6 +255,7 @@ function destinationProblem(d: Destination, steps: RoutineStep[], self: string, 
 export function routineProblem(r: RoutineInput, ctx: RoutineContext): string | null {
   if (r.name.length < 2 || r.name.length > NAME_MAX) return `O nome do roteiro precisa ter de 2 a ${NAME_MAX} caracteres.`;
   if (ctx.others.some((o) => o.name.trim().toLowerCase() === r.name.toLowerCase())) return "Já existe um roteiro com esse nome neste chatbot.";
+  if (r.handoff_sector && r.handoff_sector.length > 40) return "O nome do setor tem até 40 caracteres.";
   if (r.when_to_use.length < WHEN_MIN || r.when_to_use.length > WHEN_MAX) return `"Quando usar" precisa ter de ${WHEN_MIN} a ${WHEN_MAX} caracteres: é por ele que a IA reconhece o assunto.`;
 
   if (r.keywords.length > KEYWORDS_PER_ROUTINE) return `Até ${KEYWORDS_PER_ROUTINE} palavras-chave por roteiro.`;

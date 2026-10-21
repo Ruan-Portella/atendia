@@ -109,6 +109,8 @@ export function InboxView({
                   <span className={i.urgent ? "font-semibold text-danger" : i.waiting ? "text-amber-ink" : "text-brand"}>{i.urgent ? "urgente · " : ""}{STATE[i.state]}</span>
                   {i.assignedId && <span className="text-muted">· {i.assignedId === meId ? "com você" : `com ${i.assignedName ?? "outra pessoa"}`}</span>}
                   {i.outsideHours && <span className="text-muted">· chegou fora do horário</span>}
+                  {i.snoozedUntil && <span className="text-muted">· adiada até {new Date(i.snoozedUntil).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
+                  {i.snoozeEnded && <span className="font-semibold text-ink-2">· voltou do adiamento</span>}
                 </div>
               </Link>
             </li>

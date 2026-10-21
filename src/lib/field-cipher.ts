@@ -56,7 +56,8 @@ export type CipherField =
   | "instagram_comments.private_reply_enc"
   | "instagram_comments.public_reply_enc"
   | "fiscal_invoices.taker_tax_id_enc"
-  | "fiscal_invoices.taker_address_enc";
+  | "fiscal_invoices.taker_address_enc"
+  | "conversation_notes.body_enc";
 
 /** Escopo da cifra: o cliente dono do dado, ou null (plataforma: chatbot sem cliente, demos). */
 export interface CipherScope {

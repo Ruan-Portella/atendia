@@ -40,6 +40,7 @@ describe("roteiros: leitura do editor", () => {
       steps: [{ id: "abc12345", type: "dado", text: "Peça o CPF", kind: "cpf", variable: "cpf", pattern: null, next: { to: "passo", step: "zzz" } }],
       active: true,
       template: null,
+      handoff_sector: null,
     });
   });
 

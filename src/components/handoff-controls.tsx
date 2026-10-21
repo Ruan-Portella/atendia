@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { AgentReplyForm } from "@/components/agent-reply-form";
 import { ConfirmAction } from "@/components/ui/confirm-action";
+import type { QuickReply } from "@/lib/quick-replies";
 
 export interface HandoffConversation {
   last_message_at: string;
@@ -37,7 +38,7 @@ export function holderView(conv: HandoffConversation, meId: string): "mine" | "o
   return conv.assigned_to_id === meId ? "mine" : "other";
 }
 
-/** O rodízio do setor entregou a conversa (ainda sem assumir): a você, a outra pessoa, ou ninguém. Pura. */
+/** O rodízio do setor ou uma transferência entregou a conversa (ainda sem assumir): a você, a outra pessoa, ou ninguém. Pura. */
 export function rotationView(conv: HandoffConversation, meId: string): "mine" | "other" | null {
   if (conv.handled_at || conv.takeover_at || !conv.assigned_to_id) return null;
   return conv.assigned_to_id === meId ? "mine" : "other";
@@ -85,7 +86,7 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
           <Headset size={16} className="shrink-0 text-amber-ink" />
           <span className="min-w-0 flex-1 text-amber-ink">
             <strong>{who} {leadWaiting(conv) ? "deixou um pedido para a equipe" : "pediu para falar com alguém"}</strong> {relativeTime(conv.handoff_requested_at!)}.{" "}
-            {rotationView(conv, meId) === "mine" ? "O rodízio do setor entregou esta conversa a você: assuma para responder." : rotationView(conv, meId) === "other" ? `O rodízio do setor entregou esta conversa a ${conv.assigned_to_name ?? "outra pessoa"}.` : "Assuma para responder por aqui."}
+            {rotationView(conv, meId) === "mine" ? "Esta conversa foi passada para você: assuma para responder." : rotationView(conv, meId) === "other" ? `Esta conversa foi passada para ${conv.assigned_to_name ?? "outra pessoa"}.` : "Assuma para responder por aqui."}
           </span>
           {rotationView(conv, meId) !== "other" && <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir conversa</SubmitButton></ActionForm>}
         </div>
@@ -101,7 +102,7 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
 }
 
 /** Caixa de resposta e botões de assumir/encerrar. Vai embaixo da conversa. */
-export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, onRelease, docked = false, paymentCheck = false }: {
+export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, onRelease, docked = false, paymentCheck = false, quickReplies, contactName, attendantName }: {
   conv: HandoffConversation;
   /** id de quem vê a tela como atendente (agency_members ou client_members) */
   meId: string;
@@ -114,6 +115,10 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
   docked?: boolean;
   /** conversa com bebida ou remédio: pergunta antes de mandar instrução de pagamento */
   paymentCheck?: boolean;
+  /** respostas prontas do cliente (Caixa de entrada, parte 4), com {nome} e {atendente} */
+  quickReplies?: QuickReply[];
+  contactName?: string | null;
+  attendantName?: string;
 }) {
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
@@ -124,7 +129,7 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
     const name = conv.assigned_to_name ?? "outra pessoa";
     return (
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-muted">{active ? `${name} está atendendo. Só quem atende responde por aqui.` : `A conversa é de ${name}, pelo rodízio do setor.`}</span>
+        <span className="text-muted">{active ? `${name} está atendendo. Só quem atende responde por aqui.` : `A conversa foi passada para ${name}, que ainda não assumiu.`}</span>
         <ConfirmAction
           action={onForceTakeOver}
           title={`Assumir no lugar de ${name}?`}
@@ -143,7 +148,7 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
     <>
       {active ? (
         <div className={docked ? "flex flex-col gap-2" : "sticky bottom-0 flex flex-col gap-2 border-t border-line bg-ground py-3"}>
-          <AgentReplyForm action={onSend} paymentCheck={paymentCheck} />
+          <AgentReplyForm action={onSend} paymentCheck={paymentCheck} quickReplies={quickReplies} contactName={contactName} attendantName={attendantName} />
           <ActionForm action={onRelease} className="self-end">
             <SubmitButton pendingLabel="Encerrando…" className="text-xs font-semibold text-muted hover:underline">Encerrar atendimento e devolver ao assistente</SubmitButton>
           </ActionForm>

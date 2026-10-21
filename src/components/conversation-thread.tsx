@@ -34,6 +34,30 @@ export interface ThreadMessage {
   attachments?: Array<{ id: string; mime: string; size: number; doc_type: string; filename: string | null }>;
   /** O que a IA leu das fotos do contato (JSON aberto pela camada de mensagens). */
   photo_reading_enc?: string | null;
+  /** Transferência (role "transferencia", Caixa de entrada, parte 4): para quem foi. */
+  target_label?: string | null;
+}
+
+/** Nota interna e transferência (Caixa de entrada, parte 4): só a equipe vê. */
+const isNote = (m: ThreadMessage) => m.role === "nota" || m.role === "transferencia";
+
+/** As notas e transferências no meio das mensagens, pela hora. Pura. */
+export function withNotes(messages: ThreadMessage[], notes: Array<{ kind: string; authorName: string; body: string | null; targetLabel: string | null; createdAt: string }>): ThreadMessage[] {
+  if (!notes.length) return messages;
+  const asMessages: ThreadMessage[] = notes.map((n, i) => ({ id: -(i + 1), role: n.kind, content: n.body ?? "", author_display_name: n.authorName, target_label: n.targetLabel, created_at: n.createdAt }));
+  return [...messages, ...asMessages].sort((a, b) => Date.parse(a.created_at ?? "") - Date.parse(b.created_at ?? "") || a.id - b.id);
+}
+
+function NoteView({ m }: { m: ThreadMessage }) {
+  return (
+    <div className="max-w-[90%] self-center rounded-lg border border-dashed border-[#e3cf9a] bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+      <div className="text-[11px] font-semibold">
+        {m.role === "transferencia" ? `${m.author_display_name ?? "Alguém da equipe"} transferiu para ${m.target_label ?? "outra pessoa"}` : `Nota interna · ${m.author_display_name ?? "equipe"}`}
+        <span className="font-normal opacity-80"> · só a equipe vê</span>
+      </div>
+      {m.content && <p className="whitespace-pre-wrap break-words">{m.content}</p>}
+    </div>
+  );
 }
 
 const kb = (n: number) => (n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -170,7 +194,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
               <span className="h-px flex-1 bg-line" />
             </div>
           )}
-          <div
+          {isNote(m) ? <NoteView m={m} /> : <div
             className={
               m.role === "user"
                 ? "max-w-[80%] self-end rounded-[14px_14px_4px_14px] bg-ink px-3.5 py-2.5 text-sm text-ground"
@@ -202,7 +226,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
             {showSources && Array.isArray(m.sources) && m.sources.length > 0 && (
               <div className="mt-1.5 text-[11px] text-muted">Fontes: {(m.sources as Array<{ title?: string; url?: string }>).map((s) => s.title ?? s.url).join(" · ")}</div>
             )}
-          </div>
+          </div>}
           </Fragment>
         ))}
         {messages.length === 0 && <p className="text-sm text-muted">Sem mensagens.</p>}

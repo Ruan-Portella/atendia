@@ -31,6 +31,8 @@ import { ClientContacts } from "@/components/client-contacts";
 import { ClientCampaigns } from "@/components/client-campaigns";
 import { ClientIntegrationsSummary } from "@/components/integrations/client-integrations-summary";
 import { ClientSectors } from "@/components/client-sectors";
+import { ClientQuickReplies } from "@/components/client-quick-replies";
+import { listQuickReplies } from "@/lib/quick-replies";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { clientHolidays, eligibleSectorMembers, listSectors } from "@/lib/sectors";
 
@@ -45,6 +47,7 @@ const TABS = [
   ["relatorio", "Relatório e portal"],
   ["acesso", "Acesso do cliente"],
   ["setores", "Setores"],
+  ["respostas", "Respostas prontas"],
   ["conformidade", "Conformidade"],
   ["dados", "Dados do cliente"],
 ] as const;
@@ -354,6 +357,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       {tab === "conformidade" && <ClientCompliance clientId={client.id} clientName={client.name} />}
 
       {tab === "setores" && <SectorsTab agencyId={agency.id} clientId={client.id} />}
+      {tab === "respostas" && <ClientQuickReplies clientId={client.id} replies={await listQuickReplies(createAdminClient(), client.id)} />}
 
       {tab === "dados" && (
         <div className="flex max-w-[560px] flex-col gap-5">

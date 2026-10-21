@@ -13,7 +13,7 @@ import { saveMessage, touchConversation } from "./messages";
 import { learnLater } from "./learning";
 import { attendantAuthor, type Attendant } from "./authors";
 import { humanAgentEnabled } from "./presence";
-import { renderEntryNotice, type HumanHandoff } from "./handoff-hours";
+import { renderEntryNotice, transferNotice, type HumanHandoff } from "./handoff-hours";
 import { endActiveRoutine } from "./routine-engine";
 import { leadWaiting } from "./handoff-status";
 
@@ -39,7 +39,7 @@ const activeHold = (c: Holder) => Boolean(c.takeover_at) && !c.handled_at;
 export const holdsConversation = (c: Holder, whoId: string) => activeHold(c) && c.assigned_to_id === whoId;
 /** Outra pessoa está com a conversa agora (atendimento antigo, sem dono, fica livre). Pura. */
 export const heldByOther = (c: Holder, whoId: string) => activeHold(c) && Boolean(c.assigned_to_id) && c.assigned_to_id !== whoId;
-/** O rodízio do setor entregou a conversa a outra pessoa, que ainda não assumiu (Caixa de entrada, parte 2). Pura. */
+/** O rodízio do setor (ou uma transferência) entregou a conversa a outra pessoa, que ainda não assumiu (Caixa de entrada, partes 2 e 4). Pura. */
 export const assignedToOther = (c: Holder, whoId: string) => !c.handled_at && !c.takeover_at && Boolean(c.assigned_to_id) && c.assigned_to_id !== whoId;
 
 const HOLDER_COLS = "takeover_at, handled_at, assigned_to_id, assigned_to_name";
@@ -67,7 +67,7 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
   let q = admin
     .from("conversations")
     // quem assume fica com a conversa: a pausa da integração (API) acaba junto
-    .update({ takeover_at: now, handled_at: null, needs_human: true, assigned_to_type: who.type, assigned_to_id: who.id, assigned_to_name: who.name, assigned_at: now, announce_pending: true, ...API_PAUSE_CLEAR })
+    .update({ takeover_at: now, handled_at: null, needs_human: true, assigned_to_type: who.type, assigned_to_id: who.id, assigned_to_name: who.name, assigned_at: now, announce_pending: true, snoozed_until: null, snoozed_at: null, ...API_PAUSE_CLEAR })
     .eq("id", conversationId);
   // sem force: só se ninguém tem a conversa (nem pelo rodízio), ou ela já é de quem assume
   if (!opts.force) q = q.or(`handled_at.not.is.null,assigned_to_id.is.null,assigned_to_id.eq.${who.id}`);
@@ -76,7 +76,7 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
   if (!data?.length) {
     const { data: current } = await admin.from("conversations").select(HOLDER_COLS).eq("id", conversationId).maybeSingle<Holder>();
     if (current && holdsConversation(current, who.id)) return ok(ALREADY_YOURS);
-    if (current && assignedToOther(current, who.id)) return fail(`O rodízio do setor entregou esta conversa a ${otherName(current)}. Para atender, use “Assumir no lugar”.`);
+    if (current && assignedToOther(current, who.id)) return fail(`Esta conversa foi passada para ${otherName(current)}. Para atender, use “Assumir no lugar”.`);
     return fail(`${current ? otherName(current) : "Outra pessoa da equipe"} já está atendendo esta conversa.`);
   }
   // o tempo até a equipe assumir, para a Evolução: só o primeiro a assumir um pedido de atendente
@@ -94,7 +94,7 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   const content = rawContent.trim();
   if (!content) return fail("Escreva uma mensagem.");
   if (content.length > 2000) return fail("Mensagem muito longa (até 2.000 caracteres).");
-  const { data: conv } = await admin.from("conversations").select(`${HOLDER_COLS}, bots(client_name, human_handoff)`).eq("id", conversationId).maybeSingle();
+  const { data: conv } = await admin.from("conversations").select(`${HOLDER_COLS}, transfer_from_name, bots(client_name, human_handoff), sectors(name)`).eq("id", conversationId).maybeSingle();
   if (!conv) return fail("Conversa não encontrada.");
   // só quem está com a conversa responde
   if (heldByOther(conv as Holder, who.id)) return fail(`${otherName(conv as Holder)} está atendendo esta conversa. Para responder, use “Assumir no lugar”.`);
@@ -105,13 +105,16 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   }
   // anúncio de entrada: só na primeira mensagem de quem assumiu (a marca sai antes do envio, para
   // duas mensagens seguidas não saírem as duas com o anúncio; volta se o envio falhar)
-  const { data: claimed } = await admin.from("conversations").update({ announce_pending: false }).eq("id", conversationId).eq("announce_pending", true).eq("assigned_to_id", who.id).select("id");
+  const { data: claimed } = await admin.from("conversations").update({ announce_pending: false, transfer_from_name: null }).eq("id", conversationId).eq("announce_pending", true).eq("assigned_to_id", who.id).select("id");
   const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { client_name: string; human_handoff: HumanHandoff | null } | null;
-  const announce = claimed?.length ? renderEntryNotice(bot?.human_handoff?.entry_notice, { attendant: who.name, company: bot?.client_name ?? "" }) : null;
+  // transferida (Caixa de entrada, parte 4): o anúncio diz quem passou, no lugar do de entrada
+  const passedBy = (conv.transfer_from_name as string | null)?.trim() || null;
+  const sector = (Array.isArray(conv.sectors) ? conv.sectors[0] : conv.sectors) as { name: string } | null;
+  const announce = !claimed?.length ? null : passedBy && passedBy !== who.name ? transferNotice(passedBy, who.name, sector?.name) : renderEntryNotice(bot?.human_handoff?.entry_notice, { attendant: who.name, company: bot?.client_name ?? "" });
   const text = announce ? `${announce}\n\n${content}` : content;
   const record = { role: "agent" as const, content: text, ...attendantAuthor(who), announce_chars: announce ? announce.length + 2 : null };
   const restoreAnnounce = async () => {
-    if (announce) await admin.from("conversations").update({ announce_pending: true }).eq("id", conversationId).eq("assigned_to_id", who.id);
+    if (announce) await admin.from("conversations").update({ announce_pending: true, transfer_from_name: passedBy }).eq("id", conversationId).eq("assigned_to_id", who.id);
   };
   const sent = await deliverOutside(admin, conversationId, text, { insert: record });
   if (sent !== "widget" && sent !== "gravada") {
@@ -224,7 +227,7 @@ export async function release(admin: SupabaseClient, conversationId: string, who
   const at = new Date().toISOString();
   const { error } = await admin
     .from("conversations")
-    .update({ takeover_at: null, handled_at: at, assigned_to_type: null, assigned_to_id: null, assigned_to_name: null, assigned_at: null, announce_pending: false })
+    .update({ takeover_at: null, handled_at: at, assigned_to_type: null, assigned_to_id: null, assigned_to_name: null, assigned_at: null, announce_pending: false, transfer_from_name: null, snoozed_until: null, snoozed_at: null })
     .eq("id", conversationId);
   if (error) return fail("Não foi possível encerrar. Tente de novo.");
   // webhooks: handoff.returned com quem devolveu

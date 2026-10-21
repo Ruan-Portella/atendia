@@ -110,6 +110,15 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
 }
 
 /**
+ * Transferência (Caixa de entrada, parte 4): e-mail para quem recebe (a pessoa, ou as pessoas do
+ * setor). A nota interna não vai por e-mail: fica na conversa.
+ */
+export async function notifyTransfer(o: { db: SupabaseClient; bot: BotRow; conversationId: string; from: string; to: string; audience: HandoffAudience | null }) {
+  const lines = (link: string) => [`${o.from} transferiu uma conversa do chatbot ${o.bot.name} (${o.bot.client_name}) para ${o.to}.`, `\nResponda por aqui:\n${link}`];
+  await emailTeam(o.db, o.bot, { subject: `Conversa transferida para ${o.to} · ${o.bot.client_name}`, conversationId: o.conversationId, audience: o.audience, lines, clientLines: lines });
+}
+
+/**
  * E-mail para quem atende o chatbot (pedido de atendente e pedido de lead): as pessoas do cliente,
  * se ele pode atender, com a marca da agência e o link da área do cliente; a agência (equipe no
  * escopo e o e-mail de aviso do bot), com o link do painel, a não ser que ela tenha delegado o

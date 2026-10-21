@@ -135,6 +135,11 @@ export function renderBackNotice(template: string | null | undefined, bot: { nam
 export function renderEntryNotice(template: string | null | undefined, o: { attendant: string; company: string }): string {
   return (template?.trim() || DEFAULT_ENTRY_NOTICE).replaceAll("{atendente}", o.attendant).replaceAll("{empresa}", o.company);
 }
+
+/** Anúncio de transferência (Caixa de entrada, parte 4), como prefixo da primeira mensagem de quem recebe. Pura. */
+export function transferNotice(from: string, to: string, sector?: string | null): string {
+  return `${from} passou seu atendimento para ${to}${sector ? `, do setor ${sector}` : ""}.`;
+}
 /** No horário, ou sem horário configurado: texto fixo, sem data. */
 // sem "pedido registrado": num restaurante ou numa loja, soa como pedido de compra feito
 export const NO_DATE_NOTICE = "Já avisei a nossa equipe, que responde assim que possível.";

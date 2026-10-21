@@ -14,6 +14,9 @@ import { redirect } from "next/navigation";
 import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
 import { isEmail, text } from "@/lib/validation";
 import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { parseTarget, transferConversation } from "@/lib/transfer";
+import { addNote } from "@/lib/conversation-notes";
+import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
 import { resumeConversationAi } from "@/lib/api-pause";
 import { answerQuestion, deleteTextSource, dismissQuestion, saveTextSource } from "@/lib/knowledge";
 import { logAccess } from "@/lib/access-log";
@@ -99,6 +102,57 @@ export async function memberSend(clientId: string, conversationId: string, formD
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
   const r = await postAgentMessage(ctx.admin, conversationId, text(formData.get("content")), memberAttendant(ctx.member, ctx.email));
   revalidatePath(convPath(clientId, conversationId));
+  return r;
+}
+
+const memberAudit = async (ctx: NonNullable<Awaited<ReturnType<typeof ownConversation>>>, action: string, conversationId: string, after?: Record<string, unknown>) =>
+  audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action, targetType: "conversation", targetId: conversationId, ...(after ? { after } : {}), ...(await requestMeta()) });
+
+const revalidateMemberConversation = (clientId: string, conversationId: string) => {
+  revalidatePath(convPath(clientId, conversationId));
+  revalidatePath(`/cliente/${clientId}/caixa`);
+};
+
+/** Transferir (Caixa de entrada, parte 4): para outra pessoa ou para um setor, com nota interna. */
+export async function memberTransfer(clientId: string, conversationId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await ownConversation(clientId, conversationId);
+  if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
+  const target = parseTarget(formData.get("para"));
+  if (!target) return fail("Escolha para quem transferir.");
+  const r = await transferConversation(ctx.admin, conversationId, memberAttendant(ctx.member, ctx.email), target, formData.get("nota"));
+  if (r.ok) await memberAudit(ctx, "conversa.transferir", conversationId, { para: r.toLabel ?? null });
+  revalidateMemberConversation(clientId, conversationId);
+  return r.ok ? ok(r.message) : fail(r.message);
+}
+
+/** Nota interna na conversa: só a equipe vê. */
+export async function memberAddNote(clientId: string, conversationId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await ownConversation(clientId, conversationId);
+  if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
+  const r = await addNote(ctx.admin, conversationId, formData.get("nota"), memberAttendant(ctx.member, ctx.email));
+  if (r.ok) await memberAudit(ctx, "conversa.nota", conversationId);
+  revalidateMemberConversation(clientId, conversationId);
+  return r;
+}
+
+/** Adiar: a conversa sai das filas até a data (ou até o contato escrever). */
+export async function memberSnooze(clientId: string, conversationId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await ownConversation(clientId, conversationId);
+  if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
+  const until = snoozeTarget(formData.get("ate"), formData.get("data"));
+  if (!(until instanceof Date)) return fail(until.error);
+  const r = await snoozeConversation(ctx.admin, conversationId, memberAttendant(ctx.member, ctx.email), until);
+  if (r.ok) await memberAudit(ctx, "conversa.adiar", conversationId, { ate: until.toISOString() });
+  revalidateMemberConversation(clientId, conversationId);
+  return r;
+}
+
+export async function memberUnsnooze(clientId: string, conversationId: string): Promise<ActionResult> {
+  const ctx = await ownConversation(clientId, conversationId);
+  if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
+  const r = await unsnoozeConversation(ctx.admin, conversationId, memberAttendant(ctx.member, ctx.email));
+  if (r.ok) await memberAudit(ctx, "conversa.tirar_adiamento", conversationId);
+  revalidateMemberConversation(clientId, conversationId);
   return r;
 }
 

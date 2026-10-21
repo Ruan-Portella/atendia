@@ -12,6 +12,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { agencySlug, requireAgency, type AgencyContext } from "@/lib/agency";
 import { attendantOf, can, type Permission } from "@/lib/team";
 import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { parseTarget, transferConversation } from "@/lib/transfer";
+import { addNote } from "@/lib/conversation-notes";
+import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
 import { attendantAuthor, type Attendant } from "@/lib/authors";
 import { answerQuestion } from "@/lib/knowledge";
 import { PORTAL_ROLE_LABELS, isPortalRole, sendMemberLink, type PortalRole } from "@/lib/member";
@@ -738,6 +741,58 @@ export async function releaseConversation(conversationId: string): Promise<Actio
   if (r.ok) await auditPanel("conversa.devolver", { type: "conversation", id: conversationId });
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   revalidatePath("/painel", "layout");
+  return r;
+}
+
+const revalidateConversation = (botId: string, conversationId: string) => {
+  revalidatePath(`/painel/bots/${botId}/conversas/${conversationId}`);
+  revalidatePath("/painel/caixa");
+};
+
+/** Transferir (Caixa de entrada, parte 4): para outra pessoa ou para um setor, com nota interna. */
+export async function transferConversationAction(conversationId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const target = parseTarget(formData.get("para"));
+  if (!target) return fail("Escolha para quem transferir.");
+  const r = await transferConversation(owned.admin, conversationId, await me(), target, formData.get("nota"));
+  if (r.ok) await auditPanel("conversa.transferir", { type: "conversation", id: conversationId }, { after: { para: r.toLabel ?? null } });
+  revalidateConversation(owned.conv.bot_id, conversationId);
+  return r.ok ? ok(r.message) : fail(r.message);
+}
+
+/** Nota interna na conversa: só a equipe vê. */
+export async function addConversationNote(conversationId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const r = await addNote(owned.admin, conversationId, formData.get("nota"), await me());
+  if (r.ok) await auditPanel("conversa.nota", { type: "conversation", id: conversationId });
+  revalidateConversation(owned.conv.bot_id, conversationId);
+  return r;
+}
+
+/** Adiar: a conversa sai das filas até a data (ou até o contato escrever). */
+export async function snoozeConversationAction(conversationId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const until = snoozeTarget(formData.get("ate"), formData.get("data"));
+  if (!(until instanceof Date)) return fail(until.error);
+  const r = await snoozeConversation(owned.admin, conversationId, await me(), until);
+  if (r.ok) await auditPanel("conversa.adiar", { type: "conversation", id: conversationId }, { after: { ate: until.toISOString() } });
+  revalidateConversation(owned.conv.bot_id, conversationId);
+  return r;
+}
+
+export async function unsnoozeConversationAction(conversationId: string): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const r = await unsnoozeConversation(owned.admin, conversationId, await me());
+  if (r.ok) await auditPanel("conversa.tirar_adiamento", { type: "conversation", id: conversationId });
+  revalidateConversation(owned.conv.bot_id, conversationId);
   return r;
 }
 

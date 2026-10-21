@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireMember, requireMemberMfa } from "@/lib/member";
-import { ConversationThread, type ThreadMessage } from "@/components/conversation-thread";
+import { memberAttendant, requireMember, requireMemberMfa } from "@/lib/member";
+import { ConversationThread, withNotes, type ThreadMessage } from "@/components/conversation-thread";
+import { ConversationTools } from "@/components/conversation-tools";
+import { listNotes } from "@/lib/conversation-notes";
+import { transferOptions } from "@/lib/transfer";
+import { listQuickReplies } from "@/lib/quick-replies";
+import { isSnoozed } from "@/lib/snooze";
+import { contactName } from "@/lib/contacts";
 import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
@@ -14,7 +20,7 @@ import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { authorLabel } from "@/lib/authors";
-import { memberForceTakeOver, memberRelease, memberResumeAi, memberSend, memberTakeOver } from "@/app/cliente/actions";
+import { memberAddNote, memberForceTakeOver, memberRelease, memberResumeAi, memberSend, memberSnooze, memberTakeOver, memberTransfer, memberUnsnooze } from "@/app/cliente/actions";
 
 /**
  * A conversa na área do cliente: a página da conversa e o lado direito da Caixa de entrada do portal
@@ -24,7 +30,7 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, bots(sensitive_mode)")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, last_contact_at, snoozed_until, snoozed_at, bots(sensitive_mode)")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
@@ -43,7 +49,9 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   const takeOver = memberTakeOver.bind(null, id, cid);
   // arquivos que o contato mandou (abertos pela rota /api/files)
   const files = await attachmentsOfMessages(admin, (messages ?? []).map((m) => m.id));
-  const allMessages = (messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[];
+  // notas internas e transferências (Caixa de entrada, parte 4): só para quem atende
+  const notes = member.allowHandoff ? await listNotes(admin, cid).catch(() => []) : [];
+  const allMessages = withNotes((messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[], notes);
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   const handoffOpen = member.allowHandoff && !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com ele
@@ -51,6 +59,17 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   const handoffConv = contact ? { ...conv, last_user_at: await lastContactMessageAt(admin, conv.bot_id, contact, conv.contact_id) } : conv;
   // conversa com bebida ou remédio (portão): faixa de aviso e pergunta antes de instrução de pagamento
   const regulated = Boolean(contact) && regulatedConversation(conv.regulated_at as string | null);
+  // transferir, adiar e respostas prontas (Caixa de entrada, parte 4)
+  const me = memberAttendant(member, email);
+  const [options, quickReplies, nameForReplies] = member.allowHandoff
+    ? await Promise.all([
+        handoffOpen ? transferOptions(admin, { agencyId: member.agencyId, clientId: id, meId: member.memberId }) : Promise.resolve({ sectors: [], people: [] }),
+        listQuickReplies(admin, id),
+        contactName(admin, conv.contact_id).then((n) => n ?? leads[0]?.name ?? null),
+      ])
+    : [{ sectors: [], people: [] }, [], null];
+  const heldByAnother = !conv.handled_at && Boolean(conv.takeover_at) && Boolean(conv.assigned_to_id) && conv.assigned_to_id !== member.memberId;
+  const snoozedUntil = isSnoozed(conv) ? (conv.snoozed_until as string) : null;
   const coexistence = regulated && conv.channel === "whatsapp" ? Boolean((await admin.from("whatsapp_channels").select("coexistence").eq("bot_id", conv.bot_id).maybeSingle()).data?.coexistence) : false;
 
   // Tela de chat: preenche o espaço abaixo das abas (a casca do portal rola só o conteúdo);
@@ -84,7 +103,17 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
         <footer className="flex flex-col gap-2 border-t border-line py-3">
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
           <HandoffStatus conv={handoffConv} onTakeOver={takeOver} onResumeAi={memberResumeAi.bind(null, id, cid)} meId={member.memberId} />
-          <HandoffReply conv={handoffConv} meId={member.memberId} onTakeOver={takeOver} onForceTakeOver={memberForceTakeOver.bind(null, id, cid)} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked paymentCheck={regulated} />
+          <HandoffReply conv={handoffConv} meId={member.memberId} onTakeOver={takeOver} onForceTakeOver={memberForceTakeOver.bind(null, id, cid)} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked paymentCheck={regulated} quickReplies={quickReplies} contactName={nameForReplies} attendantName={me.name} />
+          <ConversationTools
+            canTransfer={handoffOpen && !heldByAnother}
+            canSnooze={handoffOpen && conv.assigned_to_id === member.memberId}
+            snoozedUntil={handoffOpen ? snoozedUntil : null}
+            options={options}
+            onTransfer={memberTransfer.bind(null, id, cid)}
+            onNote={memberAddNote.bind(null, id, cid)}
+            onSnooze={memberSnooze.bind(null, id, cid)}
+            onUnsnooze={memberUnsnooze.bind(null, id, cid)}
+          />
         </footer>
       )}
     </div>

@@ -8,6 +8,7 @@ import { audit, requestMeta } from "@/lib/audit";
 import { can } from "@/lib/team";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { deleteSector, parseHolidays, saveHolidays, saveSector, sectorFromForm } from "@/lib/sectors";
+import { deleteQuickReply, saveQuickReply } from "@/lib/quick-replies";
 
 /* Setores e feriados do cliente (Caixa de entrada, parte 1): quem configura o cliente (dono, administrador e editor no escopo). */
 
@@ -55,4 +56,25 @@ export async function saveHolidaysAction(clientId: string, formData: FormData): 
   await auditClient(c.ctx, "cliente.feriados", { type: "client", id: clientId }, { feriados: parsed.holidays.length });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok(parsed.holidays.length ? `${parsed.holidays.length} feriado${parsed.holidays.length === 1 ? "" : "s"} salvo${parsed.holidays.length === 1 ? "" : "s"}.` : "Sem feriados.");
+}
+
+/* Respostas prontas do cliente (Caixa de entrada, parte 4) */
+
+export async function saveQuickReplyAction(clientId: string, replyId: string | null, formData: FormData): Promise<ActionResult> {
+  const c = await configClient(clientId);
+  if (!c) return fail(DENIED);
+  const r = await saveQuickReply(createAdminClient(), { clientId, id: replyId, title: String(formData.get("title") ?? ""), body: String(formData.get("body") ?? "") });
+  if ("error" in r) return fail(r.error);
+  await auditClient(c.ctx, replyId ? "resposta_pronta.editar" : "resposta_pronta.criar", { type: "quick_reply", id: r.id }, { titulo: String(formData.get("title") ?? "").trim() });
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok(replyId ? "Resposta pronta salva." : "Resposta pronta criada.");
+}
+
+export async function deleteQuickReplyAction(clientId: string, replyId: string): Promise<ActionResult> {
+  const c = await configClient(clientId);
+  if (!c) return fail(DENIED);
+  if (!(await deleteQuickReply(createAdminClient(), { clientId, id: replyId }))) return fail("Não foi possível apagar. Tente de novo.");
+  await auditClient(c.ctx, "resposta_pronta.apagar", { type: "quick_reply", id: replyId }, {});
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok("Resposta pronta apagada.");
 }

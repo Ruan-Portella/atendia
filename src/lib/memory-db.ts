@@ -10,7 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 
 /** Embed do PostgREST: a tabela citada no select e a coluna que aponta para ela. */
-const EMBED_FK: Record<string, string> = { routines: "routine_id", agency_members: "member_id", agencies: "agency_id", bots: "bot_id" };
+const EMBED_FK: Record<string, string> = { routines: "routine_id", agency_members: "member_id", agencies: "agency_id", bots: "bot_id", sectors: "sector_id" };
 
 export type MemRow = Record<string, unknown>;
 
@@ -30,6 +30,7 @@ function defaultsOf(table: string, now: string): MemRow {
   if (table === "audit_log") return { created_at: now };
   if (table === "routine_runs") return { status: "active", attempts: 0, failing: false, variables_enc: null, end_reason: null, ended_at: null, held_result: null, idle_turns: 0, started_at: now };
   if (table === "contact_links") return { linked_at: now, unlinked_at: null, source: "pairing", identity_key_hash: null };
+  if (table === "conversation_notes" || table === "quick_replies") return { created_at: now };
   if (table === "fiscal_invoices") return { status: "a_emitir", currency: "brl", number: null, emitted_at: null, emitted_by: null, created_at: now };
   return {};
 }

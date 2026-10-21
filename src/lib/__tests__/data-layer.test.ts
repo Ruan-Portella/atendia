@@ -38,6 +38,8 @@ const OWNER: Record<string, string> = {
   team_whatsapp: "lib/team-whatsapp.ts",
   // comentários do Instagram (E1, parte 4a): o texto e as respostas cifrados
   instagram_comments: "lib/instagram-comments.ts",
+  // notas internas e transferências (Caixa de entrada, parte 4): o texto cifrado
+  conversation_notes: "lib/conversation-notes.ts",
 };
 
 describe("camada única de mensagens e contatos", () => {

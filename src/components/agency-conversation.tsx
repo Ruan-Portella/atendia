@@ -1,10 +1,15 @@
-import { contactDisplayName } from "@/lib/contacts";
+import { contactDisplayName, contactName as contactNameOf } from "@/lib/contacts";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { relativeTime } from "@/lib/utils";
-import { ConversationThread, type ThreadMessage } from "@/components/conversation-thread";
+import { ConversationThread, withNotes, type ThreadMessage } from "@/components/conversation-thread";
+import { ConversationTools } from "@/components/conversation-tools";
+import { listNotes } from "@/lib/conversation-notes";
+import { transferOptions } from "@/lib/transfer";
+import { listQuickReplies } from "@/lib/quick-replies";
+import { isSnoozed } from "@/lib/snooze";
 import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
 import { leadWaiting } from "@/lib/handoff-status";
 import { ConfirmAction } from "@/components/ui/confirm-action";
@@ -12,7 +17,7 @@ import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { conversationState, whatsappWindowOpen, humanAgentEnabled, humanAgentUntil, timeLeft } from "@/lib/presence";
 import { requireAgency } from "@/lib/agency";
-import { can } from "@/lib/team";
+import { attendantOf, can } from "@/lib/team";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadMessages } from "@/lib/messages";
 import { leadsOfConversation } from "@/lib/leads";
@@ -27,7 +32,7 @@ import { firstExceeded } from "@/lib/rate-limit";
 import { loadTemplateChannel, type SendableTemplate, conversationTemplates, ensureResumeTemplate, type ResumeStatus } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, takeOverConversation } from "@/app/painel/actions";
+import { addConversationNote, deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, snoozeConversationAction, takeOverConversation, transferConversationAction, unsnoozeConversationAction } from "@/app/painel/actions";
 import { botGateExemptions, conversationGateCategories } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { GateReviewButton } from "@/components/gate-review-button";
@@ -46,7 +51,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, origin_label, bots(name, client_id, client_name, sensitive_mode)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, origin_label, last_contact_at, snoozed_until, snoozed_at, bots(name, client_id, client_name, sensitive_mode)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -110,7 +115,18 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
 
   // arquivos que o contato mandou (abertos pela rota /api/files)
   const files = await attachmentsOfMessages(createAdminClient(), (messages ?? []).map((m) => m.id));
-  const allMessages = (messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[];
+  // notas internas e transferências (Caixa de entrada, parte 4; tabela interna: service role), no meio das mensagens
+  const notes = await listNotes(createAdminClient(), cid).catch(() => []);
+  const allMessages = withNotes((messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[], notes);
+  // transferir, adiar e respostas prontas (Caixa de entrada, parte 4)
+  const handoffOpen = !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
+  const [options, quickReplies, nameForReplies] = await Promise.all([
+    handoffOpen ? transferOptions(createAdminClient(), { agencyId: agency.id, clientId: bot?.client_id ?? null, meId: member.id }) : Promise.resolve({ sectors: [], people: [] }),
+    listQuickReplies(createAdminClient(), bot?.client_id),
+    contactNameOf(createAdminClient(), conv.contact_id).then((n) => n ?? (contactName || null)),
+  ]);
+  const heldByAnother = !conv.handled_at && Boolean(conv.takeover_at) && Boolean(conv.assigned_to_id) && conv.assigned_to_id !== member.id;
+  const snoozedUntil = isSnoozed(conv) ? (conv.snoozed_until as string) : null;
   // conversa com bebida ou remédio (portão): faixa de aviso e pergunta antes de instrução de pagamento
   const regulated = (isWhatsApp || isInstagram) && regulatedConversation(conv.regulated_at as string | null);
   // itens que o portão acusou nesta conversa: a agência pode pedir "isto não é {categoria}"
@@ -226,7 +242,17 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
           )}
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
           <HandoffStatus conv={handoffConv} onTakeOver={takeOver} onResumeAi={resumeConversationAiFromPanel.bind(null, cid)} meId={member.id} />
-          <HandoffReply conv={handoffConv} meId={member.id} onTakeOver={takeOver} onForceTakeOver={forceTakeOverConversation.bind(null, cid)} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked paymentCheck={regulated} />
+          <HandoffReply conv={handoffConv} meId={member.id} onTakeOver={takeOver} onForceTakeOver={forceTakeOverConversation.bind(null, cid)} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked paymentCheck={regulated} quickReplies={quickReplies} contactName={nameForReplies} attendantName={attendantOf(member).name} />
+          <ConversationTools
+            canTransfer={handoffOpen && !heldByAnother}
+            canSnooze={handoffOpen && conv.assigned_to_id === member.id}
+            snoozedUntil={handoffOpen ? snoozedUntil : null}
+            options={options}
+            onTransfer={transferConversationAction.bind(null, cid)}
+            onNote={addConversationNote.bind(null, cid)}
+            onSnooze={snoozeConversationAction.bind(null, cid)}
+            onUnsnooze={unsnoozeConversationAction.bind(null, cid)}
+          />
         </div>
       </footer>
     </div>

@@ -98,6 +98,7 @@ export function RoutineEditor({
   integrations,
   label,
   withTemplates = false,
+  sectors = [],
 }: {
   action: (fd: FormData) => Promise<ActionResult>;
   initial?: RoutineInput;
@@ -105,9 +106,11 @@ export function RoutineEditor({
   integrations: boolean;
   label: string;
   withTemplates?: boolean;
+  /** os setores do cliente do chatbot (Caixa de entrada, parte 4), para sugerir no campo */
+  sectors?: string[];
 }) {
   const p = (initial as { id?: string } | undefined)?.id ?? "novo";
-  const [r, setR] = useState<RoutineInput>(() => (initial ? structuredClone({ name: initial.name, when_to_use: initial.when_to_use, keywords: initial.keywords, steps: initial.steps, active: initial.active, template: initial.template }) : blank()));
+  const [r, setR] = useState<RoutineInput>(() => (initial ? structuredClone({ name: initial.name, when_to_use: initial.when_to_use, keywords: initial.keywords, steps: initial.steps, active: initial.active, template: initial.template, handoff_sector: initial.handoff_sector ?? null }) : blank()));
   const [keywords, setKeywords] = useState(() => (initial?.keywords ?? []).map((k) => k.toUpperCase()).join(", "));
 
   const setSteps = (fn: (steps: RoutineStep[]) => RoutineStep[]) => setR((cur) => ({ ...cur, steps: fn(cur.steps) }));
@@ -192,6 +195,14 @@ export function RoutineEditor({
         <label className="label" htmlFor={`rwhen-${p}`}>Quando usar (é por aqui que a IA reconhece o assunto)</label>
         <textarea id={`rwhen-${p}`} required rows={2} maxLength={500} value={r.when_to_use} onChange={(e) => setR({ ...r, when_to_use: e.target.value })} className="input" placeholder="O cliente pede segunda via de boleto, conta ou fatura." />
         <p className="mt-1 text-xs text-muted">A mensagem que é só uma palavra-chave começa o roteiro na hora, sem diferença de maiúsculas e acentos.</p>
+      </div>
+      <div>
+        <label className="label" htmlFor={`rsector-${p}`}>Setor da equipe (opcional)</label>
+        <input id={`rsector-${p}`} list={`rsectors-${p}`} maxLength={40} value={r.handoff_sector ?? ""} onChange={(e) => setR({ ...r, handoff_sector: e.target.value || null })} className="input max-w-[320px]" placeholder={sectors[0] ?? "Financeiro"} />
+        <datalist id={`rsectors-${p}`}>
+          {sectors.map((s) => <option key={s} value={s} />)}
+        </datalist>
+        <p className="mt-1 text-xs text-muted">Quando este roteiro passa a conversa para a equipe, ela vai para este setor do cliente (pelo nome). Vazio, ou sem setor com esse nome, segue a triagem de sempre.</p>
       </div>
 
       <div className="flex flex-col gap-3">

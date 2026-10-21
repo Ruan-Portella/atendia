@@ -3,24 +3,27 @@ import { handoffOrder, handoffStatus, type HandoffState } from "./handoff-status
 import { nextOpening, type BusinessHours } from "./handoff-hours";
 import { contactLabels } from "./contacts";
 import type { Sector } from "./sectors";
+import { isSnoozed } from "./snooze";
 
 /*
  * Caixa de entrada (parte 3; spec, Peça 11 e Telas seção 6): o atendimento humano aberto, em filas.
  * Minhas (o que é seu, assumido ou entregue pelo rodízio), Não atribuídas, cada setor, Fora do
- * horário (pedidos que chegaram com a equipe fora) e Todas. Quem vê o quê: a conversa sem setor
+ * horário (pedidos que chegaram com a equipe fora), Adiadas (parte 4: saem das outras filas até a
+ * data, ou até o contato escrever) e Todas. Quem vê o quê: a conversa sem setor
  * aparece para todos do escopo; a do setor, para as pessoas do setor, para quem está com ela e
  * para quem vê todos os setores (dono, administrador, editor e gestor da área do cliente).
  */
 
-export type Queue = "minhas" | "nao_atribuidas" | "fora" | "todas" | `setor:${string}`;
+export type Queue = "minhas" | "nao_atribuidas" | "fora" | "adiadas" | "todas" | `setor:${string}`;
 export const BASE_QUEUES: Array<{ key: Queue; label: string }> = [
   { key: "minhas", label: "Minhas" },
   { key: "nao_atribuidas", label: "Não atribuídas" },
   { key: "fora", label: "Fora do horário" },
+  { key: "adiadas", label: "Adiadas" },
   { key: "todas", label: "Todas abertas" },
 ];
 
-export const isQueue = (v: unknown): v is Queue => typeof v === "string" && (["minhas", "nao_atribuidas", "fora", "todas"].includes(v) || /^setor:[0-9a-f-]{36}$/i.test(v));
+export const isQueue = (v: unknown): v is Queue => typeof v === "string" && (["minhas", "nao_atribuidas", "fora", "adiadas", "todas"].includes(v) || /^setor:[0-9a-f-]{36}$/i.test(v));
 
 export interface InboxBot {
   id: string;
@@ -51,6 +54,10 @@ export interface InboxItem {
   since: string;
   requestedAt: string | null;
   outsideHours: boolean;
+  /** Adiada agora: até quando (fila Adiadas). */
+  snoozedUntil: string | null;
+  /** O adiamento acabou (a data passou ou o contato escreveu) e ninguém mexeu ainda. */
+  snoozeEnded: boolean;
 }
 
 const OPEN_DAYS = 30;
@@ -70,6 +77,9 @@ interface Row {
   last_contact_at: string | null;
   last_reply_at: string | null;
   last_message_at: string;
+  assigned_at?: string | null;
+  snoozed_until?: string | null;
+  snoozed_at?: string | null;
 }
 
 /** A pessoa vê esta conversa na Caixa de entrada? Pura. */
@@ -80,6 +90,8 @@ export function visibleTo(r: Pick<Row, "sector_id" | "assigned_to_id">, o: { meI
 
 /** A conversa está nesta fila? Pura. */
 export function inQueue(i: InboxItem, q: Queue, meId: string): boolean {
+  // adiada: só na fila Adiadas, até voltar
+  if (q === "adiadas" || i.snoozedUntil) return q === "adiadas" && Boolean(i.snoozedUntil);
   if (q === "todas") return true;
   if (q === "minhas") return i.assignedId === meId;
   if (q === "nao_atribuidas") return !i.assignedId;
@@ -96,7 +108,7 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
   const now = o.now ?? new Date();
   const { data, error } = await db
     .from("conversations")
-    .select("id, bot_id, channel, contact_id, sector_id, assigned_to_id, assigned_to_name, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at")
+    .select("id, bot_id, channel, contact_id, sector_id, assigned_to_id, assigned_to_name, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at, assigned_at, snoozed_until, snoozed_at")
     .in("bot_id", o.bots.map((b) => b.id))
     .or("handoff_requested_at.not.is.null,takeover_at.not.is.null")
     .is("handled_at", null)
@@ -113,6 +125,7 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
     const bot = bots.get(r.bot_id);
     if (!st || !bot) return [];
     const sector = r.sector_id ? sectors.get(r.sector_id) : undefined;
+    const snoozed = isSnoozed(r, now.getTime());
     // fora do horário: o pedido chegou com a equipe fora (horário do setor, senão o do chatbot; feriados do cliente)
     const hours = sector?.hours ?? bot.human_handoff?.hours ?? null;
     const outsideHours = Boolean(r.handoff_requested_at) && !r.takeover_at && nextOpening(hours, new Date(r.handoff_requested_at!), o.holidays.get(bot.client_id ?? "") ?? []) !== null;
@@ -132,9 +145,12 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
       state: st.state,
       urgent: st.urgent,
       waiting: st.waiting,
-      since: (st.state === "em_atendimento" ? r.takeover_at : r.handoff_requested_at ?? r.last_contact_at) ?? r.last_message_at,
+      // em atendimento: desde que chegou a quem está com ela (assumiu ou recebeu na transferência)
+      since: (st.state === "em_atendimento" ? (r.assigned_at ?? r.takeover_at) : r.handoff_requested_at ?? r.last_contact_at) ?? r.last_message_at,
       requestedAt: r.handoff_requested_at,
       outsideHours,
+      snoozedUntil: snoozed ? r.snoozed_until! : null,
+      snoozeEnded: Boolean(r.snoozed_until) && !snoozed,
     }];
   });
 }

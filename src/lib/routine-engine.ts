@@ -9,6 +9,8 @@ import { IG_APP_AUTHOR, PHONE_AUTHOR } from "./authors";
 import { parseComponents, type MessageComponent } from "./components";
 import { DATA_KIND_LABEL, routineUsesActions, type DataKind, type RoutineRow, type RoutineStep } from "./routines";
 import type { ActionIdentity } from "./actions";
+import { listSectors } from "./sectors";
+import { matchSector } from "./handoff-routing";
 import type { PhotoReading } from "./photo-note";
 import type { PhotoVerdict } from "./photo-reading";
 import {
@@ -303,6 +305,20 @@ async function saveRun(db: SupabaseClient, run: ActiveRun, patch: { stepId?: str
 export type Moved = { kind: "step" } | { kind: "completed" } | { kind: "handoff"; reason: string };
 
 /**
+ * O roteiro passa a conversa para a equipe (Caixa de entrada, parte 4): com o setor escolhido no
+ * roteiro, a conversa vai para ele (pelo nome, entre os setores do cliente do chatbot); o pedido de
+ * atendente que vem em seguida usa o setor que a conversa já tem. Sem setor com esse nome, nada muda.
+ */
+export async function routeToRoutineSector(db: SupabaseClient, run: ActiveRun): Promise<void> {
+  const name = run.routine.handoff_sector?.trim();
+  if (!name) return;
+  const { data: bot } = await db.from("bots").select("client_id").eq("id", run.botId).maybeSingle();
+  if (!bot?.client_id) return;
+  const hit = matchSector(await listSectors(db, [bot.client_id as string]), name);
+  if (hit) await db.from("conversations").update({ sector_id: hit.id }).eq("id", run.conversationId);
+}
+
+/**
  * Vai para o próximo lugar: grava o passo (zerando as tentativas), conclui ou passa para a equipe
  * (abandonado, handoff). No passo novo que pede um dado, já preenche o que dá: o telefone desta
  * conversa do WhatsApp ou o dado que veio nas mensagens desta vez (nunca um valor já usado). Com a
@@ -320,6 +336,7 @@ async function moveTo(db: SupabaseClient, run: ActiveRun, next: NextStep, ctx: {
     }
     if (n.kind === "handoff") {
       await finishRun(db, run.id, "abandoned", ctx.endReason ?? "handoff");
+      await routeToRoutineSector(db, run).catch(() => undefined);
       return { kind: "handoff", reason: ctx.why };
     }
     const step = n.step;
@@ -518,6 +535,7 @@ export async function routinePreTurn(
           return { ...turn, fixed: { kind: "cancelled", text: ROUTINE_CANCELLED_TEXT } };
         }
         await finishRun(db, run.id, "abandoned", "handoff");
+        await routeToRoutineSector(db, run).catch(() => undefined);
         return { ...turn, fixed: { kind: "handoff", reason: `Roteiro "${run.routine.name}": ${currentStep(run).type === "foto" ? "não deu para receber a foto pedida" : "não deu para conferir o dado pedido"}` } };
       }
     } else if (click.stepId === run.stepId) {

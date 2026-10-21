@@ -163,6 +163,15 @@ export async function contactDisplayName(db: SupabaseClient, contactId: string):
   return typeof name === "string" && name.trim() ? name.trim().slice(0, 80) : null;
 }
 
+/** O nome do contato para as respostas prontas ({nome}): o que a empresa mandou, senão o do perfil; sem nome, null. */
+export async function contactName(db: SupabaseClient, contactId: string | null | undefined): Promise<string | null> {
+  if (!contactId) return null;
+  const { data } = await db.from("contacts").select("name, display").eq("id", contactId).maybeSingle();
+  const display = (data?.display as { name?: unknown } | null)?.name;
+  const name = (typeof display === "string" && display.trim()) || (data?.name as string | null)?.trim() || "";
+  return name ? name.slice(0, 80) : null;
+}
+
 /** external_id do contato (para as ações e os webhooks). */
 export async function contactExternalId(db: SupabaseClient, contactId: string): Promise<string | null> {
   const { data } = await db.from("contacts").select("external_id_enc").eq("id", contactId).maybeSingle();

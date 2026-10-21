@@ -68,12 +68,12 @@ export async function saveRoutine(botId: string, routineId: string | null, fd: F
   const problem = routineProblem(input, { actions: (actions ?? []) as Array<{ name: string; outcomes: string[] }>, others: rest, integrations });
   if (problem) return fail(problem);
 
-  const row = { bot_id: bot.id, name: input.name, when_to_use: input.when_to_use, keywords: input.keywords, steps: input.steps, active: input.active, template: input.template, updated_at: new Date().toISOString() };
+  const row = { bot_id: bot.id, name: input.name, when_to_use: input.when_to_use, keywords: input.keywords, steps: input.steps, active: input.active, template: input.template, handoff_sector: input.handoff_sector ?? null, updated_at: new Date().toISOString() };
   const { error } = routineId ? await db.from("routines").update(row).eq("id", routineId).eq("bot_id", bot.id) : await db.from("routines").insert(row);
   if (error) return fail(/duplicate|unique/i.test(error.message) ? "Já existe um roteiro com esse nome neste chatbot." : "Não foi possível salvar. Tente de novo.");
   // quem estava no meio deste roteiro termina (o passo pode ter mudado); se pedir de novo, começa do 1
   if (routineId) await endRoutineRuns(db, routineId, "routine_changed");
-  await auditRoutine(ctx, routineId ? "roteiros.editar" : "roteiros.criar", bot.id, { nome: input.name, passos: input.steps.length, palavras_chave: input.keywords, ativo: input.active, com_acao: routineUsesActions(input), modelo: input.template });
+  await auditRoutine(ctx, routineId ? "roteiros.editar" : "roteiros.criar", bot.id, { nome: input.name, passos: input.steps.length, palavras_chave: input.keywords, ativo: input.active, com_acao: routineUsesActions(input), modelo: input.template, setor: input.handoff_sector ?? null });
   await markAnalysisDue(db, bot.id);
   revalidatePath(`/painel/bots/${bot.id}`);
   return ok(routineId ? "Roteiro salvo." : "Roteiro criado.");
