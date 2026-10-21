@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { hashId } from "@/lib/rate-limit";
 import { passwordOnlySession } from "@/lib/login-code";
 import { DEVICE_COOKIE, DEVICE_COOKIE_MAX_AGE } from "@/lib/person-signals";
+import { hasSessionCookie, isScannerPath } from "@/lib/bot-guard";
 
 /** Cookie que marca "esta sessão já foi registrada hoje, deste IP" (evita gravar a cada página). */
 const ACCESS_MARK = "bv_al";
@@ -21,6 +22,9 @@ const PLATFORM_ICONS = /^\/(favicon\.ico|icon\.svg|apple-icon\.png)$/;
  * (No Next 16 o antigo middleware.ts chama-se proxy.ts.)
  */
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
+  // varredura de robô (.env, .git, wp-admin, .php…), também nos domínios das agências: 404 na hora,
+  // sem sessão, sem página e sem registro
+  if (isScannerPath(request.nextUrl.pathname)) return new NextResponse(null, { status: 404, headers: { "Cache-Control": "public, max-age=86400" } });
   const customHost = isCustomHost(request.headers.get("host"));
   // API pública (/api/v1): só no domínio do BoaVoz, sem sessão (a chave é conferida na rota)
   if (/^\/api\/v1(\/|$)/.test(request.nextUrl.pathname)) {
@@ -41,22 +45,26 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
 
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
-        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
-      },
-    },
-  });
+  // sem o cookie de sessão (visitante ou robô), não há sessão para renovar nem conferir: o pedido
+  // segue sem tocar no Supabase (Proteção contra robôs)
+  const supabase = hasSessionCookie(request.cookies.getAll().map((c) => c.name))
+    ? createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+            response = NextResponse.next({ request });
+            cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+          },
+        },
+      })
+    : null;
 
   // getClaims valida o JWT localmente (chave pública em cache) em vez de consultar o Auth
   // a cada requisição, como faz getUser: é a diferença entre ~5 ms e ~300 ms por página.
-  const { data: claims } = await supabase.auth.getClaims();
+  const claims = supabase ? (await supabase.auth.getClaims()).data : null;
   const user = claims?.claims?.sub ? claims.claims : null;
 
   const path = request.nextUrl.pathname;
@@ -70,7 +78,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // sem senha (Entrada e docs, parte 3): a sessão aberta só com senha sai, e a pessoa entra pelo
   // código no e-mail ou pelo Google (os cookies apagados vão junto no redirecionamento)
   if (user && (path.startsWith("/painel") || path === "/comecar") && passwordOnlySession(user.amr)) {
-    await supabase.auth.signOut({ scope: "local" });
+    await supabase!.auth.signOut({ scope: "local" });
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
