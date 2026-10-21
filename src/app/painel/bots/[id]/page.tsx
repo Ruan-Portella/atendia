@@ -74,6 +74,7 @@ import { HandoffBadge } from "@/components/handoff-badge";
 import { handoffStatus } from "@/lib/handoff-status";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, NO_DATE_NOTICE, nextOpening, whenLabel, type HumanHandoff } from "@/lib/handoff-hours";
 import { SIGNATURE_FORMATS, SIGNATURE_LABEL } from "@/lib/signature";
+import { TICKET_SUBJECTS_MAX, type TicketForm } from "@/lib/tickets";
 import { HUMAN_ONLY_NOTICE } from "@/lib/chat";
 import { GATE_TEXTS } from "@/lib/gate/rules";
 import { TemplateField } from "@/components/template-field";
@@ -185,6 +186,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const appearance = bot.appearance ?? {};
   const leadCapture = bot.lead_capture ?? {};
   const handoff = (bot.human_handoff ?? {}) as HumanHandoff;
+  // chamados no chat do site (Caixa de entrada, parte 7a): o que está guardado, ligado ou não
+  const ticketForm = (bot.ticket_form ?? null) as TicketForm | null;
   // pedidos fora do assunto (trava de escopo): separados das perguntas sem resposta; tabela interna,
   // lida com a service role depois de a sessão confirmar o dono do chatbot
   const taggedSources = tab === "fontes" ? ((await supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).not("context", "is", null)).count ?? 0) : 0;
@@ -603,6 +606,34 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <span className="block text-xs text-muted">Com um toque, o visitante pede atendente sem precisar escrever; a conversa aparece em Conversas. Sem o botão, ele ainda pode pedir escrevendo.</span>
                   </span>
                 </label>
+              </section>
+
+              <section className="flex flex-col gap-3 border-t border-line pt-4">
+                <h3 className="text-sm font-semibold">Chamados no chat do site</h3>
+                <p className="-mt-2 text-xs text-muted">O visitante abre um chamado com nome, e-mail, a descrição e, se você quiser, o telefone e o assunto. Ele recebe um protocolo, vira lead e o pedido entra na Caixa de entrada; a resposta chega no e-mail dele. O assunto com o nome de um setor do cliente vai para esse setor.</p>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" name="ticket_enabled" defaultChecked={Boolean(ticketForm?.enabled)} className="mt-1" />
+                  <span>Receber chamados pelo chat do site</span>
+                </label>
+                <fieldset className="flex flex-col gap-1.5 text-sm">
+                  <legend className="label">Como aparece</legend>
+                  <label className="flex items-start gap-2"><input type="radio" name="ticket_mode" value="aba" defaultChecked={ticketForm?.mode !== "sozinho"} className="mt-1" /><span>Na aba &ldquo;Abrir chamado&rdquo;, ao lado da conversa com o assistente</span></label>
+                  <label className="flex items-start gap-2"><input type="radio" name="ticket_mode" value="sozinho" defaultChecked={ticketForm?.mode === "sozinho"} className="mt-1" /><span>Só o formulário de chamado (sem a conversa)</span></label>
+                </fieldset>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="ticket_phone" className="label">Telefone</label>
+                    <select id="ticket_phone" name="ticket_phone" defaultValue={ticketForm?.phone ?? "nao"} className="input">
+                      <option value="nao">Não pedir</option>
+                      <option value="opcional">Pedir, opcional</option>
+                      <option value="obrigatorio">Pedir, obrigatório</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="ticket_subjects" className="label">Assuntos (um por linha, até {TICKET_SUBJECTS_MAX}; vazio: sem o campo)</label>
+                    <textarea id="ticket_subjects" name="ticket_subjects" rows={4} defaultValue={(ticketForm?.subjects ?? []).join("\n")} className="input" placeholder={"Financeiro\nTroca e devolução\nOutro assunto"} />
+                  </div>
+                </div>
               </section>
 
               <section className="flex flex-col gap-3 border-t border-line pt-4">

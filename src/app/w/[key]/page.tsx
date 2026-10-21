@@ -5,8 +5,15 @@ import { ChatWindow } from "@/components/chat-window";
 import { WidgetFrame } from "@/components/widget-frame";
 import { initials } from "@/lib/utils";
 import { isBotSize } from "@/lib/plans";
+import { ticketFormOf } from "@/lib/tickets";
 
 export const metadata = { title: { absolute: "Chat" }, robots: { index: false } };
+
+/** O formulário de chamado para o widget (só o que a tela usa). */
+function publicTicket(raw: unknown) {
+  const f = ticketFormOf(raw);
+  return f ? { mode: f.mode, phone: f.phone, subjects: f.subjects } : null;
+}
 
 /** Conteúdo do iframe do widget e link direto para Instagram/WhatsApp. */
 export default async function WidgetPage({ params, searchParams }: PageProps<"/w/[key]">) {
@@ -29,7 +36,7 @@ export default async function WidgetPage({ params, searchParams }: PageProps<"/w
           channel="widget"
           embedded
           identity={identity}
-          bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color: bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d", avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button) }}
+          bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color: bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d", avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button), ticket: publicTicket(bot.ticket_form) }}
         />
       )}
     </WidgetFrame>

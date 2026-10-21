@@ -21,6 +21,15 @@ export interface ChatBotPublic {
   privacyUrl?: string | null;
   /** botão "Falar com uma pessoa" (Bot → Atendimento) */
   handoffButton?: boolean;
+  /** chamados no chat do site (Caixa de entrada, parte 7a): a aba "Abrir chamado" ou só o formulário */
+  ticket?: TicketPublic | null;
+}
+
+/** O formulário de chamado do chatbot (tickets.ts TicketForm, sem o que é do servidor). */
+export interface TicketPublic {
+  mode: "aba" | "sozinho";
+  phone: "nao" | "opcional" | "obrigatorio";
+  subjects: string[];
 }
 
 type HandoffMode = "bot" | "requested" | "agent";
@@ -237,6 +246,8 @@ export function ChatWindow({
     return getOrCreateVisitorId(storageKey);
   });
   const [input, setInput] = useState("");
+  // chamados (parte 7a): com a aba, a pessoa troca entre a conversa e o formulário; sozinho, só o formulário
+  const [view, setView] = useState<"chat" | "chamado">(bot.ticket?.mode === "sozinho" ? "chamado" : "chat");
   const [errorText, setErrorText] = useState<string | null>(null);
   // o assistente não pode responder agora (cota, teste, falha): mostra o formulário de contato
   const [fallback, setFallback] = useState<string | null>(null);
@@ -505,7 +516,7 @@ export function ChatWindow({
         </div>
         <div className="min-w-0 leading-tight">
           <div className="text-[15px] font-semibold">{bot.name}</div>
-          <div className="text-xs opacity-85">{bot.clientName} · responde na hora</div>
+          <div className="text-xs opacity-85">{bot.clientName} · {bot.ticket?.mode === "sozinho" ? "abra um chamado" : "responde na hora"}</div>
         </div>
         {close && (
           <button type="button" onClick={close} aria-label="Fechar" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
@@ -514,6 +525,19 @@ export function ChatWindow({
         )}
       </div>
 
+      {bot.ticket?.mode === "aba" && (
+        <div className="flex border-b border-[#e1e6ea] bg-white text-[13px] font-semibold" role="tablist">
+          {(["chat", "chamado"] as const).map((v) => (
+            <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)} className="flex-1 border-b-2 px-3 py-2" style={view === v ? { borderColor: bot.color, color: bot.color } : { borderColor: "transparent", color: "#4c5551" }}>
+              {v === "chat" ? "Conversar" : "Abrir chamado"}
+            </button>
+          ))}
+        </div>
+      )}
+      {bot.ticket && view === "chamado" ? (
+        <TicketPanel bot={bot} ticket={bot.ticket} apiBase={apiBase} visitorId={visitorId} storageKey={storageKey} onBack={bot.ticket.mode === "aba" ? () => setView("chat") : undefined} />
+      ) : (
+      <>
       <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto bg-[#f4f6f8] p-3.5">
         <Bubble side="left">{bot.welcome}</Bubble>
         {showSuggestions && (
@@ -598,6 +622,8 @@ export function ChatWindow({
         </button>
       </form>
       )}
+      </>
+      )}
       <p className="px-3 pb-1 text-center text-[10.5px] leading-snug text-[#8a938e]">
         A conversa fica registrada para o atendimento.{bot.privacyUrl ? <> <a href={bot.privacyUrl} target="_blank" rel="noopener" className="underline">Privacidade</a></> : null}
       </p>
@@ -607,6 +633,94 @@ export function ChatWindow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Abrir chamado (Caixa de entrada, parte 7a): nome, e-mail, telefone (se o chatbot pede), assunto
+ * (se há lista) e descrição. O protocolo fica guardado no navegador, para acompanhar depois.
+ */
+function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { bot: ChatBotPublic; ticket: TicketPublic; apiBase: string; visitorId: string | null; storageKey: string; onBack?: () => void }) {
+  const [state, setState] = useState<"idle" | "sending">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [protocol, setProtocol] = useState<string | null>(null);
+  const field = "rounded-lg border border-[#e1e6ea] bg-white px-3 py-2 text-sm outline-none focus:border-[#9aa39e]";
+
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const get = (k: string) => String(fd.get(k) ?? "").trim();
+    setState("sending");
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/widget/ticket`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: bot.key, visitorId, name: get("name"), email: get("email"), phone: get("phone") || null, subject: get("subject") || null, description: get("description") }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { protocol?: string; message?: string };
+      if (!res.ok || !j.protocol) {
+        setError(j.message ?? "Confira os dados e tente de novo.");
+        return;
+      }
+      setProtocol(j.protocol);
+      try {
+        const key = `${storageKey}:chamados`;
+        const saved = JSON.parse(localStorage.getItem(key) ?? "[]") as Array<{ protocol: string; at: string }>;
+        localStorage.setItem(key, JSON.stringify([{ protocol: j.protocol, at: new Date().toISOString() }, ...saved].slice(0, 10)));
+      } catch {
+        // navegador sem armazenamento: o protocolo continua na tela e no e-mail
+      }
+    } catch {
+      setError("Sem conexão. Tente de novo.");
+    } finally {
+      setState("idle");
+    }
+  }
+
+  if (protocol) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#f4f6f8] p-6 text-center">
+        <p className="text-[15px] font-semibold">Chamado aberto!</p>
+        <p className="text-sm text-[#4c5551]">Seu protocolo é</p>
+        <p className="rounded-lg bg-white px-4 py-2 font-mono text-lg font-bold tracking-wider" style={{ color: bot.color }}>{protocol}</p>
+        <p className="text-[13px] text-[#4c5551]">A equipe de {bot.clientName} responde no seu e-mail. Guarde o protocolo para acompanhar.</p>
+        <div className="flex flex-wrap justify-center gap-2 pt-1">
+          <button type="button" onClick={() => setProtocol(null)} className="rounded-full border bg-white px-3 py-1.5 text-[13px] font-medium" style={{ borderColor: bot.color, color: bot.color }}>Abrir outro chamado</button>
+          {onBack && <button type="button" onClick={onBack} className="rounded-full px-3 py-1.5 text-[13px] font-medium text-white" style={{ background: bot.color }}>Voltar à conversa</button>}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={submit} className="flex flex-1 flex-col gap-2 overflow-y-auto bg-[#f4f6f8] p-3.5">
+      <p className="text-[13px] text-[#4c5551]">Conte o que aconteceu: a equipe de {bot.clientName} responde no seu e-mail, com um protocolo para acompanhar.</p>
+      <label className="sr-only" htmlFor={`t-name-${bot.key}`}>Nome</label>
+      <input id={`t-name-${bot.key}`} name="name" required minLength={2} maxLength={80} placeholder="Seu nome" autoComplete="name" className={field} />
+      <label className="sr-only" htmlFor={`t-email-${bot.key}`}>E-mail</label>
+      <input id={`t-email-${bot.key}`} name="email" type="email" required maxLength={200} placeholder="Seu e-mail" autoComplete="email" className={field} />
+      {ticket.phone !== "nao" && (
+        <>
+          <label className="sr-only" htmlFor={`t-phone-${bot.key}`}>Telefone</label>
+          <input id={`t-phone-${bot.key}`} name="phone" type="tel" required={ticket.phone === "obrigatorio"} maxLength={40} placeholder={ticket.phone === "obrigatorio" ? "Telefone com DDD" : "Telefone com DDD (opcional)"} autoComplete="tel" className={field} />
+        </>
+      )}
+      {ticket.subjects.length > 0 && (
+        <>
+          <label className="sr-only" htmlFor={`t-subject-${bot.key}`}>Assunto</label>
+          <select id={`t-subject-${bot.key}`} name="subject" required defaultValue="" className={field}>
+            <option value="" disabled>Assunto</option>
+            {ticket.subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </>
+      )}
+      <label className="sr-only" htmlFor={`t-desc-${bot.key}`}>Descrição</label>
+      <textarea id={`t-desc-${bot.key}`} name="description" required minLength={10} maxLength={2000} rows={5} placeholder="O que aconteceu? Quanto mais detalhe, mais rápido a equipe resolve." className={`${field} resize-none`} />
+      {error && <p className="text-[12px] text-[#b23a3a]">{error}</p>}
+      <button type="submit" disabled={state === "sending"} className="rounded-lg px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-60" style={{ background: bot.color }}>
+        {state === "sending" ? "Abrindo…" : "Abrir chamado"}
+      </button>
+    </form>
   );
 }
 

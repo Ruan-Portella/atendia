@@ -104,6 +104,7 @@ export function InboxView({
                   <span>{CHANNEL[i.channel] ?? i.channel}</span>
                   <span>· {showClient ? `${i.clientName} · ` : ""}{i.botName}</span>
                   {i.sectorName && <span className="rounded-full bg-ground px-1.5 font-medium text-ink-2">{i.sectorName}</span>}
+                  {i.ticketProtocol && <span className="rounded-full bg-brand-soft px-1.5 font-mono font-medium text-brand">chamado {i.ticketProtocol}</span>}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 text-xs">
                   <span className={i.urgent ? "font-semibold text-danger" : i.waiting ? "text-amber-ink" : i.state === "com_ia" ? "text-muted" : "text-brand"}>{i.urgent ? "urgente · " : ""}{i.aiPaused ? "IA pausada pela integração" : STATE[i.state]}</span>

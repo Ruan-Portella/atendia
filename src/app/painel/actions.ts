@@ -14,6 +14,7 @@ import { attendantOf, can, type Permission } from "@/lib/team";
 import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { parseTarget, transferConversation } from "@/lib/transfer";
 import { isSignatureFormat } from "@/lib/signature";
+import { parseTicketForm } from "@/lib/tickets";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
 import { attendantAuthor, type Attendant } from "@/lib/authors";
@@ -352,6 +353,10 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
     const regulated = parseRegulatedChannel(f);
     if ("error" in regulated) return fail(regulated.error);
     patch.regulated_channel = regulated.value;
+    // chamados no chat do site (Caixa de entrada, parte 7a)
+    const ticket = parseTicketForm(f);
+    if ("error" in ticket) return fail(ticket.error);
+    patch.ticket_form = ticket.value;
   }
   if (!Object.keys(patch).length && !("extra_instructions" in f) && !("welcome" in f)) return fail("Nada para salvar.");
 

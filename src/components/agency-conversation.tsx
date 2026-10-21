@@ -10,6 +10,7 @@ import { listNotes } from "@/lib/conversation-notes";
 import { transferOptions } from "@/lib/transfer";
 import { listQuickReplies } from "@/lib/quick-replies";
 import { isSnoozed } from "@/lib/snooze";
+import { TICKET_STATUS_LABEL, type TicketStatus } from "@/lib/tickets";
 import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
 import { leadWaiting } from "@/lib/handoff-status";
 import { ConfirmAction } from "@/components/ui/confirm-action";
@@ -51,7 +52,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, origin_label, last_contact_at, snoozed_until, snoozed_at, bots(name, client_id, client_name, sensitive_mode)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, origin_label, last_contact_at, snoozed_until, snoozed_at, ticket_protocol, ticket_status, ticket_subject, bots(name, client_id, client_name, sensitive_mode)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -149,6 +150,9 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
           )}
           <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa {relativeTime(conv.started_at)} <ConversationStateBadge conv={conv} withTime />{sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">dados sensíveis</span>}</h1>
           <p className="text-xs text-muted">canal: {conv.channel}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
+          {conv.ticket_protocol && (
+            <p className="mt-1 text-xs font-semibold text-brand">Chamado <span className="font-mono">{conv.ticket_protocol as string}</span>{conv.ticket_subject ? ` · ${conv.ticket_subject as string}` : ""} · {TICKET_STATUS_LABEL[(conv.ticket_status as TicketStatus) ?? "aberto"]}</p>
+          )}
           {gateCats.length > 0 && (
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>O portão acusou:</span>

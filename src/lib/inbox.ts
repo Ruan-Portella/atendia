@@ -68,6 +68,8 @@ export interface InboxItem {
   state: HandoffState | "com_ia";
   /** Com a IA, mas pausada pela integração (API) até agora. */
   aiPaused?: boolean;
+  /** Chamado do chat do site (parte 7a): o protocolo. */
+  ticketProtocol?: string | null;
   urgent: boolean;
   waiting: boolean;
   /** Desde quando espera: o pedido de atendente, ou a última mensagem do contato sem resposta. */
@@ -98,6 +100,7 @@ interface Row {
   last_reply_at: string | null;
   last_message_at: string;
   ai_paused_until?: string | null;
+  ticket_protocol?: string | null;
   assigned_at?: string | null;
   snoozed_until?: string | null;
   snoozed_at?: string | null;
@@ -131,7 +134,7 @@ export function inQueue(i: InboxItem, q: Queue, meId: string): boolean {
 export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; sectors: Sector[]; holidays: Map<string, string[]>; meId: string; mySectorIds: string[]; seeAllSectors: Set<string>; now?: Date }): Promise<InboxItem[]> {
   if (!o.bots.length) return [];
   const now = o.now ?? new Date();
-  const cols = "id, bot_id, channel, contact_id, sector_id, assigned_to_id, assigned_to_name, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at, assigned_at, snoozed_until, snoozed_at, ai_paused_until";
+  const cols = "id, bot_id, channel, contact_id, sector_id, assigned_to_id, assigned_to_name, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at, assigned_at, snoozed_until, snoozed_at, ai_paused_until, ticket_protocol";
   const botIds = o.bots.map((b) => b.id);
   const [{ data, error }, { data: aiData }] = await Promise.all([
     db
@@ -218,6 +221,7 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
       since: (st.state === "em_atendimento" ? (r.assigned_at ?? r.takeover_at) : r.handoff_requested_at ?? r.last_contact_at) ?? r.last_message_at,
       requestedAt: r.handoff_requested_at,
       outsideHours,
+      ticketProtocol: r.ticket_protocol ?? null,
       snoozedUntil: snoozed ? r.snoozed_until! : null,
       snoozeEnded: Boolean(r.snoozed_until) && !snoozed,
     }];
