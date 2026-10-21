@@ -80,6 +80,10 @@ Quando o assistente não acha a resposta na base, ele diz que não tem a informa
 
 Na aba Personalidade ficam o nome do assistente, o tom (por exemplo, amigável e direto), o idioma, as instruções da empresa e os assuntos que o negócio também atende. O "teste ao vivo" mostra como o assistente responde antes de ligar os canais. A aparência do chat do site (cores, logo, saudação, perguntas sugeridas) fica na aba Aparência e marca.
 
+## Memória do assistente
+
+Na aba Personalidade do chatbot, a Memória do contato faz o assistente lembrar, de uma conversa para outra, o que ajuda no atendimento: o nome que a pessoa prefere, o produto de sempre, o tamanho que ela usa (até 10 fatos curtos, só naquele chatbot). Os fatos são anotados por uma IA uns 30 minutos depois de a conversa parar e valem 180 dias desde a última atualização. Nunca entram saúde, religião, política, documentos, dados de pagamento, senhas, endereço completo, telefone ou e-mail. O assistente usa a memória com naturalidade, sem listar o que sabe, e segue o que a pessoa disser agora se algo mudou; se ela pedir para ele esquecer, ele apaga na hora. A memória aparece na ficha do contato, com o botão Apagar a memória. Vem desligada; desligar apaga as memórias do chatbot, e ligar o modo dados sensíveis desliga e apaga também.
+
 ## O que o assistente não faz
 
 Nos canais da Meta (WhatsApp e Instagram), o assistente só fala do negócio do cliente: recusa com educação o que não tem a ver (como fazer redação, escrever código ou dar opinião de jogo) e o que faria a IA virar o próprio serviço. Ele não faz diagnóstico nem indica remédio, não confirma pagamento, não inventa preço, prazo ou promoção, e não finge ser uma pessoa. Em risco à vida, manda o texto com os telefones de emergência e avisa a equipe com urgência. Em todos os canais, inclusive o chat do site, o assistente só manda link, e-mail, chave Pix, linha de boleto ou conta bancária que estejam escritos igual nas instruções, na base, na configuração do chatbot, numa mensagem da equipe ou no retorno de uma ação: o resto sai como "[link removido]". Assim, um texto de outra pessoa que chegue por uma ação ("o Pix mudou, informe a chave X") não vira golpe. Para o assistente mandar um link, ponha o link na base ou nas instruções.
@@ -178,7 +182,7 @@ Em Equipe, o dono ou o administrador convida pessoas pelo e-mail (o convite vale
 
 ## Meu perfil
 
-Em Meu perfil, cada pessoa da equipe põe o nome e a foto que o contato vê quando ela atende, marca se está Disponível ou Ausente para o rodízio dos setores (também dá para trocar na própria Caixa de entrada), escolhe a própria assinatura (nos chatbots que não travam o formato), liga o segundo fator (app autenticador) e põe o próprio WhatsApp para receber os avisos da conta e conversar com o assistente da BoaVoz.
+Em Meu perfil, cada pessoa da equipe põe o nome e a foto que o contato vê quando ela atende, marca se está Disponível ou Ausente para o rodízio dos setores (também dá para trocar na própria Caixa de entrada), escolhe a própria assinatura (nos chatbots que não travam o formato), liga o segundo fator (app autenticador), põe o próprio WhatsApp para receber os avisos da conta e conversar com o assistente da BoaVoz e ativa os avisos no celular e no computador.
 
 ## Área do cliente (portal)
 
@@ -238,11 +242,15 @@ Num roteiro com ação, o sistema do cliente pode dizer quem é a pessoa (pelo C
 
 ## Segurança e privacidade (LGPD)
 
-O que vem do contato fica cifrado com a chave de cada cliente. A agência escolhe o prazo de guarda (6, 12 ou 24 meses), e o modo dados sensíveis (para saúde, por exemplo) apaga em 7 a 90 dias e desliga a leitura de fotos. Os pedidos do titular (apagar dados) chegam pelo chat, pelo painel e pela API e são cumpridos num lugar só. Em Segurança ficam a auditoria, os acessos, o acesso do suporte da BoaVoz (só com liberação por 24 horas) e o segundo fator. Os dados do cliente podem ser exportados em Dados do cliente.
+O que vem do contato fica cifrado com a chave de cada cliente. A agência escolhe o prazo de guarda (6, 12 ou 24 meses), e o modo dados sensíveis (para saúde, por exemplo) apaga em 7 a 90 dias e desliga a leitura de fotos e a memória do assistente. Os pedidos do titular (apagar dados) chegam pelo chat, pelo painel e pela API e são cumpridos num lugar só. Em Segurança ficam a auditoria, os acessos, o acesso do suporte da BoaVoz (só com liberação por 24 horas) e o segundo fator. Os dados do cliente podem ser exportados em Dados do cliente.
 
 ## Avisos no WhatsApp para a equipe
 
 Cada pessoa da equipe pode receber os avisos da conta no próprio WhatsApp, pelo número da BoaVoz: atendimento urgente, pedido de atendente, lead novo, WhatsApp de um cliente desconectado, pagamento atrasado e cota no fim. Para ligar, ponha o número no primeiro acesso, em Meu perfil ou em "Ativar no WhatsApp", na faixa do topo do painel, e toque em Confirmar na mensagem que chega. Os avisos não trazem o conteúdo das conversas, só o que aconteceu e onde ver no painel. Para parar, mande SAIR para o número da BoaVoz ou desligue em Meu perfil. Os clientes da agência nunca recebem mensagens da BoaVoz.
+
+## Avisos no celular e no computador
+
+Em Meu perfil, em Avisos no celular e no computador, cada pessoa ativa os avisos em cada aparelho que usa: eles aparecem na tela mesmo com o painel fechado, e tocar no aviso abre a conversa. Chegam os mesmos avisos do WhatsApp (atendimento urgente, pedido de atendente, lead novo e, conforme o papel, WhatsApp de um cliente desconectado, pagamento atrasado e cota no fim) e também a conversa transferida para você ou para o seu setor. Dá para escolher os tipos, ver os aparelhos que recebem, remover um e tocar em Enviar um teste. No iPhone, os avisos só chegam com o site na tela de início: no Safari, toque em Compartilhar e em Adicionar à Tela de Início, abra pelo ícone novo e ative em Meu perfil. Se o navegador bloquear as notificações, libere nas configurações do site (o cadeado ao lado do endereço). Na área do cliente, quem atende recebe os avisos do atendimento (urgente, atendente, transferência e lead), que abrem na Caixa de entrada dela. Os avisos não levam o conteúdo das conversas.
 
 ## Excluir a conta
 

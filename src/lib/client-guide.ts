@@ -99,7 +99,7 @@ export function clientGuide(access: GuideAccess, names: { agency: string; client
       id: "perfil",
       title: "Meu perfil",
       show: true,
-      paragraphs: ["Em Meu perfil, você troca o nome e a foto que o cliente vê quando você atende, marca se está disponível para receber conversas pelo rodízio dos setores e escolhe a sua assinatura. Ali também fica a verificação em duas etapas, pedida para abrir conversas em modo dados sensíveis e para confirmar pedidos de exclusão."],
+      paragraphs: ["Em Meu perfil, você troca o nome e a foto que o cliente vê quando você atende, marca se está disponível para receber conversas pelo rodízio dos setores, escolhe a sua assinatura e ativa os avisos no celular e no computador (pedido de atendente, conversa transferida para você e lead novo; no iPhone, com o site adicionado à tela de início). Ali também fica a verificação em duas etapas, pedida para abrir conversas em modo dados sensíveis e para confirmar pedidos de exclusão."],
     },
   ];
   return sections.filter((s) => s.show).map(({ id, title, paragraphs }) => ({ id, title, paragraphs }));

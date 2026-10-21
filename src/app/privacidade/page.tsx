@@ -14,6 +14,8 @@ export const metadata = { title: "Política de Privacidade" };
  * WhatsApp (19/10/2026): o número da pessoa da equipe, com o aceite confirmado no WhatsApp. Réguas
  * (20/10/2026): as datas do contato informadas pela empresa (aniversário sem o ano, última visita e
  * próximo horário). Pendências do MVP (20/10/2026): o código do contato que vai ao provedor de IA, o que segura a ficha do contato e o CPF ou CNPJ e o endereço para a nota fiscal.
+ * Memória e avisos no celular (21/10/2026): a memória do assistente na ficha do contato e os aparelhos
+ * que recebem os avisos da equipe (com os serviços de notificação dos navegadores).
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -21,7 +23,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Política de Privacidade"
-      updatedAt="20 de outubro de 2026"
+      updatedAt="21 de outubro de 2026"
       intro={`Esta política explica quais dados pessoais a ${brand} trata, para quê, com quem compartilha, por quanto tempo guarda e como você exerce seus direitos, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).`}
     >
       <Section title="1. Quem somos">
@@ -51,9 +53,15 @@ export default function PrivacyPage() {
             <strong>Leitura de fotos:</strong> quando o assistente tem IA, a foto que o contato envia pelo WhatsApp ou pelo Instagram é lida em baixa resolução, e uma descrição curta do que ela mostra passa a fazer parte da conversa. A descrição não identifica pessoas e não copia links, e-mails nem números longos. Comprovantes de pagamento, documentos pessoais, cartões e fotos de saúde não são descritos. No modo dados sensíveis, nenhuma foto é lida.
           </li>
           <li><strong>Contato:</strong> telefone ou identificador do WhatsApp e do Instagram, nome de perfil e, quando a empresa identifica o cliente dela no chat, o identificador informado por ela. Quando o contato pede um item regulamentado (como bebida alcoólica), guardamos a resposta à pergunta de maioridade. Quando a empresa informa (pela planilha, pelo painel ou pela API), também o dia e o mês do aniversário (o ano não é guardado), a data da última visita ou compra e o próximo horário marcado, usados nas mensagens automáticas do WhatsApp que a empresa liga.</li>
+          <li>
+            <strong>Memória do assistente:</strong> quando a empresa liga a memória num assistente, uma IA anota, depois de cada conversa, até 10 fatos curtos que ajudam no próximo atendimento (por exemplo, o nome que a pessoa prefere ou o produto de sempre), guardados cifrados na ficha do contato e usados só por aquele assistente. Nunca entram saúde, religião, política, vida sexual, origem racial ou étnica, dados de criança, documentos, dados de pagamento, senhas, endereço completo, telefone nem e-mail. A pessoa pode pedir no próprio chat para o assistente esquecer, e a empresa vê e apaga a memória na ficha do contato.
+          </li>
           <li><strong>Leads:</strong> nome, telefone, e-mail e o interesse, quando a pessoa decide informá-los.</li>
           <li>
             <strong>WhatsApp da equipe para avisos:</strong> quando uma pessoa da equipe de uma agência põe o número dela no painel, guardamos o número (cifrado), a confirmação que ela faz pelo botão na mensagem que chega no WhatsApp, quais avisos ela quer receber e o sinal de identidade do WhatsApp que a Meta envia (para parar os avisos se o número mudar de aparelho ou de dono). O número só é usado para os avisos da conta e para o assistente da {brand} conversar com ela por lá. Os avisos não levam o conteúdo das conversas. As pessoas dos clientes da agência nunca recebem mensagens da {brand}.
+          </li>
+          <li>
+            <strong>Avisos no celular e no computador:</strong> quando uma pessoa da equipe (da agência ou da empresa atendida) ativa os avisos num aparelho, guardamos o endereço de entrega que o navegador cria (com as chaves dele, cifradas), o nome do navegador e do sistema (como &quot;Chrome no Android&quot;), a data do último aviso e quais avisos ela quer receber. Os avisos não levam o conteúdo das conversas.
           </li>
           <li>
             <strong>Registros de acesso:</strong> endereço IP completo, data e hora dos acessos ao painel e à área do cliente (entradas e sessões) e do chat do site (início de cada conversa e mudança de IP), como exige o Marco Civil da Internet. Nos demais registros, como o limite de uso do chat, o IP é guardado apenas como um código (hash).
@@ -120,6 +128,7 @@ export default function PrivacyPage() {
           <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp e no Instagram, quando a empresa conecta esses canais.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>
+          <li><strong>Serviços de notificação dos navegadores</strong> (Google, Apple, Mozilla e Microsoft): entregam os avisos no celular e no computador às pessoas da equipe que os ativam; o aviso vai cifrado e não leva o conteúdo das conversas.</li>
           <li><strong>Sentry</strong>: monitoramento de erros técnicos da plataforma, configurado para não receber conteúdo de conversas, cookies nem dados de usuários.</li>
         </ul>
         <p>
@@ -157,6 +166,7 @@ export default function PrivacyPage() {
             <strong>Conversas, arquivos recebidos, leads e perguntas:</strong> 12 meses após a última mensagem, ou 6 ou 24 meses, se a empresa atendida escolher (cada empresa tem o seu prazo; sem escolha, vale o padrão da conta que a atende). Quando o prazo diminui, a mudança só vale 30 dias depois do aviso, com opção de exportar. Em assistentes com o modo dados sensíveis, o prazo escolhido pela empresa, de 7 a 90 dias, e arquivos recebidos por até 30 dias.
           </li>
           <li><strong>Ficha do contato (com as datas informadas pela empresa) e resposta de maioridade:</strong> apagadas quando o contato fica parado pelo prazo acima, sem conversa, vínculo ativo, aceite de novidades em vigor, lead, mensagem agendada nem horário marcado pela frente.</li>
+          <li><strong>Memória do assistente:</strong> 180 dias desde a última atualização; sai antes quando a pessoa pede para esquecer, quando a empresa apaga ou desliga a memória, quando o modo dados sensíveis é ligado e junto com a ficha do contato (inclusive no pedido de exclusão).</li>
           <li><strong>Registros técnicos de integrações</strong> (chamadas de ações e entregas de webhooks): 30 dias.</li>
           <li><strong>Instagram:</strong> comentários recebidos e as respostas, 90 dias; descrições de stories e posts lidos no momento da mensagem, 30 dias; os posts lidos como base de conhecimento ficam enquanto estiverem entre os 100 mais novos dos últimos 90 dias.</li>
           <li><strong>Auditoria da conta</strong> (sem conteúdo de conversas): 1 ano.</li>
@@ -173,6 +183,7 @@ export default function PrivacyPage() {
           <li><strong>Totais dos relatórios:</strong> números por dia, sem dados pessoais, enquanto a conta existir.</li>
           <li><strong>Tokens de acesso do WhatsApp e do Instagram:</strong> até a desconexão ou o encerramento da conta.</li>
           <li><strong>WhatsApp da equipe para avisos:</strong> enquanto a pessoa estiver na equipe e quiser receber; sai quando ela para os avisos ou sai da equipe. As conversas com o assistente da {brand} seguem o prazo das conversas (12 meses).</li>
+          <li><strong>Aparelhos que recebem os avisos:</strong> até a pessoa desativar ou remover o aparelho, o navegador recusar o endereço ou a pessoa sair da equipe.</li>
           <li><strong>Dados da conta:</strong> enquanto ela estiver ativa, e depois pelo prazo exigido por lei (por exemplo, registros fiscais).</li>
         </ul>
         <p>
@@ -182,7 +193,7 @@ export default function PrivacyPage() {
 
       <Section title="12. Dados sensíveis">
         <p>
-          Quando o modo dados sensíveis é ligado num assistente, pela empresa ou pela agência que cuida dele (a {brand} sugere isso para negócios de saúde), as conversas dele ficam guardadas por menos tempo, num prazo escolhido entre 7 e 90 dias; os arquivos recebidos, por até 30 dias; e abrir essas conversas no painel ou na área do cliente exige verificação em duas etapas. Quando a agência muda o modo, a empresa recebe um aviso. Em todos os assistentes, enviamos aos provedores de IA e aos registros técnicos só o necessário.
+          Quando o modo dados sensíveis é ligado num assistente, pela empresa ou pela agência que cuida dele (a {brand} sugere isso para negócios de saúde), as conversas dele ficam guardadas por menos tempo, num prazo escolhido entre 7 e 90 dias; os arquivos recebidos, por até 30 dias; abrir essas conversas no painel ou na área do cliente exige verificação em duas etapas; e a memória do assistente fica desligada (ligar o modo apaga a que havia). Quando a agência muda o modo, a empresa recebe um aviso. Em todos os assistentes, enviamos aos provedores de IA e aos registros técnicos só o necessário.
         </p>
       </Section>
 
