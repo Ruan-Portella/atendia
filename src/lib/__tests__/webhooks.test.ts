@@ -3,11 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Webhook } from "standardwebhooks";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const posted = vi.hoisted(() => ({ calls: [] as Array<{ url: string; body: string; headers: Record<string, string> }>, status: 200 }));
+const posted = vi.hoisted(() => ({ calls: [] as Array<{ url: string; body: string; headers: Record<string, string> }>, status: 200, onPost: null as null | (() => void) }));
 vi.mock("../safe-fetch", async (orig) => ({
   ...(await orig<typeof import("../safe-fetch")>()),
   safePost: vi.fn(async (url: string, o: { body: string; headers: Record<string, string> }) => {
     posted.calls.push({ url, body: o.body, headers: o.headers });
+    posted.onPost?.();
     return { status: posted.status, text: "", truncated: false, redirect: false };
   }),
 }));
@@ -171,6 +172,52 @@ describe("entrega", () => {
     expect(posted.calls[1].headers["webhook-id"]).toBe(posted.calls[0].headers["webhook-id"]);
     expect(tables.webhook_deliveries[0]).toMatchObject({ status: "delivered", attempts: 2 });
     expect(tables.webhooks[0].failing_since).toBeNull();
+  });
+
+  it("a trava: duas tentativas ao mesmo tempo mandam a entrega uma vez só; a travada fica até a trava vencer", async () => {
+    const { db, tables } = setup();
+    posted.status = 500;
+    await fire(db);
+    const d = tables.webhook_deliveries[0];
+    // a primeira tentativa (na hora) soltou a trava ao terminar
+    expect(d.locked_until).toBeNull();
+    d.next_attempt_at = new Date(Date.now() - 1000).toISOString();
+    posted.status = 204;
+    // o tique do minuto e o consumidor de carona de outro evento, juntos
+    const [a, b] = await Promise.all([retryDueDeliveries(db), retryDueDeliveries(db)]);
+    expect(a + b).toBe(1);
+    expect(posted.calls).toHaveLength(2);
+    // travada por outra tentativa: pula; com a trava vencida (a função caiu no meio), sai
+    const again = setup();
+    again.tables.webhook_deliveries.push({ ...d, id: "d2", status: "pending", attempts: 1, next_attempt_at: new Date(Date.now() - 1000).toISOString(), locked_until: new Date(Date.now() + 20_000).toISOString() });
+    expect(await retryDueDeliveries(again.db)).toBe(0);
+    again.tables.webhook_deliveries[0].locked_until = new Date(Date.now() - 1000).toISOString();
+    expect(await retryDueDeliveries(again.db)).toBe(1);
+    expect(again.tables.webhook_deliveries[0]).toMatchObject({ status: "delivered", locked_until: null });
+  });
+
+  it("a entrega que sai na hora já nasce travada; o primeiro 2xx depois de uma falha antecipa as pendentes", async () => {
+    const { db, tables } = setup();
+    // durante a tentativa na hora, a entrega está travada (o consumidor do minuto pularia)
+    let lockedDuringPost: unknown = "nao";
+    posted.onPost = () => (lockedDuringPost = tables.webhook_deliveries[0]?.locked_until ?? null);
+    posted.status = 500;
+    await fire(db);
+    posted.onPost = null;
+    expect(lockedDuringPost).not.toBeNull();
+    expect(Date.parse(String(lockedDuringPost)) - Date.now()).toBeGreaterThan(20_000);
+    // outra entrega do mesmo webhook, esperando o calendário (daqui a 1 hora)
+    const [first] = tables.webhook_deliveries;
+    tables.webhook_deliveries.push({ ...first, id: "d2", event_id: "evt_outro", attempts: 1, status: "pending", locked_until: null, next_attempt_at: new Date(Date.now() + 3_600_000).toISOString() });
+    const second = tables.webhook_deliveries[1];
+    first.next_attempt_at = new Date(Date.now() - 1000).toISOString();
+    posted.status = 200;
+    expect(await retryDueDeliveries(db)).toBe(1);
+    expect(first.status).toBe("delivered");
+    // a pendente que só sairia daqui a 1 hora foi antecipada para agora
+    expect(Date.parse(String(second.next_attempt_at))).toBeLessThanOrEqual(Date.now());
+    expect(await retryDueDeliveries(db)).toBe(1);
+    expect(second.status).toBe("delivered");
   });
 
   it("410 Gone ou 3 dias só de falhas desativam o webhook", async () => {

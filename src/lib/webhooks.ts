@@ -88,6 +88,13 @@ export const HIGH_VOLUME_EVENTS: readonly WebhookEvent[] = ["message.status"];
 export const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 30 * 60_000, 2 * 3_600_000, 6 * 3_600_000, 12 * 3_600_000, 24 * 3_600_000, 24 * 3_600_000];
 export const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 const DISABLE_AFTER_MS = 3 * 86_400_000;
+/**
+ * A trava de cada tentativa (spec, Peça 2): quem tenta trava a entrega por 30 segundos (o envio tem
+ * 10 de prazo), e quem chega depois não manda a mesma entrega de novo. Se a função cair no meio, a
+ * trava vence e a entrega sai no minuto seguinte.
+ */
+const LEASE_MS = 30_000;
+const DELIVERY_COLS = "id, webhook_id, event_id, payload_enc, attempts";
 const TIMEOUT_MS = 10_000;
 
 /** base32 (RFC 4648), minúsculo, sem preenchimento. Função pura. */
@@ -241,6 +248,18 @@ interface DeliveryRow {
   attempts: number;
 }
 
+/**
+ * Trava a entrega pendente para esta tentativa (null: outra tentativa já está com ela). Duas
+ * atualizações condicionais, cada uma atômica no banco: sem trava, ou com a trava vencida.
+ */
+async function claimDelivery(db: SupabaseClient, id: string, now = Date.now()): Promise<DeliveryRow | null> {
+  const until = new Date(now + LEASE_MS).toISOString();
+  const free = await db.from("webhook_deliveries").update({ locked_until: until }).eq("id", id).eq("status", "pending").is("locked_until", null).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
+  if (free.data) return free.data;
+  const expired = await db.from("webhook_deliveries").update({ locked_until: until }).eq("id", id).eq("status", "pending").lte("locked_until", new Date(now).toISOString()).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
+  return expired.data ?? null;
+}
+
 /** Uma tentativa: entregue, nova tentativa agendada, ou falha final; 410 e 3 dias de falhas desativam. */
 async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = Date.now()): Promise<"delivered" | "pending" | "failed"> {
   // o link do arquivo (media.url) vale 1 hora: cada tentativa leva um novo
@@ -248,13 +267,17 @@ async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = 
   const r = await post(w, d.event_id, body);
   const attempts = d.attempts + 1;
   if (r.status !== null && r.status >= 200 && r.status < 300 && !r.error) {
-    await db.from("webhook_deliveries").update({ status: "delivered", attempts, last_status: r.status, last_error: null, last_response_enc: responseEnc(r.response), delivered_at: new Date(now).toISOString() }).eq("id", d.id);
-    if (w.failing_since) await db.from("webhooks").update({ failing_since: null }).eq("id", w.id);
+    await db.from("webhook_deliveries").update({ status: "delivered", attempts, last_status: r.status, last_error: null, last_response_enc: responseEnc(r.response), delivered_at: new Date(now).toISOString(), locked_until: null }).eq("id", d.id);
+    if (w.failing_since) {
+      await db.from("webhooks").update({ failing_since: null }).eq("id", w.id);
+      // o primeiro 2xx depois de uma falha antecipa as pendentes (o consumidor leva em lotes)
+      await db.from("webhook_deliveries").update({ next_attempt_at: new Date(now).toISOString() }).eq("webhook_id", w.id).eq("status", "pending").gt("next_attempt_at", new Date(now).toISOString());
+    }
     return "delivered";
   }
   const gone = r.status === 410;
   const next = gone ? null : nextAttemptAt(attempts, now);
-  await db.from("webhook_deliveries").update({ status: next ? "pending" : "failed", attempts, last_status: r.status, last_error: r.error ?? `HTTP ${r.status}`, last_response_enc: responseEnc(r.response), ...(next ? { next_attempt_at: next } : {}) }).eq("id", d.id);
+  await db.from("webhook_deliveries").update({ status: next ? "pending" : "failed", attempts, last_status: r.status, last_error: r.error ?? `HTTP ${r.status}`, last_response_enc: responseEnc(r.response), locked_until: null, ...(next ? { next_attempt_at: next } : {}) }).eq("id", d.id);
   const failingSince = w.failing_since ?? new Date(now).toISOString();
   if (gone || now - Date.parse(failingSince) > DISABLE_AFTER_MS) {
     const reason = gone ? "respondeu 410 Gone" : "3 dias seguidos só de falhas";
@@ -315,10 +338,12 @@ export async function emitEvent(
   for (const w of targets) {
     // o mesmo fato para o mesmo webhook sai uma vez só (repetição do evento não duplica)
     // contact_id: o pedido do titular apaga as entregas do contato (o corpo cifrado não dá para buscar)
-    const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, contact_id: e.contactId ?? null, message_id: e.messageId ?? null }).select("id, webhook_id, event_id, payload_enc, attempts").maybeSingle<DeliveryRow>();
-    if (error && !/duplicate|unique/i.test(error.message)) console.error("webhook: entrega não registrada", error.message);
     // webhook com falha recente vai direto para o consumidor (não segura nada esperando um endpoint fora do ar)
-    if (d && !o.consumerOnly && !w.failing_since) created.push({ d, w });
+    const tryNow = !o.consumerOnly && !w.failing_since;
+    // a que sai na hora já nasce travada: o consumidor do minuto não pega a mesma ao mesmo tempo
+    const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, contact_id: e.contactId ?? null, message_id: e.messageId ?? null, ...(tryNow ? { locked_until: new Date(Date.now() + LEASE_MS).toISOString() } : {}) }).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
+    if (error && !/duplicate|unique/i.test(error.message)) console.error("webhook: entrega não registrada", error.message);
+    if (d && tryNow) created.push({ d, w });
   }
   const run = async () => {
     for (const { d, w } of created) await attempt(db, d, w).catch((err) => console.error("webhook: tentativa", (err as Error).message));
@@ -345,7 +370,7 @@ export async function emitAccountEvent(db: SupabaseClient, agencyId: string, e: 
     const payload_enc = await sealField("webhook_deliveries.payload_enc", JSON.stringify(envelope), PLATFORM_SCOPE);
     const created: Array<{ d: DeliveryRow; w: WebhookRow }> = [];
     for (const w of targets) {
-      const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc }).select("id, webhook_id, event_id, payload_enc, attempts").maybeSingle<DeliveryRow>();
+      const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, ...(!w.failing_since ? { locked_until: new Date(Date.now() + LEASE_MS).toISOString() } : {}) }).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
       if (error && !/duplicate|unique/i.test(error.message)) console.error("webhook: entrega não registrada", error.message);
       if (d && !w.failing_since) created.push({ d, w });
     }
@@ -391,17 +416,20 @@ export async function emitContactDeleted(db: SupabaseClient, c: { contactId: str
 
 /** Novas tentativas que já venceram (cron e de carona em cada evento novo). webhookId: só as desse webhook. */
 export async function retryDueDeliveries(db: SupabaseClient, o: { limit?: number; hasTime?: () => boolean; webhookId?: string } = {}): Promise<number> {
-  let q = db.from("webhook_deliveries").select("id, webhook_id, event_id, payload_enc, attempts").eq("status", "pending").lte("next_attempt_at", new Date().toISOString());
+  let q = db.from("webhook_deliveries").select("id").eq("status", "pending").lte("next_attempt_at", new Date().toISOString());
   if (o.webhookId) q = q.eq("webhook_id", o.webhookId);
   const { data } = await q.order("next_attempt_at").limit(o.limit ?? 50);
   let done = 0;
-  for (const d of (data ?? []) as DeliveryRow[]) {
+  for (const c of (data ?? []) as Array<{ id: string }>) {
     if (o.hasTime && !o.hasTime()) break;
+    // outra tentativa (a primeira, na hora, ou outro consumidor) já está com ela: pula
+    const d = await claimDelivery(db, c.id);
+    if (!d) continue;
     const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", d.webhook_id).maybeSingle<WebhookRow>();
     // webhook desativado, ou a conta sem o pacote Integrações: não entrega nem acumula
     const noPack = w?.active ? !(await hasPack(db, w.agency_id, "integracoes")) : false;
     if (!w?.active || noPack) {
-      await db.from("webhook_deliveries").update({ status: "failed", last_error: noPack ? "sem o pacote Integrações" : "webhook desativado" }).eq("id", d.id);
+      await db.from("webhook_deliveries").update({ status: "failed", last_error: noPack ? "sem o pacote Integrações" : "webhook desativado", locked_until: null }).eq("id", d.id);
       continue;
     }
     await attempt(db, d, w);
@@ -415,8 +443,11 @@ export async function retryDueDeliveries(db: SupabaseClient, o: { limit?: number
  * o webhook ativo; o corpo é o guardado (se a linha sumiu por exclusão, não há o que reenviar).
  */
 export async function redeliver(db: SupabaseClient, agencyId: string, deliveryId: string): Promise<{ result: "delivered" | "pending" | "failed" } | { error: string }> {
-  const { data: d } = await db.from("webhook_deliveries").select("id, webhook_id, event_id, payload_enc, attempts").eq("id", deliveryId).maybeSingle<DeliveryRow>();
-  if (!d) return { error: "Entrega não encontrada (pode ter sido apagada por um pedido de exclusão)." };
+  const { data: found } = await db.from("webhook_deliveries").select("id, webhook_id, event_id, payload_enc, attempts, status").eq("id", deliveryId).maybeSingle<DeliveryRow & { status: string }>();
+  if (!found) return { error: "Entrega não encontrada (pode ter sido apagada por um pedido de exclusão)." };
+  // pendente: só se ninguém estiver tentando agora (senão a mesma sairia duas vezes)
+  const d = found.status === "pending" ? await claimDelivery(db, found.id) : found;
+  if (!d) return { error: "Essa entrega está saindo agora. Confira em instantes." };
   const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", d.webhook_id).eq("agency_id", agencyId).maybeSingle<WebhookRow>();
   if (!w) return { error: "Entrega não encontrada." };
   if (!w.active) return { error: "Reative o webhook antes de reenviar." };
