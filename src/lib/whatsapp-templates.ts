@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { graphFor, recipientOf, type WaChannel } from "./whatsapp";
+import { graphFor, recipientOf, type WaChannel, type WaRecipient } from "./whatsapp";
 import { OPTOUT_BUTTON_TEXT } from "./suppression";
 import { TEMPLATE_LANGUAGE, templateVariables, toSendable, unsupportedReason, type SendableTemplate, type Template, type TemplateCategory } from "./template-text";
 
@@ -70,7 +70,7 @@ export async function deleteTemplate(ch: TemplateChannel, name: string) {
  * Manda o modelo. buttonPayloads: o que volta no toque de cada botão de resposta rápida, na ordem
  * (sem ele, volta o texto do botão). urlSuffix: o fim da URL do botão de link (o primeiro botão).
  */
-export async function sendTemplate(ch: WaChannel, to: string, t: { name: string; language: string }, params: string[], opts: { callbackData?: string; timeoutMs?: number; buttonPayloads?: string[]; urlSuffix?: string } = {}) {
+export async function sendTemplate(ch: WaChannel, to: WaRecipient, t: { name: string; language: string }, params: string[], opts: { callbackData?: string; timeoutMs?: number; buttonPayloads?: string[]; urlSuffix?: string } = {}) {
   const components: Array<Record<string, unknown>> = params.length ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }] : [];
   for (const [i, payload] of (opts.buttonPayloads ?? []).entries()) components.push({ type: "button", sub_type: "quick_reply", index: String(i), parameters: [{ type: "payload", payload }] });
   if (opts.urlSuffix !== undefined) components.push({ type: "button", sub_type: "url", index: String(opts.buttonPayloads?.length ?? 0), parameters: [{ type: "text", text: opts.urlSuffix }] });

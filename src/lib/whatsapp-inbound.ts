@@ -15,7 +15,7 @@ import { fixedPhotoReply, photoReadingOn, photoSeen, withHandoffNotice, type Pho
 import { readBurstPhotos } from "./photo-reading";
 import { recordAiUsage } from "./ai-usage";
 import { WhatsAppError, downloadMedia, markReadTyping, sendButtons, sendMedia, sendPlan, sendText, toWhatsAppText, waIdVariants, type WaChannel, enableIdentityCheck } from "./whatsapp";
-import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, isPromoOptOutButton, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope, type SuppressionKind } from "./suppression";
+import { OPTOUT_ALSO, OPTOUT_UNDO, activeSuppressions, isOptOutKeyword, isPromoOptOutButton, optOutConfirmation, queueUndoEvents, revoke, suppress, suppressionScope, type SuppressionKind, REMIND_OPTIN_BUTTONS, REMIND_OPTIN_NO, REMIND_OPTIN_YES, REMIND_NO_TEXT, isReminderReturnRequest, remindOfferText, remindYesText, remindersStopped, returnToReminders } from "./suppression";
 import { markCampaignContact } from "./campaigns";
 import { OPTIN_BUTTONS, OPTIN_NO, OPTIN_NO_TEXT, OPTIN_VERSION, OPTIN_YES, consentHistory, consentStateOf, isClosingMessage, offerDue, optInOfferText, optInYesText, recordConsent, restoreConsents, revokeConsents, typedOptInAnswer } from "./marketing-consent";
 import { ageRecord } from "./gate/age";
@@ -782,15 +782,28 @@ async function handleOptOuts(
   };
 
   let keywordDone = false;
+  // volta aos lembretes (leva das sobras, parte 2): só para quem parou os lembretes
+  let stopped: boolean | null = null;
+  const remindersOff = async () => (stopped ??= await remindersStopped(db, target));
   for (let i = 0; i < burst.length; i++) {
     const button = burst[i].msg.interactive?.button_reply?.id ?? "";
     const keyword = isOptOutKeyword(texts[i]);
-    if (!button.startsWith(`${OPTOUT_UNDO}:`) && !button.startsWith(`${OPTOUT_ALSO}:`) && !keyword) continue;
+    const remindAnswer = button === REMIND_OPTIN_YES || button === REMIND_OPTIN_NO;
+    const remindAsk = !button && !keyword && isReminderReturnRequest(texts[i]) && (await remindersOff());
+    if (!button.startsWith(`${OPTOUT_UNDO}:`) && !button.startsWith(`${OPTOUT_ALSO}:`) && !keyword && !remindAnswer && !remindAsk) continue;
     handled.add(i);
     const id = await conversation();
     if (id) await storeOnce(db, id, shown(i), burst[i].key);
 
-    if (button.startsWith(`${OPTOUT_UNDO}:`)) {
+    if (remindAsk) {
+      await answer(remindOfferText(company), REMIND_OPTIN_BUTTONS);
+    } else if (remindAnswer) {
+      if (button === REMIND_OPTIN_YES) {
+        await returnToReminders(db, target);
+        stopped = false;
+      }
+      await answer(button === REMIND_OPTIN_YES ? remindYesText(company) : REMIND_NO_TEXT);
+    } else if (button.startsWith(`${OPTOUT_UNDO}:`)) {
       // "Foi engano": desfaz todos os SAIR/PARAR/STOP ativos do contato (quem tocou espera voltar a
       // receber tudo) e fica gravado como novo opt-in dado pela própria pessoa. O que veio da Meta
       // (preferências do WhatsApp, erro 131050) continua: não foi dado por esse SAIR.

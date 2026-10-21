@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { linkedRecipient } from "./pairing";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { apiContacts, parseContactAddress, whatsappContact, type ApiContact } from "./contacts";
 import { API_SEND_REF, saveMessage, touchConversation, UNCERTAIN } from "./messages";
@@ -460,7 +461,9 @@ async function sendChannelMessage(api: ApiContext, botId: string, p: Extract<Sen
     ref,
     claimed,
     transport: async () => {
-      if (to.channel === "whatsapp" && component) return (await sendPlan(waCh, to.address, content, whatsappPlan(component), { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })).messages?.[0]?.id ?? null;
+      // contato com vínculo: o hash de identidade vai junto (número reciclado não recebe)
+      const waTo = to.channel === "whatsapp" ? await linkedRecipient(db, to.contact?.id ?? null, to.address) : to.address;
+      if (to.channel === "whatsapp" && component) return (await sendPlan(waCh, waTo, content, whatsappPlan(component), { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })).messages?.[0]?.id ?? null;
       if (to.channel === "instagram" && component) {
         // link no texto; opções com o resumo numerado e as respostas rápidas numa DM própria
         if (component.type === "link") return sendInstagram(db, igCh, to.address, instagramLinkText(content, component), undefined, { timeoutMs: SEND_TIMEOUT_MS });
@@ -472,8 +475,8 @@ async function sendChannelMessage(api: ApiContext, botId: string, p: Extract<Sen
       }
       if (to.channel === "whatsapp") {
         const sent = file
-          ? await sendMedia(waCh, to.address, { type: p.type === "image" ? "image" : "document", link: file.url, caption: lead, filename: file.filename }, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })
-          : await sendText(waCh, to.address, content, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS });
+          ? await sendMedia(waCh, waTo, { type: p.type === "image" ? "image" : "document", link: file.url, caption: lead, filename: file.filename }, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })
+          : await sendText(waCh, waTo, content, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS });
         return sent.messages?.[0]?.id ?? null;
       }
       if (!file) return sendInstagram(db, igCh, to.address, content, undefined, { timeoutMs: SEND_TIMEOUT_MS });
@@ -564,7 +567,7 @@ async function sendTemplateMessage(api: ApiContext, botId: string, p: Extract<Se
     rec: record(api, p, text, null, category),
     ref,
     claimed: false,
-    transport: async () => (await sendTemplate(ch, to.address, t, p.template.variables, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })).messages?.[0]?.id ?? null,
+    transport: async () => (await sendTemplate(ch, await linkedRecipient(db, to.contact?.id ?? null, to.address), t, p.template.variables, { callbackData: ref, timeoutMs: SEND_TIMEOUT_MS })).messages?.[0]?.id ?? null,
   });
 }
 

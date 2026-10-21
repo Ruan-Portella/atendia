@@ -8,6 +8,7 @@
 const WHATSAPP: Record<string, string> = {
   "131037": "o número ainda não tem o nome de exibição aprovado pela Meta (veja no WhatsApp Manager)",
   "131047": "passaram 24 horas desde a última mensagem do contato; só um modelo aprovado reabre a conversa",
+  "137000": "o WhatsApp do contato mudou desde que ele conectou a conta (número reciclado ou aparelho novo): a mensagem não foi entregue e o vínculo com a conta foi desfeito",
   "131026": "o contato não pode receber (número sem WhatsApp ou aplicativo desatualizado)",
   "131050": "o contato parou de receber promoções desta empresa pelo próprio WhatsApp",
   "131042": "a conta do WhatsApp está sem forma de pagamento na Meta",

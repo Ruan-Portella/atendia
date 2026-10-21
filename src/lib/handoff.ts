@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { linkedRecipient } from "./pairing";
 import { API_PAUSE_CLEAR } from "./api-pause";
 import { queueConversationAssigned, queueHandoffReturned } from "./message-events";
 import { fail, ok, type ActionResult } from "./action-result";
@@ -164,7 +165,7 @@ async function memberSignature(admin: SupabaseClient, who: Attendant): Promise<S
  * Site: só confere a regra (canal suspenso) e quem chamou grava.
  */
 async function deliverOutside(admin: SupabaseClient, conversationId: string, content: string, record: SendRecord): Promise<"widget" | "gravada" | ActionResult> {
-  const { data: conv } = await admin.from("conversations").select("bot_id, channel, wa_id, ig_id").eq("id", conversationId).maybeSingle();
+  const { data: conv } = await admin.from("conversations").select("bot_id, channel, wa_id, ig_id, contact_id").eq("id", conversationId).maybeSingle();
   const metaChannel = conv?.channel === "whatsapp" || conv?.channel === "instagram" ? (conv.channel as "whatsapp" | "instagram") : null;
   if (conv && !metaChannel) {
     // regra de estado no site: canal suspenso pela BoaVoz
@@ -183,7 +184,8 @@ async function deliverOutside(admin: SupabaseClient, conversationId: string, con
       kind: "equipe",
       recordFailures: false,
       record,
-      transport: async () => (await sendText(channel, conv.wa_id!, content)).messages?.[0]?.id ?? null,
+      // contato com vínculo: o hash de identidade vai junto (número reciclado não recebe)
+      transport: async () => (await sendText(channel, await linkedRecipient(admin, conv.contact_id as string | null, conv.wa_id!), content)).messages?.[0]?.id ?? null,
     });
     if (r.status === "blocked") return fail(`${(await sendBlockedReason(admin, conv.bot_id, "whatsapp")) ?? `Envio barrado: ${r.reason}.`} A mensagem não foi enviada.`);
     return "gravada";

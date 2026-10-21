@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { WaRecipient } from "./whatsapp";
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -492,6 +493,35 @@ export async function checkIdentityKey(db: SupabaseClient, contactId: string, ha
   for (const l of changed) await unlinkLink(db, l, "identity_changed");
   if (changed.length) await notify();
   return changed.length > 0;
+}
+
+/**
+ * O destino do envio que a empresa começa (equipe, API): com vínculo ativo e o hash guardado, o
+ * hash vai junto e a Meta só entrega para o mesmo WhatsApp do pareamento. Sem vínculo, só o número.
+ */
+export async function linkedRecipient(db: SupabaseClient, contactId: string | null | undefined, to: string): Promise<WaRecipient> {
+  if (!contactId) return to;
+  const { data } = await db.from("contact_links").select("identity_key_hash").eq("contact_id", contactId).eq("channel", "whatsapp").is("unlinked_at", null).not("identity_key_hash", "is", null).limit(1);
+  const hash = (data?.[0]?.identity_key_hash as string | undefined) ?? null;
+  return hash ? { id: to, identityHash: hash } : to;
+}
+
+/**
+ * Erro 137000 no status (o hash mandado no envio não bate mais): a mensagem não foi entregue, o
+ * WhatsApp do outro lado mudou. Os vínculos do contato caem (contact.unlinked, identity_changed),
+ * como na checagem da mensagem recebida. Devolve o contato e quantos vínculos caíram.
+ */
+export async function handleIdentityMismatch(db: SupabaseClient, channelMsgHash: string): Promise<{ contactId: string | null; conversationId: string | null; unlinked: number }> {
+  const { findMessage } = await import("./messages");
+  const msg = await findMessage(db, { channelMsgHash, newestFirst: true }, ["conversation_id"] as const);
+  const conversationId = msg?.conversation_id ?? null;
+  if (!conversationId) return { contactId: null, conversationId: null, unlinked: 0 };
+  const { data: conv } = await db.from("conversations").select("contact_id").eq("id", conversationId).maybeSingle();
+  const contactId = (conv?.contact_id as string | null | undefined) ?? null;
+  if (!contactId) return { contactId: null, conversationId, unlinked: 0 };
+  let unlinked = 0;
+  for (const l of (await activeLinks(db, contactId)).filter((x) => x.channel === "whatsapp")) if (await unlinkLink(db, l, "identity_changed")) unlinked++;
+  return { contactId, conversationId, unlinked };
 }
 
 /**

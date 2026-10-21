@@ -114,7 +114,7 @@ export function graphFor<T>(ch: WaChannel, path: string, init?: { method?: strin
 }
 
 /** callbackData volta nos status da Meta (concilia o envio incerto da API); timeoutMs: prazo da resposta. */
-export async function sendText(ch: WaChannel, to: string, body: string, opts: { callbackData?: string; timeoutMs?: number } = {}) {
+export async function sendText(ch: WaChannel, to: WaRecipient, body: string, opts: { callbackData?: string; timeoutMs?: number } = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true }, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
     timeoutMs: opts.timeoutMs,
@@ -125,7 +125,7 @@ export async function sendText(ch: WaChannel, to: string, body: string, opts: { 
  * Imagem ou documento pelo link (a Meta baixa da URL). Legenda até 1.024 caracteres; o documento
  * leva o nome do arquivo. callbackData e timeoutMs como no texto.
  */
-export async function sendMedia(ch: WaChannel, to: string, m: { type: "image" | "document"; link: string; caption?: string | null; filename?: string | null }, opts: { callbackData?: string; timeoutMs?: number } = {}) {
+export async function sendMedia(ch: WaChannel, to: WaRecipient, m: { type: "image" | "document"; link: string; caption?: string | null; filename?: string | null }, opts: { callbackData?: string; timeoutMs?: number } = {}) {
   const media: Record<string, string> = { link: m.link };
   if (m.caption) media.caption = m.caption.slice(0, 1024);
   if (m.type === "document" && m.filename) media.filename = m.filename;
@@ -149,7 +149,7 @@ const callbackOf = (o: InteractiveOpts) => (o.callbackData ? { biz_opaque_callba
 const headerOf = (o: InteractiveOpts) => (o.header ? { header: { type: o.header.type, [o.header.type]: { link: o.header.url } } } : {});
 
 /** Texto com até 3 botões de resposta (título de até 20 caracteres; o id volta no clique). */
-export async function sendButtons(ch: WaChannel, to: string, body: string, buttons: Array<{ id: string; title: string }>, opts: InteractiveOpts = {}) {
+export async function sendButtons(ch: WaChannel, to: WaRecipient, body: string, buttons: Array<{ id: string; title: string }>, opts: InteractiveOpts = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: {
       messaging_product: "whatsapp",
@@ -164,7 +164,7 @@ export async function sendButtons(ch: WaChannel, to: string, body: string, butto
 }
 
 /** Lista interativa (até 10 itens; título de até 24 caracteres e descrição de até 72; o id volta no clique). */
-export async function sendList(ch: WaChannel, to: string, body: string, button: string, rows: Array<{ id: string; title: string; description?: string }>, opts: InteractiveOpts = {}) {
+export async function sendList(ch: WaChannel, to: WaRecipient, body: string, button: string, rows: Array<{ id: string; title: string; description?: string }>, opts: InteractiveOpts = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: {
       messaging_product: "whatsapp",
@@ -186,7 +186,7 @@ export async function sendList(ch: WaChannel, to: string, body: string, button: 
 }
 
 /** Texto com um botão que abre um link (CTA URL; rótulo de até 20 caracteres). */
-export async function sendCtaUrl(ch: WaChannel, to: string, body: string, label: string, url: string, opts: InteractiveOpts = {}) {
+export async function sendCtaUrl(ch: WaChannel, to: WaRecipient, body: string, label: string, url: string, opts: InteractiveOpts = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: {
       messaging_product: "whatsapp",
@@ -205,7 +205,7 @@ export async function sendCtaUrl(ch: WaChannel, to: string, body: string, label:
  * vídeo, texto de até 160 caracteres e os botões, todos do mesmo tipo e na mesma quantidade (de
  * resposta, com o id que volta no clique, ou um de link).
  */
-export async function sendCarousel(ch: WaChannel, to: string, body: string, cards: WhatsAppCard[], opts: InteractiveOpts = {}) {
+export async function sendCarousel(ch: WaChannel, to: WaRecipient, body: string, cards: WhatsAppCard[], opts: InteractiveOpts = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
     body: {
       messaging_product: "whatsapp",
@@ -234,7 +234,7 @@ export async function sendCarousel(ch: WaChannel, to: string, body: string, card
 }
 
 /** Botões, lista, link ou carrossel já convertidos para o WhatsApp (whatsappPlan), com o texto no corpo. */
-export async function sendPlan(ch: WaChannel, to: string, body: string, plan: WhatsAppPlan, opts: InteractiveOpts = {}) {
+export async function sendPlan(ch: WaChannel, to: WaRecipient, body: string, plan: WhatsAppPlan, opts: InteractiveOpts = {}) {
   if (plan.kind === "buttons") return sendButtons(ch, to, body, plan.buttons, opts);
   if (plan.kind === "list") return sendList(ch, to, body, plan.button, plan.rows, opts);
   if (plan.kind === "carousel") return sendCarousel(ch, to, body, plan.cards, opts);
@@ -249,11 +249,23 @@ export async function sendPlan(ch: WaChannel, to: string, body: string, plan: Wh
 }
 
 /**
- * Destino do envio: telefone vai em `to`; sem telefone (desde abr/2026 a Meta pode mandar só o
- * BSUID, o id do usuário), o BSUID vai em `recipient`.
+ * Destino com o hash de identidade da Meta (leva das sobras, parte 2; spec, Peça 4): no envio que a
+ * empresa começa para um contato com vínculo, a Meta só entrega se o WhatsApp do outro lado ainda
+ * for o mesmo do pareamento; senão, o status volta com o erro 137000 e o vínculo cai.
  */
-export function recipientOf(contact: string): { to: string } | { recipient: string } {
-  return /^\d+$/.test(contact) ? { to: contact } : { recipient: contact };
+export type WaRecipient = string | { id: string; identityHash: string | null };
+
+/** O erro do status quando o hash não bate mais (número reciclado, aparelho ou WhatsApp novo). */
+export const IDENTITY_MISMATCH_CODE = 137000;
+
+/**
+ * Destino do envio: telefone vai em `to`; sem telefone (desde abr/2026 a Meta pode mandar só o
+ * BSUID, o id do usuário), o BSUID vai em `recipient`; com vínculo, o hash vai junto.
+ */
+export function recipientOf(contact: WaRecipient): { to: string; recipient_identity_key_hash?: string } | { recipient: string; recipient_identity_key_hash?: string } {
+  const id = typeof contact === "string" ? contact : contact.id;
+  const hash = typeof contact === "string" ? null : contact.identityHash;
+  return { ...(/^\d+$/.test(id) ? { to: id } : { recipient: id }), ...(hash ? { recipient_identity_key_hash: hash } : {}) };
 }
 
 /** O WhatsApp aceita mídia de até 16 MB; mais que isso nem tentamos baixar. */

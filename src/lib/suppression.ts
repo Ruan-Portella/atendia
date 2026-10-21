@@ -141,3 +141,55 @@ export function optOutConfirmation(kind: SuppressionKind, company: string): stri
 /** Botões que vão com a confirmação (ids lidos de volta em handleOptOutButton). */
 export const OPTOUT_UNDO = "optout_undo";
 export const OPTOUT_ALSO = "optout_also";
+
+/* ------------------------------------------------------------------ volta aos lembretes pelo chat */
+
+/*
+ * Lembretes pelo chat (leva das sobras, parte 2; spec Peça 7, origens do opt-in: "opt-in de
+ * lembretes no mesmo formato do de promoções, para quem saiu e quer voltar"). Quem parou os
+ * lembretes (SAIR depois de um lembrete, ou de tudo) e pede para voltar recebe a oferta com os
+ * botões Sim e Não; o Sim desfaz o descadastro de lembretes, como um novo opt-in da própria pessoa
+ * (o de tudo vira só de promoções). O que veio da Meta ou de um pedido do titular continua.
+ */
+export const REMIND_OPTIN_YES = "rmd_optin_yes";
+export const REMIND_OPTIN_NO = "rmd_optin_no";
+export const REMIND_OPTIN_BUTTONS = [
+  { id: REMIND_OPTIN_YES, title: "Sim, quero" },
+  { id: REMIND_OPTIN_NO, title: "Não, obrigado" },
+];
+export const remindOfferText = (company: string) => `Quer voltar a receber os lembretes e avisos da ${company} por aqui (consultas, vencimentos, pedidos)? Você pode parar quando quiser respondendo SAIR.`;
+export const remindYesText = (company: string) => `Pronto! Você volta a receber os lembretes e avisos da ${company} por aqui. Para parar, é só responder SAIR.`;
+export const REMIND_NO_TEXT = "Tudo bem, os lembretes continuam parados. O atendimento continua normal por aqui.";
+
+const plain = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim();
+
+/**
+ * O pedido de voltar aos lembretes, escrito pela pessoa ("quero voltar a receber os lembretes",
+ * "ativa os lembretes de novo"): fala de lembrete, pede para voltar ou receber, sem negação nem
+ * pedido de parar. Mensagem curta (até 160 letras): conversa longa fica com a IA. Pura.
+ */
+export function isReminderReturnRequest(text: string | null | undefined): boolean {
+  if (!text || text.length > 160) return false;
+  const t = ` ${plain(text)} `;
+  if (!/ lembrete/.test(t)) return false;
+  if (/ (nao|parar|pare|parem|para de|sair|cancela|cancelar|chega|desativa|desativar|bloquear|bloqueia|stop) /.test(t)) return false;
+  return / (voltar|volta|voltem|reativar|reativa|ativar|ativa|religar|liga|receber|recebendo|quero|queria|de novo|novamente) /.test(t);
+}
+
+/** Os lembretes estão parados por pedido da própria pessoa (SAIR de lembretes ou de tudo)? */
+export async function remindersStopped(db: SupabaseClient, t: Target): Promise<boolean> {
+  return (await activeSuppressions(db, t)).some((s) => (s.kind === "utility" || s.kind === "all") && s.reason === "opt_out");
+}
+
+/**
+ * "Sim, quero" na oferta: desfaz o descadastro de lembretes pedido pela pessoa (o de tudo vira só
+ * de promoções) e avisa os webhooks (contact.opted_in, lembretes). Devolve se havia o que desfazer.
+ */
+export async function returnToReminders(db: SupabaseClient, t: Target): Promise<boolean> {
+  const utility = await revoke(db, { ...t, kind: "utility", reason: "opt_out", source: "chat:volta_lembretes" });
+  const all = await revoke(db, { ...t, kind: "all", reason: "opt_out", source: "chat:volta_lembretes" });
+  // as promoções continuam paradas: o sim foi só para os lembretes
+  if (all.length) await suppress(db, { ...t, kind: "marketing", reason: "opt_out", source: "optin:resto" });
+  await queueUndoEvents(db, t, [...utility, ...all.map((a) => ({ id: a.id, kind: "utility" as const }))]);
+  return utility.length + all.length > 0;
+}

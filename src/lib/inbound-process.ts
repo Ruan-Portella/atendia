@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { IDENTITY_MISMATCH_CODE } from "./whatsapp";
 import { PRIMARY_INACTIVITY_TEXT, queueTemplateEvent } from "./platform-events";
 import { expectInbound, igInboundExtra, queueStatusEvent, releaseInbound, waInboundExtra } from "./message-events";
 import { API_SEND_REF, reconcileUncertain } from "./messages";
@@ -53,6 +54,32 @@ async function activeWaChannel(db: SupabaseClient, phoneNumberId: string) {
   return channel && !channel.disconnected_at ? channel : null;
 }
 
+/**
+ * Erro 137000 (o hash de identidade mandado no envio não bate): os vínculos do contato caem e,
+ * dentro da janela de 24 horas, ele recebe uma vez o pedido de conectar de novo (sem o hash: é para
+ * quem está com o número agora, e o texto não leva dado da conta).
+ */
+async function identityMismatch(db: SupabaseClient, phoneNumberId: string, msgHash: string): Promise<void> {
+  const { IDENTITY_CHANGED_TEXT, handleIdentityMismatch } = await import("./pairing");
+  const r = await handleIdentityMismatch(db, msgHash);
+  if (!r.unlinked || !r.conversationId) return;
+  const { data: conv } = await db.from("conversations").select("bot_id, wa_id, last_contact_at").eq("id", r.conversationId).maybeSingle();
+  if (!conv?.wa_id || !conv.last_contact_at || Date.parse(conv.last_contact_at as string) < Date.now() - 23 * 3_600_000) return;
+  const channel = await activeWaChannel(db, phoneNumberId);
+  if (!channel) return;
+  const { deliver } = await import("./send");
+  const { sendText } = await import("./whatsapp");
+  const { SYSTEM_AUTHOR } = await import("./chat");
+  await deliver(db, {
+    botId: conv.bot_id as string,
+    channel: "whatsapp",
+    conversationId: r.conversationId,
+    kind: "sistema",
+    record: { insert: { role: "assistant", content: IDENTITY_CHANGED_TEXT, author: SYSTEM_AUTHOR } },
+    transport: async () => (await sendText(channel, conv.wa_id as string, IDENTITY_CHANGED_TEXT)).messages?.[0]?.id ?? null,
+  });
+}
+
 const whatsappGroup: GroupHandler = async (db, events) => {
   const all = events as InboundEvent<WaPayload>[];
   for (const e of all) {
@@ -81,6 +108,10 @@ const whatsappGroup: GroupHandler = async (db, events) => {
         console.warn("whatsapp: mensagem não entregue", p.phoneNumberId, p.status.errors?.[0]);
         // a recusa por pagamento às vezes só chega aqui, no status da mensagem
         if (p.status.errors?.some((err) => err.code === PAYMENT_ISSUE_CODE)) await markPaymentIssue(db, { column: "phone_number_id", value: p.phoneNumberId });
+      }
+      // o hash de identidade não bate mais (número reciclado ou aparelho novo): o vínculo cai
+      if (p.status.id && p.status.errors?.some((err) => err.code === IDENTITY_MISMATCH_CODE)) {
+        await identityMismatch(db, p.phoneNumberId, channelMsgHash("whatsapp", p.status.id)).catch((err) => console.error("whatsapp: 137000", (err as Error).message));
       }
       // o contato bloqueou o marketing: entra na supressão de marketing (como um SAIR)
       if (e.bot_id && p.status.recipient_id && p.status.errors?.some((err) => err.code === MARKETING_STOPPED_CODE)) {

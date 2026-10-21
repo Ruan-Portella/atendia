@@ -217,6 +217,8 @@ export interface MessageQuery {
   conversationId?: string;
   conversationIds?: string[];
   inboundKey?: string;
+  /** A mensagem pelo id do canal (hash), como o status da Meta traz. */
+  channelMsgHash?: string;
   roles?: MessageRole[];
   notRole?: MessageRole;
   authors?: string[];
@@ -240,6 +242,7 @@ export async function loadMessages<K extends MessageColumn>(db: SupabaseClient, 
   if (q.conversationId) r = r.eq("conversation_id", q.conversationId);
   if (q.conversationIds) r = r.in("conversation_id", q.conversationIds);
   if (q.inboundKey) r = r.eq("inbound_key", q.inboundKey);
+  if (q.channelMsgHash) r = r.eq("channel_msg_hash", q.channelMsgHash);
   if (q.roles) r = q.roles.length === 1 ? r.eq("role", q.roles[0]) : r.in("role", q.roles);
   if (q.notRole) r = r.neq("role", q.notRole);
   if (q.authors) r = r.in("author", q.authors);
