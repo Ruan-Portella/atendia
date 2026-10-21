@@ -7,6 +7,8 @@ import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
 import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf, markMarketingOffer } from "./contacts";
 import { firstExceeded, noticeOnce } from "./rate-limit";
+import { LONG_AUDIO_ASK, LONG_AUDIO_LABEL, audioLimit, longAudioAskDue } from "./audio-limits";
+import { withContactId } from "./ai-contact";
 import { canReadPhotos, canTranscribe, transcribeAudio } from "./ai";
 import { fixedPhotoReply, photoReadingOn, photoSeen, withHandoffNotice, type PhotoReading } from "./photo-note";
 import { readBurstPhotos } from "./photo-reading";
@@ -197,7 +199,13 @@ export async function previousAnswer(db: SupabaseClient, key: string): Promise<{
  * ninguém) sai da regra única de estado (conversation-mode). Erro de acesso ou de pagamento sobe
  * para quem chamou marcar o número.
  */
+/** As mensagens de um contato, com o identificador dele nas chamadas de IA (ai-contact.ts). */
 export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow, all: QueuedMessage[]) {
+  const first = all.find((q) => contactOf(q.msg));
+  return withContactId(channel.bot_id, first ? contactOf(first.msg) : null, () => inboundBurst(db, channel, all));
+}
+
+async function inboundBurst(db: SupabaseClient, channel: ChannelRow, all: QueuedMessage[]) {
   // a pessoa trocou de número (aviso do sistema da Meta): o mesmo contato fica com o telefone e o BSUID novos
   for (const q of all) {
     const sys = q.msg.type === "system" ? q.msg.system : undefined;
@@ -248,13 +256,19 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     }
   }
 
-  const transcribe = async (m: InboundMessage): Promise<string | null> => {
+  // áudio acima de 5 minutos ou além dos 30 do dia: fica como "[áudio longo]", sem transcrever (audio-limits.ts)
+  const longAudio = new Set<number>();
+  const transcribe = async (m: InboundMessage, i: number): Promise<string | null> => {
     const audioId = m.type === "audio" ? m.audio?.id : undefined;
     // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio);
     // sem IA (chatbot sem IA ou pagamento em aberto): a equipe ouve o áudio na conversa
     if (!audioId || !canTranscribe() || mode.step <= 2 || aiOff) return null;
     try {
       const { data } = await downloadMedia(channel, audioId);
+      if (await audioLimit(db, `${bot.id}:${waId}`, data)) {
+        longAudio.add(i);
+        return null;
+      }
       const transcript = await transcribeAudio(data, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "whatsapp", ...u }));
       return transcript ? AUDIO_PREFIX + transcript : null;
     } catch (e) {
@@ -266,11 +280,11 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
   // texto de cada mensagem: digitado, áudio transcrito ou null (mídia sem texto)
   const texts: Array<string | null> = [];
   // número de cartão sai antes de gravar e antes da IA (também o dito no áudio)
-  for (const q of burst) {
-    const t = (inboundText(q.msg) ?? (await transcribe(q.msg)))?.slice(0, MAX_MESSAGE_CHARS) ?? null;
+  for (const [i, q] of burst.entries()) {
+    const t = (inboundText(q.msg) ?? (await transcribe(q.msg, i)))?.slice(0, MAX_MESSAGE_CHARS) ?? null;
     texts.push(t === null ? null : maskCardNumbers(t).text);
   }
-  const shown = (i: number) => texts[i] ?? mediaLabel(burst[i].msg.type);
+  const shown = (i: number) => texts[i] ?? (longAudio.has(i) ? LONG_AUDIO_LABEL : mediaLabel(burst[i].msg.type));
   /** Fotos lidas pela IA, por posição na rajada (gravadas junto da mensagem). */
   let photos = new Map<number, PhotoReading[]>();
 
@@ -588,6 +602,11 @@ export async function handleInboundBurst(db: SupabaseClient, channel: ChannelRow
     const convId = await plainConversation();
     if (convId) await storeAll(convId);
     const lastAudio = last.msg.type === "audio" && canTranscribe();
+    // áudio longo: o pedido de resumo vai uma vez por dia (depois, ele só fica no painel)
+    if (longAudio.has(burst.length - 1)) {
+      if (await longAudioAskDue(db, `${bot.id}:${waId}`)) await say("ia", LONG_AUDIO_ASK, convId ? fixedRecord(LONG_AUDIO_ASK) : null, convId);
+      return;
+    }
     const fixed = lastAudio ? AUDIO_FAILED : photosOn ? ONLY_TEXT_PHOTOS : ONLY_TEXT;
     return void (await say("ia", fixed, convId ? fixedRecord(fixed) : null, convId));
   }

@@ -14,6 +14,7 @@ import { restrictedTerm } from "./instagram-direct";
 import { botHasAi } from "./plans";
 import { openAtendimento } from "./atendimentos";
 import { recordAiUsage, type UsageTokens } from "./ai-usage";
+import { withContactId } from "./ai-contact";
 
 /*
  * Comentários dos posts (E1, parte 4a; spec Peça 9). O webhook "comments" entra na fila como os
@@ -84,7 +85,12 @@ async function recordPrivateReply(db: SupabaseClient, bot: { id: string; agency_
  * duplica (o comentário é único por chatbot). Erro de acesso (token recusado) sobe para quem
  * chamou marcar a conta; o resto fica registrado no comentário.
  */
+/** Um comentário, com o identificador de quem comentou nas chamadas de IA (ai-contact.ts). */
 export async function handleInstagramComment(db: SupabaseClient, ch: IgChannel & { bot_id: string }, c: IgComment): Promise<CommentAction | null> {
+  return withContactId(ch.bot_id, c.from?.id ?? null, () => instagramComment(db, ch, c));
+}
+
+async function instagramComment(db: SupabaseClient, ch: IgChannel & { bot_id: string }, c: IgComment): Promise<CommentAction | null> {
   if (!commentsEnabled() || !c.id || !c.from?.id) return null;
   // da própria conta: a resposta pública do BoaVoz ou alguém da loja pelo app
   if (c.from.id === ch.ig_user_id) return null;

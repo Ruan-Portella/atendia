@@ -37,6 +37,8 @@ import { widgetFiles, widgetFilesNotice, type ActionFile } from "./action-files"
 import { identityPromptNote, type ChatIdentity } from "./widget-identity";
 import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
+import { createLinkGuard, knowledgeLookup, type LinkGuard } from "./link-guard";
+import { logGate } from "./gate/log";
 import { endActiveRoutine, routineSession, type RoutineTurn } from "./routine-engine";
 import { DEFAULT_POST_RULE, isPostHit, postPriceNote, postPriceRuleOf, withPostAges, type PostPriceRule } from "./post-context";
 import type { IdentityPort } from "./routine-identity";
@@ -189,7 +191,14 @@ export function appendActionFiles(files: () => ActionFile[]) {
   });
 }
 
-export function withoutToolParts(o: { component?: () => MessageComponent | null } = {}) {
+/** Até onde o texto já pode sair conferido: o fim da última frase ou linha (link e boleto não têm espaço). */
+export function sentenceCut(text: string): number {
+  let cut = 0;
+  for (const m of text.matchAll(/\n|[.!?](?=\s)/g)) cut = m.index! + 1;
+  return cut;
+}
+
+export function withoutToolParts(o: { component?: () => MessageComponent | null; links?: Pick<LinkGuard, "guard" | "addOutput"> } = {}) {
   // como no WhatsApp e no Instagram, só o primeiro reply da vez vai (duas ações em paralelo)
   let replied = false;
   // botões, lista ou link (mostrar_opcoes / mostrar_link): o texto da ferramenta e o componente
@@ -199,28 +208,56 @@ export function withoutToolParts(o: { component?: () => MessageComponent | null 
   const terms: string[] = [];
   const held = new Map<string, string>();
   const live = new Set<string>();
-  const flush = (id: string, ctrl: TransformStreamDefaultController<UIMessageChunk>) => {
-    const text = guardInternal(held.get(id) ?? "", terms);
+  // filtro de links (link-guard.ts): o texto sai por frase, conferido; o fim do que já saiu dá o
+  // contexto da frase seguinte ("Chave Pix:" numa linha e a chave na outra)
+  const pending = new Map<string, string>();
+  const sent = new Map<string, string>();
+  const toolNames = new Map<string, string>();
+  const checked = async (id: string, text: string) => {
+    if (!text || !o.links) return text;
+    const g = await o.links.guard(text, { before: sent.get(id) });
+    sent.set(id, ((sent.get(id) ?? "") + g.text).slice(-200));
+    return g.text;
+  };
+  const flush = async (id: string, ctrl: TransformStreamDefaultController<UIMessageChunk>) => {
+    const text = await checked(id, guardInternal(held.get(id) ?? "", terms));
     held.delete(id);
     if (!text) return;
     ctrl.enqueue({ type: "text-start", id });
     ctrl.enqueue({ type: "text-delta", id, delta: text });
     ctrl.enqueue({ type: "text-end", id });
   };
+  const release = async (id: string, ctrl: TransformStreamDefaultController<UIMessageChunk>, all: boolean) => {
+    const buf = pending.get(id) ?? "";
+    const cut = all ? buf.length : sentenceCut(buf);
+    if (!cut) return;
+    pending.set(id, buf.slice(cut));
+    const delta = await checked(id, buf.slice(0, cut));
+    if (delta) ctrl.enqueue({ type: "text-delta", id, delta });
+  };
   return new TransformStream<UIMessageChunk, UIMessageChunk>({
-    transform(chunk, ctrl) {
+    async transform(chunk, ctrl) {
       if (chunk.type === "text-start" || chunk.type === "text-delta" || chunk.type === "text-end") {
         if (chunk.type === "text-delta") streamed += chunk.delta;
         if (!terms.length || live.has(chunk.id)) {
           if (chunk.type === "text-start") live.add(chunk.id);
+          if (!o.links) return ctrl.enqueue(chunk);
+          if (chunk.type === "text-delta") {
+            pending.set(chunk.id, (pending.get(chunk.id) ?? "") + chunk.delta);
+            return release(chunk.id, ctrl, false);
+          }
+          if (chunk.type === "text-end") {
+            await release(chunk.id, ctrl, true);
+            pending.delete(chunk.id);
+          }
           return ctrl.enqueue(chunk);
         }
         if (chunk.type === "text-start") held.set(chunk.id, "");
         else if (chunk.type === "text-delta") held.set(chunk.id, (held.get(chunk.id) ?? "") + chunk.delta);
-        else flush(chunk.id, ctrl);
+        else await flush(chunk.id, ctrl);
         return;
       }
-      if (chunk.type === "finish") for (const id of [...held.keys()]) flush(id, ctrl);
+      if (chunk.type === "finish") for (const id of [...held.keys()]) await flush(id, ctrl);
       // lista escrita no texto vira botões só se a vez não tem outro componente (o da ação vence)
       if (chunk.type === "finish" && !shownSent && !replied && !o.component?.()) {
         const fromList = optionsFromText(streamed);
@@ -230,9 +267,12 @@ export function withoutToolParts(o: { component?: () => MessageComponent | null 
         }
       }
       if (!chunk.type.startsWith("tool-")) return ctrl.enqueue(chunk);
+      if (chunk.type === "tool-input-start" || chunk.type === "tool-input-available") toolNames.set(chunk.toolCallId, chunk.toolName);
       if (chunk.type === "tool-output-available") {
         const interno = (chunk.output as { interno?: unknown } | null)?.interno;
         if (interno) terms.push(...internalTerms(interno));
+        // o que uma ação devolveu vale como fonte dos links das frases seguintes
+        if (toolNames.get(chunk.toolCallId)?.startsWith("acao_")) o.links?.addOutput(chunk.output);
       }
       if (chunk.type === "tool-input-available" && chunk.toolName === "chamar_atendente") ctrl.enqueue({ type: "data-handoff", data: true });
       // botões, lista ou link: o texto que veio na ferramenta (sem repetir o que já saiu) e o componente
@@ -244,8 +284,9 @@ export function withoutToolParts(o: { component?: () => MessageComponent | null 
           const joined = joinShownText(streamed, texto);
           if (joined !== streamed.trim()) {
             const id = `opcoes-${chunk.toolCallId}`;
+            const shown = await checked(id, texto.trim());
             ctrl.enqueue({ type: "text-start", id });
-            ctrl.enqueue({ type: "text-delta", id, delta: streamed.trim() ? `\n\n${texto.trim()}` : texto.trim() });
+            ctrl.enqueue({ type: "text-delta", id, delta: streamed.trim() ? `\n\n${shown}` : shown });
             ctrl.enqueue({ type: "text-end", id });
           }
           ctrl.enqueue({ type: "data-components", data: out.componente });
@@ -264,8 +305,12 @@ export function withoutToolParts(o: { component?: () => MessageComponent | null 
       }
     },
     // stream cortado antes do fim: o que estava segurado sai conferido
-    flush(ctrl) {
-      for (const id of [...held.keys()]) flush(id, ctrl);
+    async flush(ctrl) {
+      for (const id of [...held.keys()]) await flush(id, ctrl);
+      for (const id of [...pending.keys()]) {
+        await release(id, ctrl, true);
+        ctrl.enqueue({ type: "text-end", id });
+      }
     },
   });
 }
@@ -879,6 +924,25 @@ export async function runChat(opts: {
   // os botões do passo do roteiro vêm antes dos da ação e dos da IA (que nem mostra opções nesse passo)
   const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (replyComponent ?? actionComponent ?? routine?.component() ?? null) : (routine?.component() ?? actionComponent ?? shown));
   const linkHosts = linkHostsFor(bot, context);
+  // filtro de links na saída (link-guard.ts): o que a IA escreve de link, e-mail, Pix, boleto ou
+  // conta só sai se veio da configuração do chatbot, da base, da equipe, da própria pessoa ou de
+  // uma ação; o nome do perfil e o texto livre do `data` não contam
+  const said = (role: string) => messages.filter((m) => m.role === role).flatMap((m) => m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])));
+  const linkGuard = createLinkGuard({
+    texts: [context, withDisplay("", bot.fixed_display), bot.name, bot.client_name, bot.client_site, JSON.stringify(bot.persona ?? {}), bot.business_topics, activeMomentNotice(bot)?.text, JSON.stringify(bot.human_handoff ?? {}), JSON.stringify(bot.regulated_channel ?? {}), ...agentMessages, ...said("assistant"), ...said("user"), routine?.prompt() ?? null],
+    lookup: knowledgeLookup(db, [search.botId, search.alsoBotId].filter((b): b is string => Boolean(b))),
+  });
+  if (opts.confirmed) linkGuard.addOutput(opts.confirmed.output);
+  let linksLogged = false;
+  const guardLinks = async (text: string, g?: { before?: string }) => {
+    const r = await linkGuard.guard(text, g);
+    // uma linha no registro do portão por vez (o widget confere frase a frase; o canal, o texto todo)
+    if (r.removed.length && !linksLogged) {
+      linksLogged = true;
+      void logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "link_removido", categories: [] });
+    }
+    return r;
+  };
   // valores de `internal` das ações desta vez: a resposta é conferida contra eles
   const internal: string[] = [...(opts.confirmed?.internal ?? [])];
   const actionTools = await actionToolsFor(db, {
@@ -1081,7 +1145,10 @@ export async function runChat(opts: {
         // botões, lista ou link: o texto da ferramenta entra na mensagem (sem repetir o que a IA escreveu)
         // resumo do Confirmar: só o que o BoaVoz montou (o texto da IA junto com a chamada fica de fora)
         const written = actionReply ? text : confirmShown && shownText ? shownText : joinShownText(text, shownText);
-        const guarded = internal.length ? guardInternal(written, internal) : written;
+        // o que as ações devolveram vale como fonte dos links; o resumo do Confirmar é do BoaVoz
+        for (const s of steps) for (const t of s.toolResults) if (t.toolName.startsWith("acao_")) linkGuard.addOutput(t.output);
+        const linked = confirmShown && shownText ? written : (await guardLinks(written)).text;
+        const guarded = internal.length ? guardInternal(linked, internal) : linked;
         const content = actionReply ? [guarded.trim(), actionReply].filter(Boolean).join("\n\n") : guarded;
         // rede de segurança: lista curta com pergunta de escolha no texto vira opções (no site a
         // lista já saiu no texto; no WhatsApp e no Instagram o canal manda o texto sem ela)
@@ -1116,5 +1183,6 @@ export async function runChat(opts: {
   // urgent(): a IA chamou atendente por risco à vida (o canal garante o texto fixo na resposta)
   // actionReply(): reply exato de uma ação (o canal confere no portão antes de enviar)
   // components(): botões, lista ou link desta vez (o canal converte); shownText(): o texto que veio na ferramenta
-  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: finalComponent, files: () => actionFiles, shownText: () => shownText, listText: () => listText, confirmShown: () => confirmShown };
+  // links: o filtro de links desta vez (o canal confere o texto que sai; o widget, frase a frase)
+  return { result, conversationId: convId, sources: used, saved, leadSaved: () => leadCreated, siteOffer: () => siteOffer, urgent: () => urgentCalled, askAge: () => askAgeCalled, actionReply: () => actionReply, internalTerms: () => internal, components: finalComponent, files: () => actionFiles, shownText: () => shownText, listText: () => listText, confirmShown: () => confirmShown, links: { guard: guardLinks, addOutput: linkGuard.addOutput } };
 }

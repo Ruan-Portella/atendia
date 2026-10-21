@@ -4,6 +4,7 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { withContactId } from "@/lib/ai-contact";
 import { AI_BLOCK_LABEL, CORS_HEADERS, SYSTEM_AUTHOR, appendActionComponent, appendActionFiles, appendSiteOffer, conversationHistory, lastUserText, openConversation, requestHandoff, runChat, withoutToolParts, type BotRow } from "@/lib/chat";
 import { resolveConfirmClick } from "@/lib/action-confirm";
 import { devButtonId, type Interactive } from "@/lib/message-events";
@@ -351,7 +352,8 @@ export async function POST(req: Request) {
       return fixedStream("roteiro", reply, handoffNotice ? { ...headers, "X-Handoff": "requested" } : headers, { handoff: Boolean(handoffNotice) });
     }
     const history = convId ? await conversationHistory(db, convId, 11, MAX_MESSAGE_CHARS) : [];
-    const { result, conversationId: activeId, siteOffer, components, files, saved } = await runChat({
+    // o identificador do visitante nas chamadas de IA (ai-contact.ts): um abuso bloqueia só ele
+    const { result, conversationId: activeId, siteOffer, components, files, saved, links } = await withContactId(bot.id, (who.kind === "token" ? who.identityHash : null) ?? visitorId ?? convId, async () => runChat({
       db,
       bot,
       // depois do Confirmar, o clique já está gravado (e já vem no histórico)
@@ -370,7 +372,7 @@ export async function POST(req: Request) {
       extraTools: port.switchTool(),
       identityPort: port,
       identityNote,
-    });
+    }));
     // registro de acesso do visitante (Marco Civil): IP quando a conversa começa e quando muda;
     // o teste ao vivo do painel já fica no registro de acesso do painel
     if (channel !== "painel") after(() => logWidgetAccess(db, { botId: bot.id, conversationId: activeId, ip: clientIp(req), isNew: newConversation }));
@@ -383,7 +385,7 @@ export async function POST(req: Request) {
     // atendimento aberto antes da conversa existir: liga a primeira conversa a ele
     if (slot?.isNew && slot.id && newConversation) after(async () => void (await db.from("atendimentos").update({ first_conversation_id: activeId }).eq("id", slot.id)));
     return createUIMessageStreamResponse({
-      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts({ component: components })).pipeThrough(appendActionComponent(components)).pipeThrough(appendActionFiles(files)).pipeThrough(appendSiteOffer(siteOffer)),
+      stream: result.toUIMessageStream({ onError: () => "erro" }).pipeThrough(withoutToolParts({ component: components, links })).pipeThrough(appendActionComponent(components)).pipeThrough(appendActionFiles(files)).pipeThrough(appendSiteOffer(siteOffer)),
       headers: { ...CORS_HEADERS, "X-Conversation-Id": activeId, ...(handoff ? { "X-Handoff": handoff } : {}), "Access-Control-Expose-Headers": "X-Conversation-Id, X-Handoff" },
     });
   } catch (e) {

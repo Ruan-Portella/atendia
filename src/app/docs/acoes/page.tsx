@@ -159,7 +159,7 @@ export default function ActionsDocs() {
       <Table
         head={["Campo", "O que acontece"]}
         rows={[
-          [<code key="d">data</code>, "Os dados para a IA responder com as palavras dela. Qualquer JSON."],
+          [<code key="d">data</code>, <>Os dados para a IA responder com as palavras dela. Qualquer JSON. Link, e-mail, chave Pix, linha de boleto ou conta que a IA escrever só sai se for o valor inteiro de um campo (<code key="ex">{`"pix": "12345678900"`}</code>): no meio de um texto livre (uma observação de pedido escrita por outra pessoa), vira <em>[link removido]</em>. Para mandar um texto com link do jeito certo, use <code key="r2">reply</code>.</>],
           [<code key="r">reply</code>, "Texto exato para o contato (até 4.000 caracteres). Com reply, a IA não escreve nada naquela vez: vai o seu texto, com os botões e os arquivos da mesma resposta."],
           [<code key="i">internal</code>, <>Objeto que a IA usa para decidir o que dizer, mas que nunca aparece: frase da resposta que contiver um desses valores sai, e se não sobrar nada o contato recebe <em>“Não consigo te passar essa informação por aqui. Posso ajudar com outra coisa?”</em>.</>],
           [<code key="c">components</code>, <>Botões, lista, link ou carrossel (veja <Link href="/docs/mensagens-ricas">Mensagens ricas</Link>). Numa consulta sem reply, eles só vão se a resposta da IA oferece essa escolha; com reply e no resultado do Confirmar, vão sempre.</>],

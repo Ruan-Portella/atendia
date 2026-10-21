@@ -426,7 +426,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
 
   // 3. IA (aviso de IA calculado antes de a resposta nova entrar na conversa)
   const disclosure = await aiDisclosure(db, bot, convId);
-  const { result, saved, leadSaved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, files: actionFiles, shownText, listText, confirmShown } = await runChat({
+  const { result, saved, leadSaved, urgent, askAge: aiAskedAge, actionReply, internalTerms, components: shownComponent, files: actionFiles, shownText, listText, confirmShown, links: linkGuard } = await runChat({
     db,
     bot,
     messages: history,
@@ -483,8 +483,12 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
       text = replyFallback(rc, destination);
     }
   }
+  // link, e-mail, Pix ou conta escrito pela IA sem fonte confiável vira "[link removido]" (o reply
+  // é texto do dev e sai como veio; o resumo do Confirmar é do BoaVoz)
+  const aiText = text === raw;
+  if (aiText && !confirmShown()) text = (await linkGuard.guard(text)).text;
   // valor interno de uma ação escrito pela IA (o reply é texto do dev e sai como veio)
-  if (text === raw && internalTerms().length) {
+  if (aiText && internalTerms().length) {
     const s = stripInternal(text, internalTerms());
     if (s.leaked) {
       await logGate(db, { botId: bot.id, conversationId: convId, stage: "saida", decision: "interno_removido", categories: [] });

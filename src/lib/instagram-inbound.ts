@@ -25,6 +25,8 @@ import { readBurstPhotos } from "./photo-reading";
 import { fetchIgImage, fetchIgMedia } from "./media-capture";
 import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
+import { LONG_AUDIO_ASK, LONG_AUDIO_LABEL, audioLimit, longAudioAskDue } from "./audio-limits";
+import { withContactId } from "./ai-contact";
 import { instagramTyping, isInstagramAccessError, sendInstagramAttachment, sendInstagramTemplate, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { answerWithGate, gateButtons } from "./gate/flow";
@@ -194,11 +196,12 @@ export async function sendCarousel(db: SupabaseClient, ch: IgChannelRow, to: str
   return send(db, ch, to, plan.summary, plan.quickReplies, opts);
 }
 
-async function transcribeFrom(url: string, onUsage?: Parameters<typeof transcribeAudio>[1]): Promise<string | null> {
+async function transcribeFrom(url: string, o: { onUsage?: Parameters<typeof transcribeAudio>[1]; allowed: (data: Uint8Array) => Promise<boolean> }): Promise<string | null> {
   // safeFetch (nunca um endereço interno), com limite de tamanho
   const file = await fetchIgMedia(url);
   if (!file) throw new Error("áudio grande demais");
-  const transcript = await transcribeAudio(file.data, onUsage);
+  if (!(await o.allowed(file.data))) return null;
+  const transcript = await transcribeAudio(file.data, o.onUsage);
   return transcript ? AUDIO_PREFIX + transcript : null;
 }
 
@@ -214,7 +217,12 @@ export interface QueuedDm {
  * à última com texto. Quem responde (IA, equipe ou ninguém) sai da regra única de estado
  * (conversation-mode). Erro de acesso (token recusado) sobe para quem chamou marcar a conta.
  */
+/** As DMs de um contato, com o identificador dele nas chamadas de IA (ai-contact.ts). */
 export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedDm[]) {
+  return withContactId(ch.bot_id, all.find((q) => q.ev.sender?.id)?.ev.sender?.id ?? null, () => instagramBurst(db, ch, all));
+}
+
+async function instagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedDm[]) {
   // mensagem não suportada (enquete, efeito…) e apagada não recebem resposta
   const burst = all.filter((q) => (q.ev.message?.mid ?? q.ev.postback?.mid ?? igRef(q.ev)) && q.ev.sender?.id && !q.ev.message?.is_deleted && !q.ev.message?.is_unsupported);
   if (!burst.length) return;
@@ -268,13 +276,22 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     }
   }
 
-  const transcribe = async (ev: IgMessagingEvent) => {
+  // áudio acima de 5 minutos ou além dos 30 do dia: fica como "[áudio longo]", sem transcrever (audio-limits.ts)
+  const longAudio = new Set<number>();
+  const transcribe = async (ev: IgMessagingEvent, i: number) => {
     const audioUrl = ev.message?.attachments?.find((a) => a.type === "audio")?.payload?.url;
     // envio bloqueado ou canal suspenso: ninguém vai ler a transcrição agora (fica o rótulo do áudio);
     // sem IA (chatbot sem IA ou pagamento em aberto): a equipe ouve o áudio na conversa
     if (!audioUrl || !canTranscribe() || mode.step <= 2 || aiOff) return null;
     try {
-      return await transcribeFrom(audioUrl, (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "instagram", ...u }));
+      return await transcribeFrom(audioUrl, {
+        onUsage: (u) => void recordAiUsage(db, { agencyId: bot.agency_id, botId: bot.id, kind: "transcricao", channel: "instagram", ...u }),
+        allowed: async (data) => {
+          if (!(await audioLimit(db, `${bot.id}:${igsid}`, data))) return true;
+          longAudio.add(i);
+          return false;
+        },
+      });
     } catch (e) {
       console.error("instagram: áudio não transcrito", e);
       return null;
@@ -300,10 +317,10 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     const ref = pairingRef(q.ev);
     const typed = [igText(q.ev), contexts[i].text].filter(Boolean).join("\n") || (ref ? `Conectar ${ref}` : null);
     // número de cartão sai antes de gravar e antes da IA (também o dito no áudio)
-    const t = (typed ?? (await transcribe(q.ev)))?.slice(0, MAX_MESSAGE_CHARS) ?? null;
+    const t = (typed ?? (await transcribe(q.ev, i)))?.slice(0, MAX_MESSAGE_CHARS) ?? null;
     texts.push(t === null ? null : maskCardNumbers(t).text);
   }
-  const shown = (i: number) => (deleted.has(burst[i].key) ? DELETED_LABEL : (texts[i] ?? igMediaLabel(burst[i].ev)));
+  const shown = (i: number) => (deleted.has(burst[i].key) ? DELETED_LABEL : (texts[i] ?? (longAudio.has(i) ? LONG_AUDIO_LABEL : igMediaLabel(burst[i].ev))));
   /** Depois de gravar: a referência do post ou reel e a marca de apagada nas mensagens. */
   const afterStore = async () => {
     for (const [i, q] of burst.entries()) {
@@ -547,6 +564,11 @@ export async function handleInstagramBurst(db: SupabaseClient, ch: IgChannelRow,
     const convId = await plainConversation();
     if (convId) await storeAll(convId);
     const lastAudio = Boolean(lastEv.message?.attachments?.some((a) => a.type === "audio")) && canTranscribe();
+    // áudio longo: o pedido de resumo vai uma vez por dia (depois, ele só fica no painel)
+    if (longAudio.has(burst.length - 1)) {
+      if (await longAudioAskDue(db, `${bot.id}:${igsid}`)) await say("ia", LONG_AUDIO_ASK, convId ? fixedRecord(LONG_AUDIO_ASK) : null, convId);
+      return;
+    }
     const fixed = lastAudio ? AUDIO_FAILED : photosOn ? ONLY_TEXT_PHOTOS : ONLY_TEXT;
     return void (await say("ia", fixed, convId ? fixedRecord(fixed) : null, convId));
   }

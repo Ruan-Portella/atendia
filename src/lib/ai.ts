@@ -5,6 +5,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { embed, embedMany, transcribe, type EmbeddingModel, type LanguageModel, type SystemModelMessage } from "ai";
 import { CATEGORIES } from "./gate/rules";
 import { audioDurationSeconds } from "./audio-duration";
+import { currentContactId } from "./ai-contact";
 
 type ProviderOptions = NonNullable<Parameters<typeof embed>[0]["providerOptions"]>;
 
@@ -90,7 +91,9 @@ export function modelCallOptions(modelId: string, o: { temperature?: number; cac
     ? (o.effort ?? (major === 5 && minor === null ? "minimal" : acceptsNone ? "none" : "low"))
     : undefined;
   const keepsTemperature = !reasoning || (effort === "none" && acceptsNone);
-  const openaiOptions = { ...(o.cacheKey ? { promptCacheKey: o.cacheKey } : {}), ...(effort ? { reasoningEffort: effort } : {}) };
+  // o identificador do contato que o BoaVoz está atendendo (ai-contact.ts), quando houver
+  const safetyIdentifier = currentContactId();
+  const openaiOptions = { ...(o.cacheKey ? { promptCacheKey: o.cacheKey } : {}), ...(effort ? { reasoningEffort: effort } : {}), ...(safetyIdentifier ? { safetyIdentifier } : {}) };
   return {
     ...(keepsTemperature && o.temperature !== undefined ? { temperature: o.temperature } : {}),
     ...(Object.keys(openaiOptions).length ? { providerOptions: { openai: openaiOptions } } : {}),

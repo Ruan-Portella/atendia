@@ -12,7 +12,7 @@ export const metadata = { title: "Política de Privacidade" };
  * consentimento para novidades; o envio de campanhas entra com a tela de campanhas. Avisos no
  * WhatsApp (19/10/2026): o número da pessoa da equipe, com o aceite confirmado no WhatsApp. Réguas
  * (20/10/2026): as datas do contato informadas pela empresa (aniversário sem o ano, última visita e
- * próximo horário).
+ * próximo horário). Pendências do MVP (20/10/2026): o código do contato que vai ao provedor de IA.
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -115,7 +115,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Supabase</strong>: banco de dados, autenticação, fila e arquivos (Brasil, região de São Paulo).</li>
           <li><strong>Vercel</strong>: hospedagem da aplicação (funções na região de São Paulo).</li>
-          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento, transcrevem áudios e descrevem as fotos enviadas pelos contatos e as fotos dos posts e stories da empresa no Instagram (a OpenAI). Pelos termos de uso das APIs, não usam os dados para treinar modelos.</li>
+          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento, transcrevem áudios e descrevem as fotos enviadas pelos contatos e as fotos dos posts e stories da empresa no Instagram (a OpenAI). Pelos termos de uso das APIs, não usam os dados para treinar modelos. Junto de cada pedido vai um código do contato (gerado pela {brand} com uma chave própria, sem o telefone nem o nome), para o provedor poder bloquear só aquele contato em caso de abuso.</li>
           <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp e no Instagram, quando a empresa conecta esses canais.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>
