@@ -32,7 +32,8 @@
             "ai_paused_until": null,
             "agent": null,
             "sector": null,
-            "snoozed_until": null
+            "snoozed_until": null,
+            "ticket": null
           }
         ],
         "next_cursor": "MjAyNi0xMC0xOVQxNTowMjoxMS40ODFafDBlOGY1YTNj"
@@ -69,7 +70,8 @@
           "ai_paused_until": null,
           "agent": null,
           "sector": null,
-          "snoozed_until": null
+          "snoozed_until": null,
+          "ticket": null
         },
         "data": [
           {

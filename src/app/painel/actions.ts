@@ -16,6 +16,7 @@ import { parseTarget, transferConversation } from "@/lib/transfer";
 import { isSignatureFormat } from "@/lib/signature";
 import { parseTicketForm } from "@/lib/tickets";
 import { setTicketStatus } from "@/lib/ticket-follow";
+import { ensureTicketTemplate } from "@/lib/ticket-whatsapp";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
 import { attendantAuthor, type Attendant } from "@/lib/authors";
@@ -312,6 +313,8 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   const supabase = await createClient();
   const f = Object.fromEntries(formData) as Record<string, string>;
   const patch: Record<string, unknown> = {};
+  // chamados com o telefone (parte 7d): o modelo do aviso no WhatsApp é criado depois de salvar
+  let ticketWhatsApp = false;
   if ("name" in f) {
     const n = assistantName(f.name);
     if ("error" in n) return fail(n.error);
@@ -358,6 +361,7 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
     const ticket = parseTicketForm(f);
     if ("error" in ticket) return fail(ticket.error);
     patch.ticket_form = ticket.value;
+    ticketWhatsApp = Boolean(ticket.value?.enabled && ticket.value.phone !== "nao");
   }
   if (!Object.keys(patch).length && !("extra_instructions" in f) && !("welcome" in f)) return fail("Nada para salvar.");
 
@@ -384,7 +388,14 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   const { data: saved } = await supabase.from("bots").select("is_template").eq("id", botId).maybeSingle();
   if (kind?.template_id) await applyTemplate(createAdminClient(), kind.template_id as string, [botId]);
   revalidatePath("/painel", "layout");
-  return ok(saved?.is_template ? "Salvo no rascunho do modelo. Os chatbots derivados recebem quando você publicar." : "Alterações salvas.");
+  if (saved?.is_template) return ok("Salvo no rascunho do modelo. Os chatbots derivados recebem quando você publicar.");
+  // chamado com telefone e WhatsApp conectado: o modelo do aviso da resposta (criado uma vez)
+  if (ticketWhatsApp) {
+    const status = await ensureTicketTemplate(createAdminClient(), botId).catch(() => "ausente" as const);
+    if (status === "em_analise") return ok("Alterações salvas. O modelo do aviso dos chamados no WhatsApp foi para a análise da Meta (costuma sair em minutos).");
+    if (status === "recusado" || status === "reclassificado") return ok("Alterações salvas. A Meta recusou o modelo do aviso dos chamados no WhatsApp: a resposta segue só por e-mail.");
+  }
+  return ok("Alterações salvas.");
 }
 
 /**
@@ -804,7 +815,7 @@ export async function setTicketStatusAction(conversationId: string, formData: Fo
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
   const status = String(formData.get("status") ?? "");
-  const r = await setTicketStatus(owned.admin, conversationId, status);
+  const r = await setTicketStatus(owned.admin, conversationId, status, new Date(), await me());
   if (r.ok && r.before !== undefined) await auditPanel("chamado.status", { type: "conversation", id: conversationId }, { before: { status: r.before }, after: { status } });
   revalidateConversation(owned.conv.bot_id, conversationId);
   return r.ok ? ok(r.message) : fail(r.message);

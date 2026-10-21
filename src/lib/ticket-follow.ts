@@ -5,6 +5,7 @@ import { loadMessages, saveMessage } from "./messages";
 import { agencyBaseUrl } from "./domain";
 import type { Attendant } from "./authors";
 import { isTicketStatus, type TicketStatus } from "./tickets";
+import { queueTicketEvent } from "./message-events";
 
 /*
  * O chamado depois de aberto (Chamados, parte 7c). A equipe muda o status pela conversa (aberto,
@@ -62,13 +63,14 @@ export async function addTicketMessage(db: SupabaseClient, t: TicketRow, rawText
     .from("conversations")
     .update({ ticket_status: status, ...(reopened ? { ticket_resolved_at: null, handled_at: null, needs_human: true, handoff_requested_at: at, takeover_at: null, assigned_to_type: null, assigned_to_id: null, assigned_to_name: null, assigned_at: null } : {}) })
     .eq("id", t.id);
+  await queueTicketEvent(db, t.id, { type: "ticket.updated", ticket: { protocol: t.ticket_protocol, status, subject: t.ticket_subject }, at, change: "mensagem_cliente", previousStatus: t.ticket_status });
   return ok("Mensagem enviada. A equipe responde no seu e-mail.");
 }
 
 /** A equipe mudou o status (resolvido encerra o atendimento da conversa; outro status reabre). */
-export async function setTicketStatus(db: SupabaseClient, conversationId: string, status: unknown, now = new Date()): Promise<ActionResult & { before?: string | null }> {
+export async function setTicketStatus(db: SupabaseClient, conversationId: string, status: unknown, now = new Date(), who: Attendant | null = null): Promise<ActionResult & { before?: string | null }> {
   if (!isTicketStatus(status)) return fail("Status inválido.");
-  const { data: conv } = await db.from("conversations").select("ticket_protocol, ticket_status, handled_at").eq("id", conversationId).maybeSingle();
+  const { data: conv } = await db.from("conversations").select("ticket_protocol, ticket_status, ticket_subject, handled_at").eq("id", conversationId).maybeSingle();
   if (!conv?.ticket_protocol) return fail("Esta conversa não é um chamado.");
   if (conv.ticket_status === status) return ok("O chamado já está com esse status.");
   const at = now.toISOString();
@@ -78,6 +80,7 @@ export async function setTicketStatus(db: SupabaseClient, conversationId: string
       : { ticket_status: status, ticket_resolved_at: null, ...(conv.handled_at ? { handled_at: null, needs_human: true, handoff_requested_at: at } : {}) };
   const { error } = await db.from("conversations").update(patch).eq("id", conversationId);
   if (error) return fail("Não foi possível mudar o status. Tente de novo.");
+  await queueTicketEvent(db, conversationId, { type: "ticket.updated", ticket: { protocol: conv.ticket_protocol as string, status, subject: (conv.ticket_subject as string | null) ?? null }, at, change: "status", previousStatus: (conv.ticket_status as string | null) ?? null, agent: who });
   return { ...ok(status === "resolvido" ? "Chamado resolvido: ele sai da Caixa de entrada." : "Status do chamado atualizado."), before: (conv.ticket_status as string | null) ?? null };
 }
 
@@ -109,10 +112,19 @@ export function ticketReplyEmail(o: { protocol: string; subject: string | null; 
  * Depois de a equipe responder pelo painel: a resposta vai por e-mail para quem abriu e o chamado
  * fica aguardando o cliente. Sem a Resend (dev), só o status muda.
  */
-export async function afterTicketReply(db: SupabaseClient, conversationId: string, text: string, who: Attendant): Promise<void> {
-  const { data: conv } = await db.from("conversations").select("ticket_protocol, ticket_subject, ticket_status, bots(public_key, client_name, agencies(name, custom_domain, custom_domain_verified_at))").eq("id", conversationId).maybeSingle();
+export async function afterTicketReply(db: SupabaseClient, conversationId: string, text: string, who: Attendant, now = new Date()): Promise<void> {
+  const { data: conv } = await db.from("conversations").select("bot_id, ticket_protocol, ticket_subject, ticket_status, ticket_whatsapp_at, bots(public_key, client_name, agencies(name, custom_domain, custom_domain_verified_at))").eq("id", conversationId).maybeSingle();
   if (!conv?.ticket_protocol) return;
   await db.from("conversations").update({ ticket_status: "aguardando_cliente" }).eq("id", conversationId);
+  await queueTicketEvent(db, conversationId, { type: "ticket.updated", ticket: { protocol: conv.ticket_protocol as string, status: "aguardando_cliente", subject: (conv.ticket_subject as string | null) ?? null }, at: now.toISOString(), change: "resposta_equipe", previousStatus: (conv.ticket_status as string | null) ?? null, agent: who });
+  // aviso pelo WhatsApp (parte 7d): só com o aceite de quem abriu
+  if (conv.ticket_whatsapp_at) {
+    const lead = (await leadsOfConversation(db, conversationId).catch(() => [])).find((l) => l.phone);
+    if (lead?.phone) {
+      const { notifyTicketByWhatsApp } = await import("./ticket-whatsapp");
+      await notifyTicketByWhatsApp(db, { botId: conv.bot_id as string, phone: lead.phone, name: lead.name, protocol: conv.ticket_protocol as string });
+    }
+  }
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return;
   const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { public_key: string; client_name: string; agencies: { name: string; custom_domain: string | null; custom_domain_verified_at: string | null } | Array<{ name: string; custom_domain: string | null; custom_domain_verified_at: string | null }> | null } | null;

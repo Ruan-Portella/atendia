@@ -154,7 +154,7 @@ export async function memberSetTicketStatus(clientId: string, conversationId: st
   const ctx = await ownConversation(clientId, conversationId);
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
   const status = String(formData.get("status") ?? "");
-  const r = await setTicketStatus(ctx.admin, conversationId, status);
+  const r = await setTicketStatus(ctx.admin, conversationId, status, new Date(), memberAttendant(ctx.member, ctx.email));
   if (r.ok && r.before !== undefined) await memberAudit(ctx, "chamado.status", conversationId, { status });
   revalidateMemberConversation(clientId, conversationId);
   return r.ok ? ok(r.message) : fail(r.message);

@@ -380,6 +380,39 @@ export async function queueConversationTransferred(db: SupabaseClient, conversat
   }
 }
 
+/** O chamado como os webhooks levam (Chamados, parte 7d). */
+export interface TicketRef {
+  protocol: string;
+  status: string;
+  subject: string | null;
+}
+
+/**
+ * ticket.created (o chamado foi aberto no chat do site, com quem abriu) e ticket.updated (o status
+ * mudou, a equipe respondeu ou a pessoa escreveu de novo: `change`). As notas internas nunca vão.
+ */
+export async function queueTicketEvent(
+  db: SupabaseClient,
+  conversationId: string,
+  o: { type: "ticket.created" | "ticket.updated"; ticket: TicketRef; at: string; change?: "status" | "resposta_equipe" | "mensagem_cliente"; previousStatus?: string | null; requester?: { name: string; email: string; phone: string | null } | null; agent?: AgentRef | null },
+): Promise<void> {
+  try {
+    const ctx = await eventContext(db, conversationId);
+    if (!ctx) return;
+    const { emitEvent } = await import("./webhooks");
+    const data: Record<string, unknown> = { ticket: o.ticket };
+    if (o.type === "ticket.created") data.requester = o.requester ?? null;
+    else Object.assign(data, { change: o.change ?? "status", previous_status: o.previousStatus ?? null, agent: agentRef(o.agent) });
+    await emitEvent(
+      db,
+      { type: o.type, key: `${conversationId}:${o.type}:${o.change ?? "criado"}:${o.at}`, bot: ctx.bot, createdAt: o.at, conversation: { id: conversationId, channel: ctx.channel }, contact: await contactObject(db, ctx.contactId), contactId: ctx.contactId, data },
+      { background: true },
+    );
+  } catch (e) {
+    console.error("webhook: evento de chamado não registrado", (e as Error).message);
+  }
+}
+
 /* ------------------------------------------------------------------ arquivo e clique na mensagem recebida */
 
 export interface Interactive {

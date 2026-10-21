@@ -36,6 +36,8 @@ export const WEBHOOK_EVENTS = [
   "handoff.returned",
   "conversation.assigned",
   "conversation.transferred",
+  "ticket.created",
+  "ticket.updated",
   "contact.linked",
   "contact.unlinked",
   "contact.opted_in",
@@ -67,6 +69,7 @@ export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 export const WEBHOOK_EVENT_GROUPS: Array<{ label: string; events: WebhookEvent[] }> = [
   { label: "Mensagens", events: ["message.received", "message.sent", "message.status", "message.failed", "message.deleted"] },
   { label: "Atendimento", events: ["lead.created", "lead.updated", "handoff.requested", "handoff.returned", "conversation.assigned", "conversation.transferred"] },
+  { label: "Chamados", events: ["ticket.created", "ticket.updated"] },
   { label: "Roteiros", events: ["routine.completed", "routine.abandoned"] },
   { label: "Contato", events: ["contact.linked", "contact.unlinked", "contact.opted_in", "contact.opted_out", "contact.deleted"] },
   { label: "Campanhas", events: ["campaign.finished"] },

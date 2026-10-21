@@ -117,6 +117,17 @@ export default function WebhooksDocs() {
           [<code key="6">conversation.transferred</code>, "Alguém da equipe transferiu a conversa para outra pessoa ou para um setor. A nota interna não vai no evento.", <><code>from</code> (quem transferiu) e <code>to</code> {`{type, agent, sector}`}: <code>type</code> <code>agent</code> ou <code>sector</code>; no setor com rodízio, <code>agent</code> é quem recebeu.</>],
         ]}
       />
+      <H3 id="chamados">Chamados</H3>
+      <Table
+        head={["Evento", "Quando", "data"]}
+        rows={[
+          [<code key="1">ticket.created</code>, "Alguém abriu um chamado no chat do site.", <><code>ticket</code> {`{protocol, status, subject}`} e <code>requester</code> {`{name, email, phone}`} (quem abriu).</>],
+          [<code key="2">ticket.updated</code>, "O chamado mudou: a equipe trocou o status, respondeu, ou a pessoa escreveu de novo pelo acompanhamento.", <><code>ticket</code>, <code>change</code> (<code>status</code>, <code>resposta_equipe</code> ou <code>mensagem_cliente</code>), <code>previous_status</code> e <code>agent</code> (quem da equipe, quando foi a equipe). Status: <code>aberto</code>, <code>em_andamento</code>, <code>aguardando_cliente</code> e <code>resolvido</code>. A nota interna nunca vai.</>],
+        ]}
+      />
+      <p>
+        Para quem já tem um helpdesk (Zendesk, Freshdesk…): o <code>ticket.created</code> leva o necessário para criar o chamado lá, com o protocolo do BoaVoz como referência; o <code>ticket.updated</code> mantém os dois iguais.
+      </p>
       <H3 id="roteiros">Roteiros</H3>
       <Table
         head={["Evento", "Quando", "data"]}

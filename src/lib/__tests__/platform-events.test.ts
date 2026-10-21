@@ -10,7 +10,7 @@ describe("eventos sem conteúdo de conversa (C pública, parte 2b)", () => {
     for (const e of ["contact.opted_in", "contact.opted_out", "campaign.finished", "channel.connected", "channel.disconnected", "channel.issue", "template.status_changed", "bot.paused", "bot.resumed", "compliance.changed"] as const) {
       expect(WEBHOOK_EVENTS).toContain(e);
     }
-    expect(WEBHOOK_EVENT_GROUPS.map((g) => g.label)).toEqual(["Mensagens", "Atendimento", "Roteiros", "Contato", "Campanhas", "Canais", "Conformidade", "Cota e crédito"]);
+    expect(WEBHOOK_EVENT_GROUPS.map((g) => g.label)).toEqual(["Mensagens", "Atendimento", "Chamados", "Roteiros", "Contato", "Campanhas", "Canais", "Conformidade", "Cota e crédito"]);
     // todo evento aparece num grupo do editor, uma vez só
     expect(WEBHOOK_EVENT_GROUPS.flatMap((g) => g.events).sort()).toEqual([...WEBHOOK_EVENTS].sort());
   });

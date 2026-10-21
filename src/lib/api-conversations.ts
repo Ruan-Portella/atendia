@@ -54,9 +54,13 @@ interface ConversationRow {
   snoozed_until?: string | null;
   snoozed_at?: string | null;
   last_contact_at?: string | null;
+  /** Chamado do chat do site (Chamados, parte 7d). */
+  ticket_protocol?: string | null;
+  ticket_status?: string | null;
+  ticket_subject?: string | null;
 }
 
-const CONV_COLS = "id, bot_id, channel, contact_id, started_at, last_message_at, message_count, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, ai_paused_until, sector_id, snoozed_until, snoozed_at, last_contact_at, sectors(name)";
+const CONV_COLS = "id, bot_id, channel, contact_id, started_at, last_message_at, message_count, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, ai_paused_until, sector_id, snoozed_until, snoozed_at, last_contact_at, ticket_protocol, ticket_status, ticket_subject, sectors(name)";
 
 /** Quem responde a conversa agora: a IA, ninguém (a integração pausou), a fila da equipe ou alguém da equipe. Pura. */
 export function conversationStatus(c: Pick<ConversationRow, "handoff_requested_at" | "takeover_at" | "handled_at" | "ai_paused_until">, now = Date.now()): ConversationStatus {
@@ -84,6 +88,7 @@ export function conversationObject(c: ConversationRow, now = Date.now()) {
     // setor da conversa e adiamento (Caixa de entrada, parte 6)
     sector: c.sector_id && sectorName ? { id: `sec_${c.sector_id}`, name: sectorName } : null,
     snoozed_until: isSnoozed(c, now) ? c.snoozed_until! : null,
+    ticket: c.ticket_protocol ? { protocol: c.ticket_protocol, status: c.ticket_status ?? "aberto", subject: c.ticket_subject ?? null } : null,
   };
 }
 

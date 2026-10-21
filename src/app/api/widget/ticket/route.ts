@@ -15,6 +15,7 @@ const schema = z.object({
   phone: z.string().max(40).nullable().optional(),
   subject: z.string().max(60).nullable().optional(),
   description: z.string().max(4000),
+  whatsapp: z.boolean().optional(),
 });
 
 export async function OPTIONS() {
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
   ]);
   if (exceeded) return tooMany(exceeded, CORS_HEADERS);
   try {
-    const { protocol } = await openTicket(db, bot, form, { name: d.name, email: d.email, phone: d.phone ?? null, subject: d.subject ?? null, description: d.description, visitorId: d.visitorId ?? null });
+    const { protocol } = await openTicket(db, bot, form, { name: d.name, email: d.email, phone: d.phone ?? null, subject: d.subject ?? null, description: d.description, visitorId: d.visitorId ?? null, whatsapp: d.whatsapp === true });
     return Response.json({ ok: true, protocol }, { headers: CORS_HEADERS });
   } catch (e) {
     console.error("chamado não aberto", (e as Error).message);

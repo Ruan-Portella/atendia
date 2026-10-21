@@ -6,6 +6,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { adoptLegacyStorage, getOrCreateVisitorId } from "@/lib/utils";
 import { cardName, parseComponents, type MessageComponent } from "@/lib/components";
+import { TICKET_WHATSAPP_CONSENT } from "@/lib/ticket-text";
 
 export interface ChatBotPublic {
   key: string;
@@ -30,6 +31,8 @@ export interface TicketPublic {
   mode: "aba" | "sozinho";
   phone: "nao" | "opcional" | "obrigatorio";
   subjects: string[];
+  /** o chatbot tem WhatsApp conectado: o aceite do aviso pela resposta aparece junto do telefone (parte 7d) */
+  whatsapp?: boolean;
 }
 
 type HandoffMode = "bot" | "requested" | "agent";
@@ -698,7 +701,7 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, initialProto
       const res = await fetch(`${apiBase}/api/widget/ticket`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: bot.key, visitorId, name: get("name"), email: get("email"), phone: get("phone") || null, subject: get("subject") || null, description: get("description") }),
+        body: JSON.stringify({ key: bot.key, visitorId, name: get("name"), email: get("email"), phone: get("phone") || null, subject: get("subject") || null, description: get("description"), whatsapp: fd.get("whatsapp") === "on" }),
       });
       const j = (await res.json().catch(() => ({}))) as { protocol?: string; message?: string };
       if (!res.ok || !j.protocol) {
@@ -763,6 +766,12 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, initialProto
         <>
           <label className="sr-only" htmlFor={`t-phone-${bot.key}`}>Telefone</label>
           <input id={`t-phone-${bot.key}`} name="phone" type="tel" required={ticket.phone === "obrigatorio"} maxLength={40} placeholder={ticket.phone === "obrigatorio" ? "Telefone com DDD" : "Telefone com DDD (opcional)"} autoComplete="tel" className={field} />
+          {ticket.whatsapp && (
+            <label className="flex items-start gap-2 text-[12.5px] text-[#4c5551]">
+              <input type="checkbox" name="whatsapp" className="mt-0.5" />
+              <span>{TICKET_WHATSAPP_CONSENT}</span>
+            </label>
+          )}
         </>
       )}
       {ticket.subjects.length > 0 && (
