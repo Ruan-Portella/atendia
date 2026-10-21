@@ -49,6 +49,7 @@ export function clientGuide(access: GuideAccess, names: { agency: string; client
             'Toque em "Assumir conversa": o assistente para de responder nela, e você responde por aqui. O cliente vê o seu nome e a sua foto (veja Meu perfil). Se outra pessoa já está atendendo, "Assumir no lugar" troca quem atende.',
             'No fim, "Encerrar atendimento e devolver ao assistente" faz ele voltar a responder. No WhatsApp, dá para responder até 24 horas depois da última mensagem do cliente.',
             "Embaixo da resposta: Transferir passa o atendimento para outra pessoa ou setor (com uma nota só para a equipe), Nota interna grava um recado que o cliente nunca vê e Adiar tira a conversa das filas até uma data. As respostas prontas ficam na lista em cima do campo de resposta.",
+            "Chamados abertos pelo chat do site ficam na fila Chamados, com o protocolo e o status em cima da conversa. A sua resposta vai por e-mail para quem abriu; marque Resolvido quando terminar.",
           ],
         }
       : {
