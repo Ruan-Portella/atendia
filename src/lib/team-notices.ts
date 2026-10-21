@@ -154,7 +154,7 @@ async function assistantTemplates(ch: TemplateChannel): Promise<Template[]> {
 }
 
 /** Quem da agência pode receber o aviso: o papel e, com chatbot, o escopo (como os e-mails). */
-async function eligibleMembers(db: SupabaseClient, n: { agencyId: string; kind: NoticeKind; botId?: string | null; clientId?: string | null }): Promise<string[]> {
+export async function eligibleMembers(db: SupabaseClient, n: { agencyId: string; kind: NoticeKind; botId?: string | null; clientId?: string | null }): Promise<string[]> {
   const { data } = await db.from("agency_members").select("id, role, scope").eq("agency_id", n.agencyId).is("removed_at", null).not("accepted_at", "is", null);
   const rows = ((data ?? []) as Array<{ id: string; role: AgencyRole; scope: string }>).filter((m) => can(m.role, NOTICE_KINDS[n.kind].permission));
   if (!n.botId) return rows.map((m) => m.id);
@@ -173,7 +173,7 @@ async function eligibleMembers(db: SupabaseClient, n: { agencyId: string; kind: 
  * O atendimento ficou com o cliente (a agência escolheu: só as pessoas do cliente são avisadas):
  * pedido de atendente e lead não vão para a agência, como no e-mail (urgente vai sempre).
  */
-async function delegatedToClient(db: SupabaseClient, clientId: string): Promise<boolean> {
+export async function delegatedToClient(db: SupabaseClient, clientId: string): Promise<boolean> {
   const { data: client } = await db.from("clients").select("allow_handoff, handoff_notify").eq("id", clientId).maybeSingle();
   if (!client?.allow_handoff || client.handoff_notify !== "client") return false;
   const { count } = await db.from("client_members").select("id", { count: "exact", head: true }).eq("client_id", clientId);
@@ -193,6 +193,9 @@ export interface TeamNotice {
   ref: string;
   /** Só estas pessoas da equipe (o setor da conversa, ou quem recebeu pelo rodízio; Caixa de entrada, parte 2). */
   onlyMemberIds?: string[] | null;
+  /** Avisos no celular (Memória e avisos, parte 2): só estas pessoas da área do cliente e a conversa (a Caixa dela abre nela). */
+  onlyClientMemberIds?: string[] | null;
+  conversationId?: string | null;
 }
 
 /**
@@ -201,6 +204,8 @@ export interface TeamNotice {
  * Devolve quantos saíram.
  */
 export async function sendTeamNotice(db: SupabaseClient, n: TeamNotice): Promise<number> {
+  // o mesmo aviso no celular e no computador (Memória e avisos, parte 2), sem depender do WhatsApp
+  await import("./push").then((m) => m.pushForNotice(db, n)).catch((e) => console.error("avisos push:", (e as Error).message));
   try {
     const a = await assistantChannel(db);
     if (!a) return 0;

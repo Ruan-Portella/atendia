@@ -59,6 +59,8 @@ export async function assignByRotation(db: SupabaseClient, conversationId: strin
 export interface HandoffAudience {
   emails: string[];
   agencyMemberIds: string[];
+  /** as pessoas da área do cliente (avisos no celular, Memória e avisos, parte 2) */
+  clientMemberIds?: string[];
 }
 
 export async function handoffAudience(db: SupabaseClient, sector: Sector | null, assignee: Assignee | null): Promise<HandoffAudience | null> {
@@ -70,5 +72,5 @@ export async function handoffAudience(db: SupabaseClient, sector: Sector | null,
     agencyIds.length ? db.from("agency_members").select("email").in("id", agencyIds) : Promise.resolve({ data: [] as Array<{ email: string }> }),
     clientIds.length ? db.from("client_members").select("email").in("id", clientIds) : Promise.resolve({ data: [] as Array<{ email: string }> }),
   ]);
-  return { emails: [...(a ?? []), ...(c ?? [])].map((r) => String(r.email).toLowerCase()), agencyMemberIds: agencyIds };
+  return { emails: [...(a ?? []), ...(c ?? [])].map((r) => String(r.email).toLowerCase()), agencyMemberIds: agencyIds, clientMemberIds: clientIds };
 }

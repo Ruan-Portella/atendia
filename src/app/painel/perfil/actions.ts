@@ -10,6 +10,17 @@ import { dismissNoticeCard, forgetTeamWhatsApp, loadTeamWhatsApp, requestTeamWha
 import { kindsForRole } from "@/lib/team-notices";
 import { setAvailable } from "@/lib/availability";
 import { isSignatureFormat } from "@/lib/signature";
+import { firstExceeded } from "@/lib/rate-limit";
+import { agencyPushKinds, deviceLabel, parseSubscription, pushConfigured, pushTo, removePushDevice, removePushEndpoint, savePushPrefs, savePushSubscription } from "@/lib/push";
+import { headers } from "next/headers";
+
+const safeJson = (s: string): unknown => {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+};
 
 /** Meu perfil: nome de exibição e foto de quem está logado (qualquer papel). */
 export async function updateMyProfile(formData: FormData): Promise<ActionResult> {
@@ -102,3 +113,53 @@ export async function saveMyNoticePrefs(formData: FormData): Promise<ActionResul
   return ok("Avisos salvos.");
 }
 
+
+/* ------------------------------------------------------------------ avisos no celular (Memória e avisos, parte 2) */
+
+const meOnDevice = (id: string) => ({ type: "agency_member" as const, id });
+
+/** "Ativar neste aparelho": o endereço que o navegador criou, com o nome do aparelho. */
+export async function subscribeMyPush(json: string): Promise<ActionResult> {
+  const { member } = await requireAgency();
+  if (!pushConfigured()) return fail("Os avisos no celular ainda não estão ligados na plataforma.");
+  const sub = parseSubscription(safeJson(json));
+  if (!sub) return fail("O navegador não mandou um endereço válido. Tente de novo.");
+  const label = deviceLabel((await headers()).get("user-agent"));
+  if (!(await savePushSubscription(createAdminClient(), meOnDevice(member.id), sub, label))) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath("/painel/perfil");
+  return ok(`Avisos ativados: ${label}.`);
+}
+
+export async function unsubscribeMyPush(endpoint: string): Promise<ActionResult> {
+  const { member } = await requireAgency();
+  await removePushEndpoint(createAdminClient(), meOnDevice(member.id), String(endpoint));
+  revalidatePath("/painel/perfil");
+  return ok();
+}
+
+export async function removeMyPushDevice(formData: FormData): Promise<ActionResult> {
+  const { member } = await requireAgency();
+  if (!(await removePushDevice(createAdminClient(), meOnDevice(member.id), String(formData.get("device") ?? "")))) return fail("Não foi possível remover. Tente de novo.");
+  revalidatePath("/painel/perfil");
+  return ok("Aparelho removido.");
+}
+
+/** Quais avisos chegam nos aparelhos (só os que o papel recebe, mais a transferência). */
+export async function saveMyPushPrefs(formData: FormData): Promise<ActionResult> {
+  const { member, role } = await requireAgency();
+  const on = new Set([...formData.keys()].filter((k) => k.startsWith("push_")).map((k) => k.slice(5)));
+  if (!(await savePushPrefs(createAdminClient(), meOnDevice(member.id), agencyPushKinds(role), on))) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath("/painel/perfil");
+  return ok("Avisos salvos.");
+}
+
+/** "Enviar um teste" para todos os aparelhos da pessoa (no máximo 5 a cada 10 minutos). */
+export async function testMyPush(): Promise<ActionResult> {
+  const { member } = await requireAgency();
+  const db = createAdminClient();
+  const limited = await firstExceeded(db, [{ key: `push:teste:${member.id}`, max: 5, windowSeconds: 600, message: "Muitos testes seguidos. Espere alguns minutos." }]);
+  if (limited) return fail(limited.message);
+  const n = await pushTo(db, [meOnDevice(member.id)], { kind: "teste", title: "Teste dos avisos", body: "Se você está vendo isto, os avisos do painel chegam neste aparelho.", url: "/painel/caixa", ref: String(Date.now()) });
+  revalidatePath("/painel/perfil");
+  return n ? ok(n === 1 ? "Mandamos o teste para 1 aparelho." : `Mandamos o teste para ${n} aparelhos.`) : fail("Nenhum aparelho recebeu. Ative os avisos neste aparelho primeiro.");
+}

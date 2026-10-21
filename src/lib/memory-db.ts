@@ -31,6 +31,7 @@ function defaultsOf(table: string, now: string): MemRow {
   if (table === "routine_runs") return { status: "active", attempts: 0, failing: false, variables_enc: null, end_reason: null, ended_at: null, held_result: null, idle_turns: 0, started_at: now };
   if (table === "contact_links") return { linked_at: now, unlinked_at: null, source: "pairing", identity_key_hash: null };
   if (table === "conversation_notes" || table === "quick_replies") return { created_at: now };
+  if (table === "push_subscriptions") return { created_at: now, last_sent_at: null, failures: 0 };
   if (table === "fiscal_invoices") return { status: "a_emitir", currency: "brl", number: null, emitted_at: null, emitted_by: null, created_at: now };
   return {};
 }

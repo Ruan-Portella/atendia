@@ -3,7 +3,10 @@ import { DEFAULT_ENTRY_NOTICE } from "@/lib/handoff-hours";
 import { isOurAvatarUrl } from "@/lib/attendants";
 import { ProfileForm } from "@/components/profile-form";
 import { MfaSection } from "@/app/painel/seguranca/mfa-section";
-import { memberSetAvailability, memberSetSignature, memberUpdateProfile, recordMemberMfaRemoved } from "../../actions";
+import { memberPushPrefs, memberPushRemove, memberPushSubscribe, memberPushTest, memberPushUnsubscribe, memberSetAvailability, memberSetSignature, memberUpdateProfile, recordMemberMfaRemoved } from "../../actions";
+import { PushCard } from "@/components/push-card";
+import { CLIENT_PUSH_KINDS, PUSH_KIND_LABEL, listPushDevices, pushConfigured, pushPrefs, vapidPublicKey } from "@/lib/push";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { AvailabilityCard } from "@/components/availability-card";
 import { SignatureCard } from "@/components/signature-card";
 import { isSignatureFormat } from "@/lib/signature";
@@ -34,6 +37,19 @@ export default async function MemberProfilePage({ params }: PageProps<"/cliente/
       />
       {member.allowHandoff && <AvailabilityCard available={member.available} action={memberSetAvailability.bind(null, id)} />}
       {member.allowHandoff && <SignatureCard value={isSignatureFormat(member.signature) ? member.signature : null} action={memberSetSignature.bind(null, id)} />}
+      {member.allowHandoff && pushConfigured() && (
+        <PushCard
+          publicKey={vapidPublicKey()!}
+          devices={await listPushDevices(createAdminClient(), { type: "client_member", id: member.memberId })}
+          kinds={CLIENT_PUSH_KINDS.map((k) => ({ kind: k, label: PUSH_KIND_LABEL[k] }))}
+          prefs={await pushPrefs(createAdminClient(), { type: "client_member", id: member.memberId })}
+          subscribe={memberPushSubscribe.bind(null, id)}
+          unsubscribe={memberPushUnsubscribe.bind(null, id)}
+          remove={memberPushRemove.bind(null, id)}
+          savePrefs={memberPushPrefs.bind(null, id)}
+          test={memberPushTest.bind(null, id)}
+        />
+      )}
       <MfaSection
         onRemoved={recordMemberMfaRemoved.bind(null, id)}
         verifyHref={verify}

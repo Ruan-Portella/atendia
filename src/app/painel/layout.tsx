@@ -17,6 +17,10 @@ import { TeamWhatsAppStrip } from "@/components/team-whatsapp-strip";
 import { NOTICE_CONSENT_SHORT, noticeStatus } from "@/lib/team-whatsapp";
 import { company } from "@/lib/company";
 
+// o manifest deixa adicionar o painel à tela de início (no iPhone, os avisos no celular só chegam
+// assim; Memória e avisos, parte 2)
+export const metadata = { manifest: "/manifest.webmanifest", appleWebApp: { capable: true, title: "BoaVoz" } };
+
 const SUSPENDED_LABEL: Record<string, string> = { all: "todos os canais", whatsapp: "WhatsApp", instagram: "Instagram", widget: "chat do site" };
 
 export default async function PainelLayout({ children }: LayoutProps<"/painel">) {

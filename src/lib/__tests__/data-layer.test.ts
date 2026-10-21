@@ -40,6 +40,8 @@ const OWNER: Record<string, string> = {
   instagram_comments: "lib/instagram-comments.ts",
   // notas internas e transferências (Caixa de entrada, parte 4): o texto cifrado
   conversation_notes: "lib/conversation-notes.ts",
+  // aparelhos dos avisos no celular (Memória e avisos, parte 2): as chaves do navegador cifradas
+  push_subscriptions: "lib/push.ts",
 };
 
 describe("camada única de mensagens e contatos", () => {

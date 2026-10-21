@@ -29,6 +29,7 @@ import { appUrl } from "@/lib/utils";
 import { isRetentionMonths, retentionLabel, retentionReduced } from "@/lib/retention";
 import { parseMomentNotice, untilLabel } from "@/lib/moment-notice";
 import { headers } from "next/headers";
+import { CLIENT_PUSH_KINDS, deviceLabel, parseSubscription, pushConfigured, pushTo, removePushDevice, removePushEndpoint, savePushPrefs, savePushSubscription } from "@/lib/push";
 
 const GENERIC = "Se esse e-mail tiver acesso, enviamos um link para entrar. Confira a caixa de entrada (e o spam).";
 
@@ -396,6 +397,67 @@ export async function memberSetSignature(clientId: string, formData: FormData): 
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   revalidatePath(`/cliente/${clientId}/perfil`);
   return ok(signature ? "Assinatura salva. Nos chatbots que travam o formato, vale o deles." : "Pronto: vale o formato de cada chatbot.");
+}
+
+/* ------------------------------------------------------------------ avisos no celular (Memória e avisos, parte 2) */
+
+const onDevice = (memberId: string) => ({ type: "client_member" as const, id: memberId });
+const safeJson = (s: string): unknown => {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+};
+
+/** "Ativar neste aparelho": o endereço que o navegador criou, com o nome do aparelho. */
+export async function memberPushSubscribe(clientId: string, json: string): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  if (!pushConfigured()) return fail("Os avisos no celular ainda não estão ligados.");
+  const sub = parseSubscription(safeJson(json));
+  if (!sub) return fail("O navegador não mandou um endereço válido. Tente de novo.");
+  const label = deviceLabel((await headers()).get("user-agent"));
+  if (!(await savePushSubscription(ctx.admin, onDevice(ctx.member.memberId), sub, label))) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/cliente/${clientId}/perfil`);
+  return ok(`Avisos ativados: ${label}.`);
+}
+
+export async function memberPushUnsubscribe(clientId: string, endpoint: string): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  await removePushEndpoint(ctx.admin, onDevice(ctx.member.memberId), String(endpoint));
+  revalidatePath(`/cliente/${clientId}/perfil`);
+  return ok();
+}
+
+export async function memberPushRemove(clientId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  if (!(await removePushDevice(ctx.admin, onDevice(ctx.member.memberId), text(formData.get("device"))))) return fail("Não foi possível remover. Tente de novo.");
+  revalidatePath(`/cliente/${clientId}/perfil`);
+  return ok("Aparelho removido.");
+}
+
+/** Quais avisos chegam nos aparelhos: os do atendimento (urgente, atendente, transferência, lead). */
+export async function memberPushPrefs(clientId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  const on = new Set([...formData.keys()].filter((k) => k.startsWith("push_")).map((k) => k.slice(5)));
+  if (!(await savePushPrefs(ctx.admin, onDevice(ctx.member.memberId), CLIENT_PUSH_KINDS, on))) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/cliente/${clientId}/perfil`);
+  return ok("Avisos salvos.");
+}
+
+/** "Enviar um teste" para todos os aparelhos da pessoa (no máximo 5 a cada 10 minutos). */
+export async function memberPushTest(clientId: string): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  const limited = await firstExceeded(ctx.admin, [{ key: `push:teste:${ctx.member.memberId}`, max: 5, windowSeconds: 600, message: "Muitos testes seguidos. Espere alguns minutos." }]);
+  if (limited) return fail(limited.message);
+  const n = await pushTo(ctx.admin, [onDevice(ctx.member.memberId)], { kind: "teste", title: "Teste dos avisos", body: "Se você está vendo isto, os avisos do atendimento chegam neste aparelho.", url: `/cliente/${clientId}/caixa`, ref: String(Date.now()) });
+  revalidatePath(`/cliente/${clientId}/perfil`);
+  return n ? ok(n === 1 ? "Mandamos o teste para 1 aparelho." : `Mandamos o teste para ${n} aparelhos.`) : fail("Nenhum aparelho recebeu. Ative os avisos neste aparelho primeiro.");
 }
 
 const ONLY_MANAGER = "Só o gestor mexe na equipe do portal.";

@@ -82,8 +82,8 @@ describe("rodízio", () => {
   it("os avisos: só quem recebeu; sem ninguém, as pessoas do setor; setor vazio, todos", async () => {
     const { db } = setup();
     const sector = { id: "s1", clientId: "c1", name: "Financeiro", hours: null, distribution: "manual", position: 0, members: [{ type: "agency_member", id: "vivi" }, { type: "client_member", id: "carla" }] } as Sector;
-    expect(await handoffAudience(db, sector, { type: "agency_member", id: "vivi", name: "Vivi" })).toEqual({ emails: ["vivi@x.com"], agencyMemberIds: ["vivi"] });
-    expect(await handoffAudience(db, sector, null)).toEqual({ emails: ["vivi@x.com", "carla@loja.com"], agencyMemberIds: ["vivi"] });
+    expect(await handoffAudience(db, sector, { type: "agency_member", id: "vivi", name: "Vivi" })).toEqual({ emails: ["vivi@x.com"], agencyMemberIds: ["vivi"], clientMemberIds: [] });
+    expect(await handoffAudience(db, sector, null)).toEqual({ emails: ["vivi@x.com", "carla@loja.com"], agencyMemberIds: ["vivi"], clientMemberIds: ["carla"] });
     expect(await handoffAudience(db, { ...sector, members: [] }, null)).toBeNull();
   });
 });

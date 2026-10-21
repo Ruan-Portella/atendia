@@ -112,5 +112,13 @@ export async function transferConversation(db: SupabaseClient, conversationId: s
   const audience = await handoffAudience(db, sector, assignee).catch(() => null);
   const { notifyTransfer } = await import("./notify");
   notifyTransfer({ db, bot, conversationId, from: who.name, to: toLabel, audience }).catch(() => {});
+  // aviso no celular e no computador (Memória e avisos, parte 2): quem recebeu, senão as pessoas do setor
+  const people = assignee ? [{ type: assignee.type, id: assignee.id }] : (sector?.members ?? []);
+  if (people.length) {
+    const [{ pushTo }, { botTitle }] = await Promise.all([import("./push"), import("./team-notices")]);
+    const agencyUrl = `/painel/bots/${bot.id}/conversas/${conversationId}`;
+    const clientUrl = `/cliente/${bot.client_id}/caixa?fila=todas&c=${conversationId}`;
+    await pushTo(db, people.filter((p) => p.id !== who.id).map((p) => ({ type: p.type, id: p.id, url: p.type === "client_member" ? clientUrl : agencyUrl })), { kind: "transferencia", title: "Conversa transferida", body: `${who.name} transferiu uma conversa do chatbot ${botTitle(bot)} para ${assignee ? "você" : toLabel}.`, url: agencyUrl, ref: `${conversationId}:${at}` }).catch(() => 0);
+  }
   return { ...ok(`Transferida para ${toLabel}.${active ? " A primeira mensagem de quem recebe sai com o anúncio de transferência." : ""}`), toLabel, assignee, sectorId: sector?.id ?? conv.sector_id };
 }

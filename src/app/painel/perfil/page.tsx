@@ -11,7 +11,9 @@ import { ProfileForm } from "@/components/profile-form";
 import { MfaSection } from "../seguranca/mfa-section";
 import { TeamWhatsAppCard } from "@/components/team-whatsapp-card";
 import { noticeStatus } from "@/lib/team-whatsapp";
-import { setMyAvailability, setMySignature, updateMyProfile } from "./actions";
+import { PushCard } from "@/components/push-card";
+import { PUSH_KIND_LABEL, agencyPushKinds, listPushDevices, pushConfigured, pushPrefs, vapidPublicKey } from "@/lib/push";
+import { removeMyPushDevice, saveMyPushPrefs, setMyAvailability, setMySignature, subscribeMyPush, testMyPush, unsubscribeMyPush, updateMyProfile } from "./actions";
 
 export const metadata = { title: "Meu perfil" };
 
@@ -62,6 +64,19 @@ export default async function ProfilePage() {
       <AvailabilityCard available={member.available !== false} action={setMyAvailability} />
       <SignatureCard value={isSignatureFormat(member.signature) ? member.signature : null} action={setMySignature} />
       <TeamWhatsAppCard status={await noticeStatus(createAdminClient(), member.id)} role={role} />
+      {pushConfigured() && (
+        <PushCard
+          publicKey={vapidPublicKey()!}
+          devices={await listPushDevices(createAdminClient(), { type: "agency_member", id: member.id })}
+          kinds={agencyPushKinds(role).map((k) => ({ kind: k, label: PUSH_KIND_LABEL[k] }))}
+          prefs={await pushPrefs(createAdminClient(), { type: "agency_member", id: member.id })}
+          subscribe={subscribeMyPush}
+          unsubscribe={unsubscribeMyPush}
+          remove={removeMyPushDevice}
+          savePrefs={saveMyPushPrefs}
+          test={testMyPush}
+        />
+      )}
       <MfaSection enrollHref={`/painel/verificar?next=${encodeURIComponent("/painel/perfil")}`} />
     </div>
   );

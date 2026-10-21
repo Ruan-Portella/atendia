@@ -9,8 +9,8 @@ import { passwordOnlySession } from "@/lib/login-code";
 /** Cookie que marca "esta sessão já foi registrada hoje, deste IP" (evita gravar a cada página). */
 const ACCESS_MARK = "bv_al";
 
-/** O que um domínio de agência serve: demos, portal do cliente, widget e API. */
-const CUSTOM_HOST_PATHS = /^\/(demo|c|w)\/|^\/api\/|^\/widget\.js$|^\/dominio$/;
+/** O que um domínio de agência serve: demos, portal do cliente, widget e API (e o que os avisos no celular da área do cliente usam). */
+const CUSTOM_HOST_PATHS = /^\/(demo|c|w)\/|^\/api\/|^\/widget\.js$|^\/dominio$|^\/sw\.js$|^\/manifest\.webmanifest$/;
 const PLATFORM_ICONS = /^\/(favicon\.ico|icon\.svg|apple-icon\.png)$/;
 
 /**
