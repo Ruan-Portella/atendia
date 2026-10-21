@@ -37,6 +37,8 @@ import { emitSizeChanged } from "@/lib/billing-events";
 import { assistantChannel, ensureNoticeTemplate, forgetAssistantCache, refreshAssistantGuides } from "@/lib/team-whatsapp";
 import { NOTICE_KINDS, NOTICE_KIND_ORDER, ensureNoticeKindTemplates, forgetNoticeTemplates } from "@/lib/team-notices";
 import { setFreeRelease } from "@/lib/person-signals";
+import { withdraw } from "@/lib/withdrawal";
+import { stripe } from "@/lib/stripe";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -104,6 +106,18 @@ export async function releaseFreeTest(agencyId: string, fd: FormData): Promise<A
   await auditAdmin(s.email, "conta_gratis.liberada", { agencyId, targetType: "agency", targetId: agencyId, after: { reason } });
   revalidatePath(`/admin/clientes/${agencyId}`);
   return ok("Teste grátis liberado: a conta volta a ter as respostas de teste e as demos.");
+}
+
+/** Desistência pelo suporte: a pessoa marcada que pediu por e-mail, ou refazer uma que falhou no estorno. */
+export async function supportWithdraw(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const reason = reasonOf(fd);
+  if (typeof reason !== "string") return fail(reason.error);
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (desistência pelo suporte: ${reason})`);
+  if (!stripe) return fail("A cobrança não está configurada neste servidor.");
+  const r = await withdraw(createAdminClient(), stripe, agencyId, { via: "suporte", actor: s.email, reason });
+  if (!r.ok) return fail(r.message);
+  revalidatePath(`/admin/clientes/${agencyId}`);
+  return ok(`Desistência feita: ${(r.refundedCents / 100).toFixed(2).replace(".", ",")} estornados.`);
 }
 
 export async function lockFreeTest(agencyId: string): Promise<ActionResult> {

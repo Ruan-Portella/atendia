@@ -132,21 +132,25 @@ describe("webhook da Stripe", () => {
   function fakeDb(status: string) {
     const rpc: Array<[string, Record<string, unknown>]> = [];
     const inserts: Array<[string, unknown]> = [];
+    const updates: Array<[string, unknown]> = [];
     const change = { id: "chg", agency_id: "ag", status, target: { bots: [{ id: "a", size: "P", volumePacks: null }, { id: "b", size: null, volumePacks: null }], packs: ["dominio"] } };
     const db = {
       from: (t: string) => ({
         select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: change, error: null }) }), in: async () => ({ data: [], error: null }) }),
         insert: async (row: unknown) => (inserts.push([t, row]), { error: null }),
+        update: (row: unknown) => ({ eq: async () => (updates.push([t, row]), { error: null }) }),
       }),
       rpc: async (fn: string, args: Record<string, unknown>) => (rpc.push([fn, args]), { data: true, error: null }),
     } as unknown as SupabaseClient;
-    return { db, rpc, inserts };
+    return { db, rpc, inserts, updates };
   }
 
   it("compra paga: aplica tamanhos, cota proporcional, pacotes e a assinatura, e audita", async () => {
-    const { db, rpc, inserts } = fakeDb("pending");
+    const { db, rpc, inserts, updates } = fakeDb("pending");
     const now = at("2026-10-16T03:00:00Z");
     expect(await applyCheckout(db, "chg", "sub_1", now)).toBe(true);
+    // o pagamento que abre a assinatura abre os 7 dias da desistência
+    expect(updates).toEqual([["agencies", { first_paid_at: now.toISOString(), withdrawn_at: null }]]);
     expect(rpc[0][0]).toBe("apply_billing_change");
     expect(rpc[0][1]).toEqual({
       p_change_id: "chg",

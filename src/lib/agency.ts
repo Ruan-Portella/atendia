@@ -47,6 +47,9 @@ export interface Agency {
   free_blocked_at: string | null;
   free_block_reason: string | null;
   free_released_at: string | null;
+  /** O pagamento que abriu a assinatura atual (abre os 7 dias da desistência) e a desistência feita. */
+  first_paid_at: string | null;
+  withdrawn_at: string | null;
   /** Recarga automática do crédito do excedente (centavos). */
   credit_auto_enabled: boolean;
   credit_auto_below_cents: number | null;

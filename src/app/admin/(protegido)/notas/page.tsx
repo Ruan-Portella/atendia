@@ -10,7 +10,7 @@ import { markInvoiceEmitted } from "./actions";
 
 export const metadata = { title: "Notas fiscais" };
 
-const STATUSES: FiscalStatus[] = ["a_emitir", "emitida", "erro"];
+const STATUSES: FiscalStatus[] = ["a_emitir", "emitida", "erro", "estornada"];
 const brl = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const day = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
@@ -46,7 +46,12 @@ function Invoice({ n }: { n: FiscalInvoice }) {
           <SubmitButton className="btn-primary py-1 text-sm" pendingLabel="…">Marcar como emitida</SubmitButton>
         </ActionForm>
       ) : n.status === "emitida" ? (
-        <p className="text-xs text-muted">Emitida{n.number ? ` (nº ${n.number})` : ""} em {n.emittedAt ? day(n.emittedAt) : "?"} por {n.emittedBy ?? "?"}.</p>
+        <p className="text-xs text-muted">
+          Emitida{n.number ? ` (nº ${n.number})` : ""} em {n.emittedAt ? day(n.emittedAt) : "?"} por {n.emittedBy ?? "?"}.
+          {n.refundedAt && <strong className="text-danger"> Estornada numa desistência em {day(n.refundedAt)}: cancele a nota no Emissor Nacional.</strong>}
+        </p>
+      ) : n.status === "estornada" ? (
+        <p className="text-xs text-muted">Estornada numa desistência{n.refundedAt ? ` em ${day(n.refundedAt)}` : ""}, antes da emissão: não precisa de nota.</p>
       ) : null}
     </li>
   );

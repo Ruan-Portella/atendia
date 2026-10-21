@@ -10,6 +10,8 @@ import { BillingCard } from "@/components/admin/billing-card";
 import { ClientTransferForm } from "@/components/admin/client-transfer-form";
 import { FreeAccountCard } from "@/components/admin/free-account-card";
 import { freeLinksOf } from "@/lib/person-signals";
+import { WithdrawalAdminCard } from "@/components/admin/withdrawal-admin-card";
+import { withdrawalState } from "@/lib/withdrawal";
 import { nextMonthTarget } from "@/lib/billing-sync";
 import { creditBalance } from "@/lib/billing-credit";
 import { targetMonthlyCents } from "@/lib/billing";
@@ -39,7 +41,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
     getMeasures({ agencyId: id, active: true }),
     continuousView(db, { agencyId: id }),
     botQuotaStatus(db, id),
-    db.from("agencies").select("billing_status, billing_cancel_at, stripe_subscription_id, credit_auto_enabled, test_answers_used, free_used_at, free_blocked_at, free_block_reason, free_released_at").eq("id", id).maybeSingle(),
+    db.from("agencies").select("billing_status, billing_cancel_at, stripe_subscription_id, credit_auto_enabled, test_answers_used, free_used_at, free_blocked_at, free_block_reason, free_released_at, first_paid_at, withdrawn_at").eq("id", id).maybeSingle(),
     nextMonthTarget(db, id),
     creditBalance(db, id),
   ]);
@@ -62,6 +64,13 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
   ]);
   const agencyName = new Map((await getAgencies()).map((a) => [a.id, a.name]));
   const freeLinks = await freeLinksOf(db, id);
+  // desistência em 7 dias (Trava da conta grátis, parte 2)
+  const billingStatus = (billing?.billing_status as string | undefined) ?? "none";
+  const [withdrawal, { data: marked }, { data: withdrawalRows }] = await Promise.all([
+    withdrawalState(db, { id, billing_status: billingStatus, first_paid_at: (billing?.first_paid_at as string | null | undefined) ?? null, withdrawn_at: (billing?.withdrawn_at as string | null | undefined) ?? null }),
+    db.rpc("person_marked", { p_agency_id: id }),
+    db.from("withdrawals").select("created_at, via, actor, refunded_cents, status, error").eq("agency_id", id).order("created_at", { ascending: false }).limit(10),
+  ]);
   const waBy = new Map((wa ?? []).map((w) => [w.bot_id as string, w]));
   const igBy = new Map((ig ?? []).map((i) => [i.bot_id as string, i]));
 
@@ -128,6 +137,13 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         }}
         links={freeLinks}
         names={agencyName}
+      />
+      <WithdrawalAdminCard
+        agencyId={id}
+        state={withdrawal}
+        marked={Boolean(marked)}
+        subscribed={billingStatus !== "none"}
+        rows={(withdrawalRows ?? []).map((w) => ({ createdAt: w.created_at as string, via: w.via as string, actor: w.actor as string, refundedCents: Number(w.refunded_cents), status: w.status as string, error: (w.error as string | null) ?? null }))}
       />
       <AgencyActions agency={agency} />
       <AgencyFeatures agencyId={id} features={agency.features} />

@@ -10,8 +10,9 @@ import { PLATFORM_SCOPE, openNullable, sealNullable } from "./field-cipher";
  * (NFE.io, eNotas, Focus NFe, PlugNotas) fica para depois. Só este arquivo toca a tabela.
  */
 
-export type FiscalStatus = "a_emitir" | "emitida" | "erro";
-export const FISCAL_STATUS_LABEL: Record<FiscalStatus, string> = { a_emitir: "A emitir", emitida: "Emitida", erro: "Com erro" };
+/** estornada: o pagamento voltou numa desistência antes da emissão (não precisa de nota). */
+export type FiscalStatus = "a_emitir" | "emitida" | "erro" | "estornada";
+export const FISCAL_STATUS_LABEL: Record<FiscalStatus, string> = { a_emitir: "A emitir", emitida: "Emitida", erro: "Com erro", estornada: "Estornada" };
 
 export interface FiscalRecord {
   source: "fatura" | "pix";
@@ -127,6 +128,8 @@ export interface FiscalInvoice {
   number: string | null;
   emittedAt: string | null;
   emittedBy: string | null;
+  /** o pagamento foi estornado numa desistência (emitida: o suporte cancela a nota) */
+  refundedAt: string | null;
 }
 
 /** As notas de um estado, as mais antigas primeiro (as a emitir) ou as mais novas (as emitidas). */
@@ -151,6 +154,7 @@ export async function listFiscalInvoices(db: SupabaseClient, status: FiscalStatu
       number: (r.number as string | null) ?? null,
       emittedAt: (r.emitted_at as string | null) ?? null,
       emittedBy: (r.emitted_by as string | null) ?? null,
+      refundedAt: (r.refunded_at as string | null) ?? null,
     })),
   );
 }

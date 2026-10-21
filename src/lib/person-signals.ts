@@ -123,3 +123,15 @@ export async function purgeOrphanSignals(db: SupabaseClient, now = new Date()): 
   if (error) console.error("trava da conta grátis: sinais antigos não apagados", error.message);
   return count ?? 0;
 }
+
+/**
+ * A cada pagamento (Trava da conta grátis, parte 2): o CPF ou CNPJ de quem paga e o cartão (a
+ * impressão digital que a Stripe dá ao cartão, igual em qualquer conta) viram sinais da conta.
+ */
+export async function recordPaymentSignals(db: SupabaseClient, customerId: string | null | undefined, taxId: string | null | undefined, cards: string[]): Promise<void> {
+  if (!customerId) return;
+  const { data } = await db.from("agencies").select("id").eq("stripe_customer_id", customerId).maybeSingle();
+  if (!data) return;
+  const doc = (taxId ?? "").replace(/\D/g, "");
+  await addSignals(db, data.id as string, [{ kind: "doc", value: doc.length === 11 || doc.length === 14 ? doc : null }, ...cards.map((value) => ({ kind: "card" as const, value }))]);
+}

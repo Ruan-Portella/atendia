@@ -9,7 +9,9 @@ import { SubscribeForm } from "@/components/subscribe-form";
 import { PackButton, SizeChangeForm } from "@/components/billing-controls";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { openBillingPortal, reactivateSubscription } from "./actions";
+import { openBillingPortal, reactivateSubscription, withdrawSubscription } from "./actions";
+import { WithdrawalCard } from "@/components/withdrawal-card";
+import { withdrawalState } from "@/lib/withdrawal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { billingView, unpaidInvoices } from "@/lib/billing-view";
 import { dateBR } from "@/lib/retention";
@@ -39,6 +41,8 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
   const open = view.invoices.filter((i) => i.status === "em aberto");
   // sem assinatura: a da assinatura anterior que ficou sem pagamento vem antes de assinar de novo
   const unpaid = subscribed ? [] : await unpaidInvoices(agency.stripe_customer_id);
+  // desistência nos 7 dias do primeiro pagamento (Trava da conta grátis, parte 2)
+  const withdrawal = await withdrawalState(createAdminClient(), agency);
 
   return (
     <div className="max-w-[960px]">
@@ -69,6 +73,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
               )}
             </p>
           ))}
+          {withdrawal.kind === "done" && <WithdrawalCard state={withdrawal} action={withdrawSubscription} />}
           <SubscribeForm bots={billable.map((b) => ({ id: b.botId, name: b.name, clientName: b.clientName, size: b.size, volumePacks: b.volumePacks }))} fraction={remainingFraction()} renewal={renewal} enabled={billingEnabled && unpaid.length === 0} />
         </>
       ) : (
@@ -81,6 +86,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
               </ActionForm>
             </div>
           )}
+          <WithdrawalCard state={withdrawal} action={withdrawSubscription} />
           {open.map((i) => (
             <p key={i.id} className="mt-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
               Fatura em aberto de <strong className="tabular">{brlCents(i.totalCents / 100)}</strong> ({i.description}).{" "}

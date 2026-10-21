@@ -13,6 +13,8 @@ import { isBotSize, type BotSize } from "./plans";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl } from "./utils";
 import { invoiceRecord, pixRecord, recordFiscalInvoice } from "./fiscal-invoices";
+import { recordPaymentSignals } from "./person-signals";
+import { stripe } from "./stripe";
 
 /*
  * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), inclusive a
@@ -57,6 +59,8 @@ export async function applyCheckout(db: SupabaseClient, changeId: string, subscr
     }
     // chatbots com IA a partir de agora: a base é classificada antes das próximas respostas
     classifyGainedAi(db, target.bots);
+    // o pagamento que abre a assinatura abre os 7 dias da desistência (Trava da conta grátis, parte 2)
+    must(await db.from("agencies").update({ first_paid_at: now.toISOString(), withdrawn_at: null }).eq("id", change.agency_id));
     await audit(db, {
       agencyId: change.agency_id as string,
       actorType: "system",
@@ -110,6 +114,18 @@ export async function endSubscription(db: SupabaseClient, customer: string): Pro
   }
 }
 
+/** Os sinais do pagamento: o documento e os cartões das últimas cobranças. Falha aqui não volta para a Stripe. */
+async function paymentSignals(db: SupabaseClient, customer: string | null, taxId: string | null): Promise<void> {
+  if (!customer) return;
+  try {
+    const charges = stripe ? (await stripe.charges.list({ customer, limit: 3 })).data : [];
+    const cards = charges.map((c) => c.payment_method_details?.card?.fingerprint).filter((f): f is string => Boolean(f));
+    await recordPaymentSignals(db, customer, taxId, cards);
+  } catch (e) {
+    console.error("trava da conta grátis: sinais do pagamento", (e as Error).message);
+  }
+}
+
 export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed":
@@ -122,7 +138,9 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
         await applyCheckout(db, changeId, sub);
       } else if (s.mode === "payment") {
         // crédito pago pelo Pix: a nota a emitir (sem fatura na Stripe) e o crédito
-        await recordFiscalInvoice(db, pixRecord(s));
+        const record = pixRecord(s);
+        await recordFiscalInvoice(db, record);
+        await paymentSignals(db, record?.customerId ?? null, record?.takerTaxId ?? null);
         await applyPixCredit(db, changeId);
       }
       break;
@@ -174,7 +192,10 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
     case "invoice.paid": {
       // todo pagamento vira nota a emitir (assinatura, subida e crédito no cartão); erro aqui volta
       // para a Stripe tentar de novo (gravar a mesma fatura de novo não duplica)
-      await recordFiscalInvoice(db, invoiceRecord(event.data.object));
+      const record = invoiceRecord(event.data.object);
+      await recordFiscalInvoice(db, record);
+      // o documento e o cartão de quem pagou viram sinais da conta (trava da conta grátis e desistência)
+      await paymentSignals(db, record?.customerId ?? null, record?.takerTaxId ?? null);
       // fatura avulsa paga depois na página da Stripe (cartão recusado na hora): subida ou crédito
       const changeId = event.data.object.metadata?.changeId;
       if (!changeId) break;

@@ -17,6 +17,8 @@ import { emitOverageChanged } from "@/lib/billing-events";
 import { PACKS, brlCents, isPackId } from "@/lib/plans";
 import { audit, requestMeta } from "@/lib/audit";
 import { appUrl } from "@/lib/utils";
+import { withdraw, withdrawalState } from "@/lib/withdrawal";
+import { company } from "@/lib/company";
 
 const DENIED = "O seu papel na equipe não permite mexer na cobrança. Fale com o dono ou com um administrador da agência.";
 const OFF = "A cobrança ainda não está configurada neste servidor.";
@@ -303,6 +305,23 @@ export async function resolveSpike(botId: string, verdict: "real" | "ataque"): P
   await emitOverageChanged(db, botId, { enabled: Boolean(b?.overage_enabled), capBrl: b?.overage_cap_brl === null || b?.overage_cap_brl === undefined ? null : Number(b.overage_cap_brl), suspended: verdict === "real" ? null : "ataque" });
   revalidatePath("/painel", "layout");
   return ok(verdict === "real" ? "Excedente de volta. Nos próximos 7 dias, um pico não suspende de novo." : `Marcado como ataque: o excedente desse chatbot fica suspenso até ${renewalLabel()}.`);
+}
+
+/**
+ * Desistência nos 7 dias do primeiro pagamento (Trava da conta grátis, parte 2): só o dono (a
+ * permissão de cobrança) e só com a janela aberta; com a pessoa marcada, vai pelo suporte.
+ */
+export async function withdrawSubscription(): Promise<ActionResult> {
+  const s = await subscribed();
+  if ("error" in s) return fail(s.error);
+  const db = createAdminClient();
+  const state = await withdrawalState(db, s.ctx.agency);
+  if (state.kind === "support") return fail(`A desistência desta assinatura é feita pelo suporte: escreva para ${company.email}.`);
+  if (state.kind !== "open") return fail("O prazo de 7 dias para desistir já passou. Para não renovar, cancele em Cartão e cancelamento.");
+  const r = await withdraw(db, stripe!, s.ctx.agency.id, { via: "painel", actor: s.ctx.userId });
+  if (!r.ok) return fail(r.message);
+  revalidatePath("/painel", "layout");
+  return ok(`Desistência feita: estornamos ${brlCents(r.refundedCents / 100)}. A confirmação foi para o seu e-mail.`);
 }
 
 /** Desfaz o cancelamento agendado no portal: a assinatura segue no dia 1º. */
