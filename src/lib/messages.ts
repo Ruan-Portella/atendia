@@ -336,3 +336,10 @@ export async function failedMessages(db: SupabaseClient, o: { botIds: string[]; 
     })),
   );
 }
+
+/** Respostas mandadas pelo WhatsApp e pelo Instagram desde `since` e quantas o canal recusou (alerta de erro alto da Meta). */
+export async function sendFailureStats(db: SupabaseClient, since: string): Promise<{ sent: number; failed: number }> {
+  const base = () => db.from("messages").select("id", { count: "exact", head: true }).in("role", ["assistant", "agent"]).gte("created_at", since);
+  const [sent, failed] = await Promise.all([base().not("channel_msg_hash", "is", null), base().not("failed_at", "is", null)]);
+  return { sent: (sent.count ?? 0) + (failed.count ?? 0), failed: failed.count ?? 0 };
+}

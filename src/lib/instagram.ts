@@ -189,6 +189,15 @@ export async function subscribeInstagram(token: string) {
   }
 }
 
+/** Campos em que o app está inscrito na conta (sem "messages", as DMs não chegam). */
+export async function instagramSubscribedFields(ch: IgChannel): Promise<string[]> {
+  const r = await api<{ data?: Array<{ subscribed_fields?: string[] }> }>("me/subscribed_apps", tokenOf(ch));
+  return (r.data ?? []).flatMap((a) => a.subscribed_fields ?? []);
+}
+
+/** Inscreve de novo, com o token guardado da conta (a conferência diária). */
+export const resubscribeInstagram = (ch: IgChannel) => subscribeInstagram(tokenOf(ch));
+
 export async function unsubscribeInstagram(token: string) {
   await api("me/subscribed_apps", token, { method: "DELETE" }).catch(() => {});
 }

@@ -293,6 +293,17 @@ export async function subscribeApp(wabaId: string, token = envToken()) {
 }
 
 /** Desfaz a inscrição ao desconectar. Falha não importa: o número já saiu do banco. */
+/** Apps inscritos na conta do WhatsApp (os ids): sem o BoaVoz na lista, o webhook não recebe nada dela. */
+export async function subscribedAppIds(ch: WaChannel & { waba_id: string }): Promise<string[]> {
+  const r = await graph<{ data?: Array<{ whatsapp_business_api_data?: { id?: string } }> }>(`${ch.waba_id}/subscribed_apps`, channelToken(ch));
+  return (r.data ?? []).flatMap((a) => (a.whatsapp_business_api_data?.id ? [a.whatsapp_business_api_data.id] : []));
+}
+
+/** Inscreve de novo o app na conta, com o token do número (a conferência diária). */
+export async function resubscribeApp(ch: WaChannel & { waba_id: string }): Promise<void> {
+  await graph(`${ch.waba_id}/subscribed_apps`, channelToken(ch), { method: "POST", body: {} });
+}
+
 export async function unsubscribeApp(wabaId: string, token: string) {
   await graph(`${wabaId}/subscribed_apps`, token, { method: "DELETE" }).catch(() => {});
 }

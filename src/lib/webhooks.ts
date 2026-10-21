@@ -9,6 +9,9 @@ import { safePost } from "./safe-fetch";
 import { sendableHeaders } from "./custom-headers";
 import { contactChannelIds } from "./contacts";
 import { refreshMediaLink } from "./file-links";
+import { noticeOnce } from "./rate-limit";
+import { notifyAgencyOwner } from "./notify";
+import { appUrl } from "./utils";
 
 /*
  * Webhooks (spec "Formatos de payload", seção 3). Na P2 só saem contact.linked e
@@ -122,8 +125,43 @@ export interface WebhookRow {
   failing_since: string | null;
   /** Cabeçalhos personalizados, cifrados (C pública). */
   headers_enc?: string | null;
+  name?: string | null;
 }
-const WEBHOOK_COLS = "id, agency_id, url, secret_enc, events, scope_type, scope_bot_ids, scope_client_id, active, failing_since, headers_enc";
+const WEBHOOK_COLS = "id, agency_id, name, url, secret_enc, events, scope_type, scope_bot_ids, scope_client_id, active, failing_since, headers_enc";
+
+/*
+ * Avisos ao dono quando um webhook falha (spec, Peça 2, Desativação): com 1 hora só de falhas, no
+ * dia 2 e ao desativar (3 dias, ou na hora com 410), com o link para reativar. Cada aviso vai uma
+ * vez por episódio (a chave leva o começo das falhas); o primeiro 2xx encerra o episódio.
+ */
+export const WEBHOOK_FAILING_NOTICES = [
+  { after: 3_600_000, tag: "1h" },
+  { after: 86_400_000, tag: "dia2" },
+] as const;
+
+/** O endereço sem a query (nunca vai segredo de URL num e-mail). Função pura. */
+export const urlWithoutQuery = (url: string) => url.split(/[?#]/)[0];
+
+async function noticeFailing(db: SupabaseClient, w: WebhookRow, failingSince: string, now: number, disabled: { reason: string } | null): Promise<void> {
+  const label = `${w.name ? `"${w.name}" ` : ""}(${urlWithoutQuery(w.url)})`;
+  const link = appUrl("/painel/integracoes");
+  if (disabled) {
+    if (!(await noticeOnce(db, { key: `webhook-falha:${w.id}:${failingSince}:off`, max: 1, windowSeconds: 7 * 86_400, message: "" }))) return;
+    await notifyAgencyOwner(db, w.agency_id, `Webhook desativado: ${urlWithoutQuery(w.url)}`, [
+      `O webhook ${label} foi desativado (${disabled.reason}) e não recebe mais eventos.`,
+      "Os eventos desde então não ficam guardados para ele. Depois de corrigir o endereço, reative em Integrações → Webhooks e use \"Reenviar falhas desde\" para mandar de novo o que falhou antes.",
+      `Reativar: ${link}`,
+    ]).catch(() => false);
+    return;
+  }
+  const due = [...WEBHOOK_FAILING_NOTICES].reverse().find((n) => now - Date.parse(failingSince) >= n.after);
+  if (!due || !(await noticeOnce(db, { key: `webhook-falha:${w.id}:${failingSince}:${due.tag}`, max: 1, windowSeconds: 7 * 86_400, message: "" }))) return;
+  await notifyAgencyOwner(db, w.agency_id, `Webhook falhando: ${urlWithoutQuery(w.url)}`, [
+    `O webhook ${label} está recebendo erros ${due.tag === "1h" ? "há mais de 1 hora" : "há mais de 1 dia"}. O BoaVoz continua tentando de novo.`,
+    "Com 3 dias seguidos só de falhas (ou se o endereço responder 410), ele é desativado.",
+    `Ver as entregas e a resposta do seu sistema: ${link}`,
+  ]).catch(() => false);
+}
 
 /** O webhook recebe eventos deste chatbot? Função pura. */
 export const webhookCovers = (w: Pick<WebhookRow, "scope_type" | "scope_bot_ids" | "scope_client_id">, bot: { id: string; client_id: string | null }) =>
@@ -214,9 +252,14 @@ async function attempt(db: SupabaseClient, d: DeliveryRow, w: WebhookRow, now = 
   await db.from("webhook_deliveries").update({ status: next ? "pending" : "failed", attempts, last_status: r.status, last_error: r.error ?? `HTTP ${r.status}`, last_response_enc: responseEnc(r.response), ...(next ? { next_attempt_at: next } : {}) }).eq("id", d.id);
   const failingSince = w.failing_since ?? new Date(now).toISOString();
   if (gone || now - Date.parse(failingSince) > DISABLE_AFTER_MS) {
-    await db.from("webhooks").update({ active: false, disabled_at: new Date(now).toISOString(), disabled_reason: gone ? "respondeu 410 Gone" : "3 dias seguidos só de falhas", failing_since: failingSince }).eq("id", w.id);
+    const reason = gone ? "respondeu 410 Gone" : "3 dias seguidos só de falhas";
+    await db.from("webhooks").update({ active: false, disabled_at: new Date(now).toISOString(), disabled_reason: reason, failing_since: failingSince }).eq("id", w.id);
     console.warn("webhook desativado", w.id, gone ? "410" : "3 dias de falhas");
-  } else if (!w.failing_since) await db.from("webhooks").update({ failing_since: failingSince }).eq("id", w.id);
+    await noticeFailing(db, w, failingSince, now, { reason }).catch((e) => console.error("webhook: aviso ao dono", (e as Error).message));
+  } else {
+    if (!w.failing_since) await db.from("webhooks").update({ failing_since: failingSince }).eq("id", w.id);
+    await noticeFailing(db, w, failingSince, now, null).catch((e) => console.error("webhook: aviso ao dono", (e as Error).message));
+  }
   return next ? "pending" : "failed";
 }
 

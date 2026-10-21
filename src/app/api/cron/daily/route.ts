@@ -21,6 +21,7 @@ import { linkLegacyConversations } from "@/lib/contacts";
 import { runContinuousChecks } from "@/lib/continuous-check";
 import { runDueAccountDeletions } from "@/lib/account-deletion";
 import { apiInvitesDigest } from "@/lib/api-members";
+import { checkErrorRates, checkSubscriptions } from "@/lib/meta-monitor";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
 export const maxDuration = 300;
@@ -83,6 +84,10 @@ async function daily() {
   const instagram = await run("tokens do Instagram", () => refreshInstagramTokens(db));
   // o nome de usuário muda no Instagram sem aviso e os links ig.me levam o nome (E1): até 20 s
   const igNames = await run("nomes do Instagram", () => refreshInstagramUsernames(db, deadline(20_000)));
+  // cada número e cada conta do Instagram ainda tem o app inscrito (sem isso, nada chega): até 20 s
+  const subscriptions = await run("inscrição do app na Meta", () => checkSubscriptions(db, { hasTime: deadline(20_000) }));
+  // erro alto de IA ou da Meta nas últimas 24 horas: aviso ao Ruan
+  const errors = await run("erro alto", () => checkErrorRates(db));
   // custo de IA: totais do mês e limpeza dos registros com mais de 90 dias
   const aiUsage = await run("totais de IA", async () => {
     const { error } = await db.rpc("ai_usage_rollup");
@@ -115,5 +120,5 @@ async function daily() {
   // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
   const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, subscriptions, errors, aiUsage, disk, sources, base, analysis };
 }

@@ -1,3 +1,4 @@
+import { KNOWN_WA_FIELDS, KNOWN_WA_MESSAGE_TYPES, reportUnknownMeta } from "@/lib/meta-monitor";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validSignature } from "@/lib/whatsapp";
@@ -68,6 +69,13 @@ export async function POST(req: Request) {
     return new Response("invalid body", { status: 400 });
   }
   if (body.object !== "whatsapp_business_account") return new Response("ok");
+  // campo ou tipo de mensagem que o código não conhece: aviso ao Ruan, uma vez por dia por tipo
+  const unknown = (body.entry ?? []).flatMap((e) =>
+    (e.changes ?? []).flatMap((c) =>
+      !KNOWN_WA_FIELDS.has(c.field ?? "?") ? [`campo ${c.field ?? "?"}`] : c.field === "messages" ? ((c.value?.messages ?? []) as Array<{ type?: string }>).filter((m) => !KNOWN_WA_MESSAGE_TYPES.has(m.type ?? "?")).map((m) => `mensagem ${m.type ?? "?"}`) : [],
+    ),
+  );
+  if (unknown.length) after(() => reportUnknownMeta(createAdminClient(), "whatsapp", unknown));
 
   const changes: Change[] = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => ({ ...c, entryId: e.id }))).filter((c) => c.value && (c.field === "messages" || c.field === "account_update" || c.field === "smb_message_echoes" || c.field === "user_preferences" || isCampaignNoticeField(c.field)));
   if (!changes.length) return new Response("ok");

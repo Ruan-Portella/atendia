@@ -189,7 +189,7 @@ export default function WebhooksDocs() {
         <li>Entregue = 2xx em até 10 segundos. Qualquer outra coisa conta como falha.</li>
         <li>Novas tentativas, com o mesmo id: 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h e 24 h depois (9 tentativas no total). Cada tentativa vai com horário e assinatura novos.</li>
         <li>
-          <strong>410 Gone</strong> desativa o webhook na hora. <strong>3 dias seguidos só de falhas</strong> também desativam. O painel mostra o motivo; reative e use “Reenviar falhas desde” para recuperar o que ficou para trás.
+          <strong>410 Gone</strong> desativa o webhook na hora. <strong>3 dias seguidos só de falhas</strong> também desativam. O dono da conta recebe um e-mail com 1 hora de falhas, outro no segundo dia e outro quando o webhook é desativado, com o link para reativar. O painel mostra o motivo; reative e use “Reenviar falhas desde” para recuperar o que ficou para trás.
         </li>
         <li>Até 10 entregas ao mesmo tempo por webhook.</li>
         <li>Um pedido do titular (LGPD) apaga as entregas do contato, inclusive as pendentes, antes do <code>contact.deleted</code>.</li>

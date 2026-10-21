@@ -140,3 +140,13 @@ export async function rearmInbound(db: SupabaseClient, keyHash: string, source: 
   const g = data?.[0] as Group | undefined;
   return g ?? null;
 }
+
+/**
+ * Mensagens recebidas desde `since`: quantas e quantas precisaram de outra tentativa ou falharam
+ * (a IA ou o envio caíram no meio). Para o alerta de erro alto (meta-monitor.ts).
+ */
+export async function inboundErrorStats(db: SupabaseClient, since: string): Promise<{ total: number; retried: number }> {
+  const base = () => db.from("inbound_events").select("id", { count: "exact", head: true }).eq("kind", "msg").gte("created_at", since);
+  const [all, retried] = await Promise.all([base(), base().or("attempts.gt.1,status.eq.failed")]);
+  return { total: all.count ?? 0, retried: retried.count ?? 0 };
+}

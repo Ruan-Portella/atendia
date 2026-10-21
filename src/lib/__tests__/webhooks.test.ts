@@ -12,7 +12,15 @@ vi.mock("../safe-fetch", async (orig) => ({
   }),
 }));
 
-import { MAX_ATTEMPTS, base32, emitEvent, emitLinkEvent, eventId, nextAttemptAt, retryDueDeliveries, webhookCovers } from "../webhooks";
+const notified = vi.hoisted(() => [] as Array<{ subject: string; lines: string[] }>);
+vi.mock("../notify", async (orig) => ({
+  ...(await orig<typeof import("../notify")>()),
+  notifyAgencyOwner: async (_db: unknown, _agency: string, subject: string, lines: string[]) => {
+    notified.push({ subject, lines });
+    return true;
+  },
+}));
+import { MAX_ATTEMPTS, base32, emitEvent, emitLinkEvent, eventId, nextAttemptAt, retryDueDeliveries, urlWithoutQuery, webhookCovers } from "../webhooks";
 import { checkIdentityKey, unlinkInactive } from "../pairing";
 import { seal } from "../secret-box";
 
@@ -66,7 +74,14 @@ function memDb(tables: Record<string, Row[]>) {
     };
     return b;
   };
-  return { from } as unknown as SupabaseClient;
+  // hit_rate_limit em memória: o aviso ao dono vai uma vez por chave
+  const hits = new Map<string, number>();
+  const rpc = async (_fn: string, x: { p_key: string; p_max: number }) => {
+    const n = (hits.get(x.p_key) ?? 0) + 1;
+    hits.set(x.p_key, n);
+    return { data: n <= x.p_max, error: null };
+  };
+  return { from, rpc } as unknown as SupabaseClient;
 }
 
 const SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
@@ -168,6 +183,32 @@ describe("entrega", () => {
     posted.status = 500;
     await fire(old.db);
     expect(old.tables.webhooks[0]).toMatchObject({ active: false, disabled_reason: "3 dias seguidos só de falhas" });
+  });
+
+  it("o dono recebe e-mail com 1 hora de falhas, no dia 2 e ao desativar, uma vez em cada (sem a query da URL)", async () => {
+    notified.length = 0;
+    posted.status = 500;
+    const since = (ms: number) => new Date(Date.now() - ms).toISOString();
+    const hour = setup({ url: "https://saas.example.com/hook?token=segredo", failing_since: since(2 * 3_600_000) });
+    await fire(hour.db);
+    expect(notified.map((n) => n.subject)).toEqual(["Webhook falhando: https://saas.example.com/hook"]);
+    expect(notified[0].lines.join(" ")).toContain("há mais de 1 hora");
+    expect(JSON.stringify(notified)).not.toContain("segredo");
+    // o mesmo episódio de falhas: não repete
+    await fire(hour.db, "lnk1:linked:p2");
+    expect(notified.length).toBe(1);
+    const day2 = setup({ failing_since: since(30 * 3_600_000) });
+    await fire(day2.db);
+    expect(notified[1].lines.join(" ")).toContain("há mais de 1 dia");
+    const off = setup({ failing_since: since(4 * 86_400_000) });
+    await fire(off.db);
+    expect(notified[2].subject).toBe("Webhook desativado: https://saas.example.com/hook");
+    expect(notified[2].lines.join(" ")).toContain("Reativar:");
+    // poucos minutos de falha: nada ainda
+    const fresh = setup({ failing_since: since(5 * 60_000) });
+    await fire(fresh.db);
+    expect(notified.length).toBe(3);
+    expect(urlWithoutQuery("https://a.com/x?y=1#z")).toBe("https://a.com/x");
   });
 
   it("webhook de outro escopo, sem o evento ou desativado não recebe", async () => {

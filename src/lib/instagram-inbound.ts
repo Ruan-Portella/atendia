@@ -27,6 +27,7 @@ import { recordAiUsage } from "./ai-usage";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { LONG_AUDIO_ASK, LONG_AUDIO_LABEL, audioLimit, longAudioAskDue } from "./audio-limits";
 import { withContactId } from "./ai-contact";
+import { reportUnknownMeta } from "./meta-monitor";
 import { instagramTyping, isInstagramAccessError, sendInstagramAttachment, sendInstagramTemplate, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { answerWithGate, gateButtons } from "./gate/flow";
@@ -306,7 +307,7 @@ async function instagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedD
   const contexts: IgContext[] = await Promise.all(burst.map((q) => (deleted.has(q.key) ? NO_CONTEXT : instagramContext(db, { bot, ch, ev: q.ev, describe: describeStore, postRule: postPriceRuleOf(bot) }))));
   const refs = contexts.map((c) => c.ref);
   const unknown = burst.flatMap((q) => (q.ev.message?.attachments ?? []).map((a) => a.type ?? "?")).filter((t) => !IG_MEDIA_LABEL[t] && t !== "image" && t !== "audio");
-  if (unknown.length) console.log("instagram: anexos não reconhecidos", unknown);
+  if (unknown.length) await reportUnknownMeta(db, "instagram", unknown.map((t) => `anexo ${t}`));
   const texts: Array<string | null> = [];
   for (const [i, q] of burst.entries()) {
     if (deleted.has(q.key)) {

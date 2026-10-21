@@ -1,3 +1,4 @@
+import { KNOWN_IG_FIELDS, reportUnknownMeta } from "@/lib/meta-monitor";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validSignature } from "@/lib/whatsapp";
@@ -93,6 +94,9 @@ export async function POST(req: Request) {
     return new Response("ok");
   }
 
+  // campo que o código não conhece: aviso ao Ruan, uma vez por dia por tipo
+  const unknown = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => c.field ?? "?")).filter((f) => !KNOWN_IG_FIELDS.has(f));
+  if (unknown.length) after(() => reportUnknownMeta(createAdminClient(), "instagram", unknown.map((f) => `campo ${f}`)));
   const entries = (body.entry ?? []).map((e) => ({ ...e, messaging: messagingEvents(e), comments: commentEvents(e) })).filter((e) => e.id && (e.messaging.length || e.comments.length));
   if (!entries.length) console.log("instagram: webhook sem mensagens", shape(body));
   if (!entries.length) return new Response("ok");
