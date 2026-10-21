@@ -8,7 +8,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site", painel: "Teste", demo: "Demo" };
-const STATE: Record<InboxItem["state"], string> = { aguardando: "esperando", sem_resposta: "sem resposta há 1 h", em_atendimento: "em atendimento" };
+const STATE: Record<InboxItem["state"], string> = { aguardando: "esperando", sem_resposta: "sem resposta há 1 h", em_atendimento: "em atendimento", com_ia: "com a IA" };
 
 /**
  * Caixa de entrada (parte 3), igual no painel e na área do cliente: as filas à esquerda, a lista
@@ -106,7 +106,7 @@ export function InboxView({
                   {i.sectorName && <span className="rounded-full bg-ground px-1.5 font-medium text-ink-2">{i.sectorName}</span>}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 text-xs">
-                  <span className={i.urgent ? "font-semibold text-danger" : i.waiting ? "text-amber-ink" : "text-brand"}>{i.urgent ? "urgente · " : ""}{STATE[i.state]}</span>
+                  <span className={i.urgent ? "font-semibold text-danger" : i.waiting ? "text-amber-ink" : i.state === "com_ia" ? "text-muted" : "text-brand"}>{i.urgent ? "urgente · " : ""}{i.aiPaused ? "IA pausada pela integração" : STATE[i.state]}</span>
                   {i.assignedId && <span className="text-muted">· {i.assignedId === meId ? "com você" : `com ${i.assignedName ?? "outra pessoa"}`}</span>}
                   {i.outsideHours && <span className="text-muted">· chegou fora do horário</span>}
                   {i.snoozedUntil && <span className="text-muted">· adiada até {new Date(i.snoozedUntil).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}

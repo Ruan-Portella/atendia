@@ -41,7 +41,7 @@ describe("caixa de entrada", () => {
 
   it("as filas, a ordem (urgente primeiro, depois quem espera há mais tempo) e o fora do horário", async () => {
     const items = await loadInbox(db(), { bots, sectors, holidays: new Map(), meId: "eu", mySectorIds: [], seeAllSectors: new Set(["c1"]), now });
-    expect(items.map((i) => i.id)).toEqual(["urg", "madrugada", "geral", "fin"]);
+    expect(items.filter((i) => i.state !== "com_ia").map((i) => i.id)).toEqual(["urg", "madrugada", "geral", "fin"]);
     const by = Object.fromEntries(items.map((i) => [i.id, i]));
     expect(by.geral).toMatchObject({ contact: "Maria", state: "aguardando", outsideHours: false, sectorName: null });
     expect(by.fin).toMatchObject({ sectorName: "Financeiro", assignedName: "Vivi" });
@@ -63,6 +63,30 @@ describe("caixa de entrada", () => {
     const two: Sector[] = [sectors[0], { ...sectors[0], id: "s2", clientId: "c2", name: "Vendas" }];
     expect(visibleSectors(two, { mySectorIds: [], seeAllSectors: new Set() })).toEqual([]);
     expect(visibleSectors(two, { mySectorIds: ["s1"], seeAllSectors: new Set(["c2"]) }).map((s) => s.name)).toEqual(["Financeiro", "Vendas"]);
+  });
+
+  it("Com a IA: o contato escreveu nas últimas 24 h e ninguém da equipe está com a conversa; fora das outras filas", async () => {
+    const mem = memoryDb({
+      conversations: [
+        { id: "ia", bot_id: "b1", channel: "whatsapp", contact_id: "ct1", sector_id: null, assigned_to_id: null, assigned_to_name: null, handoff_requested_at: null, takeover_at: null, handled_at: null, handoff_urgent_at: null, last_contact_at: ago(20), last_reply_at: ago(19), last_message_at: ago(19), ai_paused_until: null },
+        // a equipe devolveu: a IA voltou a responder
+        { id: "devolvida", bot_id: "b1", channel: "instagram", contact_id: null, sector_id: null, assigned_to_id: null, assigned_to_name: null, handoff_requested_at: ago(200), takeover_at: null, handled_at: ago(100), handoff_urgent_at: null, last_contact_at: ago(90), last_reply_at: ago(80), last_message_at: ago(80), ai_paused_until: ago(-30) },
+        // pediu atendente: vai para as filas do atendimento, não para Com a IA
+        { id: "pedido", bot_id: "b1", channel: "whatsapp", contact_id: null, sector_id: null, assigned_to_id: null, assigned_to_name: null, handoff_requested_at: ago(10), takeover_at: null, handled_at: null, handoff_urgent_at: null, last_contact_at: ago(10), last_reply_at: null, last_message_at: ago(10), ai_paused_until: null },
+        // de ontem cedo (mais de 24 h) e o teste do painel ficam de fora
+        { id: "velha", bot_id: "b1", channel: "whatsapp", contact_id: null, sector_id: null, assigned_to_id: null, assigned_to_name: null, handoff_requested_at: null, takeover_at: null, handled_at: null, handoff_urgent_at: null, last_contact_at: ago(60 * 30), last_reply_at: null, last_message_at: ago(60 * 30), ai_paused_until: null },
+        { id: "teste", bot_id: "b1", channel: "painel", contact_id: null, sector_id: null, assigned_to_id: null, assigned_to_name: null, handoff_requested_at: null, takeover_at: null, handled_at: null, handoff_urgent_at: null, last_contact_at: ago(5), last_reply_at: null, last_message_at: ago(5), ai_paused_until: null },
+      ],
+      contacts: [{ id: "ct1", name: "Maria", display: null, phone_enc: null }],
+    });
+    const items = await loadInbox(mem, { bots, sectors, holidays: new Map(), meId: "eu", mySectorIds: [], seeAllSectors: new Set(), now });
+    const ia = items.filter((i) => inQueue(i, "com_ia", "eu"));
+    expect(ia.map((i) => i.id)).toEqual(["ia", "devolvida"]);
+    expect(ia[0]).toMatchObject({ state: "com_ia", contact: "Maria", aiPaused: false, since: ago(20) });
+    expect(ia[1].aiPaused).toBe(true);
+    expect(items.filter((i) => inQueue(i, "todas", "eu")).map((i) => i.id)).toEqual(["pedido"]);
+    expect(queueCounts(items, ["com_ia", "nao_atribuidas", "minhas"], "eu")).toEqual({ com_ia: 2, nao_atribuidas: 1, minhas: 0 });
+    expect(isQueue("com_ia")).toBe(true);
   });
 
   it("filas válidas e o tempo de espera curto", () => {

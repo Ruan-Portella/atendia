@@ -4,6 +4,7 @@ import { nextOpening, type BusinessHours } from "./handoff-hours";
 import { contactLabels } from "./contacts";
 import type { Sector } from "./sectors";
 import { isSnoozed } from "./snooze";
+import { apiPauseActive } from "./presence";
 
 /*
  * Caixa de entrada (parte 3; spec, Peça 11 e Telas seção 6): o atendimento humano aberto, em filas.
@@ -26,16 +27,20 @@ export function seeAllSectorsIn(canConfigure: boolean, clients: Array<{ id: stri
 /** As filas de setor que a pessoa vê: os setores dela e os dos clientes em que vê todos. Pura. */
 export const visibleSectors = (sectors: Sector[], o: { mySectorIds: string[]; seeAllSectors: Set<string> }): Sector[] => sectors.filter((s) => o.seeAllSectors.has(s.clientId) || o.mySectorIds.includes(s.id));
 
-export type Queue = "minhas" | "nao_atribuidas" | "fora" | "adiadas" | "todas" | `setor:${string}`;
+export type Queue = "minhas" | "nao_atribuidas" | "fora" | "adiadas" | "todas" | "com_ia" | `setor:${string}`;
 export const BASE_QUEUES: Array<{ key: Queue; label: string }> = [
   { key: "minhas", label: "Minhas" },
   { key: "nao_atribuidas", label: "Não atribuídas" },
   { key: "fora", label: "Fora do horário" },
   { key: "adiadas", label: "Adiadas" },
   { key: "todas", label: "Todas abertas" },
+  { key: "com_ia", label: "Com a IA" },
 ];
 
-export const isQueue = (v: unknown): v is Queue => typeof v === "string" && (["minhas", "nao_atribuidas", "fora", "adiadas", "todas"].includes(v) || /^setor:[0-9a-f-]{36}$/i.test(v));
+export const isQueue = (v: unknown): v is Queue => typeof v === "string" && (["minhas", "nao_atribuidas", "fora", "adiadas", "todas", "com_ia"].includes(v) || /^setor:[0-9a-f-]{36}$/i.test(v));
+
+/** Com a IA: o contato escreveu nas últimas 24 horas e ninguém da equipe está com a conversa. */
+export const AI_QUEUE_HOURS = 24;
 
 export interface InboxBot {
   id: string;
@@ -59,7 +64,10 @@ export interface InboxItem {
   sectorName: string | null;
   assignedId: string | null;
   assignedName: string | null;
-  state: HandoffState;
+  /** com_ia: a IA está respondendo (fila Com a IA, fora das outras). */
+  state: HandoffState | "com_ia";
+  /** Com a IA, mas pausada pela integração (API) até agora. */
+  aiPaused?: boolean;
   urgent: boolean;
   waiting: boolean;
   /** Desde quando espera: o pedido de atendente, ou a última mensagem do contato sem resposta. */
@@ -89,6 +97,7 @@ interface Row {
   last_contact_at: string | null;
   last_reply_at: string | null;
   last_message_at: string;
+  ai_paused_until?: string | null;
   assigned_at?: string | null;
   snoozed_until?: string | null;
   snoozed_at?: string | null;
@@ -102,6 +111,8 @@ export function visibleTo(r: Pick<Row, "sector_id" | "assigned_to_id">, o: { meI
 
 /** A conversa está nesta fila? Pura. */
 export function inQueue(i: InboxItem, q: Queue, meId: string): boolean {
+  // com a IA: só na fila Com a IA (fora das contagens do atendimento)
+  if (q === "com_ia" || i.state === "com_ia") return q === "com_ia" && i.state === "com_ia";
   // adiada: só na fila Adiadas, até voltar
   if (q === "adiadas" || i.snoozedUntil) return q === "adiadas" && Boolean(i.snoozedUntil);
   if (q === "todas") return true;
@@ -113,27 +124,72 @@ export function inQueue(i: InboxItem, q: Queue, meId: string): boolean {
 
 /**
  * As conversas abertas da Caixa de entrada (últimos 30 dias), já com o que cada pessoa vê, em
- * ordem: urgente primeiro, depois quem espera há mais tempo, depois as em atendimento.
+ * ordem: urgente primeiro, depois quem espera há mais tempo, depois as em atendimento. No fim, as da
+ * fila Com a IA (o contato escreveu nas últimas 24 horas e ninguém da equipe está com a conversa), da
+ * mais recente para a mais antiga; elas não entram nas outras filas.
  */
 export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; sectors: Sector[]; holidays: Map<string, string[]>; meId: string; mySectorIds: string[]; seeAllSectors: Set<string>; now?: Date }): Promise<InboxItem[]> {
   if (!o.bots.length) return [];
   const now = o.now ?? new Date();
-  const { data, error } = await db
-    .from("conversations")
-    .select("id, bot_id, channel, contact_id, sector_id, assigned_to_id, assigned_to_name, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at, assigned_at, snoozed_until, snoozed_at")
-    .in("bot_id", o.bots.map((b) => b.id))
-    .or("handoff_requested_at.not.is.null,takeover_at.not.is.null")
-    .is("handled_at", null)
-    .gte("last_message_at", new Date(now.getTime() - OPEN_DAYS * 86_400_000).toISOString())
-    .order("last_message_at", { ascending: false })
-    .limit(300);
+  const cols = "id, bot_id, channel, contact_id, sector_id, assigned_to_id, assigned_to_name, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at, assigned_at, snoozed_until, snoozed_at, ai_paused_until";
+  const botIds = o.bots.map((b) => b.id);
+  const [{ data, error }, { data: aiData }] = await Promise.all([
+    db
+      .from("conversations")
+      .select(cols)
+      .in("bot_id", botIds)
+      .or("handoff_requested_at.not.is.null,takeover_at.not.is.null")
+      .is("handled_at", null)
+      .gte("last_message_at", new Date(now.getTime() - OPEN_DAYS * 86_400_000).toISOString())
+      .order("last_message_at", { ascending: false })
+      .limit(300),
+    // Com a IA: o contato escreveu nas últimas 24 horas (só os canais de verdade, sem o teste do painel)
+    db
+      .from("conversations")
+      .select(cols)
+      .in("bot_id", botIds)
+      .in("channel", ["whatsapp", "instagram", "widget"])
+      .gte("last_contact_at", new Date(now.getTime() - AI_QUEUE_HOURS * 3_600_000).toISOString())
+      .order("last_contact_at", { ascending: false })
+      .limit(200),
+  ]);
   if (error) throw new Error(`caixa de entrada: ${error.message}`);
   const bots = new Map(o.bots.map((b) => [b.id, b]));
   // quem vê todos os setores é por cliente (a opção da aba Setores)
-  const rows = ((data ?? []) as Row[]).filter((r) => visibleTo(r, { ...o, allSectors: o.seeAllSectors.has(bots.get(r.bot_id)?.client_id ?? "") })).sort((a, b) => handoffOrder(a, b, now.getTime()));
+  const sees = (r: Row) => visibleTo(r, { ...o, allSectors: o.seeAllSectors.has(bots.get(r.bot_id)?.client_id ?? "") });
+  const rows = ((data ?? []) as Row[]).filter(sees).sort((a, b) => handoffOrder(a, b, now.getTime()));
+  // sem atendimento aberto: a IA é quem responde (o que tem pedido ou alguém da equipe já está na outra lista)
+  const aiRows = ((aiData ?? []) as Row[]).filter((r) => (r.handled_at || (!r.handoff_requested_at && !r.takeover_at)) && sees(r));
   const sectors = new Map(o.sectors.map((s) => [s.id, s]));
-  const names = await contactLabels(db, rows.map((r) => r.contact_id ?? "")).catch(() => new Map<string, string>());
-  return rows.flatMap((r) => {
+  const names = await contactLabels(db, [...rows, ...aiRows].map((r) => r.contact_id ?? "")).catch(() => new Map<string, string>());
+  const aiItems: InboxItem[] = aiRows.flatMap((r) => {
+    const bot = bots.get(r.bot_id);
+    if (!bot) return [];
+    return [{
+      id: r.id,
+      botId: r.bot_id,
+      botName: bot.name,
+      clientName: bot.client_name,
+      clientId: bot.client_id,
+      channel: r.channel ?? "widget",
+      contactId: r.contact_id,
+      contact: r.contact_id ? (names.get(r.contact_id) ?? null) : null,
+      sectorId: r.sector_id,
+      sectorName: r.sector_id ? (sectors.get(r.sector_id)?.name ?? null) : null,
+      assignedId: null,
+      assignedName: null,
+      state: "com_ia" as const,
+      aiPaused: apiPauseActive(r.ai_paused_until, now.getTime()),
+      urgent: false,
+      waiting: false,
+      since: r.last_contact_at ?? r.last_message_at,
+      requestedAt: null,
+      outsideHours: false,
+      snoozedUntil: null,
+      snoozeEnded: false,
+    }];
+  });
+  return [...rows.flatMap((r) => {
     const st = handoffStatus(r, now.getTime());
     const bot = bots.get(r.bot_id);
     if (!st || !bot) return [];
@@ -165,7 +221,7 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
       snoozedUntil: snoozed ? r.snoozed_until! : null,
       snoozeEnded: Boolean(r.snoozed_until) && !snoozed,
     }];
-  });
+  }), ...aiItems];
 }
 
 /** Quantas conversas em cada fila (o número ao lado do nome). Pura. */
