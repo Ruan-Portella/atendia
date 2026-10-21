@@ -444,6 +444,22 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <p className="mt-1 text-xs text-muted">No WhatsApp e no Instagram, o assistente conversa só sobre o negócio (regra da Meta contra assistentes de uso geral). Aqui você amplia os assuntos próximos que ele pode tratar. Fazer o trabalho pela pessoa (redação, tradução, programação) ou executar o serviço que a empresa vende continua bloqueado. No chat do site não há essa trava.</p>
               </div>
               )}
+              {!bot.is_demo && (
+                <div className="flex flex-col gap-1.5 rounded-xl border border-line-2 p-3">
+                  <input type="hidden" name="memory_form" value="1" />
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" name="contact_memory" defaultChecked={Boolean(bot.contact_memory)} disabled={Boolean(bot.sensitive_mode)} className="mt-1" />
+                    <span>
+                      <span className="font-semibold">Memória do contato</span>
+                      <span className="block text-xs text-muted">
+                        {bot.sensitive_mode
+                          ? "Desligada: o modo dados sensíveis está ligado neste chatbot."
+                          : "O assistente lembra de uma conversa para outra o nome que a pessoa prefere e as preferências dela (até 10 fatos curtos), só neste chatbot. Nunca guarda saúde, religião, documentos, pagamento ou endereço completo. Vale 180 dias, aparece na ficha do contato e a pessoa pode pedir para esquecer. Desligar apaga as memórias deste chatbot."}
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
               {bot.client_id && <p className="text-xs text-muted">O nome do cliente e quanto você cobra ficam no <Link href={`/painel/clientes/${bot.client_id}?tab=dados`} className="font-semibold text-brand hover:underline">painel do cliente</Link>.</p>}
               <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
             </ActionForm>

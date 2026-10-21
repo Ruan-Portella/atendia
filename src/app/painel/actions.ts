@@ -17,6 +17,7 @@ import { isSignatureFormat } from "@/lib/signature";
 import { parseTicketForm } from "@/lib/tickets";
 import { setTicketStatus } from "@/lib/ticket-follow";
 import { ensureTicketTemplate } from "@/lib/ticket-whatsapp";
+import { clearBotMemories, saveContactMemory } from "@/lib/contacts";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
 import { attendantAuthor, type Attendant } from "@/lib/authors";
@@ -315,6 +316,12 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   const patch: Record<string, unknown> = {};
   // chamados com o telefone (parte 7d): o modelo do aviso no WhatsApp é criado depois de salvar
   let ticketWhatsApp = false;
+  // memória do contato (leva Memória e avisos, parte 1): desligar apaga as memórias do chatbot
+  let memoryOff = false;
+  if ("memory_form" in f) {
+    patch.contact_memory = f.contact_memory === "on";
+    memoryOff = f.contact_memory !== "on";
+  }
   if ("name" in f) {
     const n = assistantName(f.name);
     if ("error" in n) return fail(n.error);
@@ -388,6 +395,8 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
   const { data: saved } = await supabase.from("bots").select("is_template").eq("id", botId).maybeSingle();
   if (kind?.template_id) await applyTemplate(createAdminClient(), kind.template_id as string, [botId]);
   revalidatePath("/painel", "layout");
+  const forgotten = memoryOff ? await clearBotMemories(createAdminClient(), botId).catch(() => 0) : 0;
+  if (forgotten) await auditPanel("bot.memoria_apagada", { type: "bot", id: botId }, { after: { contatos: forgotten } });
   if (saved?.is_template) return ok("Salvo no rascunho do modelo. Os chatbots derivados recebem quando você publicar.");
   // chamado com telefone e WhatsApp conectado: o modelo do aviso da resposta (criado uma vez)
   if (ticketWhatsApp) {
@@ -1821,6 +1830,17 @@ export async function saveContactTags(clientId: string, contactId: string, formD
   await auditPanel("contato.etiquetas", { type: "contact", id: contactId }, { before: { tags: found.contact.tags }, after: { tags } });
   revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
   return ok("Etiquetas salvas.");
+}
+
+/** Apaga a memória do assistente sobre o contato (leva Memória e avisos, parte 1). */
+export async function clearContactMemoryAction(clientId: string, contactId: string): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const found = await clientContact(clientId, contactId);
+  if (!found) return fail("Contato não encontrado.");
+  await saveContactMemory(createAdminClient(), { id: contactId, botId: found.contact.bot_id }, []);
+  await auditPanel("contato.memoria_apagada", { type: "contact", id: contactId });
+  revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
+  return ok("Memória apagada: o assistente não lembra mais desta pessoa.");
 }
 
 /** O fuso do cliente (o horário marcado e as réguas são lidos nele). */

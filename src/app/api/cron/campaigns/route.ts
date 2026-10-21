@@ -7,6 +7,7 @@ import { expireApiPauses } from "@/lib/api-pause";
 import { runIdleSurveys } from "@/lib/satisfaction";
 import { syncDueInstagramSources } from "@/lib/instagram-posts";
 import { planReguas } from "@/lib/reguas";
+import { runMemoryJob } from "@/lib/contact-memory";
 
 export const maxDuration = 60;
 
@@ -33,9 +34,11 @@ export async function GET(req: Request) {
       const pauses = hasTime() ? await expireApiPauses(db, { hasTime }) : 0;
       // pesquisa de satisfação nas conversas com a IA paradas há 30 minutos (Lançamento, parte 4)
       const surveys = hasTime() ? await runIdleSurveys(db, { hasTime }) : 0;
+      // memória do contato: as conversas paradas há 30 minutos (leva Memória e avisos, parte 1)
+      const memories = hasTime() ? await runMemoryJob(db, { hasTime }).catch((e) => (console.error("memória: tarefa", e), 0)) : 0;
       // posts do Instagram (E1): a leitura em partes usa o tempo que sobrar
       const posts = hasTime() ? await syncDueInstagramSources(db, { hasTime }) : 0;
-      return { ...campaigns, reguas, webhooks, pauses, surveys, posts };
+      return { ...campaigns, reguas, webhooks, pauses, surveys, memories, posts };
     });
     return Response.json(result);
   } catch (e) {

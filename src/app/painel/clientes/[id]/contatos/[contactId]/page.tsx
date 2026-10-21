@@ -4,7 +4,7 @@ import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { can } from "@/lib/team";
-import { contactForPanel } from "@/lib/contacts";
+import { contactForPanel, contactMemory } from "@/lib/contacts";
 import { CONSENT_LABEL, SOURCE_LABEL, consentHistory, consentStateOf } from "@/lib/marketing-consent";
 import { activeSuppressions, suppressionScope } from "@/lib/suppression";
 import { relativeTime } from "@/lib/utils";
@@ -13,7 +13,7 @@ import { CLIENT_TIMEZONES, DEFAULT_TIMEZONE, isoToLocalInput } from "@/lib/timez
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { recordContactConsent, revokeContactConsent, saveContactDates, saveContactTags } from "../../../../actions";
+import { clearContactMemoryAction, recordContactConsent, revokeContactConsent, saveContactDates, saveContactTags } from "../../../../actions";
 
 export const metadata = { title: "Contato" };
 
@@ -54,6 +54,8 @@ export default async function ContactPage({ params }: PageProps<"/painel/cliente
     ]);
   }
   const state = consentStateOf(history);
+  // memória do assistente (leva Memória e avisos, parte 1): o que a IA lembra desta pessoa neste chatbot
+  const memory = await contactMemory(db, contactId).catch(() => [] as string[]);
   const { data: conversations } = await supabase.from("conversations").select("id, bot_id, started_at, last_message_at, message_count, channel").eq("contact_id", contactId).order("last_message_at", { ascending: false }).limit(20);
   const title = contact.name ?? (contact.phone ? `+${contact.phone}` : contact.instagram ? `Instagram ${contact.instagram}` : "Sem nome");
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -164,6 +166,19 @@ export default async function ContactPage({ params }: PageProps<"/painel/cliente
               </ActionForm>
             </details>
           )}
+        </section>
+      )}
+
+      {memory.length > 0 && (
+        <section className="card flex flex-col gap-2 p-5">
+          <h2 className="font-semibold">Memória do assistente</h2>
+          <p className="text-xs text-muted">O que o assistente lembra desta pessoa de conversas anteriores, só neste chatbot. Vale 180 dias desde a última atualização; a pessoa também pode pedir para ele esquecer.</p>
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+            {memory.map((f) => <li key={f}>{f}</li>)}
+          </ul>
+          <ConfirmAction action={clearContactMemoryAction.bind(null, id, contactId)} title="Apagar a memória do assistente?" description="O assistente deixa de lembrar desta pessoa. Nas próximas conversas, ele pode aprender de novo (com a memória ligada no chatbot)." confirmLabel="Apagar a memória" className="btn-ghost self-start">
+            Apagar a memória
+          </ConfirmAction>
         </section>
       )}
 

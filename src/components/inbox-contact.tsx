@@ -53,6 +53,13 @@ export function InboxContact({ data, botName, conversationHref, contactHref }: {
             {consent ? <>{CONSENT_LABEL[consent.state]} <span className="text-xs text-muted">({SOURCE_LABEL[consent.last.source]}, {when(consent.last.revoked_at ?? consent.last.collected_at)})</span></> : <span className="text-muted">sem resposta</span>}
           </Row>
         )}
+        {data.memory.length > 0 && (
+          <Row label="O assistente lembra">
+            <ul className="flex list-disc flex-col gap-0.5 pl-4">
+              {data.memory.map((f) => <li key={f}>{f}</li>)}
+            </ul>
+          </Row>
+        )}
         {links.length > 0 && (
           <Row label="Vínculos">
             <ul className="flex flex-col gap-0.5">

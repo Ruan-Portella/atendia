@@ -98,6 +98,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "conversa.assumir_no_lugar": "Conversa assumida no lugar de outra pessoa",
   "conversa.devolver": "Conversa devolvida ao assistente",
   "conversa.transferir": "Conversa transferida",
+  "bot.memoria_apagada": "Memória do contato desligada (memórias apagadas)",
+  "contato.memoria_apagada": "Memória de um contato apagada",
   "chamado.status": "Status do chamado alterado",
   "cliente.setores_visiveis": "Quem vê todos os setores (aba Setores)",
   "resposta_pronta.criar": "Resposta pronta criada",

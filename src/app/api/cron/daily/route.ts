@@ -23,6 +23,8 @@ import { runDueAccountDeletions } from "@/lib/account-deletion";
 import { apiInvitesDigest } from "@/lib/api-members";
 import { checkErrorRates, checkSubscriptions } from "@/lib/meta-monitor";
 import { checkAiCostAlarm } from "@/lib/ai-cost-alarm";
+import { expireContactMemories } from "@/lib/contacts";
+import { MEMORY_DAYS } from "@/lib/contact-memory";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
 export const maxDuration = 300;
@@ -65,6 +67,8 @@ async function daily() {
   const retention = await run("limpeza LGPD", () => applyRetention(db, () => hasTime()));
   // arquivos recebidos que ficaram sem conversa (chatbot ou cliente excluído) ou venceram
   const files = await run("arquivos sem conversa", () => sweepAttachments(db, () => hasTime()));
+  // memória do contato vencida (180 dias sem atualização)
+  const memories = await run("memórias vencidas", () => expireContactMemories(db, new Date(Date.now() - MEMORY_DAYS * 86_400_000).toISOString()));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
   // contas com a exclusão vencida (7 dias depois do pedido do dono): canais, assinatura, arquivos e a agência
@@ -123,5 +127,5 @@ async function daily() {
   // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
   const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, subscriptions, errors, aiUsage, aiCost, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, memories, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, subscriptions, errors, aiUsage, aiCost, disk, sources, base, analysis };
 }

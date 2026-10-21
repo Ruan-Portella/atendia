@@ -103,8 +103,8 @@ export function usageFrom(model: string | undefined, u: { inputTokens?: number; 
 
 /** avaliacao: o conjunto de casos do backoffice (custo da plataforma, fora da margem da agência). */
 /** foto: leitura de uma foto do contato pelo modelo de visão (leva de leitura de fotos). */
-/** aprendizado: a sugestão para a base a partir da resposta da equipe (D', parte 6). */
-export type AiUsageKind = "resposta" | "leitura" | "transcricao" | "classificacao" | "avaliacao" | "analise" | "foto" | "aprendizado";
+/** aprendizado: a sugestão para a base a partir da resposta da equipe (D', parte 6); memoria: a leitura da conversa para a memória do contato. */
+export type AiUsageKind = "resposta" | "leitura" | "transcricao" | "classificacao" | "avaliacao" | "analise" | "foto" | "aprendizado" | "memoria";
 
 /** Linha da tabela para uma chamada. */
 function usageRow(base: { agencyId: string; botId?: string | null; conversationId?: string | null; kind: AiUsageKind; channel?: string | null }, u: UsageTokens) {

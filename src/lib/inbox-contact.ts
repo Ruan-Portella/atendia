@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { contactForPanel, type ContactPanelRow } from "./contacts";
+import { contactForPanel, contactMemory, type ContactPanelRow } from "./contacts";
 import { consentHistory, consentStateOf, type ConsentRow, type ConsentState } from "./marketing-consent";
 import { suppressionScope } from "./suppression";
 import { activeLinks, isPairingLink, linkLabel } from "./pairing";
@@ -15,6 +15,8 @@ export interface InboxContactData {
   consent: { state: ConsentState; last: ConsentRow } | null;
   links: Array<{ id: string; label: string; routine: boolean; linkedAt: string }>;
   history: Array<{ id: string; botId: string; channel: string; startedAt: string; lastMessageAt: string; messages: number }>;
+  /** O que o assistente lembra da pessoa (memória do contato). */
+  memory: string[];
 }
 
 const HISTORY = 5;
@@ -24,7 +26,7 @@ export async function loadInboxContact(db: SupabaseClient, o: { contactId: strin
   const contact = await contactForPanel(db, o.contactId, o.botIds);
   if (!contact) return null;
   const number = contact.channel === "whatsapp" ? contact.phone ?? contact.bsuid : null;
-  const [consent, links, { data: convs }] = await Promise.all([
+  const [consent, links, { data: convs }, memory] = await Promise.all([
     number
       ? (async () => {
           const { data: wa } = await db.from("whatsapp_channels").select("waba_id").eq("bot_id", contact.bot_id).maybeSingle();
@@ -41,6 +43,7 @@ export async function loadInboxContact(db: SupabaseClient, o: { contactId: strin
       .neq("id", o.conversationId)
       .order("last_message_at", { ascending: false })
       .limit(HISTORY),
+    contactMemory(db, o.contactId).catch(() => [] as string[]),
   ]);
   return {
     contact,
@@ -54,6 +57,7 @@ export async function loadInboxContact(db: SupabaseClient, o: { contactId: strin
       lastMessageAt: c.last_message_at as string,
       messages: (c.message_count as number | null) ?? 0,
     })),
+    memory,
   };
 }
 

@@ -1,4 +1,5 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type UIMessage, type UIMessageChunk } from "ai";
+import { memoryForConversation, memoryNote, memoryTools } from "./contact-memory";
 import { searchBots } from "./bot-template";
 import { activeContext, withDisplay } from "./bot-context";
 import { activeMomentNotice } from "./moment-notice";
@@ -95,6 +96,8 @@ export interface BotRow {
   quota_override?: number | null;
   /** Modo dados sensíveis: a IA não lê fotos (photo-note.photoReadingOn). */
   sensitive_mode?: boolean | null;
+  /** Memória do contato ligada (leva Memória e avisos no celular, parte 1). */
+  contact_memory?: boolean | null;
 }
 
 export const CORS_HEADERS = {
@@ -937,6 +940,8 @@ export async function runChat(opts: {
   const linkHosts = linkHostsFor(bot, context);
   // setores do cliente (Caixa de entrada, parte 2): a IA diz para qual setor vai o pedido de atendente
   const sectors = await sectorNamesOf(db, bot.client_id);
+  // memória do contato (leva Memória e avisos, parte 1): o que a IA lembra dele de outras conversas deste chatbot
+  const memory = await memoryForConversation(db, bot, convId).catch(() => null);
   const sectorNote = sectors.length ? `SETORES DA EQUIPE: ${sectors.map((x) => x.name).join(", ")}. Ao chamar_atendente, preencha setor com o que cuida do pedido (só esses nomes); na dúvida, deixe vazio. Não diga o nome do setor nem prometa quem vai atender.` : null;
   // filtro de links na saída (link-guard.ts): o que a IA escreve de link, e-mail, Pix, boleto ou
   // conta só sai se veio da configuração do chatbot, da base, da equipe, da própria pessoa ou de
@@ -1013,7 +1018,7 @@ export async function runChat(opts: {
     // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
     allowSystemInMessages: true,
     messages: [
-      { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null), opts.identityNote ?? null, sectorNote].filter(Boolean).join("\n\n") },
+      { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null), opts.identityNote ?? null, sectorNote, memory ? memoryNote(memory.facts) : null].filter(Boolean).join("\n\n") },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
       // roteiro em andamento: o passo atual depois do histórico (pesa mais que ele)
@@ -1121,6 +1126,7 @@ export async function runChat(opts: {
     ...(routine?.tools ?? {}),
     ...actionTools,
     ...(opts.extraTools ?? {}),
+    ...(memory?.facts.length ? memoryTools(db, { botId: bot.id, contactId: memory.contactId }) : {}),
   },
     onError: () => markSaved(),
     onFinish: async ({ text, steps, totalUsage, response }) => {

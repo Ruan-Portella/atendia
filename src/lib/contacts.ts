@@ -943,3 +943,48 @@ export async function contactLabels(db: SupabaseClient, ids: string[]): Promise<
   }
   return out;
 }
+
+/* ------------------------------------------------------------------ memória do contato */
+
+/*
+ * Memória do contato (leva Memória e avisos no celular, parte 1): até 10 fatos curtos que a IA tirou
+ * das conversas anteriores com este chatbot, cifrados com a chave do cliente. Só este módulo lê e
+ * grava a coluna; quem decide o que entra é contact-memory.ts.
+ */
+
+/** Os fatos guardados do contato ([] sem memória). */
+export async function contactMemory(db: SupabaseClient, contactId: string): Promise<string[]> {
+  const { data } = await db.from("contacts").select("memory_enc").eq("id", contactId).maybeSingle();
+  const raw = await openNullable("contacts.memory_enc", data?.memory_enc).catch(() => null);
+  if (!raw) return [];
+  try {
+    const list = JSON.parse(raw) as unknown;
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Grava a memória (lista vazia apaga). */
+export async function saveContactMemory(db: SupabaseClient, contact: { id: string; botId: string }, facts: string[], now = new Date()): Promise<void> {
+  const patch = facts.length ? { memory_enc: await enc("contacts.memory_enc", contact.botId, JSON.stringify(facts)), memory_updated_at: now.toISOString() } : { memory_enc: null, memory_updated_at: null };
+  const { error } = await db.from("contacts").update(patch).eq("id", contact.id).eq("bot_id", contact.botId);
+  if (error) throw new Error(`memória do contato: ${error.message}`);
+}
+
+/** Apaga a memória de todos os contatos de um chatbot (desligou a memória ou ligou o modo dados sensíveis). Devolve quantos. */
+export async function clearBotMemories(db: SupabaseClient, botId: string): Promise<number> {
+  const { data, error } = await db.from("contacts").update({ memory_enc: null, memory_updated_at: null }).eq("bot_id", botId).not("memory_updated_at", "is", null).select("id");
+  if (error) throw new Error(`memória do contato: ${error.message}`);
+  return data?.length ?? 0;
+}
+
+/** Apaga as memórias sem atualização desde `before` (o prazo de 180 dias, na tarefa diária). Devolve quantas. */
+export async function expireContactMemories(db: SupabaseClient, before: string, limit = 500): Promise<number> {
+  const { data: rows } = await db.from("contacts").select("id").lt("memory_updated_at", before).limit(limit);
+  const ids = (rows ?? []).map((r) => r.id as string);
+  if (!ids.length) return 0;
+  const { error } = await db.from("contacts").update({ memory_enc: null, memory_updated_at: null }).in("id", ids);
+  if (error) throw new Error(`memória do contato: ${error.message}`);
+  return ids.length;
+}

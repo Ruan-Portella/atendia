@@ -1,3 +1,4 @@
+import { clearBotMemories } from "./contacts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SENSITIVE_DAYS, effectiveRetention, retentionLabel, retentionReduced } from "./retention";
 
@@ -35,6 +36,8 @@ export async function applySensitiveMode(
   if (reduced && !o.confirmed) return { ok: false, message: `Para encurtar o prazo, marque a confirmação: as conversas deste assistente com mais de ${retentionLabel(after)} são apagadas na próxima limpeza diária.` };
   const { error } = await db.from("bots").update({ sensitive_mode: o.on, sensitive_retention_days: days }).eq("id", o.botId);
   if (error) return { ok: false, message: "Não foi possível salvar. Tente de novo." };
+  // modo dados sensíveis: sem memória do contato (a que existia é apagada)
+  if (o.on && !bot.sensitive_mode) await clearBotMemories(db, o.botId).catch((e) => console.error("memória: não apagada no modo dados sensíveis", (e as Error).message));
   return {
     ok: true,
     change: {
