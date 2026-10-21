@@ -15,6 +15,7 @@ import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handof
 import { parseTarget, transferConversation } from "@/lib/transfer";
 import { isSignatureFormat } from "@/lib/signature";
 import { parseTicketForm } from "@/lib/tickets";
+import { setTicketStatus } from "@/lib/ticket-follow";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
 import { attendantAuthor, type Attendant } from "@/lib/authors";
@@ -795,6 +796,18 @@ export async function snoozeConversationAction(conversationId: string, formData:
   if (r.ok) await auditPanel("conversa.adiar", { type: "conversation", id: conversationId }, { after: { ate: until.toISOString() } });
   revalidateConversation(owned.conv.bot_id, conversationId);
   return r;
+}
+
+/** O status do chamado do site (Chamados, parte 7c). */
+export async function setTicketStatusAction(conversationId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const status = String(formData.get("status") ?? "");
+  const r = await setTicketStatus(owned.admin, conversationId, status);
+  if (r.ok && r.before !== undefined) await auditPanel("chamado.status", { type: "conversation", id: conversationId }, { before: { status: r.before }, after: { status } });
+  revalidateConversation(owned.conv.bot_id, conversationId);
+  return r.ok ? ok(r.message) : fail(r.message);
 }
 
 export async function unsnoozeConversationAction(conversationId: string): Promise<ActionResult> {

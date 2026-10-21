@@ -87,6 +87,8 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
   }
   // roteiro em andamento acaba: a equipe assumiu (B2')
   await endActiveRoutine(admin, conversationId, "handoff");
+  // chamado do site (parte 7c): aberto passa a em andamento
+  await import("./ticket-follow").then((m) => m.markTicketInProgress(admin, conversationId)).catch(() => undefined);
   const previous = heldByOther(before, who.id) || assignedToOther(before, who.id) ? otherName(before) : null;
   // webhooks: conversation.assigned (quem estava, quando foi "Assumir no lugar")
   await queueConversationAssigned(admin, conversationId, { agent: who, by: "agent", previous: previous && before.assigned_to_id ? { type: before.assigned_to_type ?? "agency_member", id: before.assigned_to_id, name: previous } : null, at: now });
@@ -145,6 +147,8 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   await touchConversation(admin, conversationId);
   // aprendizado (D', parte 6): no WhatsApp e no Instagram, a camada de envio já cuidou
   if (sent === "widget") learnLater(admin, { conversationId, text: content, author: who.name });
+  // chamado do site (parte 7c): a resposta vai por e-mail e o chamado fica aguardando o cliente
+  if (sent === "widget") await import("./ticket-follow").then((m) => m.afterTicketReply(admin, conversationId, content, who)).catch((e) => console.error("chamado: depois da resposta", (e as Error).message));
   return ok("Enviada. O visitante vê em alguns segundos.");
 }
 

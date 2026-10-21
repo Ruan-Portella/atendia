@@ -27,17 +27,18 @@ export function seeAllSectorsIn(canConfigure: boolean, clients: Array<{ id: stri
 /** As filas de setor que a pessoa vê: os setores dela e os dos clientes em que vê todos. Pura. */
 export const visibleSectors = (sectors: Sector[], o: { mySectorIds: string[]; seeAllSectors: Set<string> }): Sector[] => sectors.filter((s) => o.seeAllSectors.has(s.clientId) || o.mySectorIds.includes(s.id));
 
-export type Queue = "minhas" | "nao_atribuidas" | "fora" | "adiadas" | "todas" | "com_ia" | `setor:${string}`;
+export type Queue = "minhas" | "nao_atribuidas" | "fora" | "adiadas" | "chamados" | "todas" | "com_ia" | `setor:${string}`;
 export const BASE_QUEUES: Array<{ key: Queue; label: string }> = [
   { key: "minhas", label: "Minhas" },
   { key: "nao_atribuidas", label: "Não atribuídas" },
   { key: "fora", label: "Fora do horário" },
   { key: "adiadas", label: "Adiadas" },
+  { key: "chamados", label: "Chamados" },
   { key: "todas", label: "Todas abertas" },
   { key: "com_ia", label: "Com a IA" },
 ];
 
-export const isQueue = (v: unknown): v is Queue => typeof v === "string" && (["minhas", "nao_atribuidas", "fora", "adiadas", "todas", "com_ia"].includes(v) || /^setor:[0-9a-f-]{36}$/i.test(v));
+export const isQueue = (v: unknown): v is Queue => typeof v === "string" && (["minhas", "nao_atribuidas", "fora", "adiadas", "chamados", "todas", "com_ia"].includes(v) || /^setor:[0-9a-f-]{36}$/i.test(v));
 
 /** Com a IA: o contato escreveu nas últimas 24 horas e ninguém da equipe está com a conversa. */
 export const AI_QUEUE_HOURS = 24;
@@ -68,8 +69,9 @@ export interface InboxItem {
   state: HandoffState | "com_ia";
   /** Com a IA, mas pausada pela integração (API) até agora. */
   aiPaused?: boolean;
-  /** Chamado do chat do site (parte 7a): o protocolo. */
+  /** Chamado do chat do site (parte 7a): o protocolo e o status. */
   ticketProtocol?: string | null;
+  ticketStatus?: string | null;
   urgent: boolean;
   waiting: boolean;
   /** Desde quando espera: o pedido de atendente, ou a última mensagem do contato sem resposta. */
@@ -101,6 +103,7 @@ interface Row {
   last_message_at: string;
   ai_paused_until?: string | null;
   ticket_protocol?: string | null;
+  ticket_status?: string | null;
   assigned_at?: string | null;
   snoozed_until?: string | null;
   snoozed_at?: string | null;
@@ -119,6 +122,7 @@ export function inQueue(i: InboxItem, q: Queue, meId: string): boolean {
   // adiada: só na fila Adiadas, até voltar
   if (q === "adiadas" || i.snoozedUntil) return q === "adiadas" && Boolean(i.snoozedUntil);
   if (q === "todas") return true;
+  if (q === "chamados") return Boolean(i.ticketProtocol);
   if (q === "minhas") return i.assignedId === meId;
   if (q === "nao_atribuidas") return !i.assignedId;
   if (q === "fora") return i.outsideHours;
@@ -134,7 +138,7 @@ export function inQueue(i: InboxItem, q: Queue, meId: string): boolean {
 export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; sectors: Sector[]; holidays: Map<string, string[]>; meId: string; mySectorIds: string[]; seeAllSectors: Set<string>; now?: Date }): Promise<InboxItem[]> {
   if (!o.bots.length) return [];
   const now = o.now ?? new Date();
-  const cols = "id, bot_id, channel, contact_id, sector_id, assigned_to_id, assigned_to_name, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at, assigned_at, snoozed_until, snoozed_at, ai_paused_until, ticket_protocol";
+  const cols = "id, bot_id, channel, contact_id, sector_id, assigned_to_id, assigned_to_name, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at, last_message_at, assigned_at, snoozed_until, snoozed_at, ai_paused_until, ticket_protocol, ticket_status";
   const botIds = o.bots.map((b) => b.id);
   const [{ data, error }, { data: aiData }] = await Promise.all([
     db
@@ -222,6 +226,7 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
       requestedAt: r.handoff_requested_at,
       outsideHours,
       ticketProtocol: r.ticket_protocol ?? null,
+      ticketStatus: r.ticket_status ?? null,
       snoozedUntil: snoozed ? r.snoozed_until! : null,
       snoozeEnded: Boolean(r.snoozed_until) && !snoozed,
     }];

@@ -8,6 +8,7 @@ import { transferOptions } from "@/lib/transfer";
 import { listQuickReplies } from "@/lib/quick-replies";
 import { isSnoozed } from "@/lib/snooze";
 import { TICKET_STATUS_LABEL, type TicketStatus } from "@/lib/tickets";
+import { TicketStatusControl } from "@/components/ticket-status-control";
 import { contactName } from "@/lib/contacts";
 import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
 import { ConversationStateBadge } from "@/components/conversation-state";
@@ -21,7 +22,7 @@ import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { authorLabel } from "@/lib/authors";
-import { memberAddNote, memberForceTakeOver, memberRelease, memberResumeAi, memberSend, memberSnooze, memberTakeOver, memberTransfer, memberUnsnooze } from "@/app/cliente/actions";
+import { memberAddNote, memberSetTicketStatus, memberForceTakeOver, memberRelease, memberResumeAi, memberSend, memberSnooze, memberTakeOver, memberTransfer, memberUnsnooze } from "@/app/cliente/actions";
 
 /**
  * A conversa na área do cliente: a página da conversa e o lado direito da Caixa de entrada do portal
@@ -85,7 +86,11 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
         )}
         <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa <ConversationStateBadge conv={conv} withTime /></h1>
         <p className="text-xs text-muted">{new Date(conv.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "long", timeStyle: "short" })}{conv.channel === "whatsapp" ? " · WhatsApp" : conv.channel === "instagram" ? " · Instagram" : ""}</p>
-        {conv.ticket_protocol && <p className="text-xs font-semibold text-brand">Chamado <span className="font-mono">{conv.ticket_protocol as string}</span>{conv.ticket_subject ? ` · ${conv.ticket_subject as string}` : ""} · {TICKET_STATUS_LABEL[(conv.ticket_status as TicketStatus) ?? "aberto"]}</p>}
+        {conv.ticket_protocol && (member.allowHandoff ? (
+          <TicketStatusControl protocol={conv.ticket_protocol as string} subject={(conv.ticket_subject as string | null) ?? null} status={(conv.ticket_status as string | null) ?? "aberto"} action={memberSetTicketStatus.bind(null, id, cid)} />
+        ) : (
+          <p className="text-xs font-semibold text-brand">Chamado <span className="font-mono">{conv.ticket_protocol as string}</span>{conv.ticket_subject ? ` · ${conv.ticket_subject as string}` : ""} · {TICKET_STATUS_LABEL[(conv.ticket_status as TicketStatus) ?? "aberto"]}</p>
+        ))}
       </header>
 
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={handoffOpen} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />

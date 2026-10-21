@@ -18,6 +18,7 @@ import { parseTarget, transferConversation } from "@/lib/transfer";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
 import { isSignatureFormat } from "@/lib/signature";
+import { setTicketStatus } from "@/lib/ticket-follow";
 import { resumeConversationAi } from "@/lib/api-pause";
 import { answerQuestion, deleteTextSource, dismissQuestion, saveTextSource } from "@/lib/knowledge";
 import { logAccess } from "@/lib/access-log";
@@ -146,6 +147,17 @@ export async function memberSnooze(clientId: string, conversationId: string, for
   if (r.ok) await memberAudit(ctx, "conversa.adiar", conversationId, { ate: until.toISOString() });
   revalidateMemberConversation(clientId, conversationId);
   return r;
+}
+
+/** O status do chamado do site (Chamados, parte 7c). */
+export async function memberSetTicketStatus(clientId: string, conversationId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await ownConversation(clientId, conversationId);
+  if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
+  const status = String(formData.get("status") ?? "");
+  const r = await setTicketStatus(ctx.admin, conversationId, status);
+  if (r.ok && r.before !== undefined) await memberAudit(ctx, "chamado.status", conversationId, { status });
+  revalidateMemberConversation(clientId, conversationId);
+  return r.ok ? ok(r.message) : fail(r.message);
 }
 
 export async function memberUnsnooze(clientId: string, conversationId: string): Promise<ActionResult> {

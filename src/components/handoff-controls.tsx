@@ -25,6 +25,8 @@ export interface HandoffConversation {
   assigned_to_name?: string | null;
   /** IA pausada pela integração (API) até esta hora */
   ai_paused_until?: string | null;
+  /** chamado do chat do site (Chamados, parte 7c): a resposta vai por e-mail */
+  ticket_protocol?: string | null;
 }
 
 /** A integração pausou a IA e ninguém da equipe assumiu. */
@@ -46,6 +48,7 @@ export function rotationView(conv: HandoffConversation, meId: string): "mine" | 
 
 /** "Visitante online agora" / "saiu do site há X" — para saber se ainda vale responder. */
 function VisitorPresence({ conv }: { conv: HandoffConversation }) {
+  if (conv.ticket_protocol) return <span className="text-muted">Chamado pelo site: a sua resposta vai por e-mail para quem abriu, com o protocolo {conv.ticket_protocol}, e o chamado fica aguardando o cliente.</span>;
   if (conv.channel === "whatsapp" || conv.channel === "instagram") {
     const name = conv.channel === "instagram" ? "Instagram" : "WhatsApp";
     if (conv.last_user_at === null) return <span className="text-muted">Conversa pelo {name}. O contato ainda não respondeu{conv.channel === "whatsapp" ? "; até ele responder, só dá para enviar modelos" : ""}.</span>;
@@ -85,7 +88,7 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-sm">
           <Headset size={16} className="shrink-0 text-amber-ink" />
           <span className="min-w-0 flex-1 text-amber-ink">
-            <strong>{who} {leadWaiting(conv) ? "deixou um pedido para a equipe" : "pediu para falar com alguém"}</strong> {relativeTime(conv.handoff_requested_at!)}.{" "}
+            <strong>{who} {conv.ticket_protocol ? `abriu o chamado ${conv.ticket_protocol}` : leadWaiting(conv) ? "deixou um pedido para a equipe" : "pediu para falar com alguém"}</strong> {relativeTime(conv.handoff_requested_at!)}.{" "}
             {rotationView(conv, meId) === "mine" ? "Esta conversa foi passada para você: assuma para responder." : rotationView(conv, meId) === "other" ? `Esta conversa foi passada para ${conv.assigned_to_name ?? "outra pessoa"}.` : "Assuma para responder por aqui."}
           </span>
           {rotationView(conv, meId) !== "other" && <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir conversa</SubmitButton></ActionForm>}

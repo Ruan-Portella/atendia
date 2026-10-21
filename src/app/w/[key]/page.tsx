@@ -5,7 +5,7 @@ import { ChatWindow } from "@/components/chat-window";
 import { WidgetFrame } from "@/components/widget-frame";
 import { initials } from "@/lib/utils";
 import { isBotSize } from "@/lib/plans";
-import { ticketFormOf } from "@/lib/tickets";
+import { parseProtocol, ticketFormOf } from "@/lib/tickets";
 
 export const metadata = { title: { absolute: "Chat" }, robots: { index: false } };
 
@@ -18,8 +18,10 @@ function publicTicket(raw: unknown) {
 /** Conteúdo do iframe do widget e link direto para Instagram/WhatsApp. */
 export default async function WidgetPage({ params, searchParams }: PageProps<"/w/[key]">) {
   const { key } = await params;
-  // ?id=1: o site identifica a pessoa (getToken no widget.js, P2)
-  const identity = (await searchParams).id === "1";
+  // ?id=1: o site identifica a pessoa (getToken no widget.js, P2); ?chamado=: o link do e-mail do chamado (parte 7c)
+  const sp = await searchParams;
+  const identity = sp.id === "1";
+  const initialProtocol = parseProtocol(sp.chamado);
   const db = createAdminClient();
   const { data: bot } = await db.from("bots").select("*").eq("public_key", key).maybeSingle();
   if (!bot || !(await belongsToHost(bot.agency_id))) notFound();
@@ -36,6 +38,7 @@ export default async function WidgetPage({ params, searchParams }: PageProps<"/w
           channel="widget"
           embedded
           identity={identity}
+          initialProtocol={initialProtocol}
           bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color: bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d", avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button), ticket: publicTicket(bot.ticket_form) }}
         />
       )}

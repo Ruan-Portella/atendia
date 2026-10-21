@@ -225,6 +225,7 @@ export function ChatWindow({
   compact = false,
   embedded = false,
   identity = false,
+  initialProtocol = null,
 }: {
   bot: ChatBotPublic;
   channel?: "widget" | "demo" | "painel";
@@ -235,6 +236,8 @@ export function ChatWindow({
   embedded?: boolean;
   /** o site identifica a pessoa (getToken, P2): espera o token antes de retomar a conversa */
   identity?: boolean;
+  /** o link do e-mail do chamado (?chamado=): abre o acompanhamento com o protocolo (parte 7c) */
+  initialProtocol?: string | null;
 }) {
   // nome genérico: roda no domínio da agência, nada da plataforma aparece
   const storageKey = `chat:${bot.key}`;
@@ -247,7 +250,7 @@ export function ChatWindow({
   });
   const [input, setInput] = useState("");
   // chamados (parte 7a): com a aba, a pessoa troca entre a conversa e o formulário; sozinho, só o formulário
-  const [view, setView] = useState<"chat" | "chamado">(bot.ticket?.mode === "sozinho" ? "chamado" : "chat");
+  const [view, setView] = useState<"chat" | "chamado">(bot.ticket?.mode === "sozinho" || (bot.ticket && initialProtocol) ? "chamado" : "chat");
   const [errorText, setErrorText] = useState<string | null>(null);
   // o assistente não pode responder agora (cota, teste, falha): mostra o formulário de contato
   const [fallback, setFallback] = useState<string | null>(null);
@@ -535,7 +538,7 @@ export function ChatWindow({
         </div>
       )}
       {bot.ticket && view === "chamado" ? (
-        <TicketPanel bot={bot} ticket={bot.ticket} apiBase={apiBase} visitorId={visitorId} storageKey={storageKey} onBack={bot.ticket.mode === "aba" ? () => setView("chat") : undefined} />
+        <TicketPanel bot={bot} ticket={bot.ticket} apiBase={apiBase} visitorId={visitorId} storageKey={storageKey} initialProtocol={initialProtocol} onBack={bot.ticket.mode === "aba" ? () => setView("chat") : undefined} />
       ) : (
       <>
       <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto bg-[#f4f6f8] p-3.5">
@@ -646,7 +649,8 @@ const SUGGEST_MAX = 2;
  * Enquanto a pessoa escreve, a IA procura a resposta na base (parte 7b, "Isso ajuda?"); se
  * resolver, o chamado não é aberto e isso conta no relatório.
  */
-function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { bot: ChatBotPublic; ticket: TicketPublic; apiBase: string; visitorId: string | null; storageKey: string; onBack?: () => void }) {
+function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, initialProtocol, onBack }: { bot: ChatBotPublic; ticket: TicketPublic; apiBase: string; visitorId: string | null; storageKey: string; initialProtocol?: string | null; onBack?: () => void }) {
+  const [following, setFollowing] = useState(Boolean(initialProtocol));
   const [state, setState] = useState<"idle" | "sending">("idle");
   const [error, setError] = useState<string | null>(null);
   const [protocol, setProtocol] = useState<string | null>(null);
@@ -710,8 +714,8 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { 
       setDismissed(false);
       try {
         const key = `${storageKey}:chamados`;
-        const saved = JSON.parse(localStorage.getItem(key) ?? "[]") as Array<{ protocol: string; at: string }>;
-        localStorage.setItem(key, JSON.stringify([{ protocol: j.protocol, at: new Date().toISOString() }, ...saved].slice(0, 10)));
+        const saved = JSON.parse(localStorage.getItem(key) ?? "[]") as Array<{ protocol: string; email?: string; at: string }>;
+        localStorage.setItem(key, JSON.stringify([{ protocol: j.protocol, email: get("email"), at: new Date().toISOString() }, ...saved].slice(0, 10)));
       } catch {
         // navegador sem armazenamento: o protocolo continua na tela e no e-mail
       }
@@ -722,6 +726,7 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { 
     }
   }
 
+  if (following) return <TicketFollow bot={bot} apiBase={apiBase} storageKey={storageKey} initialProtocol={initialProtocol ?? null} onBack={() => setFollowing(false)} />;
   if (avoided) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#f4f6f8] p-6 text-center">
@@ -739,6 +744,7 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { 
         <p className="rounded-lg bg-white px-4 py-2 font-mono text-lg font-bold tracking-wider" style={{ color: bot.color }}>{protocol}</p>
         <p className="text-[13px] text-[#4c5551]">A equipe de {bot.clientName} responde no seu e-mail. Guarde o protocolo para acompanhar.</p>
         <div className="flex flex-wrap justify-center gap-2 pt-1">
+          <button type="button" onClick={() => setFollowing(true)} className="rounded-full border bg-white px-3 py-1.5 text-[13px] font-medium" style={{ borderColor: bot.color, color: bot.color }}>Acompanhar</button>
           <button type="button" onClick={() => setProtocol(null)} className="rounded-full border bg-white px-3 py-1.5 text-[13px] font-medium" style={{ borderColor: bot.color, color: bot.color }}>Abrir outro chamado</button>
           {onBack && <button type="button" onClick={onBack} className="rounded-full px-3 py-1.5 text-[13px] font-medium text-white" style={{ background: bot.color }}>Voltar à conversa</button>}
         </div>
@@ -748,6 +754,7 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { 
   return (
     <form onSubmit={submit} className="flex flex-1 flex-col gap-2 overflow-y-auto bg-[#f4f6f8] p-3.5">
       <p className="text-[13px] text-[#4c5551]">Conte o que aconteceu: a equipe de {bot.clientName} responde no seu e-mail, com um protocolo para acompanhar.</p>
+      <button type="button" onClick={() => setFollowing(true)} className="self-start text-[12.5px] font-semibold underline" style={{ color: bot.color }}>Já tem um chamado? Acompanhar</button>
       <label className="sr-only" htmlFor={`t-name-${bot.key}`}>Nome</label>
       <input id={`t-name-${bot.key}`} name="name" required minLength={2} maxLength={80} placeholder="Seu nome" autoComplete="name" className={field} />
       <label className="sr-only" htmlFor={`t-email-${bot.key}`}>E-mail</label>
@@ -784,6 +791,113 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { 
         {state === "sending" ? "Abrindo…" : "Abrir chamado"}
       </button>
     </form>
+  );
+}
+
+const TICKET_STATUS_TEXT: Record<string, string> = { aberto: "Aberto: a equipe ainda vai responder", em_andamento: "Em andamento", aguardando_cliente: "Aguardando você: a equipe respondeu", resolvido: "Resolvido" };
+
+interface FollowedTicket {
+  protocol: string;
+  status: string;
+  subject: string | null;
+  messages: Array<{ from: "cliente" | "equipe"; name: string | null; text: string; at: string }>;
+}
+
+/**
+ * Acompanhar o chamado (Chamados, parte 7c): protocolo e e-mail de quem abriu (os do navegador vêm
+ * preenchidos), o status e as mensagens; escrever de novo devolve o chamado para a equipe.
+ */
+function TicketFollow({ bot, apiBase, storageKey, initialProtocol, onBack }: { bot: ChatBotPublic; apiBase: string; storageKey: string; initialProtocol: string | null; onBack: () => void }) {
+  const [saved] = useState<{ protocol: string; email: string }>(() => {
+    try {
+      const list = JSON.parse(localStorage.getItem(`${storageKey}:chamados`) ?? "[]") as Array<{ protocol: string; email?: string }>;
+      const hit = (initialProtocol && list.find((x) => x.protocol === initialProtocol)) || list[0];
+      return { protocol: initialProtocol ?? hit?.protocol ?? "", email: hit?.email ?? "" };
+    } catch {
+      return { protocol: initialProtocol ?? "", email: "" };
+    }
+  });
+  const [ticket, setTicket] = useState<FollowedTicket | null>(null);
+  const [who, setWho] = useState<{ protocol: string; email: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [text, setText] = useState("");
+  const field = "rounded-lg border border-[#e1e6ea] bg-white px-3 py-2 text-sm outline-none focus:border-[#9aa39e]";
+
+  async function load(body: { protocol: string; email: string; text?: string }) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/widget/ticket/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: bot.key, ...body }) });
+      const j = (await res.json().catch(() => ({}))) as Partial<FollowedTicket> & { message?: string };
+      if (!res.ok || !j.protocol) {
+        setError(j.message ?? "Não achamos esse chamado.");
+        return false;
+      }
+      setTicket(j as FollowedTicket);
+      setWho({ protocol: body.protocol, email: body.email });
+      return true;
+    } catch {
+      setError("Sem conexão. Tente de novo.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!ticket || !who) {
+    return (
+      <form
+        className="flex flex-1 flex-col gap-2 overflow-y-auto bg-[#f4f6f8] p-3.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          void load({ protocol: String(fd.get("protocol") ?? ""), email: String(fd.get("email") ?? "") });
+        }}
+      >
+        <p className="text-[13px] text-[#4c5551]">Informe o protocolo e o e-mail que você usou para abrir o chamado.</p>
+        <label className="sr-only" htmlFor={`f-prot-${bot.key}`}>Protocolo</label>
+        <input id={`f-prot-${bot.key}`} name="protocol" required defaultValue={saved.protocol} maxLength={20} placeholder="Protocolo (ex.: K7Q2-9XMP)" className={`${field} font-mono uppercase`} autoComplete="off" />
+        <label className="sr-only" htmlFor={`f-mail-${bot.key}`}>E-mail</label>
+        <input id={`f-mail-${bot.key}`} name="email" type="email" required defaultValue={saved.email} maxLength={200} placeholder="Seu e-mail" autoComplete="email" className={field} />
+        {error && <p className="text-[12px] text-[#b23a3a]">{error}</p>}
+        <button type="submit" disabled={busy} className="rounded-lg px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-60" style={{ background: bot.color }}>{busy ? "Procurando…" : "Ver o chamado"}</button>
+        <button type="button" onClick={onBack} className="text-[12.5px] font-semibold underline" style={{ color: bot.color }}>Abrir um chamado novo</button>
+      </form>
+    );
+  }
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden bg-[#f4f6f8]">
+      <div className="border-b border-[#e1e6ea] bg-white px-3.5 py-2 text-[12.5px]">
+        <span className="font-mono font-bold" style={{ color: bot.color }}>{ticket.protocol}</span>
+        {ticket.subject ? <span className="text-[#4c5551]"> · {ticket.subject}</span> : null}
+        <div className="text-[#4c5551]">{TICKET_STATUS_TEXT[ticket.status] ?? ticket.status}</div>
+      </div>
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3.5">
+        {ticket.messages.map((m, i) => (
+          <Bubble key={i} side={m.from === "cliente" ? "right" : "left"} color={bot.color}>
+            {m.from === "equipe" && <span className="mb-0.5 block text-[11px] font-semibold" style={{ color: bot.color }}>{m.name ?? `Equipe ${bot.clientName}`}</span>}
+            {m.text}
+          </Bubble>
+        ))}
+      </div>
+      <form
+        className="flex flex-col gap-2 border-t border-[#e1e6ea] bg-white p-2.5"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (text.trim().length < 2 || busy) return;
+          if (await load({ ...who, text })) setText("");
+        }}
+      >
+        {error && <p className="text-[12px] text-[#b23a3a]">{error}</p>}
+        <label className="sr-only" htmlFor={`f-text-${bot.key}`}>Mensagem para a equipe</label>
+        <textarea id={`f-text-${bot.key}`} value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={2000} placeholder={ticket.status === "resolvido" ? "Escreva para reabrir o chamado…" : "Escreva para a equipe…"} className={`${field} resize-none`} />
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" onClick={() => { setTicket(null); setWho(null); }} className="text-[12.5px] font-semibold underline" style={{ color: bot.color }}>Outro chamado</button>
+          <button type="submit" disabled={busy || text.trim().length < 2} className="rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ background: bot.color }}>{busy ? "Enviando…" : "Enviar"}</button>
+        </div>
+      </form>
+    </div>
   );
 }
 

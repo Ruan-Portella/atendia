@@ -10,7 +10,7 @@ import { listNotes } from "@/lib/conversation-notes";
 import { transferOptions } from "@/lib/transfer";
 import { listQuickReplies } from "@/lib/quick-replies";
 import { isSnoozed } from "@/lib/snooze";
-import { TICKET_STATUS_LABEL, type TicketStatus } from "@/lib/tickets";
+import { TicketStatusControl } from "@/components/ticket-status-control";
 import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
 import { leadWaiting } from "@/lib/handoff-status";
 import { ConfirmAction } from "@/components/ui/confirm-action";
@@ -33,7 +33,7 @@ import { firstExceeded } from "@/lib/rate-limit";
 import { loadTemplateChannel, type SendableTemplate, conversationTemplates, ensureResumeTemplate, type ResumeStatus } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { addConversationNote, deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, snoozeConversationAction, takeOverConversation, transferConversationAction, unsnoozeConversationAction } from "@/app/painel/actions";
+import { addConversationNote, deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, setTicketStatusAction, snoozeConversationAction, takeOverConversation, transferConversationAction, unsnoozeConversationAction } from "@/app/painel/actions";
 import { botGateExemptions, conversationGateCategories } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { GateReviewButton } from "@/components/gate-review-button";
@@ -150,9 +150,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
           )}
           <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa {relativeTime(conv.started_at)} <ConversationStateBadge conv={conv} withTime />{sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">dados sensíveis</span>}</h1>
           <p className="text-xs text-muted">canal: {conv.channel}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
-          {conv.ticket_protocol && (
-            <p className="mt-1 text-xs font-semibold text-brand">Chamado <span className="font-mono">{conv.ticket_protocol as string}</span>{conv.ticket_subject ? ` · ${conv.ticket_subject as string}` : ""} · {TICKET_STATUS_LABEL[(conv.ticket_status as TicketStatus) ?? "aberto"]}</p>
-          )}
+          {conv.ticket_protocol && <TicketStatusControl protocol={conv.ticket_protocol as string} subject={(conv.ticket_subject as string | null) ?? null} status={(conv.ticket_status as string | null) ?? "aberto"} action={setTicketStatusAction.bind(null, cid)} />}
           {gateCats.length > 0 && (
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>O portão acusou:</span>
