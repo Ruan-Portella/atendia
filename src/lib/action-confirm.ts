@@ -6,7 +6,7 @@ import { cancelRef, claimRef, createRef, getRef, refCallId, reopenRef, setRefSta
 import { conversationIdMap, paramsGateDecision, paramsGateFacts, type IdMap } from "./action-gate";
 import { findMessage } from "./messages";
 import { choicesOf, parseComponents, type MessageComponent } from "./components";
-import { firstExceeded } from "./rate-limit";
+import { checkActionLimits } from "./action-limits";
 import { chatModel, classifierModelId, modelCallOptions } from "./ai";
 import { recordAiUsage, usageFrom } from "./ai-usage";
 import { normalizeGateText } from "./gate/match";
@@ -72,6 +72,7 @@ export const CONFIRM_TEXTS = {
   failedBefore: "Esse pedido não foi concluído. Se ainda quiser, me diga de novo o que precisa.",
   refused: "Não consigo concluir esse pedido por aqui agora. Se quiser, posso chamar alguém da equipe.",
   tooFast: "São muitas tentativas seguidas. Espere um minuto e toque de novo.",
+  monthCap: "Essa opção está indisponível agora. Se precisar, posso chamar alguém da equipe.",
   uncertain: "Não consegui confirmar se deu certo: o sistema não respondeu a tempo. Toque em Tentar de novo (sem duplicar o pedido) ou fale com alguém da equipe.",
   cantCancelUncertain: "Esse pedido já foi enviado e não consegui confirmar se deu certo. Toque em Tentar de novo ou fale com alguém da equipe.",
   sameAsBefore: "É o mesmo pedido de antes: confirmar de novo não duplica.",
@@ -406,8 +407,8 @@ async function execute(db: SupabaseClient, i: ClickInput, ref: ButtonRef, from: 
     return fixed(CONFIRM_TEXTS.refused);
   }
   if (!mine) {
-    const limited = await firstExceeded(db, [{ key: `acao:${i.conversationId}:m`, max: 15, windowSeconds: 60, message: "rate_limited" }]);
-    if (limited) return fixed(CONFIRM_TEXTS.tooFast);
+    const limited = await checkActionLimits(db, { botId: i.bot.id, conversationId: i.conversationId });
+    if (limited) return fixed(limited === "mes" ? CONFIRM_TEXTS.monthCap : CONFIRM_TEXTS.tooFast);
     // consumida de forma atômica: só um clique chama
     if (!(await claimRef(db, ref, from, i.key))) {
       const now = await getRef(db, ref.id);
@@ -434,8 +435,8 @@ async function executeAgain(db: SupabaseClient, i: ClickInput, ref: ButtonRef): 
   const action = data ? asBotAction(data as ActionRow, i.bot) : null;
   const caller = await i.caller();
   if (!action || !stillCallable(action, caller, "action")) return fixed(CONFIRM_TEXTS.refused);
-  const limited = await firstExceeded(db, [{ key: `acao:${i.conversationId}:m`, max: 15, windowSeconds: 60, message: "rate_limited" }]);
-  if (limited) return fixed(CONFIRM_TEXTS.tooFast);
+  const limited = await checkActionLimits(db, { botId: i.bot.id, conversationId: i.conversationId });
+  if (limited) return fixed(limited === "mes" ? CONFIRM_TEXTS.monthCap : CONFIRM_TEXTS.tooFast);
   const call = await callAction(db, action, { params: ref.params, confirmed: true, execute: false, messageKey: i.key, conversation: { id: i.conversationId, channel: caller.gateChannel }, contact: caller.contact, context: caller.context });
   return { kind: "called", action, params: ref.params, call, caller, via: "botao" };
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { actionCapNotice } from "@/lib/action-limits";
 import { FREE_LINKED_SHORT, freeLinked } from "@/lib/person-signals";
 import { TEST_ANSWERS_FREE, botHasAi, num } from "@/lib/plans";
 import { BotActions } from "@/components/integrations/bot-actions";
@@ -919,6 +920,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <p className="card p-5 text-sm text-muted">Demonstrações não têm ações: converta a demo em chatbot de um cliente para ligar o sistema dele.</p>
             ) : (
               <>
+                {/* o teto das chamadas de ação batido (itens menores da conferência de 20/10, parte 2) */}
+                {actionCapNotice(bot) && <p className="mb-4 max-w-[860px] rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{actionCapNotice(bot)}</p>}
                 {!integrations && (
                   <p className="mb-4 max-w-[860px] rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
                     Você pode cadastrar as ações e conferir cada uma pelo botão Testar. A IA só usa as ações na conversa com o pacote Integrações (<Link href="/painel/cobranca" className="underline">Cobrança → Assinatura</Link>).

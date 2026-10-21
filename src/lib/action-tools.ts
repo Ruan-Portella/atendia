@@ -8,7 +8,7 @@ import { openConfirmation, type Caller } from "./action-confirm";
 import { ComponentProblem, materializeComponent, parseComponentInput } from "./component-input";
 import { filesNote, prepareActionFiles, readAttachmentList, type ActionFile } from "./action-files";
 import { cardName, type MessageComponent } from "./components";
-import { firstExceeded } from "./rate-limit";
+import { LIMIT_OUTPUT, checkActionLimits } from "./action-limits";
 import { hiddenNote } from "./gate/context";
 import { ageSource, type AgeStatus } from "./gate/age";
 import { CATEGORIES, type GateCategory } from "./gate/rules";
@@ -355,12 +355,8 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
   const outOfStep = (a: ActionRow) => Boolean(a.routine_only) && i.routine?.step()?.action !== a.name;
   const shape: ShapeInput = { bot: i.bot, conversationId: i.conversationId, gateChannel: caller.gateChannel, waPhone: i.waPhone, age: i.age, exempt: i.exempt, destination: i.destination, regulatedAt: caller.regulatedAt };
   const gate = caller.gateChannel === "widget" ? null : { channel: caller.gateChannel, contactPhone: i.waPhone, exempt: i.exempt, destination: i.destination ?? null };
-  const limits = () =>
-    firstExceeded(db, [
-      { key: `acao:${i.conversationId}:m`, max: 15, windowSeconds: 60, message: "rate_limited" },
-      { key: `acao:bot:${i.bot.id}:m`, max: 600, windowSeconds: 60, message: "rate_limited" },
-    ]);
-  const RATE_LIMITED = { ok: false, motivo: "rate_limited", instrucao: "Diga que são muitas consultas seguidas e peça para tentar de novo em um minuto." };
+  // os tetos: 15 por minuto na conversa, 600 por minuto no chatbot e 10 vezes a cota no mês
+  const limits = () => checkActionLimits(db, { botId: i.bot.id, conversationId: i.conversationId });
   // uma confirmação por vez (as chamadas em paralelo ficam desligadas no provedor; isto é a garantia)
   let confirmOpened = false;
   // roteiro: o passo de ação no começo da vez (o schema sai sem os parâmetros que o BoaVoz preenche)
@@ -385,7 +381,8 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
           if (!allowed(a, c)) return NOT_YET;
           const missing = paramsProblems(a.params_schema, params);
           if (missing.length) return { ok: false, motivo: "faltam_dados", faltando: missing, instrucao: `Peça à pessoa: ${missing.join(", ")}. Não chame com dado vazio ou inventado.` };
-          if (await limits()) return RATE_LIMITED;
+          const hit = await limits();
+          if (hit) return LIMIT_OUTPUT[hit];
           const opened = await openConfirmation(db, { bot: { id: i.bot.id, agency_id: i.agencyId ?? "" }, conversationId: i.conversationId, action: a, params, caller: c, messageKey: i.messageKey, gate });
           if (!opened.ok) return opened.output;
           confirmOpened = true;
@@ -408,7 +405,8 @@ export async function actionToolsFor(db: SupabaseClient, i: ActionToolsInput): P
         // obrigatório ausente ou vazio: o endpoint não é chamado; a IA pede o dado à pessoa
         const missing = paramsProblems(a.params_schema, params);
         if (missing.length) return { ok: false, motivo: "faltam_dados", faltando: missing, instrucao: `Peça à pessoa: ${missing.join(", ")}. Não diga que não tem a informação.` };
-        if (await limits()) return RATE_LIMITED;
+        const hit = await limits();
+        if (hit) return LIMIT_OUTPUT[hit];
         // 5 "não encontrado" desta ação nesta conversa em 1 hora: ninguém varre códigos de pedido ou de cliente
         const { count: misses } = await db.from("action_calls").select("id", { count: "exact", head: true }).eq("action_id", a.id).eq("conversation_id", i.conversationId).eq("status", "not_found").gt("created_at", new Date(Date.now() - 3_600_000).toISOString());
         if ((misses ?? 0) >= 5) {

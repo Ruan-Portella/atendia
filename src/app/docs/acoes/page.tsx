@@ -227,6 +227,7 @@ export default function ActionsDocs() {
       <H2 id="limites">Limites</H2>
       <ul>
         <li>15 chamadas de ação por minuto em cada conversa e 600 por minuto em cada chatbot.</li>
+        <li>No mês, até 10 vezes a cota do chatbot (no mínimo 1.000 chamadas). Passou disso, a IA oferece a equipe até o dia 1º. No teto por minuto ou no do mês, o dono recebe e-mail e o aviso aparece na aba Ações do chatbot.</li>
         <li>5 respostas “não encontrado” da mesma ação na mesma conversa em 1 hora: a ação fica indisponível nessa conversa por um tempo (ninguém varre números de pedido).</li>
       </ul>
 
