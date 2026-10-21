@@ -10,6 +10,7 @@ import { activeSuppressions, blocks, suppress, suppressionScope } from "./suppre
 import { deliver } from "./send";
 import { firstExceeded } from "./rate-limit";
 import { normalizeKeyword } from "./routines";
+import { recordOwnerPhone } from "./person-signals";
 import { company } from "./company";
 import { BOT_SIZES } from "./plans";
 import { ROLE_LABELS, can, type AgencyRole } from "./roles";
@@ -382,6 +383,8 @@ export async function handleTeamNotices(io: NoticeIO, items: Array<{ text: strin
         await io.db.from("team_whatsapp").update({ status: "confirmed", confirmed_at: now, identity_key_hash: io.identityKeyHash ?? null, identity_changed_at: null, updated_at: now }).eq("member_id", r.member_id).eq("status", "pending");
         cache.row = { ...r, status: "confirmed" };
         await io.onConfirmed?.().catch((e) => console.error("avisos: checagem de identidade não ligou", (e as Error).message));
+        // o número do dono vira sinal da trava da conta grátis (um teste grátis por pessoa)
+        await recordOwnerPhone(io.db, r.member_id, hash).catch((e) => console.error("trava da conta grátis: número não gravado", (e as Error).message));
         const m = Array.isArray(r.agency_members) ? r.agency_members[0] : r.agency_members;
         const ag = Array.isArray(r.agencies) ? r.agencies[0] : r.agencies;
         await io.reply(convId, NOTICE_TEXTS.confirmed(firstNameOf(m ?? {}), ag?.name ?? "sua agência"));

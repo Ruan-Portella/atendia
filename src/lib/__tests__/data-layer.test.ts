@@ -42,6 +42,8 @@ const OWNER: Record<string, string> = {
   conversation_notes: "lib/conversation-notes.ts",
   // aparelhos dos avisos no celular (Memória e avisos, parte 2): as chaves do navegador cifradas
   push_subscriptions: "lib/push.ts",
+  // sinais do dono da conta (Trava da conta grátis): só como HMAC
+  person_signals: "lib/person-signals.ts",
 };
 
 describe("camada única de mensagens e contatos", () => {

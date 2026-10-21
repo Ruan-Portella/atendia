@@ -9,6 +9,8 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { checkLoginCode, requestLoginCode } from "@/lib/login-code";
 import { logAccess, requestIp } from "@/lib/access-log";
 import { safeLocalPath } from "@/lib/utils";
+import { DEVICE_COOKIE, recordLoginDevice } from "@/lib/person-signals";
+import { cookies } from "next/headers";
 
 /** "Receber código": manda o código para o e-mail (cria a conta se o e-mail é novo). */
 export async function sendLoginCode(formData: FormData): Promise<ActionResult> {
@@ -28,5 +30,8 @@ export async function verifyLoginCode(formData: FormData): Promise<ActionResult>
   // registro de acesso (Marco Civil): a entrada que o servidor vê
   const userAgent = h.get("user-agent");
   after(() => logAccess(admin, { actorType: "user", actorId: r.userId, event: "login", ip, userAgent }));
+  // o navegador do dono (Trava da conta grátis)
+  const device = (await cookies()).get(DEVICE_COOKIE)?.value ?? null;
+  after(() => recordLoginDevice(admin, r.userId, device));
   redirect(safeLocalPath(String(formData.get("next") ?? ""), "/painel/clientes"));
 }

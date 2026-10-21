@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAccess, requestIp } from "@/lib/access-log";
+import { DEVICE_COOKIE, recordLoginDevice } from "@/lib/person-signals";
+import { cookies } from "next/headers";
 
 /** Troca o código do OAuth / confirmação de e-mail por uma sessão. */
 export async function GET(request: Request) {
@@ -16,6 +18,9 @@ export async function GET(request: Request) {
       // registro de acesso (Marco Civil): a entrada que o servidor vê
       const userId = data.user?.id;
       if (userId) after(() => logAccess(createAdminClient(), { actorType: "user", actorId: userId, event: "login", ip: requestIp(request.headers), userAgent: request.headers.get("user-agent") }));
+      // o navegador do dono (Trava da conta grátis)
+      const device = (await cookies()).get(DEVICE_COOKIE)?.value ?? null;
+      if (userId) after(() => recordLoginDevice(createAdminClient(), userId, device));
       return NextResponse.redirect(`${origin}${next.startsWith("/") ? next : "/painel/clientes"}`);
     }
   }

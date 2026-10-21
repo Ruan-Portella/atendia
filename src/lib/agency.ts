@@ -9,6 +9,9 @@ import type { AccountProfile } from "./first-access";
 import { botQuotaStatus, type BotQuotaStatus } from "./atendimentos";
 import { activeMembership, can, hadMembership, openInvitesFor, type AgencyMember, type AgencyRole, type Permission } from "./team";
 import { firstName, personName } from "./authors";
+import { DEVICE_COOKIE, recordSignupSignals } from "./person-signals";
+import { requestIp } from "./access-log";
+import { cookies, headers } from "next/headers";
 
 export interface Agency {
   id: string;
@@ -40,6 +43,10 @@ export interface Agency {
   /** Demos geradas no mês (demo_month, mês civil de São Paulo). */
   demo_month: string | null;
   demo_month_count: number;
+  /** Trava da conta grátis: ligada a outra da mesma pessoa que já usou o teste (e a liberação do suporte). */
+  free_blocked_at: string | null;
+  free_block_reason: string | null;
+  free_released_at: string | null;
   /** Recarga automática do crédito do excedente (centavos). */
   credit_auto_enabled: boolean;
   credit_auto_below_cents: number | null;
@@ -145,6 +152,9 @@ export async function createAgencyFor(userId: string, email: string, meta: Recor
     member = await activeMembership(admin, userId);
   }
   if (!member) throw new Error("equipe: vínculo do dono não encontrado");
+  // os sinais do dono (Trava da conta grátis): o teste grátis vale uma vez por pessoa
+  const [h, jar] = await Promise.all([headers().catch(() => null), cookies().catch(() => null)]);
+  await recordSignupSignals(admin, created.id as string, { email, device: jar?.get(DEVICE_COOKIE)?.value ?? null, ip: h ? requestIp(h) : null });
   // nome de exibição: começa com o primeiro nome do cadastro (editável em Meu perfil)
   if (!member.display_name) {
     const display = firstName(personName(meta), email);

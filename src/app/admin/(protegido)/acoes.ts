@@ -36,6 +36,7 @@ import { classifyGainedAi } from "@/lib/gate/base";
 import { emitSizeChanged } from "@/lib/billing-events";
 import { assistantChannel, ensureNoticeTemplate, forgetAssistantCache, refreshAssistantGuides } from "@/lib/team-whatsapp";
 import { NOTICE_KINDS, NOTICE_KIND_ORDER, ensureNoticeKindTemplates, forgetNoticeTemplates } from "@/lib/team-notices";
+import { setFreeRelease } from "@/lib/person-signals";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
 async function auditAdmin(email: string, action: string, o: { agencyId?: string | null; targetType?: string; targetId?: string; after?: Record<string, unknown> } = {}) {
@@ -92,6 +93,25 @@ export async function resumeAgencyAi(agencyId: string): Promise<ActionResult> {
   await auditAdmin(s.email, "agencia.religar_ia", { agencyId, targetType: "agency", targetId: agencyId });
   revalidatePath("/admin", "layout");
   return ok("IA da agência religada.");
+}
+
+/** Trava da conta grátis: a conta presa por engano (ex.: duas empresas da mesma pessoa) ganha o teste. */
+export async function releaseFreeTest(agencyId: string, fd: FormData): Promise<ActionResult> {
+  const reason = reasonOf(fd);
+  if (typeof reason !== "string") return fail(reason.error);
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (liberou o teste grátis: ${reason})`);
+  if (!(await setFreeRelease(createAdminClient(), agencyId, true))) return fail("Não foi possível liberar. Tente de novo.");
+  await auditAdmin(s.email, "conta_gratis.liberada", { agencyId, targetType: "agency", targetId: agencyId, after: { reason } });
+  revalidatePath(`/admin/clientes/${agencyId}`);
+  return ok("Teste grátis liberado: a conta volta a ter as respostas de teste e as demos.");
+}
+
+export async function lockFreeTest(agencyId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (tirou a liberação do teste grátis)`);
+  if (!(await setFreeRelease(createAdminClient(), agencyId, false))) return fail("Não foi possível salvar. Tente de novo.");
+  await auditAdmin(s.email, "conta_gratis.travada", { agencyId, targetType: "agency", targetId: agencyId });
+  revalidatePath(`/admin/clientes/${agencyId}`);
+  return ok("Liberação tirada.");
 }
 
 /**

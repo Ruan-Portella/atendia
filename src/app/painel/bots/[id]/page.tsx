@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FREE_LINKED_SHORT, freeLinked } from "@/lib/person-signals";
 import { TEST_ANSWERS_FREE, botHasAi, num } from "@/lib/plans";
 import { BotActions } from "@/components/integrations/bot-actions";
 import { FixedContextCard } from "@/components/integrations/fixed-context-card";
@@ -956,7 +957,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           <div className="sticky top-5 flex flex-col gap-3">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span>
-              <span className="text-muted">{owner.billing_status === "none" ? `conta grátis: ${num(Math.max(0, TEST_ANSWERS_FREE - (owner.test_answers_used ?? 0)))} de ${TEST_ANSWERS_FREE} respostas` : "como o visitante vê"}</span>
+              <span className="text-muted">{freeLinked(owner) ? FREE_LINKED_SHORT : owner.billing_status === "none" ? `conta grátis: ${num(Math.max(0, TEST_ANSWERS_FREE - (owner.test_answers_used ?? 0)))} de ${TEST_ANSWERS_FREE} respostas` : "como o visitante vê"}</span>
             </div>
             <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
               {readySources ? (

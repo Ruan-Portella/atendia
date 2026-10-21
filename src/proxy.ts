@@ -5,6 +5,7 @@ import { accessDay, logAccess, requestIp, type AccessActor } from "@/lib/access-
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashId } from "@/lib/rate-limit";
 import { passwordOnlySession } from "@/lib/login-code";
+import { DEVICE_COOKIE, DEVICE_COOKIE_MAX_AGE } from "@/lib/person-signals";
 
 /** Cookie que marca "esta sessão já foi registrada hoje, deste IP" (evita gravar a cada página). */
 const ACCESS_MARK = "bv_al";
@@ -97,6 +98,11 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
       event.waitUntil(logAccess(createAdminClient(), { actorType: area, actorId: String(user.sub), email, event: "session", ip, userAgent: request.headers.get("user-agent") }));
       response.cookies.set(ACCESS_MARK, mark, { httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 60 * 60 * 24 });
     }
+  }
+  // o navegador (Trava da conta grátis): um código nosso nas páginas de conta, só para ligar as
+  // contas da mesma pessoa (guardado como HMAC)
+  if (!request.cookies.get(DEVICE_COOKIE) && /^\/(login|cadastro|comecar|painel|convite)(\/|$)/.test(path)) {
+    response.cookies.set(DEVICE_COOKIE, crypto.randomUUID(), { httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: DEVICE_COOKIE_MAX_AGE });
   }
   return response;
 }

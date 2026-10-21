@@ -8,6 +8,8 @@ import { ContinuousChecks } from "@/components/admin/continuous-checks";
 import { BotSizeForm } from "@/components/admin/bot-size-form";
 import { BillingCard } from "@/components/admin/billing-card";
 import { ClientTransferForm } from "@/components/admin/client-transfer-form";
+import { FreeAccountCard } from "@/components/admin/free-account-card";
+import { freeLinksOf } from "@/lib/person-signals";
 import { nextMonthTarget } from "@/lib/billing-sync";
 import { creditBalance } from "@/lib/billing-credit";
 import { targetMonthlyCents } from "@/lib/billing";
@@ -37,7 +39,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
     getMeasures({ agencyId: id, active: true }),
     continuousView(db, { agencyId: id }),
     botQuotaStatus(db, id),
-    db.from("agencies").select("billing_status, billing_cancel_at, stripe_subscription_id, credit_auto_enabled").eq("id", id).maybeSingle(),
+    db.from("agencies").select("billing_status, billing_cancel_at, stripe_subscription_id, credit_auto_enabled, test_answers_used, free_used_at, free_blocked_at, free_block_reason, free_released_at").eq("id", id).maybeSingle(),
     nextMonthTarget(db, id),
     creditBalance(db, id),
   ]);
@@ -59,6 +61,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
     db.from("client_transfers").select("id, client_name, from_agency_id, to_agency_id, requested_by, done_by, created_at").or(`from_agency_id.eq.${id},to_agency_id.eq.${id}`).order("created_at", { ascending: false }).limit(10),
   ]);
   const agencyName = new Map((await getAgencies()).map((a) => [a.id, a.name]));
+  const freeLinks = await freeLinksOf(db, id);
   const waBy = new Map((wa ?? []).map((w) => [w.bot_id as string, w]));
   const igBy = new Map((ig ?? []).map((i) => [i.bot_id as string, i]));
 
@@ -112,6 +115,19 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         packs={target.packs}
         creditCents={credit}
         autoRecharge={Boolean(billing?.credit_auto_enabled)}
+      />
+      <FreeAccountCard
+        agencyId={id}
+        view={{
+          billingStatus: (billing?.billing_status as string | undefined) ?? "none",
+          testAnswersUsed: Number(billing?.test_answers_used ?? 0),
+          freeUsedAt: (billing?.free_used_at as string | null | undefined) ?? null,
+          blockedAt: (billing?.free_blocked_at as string | null | undefined) ?? null,
+          blockReason: (billing?.free_block_reason as string | null | undefined) ?? null,
+          releasedAt: (billing?.free_released_at as string | null | undefined) ?? null,
+        }}
+        links={freeLinks}
+        names={agencyName}
       />
       <AgencyActions agency={agency} />
       <AgencyFeatures agencyId={id} features={agency.features} />

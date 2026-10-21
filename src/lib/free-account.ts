@@ -32,8 +32,11 @@ export function demoEndedText(agencyName: string | null, showcase: boolean): str
   return `Esta demonstração terminou. Para continuar, fale com ${agencyName ?? "quem enviou o link"}.`;
 }
 
-/** Resposta de teste: ok, a demo venceu ou chegou ao limite, ou a conta grátis usou as dela. */
-export type TestAnswer = "ok" | "demo_vencida" | "demo_limite" | "conta";
+/**
+ * Resposta de teste: ok, a demo venceu ou chegou ao limite, a conta grátis usou as dela, ou a conta
+ * está ligada a outra da mesma pessoa que já usou o teste (Trava da conta grátis).
+ */
+export type TestAnswer = "ok" | "demo_vencida" | "demo_limite" | "conta" | "ligada";
 
 /** Reserva uma resposta de teste da IA (teste ao vivo e demos). Falha nossa não trava o teste. */
 export async function takeTestAnswer(db: SupabaseClient, botId: string): Promise<TestAnswer> {
@@ -42,7 +45,7 @@ export async function takeTestAnswer(db: SupabaseClient, botId: string): Promise
     console.error("conta grátis: resposta de teste não conferida", error.message);
     return "ok";
   }
-  return data === "demo_vencida" || data === "demo_limite" || data === "conta" ? data : "ok";
+  return data === "demo_vencida" || data === "demo_limite" || data === "conta" || data === "ligada" ? data : "ok";
 }
 
 /** Recusa de demo nova: o limite do mês (contado na criação). */

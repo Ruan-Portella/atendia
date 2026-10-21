@@ -9,6 +9,7 @@ import { BotRowActions } from "@/components/bot-row-actions";
 import { deleteBot } from "../actions";
 import { DEMOS_PER_MONTH, DEMOS_PER_MONTH_FREE, DEMO_ANSWERS, DEMO_DAYS } from "@/lib/plans";
 import { monthBoundsBR } from "@/lib/billing";
+import { FREE_LINKED_DEMO, freeLinked } from "@/lib/person-signals";
 
 const dayBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 /** "vale até 01/11 · 12 de 50 respostas" ou "terminou em 01/11". */
@@ -35,6 +36,7 @@ export default async function DemosPage() {
         <p className="mt-1 text-sm text-muted tabular">
           Neste mês: {usedThisMonth} de {monthLimit} demos{agency.billing_status === "none" ? ` (com assinatura, até ${DEMOS_PER_MONTH})` : ""}.
         </p>
+        {freeLinked(agency) && <p className="mt-2 max-w-[640px] rounded-lg border border-line-2 bg-ground px-3 py-2 text-sm">{FREE_LINKED_DEMO}</p>}
       </div>
       <div className="card max-w-[640px] p-6"><DemoGenerator inPanel /></div>
       <div className="card overflow-hidden">

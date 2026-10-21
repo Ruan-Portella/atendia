@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FREE_LINKED_DEMO, freeLinked } from "@/lib/person-signals";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { activeMembership, can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
@@ -58,7 +59,9 @@ export async function POST(req: Request) {
   // demos do mês da agência (a vitrine do site tem os limites por IP e o teto diário)
   const own = agencyId;
   if (own && !(await claimDemo(db, own))) {
-    const { data: ag } = await db.from("agencies").select("billing_status").eq("id", own).maybeSingle();
+    const { data: ag } = await db.from("agencies").select("billing_status, free_blocked_at, free_released_at").eq("id", own).maybeSingle();
+    // a trava da conta grátis: ligada a outra conta da mesma pessoa que já usou o teste
+    if (ag && freeLinked(ag)) return Response.json({ error: "free_linked", message: FREE_LINKED_DEMO }, { status: 403 });
     return Response.json({ error: "demo_limit", message: demosMonthText(Boolean(ag && ag.billing_status !== "none")) }, { status: 429 });
   }
 

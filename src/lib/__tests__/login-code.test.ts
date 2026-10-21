@@ -51,6 +51,11 @@ describe("login por código", () => {
   it("sem a Resend no ambiente, e-mail inválido, limite estourado ou falha no envio: não manda", async () => {
     const send = vi.fn(async () => ({ ok: true }));
     expect(await requestLoginCode(fakeAdmin().db, { email: "ana@exemplo", ip: "x" }, send)).toEqual({ ok: false, message: LOGIN_CODE_TEXTS.invalidEmail });
+    // e-mail descartável não abre conta (Trava da conta grátis), nem num subdomínio
+    const temp = fakeAdmin();
+    expect(await requestLoginCode(temp.db, { email: "ana@mailinator.com", ip: "x" }, send)).toEqual({ ok: false, message: LOGIN_CODE_TEXTS.disposable });
+    expect(await requestLoginCode(temp.db, { email: "ana@x.yopmail.com", ip: "x" }, send)).toEqual({ ok: false, message: LOGIN_CODE_TEXTS.disposable });
+    expect(temp.createUser).not.toHaveBeenCalled();
     expect(await requestLoginCode(fakeAdmin({ allowed: (k) => !k.startsWith("login-code:gap:") }).db, { email: "ana@exemplo.com", ip: "x" }, send)).toEqual({ ok: false, message: LOGIN_CODE_TEXTS.wait });
     expect(await requestLoginCode(fakeAdmin({ otp: null }).db, { email: "ana@exemplo.com", ip: "x" }, send)).toEqual({ ok: false, message: LOGIN_CODE_TEXTS.failed });
     expect(await requestLoginCode(fakeAdmin().db, { email: "ana@exemplo.com", ip: "x" }, async () => ({ ok: false, message: "domínio não verificado" }))).toEqual({ ok: false, message: LOGIN_CODE_TEXTS.failed });

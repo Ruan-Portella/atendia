@@ -51,6 +51,7 @@ export const TRANSFER_TABLES: Record<string, { muda: boolean; por: string }> = {
   roadmap_suggestions: { muda: false, por: "sugestões da conta" },
   support_access_grants: { muda: false, por: "autorizações de suporte (histórico)" },
   team_whatsapp: { muda: false, por: "os números da equipe da conta" },
+  person_signals: { muda: false, por: "os sinais do dono da conta (trava da conta grátis)" },
   usage: { muda: false, por: "uso do mês da conta" },
   webhooks: { muda: false, por: "webhooks da origem (deixam de receber os eventos do cliente)" },
 };

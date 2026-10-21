@@ -35,6 +35,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "agencia.liberacao": "Recurso liberado pela BoaVoz",
   "agencia.pausar_ia": "IA da conta pausada pela BoaVoz",
   "agencia.religar_ia": "IA da conta religada pela BoaVoz",
+  "conta_gratis.liberada": "Teste grátis liberado pela BoaVoz",
+  "conta_gratis.travada": "Liberação do teste grátis tirada pela BoaVoz",
   "analise.resolver": "Análise do bot revisada pela BoaVoz",
   "analise.rodar_agendadas": "Análises agendadas rodadas",
   "analise.rodar_de_novo": "Análise do bot rodada de novo",

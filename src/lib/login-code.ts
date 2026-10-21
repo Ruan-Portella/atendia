@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { company } from "./company";
 import { firstExceeded, hashId } from "./rate-limit";
 import { isEmail } from "./validation";
+import { isDisposableEmail } from "./disposable-email";
 
 /*
  * Entrar e criar conta com um código no e-mail, sem senha (Entrada e docs, parte 3, 19/10/2026),
@@ -14,6 +15,7 @@ import { isEmail } from "./validation";
 export const LOGIN_CODE_TEXTS = {
   noEmail: "O código por e-mail ainda não está ligado neste ambiente. Entre com o Google.",
   invalidEmail: "Digite um e-mail válido.",
+  disposable: "Use um e-mail seu, de trabalho ou pessoal: e-mails temporários não abrem conta no BoaVoz.",
   tooMany: "Muitas tentativas. Espere alguns minutos e tente de novo.",
   wait: "Espere um pouco antes de pedir outro código.",
   failed: "Não foi possível mandar o código agora. Tente de novo em instantes.",
@@ -79,6 +81,8 @@ export async function requestLoginCode(admin: SupabaseClient, i: { email: string
   if (!loginCodeEnabled()) return { ok: false, message: LOGIN_CODE_TEXTS.noEmail };
   const email = normalizeLoginEmail(i.email);
   if (!isEmail(email) || email.length > 254) return { ok: false, message: LOGIN_CODE_TEXTS.invalidEmail };
+  // a trava da conta grátis: e-mail descartável não entra (nem cria conta)
+  if (isDisposableEmail(email)) return { ok: false, message: LOGIN_CODE_TEXTS.disposable };
   const who = hashId(email);
   const over = await firstExceeded(admin, [
     { key: `login-code:ip:${hashId(i.ip)}`, max: 10, windowSeconds: 3600, message: LOGIN_CODE_TEXTS.tooMany },

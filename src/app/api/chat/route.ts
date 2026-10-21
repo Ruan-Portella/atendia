@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ATENDIMENTO_TEST_OFF, DEMO_ENDED_PANEL, TEST_ANSWERS_DONE, demoEndedText, takeTestAnswer } from "@/lib/free-account";
+import { FREE_LINKED_TEST } from "@/lib/person-signals";
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -292,7 +293,7 @@ export async function POST(req: Request) {
   if (channel === "painel" || bot.is_demo) {
     const test = await takeTestAnswer(db, bot.id);
     if (test !== "ok") {
-      if (channel === "painel") return fixedStream("teste", test === "conta" ? TEST_ANSWERS_DONE : DEMO_ENDED_PANEL, CORS_HEADERS);
+      if (channel === "painel") return fixedStream("teste", test === "conta" ? TEST_ANSWERS_DONE : test === "ligada" ? FREE_LINKED_TEST : DEMO_ENDED_PANEL, CORS_HEADERS);
       const { data: owner } = await db.from("agencies").select("name, slug").eq("id", bot.agency_id).maybeSingle();
       return fixedStream("demo", demoEndedText((owner?.name as string | null) ?? null, owner?.slug === "boavoz"), CORS_HEADERS);
     }
