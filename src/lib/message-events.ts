@@ -325,6 +325,61 @@ export async function queueHandoffReturned(db: SupabaseClient, conversationId: s
   }
 }
 
+/** Quem da equipe, como os webhooks levam (o mesmo do handoff.returned). */
+export interface AgentRef {
+  type: string;
+  id: string;
+  name: string;
+}
+const agentRef = (a: AgentRef | null | undefined) => (a ? { id: `mbr_${a.id}`, display_name: a.name, type: a.type } : null);
+
+/** O setor da conversa agora, como os webhooks levam. */
+async function sectorOf(db: SupabaseClient, conversationId: string): Promise<{ id: string; name: string } | null> {
+  const { data } = await db.from("conversations").select("sector_id, sectors(name)").eq("id", conversationId).maybeSingle();
+  const s = one(data?.sectors as { name: string } | Array<{ name: string }> | null);
+  return data?.sector_id && s ? { id: `sec_${data.sector_id as string}`, name: s.name } : null;
+}
+
+/**
+ * conversation.assigned (Caixa de entrada, parte 6): a conversa chegou a uma pessoa da equipe:
+ * ela assumiu (by agent, com previous_agent quando foi "Assumir no lugar"), o rodízio do setor
+ * entregou (rotation) ou veio numa transferência (transfer).
+ */
+export async function queueConversationAssigned(db: SupabaseClient, conversationId: string, o: { agent: AgentRef; by: "agent" | "rotation" | "transfer"; previous?: AgentRef | null; at: string }): Promise<void> {
+  try {
+    const ctx = await eventContext(db, conversationId);
+    if (!ctx) return;
+    const { emitEvent } = await import("./webhooks");
+    await emitEvent(
+      db,
+      { type: "conversation.assigned", key: `${conversationId}:assigned:${o.agent.id}:${o.at}`, bot: ctx.bot, createdAt: o.at, conversation: { id: conversationId, channel: ctx.channel }, contact: await contactObject(db, ctx.contactId), contactId: ctx.contactId, data: { agent: agentRef(o.agent), by: o.by, previous_agent: agentRef(o.previous), sector: await sectorOf(db, conversationId) } },
+      { background: true },
+    );
+  } catch (e) {
+    console.error("webhook: evento de atribuição não registrado", (e as Error).message);
+  }
+}
+
+/**
+ * conversation.transferred (Caixa de entrada, parte 6): passada para outra pessoa ou para um setor.
+ * A nota interna da transferência não sai: é só da equipe.
+ */
+export async function queueConversationTransferred(db: SupabaseClient, conversationId: string, o: { from: AgentRef; toAgent: AgentRef | null; toSector: boolean; at: string }): Promise<void> {
+  try {
+    const ctx = await eventContext(db, conversationId);
+    if (!ctx) return;
+    const { emitEvent } = await import("./webhooks");
+    const sector = await sectorOf(db, conversationId);
+    await emitEvent(
+      db,
+      { type: "conversation.transferred", key: `${conversationId}:transferred:${o.at}`, bot: ctx.bot, createdAt: o.at, conversation: { id: conversationId, channel: ctx.channel }, contact: await contactObject(db, ctx.contactId), contactId: ctx.contactId, data: { from: agentRef(o.from), to: { type: o.toSector ? "sector" : "agent", agent: agentRef(o.toAgent), sector: o.toSector ? sector : null } } },
+      { background: true },
+    );
+  } catch (e) {
+    console.error("webhook: evento de transferência não registrado", (e as Error).message);
+  }
+}
+
 /* ------------------------------------------------------------------ arquivo e clique na mensagem recebida */
 
 export interface Interactive {

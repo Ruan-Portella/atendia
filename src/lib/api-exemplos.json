@@ -30,7 +30,9 @@
             "last_message_at": "2026-10-19T15:02:11.481Z",
             "message_count": 6,
             "ai_paused_until": null,
-            "agent": null
+            "agent": null,
+            "sector": null,
+            "snoozed_until": null
           }
         ],
         "next_cursor": "MjAyNi0xMC0xOVQxNTowMjoxMS40ODFafDBlOGY1YTNj"
@@ -65,7 +67,9 @@
           "last_message_at": "2026-10-19T15:02:11.481Z",
           "message_count": 2,
           "ai_paused_until": null,
-          "agent": null
+          "agent": null,
+          "sector": null,
+          "snoozed_until": null
         },
         "data": [
           {

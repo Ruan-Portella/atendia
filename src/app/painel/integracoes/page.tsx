@@ -299,6 +299,8 @@ const EVENT_HINT: Partial<Record<WebhookEvent, string>> = {
   "lead.updated": "o mesmo contato voltou com um pedido novo",
   "handoff.requested": "pediram atendente",
   "handoff.returned": "a conversa voltou para a IA",
+  "conversation.assigned": "a conversa chegou a alguém da equipe (assumiu, rodízio ou transferência)",
+  "conversation.transferred": "a conversa foi transferida para outra pessoa ou setor",
   "contact.opted_in": "aceitou promoções ou lembretes (chat, painel ou “Foi engano”)",
   "contact.opted_out": "pediu para sair (SAIR, botão, WhatsApp ou painel)",
   "campaign.finished": "a campanha ou o lembrete terminou de enviar, com os totais",

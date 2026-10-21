@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { API_PAUSE_CLEAR } from "./api-pause";
-import { queueHandoffReturned } from "./message-events";
+import { queueConversationAssigned, queueHandoffReturned } from "./message-events";
 import { fail, ok, type ActionResult } from "./action-result";
 import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendText } from "./whatsapp";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
@@ -59,9 +59,9 @@ export const ALREADY_YOURS = "Você já está atendendo esta conversa.";
 export async function takeOver(admin: SupabaseClient, conversationId: string, who: Attendant, opts: { force?: boolean } = {}): Promise<TakeOverResult> {
   const { data: before } = await admin
     .from("conversations")
-    .select(`${HOLDER_COLS}, bot_id, handoff_requested_at, lead_waiting_at`)
+    .select(`${HOLDER_COLS}, assigned_to_type, bot_id, handoff_requested_at, lead_waiting_at`)
     .eq("id", conversationId)
-    .maybeSingle<Holder & { bot_id: string; handoff_requested_at: string | null; lead_waiting_at: string | null }>();
+    .maybeSingle<Holder & { assigned_to_type: string | null; bot_id: string; handoff_requested_at: string | null; lead_waiting_at: string | null }>();
   if (!before) return fail("Conversa não encontrada.");
   if (holdsConversation(before, who.id)) return ok(ALREADY_YOURS);
   const now = new Date().toISOString();
@@ -88,6 +88,8 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
   // roteiro em andamento acaba: a equipe assumiu (B2')
   await endActiveRoutine(admin, conversationId, "handoff");
   const previous = heldByOther(before, who.id) || assignedToOther(before, who.id) ? otherName(before) : null;
+  // webhooks: conversation.assigned (quem estava, quando foi "Assumir no lugar")
+  await queueConversationAssigned(admin, conversationId, { agent: who, by: "agent", previous: previous && before.assigned_to_id ? { type: before.assigned_to_type ?? "agency_member", id: before.assigned_to_id, name: previous } : null, at: now });
   return { ...ok(previous ? `Você assumiu no lugar de ${previous}. A próxima mensagem sai com o anúncio com o seu nome.` : "Você assumiu a conversa. O assistente pausou até você devolver."), previous };
 }
 

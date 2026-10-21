@@ -113,6 +113,8 @@ export default function WebhooksDocs() {
           [<code key="2">lead.updated</code>, "O mesmo contato voltou com um pedido novo (ou mudou o contato). Um lead por contato em cada chatbot.", <><code>lead</code> e <code>request</code> {`{created_at, channel, conversation_id, text}`} (null quando só o contato mudou).</>],
           [<code key="3">handoff.requested</code>, "A conversa entrou na fila da equipe.", <><code>reason</code>: <code>requested</code> (pediu atendente), <code>lead</code> (deixou um pedido) ou <code>ai_unavailable</code>; <code>priority</code> (<code>urgent</code> em risco à vida); <code>outside_hours</code>.</>],
           [<code key="4">handoff.returned</code>, "A conversa voltou para a IA.", <><code>reason</code> (<code>agent_resumed</code>, <code>timeout</code>, <code>api</code>) e <code>agent</code>.</>],
+          [<code key="5">conversation.assigned</code>, "A conversa chegou a uma pessoa da equipe: ela assumiu, o rodízio do setor entregou ou veio numa transferência.", <><code>agent</code> {`{id, display_name, type}`}, <code>by</code> (<code>agent</code>, <code>rotation</code> ou <code>transfer</code>), <code>previous_agent</code> (quem estava com a conversa, ou null) e <code>sector</code> {`{id, name}`} (ou null).</>],
+          [<code key="6">conversation.transferred</code>, "Alguém da equipe transferiu a conversa para outra pessoa ou para um setor. A nota interna não vai no evento.", <><code>from</code> (quem transferiu) e <code>to</code> {`{type, agent, sector}`}: <code>type</code> <code>agent</code> ou <code>sector</code>; no setor com rodízio, <code>agent</code> é quem recebeu.</>],
         ]}
       />
       <H3 id="roteiros">Roteiros</H3>

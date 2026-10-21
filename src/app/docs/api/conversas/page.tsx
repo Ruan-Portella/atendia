@@ -30,7 +30,7 @@ export default function ConversationsApiDocs() {
           [<code key="2">cursor</code>, <>O <code>next_cursor</code> da resposta anterior (null na última página).</>, <>400 <code>cursor</code></>],
           [<code key="3">bot_id</code>, "Só as conversas deste chatbot (do escopo da chave).", <code key="e">403 forbidden_scope</code>],
           [<code key="4">channel</code>, <><code>widget</code>, <code>whatsapp</code> ou <code>instagram</code>.</>, <>400 <code>channel</code></>],
-          [<code key="5">status</code>, <><code>ai</code> (a IA responde), <code>ai_paused</code> (pausada pela integração, até <code>ai_paused_until</code>), <code>waiting_human</code> (pediu atendente e ninguém assumiu) ou <code>human</code> (alguém da equipe assumiu: vem em <code>agent</code>).</>, <>400 <code>status</code></>],
+          [<code key="5">status</code>, <><code>ai</code> (a IA responde), <code>ai_paused</code> (pausada pela integração, até <code>ai_paused_until</code>), <code>waiting_human</code> (pediu atendente e ninguém assumiu) ou <code>human</code> (alguém da equipe assumiu: vem em <code>agent</code>). Cada conversa traz também o <code>sector</code> {`{id, name}`} (ou null) e o <code>snoozed_until</code> (adiada pela equipe na Caixa de entrada até essa data, ou null).</>, <>400 <code>status</code></>],
           [<code key="6">since</code>, <>Só as que tiveram mensagem desde a data (ISO 8601, ex.: <code>2026-10-01T00:00:00Z</code>).</>, <>400 <code>since</code></>],
           [<code key="7">contact</code>, <>Só as de um contato (<Link href="/docs/api#contato">endereço</Link>).</>, <>400 <code>contact</code></>],
         ]}

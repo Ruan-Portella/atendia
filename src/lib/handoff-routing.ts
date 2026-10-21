@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listSectors, sectorById, type Sector } from "./sectors";
 import { nextInRotation, type Assignee } from "./availability";
+import { queueConversationAssigned } from "./message-events";
 
 /*
  * Para onde vai o pedido de atendente (Caixa de entrada, parte 2): a IA diz o setor (pelo nome,
@@ -48,7 +49,10 @@ export async function assignByRotation(db: SupabaseClient, conversationId: strin
     .is("takeover_at", null)
     .is("assigned_to_id", null)
     .select("id");
-  return data?.length ? next : null;
+  if (!data?.length) return null;
+  // webhooks: conversation.assigned pelo rodízio
+  await queueConversationAssigned(db, conversationId, { agent: next, by: "rotation", at: now.toISOString() });
+  return next;
 }
 
 /** Quem é avisado do pedido: quem recebeu a conversa, senão as pessoas do setor; sem setor (ou sem ninguém nele), todos, como antes. */

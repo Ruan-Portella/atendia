@@ -8,6 +8,7 @@ import { heldByOther, holdsConversation, type Holder } from "./handoff";
 import { saveNote } from "./conversation-notes";
 import { noteBody } from "./note-text";
 import type { BotRow } from "./chat";
+import { queueConversationAssigned, queueConversationTransferred } from "./message-events";
 
 /*
  * Transferir (Caixa de entrada, parte 4; spec, Peça 11): passa a conversa para outra pessoa ou
@@ -58,7 +59,7 @@ export async function transferConversation(db: SupabaseClient, conversationId: s
   if (note && typeof note === "object") return fail(note.error);
   const { data } = await db
     .from("conversations")
-    .select("takeover_at, handled_at, assigned_to_id, assigned_to_name, handoff_requested_at, transfer_from_name, bot_id, sector_id, bots(id, name, client_name, client_id, agency_id, lead_capture, human_handoff)")
+    .select("takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, handoff_requested_at, transfer_from_name, bot_id, sector_id, bots(id, name, client_name, client_id, agency_id, lead_capture, human_handoff)")
     .eq("id", conversationId)
     .maybeSingle();
   const conv = data as ConvRow | null;
@@ -103,6 +104,10 @@ export async function transferConversation(db: SupabaseClient, conversationId: s
   if (error) return fail("Não foi possível transferir. Tente de novo.");
   if (!updated?.length) return fail("A conversa mudou enquanto você transferia. Abra de novo e confira.");
   await saveNote(db, { conversationId, botId: bot.id, kind: "transferencia", who, body: note, targetLabel: toLabel }).catch((e) => console.error("registro da transferência", (e as Error).message));
+  // webhooks: conversation.transferred e, se chegou a alguém, conversation.assigned
+  await queueConversationTransferred(db, conversationId, { from: who, toAgent: assignee, toSector: target.kind === "setor", at });
+  const previous = conv.assigned_to_id ? { type: (conv as { assigned_to_type?: string | null }).assigned_to_type ?? "agency_member", id: conv.assigned_to_id, name: conv.assigned_to_name?.trim() || "Outra pessoa da equipe" } : null;
+  if (assignee) await queueConversationAssigned(db, conversationId, { agent: assignee, by: "transfer", previous, at });
   // e-mail para quem recebe: a pessoa, ou as pessoas do setor (sem ninguém no setor, toda a equipe)
   const audience = await handoffAudience(db, sector, assignee).catch(() => null);
   const { notifyTransfer } = await import("./notify");

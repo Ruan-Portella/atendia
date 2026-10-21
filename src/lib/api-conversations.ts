@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isSnoozed } from "./snooze";
 import { apiContacts, parseContactAddress } from "./contacts";
 import { loadMessages, findMessage, UNCERTAIN, type MessageRow } from "./messages";
 import { agentObject, sourceOf } from "./message-events";
@@ -47,9 +48,15 @@ interface ConversationRow {
   assigned_to_id: string | null;
   assigned_to_name: string | null;
   ai_paused_until: string | null;
+  /** Caixa de entrada (parte 6): o setor e o adiamento. */
+  sector_id?: string | null;
+  sectors?: { name: string } | Array<{ name: string }> | null;
+  snoozed_until?: string | null;
+  snoozed_at?: string | null;
+  last_contact_at?: string | null;
 }
 
-const CONV_COLS = "id, bot_id, channel, contact_id, started_at, last_message_at, message_count, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, ai_paused_until";
+const CONV_COLS = "id, bot_id, channel, contact_id, started_at, last_message_at, message_count, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, ai_paused_until, sector_id, snoozed_until, snoozed_at, last_contact_at, sectors(name)";
 
 /** Quem responde a conversa agora: a IA, ninguém (a integração pausou), a fila da equipe ou alguém da equipe. Pura. */
 export function conversationStatus(c: Pick<ConversationRow, "handoff_requested_at" | "takeover_at" | "handled_at" | "ai_paused_until">, now = Date.now()): ConversationStatus {
@@ -62,6 +69,7 @@ export function conversationStatus(c: Pick<ConversationRow, "handoff_requested_a
 /** A conversa no formato da API. Pura. */
 export function conversationObject(c: ConversationRow, now = Date.now()) {
   const status = conversationStatus(c, now);
+  const sectorName = (Array.isArray(c.sectors) ? c.sectors[0] : c.sectors)?.name ?? null;
   return {
     id: `conv_${c.id}`,
     bot_id: `bot_${c.bot_id}`,
@@ -73,6 +81,9 @@ export function conversationObject(c: ConversationRow, now = Date.now()) {
     message_count: c.message_count,
     ai_paused_until: status === "ai_paused" ? c.ai_paused_until : null,
     agent: status === "human" ? { id: c.assigned_to_id ? `mbr_${c.assigned_to_id}` : null, display_name: c.assigned_to_name, type: c.assigned_to_type } : null,
+    // setor da conversa e adiamento (Caixa de entrada, parte 6)
+    sector: c.sector_id && sectorName ? { id: `sec_${c.sector_id}`, name: sectorName } : null,
+    snoozed_until: isSnoozed(c, now) ? c.snoozed_until! : null,
   };
 }
 
