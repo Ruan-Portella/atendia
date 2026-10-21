@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { after } from "next/server";
 import { hmacHex } from "./hash";
-import { ANSWERS_PER_ATENDIMENTO, BOT_SIZES, OVERAGE_PRICE_BRL, brlCents as brl2, isBotSize, type BotSize } from "./plans";
+import { ANSWERS_PER_ATENDIMENTO, BOT_SIZES, FIRST_WEEK_DAYS, FIRST_WEEK_QUOTA_SHARE, OVERAGE_PRICE_BRL, brlCents as brl2, isBotSize, type BotSize } from "./plans";
+import { firstExceeded } from "./rate-limit";
 import { SIZE_QUOTAS, botQuota, overageAlertLevel, overageMax, quotaAlertLevel, type QuotaLevel } from "./quota";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl, currentPeriodBR, monthStartBR } from "./utils";
@@ -30,7 +31,7 @@ export type AtendimentoBlock = "quota_exceeded";
 export const contactKeyHash = (channel: AtendimentoChannel, key: string) => hmacHex(`atendimento:${channel}:${key}`);
 
 export interface OpenRow {
-  status: "aberto" | "novo" | "excedente" | "cota" | "teto" | "sem_credito" | "suspenso" | "pico";
+  status: "aberto" | "novo" | "excedente" | "cota" | "teto" | "sem_credito" | "suspenso" | "pico" | "primeira_semana";
   atendimento_id: number | null;
   used: number | null;
   quota: number | null;
@@ -42,7 +43,7 @@ export interface OpenRow {
   credit_left: number | null;
 }
 
-const STOPPED = new Set(["cota", "teto", "sem_credito", "suspenso", "pico"]);
+const STOPPED = new Set(["cota", "teto", "sem_credito", "suspenso", "pico", "primeira_semana"]);
 
 /** Depois da resposta (after do Next); fora de uma requisição, roda solto. */
 function inBackground(fn: () => Promise<unknown>) {
@@ -87,6 +88,8 @@ export async function openAtendimento(
   }
   if (STOPPED.has(row.status)) {
     if (row.status === "pico") inBackground(() => notifySpike(db, bot, row).catch((e) => console.error("atendimento: aviso de pico", e)));
+    // primeira semana da assinatura: 25% da cota usada; o dono sabe uma vez, e o webhook diz o motivo
+    if (row.status === "primeira_semana") inBackground(() => notifyFirstWeek(db, bot, row).catch((e) => console.error("atendimento: aviso da primeira semana", e)));
     // crédito acabou: bot.quota_reached (um por dia e chatbot; o crédito pode voltar e acabar de novo)
     if (row.status === "sem_credito") {
       inBackground(async () => emitQuotaReached(db, bot.id, "sem_credito", await usageSnapshot(db, bot.id, row), new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" })).catch((e) => console.error("atendimento: webhook sem crédito", e)));
@@ -111,6 +114,32 @@ export async function requireAtendimento(...args: Parameters<typeof openAtendime
 }
 
 /* ------------------------------------------------------------------ avisos */
+
+/** O e-mail da primeira semana: o chatbot usou o que a semana libera. Pura. */
+export function firstWeekEmail(bot: { name: string; clientName: string | null }, until: string, usageUrl: string): [string, string[]] {
+  const who = bot.clientName ? `${bot.name} (${bot.clientName})` : bot.name;
+  return [
+    `Primeira semana da assinatura: o chatbot ${who} usou o que a semana libera`,
+    [
+      `Na primeira semana da assinatura, cada chatbot usa até ${Math.round(FIRST_WEEK_QUOTA_SHARE * 100)}% da cota do mês. O chatbot ${who} chegou a esse limite: até ${until}, as conversas novas dele vão para a equipe em Conversas, como na cota cheia.`,
+      "",
+      `No dia ${until}, o resto da cota do mês fica liberado sozinho. O uso de cada chatbot está em ${usageUrl}.`,
+    ],
+  ];
+}
+
+async function notifyFirstWeek(db: SupabaseClient, bot: { id: string; agency_id: string }, row: OpenRow) {
+  const { data: a } = await db.from("agencies").select("first_paid_at").eq("id", bot.agency_id).maybeSingle();
+  if (!a?.first_paid_at) return;
+  const untilDate = new Date(Date.parse(a.first_paid_at as string) + FIRST_WEEK_DAYS * 86_400_000);
+  const until = untilDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });
+  await emitQuotaReached(db, bot.id, "primeira_semana", await usageSnapshot(db, bot.id, row));
+  // um e-mail por chatbot na semana
+  if (await firstExceeded(db, [{ key: `primeira-semana:${bot.id}:${a.first_paid_at}`, max: 1, windowSeconds: FIRST_WEEK_DAYS * 86_400, message: "repetido" }])) return;
+  const { data: b } = await db.from("bots").select("name, client_name").eq("id", bot.id).maybeSingle();
+  const [subject, lines] = firstWeekEmail({ name: (b?.name as string | undefined) ?? "chatbot", clientName: (b?.client_name as string | null | undefined) ?? null }, until, appUrl("/painel/cobranca/uso"));
+  await notifyAgencyOwner(db, bot.agency_id, subject, lines);
+}
 
 const fmt = (n: number) => new Intl.NumberFormat("pt-BR").format(n);
 

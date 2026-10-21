@@ -1,7 +1,7 @@
 import { ApiError, invalidRequest, notFound, readJsonBody, withIdempotency, type ApiContext } from "./api-v1";
 import { BillingOpError, changeSize, setOverage, subscribedAccount, type BillingActor, type SizeChange } from "./billing-ops";
 import { botUsage } from "./bot-usage";
-import { creditBalance, purchaseCredit } from "./billing-credit";
+import { creditBalance, firstWeekCreditProblem, purchaseCredit } from "./billing-credit";
 import { CREDIT_MAX_BRL, CREDIT_MIN_BRL, isBotSize, type BotSize } from "./plans";
 import { OVERAGE_CAP_MAX_BRL, OVERAGE_CAP_MIN_BRL } from "./quota";
 
@@ -195,6 +195,9 @@ export async function postCreditPurchase(req: Request, api: ApiContext): Promise
   return withIdempotency(api, req, raw, async () => {
     const account = subscribedAccount(await agencyOf(api));
     if (!account) throw new ApiError(422, "subscription_required", NO_SUBSCRIPTION);
+    // primeira semana da assinatura: até R$ 100 de crédito (Trava da conta grátis)
+    const weekProblem = await firstWeekCreditProblem(api.db, account.id, amount * 100);
+    if (weekProblem) throw new ApiError(422, "first_week_credit_limit", weekProblem);
     const r = await purchaseCredit(api.db, account, amount * 100, "compra", null, actorOf(api));
     if (r.status === "paid") return { status: 201, body: { status: "paid", amount_brl: amount, balance_brl: r.balanceCents / 100 } };
     return { status: 402, body: errorBody("payment_required", "O cartão da assinatura foi recusado ou pede autenticação. O crédito entra quando a fatura for paga.", { amount_brl: amount, invoice_url: r.url }) };

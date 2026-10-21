@@ -32,6 +32,13 @@ export type WithdrawalState =
 /** Até quando vale a desistência (7 dias do pagamento que abriu a assinatura). Pura. */
 export const withdrawalUntil = (firstPaidAt: string) => new Date(Date.parse(firstPaidAt) + WITHDRAWAL_DAYS * 86_400_000);
 
+/** Até quando vale a primeira semana da assinatura (25% da cota e R$ 100 de crédito), ou null. Pura. */
+export function firstWeekUntil(a: { billing_status: string; first_paid_at: string | null }, now = new Date()): string | null {
+  if (a.billing_status === "none" || !a.first_paid_at) return null;
+  const until = withdrawalUntil(a.first_paid_at);
+  return until > now ? until.toISOString() : null;
+}
+
 /** O que a tela de Cobrança mostra: o botão, o caminho pelo suporte, nada ou a desistência feita. */
 export async function withdrawalState(db: SupabaseClient, a: { id: string; billing_status: string; first_paid_at: string | null; withdrawn_at: string | null }, now = new Date()): Promise<WithdrawalState> {
   if (a.billing_status === "none") return a.withdrawn_at ? { kind: "done", at: a.withdrawn_at } : { kind: "none" };

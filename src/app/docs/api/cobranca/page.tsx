@@ -83,7 +83,7 @@ export default function BillingApiDocs() {
         ]}
       />
       <p>
-        Cartão recusado: 402 <code>payment_required</code> com <code>details.invoice_url</code>; o crédito entra quando a fatura for paga. O crédito não é reembolsável.
+        Cartão recusado: 402 <code>payment_required</code> com <code>details.invoice_url</code>; o crédito entra quando a fatura for paga. O crédito não é reembolsável, salvo na desistência dos 7 dias. Na primeira semana da assinatura, as compras somam até R$ 100: passou disso, 422 <code>first_week_credit_limit</code> (no 8º dia, sem esse limite).
       </p>
       <p>
         Numa plataforma, o restaurante liga o excedente no painel dela, ela liga pela API e cobra o restaurante como quiser a partir do <Link href="/docs/webhooks#cobranca">fechamento do mês</Link> (<code>bot.month_closed</code>). O BoaVoz nunca cobra o restaurante: o crédito é da conta da plataforma.

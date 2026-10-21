@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { creditEventData, emitCreditAlert } from "./billing-events";
-import { CREDIT_LOW_SHARE, CREDIT_MAX_BRL, CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, PIX_MAX_BRL, brlCents } from "./plans";
+import { CREDIT_LOW_SHARE, CREDIT_MAX_BRL, CREDIT_MIN_BRL, FIRST_WEEK_CREDIT_BRL, FIRST_WEEK_DAYS, OVERAGE_PRICE_BRL, PIX_MAX_BRL, brlCents } from "./plans";
 import { monthBoundsBR } from "./billing";
 import { chargeNow } from "./billing-sync";
 import { notifyAgencyOwner } from "./notify";
@@ -121,6 +121,28 @@ export async function applyCredit(db: SupabaseClient, changeId: string, source: 
 
 export type PurchaseResult = { status: "paid"; balanceCents: number } | { status: "open"; url: string | null };
 
+/** O texto do limite de crédito da primeira semana. Pura. */
+export const firstWeekCreditText = (roomCents: number, until: string) =>
+  roomCents > 0
+    ? `Na primeira semana da assinatura, a compra de crédito fica em até ${brlCents(FIRST_WEEK_CREDIT_BRL)} (ainda cabem ${brlCents(roomCents / 100)}). A partir de ${until}, sem esse limite.`
+    : `Na primeira semana da assinatura, a compra de crédito fica em até ${brlCents(FIRST_WEEK_CREDIT_BRL)}, e a conta já chegou a esse valor. A partir de ${until}, sem esse limite.`;
+
+/**
+ * A compra cabe no limite da primeira semana (Trava da conta grátis, parte 3)? Soma as compras e as
+ * recargas da semana (as pendentes do Pix também). null: cabe ou a conta já passou da semana.
+ */
+export async function firstWeekCreditProblem(db: SupabaseClient, agencyId: string, amountCents: number, now = new Date()): Promise<string | null> {
+  const { data: a } = await db.from("agencies").select("first_paid_at, billing_status").eq("id", agencyId).maybeSingle();
+  if (!a?.first_paid_at || a.billing_status === "none") return null;
+  const until = new Date(Date.parse(a.first_paid_at as string) + FIRST_WEEK_DAYS * 86_400_000);
+  if (until <= now) return null;
+  const { data: changes } = await db.from("billing_changes").select("amount_cents, status").eq("agency_id", agencyId).in("kind", ["credit", "recarga"]).gte("created_at", a.first_paid_at as string);
+  const spent = (changes ?? []).filter((c) => c.status !== "void").reduce((t, c) => t + (Number(c.amount_cents) || 0), 0);
+  const room = Math.max(0, FIRST_WEEK_CREDIT_BRL * 100 - spent);
+  if (amountCents <= room) return null;
+  return firstWeekCreditText(room, until.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }));
+}
+
 /** Compra de crédito no cartão da assinatura: grava a compra, cobra na hora e põe o crédito se pagou. */
 export async function purchaseCredit(db: SupabaseClient, agency: { id: string; stripe_customer_id: string; stripe_subscription_id: string }, amountCents: number, source: "compra" | "recarga", createdBy: string | null, actor?: { type: AuditActor; id: string | null }): Promise<PurchaseResult> {
   const kind = source === "recarga" ? "recarga" : "credit";
@@ -224,6 +246,8 @@ export async function maybeAutoRecharge(db: SupabaseClient, agencyId: string): P
       }
       return;
     }
+    // primeira semana da assinatura: a recarga não passa do limite (fica para o 8º dia)
+    if (await firstWeekCreditProblem(db, agencyId, auto.amountCents!)) return;
     const { data: claimed } = await db.rpc("claim_credit_recharge", { p_agency_id: agencyId });
     if (!claimed) return;
     try {

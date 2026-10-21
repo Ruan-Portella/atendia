@@ -100,6 +100,10 @@ describe("abertura do atendimento", () => {
     expect((await openAtendimento(fake({ status: "cota" }).db, bot, { channel: "widget", contactKey: "v1", conversationId: null })).blocked).toBe("quota_exceeded");
   });
 
+  it("primeira semana da assinatura: 25% da cota usada também passa para a equipe", async () => {
+    expect((await openAtendimento(fake({ status: "primeira_semana", used: 40, quota: 160 }).db, bot, { channel: "whatsapp", contactKey: "k", conversationId: "c" })).blocked).toBe("quota_exceeded");
+  });
+
   it("novo: conta 1", async () => {
     const r = await openAtendimento(fake({ status: "novo", atendimento_id: 9, used: 10, quota: 160 }).db, bot, { channel: "whatsapp", contactKey: "k", conversationId: "c" });
     expect(r).toEqual({ blocked: null, isNew: true, id: 9, overage: false });

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { requirePermission } from "@/lib/agency";
+import { FirstWeekNote } from "@/components/first-week-note";
+import { firstWeekUntil } from "@/lib/withdrawal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, PIX_MAX_BRL, brlCents, num } from "@/lib/plans";
 import { OVERAGE_PRICE_CENTS, creditBalance } from "@/lib/billing-credit";
@@ -50,6 +52,7 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
     <div className="max-w-[960px]">
       <h1 className="text-2xl font-bold sm:text-[28px]">Cobrança</h1>
       <BillingTabs active="/painel/cobranca/credito" />
+      <FirstWeekNote until={firstWeekUntil(agency)} />
 
       <p className="mt-5 text-sm text-muted">
         O crédito paga o excedente: com o excedente ligado num chatbot, cada atendimento além da cota do mês usa {brlCents(OVERAGE_PRICE_BRL)} do saldo da conta, na hora. Sem saldo, os chatbots que dependem do excedente entram no modo só humano. O crédito vale 12 meses (o que vence antes é usado primeiro) e não é reembolsável.

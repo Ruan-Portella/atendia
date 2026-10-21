@@ -11,7 +11,8 @@ import { emitAccountEvent } from "./webhooks";
  */
 
 /** Por que o chatbot parou: cota cheia sem excedente, teto do excedente, crédito acabou ou excedente suspenso. */
-export type QuotaStopReason = "cota" | "teto" | "sem_credito" | "excedente_suspenso";
+/** primeira_semana: nos 7 dias do início da assinatura, o chatbot usou 25% da cota (Trava da conta grátis). */
+export type QuotaStopReason = "cota" | "teto" | "sem_credito" | "excedente_suspenso" | "primeira_semana";
 
 export interface UsageSnapshot {
   /** Mês civil de São Paulo, "2026-10". */

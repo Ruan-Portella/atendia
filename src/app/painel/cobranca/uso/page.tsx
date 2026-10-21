@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { requirePermission } from "@/lib/agency";
+import { FirstWeekNote } from "@/components/first-week-note";
+import { firstWeekUntil } from "@/lib/withdrawal";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agencyMonthUsage, lastMonthTotals, monthAtendimentos, sizeLabel, type BotMonthUsage, type BotQuotaStatus } from "@/lib/atendimentos";
@@ -70,6 +72,7 @@ export default async function UsoPage() {
     <div className="max-w-[960px]">
       <h1 className="text-2xl font-bold sm:text-[28px]">Cobrança</h1>
       <BillingTabs active="/painel/cobranca/uso" />
+      <FirstWeekNote until={firstWeekUntil(agency)} />
 
       <p className="mt-5 text-sm text-muted">
         Uso de <strong className="text-ink">{periodLabel(period)}</strong> (mês civil, horário de Brasília). Cada chatbot tem a própria cota, pelo tamanho dele. Você recebe e-mail quando um chatbot chega a 80%, 95% e 100% da cota. Com o excedente ligado, a cota cheia não para o chatbot: cada atendimento a mais usa {brlCents(OVERAGE_PRICE_BRL)} do <Link href="/painel/cobranca/credito" className="underline">crédito da conta</Link>, até o teto do mês, se você escolher um.

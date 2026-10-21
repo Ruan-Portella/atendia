@@ -100,6 +100,15 @@ export const CREDIT_SHORTCUTS_BRL = [50, 100, 250, 500] as const;
 /** Compra de crédito pelo Pix: o limite padrão da Stripe é o equivalente a US$ 3.000 por pagamento, e R$ 10.000 fica abaixo. */
 export const PIX_MAX_BRL = 10_000;
 export const CREDIT_VALID_MONTHS = 12;
+
+/**
+ * Primeira semana da assinatura (Trava da conta grátis, parte 3): nos 7 dias do pagamento que abriu
+ * a assinatura (os mesmos da desistência), cada chatbot usa até 25% da cota do mês (a migração 0155
+ * leva o mesmo número) e a compra de crédito fica em até R$ 100 na semana.
+ */
+export const FIRST_WEEK_DAYS = 7;
+export const FIRST_WEEK_QUOTA_SHARE = 0.25;
+export const FIRST_WEEK_CREDIT_BRL = 100;
 /** Aviso de saldo baixo: abaixo de 20% da última compra. */
 export const CREDIT_LOW_SHARE = 0.2;
 

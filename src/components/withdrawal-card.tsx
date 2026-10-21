@@ -12,7 +12,7 @@ const dateBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { time
 export function WithdrawalCard({ state, action }: { state: WithdrawalState; action: () => Promise<ActionResult> }) {
   if (state.kind === "none") return null;
   if (state.kind === "done") {
-    return <p className="mt-4 rounded-lg bg-ground px-3 py-2 text-sm">Você desistiu da assinatura em {dateBR(state.at)}, e o que foi pago desde a assinatura foi estornado. Para usar de novo, é só assinar.</p>;
+    return <p className="mt-4 rounded-lg border border-line-2 px-3 py-2 text-sm">Você desistiu da assinatura em {dateBR(state.at)}, e o que foi pago desde a assinatura foi estornado. Para usar de novo, é só assinar.</p>;
   }
   return (
     <section className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line-2 px-4 py-3 text-sm">

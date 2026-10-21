@@ -11,7 +11,8 @@ import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { openBillingPortal, reactivateSubscription, withdrawSubscription } from "./actions";
 import { WithdrawalCard } from "@/components/withdrawal-card";
-import { withdrawalState } from "@/lib/withdrawal";
+import { firstWeekUntil, withdrawalState } from "@/lib/withdrawal";
+import { FirstWeekNote } from "@/components/first-week-note";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { billingView, unpaidInvoices } from "@/lib/billing-view";
 import { dateBR } from "@/lib/retention";
@@ -86,6 +87,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
               </ActionForm>
             </div>
           )}
+          <FirstWeekNote until={firstWeekUntil(agency)} />
           <WithdrawalCard state={withdrawal} action={withdrawSubscription} />
           {open.map((i) => (
             <p key={i.id} className="mt-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">

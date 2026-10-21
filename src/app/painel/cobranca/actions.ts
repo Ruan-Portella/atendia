@@ -10,7 +10,7 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { choiceLabel, monthBoundsBR, packChargeCents, packsRemovedWith, parseTarget, renewalLabel, targetMonthlyCents, type BillingTarget } from "@/lib/billing";
 import { syncSubscriptionSafe, voidPendingUpgrades } from "@/lib/billing-sync";
 import { BillingOpError, changeSize, chargeUpgrade, type BillingActor, type SizeChange, type SubscribedAccount } from "@/lib/billing-ops";
-import { parseAutoRecharge, parseCreditBrl, pixAmountProblem, purchaseCredit, startPixCredit } from "@/lib/billing-credit";
+import { firstWeekCreditProblem, parseAutoRecharge, parseCreditBrl, pixAmountProblem, purchaseCredit, startPixCredit } from "@/lib/billing-credit";
 import { billingEnabled, catalogPrices, checkoutTiming, ensureStripeCustomer, stripe, subscriptionItems } from "@/lib/stripe";
 import { unpaidInvoices } from "@/lib/billing-view";
 import { emitOverageChanged } from "@/lib/billing-events";
@@ -242,6 +242,9 @@ export async function buyCredit(fd: FormData): Promise<ActionResult> {
   const raw = String(fd.get("amount") ?? "") === "outro" ? String(fd.get("other") ?? "") : String(fd.get("amount") ?? "");
   const cents = parseCreditBrl(raw);
   if (cents === null) return fail(`Escolha um valor de ${brlCents(50)} a ${brlCents(50_000)}, em reais inteiros.`);
+  // primeira semana da assinatura: a compra fica em até R$ 100 (Trava da conta grátis)
+  const weekProblem = await firstWeekCreditProblem(createAdminClient(), ctx.agency.id, cents);
+  if (weekProblem) return fail(weekProblem);
   if (fd.get("via") === "pix") {
     const problem = pixAmountProblem(cents);
     if (problem) return fail(problem);
