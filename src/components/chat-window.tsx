@@ -636,14 +636,52 @@ export function ChatWindow({
   );
 }
 
+/** Quantas letras na descrição antes de a sugestão da base ser procurada, e quantas vezes por chamado. */
+const SUGGEST_AFTER_CHARS = 30;
+const SUGGEST_MAX = 2;
+
 /**
  * Abrir chamado (Caixa de entrada, parte 7a): nome, e-mail, telefone (se o chatbot pede), assunto
  * (se há lista) e descrição. O protocolo fica guardado no navegador, para acompanhar depois.
+ * Enquanto a pessoa escreve, a IA procura a resposta na base (parte 7b, "Isso ajuda?"); se
+ * resolver, o chamado não é aberto e isso conta no relatório.
  */
 function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { bot: ChatBotPublic; ticket: TicketPublic; apiBase: string; visitorId: string | null; storageKey: string; onBack?: () => void }) {
   const [state, setState] = useState<"idle" | "sending">("idle");
   const [error, setError] = useState<string | null>(null);
   const [protocol, setProtocol] = useState<string | null>(null);
+  const [description, setDescription] = useState("");
+  const [subject, setSubject] = useState("");
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [asked, setAsked] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+  const [avoided, setAvoided] = useState(false);
+
+  // a pessoa parou de escrever por 1,5 s: procura na base (até 2 vezes por chamado)
+  useEffect(() => {
+    const text = description.trim();
+    if (dismissed || suggestion || asked >= SUGGEST_MAX || text.length < SUGGEST_AFTER_CHARS) return;
+    const timer = window.setTimeout(async () => {
+      setAsked((n) => n + 1);
+      try {
+        const res = await fetch(`${apiBase}/api/widget/ticket/suggest`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: bot.key, visitorId, subject: subject || null, text }) });
+        const j = (await res.json().catch(() => ({}))) as { suggestion?: string | null };
+        if (j.suggestion) setSuggestion(j.suggestion);
+      } catch {
+        // sem rede: segue o chamado normal
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [description, subject, dismissed, suggestion, asked, apiBase, bot.key, visitorId]);
+
+  async function resolvedBySuggestion() {
+    setAvoided(true);
+    try {
+      await fetch(`${apiBase}/api/widget/ticket/resolved`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: bot.key, subject: subject || null }) });
+    } catch {
+      // a contagem é só para o relatório
+    }
+  }
   const field = "rounded-lg border border-[#e1e6ea] bg-white px-3 py-2 text-sm outline-none focus:border-[#9aa39e]";
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -664,6 +702,12 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { 
         return;
       }
       setProtocol(j.protocol);
+      // "Abrir outro chamado" começa do zero (e a sugestão pode aparecer de novo)
+      setDescription("");
+      setSubject("");
+      setSuggestion(null);
+      setAsked(0);
+      setDismissed(false);
       try {
         const key = `${storageKey}:chamados`;
         const saved = JSON.parse(localStorage.getItem(key) ?? "[]") as Array<{ protocol: string; at: string }>;
@@ -678,6 +722,15 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { 
     }
   }
 
+  if (avoided) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#f4f6f8] p-6 text-center">
+        <p className="text-[15px] font-semibold">Que bom que resolveu!</p>
+        <p className="text-[13px] text-[#4c5551]">Se precisar de mais alguma coisa, é só voltar aqui.</p>
+        {onBack && <button type="button" onClick={onBack} className="rounded-full px-3 py-1.5 text-[13px] font-medium text-white" style={{ background: bot.color }}>Voltar à conversa</button>}
+      </div>
+    );
+  }
   if (protocol) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#f4f6f8] p-6 text-center">
@@ -708,14 +761,24 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, onBack }: { 
       {ticket.subjects.length > 0 && (
         <>
           <label className="sr-only" htmlFor={`t-subject-${bot.key}`}>Assunto</label>
-          <select id={`t-subject-${bot.key}`} name="subject" required defaultValue="" className={field}>
+          <select id={`t-subject-${bot.key}`} name="subject" required value={subject} onChange={(e) => setSubject(e.target.value)} className={field}>
             <option value="" disabled>Assunto</option>
             {ticket.subjects.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </>
       )}
       <label className="sr-only" htmlFor={`t-desc-${bot.key}`}>Descrição</label>
-      <textarea id={`t-desc-${bot.key}`} name="description" required minLength={10} maxLength={2000} rows={5} placeholder="O que aconteceu? Quanto mais detalhe, mais rápido a equipe resolve." className={`${field} resize-none`} />
+      <textarea id={`t-desc-${bot.key}`} name="description" required minLength={10} maxLength={2000} rows={5} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="O que aconteceu? Quanto mais detalhe, mais rápido a equipe resolve." className={`${field} resize-none`} />
+      {suggestion && !dismissed && (
+        <div className="flex flex-col gap-2 rounded-lg border bg-white p-3 text-sm" style={{ borderColor: bot.color }} role="status">
+          <p className="text-[12px] font-semibold" style={{ color: bot.color }}>Isso ajuda?</p>
+          <p className="whitespace-pre-wrap text-[13px] text-[#1b1f1d]">{suggestion}</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={resolvedBySuggestion} className="rounded-full px-3 py-1 text-[12.5px] font-medium text-white" style={{ background: bot.color }}>Resolveu, não preciso abrir</button>
+            <button type="button" onClick={() => setDismissed(true)} className="rounded-full border bg-white px-3 py-1 text-[12.5px] font-medium" style={{ borderColor: bot.color, color: bot.color }}>Não, quero abrir o chamado</button>
+          </div>
+        </div>
+      )}
       {error && <p className="text-[12px] text-[#b23a3a]">{error}</p>}
       <button type="submit" disabled={state === "sending"} className="rounded-lg px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-60" style={{ background: bot.color }}>
         {state === "sending" ? "Abrindo…" : "Abrir chamado"}

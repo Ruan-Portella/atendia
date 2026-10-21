@@ -1,12 +1,14 @@
-import { CHANNEL_LABEL, widgetFunnel, type ChannelMonth } from "@/lib/report";
+import { CHANNEL_LABEL, ticketSentence, widgetFunnel, type ChannelMonth } from "@/lib/report";
+import type { TicketMonth } from "@/lib/ticket-metrics";
 import { num } from "@/lib/plans";
 
 /**
  * Por canal e o funil do chat do site no relatório (Pendências do MVP, parte 4): só números, sem
  * contato nem conversa (aparece também no link público).
  */
-export function ReportChannels({ channels, widgetOpens }: { channels: ChannelMonth[]; widgetOpens: number }) {
+export function ReportChannels({ channels, widgetOpens, tickets }: { channels: ChannelMonth[]; widgetOpens: number; tickets?: TicketMonth | null }) {
   if (!channels.length) return null;
+  const ticketLine = tickets ? ticketSentence(tickets) : null;
   const funnel = widgetFunnel(widgetOpens, channels.find((ch) => ch.channel === "widget"));
   const unanswered = channels.reduce((n, ch) => n + ch.unanswered, 0);
   return (
@@ -58,6 +60,11 @@ export function ReportChannels({ channels, widgetOpens }: { channels: ChannelMon
           </ol>
           <p className="text-xs text-muted">Aberturas contadas uma vez por visita ao site, sem guardar nada de quem abriu.</p>
         </div>
+      )}
+      {ticketLine && (
+        <p className="text-sm">
+          <span className="font-semibold">Chamados pelo site:</span> {ticketLine}.
+        </p>
       )}
     </section>
   );

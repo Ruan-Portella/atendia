@@ -133,7 +133,7 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
         </section>
       )}
 
-      <ReportChannels channels={report.channels} widgetOpens={report.widgetOpens} />
+      <ReportChannels channels={report.channels} widgetOpens={report.widgetOpens} tickets={report.tickets} />
 
       <section className="card flex flex-col gap-3 p-4 sm:p-5">
         <h2 className="text-base font-bold">Conversas por dia</h2>

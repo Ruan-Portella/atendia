@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { change, currentPeriodBR, isPeriod, periodLabel, periodRange, renderReportEmail, shiftPeriod, widgetFunnel, type ClientReport } from "../report";
+import { change, currentPeriodBR, isPeriod, periodLabel, periodRange, renderReportEmail, shiftPeriod, ticketSentence, widgetFunnel, type ClientReport } from "../report";
 
 describe("períodos", () => {
   it("usa o fuso de São Paulo na virada do mês", () => {
@@ -42,6 +42,7 @@ describe("renderReportEmail", () => {
     whatsapp: null,
     channels: [],
     widgetOpens: 0,
+    tickets: { opened: 3, resolved: 1, suggested: 4, avoided: 2 },
   };
   it("traz os números, a comparação e o link", () => {
     const { subject, html, text } = renderReportEmail(report, "https://x/c/tok?mes=2026-08");
@@ -58,6 +59,10 @@ describe("renderReportEmail", () => {
     ];
     const { text } = renderReportEmail({ ...report, channels, widgetOpens: 400 }, "https://x");
     expect(text).toContain("Conversas por canal: Chat do site: 120 · WhatsApp: 220");
+    // chamados pelo site (parte 7b): abertos, resolvidos e os evitados pela sugestão
+    expect(text).toContain("Chamados pelo site: 3 abertos, 1 resolvido pela equipe, 2 evitados pela sugestão do assistente");
+    expect(ticketSentence({ opened: 0, resolved: 0, suggested: 5, avoided: 0 })).toBeNull();
+    expect(ticketSentence({ opened: 1, resolved: 0, suggested: 0, avoided: 0 })).toBe("1 aberto, 0 resolvidos pela equipe");
     expect(text).toContain("Chat do site: Abriram o chat 400 → Conversaram 120 → Deixaram contato 18 → Pediram atendente 6");
     expect(text).toContain("Perguntas sem resposta: 6");
     expect(renderReportEmail(report, "https://x").text).not.toContain("Conversas por canal");

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { ticketMonth, type TicketMonth } from "./ticket-metrics";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { appUrl, currentPeriodBR } from "./utils";
 import { estimateCost, monthUsage, type UsageLine } from "./whatsapp-usage";
@@ -71,6 +72,8 @@ export interface ClientReport {
   channels: ChannelMonth[];
   /** Funil do chat do site: aberturas do widget no mês (as conversas, leads e pedidos vêm de channels). */
   widgetOpens: number;
+  /** Chamados pelo site (parte 7b): abertos, resolvidos pela equipe e evitados pela sugestão da base. */
+  tickets: TicketMonth;
 }
 
 export interface ChannelMonth {
@@ -168,13 +171,14 @@ export async function getClientReport(db: SupabaseClient, clientId: string, peri
   ]);
   const ids = (bots ?? []).map((b) => b.id);
   const { from, to } = periodRange(period);
-  const [current, previous, daily, whatsapp, channels, widgetOpens] = await Promise.all([
+  const [current, previous, daily, whatsapp, channels, widgetOpens, tickets] = await Promise.all([
     monthSummary(db, ids, period),
     monthSummary(db, ids, shiftPeriod(period, -1)),
     ids.length ? db.rpc("bots_daily", { p_bot_ids: ids, p_from: from, p_to: to }).then((r) => (r.data ?? []) as ClientReport["daily"]) : Promise.resolve([]),
     whatsappMonth(db, ids, period),
     channelMonth(db, ids, period),
     widgetOpensMonth(db, ids, period),
+    ticketMonth(db, ids, from, to),
   ]);
   return {
     period,
@@ -188,7 +192,16 @@ export async function getClientReport(db: SupabaseClient, clientId: string, peri
     whatsapp,
     channels,
     widgetOpens,
+    tickets,
   };
+}
+
+/** A frase dos chamados no relatório (tela e e-mail), ou null sem chamado nem sugestão no mês. Pura. */
+export function ticketSentence(t: TicketMonth): string | null {
+  if (!t.opened && !t.avoided && !t.resolved) return null;
+  const parts = [`${new Intl.NumberFormat("pt-BR").format(t.opened)} aberto${t.opened === 1 ? "" : "s"}`, `${new Intl.NumberFormat("pt-BR").format(t.resolved)} resolvido${t.resolved === 1 ? "" : "s"} pela equipe`];
+  if (t.avoided) parts.push(`${new Intl.NumberFormat("pt-BR").format(t.avoided)} evitado${t.avoided === 1 ? "" : "s"} pela sugestão do assistente`);
+  return parts.join(", ");
 }
 
 /* ------------------------------------------------------------------ e-mail */
@@ -226,6 +239,7 @@ export function renderReportEmail(r: ClientReport, link: string): { subject: str
   const funnel = widgetFunnel(r.widgetOpens, r.channels.find((c) => c.channel === "widget"));
   const funnelText = funnel ? funnel.map((f) => `${f.label} ${fmt(f.value)}`).join(" → ") : null;
   const unanswered = r.channels.reduce((n, c) => n + c.unanswered, 0);
+  const tickets = r.tickets ? ticketSentence(r.tickets) : null;
   const headline = r.current.conversations
     ? `Em ${month}, o assistente de ${r.client.name} atendeu ${fmt(r.current.conversations)} pessoa${r.current.conversations === 1 ? "" : "s"} e capturou ${fmt(r.current.leads)} contato${r.current.leads === 1 ? "" : "s"}.`
     : `Em ${month}, o assistente de ${r.client.name} ainda não recebeu conversas.`;
@@ -248,6 +262,7 @@ ${kpis.map(([label, value, sub]) => `<td width="33%" valign="top" style="backgro
 </tr></table></td></tr>
 ${byChannel ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">Conversas por canal:</strong> ${esc(byChannel)}</td></tr>` : ""}
 ${funnelText ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">Chat do site:</strong> ${esc(funnelText)}</td></tr>` : ""}
+${tickets ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">Chamados pelo site:</strong> ${esc(tickets)}</td></tr>` : ""}
 ${unanswered ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">Perguntas sem resposta:</strong> ${fmt(unanswered)} (dá para ensinar o assistente pelo painel)</td></tr>` : ""}
 ${r.whatsapp ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">WhatsApp:</strong> ${esc(whatsappSentence(r.whatsapp))}</td></tr>` : ""}
 <tr><td style="padding:14px 24px 24px">
@@ -262,6 +277,7 @@ ${r.whatsapp ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5
     ...kpis.map(([l, v, s]) => `${l}: ${v}${s ? ` (${s})` : ""}`),
     ...(byChannel ? ["", `Conversas por canal: ${byChannel}`] : []),
     ...(funnelText ? [`Chat do site: ${funnelText}`] : []),
+    ...(tickets ? [`Chamados pelo site: ${tickets}`] : []),
     ...(unanswered ? [`Perguntas sem resposta: ${fmt(unanswered)}`] : []),
     ...(r.whatsapp ? ["", `WhatsApp: ${whatsappSentence(r.whatsapp)}`] : []), "", `Relatório completo: ${link}`, "", `Preparado por ${r.agency.name}.`].join("\n");
   return { subject, html, text };
