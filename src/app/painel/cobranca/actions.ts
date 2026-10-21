@@ -54,6 +54,10 @@ export async function startCheckout(fd: FormData): Promise<ActionResult> {
       client_reference_id: ctx.agency.id,
       line_items: subscriptionItems(target, ids),
       payment_method_types: ["card"],
+      // nota fiscal de cada fatura paga: CPF ou CNPJ e endereço (ficam no cliente da Stripe)
+      tax_id_collection: { enabled: true, required: "if_supported" },
+      billing_address_collection: "required",
+      customer_update: { name: "auto", address: "auto" },
       success_url: appUrl("/painel/cobranca?ok=1"),
       cancel_url: appUrl("/painel/cobranca"),
       expires_at: expiresAt,

@@ -46,7 +46,7 @@ Os pacotes valem para a agência toda, um de cada por mês:
 
 ## Assinatura, fatura e cancelamento
 
-A assinatura é feita em Cobrança, com cartão, pela Stripe. Assinatura por Pix não tem: a Stripe não oferece o Pix automático para empresa brasileira, então o Pix serve só para comprar crédito. A fatura sai no dia 1º. Subir o tamanho de um chatbot vale na hora, com cobrança proporcional aos dias que faltam no mês; descer o tamanho ou tirar um chatbot vale a partir do dia 1º seguinte. O cancelamento fica agendado para o fim do período pago, e dá para reativar antes disso. As faturas ficam em Cobrança.
+A assinatura é feita em Cobrança, com cartão, pela Stripe; no checkout, a Stripe pede o CPF ou CNPJ e o endereço de quem paga, para a nota fiscal de cada pagamento (o mesmo vale para a compra de crédito pelo Pix). Assinatura por Pix não tem: a Stripe não oferece o Pix automático para empresa brasileira, então o Pix serve só para comprar crédito. A fatura sai no dia 1º. Subir o tamanho de um chatbot vale na hora, com cobrança proporcional aos dias que faltam no mês; descer o tamanho ou tirar um chatbot vale a partir do dia 1º seguinte. O cancelamento fica agendado para o fim do período pago, e dá para reativar antes disso. As faturas ficam em Cobrança.
 
 ## Pagamento atrasado
 

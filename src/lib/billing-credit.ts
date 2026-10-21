@@ -165,6 +165,10 @@ export async function startPixCredit(db: SupabaseClient, agency: { id: string; s
     line_items: [{ quantity: 1, price_data: { currency: "brl", unit_amount: amountCents, product_data: { name: "Crédito do excedente", description: "Válido por 12 meses, não reembolsável" } } }],
     payment_method_types: ["pix"],
     payment_method_options: { pix: { expires_after_seconds: PIX_EXPIRES_SECONDS } },
+    // nota fiscal do crédito: CPF ou CNPJ e endereço (a sessão do Pix não gera fatura na Stripe)
+    tax_id_collection: { enabled: true, required: "if_supported" },
+    billing_address_collection: "required",
+    customer_update: { name: "auto", address: "auto" },
     payment_intent_data: { description: `Crédito do excedente (${brlCents(amountCents / 100)}), válido por 12 meses`, metadata },
     metadata,
     success_url: appUrl("/painel/cobranca/credito?pix=ok"),

@@ -9,6 +9,7 @@ const ITEMS: Array<{ href: string; label: string; exact?: boolean }> = [
   { href: "/admin/clientes", label: "Agências" },
   { href: "/admin/custos", label: "Custos" },
   { href: "/admin/receita", label: "Receita" },
+  { href: "/admin/notas", label: "Notas fiscais" },
   { href: "/admin/qualidade", label: "Qualidade" },
   { href: "/admin/avaliacao", label: "Avaliação da IA" },
   { href: "/admin/operacao", label: "Operação" },

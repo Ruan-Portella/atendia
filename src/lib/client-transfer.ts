@@ -42,6 +42,7 @@ export const TRANSFER_TABLES: Record<string, { muda: boolean; por: string }> = {
   api_requests: { muda: false, por: "registro das chamadas à API da origem (histórico, 30 dias)" },
   atendimentos: { muda: false, por: "uso já contado (os novos contam no destino)" },
   billing_changes: { muda: false, por: "cobrança da origem" },
+  fiscal_invoices: { muda: false, por: "as notas fiscais dos pagamentos da origem" },
   business_acceptances: { muda: false, por: "o aceite vale para a conta que recebeu; a nova precisa de outro" },
   credit_lots: { muda: false, por: "crédito da conta" },
   credit_redemptions: { muda: false, por: "indicações da conta" },

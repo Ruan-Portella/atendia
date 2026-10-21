@@ -12,7 +12,7 @@ export const metadata = { title: "Política de Privacidade" };
  * consentimento para novidades; o envio de campanhas entra com a tela de campanhas. Avisos no
  * WhatsApp (19/10/2026): o número da pessoa da equipe, com o aceite confirmado no WhatsApp. Réguas
  * (20/10/2026): as datas do contato informadas pela empresa (aniversário sem o ano, última visita e
- * próximo horário). Pendências do MVP (20/10/2026): o código do contato que vai ao provedor de IA e o que segura a ficha do contato.
+ * próximo horário). Pendências do MVP (20/10/2026): o código do contato que vai ao provedor de IA, o que segura a ficha do contato e o CPF ou CNPJ e o endereço para a nota fiscal.
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -42,7 +42,7 @@ export default function PrivacyPage() {
       <Section title="3. Dados que tratamos">
         <ul>
           <li><strong>Cadastro:</strong> nome, e-mail, nome da agência, logo, cores, telefone de suporte e dados de acesso.</li>
-          <li><strong>Pagamento:</strong> tamanhos e pacotes assinados, crédito comprado, histórico de cobranças e identificadores do meio de pagamento. Os dados do cartão são tratados diretamente pela Stripe; não os armazenamos.</li>
+          <li><strong>Pagamento:</strong> tamanhos e pacotes assinados, crédito comprado, histórico de cobranças e identificadores do meio de pagamento. Os dados do cartão são tratados diretamente pela Stripe; não os armazenamos. Para a nota fiscal de cada pagamento, pedimos no checkout o CPF ou CNPJ e o endereço de quem paga, guardados cifrados pelo prazo da lei fiscal, mesmo depois que a conta sai.</li>
           <li><strong>Conteúdo dos assistentes:</strong> páginas de sites, documentos e textos enviados para formar a base de conhecimento e, quando a empresa escolhe, os posts do Instagram dela (legenda, data, link e uma descrição curta de cada foto feita por IA; a imagem não é guardada).</li>
           <li><strong>Conversas:</strong> mensagens trocadas com os assistentes e com atendentes humanos, data e hora, canal e um identificador técnico do visitante.</li>
           <li><strong>Arquivos recebidos:</strong> fotos, áudios, vídeos e documentos que o contato envia pelo WhatsApp ou pelo Instagram (até 16 MB), guardados para a empresa ver no histórico da conversa.</li>

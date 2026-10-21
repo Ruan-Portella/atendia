@@ -12,6 +12,7 @@ import { emitSizeChanged } from "./billing-events";
 import { isBotSize, type BotSize } from "./plans";
 import { notifyAgencyOwner } from "./notify";
 import { appUrl } from "./utils";
+import { invoiceRecord, pixRecord, recordFiscalInvoice } from "./fiscal-invoices";
 
 /*
  * Eventos da Stripe (revisão de preços, parte 4): a compra paga vale (uma vez só), inclusive a
@@ -120,7 +121,8 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
         const sub = typeof s.subscription === "string" ? s.subscription : (s.subscription?.id ?? null);
         await applyCheckout(db, changeId, sub);
       } else if (s.mode === "payment") {
-        // crédito pago pelo Pix
+        // crédito pago pelo Pix: a nota a emitir (sem fatura na Stripe) e o crédito
+        await recordFiscalInvoice(db, pixRecord(s));
         await applyPixCredit(db, changeId);
       }
       break;
@@ -170,6 +172,9 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
       break;
     }
     case "invoice.paid": {
+      // todo pagamento vira nota a emitir (assinatura, subida e crédito no cartão); erro aqui volta
+      // para a Stripe tentar de novo (gravar a mesma fatura de novo não duplica)
+      await recordFiscalInvoice(db, invoiceRecord(event.data.object));
       // fatura avulsa paga depois na página da Stripe (cartão recusado na hora): subida ou crédito
       const changeId = event.data.object.metadata?.changeId;
       if (!changeId) break;

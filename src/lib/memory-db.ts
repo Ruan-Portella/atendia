@@ -30,6 +30,7 @@ function defaultsOf(table: string, now: string): MemRow {
   if (table === "audit_log") return { created_at: now };
   if (table === "routine_runs") return { status: "active", attempts: 0, failing: false, variables_enc: null, end_reason: null, ended_at: null, held_result: null, idle_turns: 0, started_at: now };
   if (table === "contact_links") return { linked_at: now, unlinked_at: null, source: "pairing", identity_key_hash: null };
+  if (table === "fiscal_invoices") return { status: "a_emitir", currency: "brl", number: null, emitted_at: null, emitted_by: null, created_at: now };
   return {};
 }
 
@@ -180,7 +181,7 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
           const hit = t.find((x) => cols.every((c) => x[c] === r[c]));
           if (hit && this.ignoreDuplicates) continue;
           if (hit) Object.assign(hit, r);
-          else t.push({ ...r });
+          else t.push({ id: randomUUID(), ...defaultsOf(this.table, stamp()), ...r });
           out.push(hit ?? t[t.length - 1]);
         }
         return { data: out.map((r) => ({ ...r })), error: null };

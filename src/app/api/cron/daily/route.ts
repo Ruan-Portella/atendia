@@ -22,6 +22,7 @@ import { runContinuousChecks } from "@/lib/continuous-check";
 import { runDueAccountDeletions } from "@/lib/account-deletion";
 import { apiInvitesDigest } from "@/lib/api-members";
 import { checkErrorRates, checkSubscriptions } from "@/lib/meta-monitor";
+import { checkAiCostAlarm } from "@/lib/ai-cost-alarm";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
 export const maxDuration = 300;
@@ -94,6 +95,8 @@ async function daily() {
     if (error) throw error;
     return { ok: true };
   });
+  // alarme interno: custo de IA da conta acima de 50% da receita líquida dela no mês (só aviso ao Ruan)
+  const aiCost = await run("custo de IA x receita", () => checkAiCostAlarm(db));
   // disco: avisa a partir de 70% (com 95% o banco fica só leitura e os bots param)
   const disk = await run("disco do banco", async () => {
     const h = await checkHealth(db);
@@ -120,5 +123,5 @@ async function daily() {
   // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
   const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, subscriptions, errors, aiUsage, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, subscriptions, errors, aiUsage, aiCost, disk, sources, base, analysis };
 }
