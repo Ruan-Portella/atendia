@@ -109,6 +109,8 @@ export const CREDIT_VALID_MONTHS = 12;
 export const FIRST_WEEK_DAYS = 7;
 export const FIRST_WEEK_QUOTA_SHARE = 0.25;
 export const FIRST_WEEK_CREDIT_BRL = 100;
+/** Quem desiste da assinatura em 7 dias fica marcado por 12 meses (sem teste grátis; desistência nova pelo suporte). */
+export const WITHDRAWAL_MARK_MONTHS = 12;
 /** Aviso de saldo baixo: abaixo de 20% da última compra. */
 export const CREDIT_LOW_SHARE = 0.2;
 

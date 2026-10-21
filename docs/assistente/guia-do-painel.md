@@ -17,7 +17,7 @@ O BoaVoz é uma plataforma para agências e freelancers criarem chatbots com IA 
 
 ## Conta grátis
 
-A conta grátis serve para montar e testar: ela tem 50 respostas de teste da IA, que valem no teste ao vivo e nas demos. O chat do site, o WhatsApp e o Instagram só ligam quando o chatbot tem um tamanho (assinatura). Não precisa de cartão para criar a conta.
+A conta grátis serve para montar e testar: ela tem 50 respostas de teste da IA, que valem no teste ao vivo e nas demos. O chat do site, o WhatsApp e o Instagram só ligam quando o chatbot tem um tamanho (assinatura). Não precisa de cartão para criar a conta. O teste vale uma vez por pessoa: uma conta ligada a outra da mesma pessoa que já usou o teste ou assinou (o mesmo e-mail, mesmo com ponto ou +apelido no Gmail, o mesmo navegador, o mesmo WhatsApp, o mesmo CPF ou CNPJ ou o mesmo cartão) fica sem as respostas de teste e sem demos, e e-mails temporários não abrem conta. Se for engano (duas empresas da mesma pessoa, por exemplo), o suporte libera o teste.
 
 ## Tamanhos e preços dos chatbots
 
@@ -47,6 +47,10 @@ Os pacotes valem para a agência toda, um de cada por mês:
 ## Assinatura, fatura e cancelamento
 
 A assinatura é feita em Cobrança, com cartão, pela Stripe; no checkout, a Stripe pede o CPF ou CNPJ e o endereço de quem paga, para a nota fiscal de cada pagamento (o mesmo vale para a compra de crédito pelo Pix). Assinatura por Pix não tem: a Stripe não oferece o Pix automático para empresa brasileira, então o Pix serve só para comprar crédito. A fatura sai no dia 1º. Subir o tamanho de um chatbot vale na hora, com cobrança proporcional aos dias que faltam no mês; descer o tamanho ou tirar um chatbot vale a partir do dia 1º seguinte. O cancelamento fica agendado para o fim do período pago, e dá para reativar antes disso. As faturas ficam em Cobrança.
+
+## Desistência em 7 dias e a primeira semana
+
+Nos 7 dias do pagamento que abre a assinatura, o dono pode desistir em Cobrança, no quadro Desistir em 7 dias (art. 49 do Código de Defesa do Consumidor). O BoaVoz estorna tudo o que foi pago desde então (assinatura, subidas e crédito), a assinatura acaba na hora, os chatbots ficam sem tamanho (o WhatsApp e o Instagram desconectam; a configuração fica guardada) e a conta volta para a conta grátis, sem as respostas de teste. A confirmação chega por e-mail, e o valor volta para o cartão no prazo do banco. Quem desistiu fica marcado por 12 meses (pelos mesmos sinais da conta grátis): nenhuma conta dessa pessoa ganha o teste grátis, e a desistência de uma assinatura nova é feita pelo suporte. Na primeira semana da assinatura, cada chatbot usa até 25% da cota do mês e a compra de crédito fica em até R$ 100; passou disso, o chatbot passa para a equipe até o 8º dia, quando tudo libera. O aviso aparece em Cobrança, Crédito e Uso.
 
 ## Pagamento atrasado
 

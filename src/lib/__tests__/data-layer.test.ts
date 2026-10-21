@@ -19,6 +19,10 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+// o código lido uma vez só (ler tudo de novo a cada tabela passava dos 5 s com a máquina ocupada)
+let sources: Array<{ file: string; code: string }> | null = null;
+const allSources = () => (sources ??= sourceFiles(SRC).map((p) => ({ file: relative(SRC, p).split(sep).join("/"), code: readFileSync(p, "utf8") })));
+
 // chaves dos clientes (leva S): só o módulo único de chaves lê a tabela; leads, perguntas sem
 // resposta e pedidos fora do assunto: só as camadas que cifram o que vem do contato
 const OWNER: Record<string, string> = {
@@ -52,13 +56,9 @@ describe("camada única de mensagens e contatos", () => {
       const direct = new RegExp(`\\.from\\(\\s*["'\`]${table}["'\`]\\s*\\)`);
       // embed do PostgREST (ex.: select("id, messages(content)")) também lê a tabela
       const embedded = new RegExp(`select\\([^)]*\\b${table}\\s*\\(`);
-      const offenders = sourceFiles(SRC)
-        .map((f) => relative(SRC, f).split(sep).join("/"))
-        .filter((f) => f !== owner)
-        .filter((f) => {
-          const code = readFileSync(join(SRC, f), "utf8");
-          return direct.test(code) || embedded.test(code);
-        });
+      const offenders = allSources()
+        .filter((s) => s.file !== owner && (direct.test(s.code) || embedded.test(s.code)))
+        .map((s) => s.file);
       expect(offenders).toEqual([]);
     });
   }
@@ -67,10 +67,9 @@ describe("camada única de mensagens e contatos", () => {
   // só citam o nome da coluna)
   it("só lib/gate/flow.ts usa a pergunta pendente do 18+", () => {
     const allowed = new Set(["lib/gate/flow.ts", "lib/field-cipher.ts", "lib/reencrypt.ts"]);
-    const offenders = sourceFiles(SRC)
-      .map((f) => relative(SRC, f).split(sep).join("/"))
-      .filter((f) => !allowed.has(f))
-      .filter((f) => /age_pending_question\b/.test(readFileSync(join(SRC, f), "utf8")));
+    const offenders = allSources()
+      .filter((s) => !allowed.has(s.file) && /age_pending_question\b/.test(s.code))
+      .map((s) => s.file);
     expect(offenders).toEqual([]);
   });
 });

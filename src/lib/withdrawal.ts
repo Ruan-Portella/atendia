@@ -4,7 +4,7 @@ import { endSubscription } from "./billing-webhook";
 import { addSignals } from "./person-signals";
 import { notifyAgencyOwner, notifyPlatform } from "./notify";
 import { audit } from "./audit";
-import { brlCents } from "./plans";
+import { FIRST_WEEK_DAYS, WITHDRAWAL_MARK_MONTHS, brlCents } from "./plans";
 import { company } from "./company";
 
 /*
@@ -18,8 +18,8 @@ import { company } from "./company";
  * passam pelo advogado.
  */
 
-export const WITHDRAWAL_DAYS = 7;
-export const MARK_MONTHS = 12;
+export const WITHDRAWAL_DAYS = FIRST_WEEK_DAYS;
+export const MARK_MONTHS = WITHDRAWAL_MARK_MONTHS;
 /** Folga antes do primeiro pagamento (a cobrança do Checkout sai segundos antes do registro). */
 const SLACK_MS = 60 * 60_000;
 

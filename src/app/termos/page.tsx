@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LegalPage, Section } from "@/components/legal-page";
 import { company, companyIdentity } from "@/lib/company";
-import { CREDIT_MIN_BRL, CREDIT_VALID_MONTHS, DEMOS_PER_MONTH, DEMOS_PER_MONTH_FREE, DEMO_ANSWERS, DEMO_ANSWERS_SHOWCASE, DEMO_DAYS, OVERAGE_PRICE_BRL, TEST_ANSWERS_FREE, brl, brlCents } from "@/lib/plans";
+import { CREDIT_MIN_BRL, CREDIT_VALID_MONTHS, DEMOS_PER_MONTH, DEMOS_PER_MONTH_FREE, DEMO_ANSWERS, DEMO_ANSWERS_SHOWCASE, DEMO_DAYS, FIRST_WEEK_CREDIT_BRL, FIRST_WEEK_DAYS, FIRST_WEEK_QUOTA_SHARE, OVERAGE_PRICE_BRL, TEST_ANSWERS_FREE, WITHDRAWAL_MARK_MONTHS, brl, brlCents } from "@/lib/plans";
 
 export const metadata = { title: "Termos de Uso" };
 
@@ -9,7 +9,7 @@ export default function TermsPage() {
   const { brand, email } = company;
   const operator = companyIdentity();
   return (
-    <LegalPage title="Termos de Uso" updatedAt="19 de outubro de 2026" intro={`Estes termos regem o uso da plataforma ${brand}. Ao criar uma conta, você concorda com eles.`}>
+    <LegalPage title="Termos de Uso" updatedAt="21 de outubro de 2026" intro={`Estes termos regem o uso da plataforma ${brand}. Ao criar uma conta, você concorda com eles.`}>
       <Section title="1. O serviço">
         <p>
           A {brand}{operator && `, operada por ${operator},`} é uma plataforma para criar, personalizar e publicar assistentes virtuais de atendimento, treinados no conteúdo de cada empresa, em sites e canais de mensagem como o WhatsApp. O assistente atende os clientes da própria empresa: responde dúvidas, registra contatos e passa a conversa para um atendente humano quando preciso.
@@ -27,7 +27,7 @@ export default function TermsPage() {
       <Section title="3. Conta grátis, tamanhos e pagamento">
         <ul>
           <li>
-            <strong>Conta grátis:</strong> você monta e testa os assistentes sem cartão, com até {TEST_ANSWERS_FREE} respostas de teste da IA na conta, somando o teste no painel e as demos. Cada demo vale {DEMO_DAYS} dias e responde até {DEMO_ANSWERS} vezes (a gerada no site da {brand} sem conta, até {DEMO_ANSWERS_SHOWCASE}); a conta gera até {DEMOS_PER_MONTH_FREE} demos por mês, ou {DEMOS_PER_MONTH} com assinatura. O site, o WhatsApp e o Instagram só ligam num assistente com tamanho.
+            <strong>Conta grátis:</strong> você monta e testa os assistentes sem cartão, com até {TEST_ANSWERS_FREE} respostas de teste da IA na conta, somando o teste no painel e as demos. Cada demo vale {DEMO_DAYS} dias e responde até {DEMO_ANSWERS} vezes (a gerada no site da {brand} sem conta, até {DEMO_ANSWERS_SHOWCASE}); a conta gera até {DEMOS_PER_MONTH_FREE} demos por mês, ou {DEMOS_PER_MONTH} com assinatura. O site, o WhatsApp e o Instagram só ligam num assistente com tamanho. O teste vale uma vez por pessoa: a conta ligada a outra da mesma pessoa que já usou o teste ou assinou (pelo e-mail, pelo navegador, pelo número de WhatsApp, pelo documento ou pelo cartão) fica sem as respostas de teste e sem demos, e e-mails temporários não abrem conta. Se for engano, o suporte libera.
           </li>
           <li>
             <strong>Tamanhos e pacotes:</strong> cada assistente no ar tem um tamanho, cobrado por mês: o tamanho Atendimento, sem nenhum recurso de IA (só a sua equipe responde), ou um tamanho com IA (P, M, G ou Volume), com uma cota de atendimentos por mês. Os pacotes (Domínio próprio, Integrações e Plataforma) valem para a conta toda. Os preços e as cotas estão na página de preços e no painel; mudanças de preço são avisadas com antecedência.
@@ -39,10 +39,16 @@ export default function TermsPage() {
             A cota é de cada assistente, pelo tamanho dele, sem tolerância. Quando a cota de um assistente acaba, só ele entra no <strong>modo só humano</strong> até o mês virar, a não ser que o excedente esteja ligado. No modo só humano, a IA para de responder, as conversas continuam gravadas e a sua equipe segue respondendo pelo painel. Atendimento já aberto vai até completar 24 horas ou 40 respostas.
           </li>
           <li>
-            <strong>Excedente e crédito:</strong> com o excedente ligado num assistente, cada atendimento além da cota custa {brlCents(OVERAGE_PRICE_BRL)}, descontado do crédito pré-pago da conta. O crédito é comprado a partir de {brl(CREDIT_MIN_BRL)}, vale {CREDIT_VALID_MONTHS} meses, é usado na ordem de vencimento e não é reembolsável, salvo quando a lei garantir o direito de arrependimento. A recarga automática é opcional, com o valor e o limite por mês escolhidos por você. Um pico anormal no chat do site suspende o excedente daquele assistente até você confirmar que o tráfego é real.
+            <strong>Excedente e crédito:</strong> com o excedente ligado num assistente, cada atendimento além da cota custa {brlCents(OVERAGE_PRICE_BRL)}, descontado do crédito pré-pago da conta. O crédito é comprado a partir de {brl(CREDIT_MIN_BRL)}, vale {CREDIT_VALID_MONTHS} meses, é usado na ordem de vencimento e não é reembolsável, salvo na desistência em {FIRST_WEEK_DAYS} dias (abaixo) ou quando a lei garantir. A recarga automática é opcional, com o valor e o limite por mês escolhidos por você. Um pico anormal no chat do site suspende o excedente daquele assistente até você confirmar que o tráfego é real.
           </li>
           <li>
             <strong>Cobrança:</strong> pela Stripe, no cartão (o crédito do excedente também pode ser comprado pelo Pix). A fatura fecha todo dia 1º (mês civil, no horário de Brasília); o primeiro mês é proporcional, no preço e na cota. Subir de tamanho ou assinar um pacote vale na hora, com a diferença proporcional cobrada no ato; descer de tamanho ou tirar um pacote vale no dia 1º seguinte. Você pode cancelar quando quiser: a assinatura segue até o dia 1º seguinte, sem reembolso do mês em curso, salvo quando a lei exigir.
+          </li>
+          <li>
+            <strong>Desistência em {FIRST_WEEK_DAYS} dias</strong> (art. 49 do Código de Defesa do Consumidor): nos {FIRST_WEEK_DAYS} dias do pagamento que abre a assinatura, você pode desistir em Cobrança. Estornamos tudo o que foi pago desde então (assinatura, subidas e crédito), a assinatura acaba na hora, os assistentes ficam sem tamanho e a conta volta para a conta grátis, sem as respostas de teste. Para evitar abuso, os dados de quem desistiu (o e-mail, o número, o documento, o cartão e o navegador, guardados só como código) ficam marcados por {WITHDRAWAL_MARK_MONTHS} meses: nesse período, nenhuma conta dessa pessoa ganha o teste grátis, e a desistência de uma assinatura nova é feita pelo suporte, que analisa o pedido.
+          </li>
+          <li>
+            <strong>Primeira semana da assinatura:</strong> nos mesmos {FIRST_WEEK_DAYS} dias, cada assistente usa até {Math.round(FIRST_WEEK_QUOTA_SHARE * 100)}% da cota do mês, e a compra de crédito fica em até {brl(FIRST_WEEK_CREDIT_BRL)}. Passou disso, o assistente entra no modo só humano até o 8º dia, quando tudo libera.
           </li>
           <li>
             <strong>Pagamento em atraso:</strong> se a cobrança falhar, a IA de todos os assistentes pausa até a fatura ser paga, e a sua equipe segue respondendo. A Stripe tenta cobrar de novo por até 2 semanas; sem pagamento, a assinatura é cancelada. Para assinar de novo, a fatura em aberto precisa ser paga antes.
@@ -90,7 +96,7 @@ export default function TermsPage() {
           <li>atividades ilegais, fraude, golpes ou falsidade ideológica;</li>
           <li>spam, mensagens em massa sem consentimento ou coleta de dados sem base legal;</li>
           <li>discurso de ódio, assédio, conteúdo sexual envolvendo menores ou conteúdo que viole direitos de terceiros;</li>
-          <li>tentar invadir, sobrecarregar ou copiar a plataforma, ou contornar os limites da conta grátis, das demos ou dos tamanhos (por exemplo, criando contas para repetir o teste).</li>
+          <li>tentar invadir, sobrecarregar ou copiar a plataforma, ou contornar os limites da conta grátis, das demos ou dos tamanhos (por exemplo, criando contas para repetir o teste, ou assinando, usando e desistindo de novo e de novo).</li>
         </ul>
         <p>Podemos suspender contas que violem estes termos, avisando sempre que possível.</p>
       </Section>

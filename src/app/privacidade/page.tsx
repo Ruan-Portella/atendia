@@ -15,7 +15,9 @@ export const metadata = { title: "Política de Privacidade" };
  * (20/10/2026): as datas do contato informadas pela empresa (aniversário sem o ano, última visita e
  * próximo horário). Pendências do MVP (20/10/2026): o código do contato que vai ao provedor de IA, o que segura a ficha do contato e o CPF ou CNPJ e o endereço para a nota fiscal.
  * Memória e avisos no celular (21/10/2026): a memória do assistente na ficha do contato e os aparelhos
- * que recebem os avisos da equipe (com os serviços de notificação dos navegadores).
+ * que recebem os avisos da equipe (com os serviços de notificação dos navegadores). Trava da conta
+ * grátis (21/10/2026): os sinais que ligam contas da mesma pessoa (só como código), o cookie do
+ * navegador e a marca da desistência em 7 dias.
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -67,7 +69,10 @@ export default function PrivacyPage() {
             <strong>Registros de acesso:</strong> endereço IP completo, data e hora dos acessos ao painel e à área do cliente (entradas e sessões) e do chat do site (início de cada conversa e mudança de IP), como exige o Marco Civil da Internet. Nos demais registros, como o limite de uso do chat, o IP é guardado apenas como um código (hash).
           </li>
           <li><strong>Auditoria:</strong> quem fez o quê na conta (por exemplo, conectar um canal ou mudar um prazo), sem conteúdo de conversas.</li>
-          <li><strong>Dados técnicos:</strong> tipo de navegador, cookies de sessão do painel e armazenamento local do navegador para manter a conversa do chat do site.</li>
+          <li>
+            <strong>Sinais contra o abuso da conta grátis:</strong> para o teste grátis valer uma vez por pessoa, guardamos, só como código (HMAC, sem o valor original), o e-mail de quem abre a conta (sem pontos e apelidos do Gmail), um identificador do navegador (um cookie nosso, usado só para isso), o IP do cadastro, o WhatsApp confirmado do dono e, a cada pagamento, o CPF ou CNPJ e a impressão digital do cartão que a Stripe gera (não o número do cartão). Os códigos servem só para ligar contas da mesma pessoa; não fazem rastreamento nem perfil. Quem desiste da assinatura em 7 dias fica com esses códigos marcados por 12 meses.
+          </li>
+          <li><strong>Dados técnicos:</strong> tipo de navegador, cookies de sessão do painel, o cookie do navegador contra o abuso da conta grátis (acima) e armazenamento local do navegador para manter a conversa do chat do site.</li>
         </ul>
       </Section>
 
@@ -107,7 +112,7 @@ export default function PrivacyPage() {
           <li><strong>Verificação de uso e conformidade</strong> (por instrução da empresa atendida, como parte do serviço e para cumprir as políticas da Meta), descrita no item 6.</li>
           <li><strong>Registros de acesso</strong> (obrigação legal: Marco Civil da Internet, art. 15).</li>
           <li><strong>Cobrança e obrigações fiscais</strong> (execução de contrato e obrigação legal).</li>
-          <li><strong>Segurança e prevenção a fraude</strong> (legítimo interesse, só nos dados da conta e para prevenir fraude): limites de uso, auditoria e investigação de abusos.</li>
+          <li><strong>Segurança e prevenção a fraude</strong> (legítimo interesse, só nos dados da conta e para prevenir fraude): limites de uso, auditoria, investigação de abusos e os sinais que fazem o teste grátis valer uma vez por pessoa.</li>
           <li><strong>Comunicações sobre a conta</strong> (execução de contrato): avisos de cobrança, crédito, cota, segurança e alterações relevantes. Os e-mails de aviso não levam conteúdo de conversa: o de novo contato leva só o nome, o canal e o link para o painel.</li>
           <li><strong>Avisos e assistente no WhatsApp da equipe</strong> (consentimento da pessoa, dado no painel e confirmado no WhatsApp): os avisos que ela escolheu e a conversa com o assistente da {brand}, que responde sobre o painel e sobre a conta (só o que o papel dela vê no painel). Ela retira o consentimento quando quiser, mandando SAIR no WhatsApp ou desligando em Meu perfil.</li>
         </ul>
@@ -184,6 +189,7 @@ export default function PrivacyPage() {
           <li><strong>Tokens de acesso do WhatsApp e do Instagram:</strong> até a desconexão ou o encerramento da conta.</li>
           <li><strong>WhatsApp da equipe para avisos:</strong> enquanto a pessoa estiver na equipe e quiser receber; sai quando ela para os avisos ou sai da equipe. As conversas com o assistente da {brand} seguem o prazo das conversas (12 meses).</li>
           <li><strong>Aparelhos que recebem os avisos:</strong> até a pessoa desativar ou remover o aparelho, o navegador recusar o endereço ou a pessoa sair da equipe.</li>
+          <li><strong>Sinais contra o abuso da conta grátis:</strong> enquanto a conta existir e por 12 meses depois de ela ser excluída; a marca de quem desistiu da assinatura em 7 dias, por 12 meses.</li>
           <li><strong>Dados da conta:</strong> enquanto ela estiver ativa, e depois pelo prazo exigido por lei (por exemplo, registros fiscais).</li>
         </ul>
         <p>
