@@ -7,8 +7,9 @@ export const metadata = { title: "Política de Privacidade" };
 /*
  * Leva S (05/10/2026): papéis em três camadas, cifra por cliente, retenção por negócio, registros de
  * acesso, modo dados sensíveis, arquivos recebidos, pedido pelo chat, acesso do suporte com
- * autorização e subcontratados. Só entra aqui o que já existe: encerramento com carência e o prazo
- * dos backups (depois do Supabase Pro) entram quando existirem. Leva B3 (06/10/2026): a prova do
+ * autorização e subcontratados. Só entra aqui o que já existe: o prazo dos backups (depois do
+ * Supabase Pro) entra quando existir; o encerramento com carência de 30 dias não vai existir
+ * (decisão de 20/10/2026: vale a regra de 16/10, assinatura cancelada desconecta os canais). Leva B3 (06/10/2026): a prova do
  * consentimento para novidades; o envio de campanhas entra com a tela de campanhas. Avisos no
  * WhatsApp (19/10/2026): o número da pessoa da equipe, com o aceite confirmado no WhatsApp. Réguas
  * (20/10/2026): as datas do contato informadas pela empresa (aniversário sem o ano, última visita e
