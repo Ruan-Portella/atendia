@@ -90,7 +90,23 @@ Na aba Captura de leads, a agência liga o pedido de contato: quando alguém que
 
 ## Atendimento humano e conversas
 
-Todas as conversas ficam em Conversas, no cliente e em cada chatbot, com o estado: urgente, aguardando a equipe, assumida sem resposta, em atendimento. Alguém da equipe pode assumir a conversa (a IA para), responder pelo painel e devolver para a IA. Na aba Atendimento humano ficam o horário da equipe, o aviso de que é uma IA e o texto de fora do horário. O contato pode pedir "falar com uma pessoa" a qualquer momento.
+Todas as conversas ficam em Conversas, no cliente e em cada chatbot, com o estado: urgente, aguardando a equipe, assumida sem resposta, em atendimento. Alguém da equipe pode assumir a conversa (a IA para), responder pelo painel e devolver para a IA. Na aba Atendimento humano ficam o horário da equipe, o aviso de que é uma IA e o texto de fora do horário. O contato pode pedir "falar com uma pessoa" a qualquer momento. O atendimento do dia a dia fica na Caixa de entrada, no menu.
+
+## Caixa de entrada
+
+A Caixa de entrada, no menu do painel e na área do cliente, junta o atendimento humano aberto de todos os clientes do seu escopo em filas: Minhas (o que é seu, assumido por você ou entregue a você), Não atribuídas, uma fila para cada setor, Fora do horário (pedidos que chegaram com a equipe fora), Adiadas e Todas abertas. A lista mostra o urgente primeiro e depois quem espera há mais tempo, com o canal, o cliente, o setor e com quem está. A conversa abre ao lado (no celular, por cima da lista) e, nas telas largas, com o painel do contato: dados, etiquetas, aceite de novidades, vínculos com contas da empresa e as outras conversas. A lista atualiza sozinha. A conversa de um setor aparece para as pessoas do setor, para quem está com ela e para quem vê todos os setores (dono, administrador, editor e o gestor da área do cliente); a conversa sem setor aparece para todos do escopo.
+
+## Setores e feriados
+
+Na aba Setores da página do cliente, dá para separar o atendimento por área (Vendas, Suporte, Financeiro…), até 12 por cliente, valendo para todos os chatbots dele. Cada setor tem as pessoas (da agência, com o cliente no escopo, e da área do cliente), a distribuição e, se quiser, um horário próprio (sem ele, vale o horário do chatbot). Na distribuição manual, a conversa fica na fila do setor e quem assumir primeiro atende. No rodízio, ela vai para a próxima pessoa disponível do setor, a que recebeu há mais tempo; disponível é quem marcou Disponível e está com o painel aberto. Quando o contato pede atendente, a IA escolhe o setor pelo assunto; os avisos por e-mail e pelo WhatsApp da equipe vão só para o setor (ou só para quem recebeu pelo rodízio), e o pedido urgente avisa todo mundo. Um roteiro pode mandar a conversa para um setor quando passa para a equipe (campo Setor da equipe, no editor do roteiro). Na mesma aba ficam os feriados do negócio: 25/12 vale todo ano e 20/11/2026 só nesse dia; no feriado, a equipe fica fora do horário e o assistente avisa quando ela volta.
+
+## Transferir, notas internas, respostas prontas e adiar
+
+Embaixo da resposta, na conversa: Transferir passa o atendimento para outra pessoa ou para um setor, com uma nota interna opcional. O assistente continua pausado e a primeira mensagem de quem recebe sai com o aviso "Vivi passou seu atendimento para Carlos, do setor Financeiro"; quem recebe é avisado por e-mail. Nota interna grava um recado no meio da conversa que só a equipe vê: nunca vai para o contato nem para a IA. Adiar tira a conversa das filas até uma data (1 hora, 3 horas, amanhã às 9h ou a data escolhida) e ela fica em Adiadas; volta sozinha na data, ou antes, se o contato escrever. As respostas prontas são cadastradas na aba Respostas prontas da página do cliente, com {nome} (o primeiro nome do contato) e {atendente} (quem responde), e aparecem na lista Respostas prontas da caixa de resposta, para revisar antes de enviar.
+
+## Assinatura das mensagens da equipe
+
+No WhatsApp e no Instagram, o contato não vê quem escreveu. Na aba Atendimento humano do chatbot, em Assinatura das mensagens da equipe, dá para escolher: sem assinatura (só o anúncio de entrada leva o nome, como sempre foi), o nome no começo (Viviane:, em negrito no WhatsApp) ou no fim (— Viviane). A assinatura inteligente põe o nome só na primeira mensagem de cada sequência, até o contato responder ou outra pessoa escrever. Dá para pôr o setor junto do nome (Viviane · Financeiro) e travar o formato; sem travar, cada pessoa escolhe o seu em Meu perfil. No chat do site não sai assinatura, porque o nome e a foto já aparecem em cada mensagem.
 
 ## Pesquisa de satisfação
 
@@ -158,7 +174,7 @@ Em Equipe, o dono ou o administrador convida pessoas pelo e-mail (o convite vale
 
 ## Meu perfil
 
-Em Meu perfil, cada pessoa da equipe põe o nome e a foto que o contato vê quando ela atende, liga o segundo fator (app autenticador) e põe o próprio WhatsApp para receber os avisos da conta e conversar com o assistente da BoaVoz.
+Em Meu perfil, cada pessoa da equipe põe o nome e a foto que o contato vê quando ela atende, marca se está Disponível ou Ausente para o rodízio dos setores (também dá para trocar na própria Caixa de entrada), escolhe a própria assinatura (nos chatbots que não travam o formato), liga o segundo fator (app autenticador) e põe o próprio WhatsApp para receber os avisos da conta e conversar com o assistente da BoaVoz.
 
 ## Área do cliente (portal)
 

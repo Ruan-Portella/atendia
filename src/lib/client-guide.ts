@@ -45,9 +45,10 @@ export function clientGuide(access: GuideAccess, names: { agency: string; client
           title: "Atender: assumir, responder e devolver",
           show: true,
           paragraphs: [
-            "Quando um cliente pede para falar com uma pessoa, ou o assistente chama a equipe, a conversa aparece em Atendimento, com o número de quem está esperando.",
+            "Quando um cliente pede para falar com uma pessoa, ou o assistente chama a equipe, a conversa aparece na Caixa de entrada, com o número de quem está esperando. As filas separam o que é seu, o que ninguém pegou ainda, cada setor, o que chegou fora do horário e o que foi adiado.",
             'Toque em "Assumir conversa": o assistente para de responder nela, e você responde por aqui. O cliente vê o seu nome e a sua foto (veja Meu perfil). Se outra pessoa já está atendendo, "Assumir no lugar" troca quem atende.',
             'No fim, "Encerrar atendimento e devolver ao assistente" faz ele voltar a responder. No WhatsApp, dá para responder até 24 horas depois da última mensagem do cliente.',
+            "Embaixo da resposta: Transferir passa o atendimento para outra pessoa ou setor (com uma nota só para a equipe), Nota interna grava um recado que o cliente nunca vê e Adiar tira a conversa das filas até uma data. As respostas prontas ficam na lista em cima do campo de resposta.",
           ],
         }
       : {
@@ -97,7 +98,7 @@ export function clientGuide(access: GuideAccess, names: { agency: string; client
       id: "perfil",
       title: "Meu perfil",
       show: true,
-      paragraphs: ["Em Meu perfil, você troca o nome e a foto que o cliente vê quando você atende. Ali também fica a verificação em duas etapas, pedida para abrir conversas em modo dados sensíveis e para confirmar pedidos de exclusão."],
+      paragraphs: ["Em Meu perfil, você troca o nome e a foto que o cliente vê quando você atende, marca se está disponível para receber conversas pelo rodízio dos setores e escolhe a sua assinatura. Ali também fica a verificação em duas etapas, pedida para abrir conversas em modo dados sensíveis e para confirmar pedidos de exclusão."],
     },
   ];
   return sections.filter((s) => s.show).map(({ id, title, paragraphs }) => ({ id, title, paragraphs }));
