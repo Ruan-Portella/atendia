@@ -25,6 +25,7 @@ export function InboxView({
   available,
   onAvailability,
   compact = false,
+  contact,
   children,
 }: {
   items: InboxItem[];
@@ -40,6 +41,8 @@ export function InboxView({
   onAvailability: (available: boolean) => Promise<ActionResult>;
   /** sem a coluna das filas (a área do cliente é mais estreita): as filas ficam em botões em cima da lista */
   compact?: boolean;
+  /** o painel do contato da conversa aberta: coluna à direita nas telas largas, senão uma faixa que abre */
+  contact?: React.ReactNode;
   /** a conversa aberta (lado direito) */
   children?: React.ReactNode;
 }) {
@@ -47,6 +50,7 @@ export function InboxView({
   const list = items.filter((i) => inQueue(i, queue, meId));
   const count = (q: Queue) => items.filter((i) => inQueue(i, q, meId)).length;
   const label = all.find((q) => q.key === queue)?.label ?? "Minhas";
+  const selected = items.find((i) => i.id === selectedId);
   return (
     <div className="flex h-full min-h-0 flex-1">
       <AutoRefresh ms={10_000} />
@@ -116,7 +120,16 @@ export function InboxView({
         {selectedId ? (
           <>
             <Link href={hrefFor({ queue })} className="border-b border-line px-4 py-2 text-xs font-semibold text-muted lg:hidden">← {label}</Link>
-            <div className="min-h-0 flex-1">{children}</div>
+            {contact && (
+              <details className={cn("border-b border-line bg-panel", !compact && "2xl:hidden")}>
+                <summary className="cursor-pointer px-4 py-2 text-xs font-semibold text-muted">Contato{selected?.contact ? `: ${selected.contact}` : ""}</summary>
+                <div className="max-h-[45dvh] overflow-y-auto border-t border-line-2">{contact}</div>
+              </details>
+            )}
+            <div className="flex min-h-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">{children}</div>
+              {contact && !compact && <aside className="hidden w-[300px] shrink-0 overflow-y-auto border-l border-line bg-panel 2xl:block">{contact}</aside>}
+            </div>
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted">Escolha uma conversa da lista para responder aqui.</div>

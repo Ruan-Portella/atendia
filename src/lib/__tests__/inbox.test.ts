@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { memoryDb } from "../memory-db";
 import { inQueue, isQueue, loadInbox, queueCounts, visibleTo, waitLabel, type InboxBot } from "../inbox";
 import type { Sector } from "../sectors";
+import { contactTitle, loadInboxContact } from "../inbox-contact";
 
 const now = new Date("2026-10-20T15:00:00Z");
 const ago = (min: number) => new Date(now.getTime() - min * 60_000).toISOString();
@@ -59,5 +60,25 @@ describe("caixa de entrada", () => {
     expect(waitLabel(ago(4), now.getTime())).toBe("4 min");
     expect(waitLabel(ago(150), now.getTime())).toBe("3 h");
     expect(waitLabel(ago(60 * 50), now.getTime())).toBe("2 d");
+  });
+
+  it("o painel do contato: dados, vínculos e as outras conversas, só dos chatbots do escopo", async () => {
+    const mem = memoryDb({
+      contacts: [{ id: "ct1", bot_id: "b1", channel: "instagram", name: "Maria", tags: ["vip"], email: "maria@exemplo.com", phone_enc: null, ig_enc: null, wa_user_enc: null, first_inbound_at: ago(600), last_inbound_at: ago(5), created_at: ago(600) }],
+      contact_links: [{ id: "l1", bot_id: "b1", contact_id: "ct1", channel: "instagram", external_id_hash: "h", external_id_enc: "e", display: { workspace_name: "Loja Centro" }, linked_at: ago(100), unlinked_at: null, source: "pairing" }],
+      conversations: [
+        { id: "atual", bot_id: "b1", contact_id: "ct1", channel: "instagram", started_at: ago(10), last_message_at: ago(5), message_count: 4 },
+        { id: "antiga", bot_id: "b1", contact_id: "ct1", channel: "instagram", started_at: ago(3000), last_message_at: ago(2900), message_count: 12 },
+        { id: "outro-bot", bot_id: "b9", contact_id: "ct1", channel: "instagram", started_at: ago(50), last_message_at: ago(40), message_count: 2 },
+      ],
+    });
+    const d = await loadInboxContact(mem, { contactId: "ct1", botIds: ["b1"], conversationId: "atual" });
+    expect(d?.contact).toMatchObject({ name: "Maria", tags: ["vip"], email: "maria@exemplo.com" });
+    expect(d?.consent).toBeNull();
+    expect(d?.links).toEqual([{ id: "l1", label: "Loja Centro", routine: false, linkedAt: ago(100) }]);
+    expect(d?.history.map((h) => h.id)).toEqual(["antiga"]);
+    // contato de outro chatbot (fora do escopo): nada
+    expect(await loadInboxContact(mem, { contactId: "ct1", botIds: ["b2"], conversationId: "atual" })).toBeNull();
+    expect(contactTitle({ name: null, phone: "5521999990000", instagram: null })).toBe("+5521999990000");
   });
 });

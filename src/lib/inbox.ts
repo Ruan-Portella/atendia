@@ -28,6 +28,7 @@ export interface InboxBot {
   client_name: string;
   client_id: string | null;
   human_handoff?: { hours?: BusinessHours | null } | null;
+  sensitive_mode?: boolean | null;
 }
 
 export interface InboxItem {
@@ -37,6 +38,7 @@ export interface InboxItem {
   clientName: string;
   clientId: string | null;
   channel: string;
+  contactId: string | null;
   contact: string | null;
   sectorId: string | null;
   sectorName: string | null;
@@ -121,6 +123,7 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
       clientName: bot.client_name,
       clientId: bot.client_id,
       channel: r.channel ?? "widget",
+      contactId: r.contact_id,
       contact: r.contact_id ? (names.get(r.contact_id) ?? null) : null,
       sectorId: r.sector_id,
       sectorName: sector?.name ?? null,

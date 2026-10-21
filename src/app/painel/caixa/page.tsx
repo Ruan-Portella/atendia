@@ -6,6 +6,9 @@ import { isQueue, loadInbox, type InboxBot, type Queue } from "@/lib/inbox";
 import { listSectors, sectorsOfMember } from "@/lib/sectors";
 import { InboxView } from "@/components/inbox-view";
 import { AgencyConversation } from "@/components/agency-conversation";
+import { InboxContact } from "@/components/inbox-contact";
+import { loadInboxContact } from "@/lib/inbox-contact";
+import { requireAgencyMfa } from "@/lib/agency-mfa";
 import { setMyAvailability } from "../perfil/actions";
 
 export const metadata = { title: "Caixa de entrada" };
@@ -18,7 +21,7 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   const [sp, { member, role }] = await Promise.all([searchParams, requireAgency()]);
   const supabase = await createClient();
   const admin = createAdminClient();
-  const { data: botRows } = await supabase.from("bots").select("id, name, client_name, client_id, human_handoff").eq("is_demo", false).eq("is_template", false);
+  const { data: botRows } = await supabase.from("bots").select("id, name, client_name, client_id, human_handoff, sensitive_mode").eq("is_demo", false).eq("is_template", false);
   const bots = (botRows ?? []) as InboxBot[];
   const clientIds = [...new Set(bots.map((b) => b.client_id).filter((c): c is string => Boolean(c)))];
   const [sectors, mySectorIds, { data: clients }] = await Promise.all([
@@ -36,11 +39,18 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   const queue: Queue = isQueue(sp.fila) && (!sp.fila.startsWith("setor:") || queues.some((q) => q.key === sp.fila)) ? sp.fila : "minhas";
   const selected = typeof sp.c === "string" ? items.find((i) => i.id === sp.c) ?? null : null;
   const hrefFor = (o: { queue: Queue; conversationId?: string }) => `/painel/caixa?fila=${encodeURIComponent(o.queue)}${o.conversationId ? `&c=${o.conversationId}` : ""}`;
+  const back = selected ? hrefFor({ queue, conversationId: selected.id }) : undefined;
+  // modo sensível: o segundo fator vem antes da conversa e do painel do contato
+  const selectedBot = selected ? bots.find((b) => b.id === selected.botId) : undefined;
+  if (selectedBot?.sensitive_mode) await requireAgencyMfa(back!);
+  const contact = selected?.contactId ? await loadInboxContact(admin, { contactId: selected.contactId, botIds: bots.map((b) => b.id), conversationId: selected.id }) : null;
+  const botName = (botId: string) => bots.find((b) => b.id === botId)?.name;
 
   return (
     <div className="-mx-4 -my-5 h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]">
-      <InboxView items={items} queue={queue} queues={queues} meId={member.id} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={clientIds.length > 1} available={member.available !== false} onAvailability={setMyAvailability}>
-        {selected && <AgencyConversation botId={selected.botId} convId={selected.id} embedded back={hrefFor({ queue, conversationId: selected.id })} />}
+      <InboxView items={items} queue={queue} queues={queues} meId={member.id} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={clientIds.length > 1} available={member.available !== false} onAvailability={setMyAvailability}
+        contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(b, c) => `/painel/bots/${b}/conversas/${c}`} contactHref={contact && allSectors && selectedBot?.client_id ? `/painel/clientes/${selectedBot.client_id}/contatos/${contact.contact.id}` : null} />}>
+        {selected && <AgencyConversation botId={selected.botId} convId={selected.id} embedded back={back} />}
       </InboxView>
     </div>
   );
