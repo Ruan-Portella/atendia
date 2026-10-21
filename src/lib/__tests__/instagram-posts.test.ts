@@ -31,7 +31,7 @@ vi.mock("../instagram", async (orig) => ({ ...(await orig<typeof import("../inst
 // um JPEG: os primeiros bytes bastam para o tipo
 vi.mock("../media-capture", () => ({ fetchIgImage: vi.fn(async () => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(60).fill(1)])) }));
 
-import { isReel, photoLine, postImageUrls, postText, readableMedia, syncInstagramSource } from "../instagram-posts";
+import { IMAGES_PER_POST, editPostDescription, isReel, parseEditedDescription, photoLine, postImageUrls, postText, readableMedia, syncInstagramSource } from "../instagram-posts";
 
 const AGENCY = "aaaaaaaa-0000-4000-8000-000000000001";
 const BOT = "aaaaaaaa-0000-4000-8000-0000000000b1";
@@ -201,5 +201,54 @@ describe("a leitura da fonte", () => {
     expect(tables.chunks).toHaveLength(before);
     expect(source()).toMatchObject({ status: "ready", pages: 3 });
     expect(String(source().refresh_error)).toContain("não devolveu nenhum post");
+  });
+});
+
+describe("a descrição corrigida pela equipe (itens menores, parte 5)", () => {
+  const chunksOf = (media: string) => tables.chunks.filter((c) => (c.metadata as { ig_media_id?: string }).ig_media_id === media);
+
+  it("uma linha por foto, sem o rótulo copiado e sem caractere de controle; até 10 linhas", () => {
+    expect(parseEditedDescription("Foto 1: Tênis azul-marinho\n\n  Capa:  Bota \u0007 preta  \r\nfoto 3 : Veja em https://loja.com/t")).toEqual(["Tênis azul-marinho", "Bota preta", "Veja em https://loja.com/t"]);
+    expect(parseEditedDescription(Array.from({ length: 14 }, (_, i) => `linha ${i}`).join("\n"))).toHaveLength(IMAGES_PER_POST);
+    expect(parseEditedDescription("   \n ")).toEqual([]);
+    expect(postText({ caption: "Promo", mediaType: "IMAGE", reel: false, permalink: null, photos: ["Tênis azul."], edited: true })).toBe("Legenda: Promo\nTipo: foto\nFoto (descrição revisada pela equipe): Tênis azul.");
+  });
+
+  it("salvar refaz os trechos do post com o texto novo; a releitura mantém a correção", async () => {
+    await syncInstagramSource(db, SOURCE, { hasTime: always });
+    const post = tables.instagram_posts.find((x) => x.media_id === "m1")!;
+    const old = post.chunk_ids as string[];
+    const r = await editPostDescription(db, { botId: BOT, sourceId: SOURCE, postId: post.id as string, text: "Foto: Vestido midi floral VERDE, de alça, com bolso.", by: "ana@agencia.com" });
+    expect(r).toMatchObject({ ok: true, chunks: 1 });
+    expect(tables.chunks.some((c) => old.includes(c.id as string))).toBe(false);
+    const [chunk] = chunksOf("m1");
+    expect(String(chunk.content)).toContain("Foto (descrição revisada pela equipe): Vestido midi floral VERDE, de alça, com bolso.");
+    expect(String(chunk.content)).not.toContain("azul");
+    expect(chunk.metadata).toMatchObject({ title: "Post do Instagram de 18/10/2026", kind: "instagram_post", ig_media_id: "m1" });
+    expect(post).toMatchObject({ description: "Vestido midi floral VERDE, de alça, com bolso.", images: 1, description_edited_by: "ana@agencia.com" });
+    expect(post.description_edited_at).toBeTruthy();
+    expect(source().chunk_count).toBe(tables.chunks.length);
+    expect(source().sync_lock_until).toBeNull();
+
+    // a legenda mudou no Instagram: o trecho é refeito com a correção, sem descrever a foto de novo
+    fake.describes = 0;
+    fake.media = [{ ...photo, caption: "Vestido midi floral por R$ 99,90" }, album, reel];
+    await syncInstagramSource(db, SOURCE, { hasTime: always });
+    expect(fake.describes).toBe(0);
+    expect(String(chunksOf("m1")[0].content)).toContain("(descrição revisada pela equipe): Vestido midi floral VERDE");
+  });
+
+  it("vazio deixa o post só com a legenda; com a leitura rodando ou de outra fonte, não salva", async () => {
+    await syncInstagramSource(db, SOURCE, { hasTime: always });
+    const post = tables.instagram_posts.find((x) => x.media_id === "m2")!;
+    expect(await editPostDescription(db, { botId: BOT, sourceId: SOURCE, postId: post.id as string, text: "  ", by: "ana@agencia.com" })).toMatchObject({ ok: true });
+    expect(post.description).toBeNull();
+    expect(String(chunksOf("m2")[0].content)).not.toContain("Foto 1");
+    expect(String(chunksOf("m2")[0].content)).toContain("Legenda: Coleção de verão");
+
+    lockFree = false;
+    expect(await editPostDescription(db, { botId: BOT, sourceId: SOURCE, postId: post.id as string, text: "x", by: "ana" })).toEqual({ ok: false, problem: "ocupada" });
+    lockFree = true;
+    expect(await editPostDescription(db, { botId: BOT, sourceId: "outra-fonte", postId: post.id as string, text: "x", by: "ana" })).toEqual({ ok: false, problem: "nao_encontrado" });
   });
 });

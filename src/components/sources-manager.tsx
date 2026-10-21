@@ -2,12 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AlertCircle, FileText, Globe, Images, Link2, ListChecks, Loader2, Pencil, Plus, RefreshCw, Trash2, Type } from "lucide-react";
+import { AlertCircle, Eye, FileText, Globe, Images, Link2, ListChecks, Loader2, Pencil, Plus, RefreshCw, Trash2, Type } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { socialNetworkOf } from "@/lib/social-links";
 import { Modal, ConfirmModal } from "@/components/ui/modal";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
+import { InstagramPostsModal } from "@/components/instagram-posts-modal";
 
 export interface SourceItem {
   id: string;
@@ -69,6 +70,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
   const [adding, setAdding] = useState<Kind | null>(null);
   const [editing, setEditing] = useState<SourceItem | null>(null);
   const [removing, setRemoving] = useState<SourceItem | null>(null);
+  const [postsOf, setPostsOf] = useState<string | null>(null); // a fonte do Instagram com a lista dos posts aberta
   const [busyId, setBusyId] = useState<string | null>(null); // linha em processamento
   const [saving, setSaving] = useState(false);
   // os posts do Instagram são lidos em segundo plano: a lista se atualiza sozinha enquanto lê
@@ -229,7 +231,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
                   {s.refresh_error && s.status === "ready" && <span className="block truncate text-xs text-amber-ink" title={s.refresh_error}>{posts ? `Não consegui buscar os posts novos (${s.refresh_error}); usando os que já tinha.` : "Não consegui reler na última atualização automática; usando o conteúdo anterior."}</span>}
                 </span>
                 <span className="md:hidden">
-                  <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} />
+                  <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} onPosts={() => setPostsOf(s.id)} />
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-[42px] text-xs text-muted md:contents md:pl-0">
@@ -238,7 +240,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
                 <span className="md:text-sm">{relativeTime(s.updated_at)}</span>
               </div>
               <span className="hidden justify-end md:flex">
-                <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} />
+                <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} onPosts={() => setPostsOf(s.id)} />
               </span>
             </div>
           );
@@ -250,6 +252,9 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
           </div>
         )}
       </div>
+
+      {/* posts do Instagram: a lista, com a descrição das fotos corrigível */}
+      <InstagramPostsModal botId={botId} sourceId={postsOf} open={postsOf !== null} onClose={() => setPostsOf(null)} />
 
       {/* editar */}
       <Modal
@@ -385,11 +390,12 @@ function UrlInput({ id, defaultValue, autoFocus }: { id: string; defaultValue?: 
   );
 }
 
-function SourceMenu({ s, processing, onEdit, onReprocess, onRemove }: { s: SourceItem; processing: boolean; onEdit: () => void; onReprocess: () => void; onRemove: () => void }) {
+function SourceMenu({ s, processing, onEdit, onReprocess, onRemove, onPosts }: { s: SourceItem; processing: boolean; onEdit: () => void; onReprocess: () => void; onRemove: () => void; onPosts: () => void }) {
   const editable = s.kind === "text" || s.kind === "faq";
   return (
     <Menu
       items={[
+        ...(s.kind === "instagram" ? [{ label: "Ver e corrigir os posts", icon: Eye, onSelect: onPosts, disabled: s.pages === 0 }] : []),
         { label: s.kind === "pdf" ? "Enviar novo PDF" : s.kind === "site" || s.kind === "page" ? "Reler e atualizar" : s.kind === "instagram" ? "Atualizar agora" : "Editar conteúdo", icon: s.kind === "pdf" ? FileText : editable ? Pencil : RefreshCw, onSelect: editable ? onEdit : onReprocess, disabled: processing || syncing(s) },
         { label: s.kind === "site" || s.kind === "page" ? "Editar endereço ou título" : "Renomear", icon: Pencil, onSelect: onEdit, disabled: processing },
         { type: "separator" },

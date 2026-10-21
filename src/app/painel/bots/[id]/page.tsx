@@ -39,7 +39,8 @@ import { countLeads } from "@/lib/leads";
 import { listSendable, loadTemplateChannel, type SendableTemplate } from "@/lib/whatsapp-templates";
 import { Status } from "@/components/status";
 import { SourcesManager, type SourceItem } from "@/components/sources-manager";
-import { ChatWindow } from "@/components/chat-window";
+import { LiveTest } from "@/components/live-test";
+import { configBotId } from "@/lib/bot-template";
 import { CopyButton } from "@/components/copy-button";
 import { ConvertDemo } from "@/components/convert-demo";
 import { InstallGuide } from "@/components/install-guide";
@@ -151,6 +152,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const igRenamed = instagram ? renamedNotice(instagram) : null;
   // o derivado usa a base do modelo: as fontes prontas dele contam no teste ao vivo e no Publicar
   const readySources = bot.template_id ? await readySourceCount(createAdminClient(), { id, template_id: bot.template_id as string }) : (ownReady ?? 0);
+  // o teste ao vivo mostra o passo do roteiro (itens menores, parte 5): só com roteiro ligado (no derivado, os do modelo)
+  const { count: liveRoutines } = await createAdminClient().from("routines").select("id", { count: "exact", head: true }).eq("bot_id", configBotId({ id, template_id: (bot.template_id as string | null) ?? null, config_bot_id: (bot.config_bot_id as string | null | undefined) ?? null })).eq("active", true);
+  const hasLiveRoutines = (liveRoutines ?? 0) > 0;
   const clients = bot.is_demo || tab === "personalidade" || tab === "heranca" ? await getClientOptions(supabase, agency.id) : [];
   // aba Instagram (E1, partes 3a e 3b): os links ig.me com origem e as palavras-chave do chatbot
   const igTab = tab === "instagram" && !bot.is_demo;
@@ -962,24 +966,21 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span>
               <span className="text-muted">{freeLinked(owner) ? FREE_LINKED_SHORT : owner.billing_status === "none" ? `conta grátis: ${num(Math.max(0, TEST_ANSWERS_FREE - (owner.test_answers_used ?? 0)))} de ${TEST_ANSWERS_FREE} respostas` : "como o visitante vê"}</span>
             </div>
-            <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
-              {readySources ? (
-                <ChatWindow
-                  channel="painel"
-                  bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
-                />
-              ) : (
+            {readySources ? (
+              // com roteiro em andamento no teste, a faixa do passo atual fica em cima do chat
+              <LiveTest botId={bot.id} hasRoutines={hasLiveRoutines} chatClassName="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]" bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
+              />
+            ) : (
+              <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
                 <div className="flex h-full items-center justify-center bg-white p-6 text-center text-sm text-muted">Adicione uma fonte para testar o assistente.</div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </aside>}
 
         {/* abaixo de lg o teste ao vivo abre por um botão flutuante */}
         <ChatPreviewSheet disabledReason={!readySources ? "Adicione uma fonte para testar o assistente." : null}>
-          <ChatWindow
-            channel="painel"
-            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
+          <LiveTest botId={bot.id} hasRoutines={hasLiveRoutines} className="h-full gap-0" chatClassName="min-h-0 flex-1" bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
           />
         </ChatPreviewSheet>
       </div>

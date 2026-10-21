@@ -69,6 +69,8 @@ export interface PostTextInput {
   photos: string[];
   /** Itens do carrossel. */
   items?: number;
+  /** A descrição foi corrigida pela equipe (sai como revisada, não como automática). */
+  edited?: boolean;
 }
 
 /** O texto do post na base (o título com a data vai à parte, nos metadados do trecho). Pura. */
@@ -76,7 +78,8 @@ export function postText(p: PostTextInput): string {
   const carousel = p.mediaType === "CAROUSEL_ALBUM";
   const kind = carousel ? `carrossel${p.items ? ` com ${p.items} ${p.items === 1 ? "item" : "itens"}` : ""}` : p.mediaType === "VIDEO" ? (p.reel ? "reel" : "vídeo") : "foto";
   const label = (i: number) => (carousel ? `Foto ${i + 1} do carrossel` : p.mediaType === "VIDEO" ? `Capa do ${p.reel ? "reel" : "vídeo"}` : "Foto");
-  const lines = [`Legenda: ${p.caption?.trim() || "(sem legenda)"}`, `Tipo: ${kind}`, ...p.photos.flatMap((d, i) => (d ? [`${label(i)} (descrição automática): ${d}`] : [])), ...(p.permalink ? [`Link do post: ${p.permalink}`] : [])];
+  const origin = p.edited ? "descrição revisada pela equipe" : "descrição automática";
+  const lines = [`Legenda: ${p.caption?.trim() || "(sem legenda)"}`, `Tipo: ${kind}`, ...p.photos.flatMap((d, i) => (d ? [`${label(i)} (${origin}): ${d}`] : [])), ...(p.permalink ? [`Link do post: ${p.permalink}`] : [])];
   return lines.join("\n");
 }
 
@@ -167,6 +170,7 @@ interface PostRow {
   permalink: string | null;
   posted_at: string;
   description: string | null;
+  description_edited_at?: string | null;
   chunk_ids: Array<number | string> | null;
 }
 
@@ -237,7 +241,7 @@ export async function syncInstagramSource(db: SupabaseClient, sourceId: string, 
     if (!ch?.access_token_enc || ch.disconnected_at) return failSync(db, source, "O Instagram do chatbot está desconectado. Conecte de novo na aba Instagram para atualizar os posts.");
 
     const media = (await instagramMedia(ch, { max: POSTS_MAX, since: new Date(Date.now() - POSTS_DAYS * 86_400_000) })).filter(readableMedia);
-    const { data: knownRows, error: knownError } = await db.from("instagram_posts").select("id, media_id, media_type, is_reel, caption_hash, permalink, posted_at, description, chunk_ids").eq("source_id", sourceId);
+    const { data: knownRows, error: knownError } = await db.from("instagram_posts").select("id, media_id, media_type, is_reel, caption_hash, permalink, posted_at, description, description_edited_at, chunk_ids").eq("source_id", sourceId);
     if (knownError) throw new Error(`posts lidos: ${knownError.message}`);
     const known = new Map(((knownRows ?? []) as PostRow[]).map((r) => [r.media_id, r]));
     // nenhum post de volta com a base cheia: melhor manter o que há do que apagar tudo por uma falha da Meta
@@ -288,7 +292,7 @@ export async function syncInstagramSource(db: SupabaseClient, sourceId: string, 
       for (const item of queue.slice(done, done + BATCH)) {
         if (prepared.length && !o.hasTime()) break;
         const photos = item.row ? (item.row.description ?? "").split("\n") : vision ? await describePost(item.media, bot.client_name as string, usage) : [];
-        const text = postText({ caption: item.media.caption ?? null, mediaType: item.media.media_type!, reel: isReel(item.media), permalink: item.media.permalink ?? null, photos, items: item.media.children?.data?.length });
+        const text = postText({ caption: item.media.caption ?? null, mediaType: item.media.media_type!, reel: isReel(item.media), permalink: item.media.permalink ?? null, photos, items: item.media.children?.data?.length, edited: Boolean(item.row?.description_edited_at) });
         prepared.push({ ...item, photos, pieces: chunkText(text) });
       }
       const pieces = prepared.flatMap((p) => p.pieces);
@@ -352,6 +356,72 @@ export async function syncInstagramSource(db: SupabaseClient, sourceId: string, 
     return failSync(db, source, syncErrorMessage(e));
   } finally {
     await db.from("sources").update({ sync_lock_until: null }).eq("id", sourceId);
+  }
+}
+
+/* ------------------------------------------------------------------ descrição corrigida pela equipe */
+
+/** Caracteres por linha da descrição corrigida (a descrição e o texto da foto da leitura automática). */
+export const EDITED_LINE_MAX = DESCRIPTION_MAX + PHOTO_TEXT_MAX + 20;
+
+/**
+ * O texto da equipe vira as linhas da descrição: uma por foto, na ordem (até 10), sem o rótulo que
+ * alguém copie ("Foto 2: …") e sem caracteres de controle. É a equipe escrevendo na própria base
+ * (como num Texto): o filtro da leitura automática (links, números longos) não vale aqui. Pura.
+ */
+export function parseEditedDescription(raw: string): string[] {
+  return raw
+    .split(/\r\n?|\n/)
+    .map((l) => l.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/^\s*(foto|capa)(\s+\d+)?\s*:\s*/i, "").replace(/\s+/g, " ").trim().slice(0, EDITED_LINE_MAX))
+    .filter(Boolean)
+    .slice(0, IMAGES_PER_POST);
+}
+
+export type EditDescriptionResult = { ok: true; chunks: number } | { ok: false; problem: "nao_encontrado" | "ocupada" | "erro" };
+
+/**
+ * A equipe corrigiu a descrição das fotos de um post (parte 5 dos itens menores): os trechos do
+ * post são refeitos com o texto novo (marcado como revisado) e a correção fica, porque a leitura
+ * de 6 em 6 horas nunca descreve de novo um post que já está na base. Vazio: o post fica só com a
+ * legenda. Usa a trava da fonte, para não cruzar com uma leitura em andamento.
+ */
+export async function editPostDescription(db: SupabaseClient, o: { botId: string; sourceId: string; postId: string; text: string; by: string }): Promise<EditDescriptionResult> {
+  const { data } = await db.from("instagram_posts").select("id, source_id, bot_id, media_id, media_type, is_reel, caption, permalink, posted_at, images, chunk_ids").eq("id", o.postId).eq("source_id", o.sourceId).eq("bot_id", o.botId).maybeSingle();
+  const post = data as (PostRow & { source_id: string; bot_id: string; caption: string | null; images: number }) | null;
+  if (!post) return { ok: false, problem: "nao_encontrado" };
+  const { data: claimed } = await db.rpc("claim_source_sync", { p_source: o.sourceId, p_seconds: 60 });
+  if (claimed !== true) return { ok: false, problem: "ocupada" };
+  try {
+    const photos = parseEditedDescription(o.text);
+    const text = postText({ caption: post.caption, mediaType: post.media_type, reel: post.is_reel, permalink: post.permalink, photos, items: post.media_type === "CAROUSEL_ALBUM" ? Math.max(post.images ?? 0, photos.length) : undefined, edited: true });
+    const pieces = chunkText(text);
+    const embedded = pieces.length ? await embedTexts(pieces) : { embeddings: [] as number[][], usage: null };
+    const metadata = { title: postTitle(post.posted_at), url: post.permalink ?? null, kind: "instagram_post", ig_media_id: post.media_id, posted_at: new Date(post.posted_at).toISOString() };
+    let ids: Array<number | string> = [];
+    if (pieces.length) {
+      const { data: inserted, error } = await db.from("chunks").insert(pieces.map((content, i) => ({ bot_id: o.botId, source_id: o.sourceId, content, embedding: JSON.stringify(embedded.embeddings[i]), metadata }))).select("id");
+      if (error) throw new Error(`trechos do post: ${error.message}`);
+      ids = (inserted ?? []).map((r) => r.id as number | string);
+    }
+    await deleteChunks(db, post.chunk_ids ?? []);
+    await db
+      .from("instagram_posts")
+      .update({ description: photos.length ? photos.join("\n") : null, images: photos.length, chunk_ids: ids, description_edited_at: new Date().toISOString(), description_edited_by: o.by.slice(0, 200) })
+      .eq("id", post.id);
+    const { count } = await db.from("chunks").select("id", { count: "exact", head: true }).eq("source_id", o.sourceId);
+    await db.from("sources").update({ chunk_count: count ?? 0 }).eq("id", o.sourceId);
+    if (embedded.usage) {
+      const { data: bot } = await db.from("bots").select("agency_id").eq("id", o.botId).maybeSingle();
+      if (bot) void recordAiUsage(db, { agencyId: bot.agency_id as string, botId: o.botId, kind: "leitura", embeddingModel: embedded.usage.model, embeddingTokens: embedded.usage.tokens });
+    }
+    // a base mudou: o portão classifica os trechos novos (proibidos, 18+)
+    classifyLater(db, o.botId);
+    return { ok: true, chunks: ids.length };
+  } catch (e) {
+    console.error("instagram: descrição do post não salva", o.postId, (e as Error).message);
+    return { ok: false, problem: "erro" };
+  } finally {
+    await db.from("sources").update({ sync_lock_until: null }).eq("id", o.sourceId);
   }
 }
 

@@ -229,6 +229,7 @@ export function ChatWindow({
   embedded = false,
   identity = false,
   initialProtocol = null,
+  onConversation,
 }: {
   bot: ChatBotPublic;
   channel?: "widget" | "demo" | "painel";
@@ -241,12 +242,15 @@ export function ChatWindow({
   identity?: boolean;
   /** o link do e-mail do chamado (?chamado=): abre o acompanhamento com o protocolo (parte 7c) */
   initialProtocol?: string | null;
+  /** o teste ao vivo acompanha a conversa (a faixa do passo do roteiro) */
+  onConversation?: (id: string | null) => void;
 }) {
   // nome genérico: roda no domínio da agência, nada da plataforma aparece
   const storageKey = `chat:${bot.key}`;
   // no iframe do widget, o X do topo fecha o balão na página do cliente
   const close = onClose ?? (embedded ? () => notifyParent("chat-widget:close") : undefined);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  useEffect(() => onConversation?.(conversationId), [conversationId, onConversation]);
   const [visitorId] = useState<string | null>(() => {
     adoptLegacyStorage(`atendia:${bot.key}`, storageKey); // chave de antes da Boavoz
     return getOrCreateVisitorId(storageKey);
