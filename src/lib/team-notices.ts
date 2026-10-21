@@ -191,6 +191,8 @@ export interface TeamNotice {
   path: string;
   /** O acontecimento (a conversa, o chatbot, a agência): o mesmo aviso não sai duas vezes no prazo. */
   ref: string;
+  /** Só estas pessoas da equipe (o setor da conversa, ou quem recebeu pelo rodízio; Caixa de entrada, parte 2). */
+  onlyMemberIds?: string[] | null;
 }
 
 /**
@@ -205,7 +207,8 @@ export async function sendTeamNotice(db: SupabaseClient, n: TeamNotice): Promise
     // a própria BoaVoz não se avisa pelo próprio assistente
     if (n.agencyId === a.agencyId && n.botId === a.botId) return 0;
     if ((n.kind === "atendente" || n.kind === "lead") && n.clientId && (await delegatedToClient(db, n.clientId))) return 0;
-    const members = await eligibleMembers(db, n);
+    const all = await eligibleMembers(db, n);
+    const members = n.onlyMemberIds ? all.filter((id) => n.onlyMemberIds!.includes(id)) : all;
     if (!members.length) return 0;
     const numbers = (await confirmedTeamNumbers(db, members)).filter((x) => !x.identityChanged && x.phone && noticeOn(x.prefs, n.kind));
     if (!numbers.length) return 0;

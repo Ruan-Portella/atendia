@@ -1,6 +1,7 @@
 import { memberForAction } from "@/lib/member";
 import { getPendingHandoffs } from "@/lib/panel";
 import { handoffStatus } from "@/lib/handoff-status";
+import { markSeen } from "@/lib/availability";
 
 /** Visitantes esperando atendente, para o aviso da área do cliente (só quem pode atender). */
 export async function GET(req: Request) {
@@ -8,6 +9,8 @@ export async function GET(req: Request) {
   const ctx = /^[0-9a-f-]{36}$/i.test(clientId) ? await memberForAction(clientId, "handoff") : null;
   if (!ctx) return Response.json({ items: [] }, { status: 401 });
   const pending = await getPendingHandoffs(ctx.admin, ctx.botIds);
+  // a área do cliente aberta: a presença para o rodízio dos setores
+  await markSeen(ctx.admin, { type: "client_member", id: ctx.member.memberId }).catch(() => undefined);
   const items = pending
     // pediu atendente, ou assumida e sem resposta há mais de 1 hora
     .filter((h) => handoffStatus(h)?.waiting)

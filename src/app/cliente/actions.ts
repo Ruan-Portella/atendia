@@ -309,6 +309,16 @@ export async function memberUpdateProfile(clientId: string, formData: FormData):
   return ok("Perfil salvo. As próximas mensagens já saem com este nome.");
 }
 
+/** Disponível ou Ausente para o rodízio dos setores (Caixa de entrada, parte 2): vale só neste cliente. */
+export async function memberSetAvailability(clientId: string, available: boolean): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  const { error } = await ctx.admin.from("client_members").update({ available, ...(available ? { last_seen_at: new Date().toISOString() } : {}) }).eq("id", ctx.member.memberId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/cliente/${clientId}`, "layout");
+  return ok(available ? "Você está disponível: o rodízio dos seus setores manda conversas para você." : "Você está ausente: o rodízio pula você até voltar.");
+}
+
 const ONLY_MANAGER = "Só o gestor mexe na equipe do portal.";
 
 /** Gestor convida um atendente (o gestor novo vem da agência). */

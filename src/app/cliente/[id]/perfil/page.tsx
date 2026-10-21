@@ -3,7 +3,8 @@ import { DEFAULT_ENTRY_NOTICE } from "@/lib/handoff-hours";
 import { isOurAvatarUrl } from "@/lib/attendants";
 import { ProfileForm } from "@/components/profile-form";
 import { MfaSection } from "@/app/painel/seguranca/mfa-section";
-import { memberUpdateProfile, recordMemberMfaRemoved } from "../../actions";
+import { memberSetAvailability, memberUpdateProfile, recordMemberMfaRemoved } from "../../actions";
+import { AvailabilityCard } from "@/components/availability-card";
 
 export const metadata = { title: { absolute: "Meu perfil" }, robots: { index: false, follow: false } };
 
@@ -29,6 +30,7 @@ export default async function MemberProfilePage({ params }: PageProps<"/cliente/
         entryExample={DEFAULT_ENTRY_NOTICE}
         company={member.clientName}
       />
+      {member.allowHandoff && <AvailabilityCard available={member.available} action={memberSetAvailability.bind(null, id)} />}
       <MfaSection
         onRemoved={recordMemberMfaRemoved.bind(null, id)}
         verifyHref={verify}

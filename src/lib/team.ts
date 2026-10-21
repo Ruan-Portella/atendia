@@ -29,9 +29,11 @@ export interface AgencyMember {
   invite_expires_at: string | null;
   accepted_at: string | null;
   removed_at: string | null;
+  /** Disponível para o rodízio dos setores (Caixa de entrada, parte 2). */
+  available?: boolean | null;
 }
 
-export const MEMBER_COLS = "id, agency_id, user_id, email, role, scope, display_name, avatar_url, invited_by, invited_at, invite_expires_at, accepted_at, removed_at";
+export const MEMBER_COLS = "id, agency_id, user_id, email, role, scope, display_name, avatar_url, invited_by, invited_at, invite_expires_at, accepted_at, removed_at, available";
 
 export const inviteTokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 export const newInviteToken = () => randomBytes(24).toString("base64url");

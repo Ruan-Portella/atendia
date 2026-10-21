@@ -39,6 +39,8 @@ const activeHold = (c: Holder) => Boolean(c.takeover_at) && !c.handled_at;
 export const holdsConversation = (c: Holder, whoId: string) => activeHold(c) && c.assigned_to_id === whoId;
 /** Outra pessoa está com a conversa agora (atendimento antigo, sem dono, fica livre). Pura. */
 export const heldByOther = (c: Holder, whoId: string) => activeHold(c) && Boolean(c.assigned_to_id) && c.assigned_to_id !== whoId;
+/** O rodízio do setor entregou a conversa a outra pessoa, que ainda não assumiu (Caixa de entrada, parte 2). Pura. */
+export const assignedToOther = (c: Holder, whoId: string) => !c.handled_at && !c.takeover_at && Boolean(c.assigned_to_id) && c.assigned_to_id !== whoId;
 
 const HOLDER_COLS = "takeover_at, handled_at, assigned_to_id, assigned_to_name";
 const otherName = (c: Holder) => c.assigned_to_name?.trim() || "Outra pessoa da equipe";
@@ -67,12 +69,14 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
     // quem assume fica com a conversa: a pausa da integração (API) acaba junto
     .update({ takeover_at: now, handled_at: null, needs_human: true, assigned_to_type: who.type, assigned_to_id: who.id, assigned_to_name: who.name, assigned_at: now, announce_pending: true, ...API_PAUSE_CLEAR })
     .eq("id", conversationId);
-  if (!opts.force) q = q.or("takeover_at.is.null,handled_at.not.is.null,assigned_to_id.is.null");
+  // sem force: só se ninguém tem a conversa (nem pelo rodízio), ou ela já é de quem assume
+  if (!opts.force) q = q.or(`handled_at.not.is.null,assigned_to_id.is.null,assigned_to_id.eq.${who.id}`);
   const { data, error } = await q.select("id");
   if (error) return fail("Não foi possível assumir a conversa. Tente de novo.");
   if (!data?.length) {
     const { data: current } = await admin.from("conversations").select(HOLDER_COLS).eq("id", conversationId).maybeSingle<Holder>();
     if (current && holdsConversation(current, who.id)) return ok(ALREADY_YOURS);
+    if (current && assignedToOther(current, who.id)) return fail(`O rodízio do setor entregou esta conversa a ${otherName(current)}. Para atender, use “Assumir no lugar”.`);
     return fail(`${current ? otherName(current) : "Outra pessoa da equipe"} já está atendendo esta conversa.`);
   }
   // o tempo até a equipe assumir, para a Evolução: só o primeiro a assumir um pedido de atendente
@@ -82,7 +86,7 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
   }
   // roteiro em andamento acaba: a equipe assumiu (B2')
   await endActiveRoutine(admin, conversationId, "handoff");
-  const previous = heldByOther(before, who.id) ? otherName(before) : null;
+  const previous = heldByOther(before, who.id) || assignedToOther(before, who.id) ? otherName(before) : null;
   return { ...ok(previous ? `Você assumiu no lugar de ${previous}. A próxima mensagem sai com o anúncio com o seu nome.` : "Você assumiu a conversa. O assistente pausou até você devolver."), previous };
 }
 

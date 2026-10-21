@@ -8,6 +8,7 @@ import { profileProblem } from "@/lib/attendants";
 import { audit, requestMeta } from "@/lib/audit";
 import { dismissNoticeCard, forgetTeamWhatsApp, loadTeamWhatsApp, requestTeamWhatsApp, saveNoticePrefs } from "@/lib/team-whatsapp";
 import { kindsForRole } from "@/lib/team-notices";
+import { setAvailable } from "@/lib/availability";
 
 /** Meu perfil: nome de exibição e foto de quem está logado (qualquer papel). */
 export async function updateMyProfile(formData: FormData): Promise<ActionResult> {
@@ -20,6 +21,14 @@ export async function updateMyProfile(formData: FormData): Promise<ActionResult>
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   revalidatePath("/painel", "layout");
   return ok("Perfil salvo. As próximas mensagens já saem com este nome.");
+}
+
+/** Disponível ou Ausente para o rodízio dos setores (Caixa de entrada, parte 2). */
+export async function setMyAvailability(available: boolean): Promise<ActionResult> {
+  const { member } = await requireAgency();
+  if (!(await setAvailable(createAdminClient(), { type: "agency_member", id: member.id }, available))) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath("/painel", "layout");
+  return ok(available ? "Você está disponível: o rodízio dos seus setores manda conversas para você." : "Você está ausente: o rodízio pula você até voltar.");
 }
 
 /* ------------------------------------------------------------------ avisos no WhatsApp */

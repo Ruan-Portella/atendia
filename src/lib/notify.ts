@@ -1,4 +1,5 @@
 import { clientHolidays } from "./sectors";
+import type { HandoffAudience } from "./handoff-routing";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { queueHandoffRequested } from "./message-events";
 import { nextOpening } from "./handoff-hours";
@@ -86,23 +87,26 @@ async function recipients(db: SupabaseClient, bot: BotRow): Promise<string[]> {
  *  - as pessoas do cliente, se ele pode atender, com link para a área do cliente e a marca
  *    da agência. Ninguém recebe o aviso duas vezes.
  */
-export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string; urgent?: boolean; aiUnavailable?: boolean }) {
+export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; conversationId: string; reason?: string; urgent?: boolean; aiUnavailable?: boolean; audience?: HandoffAudience | null }) {
   // o motivo (o que o contato disse) não vai por e-mail (leva S): a conversa fica no painel
   const { db, bot, conversationId, urgent } = opts;
   // webhooks: handoff.requested (com ou sem e-mail configurado)
   await queueHandoffRequested(db, conversationId, { urgent, aiUnavailable: opts.aiUnavailable, outsideHours: nextOpening(bot.human_handoff?.hours, new Date(), await clientHolidays(db, bot.client_id)) !== null });
   // risco à vida: assunto destacado e a agência sempre avisada (mesmo com o atendimento delegado)
   const urgentTag = urgent ? "URGENTE (possível risco à vida) · " : "";
+  // setor (Caixa de entrada, parte 2): só quem é do setor, ou só quem recebeu pelo rodízio; urgente avisa todos
+  const audience = urgent ? null : (opts.audience ?? null);
   await emailTeam(db, bot, {
     subject: `${urgentTag}Um visitante quer falar com alguém · ${bot.client_name}`,
     conversationId,
     urgent,
+    audience,
     lines: (link) => [`Um visitante do chatbot ${bot.name} (${bot.client_name}) pediu para falar com uma pessoa.`, `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`],
     clientLines: (link) => [`Um visitante do site de ${bot.client_name} pediu para falar com uma pessoa.`, `\nResponda por aqui (o assistente pausa enquanto você atende):\n${link}`],
   });
   // avisos no WhatsApp da equipe, pelo assistente da BoaVoz (o import na hora evita o ciclo chat → notify → avisos)
   const { botTitle, sendTeamNotice } = await import("./team-notices");
-  await sendTeamNotice(db, { kind: urgent ? "urgente" : "atendente", agencyId: bot.agency_id, botId: bot.id, clientId: bot.client_id ?? null, vars: [botTitle(bot)], path: `painel/bots/${bot.id}/conversas/${conversationId}`, ref: conversationId });
+  await sendTeamNotice(db, { kind: urgent ? "urgente" : "atendente", agencyId: bot.agency_id, botId: bot.id, clientId: bot.client_id ?? null, vars: [botTitle(bot)], path: `painel/bots/${bot.id}/conversas/${conversationId}`, ref: conversationId, onlyMemberIds: audience?.agencyMemberIds ?? null });
 }
 
 /**
@@ -115,7 +119,7 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
 async function emailTeam(
   db: SupabaseClient,
   bot: BotRow,
-  o: { subject: string; conversationId: string | null; urgent?: boolean; lines: (link: string) => string[]; clientLines?: (link: string) => string[] },
+  o: { subject: string; conversationId: string | null; urgent?: boolean; audience?: HandoffAudience | null; lines: (link: string) => string[]; clientLines?: (link: string) => string[] },
 ): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return false;
@@ -130,7 +134,7 @@ async function emailTeam(
     const { data: client } = await db.from("clients").select("id, allow_handoff, handoff_notify, agencies(name, custom_domain, custom_domain_verified_at)").eq("id", bot.client_id).maybeSingle();
     if (client?.allow_handoff) {
       const { data: members } = await db.from("client_members").select("email").eq("client_id", client.id);
-      memberEmails = (members ?? []).map((m) => m.email as string);
+      memberEmails = (members ?? []).map((m) => m.email as string).filter((e) => !o.audience || o.audience.emails.includes(e.toLowerCase()));
       const agency = (Array.isArray(client.agencies) ? client.agencies[0] : client.agencies) as { name: string; custom_domain: string | null; custom_domain_verified_at: string | null } | null;
       if (memberEmails.length && agency) {
         const fromAddress = process.env.EMAIL_FROM?.match(/<([^>]+)>/)?.[1] ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev";
@@ -150,7 +154,7 @@ async function emailTeam(
   if (delegated && !o.urgent) return sent;
 
   const clientPeople = memberEmails.map((m) => m.toLowerCase());
-  const to = (await recipients(db, bot)).filter((e) => !clientPeople.includes(e));
+  const to = (await recipients(db, bot)).filter((e) => !clientPeople.includes(e) && (!o.audience || o.audience.emails.includes(e.toLowerCase())));
   if (!to.length) return sent;
   const link = o.conversationId ? appUrl(`/painel/bots/${bot.id}/conversas/${o.conversationId}`) : appUrl(bot.client_id ? `/painel/clientes/${bot.client_id}?tab=leads` : `/painel/bots/${bot.id}?tab=leads`);
   const { error } = await resend.emails.send({

@@ -39,7 +39,8 @@ import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
 import { createLinkGuard, knowledgeLookup, type LinkGuard } from "./link-guard";
 import { logGate } from "./gate/log";
-import { clientHolidays } from "./sectors";
+import { clientHolidays, type Sector } from "./sectors";
+import { assignByRotation, handoffAudience, sectorForHandoff, sectorNamesOf } from "./handoff-routing";
 import { endActiveRoutine, routineSession, type RoutineTurn } from "./routine-engine";
 import { DEFAULT_POST_RULE, isPostHit, postPriceNote, postPriceRuleOf, withPostAges, type PostPriceRule } from "./post-context";
 import type { IdentityPort } from "./routine-identity";
@@ -511,20 +512,27 @@ export async function aiDisclosure(db: SupabaseClient, bot: Pick<BotRow, "name" 
  * conversa e avisa a equipe na primeira vez (ou de novo, se o atendimento anterior foi encerrado).
  * Devolve o aviso ao contato: fora do horário, diz quando a equipe volta; nunca promete resposta imediata.
  */
-export async function requestHandoff(db: SupabaseClient, bot: BotRow, conversationId: string, reason: string): Promise<string> {
+export async function requestHandoff(db: SupabaseClient, bot: BotRow, conversationId: string, reason: string, o: { sector?: string | null; sectors?: Sector[] } = {}): Promise<string> {
   // roteiro em andamento (B2'): acaba aqui, passado para a equipe
   await endActiveRoutine(db, conversationId, "handoff");
+  // setor (Caixa de entrada, parte 2): o que a IA escolheu, ou o que a conversa já tinha
+  const sector = await sectorForHandoff(db, { clientId: bot.client_id, conversationId, sectorName: o.sector, sectors: o.sectors }).catch(() => null);
+  const sectorCol = sector ? { sector_id: sector.id } : {};
   // esperando só por um lead (pedido deixado): o pedido de atendente vale como novo e avisa a equipe
   const { data: updated } = await db
     .from("conversations")
-    .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), lead_waiting_at: null, handled_at: null })
+    .update({ needs_human: true, handoff_requested_at: new Date().toISOString(), lead_waiting_at: null, handled_at: null, ...sectorCol })
     .eq("id", conversationId)
     .or("handoff_requested_at.is.null,handled_at.not.is.null,lead_waiting_at.not.is.null")
     .select("id");
-  if (updated?.length) notifyHandoff({ db, bot, conversationId, reason }).catch(() => {});
-  else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", conversationId);
-  // feriado do negócio (Caixa de entrada, parte 1) é dia fechado
-  return handoffNotice(bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message, await clientHolidays(db, bot.client_id));
+  if (updated?.length) {
+    // rodízio: a próxima pessoa disponível do setor recebe; os avisos vão só para ela (ou para o setor)
+    const assignee = sector ? await assignByRotation(db, conversationId, sector).catch(() => null) : null;
+    const audience = sector ? await handoffAudience(db, sector, assignee).catch(() => null) : null;
+    notifyHandoff({ db, bot, conversationId, reason, audience }).catch(() => {});
+  } else await db.from("conversations").update({ needs_human: true, handled_at: null, ...sectorCol }).eq("id", conversationId);
+  // o horário do setor, se ele tem o seu; feriado do negócio (Caixa de entrada, parte 1) é dia fechado
+  return handoffNotice(sector?.hours ?? bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message, await clientHolidays(db, bot.client_id));
 }
 
 /** Garante o texto fixo de risco à vida na resposta quando a IA chamou atendente com urgência. */
@@ -650,7 +658,7 @@ export type RefusalLevel = "fixo" | "flexivel";
  */
 export function chatTools(exec: {
   registrar_lead: ToolExec<{ nome: string; whatsapp?: string; email?: string; instagram?: string; interesse?: string }>;
-  chamar_atendente: ToolExec<{ motivo?: string; urgente?: boolean }>;
+  chamar_atendente: ToolExec<{ motivo?: string; urgente?: boolean; setor?: string }>;
   registrar_pergunta_sem_resposta: ToolExec<{ pergunta: string }>;
   registrar_recusa: ToolExec<{ nivel: RefusalLevel; pedido?: string }>;
   pedir_confirmacao_18: ToolExec<Record<string, never>>;
@@ -673,6 +681,7 @@ export function chatTools(exec: {
       description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano ou alguém da equipe, ou com urgente=true quando houver risco à vida ou à integridade.",
       inputSchema: z.object({
         motivo: z.string().optional().describe("resumo curto do que a pessoa precisa"),
+        setor: z.string().optional().describe("o setor da equipe que cuida do pedido, só com um dos nomes de SETORES DA EQUIPE (quando houver); na dúvida, deixe vazio"),
         urgente: z.boolean().optional().describe("true só se a pessoa indicar risco à vida ou à integridade (suicídio, autolesão, emergência médica, violência); febre, dor, vômito, pergunta de remédio ou de dose e animal doente não contam"),
       }),
       execute: exec.chamar_atendente,
@@ -926,6 +935,9 @@ export async function runChat(opts: {
   // os botões do passo do roteiro vêm antes dos da ação e dos da IA (que nem mostra opções nesse passo)
   const finalComponent = (): MessageComponent | null => (confirmShown ? shown : actionReply ? (replyComponent ?? actionComponent ?? routine?.component() ?? null) : (routine?.component() ?? actionComponent ?? shown));
   const linkHosts = linkHostsFor(bot, context);
+  // setores do cliente (Caixa de entrada, parte 2): a IA diz para qual setor vai o pedido de atendente
+  const sectors = await sectorNamesOf(db, bot.client_id);
+  const sectorNote = sectors.length ? `SETORES DA EQUIPE: ${sectors.map((x) => x.name).join(", ")}. Ao chamar_atendente, preencha setor com o que cuida do pedido (só esses nomes); na dúvida, deixe vazio. Não diga o nome do setor nem prometa quem vai atender.` : null;
   // filtro de links na saída (link-guard.ts): o que a IA escreve de link, e-mail, Pix, boleto ou
   // conta só sai se veio da configuração do chatbot, da base, da equipe, da própria pessoa ou de
   // uma ação; o nome do perfil e o texto livre do `data` não contam
@@ -1001,7 +1013,7 @@ export async function runChat(opts: {
     // o SDK recusa mensagem de sistema no meio da conversa sem allowSystemInMessages
     allowSystemInMessages: true,
     messages: [
-      { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null), opts.identityNote ?? null].filter(Boolean).join("\n\n") },
+      { role: "system" as const, content: [prompt.variable, hasActions ? ACTIONS_PROMPT_NOTE : null, identityPromptNote(opts.identity ?? null), opts.identityNote ?? null, sectorNote].filter(Boolean).join("\n\n") },
       // respostas antigas do bot com o mesmo corte da base (sem o "Sim", nada de item 18+ do histórico)
       ...(await convertToModelMessages(scopeLock ? gatedHistory(messages.slice(-12), { channel: channel as "whatsapp" | "instagram", contactPhone: waPhone, age: opts.gate?.age ?? null, exempt: opts.gate?.exempt }) : messages.slice(-12))),
       // roteiro em andamento: o passo atual depois do histórico (pesa mais que ele)
@@ -1041,7 +1053,7 @@ export async function runChat(opts: {
         // o que dizer depois: a equipe retorna (pela própria conversa, no WhatsApp e no Instagram), sem pedir mais dados
         return { ok: true, instrucao: leadSavedNote(channel) };
       },
-      chamar_atendente: async ({ motivo, urgente }) => {
+      chamar_atendente: async ({ motivo, urgente, setor }) => {
         // roteiro em andamento acaba (o pedido de atendente encerra no banco)
         routine?.stop();
         if (urgente) {
@@ -1051,7 +1063,7 @@ export async function runChat(opts: {
           notifyHandoff({ db, bot, conversationId: convId, reason: motivo ?? question, urgent: true }).catch(() => {});
           return { ok: true, aviso: RISK_TEXT };
         }
-        return { ok: true, aviso: await requestHandoff(db, bot, convId, motivo ?? question) };
+        return { ok: true, aviso: await requestHandoff(db, bot, convId, motivo ?? question, { sector: setor, sectors }) };
       },
       registrar_pergunta_sem_resposta: async ({ pergunta }) => {
         unansweredRecorded = true;

@@ -37,6 +37,12 @@ export function holderView(conv: HandoffConversation, meId: string): "mine" | "o
   return conv.assigned_to_id === meId ? "mine" : "other";
 }
 
+/** O rodízio do setor entregou a conversa (ainda sem assumir): a você, a outra pessoa, ou ninguém. Pura. */
+export function rotationView(conv: HandoffConversation, meId: string): "mine" | "other" | null {
+  if (conv.handled_at || conv.takeover_at || !conv.assigned_to_id) return null;
+  return conv.assigned_to_id === meId ? "mine" : "other";
+}
+
 /** "Visitante online agora" / "saiu do site há X" — para saber se ainda vale responder. */
 function VisitorPresence({ conv }: { conv: HandoffConversation }) {
   if (conv.channel === "whatsapp" || conv.channel === "instagram") {
@@ -77,8 +83,11 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
       ) : waiting ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-sm">
           <Headset size={16} className="shrink-0 text-amber-ink" />
-          <span className="min-w-0 flex-1 text-amber-ink"><strong>{who} {leadWaiting(conv) ? "deixou um pedido para a equipe" : "pediu para falar com alguém"}</strong> {relativeTime(conv.handoff_requested_at!)}. Assuma para responder por aqui.</span>
-          <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir conversa</SubmitButton></ActionForm>
+          <span className="min-w-0 flex-1 text-amber-ink">
+            <strong>{who} {leadWaiting(conv) ? "deixou um pedido para a equipe" : "pediu para falar com alguém"}</strong> {relativeTime(conv.handoff_requested_at!)}.{" "}
+            {rotationView(conv, meId) === "mine" ? "O rodízio do setor entregou esta conversa a você: assuma para responder." : rotationView(conv, meId) === "other" ? `O rodízio do setor entregou esta conversa a ${conv.assigned_to_name ?? "outra pessoa"}.` : "Assuma para responder por aqui."}
+          </span>
+          {rotationView(conv, meId) !== "other" && <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir conversa</SubmitButton></ActionForm>}
         </div>
       ) : (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-brand">
@@ -110,11 +119,12 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
   const active = open && Boolean(conv.takeover_at);
   const waiting = open && !conv.takeover_at && Boolean(conv.handoff_requested_at);
   // só quem está com a conversa vê a caixa de resposta; os outros, o histórico e "Assumir no lugar"
-  if (active && holderView(conv, meId) === "other") {
+  // (também quando o rodízio do setor entregou a conversa a outra pessoa, que ainda não assumiu)
+  if ((active && holderView(conv, meId) === "other") || rotationView(conv, meId) === "other") {
     const name = conv.assigned_to_name ?? "outra pessoa";
     return (
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-muted">{name} está atendendo. Só quem atende responde por aqui.</span>
+        <span className="text-muted">{active ? `${name} está atendendo. Só quem atende responde por aqui.` : `A conversa é de ${name}, pelo rodízio do setor.`}</span>
         <ConfirmAction
           action={onForceTakeOver}
           title={`Assumir no lugar de ${name}?`}
