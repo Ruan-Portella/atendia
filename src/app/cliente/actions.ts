@@ -23,6 +23,7 @@ import { resumeConversationAi } from "@/lib/api-pause";
 import { answerQuestion, deleteTextSource, dismissQuestion, saveTextSource } from "@/lib/knowledge";
 import { logAccess } from "@/lib/access-log";
 import { audit, requestMeta } from "@/lib/audit";
+import { RECOVERY_CONFIRM_HOURS, RECOVERY_PROBLEM, cancelOnVerified, requestRecovery } from "@/lib/mfa-recovery";
 import { disconnectInstagramChannel, disconnectWhatsAppChannel } from "@/lib/channel-disconnect";
 import { notifyAgencyOwner } from "@/lib/notify";
 import { appUrl } from "@/lib/utils";
@@ -546,6 +547,20 @@ export async function recordMemberMfa(clientId: string, success: boolean, enroll
   const meta = await requestMeta();
   if (data?.claims?.sub) await logAccess(ctx.admin, { actorType: "member", actorId: String(data.claims.sub), email: ctx.email, event: success ? "login" : "login_failed", ip: meta.ip, userAgent: meta.userAgent, agencyId: ctx.member.agencyId });
   if (success && enrolled) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "seguranca.mfa_cadastrar", targetType: "client", targetId: clientId, ...meta });
+  // quem tem o app não precisa da recuperação: o pedido em aberto cai
+  if (success && data?.claims?.sub) await cancelOnVerified(ctx.admin, String(data.claims.sub));
+}
+
+/** Perdi o app autenticador: o pedido de recuperação (o link de confirmação vai por e-mail, com o nome da agência). */
+export async function requestMemberMfaRecovery(clientId: string, fd: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  const { data } = await (await createClient()).auth.getClaims();
+  const userId = data?.claims?.sub ? String(data.claims.sub) : null;
+  if (!ctx || !userId) return fail("Seu acesso expirou. Entre de novo pelo link do e-mail.");
+  const r = await requestRecovery(ctx.admin, { userId, email: ctx.email, area: "cliente", agencyId: ctx.member.agencyId, clientId }, { reason: text(fd.get("reason")), ...(await requestMeta()) });
+  if (!r.ok) return fail(RECOVERY_PROBLEM[r.problem]);
+  revalidatePath(`/cliente/${clientId}/verificar/recuperar`);
+  return ok(`Pronto: o link para confirmar foi para ${ctx.email} e vale ${RECOVERY_CONFIRM_HOURS} horas.`);
 }
 
 /** O app autenticador da pessoa do portal foi removido (evento grave para a agência). */

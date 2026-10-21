@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -10,9 +11,10 @@ type Step = { kind: "carregando" } | { kind: "cadastrar"; factorId: string; qr: 
  * Segunda etapa (app autenticador, TOTP do Supabase), do backoffice e do painel. Primeira vez:
  * mostra o QR para cadastrar no app; depois, só pede o código de 6 dígitos a cada novo login.
  * onResult registra a entrada ou a falha (e o cadastro); next: para onde ir depois (download de
- * /api/… vai pelo navegador, para baixar o arquivo).
+ * /api/… vai pelo navegador, para baixar o arquivo). recoverHref: o "Perdi o app autenticador" (a
+ * recuperação pelo suporte; o backoffice não tem).
  */
-export function MfaForm({ friendlyName, next, submitLabel, onResult }: { friendlyName: string; next: string; submitLabel: string; onResult: (ok: boolean, enrolled: boolean) => Promise<void> }) {
+export function MfaForm({ friendlyName, next, submitLabel, onResult, recoverHref }: { friendlyName: string; next: string; submitLabel: string; onResult: (ok: boolean, enrolled: boolean) => Promise<void>; recoverHref?: string }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>({ kind: "carregando" });
   const [code, setCode] = useState("");
@@ -73,6 +75,11 @@ export function MfaForm({ friendlyName, next, submitLabel, onResult }: { friendl
       <button type="submit" className="btn-primary" disabled={busy || code.length !== 6}>
         {busy ? "Conferindo…" : submitLabel}
       </button>
+      {step.kind === "verificar" && recoverHref && (
+        <Link href={recoverHref} className="self-center text-xs text-muted hover:underline">
+          Perdi o app autenticador
+        </Link>
+      )}
     </form>
   );
 }

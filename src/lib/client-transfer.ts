@@ -34,6 +34,7 @@ export const TRANSFER_TABLES: Record<string, { muda: boolean; por: string }> = {
   campaigns: { muda: true, por: "as campanhas e lembretes (as agendadas ficam pausadas)" },
   reguas: { muda: true, por: "as réguas dos chatbots (chegam desligadas, para a conta nova conferir)" },
   access_log: { muda: false, por: "registro de acesso (histórico)" },
+  mfa_recovery_requests: { muda: false, por: "os pedidos de recuperação do segundo fator (histórico de segurança da origem)" },
   audit_log: { muda: false, por: "auditoria (histórico)" },
   agency_members: { muda: false, por: "a equipe é da conta (os escopos neste cliente saem)" },
   agency_packs: { muda: false, por: "pacotes da conta" },

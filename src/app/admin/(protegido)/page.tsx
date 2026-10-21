@@ -7,6 +7,8 @@ import { ChannelOpeningControls } from "@/components/admin/release-controls";
 import { agencyStatus, fixedMonthlyBrl, getActivity, getAgencies, getAiCosts, getBotCounts, getFixedCosts, getPlatformFlags, getRevenue, rangeFor, usd, usdBrl } from "@/lib/backoffice";
 import { getOperations, operationAlerts } from "@/lib/backoffice-ops";
 import { brl, num } from "@/lib/plans";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { openRecoveryCounts } from "@/lib/mfa-recovery";
 
 export const metadata = { title: "Visão geral" };
 
@@ -15,7 +17,7 @@ const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram:
 export default async function AdminHome() {
   await requireAdmin("/admin");
   const month = rangeFor("mes");
-  const [agencies, bots, activity, ai, revenue, fixed, ops, flags] = await Promise.all([getAgencies(), getBotCounts(), getActivity(30), getAiCosts(month.since, month.until), getRevenue(), getFixedCosts(), getOperations(), getPlatformFlags()]);
+  const [agencies, bots, activity, ai, revenue, fixed, ops, flags, recoveries] = await Promise.all([getAgencies(), getBotCounts(), getActivity(30), getAiCosts(month.since, month.until), getRevenue(), getFixedCosts(), getOperations(), getPlatformFlags(), openRecoveryCounts(createAdminClient())]);
   const alerts = operationAlerts(ops);
   const fixedBrl = fixedMonthlyBrl(fixed);
 
@@ -49,6 +51,15 @@ export default async function AdminHome() {
         </section>
       ) : (
         <p className="text-sm text-muted">✓ Operação sem alertas: banco, fila da Meta, canais e tarefas agendadas em dia.</p>
+      )}
+
+      {recoveries.open > 0 && (
+        <p className="text-sm">
+          <Link href="/admin/segundo-fator" className="font-semibold underline">
+            {recoveries.open === 1 ? "1 pedido" : `${recoveries.open} pedidos`} de recuperação do segundo fator em aberto
+          </Link>
+          {recoveries.ready > 0 && <span className="font-semibold text-danger"> · {recoveries.ready} pronto{recoveries.ready === 1 ? "" : "s"} para remover</span>}
+        </p>
       )}
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">

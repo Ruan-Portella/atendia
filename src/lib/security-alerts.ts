@@ -21,6 +21,8 @@ export const SECURITY_ALERTS: Record<string, string> = {
   "canal.desconectar_api": "Canal desconectado pela API",
   "bot.destino_atendimento_api": "Destino do atendimento humano trocado pela API (para onde a pessoa vai quando quer falar com a equipe)",
   "seguranca.mfa_remover": "Segundo fator removido",
+  "seguranca.mfa_recuperar_confirmar": "Recuperação do segundo fator confirmada (o suporte remove o app autenticador em 48 horas)",
+  "seguranca.mfa_remover_suporte": "Segundo fator removido pelo suporte (recuperação)",
   "equipe.admin_novo": "Novo administrador na equipe",
   "conta.exclusao_pedida": "Exclusão da conta pedida",
 };

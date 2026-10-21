@@ -14,6 +14,7 @@ const ITEMS: Array<{ href: string; label: string; exact?: boolean }> = [
   { href: "/admin/avaliacao", label: "Avaliação da IA" },
   { href: "/admin/operacao", label: "Operação" },
   { href: "/admin/status", label: "Status" },
+  { href: "/admin/segundo-fator", label: "Segundo fator" },
   { href: "/admin/conformidade", label: "Conformidade" },
   { href: "/admin/roadmap", label: "Roadmap" },
 ];

@@ -22,7 +22,7 @@ export default async function AgencyVerifyPage({ searchParams }: PageProps<"/pai
           <h1 className="text-xl font-bold">Verificação em duas etapas</h1>
           <p className="text-sm text-muted">Esta área pede o código do app autenticador (Segurança, exportação de dados e conversas em modo dados sensíveis). O resto do painel continua sem o código.</p>
         </div>
-        <MfaForm friendlyName="Painel BoaVoz" next={next} submitLabel="Continuar" onResult={recordAgencyMfa} />
+        <MfaForm friendlyName="Painel BoaVoz" next={next} submitLabel="Continuar" onResult={recordAgencyMfa} recoverHref="/painel/verificar/recuperar" />
       </div>
     </div>
   );

@@ -29,6 +29,7 @@ import { grantSupport, revokeSupport } from "@/lib/support-access";
 import { cancelAccountDeletion, requestAccountDeletion } from "@/lib/account-deletion";
 import { parseMomentNotice, untilLabel } from "@/lib/moment-notice";
 import { hasMfa } from "@/lib/agency-mfa";
+import { RECOVERY_CONFIRM_HOURS, RECOVERY_PROBLEM, cancelOnVerified, requestRecovery } from "@/lib/mfa-recovery";
 import { purgeAttachments } from "@/lib/attachments";
 import { removeBotSourceFiles } from "@/lib/source-files";
 import { applySensitiveMode, sensitiveChangeText, sensitiveSavedText } from "@/lib/sensitive-mode";
@@ -1563,6 +1564,17 @@ export async function recordAgencyMfa(ok: boolean, enrolled: boolean): Promise<v
   const meta = await requestMeta();
   await logAccess(createAdminClient(), { actorType: "user", actorId: userId, event: ok ? "login" : "login_failed", ip: meta.ip, userAgent: meta.userAgent, agencyId: agency.id });
   if (ok && enrolled) await auditPanel("seguranca.mfa_cadastrar", { type: "agency", id: agency.id });
+  // quem tem o app não precisa da recuperação: o pedido em aberto cai
+  if (ok) await cancelOnVerified(createAdminClient(), userId);
+}
+
+/** Perdi o app autenticador: o pedido de recuperação pelo suporte (o link de confirmação vai por e-mail). */
+export async function requestAgencyMfaRecovery(fd: FormData): Promise<ActionResult> {
+  const { agency, userId, email } = await requireAgency();
+  const r = await requestRecovery(createAdminClient(), { userId, email, area: "painel", agencyId: agency.id }, { reason: text(fd.get("reason")), ...(await requestMeta()) });
+  if (!r.ok) return fail(RECOVERY_PROBLEM[r.problem]);
+  revalidatePath("/painel/verificar/recuperar");
+  return ok(`Pronto: o link para confirmar foi para ${email} e vale ${RECOVERY_CONFIRM_HOURS} horas.`);
 }
 
 /** O app autenticador foi removido (trocar de aparelho): evento grave, com e-mail e faixa. */
