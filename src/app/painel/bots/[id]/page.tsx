@@ -73,6 +73,7 @@ import { ConversationStateBadge } from "@/components/conversation-state";
 import { HandoffBadge } from "@/components/handoff-badge";
 import { handoffStatus } from "@/lib/handoff-status";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, NO_DATE_NOTICE, nextOpening, whenLabel, type HumanHandoff } from "@/lib/handoff-hours";
+import { SIGNATURE_FORMATS, SIGNATURE_LABEL } from "@/lib/signature";
 import { HUMAN_ONLY_NOTICE } from "@/lib/chat";
 import { GATE_TEXTS } from "@/lib/gate/rules";
 import { TemplateField } from "@/components/template-field";
@@ -563,6 +564,26 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   vars={{ nome: bot.name, empresa: bot.client_name }}
                   maxLength={300}
                 />
+                <div className="flex flex-col gap-2 border-t border-line-2 pt-3">
+                  <h4 className="text-sm font-semibold">Assinatura das mensagens da equipe</h4>
+                  <p className="text-xs text-muted">No WhatsApp e no Instagram, o contato não vê quem escreveu: a assinatura põe o nome de quem atende na mensagem. No chat do site não sai assinatura, porque o nome e a foto já aparecem em cada mensagem. A mensagem com o anúncio de entrada ou de transferência sai sem assinatura (o anúncio já diz o nome).</p>
+                  <label htmlFor="signature" className="label">Formato</label>
+                  <select id="signature" name="signature" defaultValue={handoff.signature ?? "nenhuma"} className="input max-w-[460px]">
+                    {SIGNATURE_FORMATS.map((f) => <option key={f} value={f}>{SIGNATURE_LABEL[f]}</option>)}
+                  </select>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" name="signature_smart" defaultChecked={handoff.signature_smart !== false} className="mt-1" />
+                    <span>Assinatura inteligente: o nome só na primeira mensagem de cada sequência<span className="block text-xs text-muted">Mensagens seguidas da mesma pessoa saem sem o nome, até o contato responder ou outra pessoa escrever.</span></span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" name="signature_sector" defaultChecked={Boolean(handoff.signature_sector)} className="mt-1" />
+                    <span>Com o setor junto do nome (Viviane · Financeiro)<span className="block text-xs text-muted">Usa o setor da conversa (Setores, na página do cliente). Conversa sem setor: só o nome.</span></span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" name="signature_locked" defaultChecked={Boolean(handoff.signature_locked)} className="mt-1" />
+                    <span>Travar o formato<span className="block text-xs text-muted">Sem travar, cada pessoa pode escolher o próprio formato em Meu perfil. Travado, vale este para todo mundo.</span></span>
+                  </label>
+                </div>
                 <details className="rounded-lg border border-line-2 px-3 py-2 text-sm">
                   <summary className="cursor-pointer text-xs font-semibold text-muted">Textos fixos (conformidade, só para consulta)</summary>
                   <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-ink-2">

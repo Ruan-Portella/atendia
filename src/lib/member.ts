@@ -49,6 +49,8 @@ export interface Membership {
   avatarUrl: string | null;
   /** Disponível para o rodízio dos setores (Caixa de entrada, parte 2). */
   available: boolean;
+  /** O formato da assinatura que a pessoa escolheu (Caixa de entrada, parte 5); null = o do chatbot. */
+  signature: string | null;
   clientId: string;
   clientName: string;
   agencyId: string;
@@ -107,7 +109,7 @@ export const getMemberSession = cache(async (): Promise<MemberSession | null> =>
   if (isMemberSessionExpired(claims?.amr)) return { email, expired: true, memberships: [] };
   const { data: rows } = await createAdminClient()
     .from("client_members")
-    .select("id, role, display_name, avatar_url, available, client_id, clients!inner(id, name, agency_id, allow_handoff, allow_knowledge, allow_hours, agencies!inner(name, logo_url, brand_color, support_whatsapp, custom_domain, custom_domain_verified_at))")
+    .select("id, role, display_name, avatar_url, available, signature, client_id, clients!inner(id, name, agency_id, allow_handoff, allow_knowledge, allow_hours, agencies!inner(name, logo_url, brand_color, support_whatsapp, custom_domain, custom_domain_verified_at))")
     .eq("email", email);
   const memberships = (rows ?? []).map((r) => {
     const c = (Array.isArray(r.clients) ? r.clients[0] : r.clients) as Record<string, unknown>;
@@ -118,6 +120,7 @@ export const getMemberSession = cache(async (): Promise<MemberSession | null> =>
       displayName: (r.display_name as string | null) ?? null,
       avatarUrl: (r.avatar_url as string | null) ?? null,
       available: r.available !== false,
+      signature: (r.signature as string | null) ?? null,
       clientId: String(c.id),
       clientName: String(c.name),
       agencyId: String(c.agency_id),

@@ -17,6 +17,7 @@ import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handof
 import { parseTarget, transferConversation } from "@/lib/transfer";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
+import { isSignatureFormat } from "@/lib/signature";
 import { resumeConversationAi } from "@/lib/api-pause";
 import { answerQuestion, deleteTextSource, dismissQuestion, saveTextSource } from "@/lib/knowledge";
 import { logAccess } from "@/lib/access-log";
@@ -371,6 +372,18 @@ export async function memberSetAvailability(clientId: string, available: boolean
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   revalidatePath(`/cliente/${clientId}`, "layout");
   return ok(available ? "Você está disponível: o rodízio dos seus setores manda conversas para você." : "Você está ausente: o rodízio pula você até voltar.");
+}
+
+/** Minha assinatura (Caixa de entrada, parte 5): "chatbot" volta para o formato do chatbot. */
+export async function memberSetSignature(clientId: string, formData: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId);
+  if (!ctx) return fail("Sua sessão expirou. Entre de novo.");
+  const v = String(formData.get("signature") ?? "");
+  const signature = isSignatureFormat(v) ? v : null;
+  const { error } = await ctx.admin.from("client_members").update({ signature }).eq("id", ctx.member.memberId);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath(`/cliente/${clientId}/perfil`);
+  return ok(signature ? "Assinatura salva. Nos chatbots que travam o formato, vale o deles." : "Pronto: vale o formato de cada chatbot.");
 }
 
 const ONLY_MANAGER = "Só o gestor mexe na equipe do portal.";

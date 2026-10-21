@@ -5,6 +5,7 @@ import { decideMode, resolveMode, type Mode, type ModeFacts, type ModeInput } fr
 import { channelMsgHash } from "./hash";
 import { saveMessage, updateMessages, type MessagePatch } from "./messages";
 import { learnLater } from "./learning";
+import { withoutSignatureSuffix } from "./signature";
 
 /*
  * Camada única de envio (L1): toda mensagem que sai pelo WhatsApp ou pelo Instagram passa por
@@ -108,7 +109,7 @@ export async function deliver(
   // aprendizado (D', parte 6): a resposta da equipe pode virar rascunho para a base (sem o anúncio e a assinatura)
   if (o.kind === "equipe" && o.conversationId && o.record && "insert" in o.record && o.record.insert.role === "agent") {
     const r = o.record.insert;
-    learnLater(db, { conversationId: o.conversationId, text: r.content.slice(r.announce_chars ?? 0), author: r.author_display_name ?? r.author });
+    learnLater(db, { conversationId: o.conversationId, text: withoutSignatureSuffix(r.content.slice(r.announce_chars ?? 0)), author: r.author_display_name ?? r.author });
   }
   return { status: "sent", id, messageId };
 }

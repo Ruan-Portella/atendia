@@ -31,9 +31,11 @@ export interface AgencyMember {
   removed_at: string | null;
   /** Disponível para o rodízio dos setores (Caixa de entrada, parte 2). */
   available?: boolean | null;
+  /** O formato da assinatura que a pessoa escolheu (Caixa de entrada, parte 5); null = o do chatbot. */
+  signature?: string | null;
 }
 
-export const MEMBER_COLS = "id, agency_id, user_id, email, role, scope, display_name, avatar_url, invited_by, invited_at, invite_expires_at, accepted_at, removed_at, available";
+export const MEMBER_COLS = "id, agency_id, user_id, email, role, scope, display_name, avatar_url, invited_by, invited_at, invite_expires_at, accepted_at, removed_at, available, signature";
 
 export const inviteTokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 export const newInviteToken = () => randomBytes(24).toString("base64url");

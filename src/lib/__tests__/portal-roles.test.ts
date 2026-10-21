@@ -47,8 +47,8 @@ describe("ações do portal conferem o papel", () => {
   it("toda ação exportada diz a permissão que exige, menos as que valem para qualquer papel", () => {
     // o arquivo pode vir com CRLF (checkout no Windows): sem normalizar, a busca abaixo não acha nada
     const src = readFileSync(join(__dirname, "../../app/cliente/actions.ts"), "utf8").replace(/\r\n/g, "\n");
-    // qualquer pessoa logada do portal: entrar, o próprio perfil, o próprio segundo fator e a própria disponibilidade
-    const anyRole = new Set(["requestAccessLink", "confirmAccess", "memberUpdateProfile", "recordMemberMfa", "recordMemberMfaRemoved", "memberSetAvailability"]);
+    // qualquer pessoa logada do portal: entrar, o próprio perfil, o próprio segundo fator, a própria disponibilidade e a própria assinatura
+    const anyRole = new Set(["requestAccessLink", "confirmAccess", "memberUpdateProfile", "recordMemberMfa", "recordMemberMfaRemoved", "memberSetAvailability", "memberSetSignature"]);
     const missing: string[] = [];
     for (const m of src.matchAll(/^export async function (\w+)\([^\n]*\{\n((?:.*\n){1,3})/gm)) {
       if (anyRole.has(m[1])) continue;

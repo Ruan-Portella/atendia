@@ -3,8 +3,10 @@ import { DEFAULT_ENTRY_NOTICE } from "@/lib/handoff-hours";
 import { isOurAvatarUrl } from "@/lib/attendants";
 import { ProfileForm } from "@/components/profile-form";
 import { MfaSection } from "@/app/painel/seguranca/mfa-section";
-import { memberSetAvailability, memberUpdateProfile, recordMemberMfaRemoved } from "../../actions";
+import { memberSetAvailability, memberSetSignature, memberUpdateProfile, recordMemberMfaRemoved } from "../../actions";
 import { AvailabilityCard } from "@/components/availability-card";
+import { SignatureCard } from "@/components/signature-card";
+import { isSignatureFormat } from "@/lib/signature";
 
 export const metadata = { title: { absolute: "Meu perfil" }, robots: { index: false, follow: false } };
 
@@ -31,6 +33,7 @@ export default async function MemberProfilePage({ params }: PageProps<"/cliente/
         company={member.clientName}
       />
       {member.allowHandoff && <AvailabilityCard available={member.available} action={memberSetAvailability.bind(null, id)} />}
+      {member.allowHandoff && <SignatureCard value={isSignatureFormat(member.signature) ? member.signature : null} action={memberSetSignature.bind(null, id)} />}
       <MfaSection
         onRemoved={recordMemberMfaRemoved.bind(null, id)}
         verifyHref={verify}

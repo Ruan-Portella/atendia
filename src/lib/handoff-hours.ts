@@ -1,3 +1,5 @@
+import type { SignatureFormat } from "./signature";
+
 /*
  * Caminho para humano (Peça 10): o pedido de atendente no chat está sempre ligado; o cliente
  * pode informar outros contatos e um horário de atendimento. Fora do horário, o pedido é
@@ -24,6 +26,11 @@ export interface HumanHandoff {
   entry_notice?: string | null;
   /** Anúncio de volta para a IA editado (null = o padrão). Leva B1'. */
   back_notice?: string | null;
+  /** Assinatura das mensagens da equipe (Caixa de entrada, parte 5; signature.ts). */
+  signature?: SignatureFormat | null;
+  signature_smart?: boolean | null;
+  signature_sector?: boolean | null;
+  signature_locked?: boolean | null;
 }
 
 export const WEEKDAYS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"] as const;

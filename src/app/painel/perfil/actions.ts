@@ -9,6 +9,7 @@ import { audit, requestMeta } from "@/lib/audit";
 import { dismissNoticeCard, forgetTeamWhatsApp, loadTeamWhatsApp, requestTeamWhatsApp, saveNoticePrefs } from "@/lib/team-whatsapp";
 import { kindsForRole } from "@/lib/team-notices";
 import { setAvailable } from "@/lib/availability";
+import { isSignatureFormat } from "@/lib/signature";
 
 /** Meu perfil: nome de exibição e foto de quem está logado (qualquer papel). */
 export async function updateMyProfile(formData: FormData): Promise<ActionResult> {
@@ -29,6 +30,17 @@ export async function setMyAvailability(available: boolean): Promise<ActionResul
   if (!(await setAvailable(createAdminClient(), { type: "agency_member", id: member.id }, available))) return fail("Não foi possível salvar. Tente de novo.");
   revalidatePath("/painel", "layout");
   return ok(available ? "Você está disponível: o rodízio dos seus setores manda conversas para você." : "Você está ausente: o rodízio pula você até voltar.");
+}
+
+/** Minha assinatura (Caixa de entrada, parte 5): "chatbot" volta para o formato do chatbot. */
+export async function setMySignature(formData: FormData): Promise<ActionResult> {
+  const { member } = await requireAgency();
+  const v = String(formData.get("signature") ?? "");
+  const signature = isSignatureFormat(v) ? v : null;
+  const { error } = await createAdminClient().from("agency_members").update({ signature }).eq("id", member.id);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  revalidatePath("/painel/perfil");
+  return ok(signature ? "Assinatura salva. Nos chatbots que travam o formato, vale o deles." : "Pronto: vale o formato de cada chatbot.");
 }
 
 /* ------------------------------------------------------------------ avisos no WhatsApp */

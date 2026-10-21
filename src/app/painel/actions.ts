@@ -13,6 +13,7 @@ import { agencySlug, requireAgency, type AgencyContext } from "@/lib/agency";
 import { attendantOf, can, type Permission } from "@/lib/team";
 import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
 import { parseTarget, transferConversation } from "@/lib/transfer";
+import { isSignatureFormat } from "@/lib/signature";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
 import { attendantAuthor, type Attendant } from "@/lib/authors";
@@ -268,6 +269,11 @@ async function parseHumanHandoff(supabase: Awaited<ReturnType<typeof createClien
       entry_notice: entry && entry !== DEFAULT_ENTRY_NOTICE ? entry : null,
       back_notice: back && back !== DEFAULT_BACK_NOTICE ? back : null,
       widget_button: f.widget_button === "on",
+      // assinatura das mensagens da equipe (Caixa de entrada, parte 5); sem assinatura fica nulo
+      signature: isSignatureFormat(f.signature) && f.signature !== "nenhuma" ? f.signature : null,
+      signature_smart: f.signature_smart === "on",
+      signature_sector: f.signature_sector === "on",
+      signature_locked: f.signature_locked === "on",
     },
   };
 }

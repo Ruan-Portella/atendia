@@ -1,4 +1,6 @@
 import { AvailabilityCard } from "@/components/availability-card";
+import { SignatureCard } from "@/components/signature-card";
+import { isSignatureFormat } from "@/lib/signature";
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -9,7 +11,7 @@ import { ProfileForm } from "@/components/profile-form";
 import { MfaSection } from "../seguranca/mfa-section";
 import { TeamWhatsAppCard } from "@/components/team-whatsapp-card";
 import { noticeStatus } from "@/lib/team-whatsapp";
-import { setMyAvailability, updateMyProfile } from "./actions";
+import { setMyAvailability, setMySignature, updateMyProfile } from "./actions";
 
 export const metadata = { title: "Meu perfil" };
 
@@ -58,6 +60,7 @@ export default async function ProfilePage() {
         {role !== "owner" && <p className="text-xs text-muted">Para mudar o papel ou o escopo, fale com o dono ou um administrador da agência.</p>}
       </section>
       <AvailabilityCard available={member.available !== false} action={setMyAvailability} />
+      <SignatureCard value={isSignatureFormat(member.signature) ? member.signature : null} action={setMySignature} />
       <TeamWhatsAppCard status={await noticeStatus(createAdminClient(), member.id)} role={role} />
       <MfaSection enrollHref={`/painel/verificar?next=${encodeURIComponent("/painel/perfil")}`} />
     </div>

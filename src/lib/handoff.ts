@@ -9,7 +9,8 @@ import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channe
 import { send as sendInstagram } from "./instagram-inbound";
 import { sendBlockedReason } from "./conversation-mode";
 import { deliver, type SendRecord } from "./send";
-import { saveMessage, touchConversation } from "./messages";
+import { findMessage, saveMessage, touchConversation } from "./messages";
+import { effectiveSignature, isSignatureFormat, signText, startsSequence, type SignatureFormat } from "./signature";
 import { learnLater } from "./learning";
 import { attendantAuthor, type Attendant } from "./authors";
 import { humanAgentEnabled } from "./presence";
@@ -94,7 +95,7 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   const content = rawContent.trim();
   if (!content) return fail("Escreva uma mensagem.");
   if (content.length > 2000) return fail("Mensagem muito longa (até 2.000 caracteres).");
-  const { data: conv } = await admin.from("conversations").select(`${HOLDER_COLS}, transfer_from_name, bots(client_name, human_handoff), sectors(name)`).eq("id", conversationId).maybeSingle();
+  const { data: conv } = await admin.from("conversations").select(`${HOLDER_COLS}, channel, transfer_from_name, bots(client_name, human_handoff), sectors(name)`).eq("id", conversationId).maybeSingle();
   if (!conv) return fail("Conversa não encontrada.");
   // só quem está com a conversa responde
   if (heldByOther(conv as Holder, who.id)) return fail(`${otherName(conv as Holder)} está atendendo esta conversa. Para responder, use “Assumir no lugar”.`);
@@ -111,8 +112,17 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   const passedBy = (conv.transfer_from_name as string | null)?.trim() || null;
   const sector = (Array.isArray(conv.sectors) ? conv.sectors[0] : conv.sectors) as { name: string } | null;
   const announce = !claimed?.length ? null : passedBy && passedBy !== who.name ? transferNotice(passedBy, who.name, sector?.name) : renderEntryNotice(bot?.human_handoff?.entry_notice, { attendant: who.name, company: bot?.client_name ?? "" });
-  const text = announce ? `${announce}\n\n${content}` : content;
-  const record = { role: "agent" as const, content: text, ...attendantAuthor(who), announce_chars: announce ? announce.length + 2 : null };
+  // assinatura (Caixa de entrada, parte 5): não vai junto do anúncio, que já diz o nome
+  const hh = bot?.human_handoff ?? null;
+  const format = effectiveSignature(hh, await memberSignature(admin, who));
+  let signed = { text: content, prefixChars: 0 };
+  if (!announce && format !== "nenhuma") {
+    const smart = hh?.signature_smart !== false;
+    const last = smart ? await findMessage(admin, { conversationId, roles: ["user", "agent", "assistant"], newestFirst: true }, ["role", "author_id"] as const) : null;
+    if (!smart || startsSequence(last, who.id)) signed = signText(content, { format, name: who.name, sector: hh?.signature_sector ? sector?.name : null, channel: conv.channel as string | null });
+  }
+  const text = announce ? `${announce}\n\n${content}` : signed.text;
+  const record = { role: "agent" as const, content: text, ...attendantAuthor(who), announce_chars: announce ? announce.length + 2 : signed.prefixChars || null };
   const restoreAnnounce = async () => {
     if (announce) await admin.from("conversations").update({ announce_pending: true, transfer_from_name: passedBy }).eq("id", conversationId).eq("assigned_to_id", who.id);
   };
@@ -134,6 +144,12 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   // aprendizado (D', parte 6): no WhatsApp e no Instagram, a camada de envio já cuidou
   if (sent === "widget") learnLater(admin, { conversationId, text: content, author: who.name });
   return ok("Enviada. O visitante vê em alguns segundos.");
+}
+
+/** O formato de assinatura que a pessoa escolheu no perfil (null = o do chatbot). */
+async function memberSignature(admin: SupabaseClient, who: Attendant): Promise<SignatureFormat | null> {
+  const { data } = await admin.from(who.type === "client_member" ? "client_members" : "agency_members").select("signature").eq("id", who.id).maybeSingle();
+  return isSignatureFormat(data?.signature) ? data.signature : null;
 }
 
 /**
