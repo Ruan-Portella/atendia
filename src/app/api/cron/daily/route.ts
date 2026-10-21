@@ -25,6 +25,7 @@ import { checkErrorRates, checkSubscriptions } from "@/lib/meta-monitor";
 import { checkAiCostAlarm } from "@/lib/ai-cost-alarm";
 import { expireContactMemories } from "@/lib/contacts";
 import { purgeOrphanSignals } from "@/lib/person-signals";
+import { purgeStatusDaily } from "@/lib/status";
 import { MEMORY_DAYS } from "@/lib/contact-memory";
 
 // a classificação da base (portão, parte 6) usa o que sobrar depois das tarefas rápidas
@@ -72,6 +73,8 @@ async function daily() {
   const memories = await run("memórias vencidas", () => expireContactMemories(db, new Date(Date.now() - MEMORY_DAYS * 86_400_000).toISOString()));
   // sinais de contas excluídas saem 12 meses depois (trava da conta grátis)
   const signals = await run("sinais de contas excluídas", () => purgeOrphanSignals(db));
+  // o histórico da página de status fica 120 dias
+  const statusDays = await run("histórico da página de status", () => purgeStatusDaily(db));
   // aceite pelo link sem a Meta concluir a conexão em 7 dias é apagado
   const acceptances = await run("aceites pendentes", () => deleteStalePending(db));
   // contas com a exclusão vencida (7 dias depois do pedido do dono): canais, assinatura, arquivos e a agência
@@ -130,5 +133,5 @@ async function daily() {
   // bot.month_closed: o fechamento do mês anterior de cada chatbot (só nos 3 primeiros dias do mês)
   const monthClosed = await run("fechamento do mês", () => emitMonthClosed(db));
   const analysis = await run("análise do bot", () => runDueAnalyses(db, { budgetMs: Math.max(0, 285_000 - (Date.now() - started)) }));
-  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, memories, signals, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, subscriptions, errors, aiUsage, aiCost, disk, sources, base, analysis };
+  return { inbound, inbox, domains, monthClosed, invites, apiLogs, reports, continuous, retention, files, memories, signals, statusDays, acceptances, accounts, cipher, links, contacts, logs, instagram, igNames, subscriptions, errors, aiUsage, aiCost, disk, sources, base, analysis };
 }

@@ -7,6 +7,9 @@ import { hashId } from "@/lib/rate-limit";
 import { passwordOnlySession } from "@/lib/login-code";
 import { DEVICE_COOKIE, DEVICE_COOKIE_MAX_AGE } from "@/lib/person-signals";
 import { hasSessionCookie, isScannerPath } from "@/lib/bot-guard";
+import { isStatusHost } from "@/lib/status";
+import { hostOf } from "@/lib/domain";
+import { appUrl } from "@/lib/utils";
 
 /** Cookie que marca "esta sessão já foi registrada hoje, deste IP" (evita gravar a cada página). */
 const ACCESS_MARK = "bv_al";
@@ -25,6 +28,13 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // varredura de robô (.env, .git, wp-admin, .php…), também nos domínios das agências: 404 na hora,
   // sem sessão, sem página e sem registro
   if (isScannerPath(request.nextUrl.pathname)) return new NextResponse(null, { status: 404, headers: { "Cache-Control": "public, max-age=86400" } });
+  // status.boavoz.com: a página de status na raiz (o resto, como os arquivos do Next, segue)
+  if (isStatusHost(request.headers.get("host"), hostOf(appUrl()))) {
+    if (request.nextUrl.pathname !== "/") return NextResponse.next();
+    const url = request.nextUrl.clone();
+    url.pathname = "/status";
+    return NextResponse.rewrite(url);
+  }
   const customHost = isCustomHost(request.headers.get("host"));
   // API pública (/api/v1): só no domínio do BoaVoz, sem sessão (a chave é conferida na rota)
   if (/^\/api\/v1(\/|$)/.test(request.nextUrl.pathname)) {

@@ -8,6 +8,7 @@ import { runIdleSurveys } from "@/lib/satisfaction";
 import { syncDueInstagramSources } from "@/lib/instagram-posts";
 import { planReguas } from "@/lib/reguas";
 import { runMemoryJob } from "@/lib/contact-memory";
+import { runStatusCheck } from "@/lib/status";
 
 export const maxDuration = 60;
 
@@ -25,6 +26,8 @@ export async function GET(req: Request) {
   try {
     const result = await withCronLock(db, "campanhas", 90, async () => {
       const hasTime = deadline(45_000);
+      // página de status: a conferência dos sinais a cada 5 minutos (rápida; antes do resto)
+      const status = await runStatusCheck(db).catch((e) => (console.error("status: conferência", e), null));
       // réguas: quem entrou nelas vai para a fila e já sai neste tique (erro aqui não para as campanhas)
       const reguas = await planReguas(db, { hasTime }).catch((e) => (console.error("réguas: planejador", e), Sentry.captureException(e), null));
       const campaigns = await runCampaignTick(db, { hasTime });
@@ -38,7 +41,7 @@ export async function GET(req: Request) {
       const memories = hasTime() ? await runMemoryJob(db, { hasTime }).catch((e) => (console.error("memória: tarefa", e), 0)) : 0;
       // posts do Instagram (E1): a leitura em partes usa o tempo que sobrar
       const posts = hasTime() ? await syncDueInstagramSources(db, { hasTime }) : 0;
-      return { ...campaigns, reguas, webhooks, pauses, surveys, memories, posts };
+      return { ...campaigns, reguas, webhooks, pauses, surveys, memories, posts, status };
     });
     return Response.json(result);
   } catch (e) {

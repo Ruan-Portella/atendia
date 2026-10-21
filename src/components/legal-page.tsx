@@ -50,6 +50,7 @@ export function LegalFooter() {
         <Link href="/seguranca">Segurança</Link>
         <Link href="/exclusao-de-dados">Exclusão de dados</Link>
         <Link href="/roadmap">Roadmap</Link>
+        <Link href="/status">Status</Link>
         <a href={`mailto:${company.email}`}>{company.email}</a>
       </nav>
     </footer>

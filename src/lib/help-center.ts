@@ -30,7 +30,7 @@ export const HELP_GROUPS: Array<{ title: string; sections: string[] }> = [
   { title: "Atendimento e equipe", sections: ["Atendimento humano e conversas", "Caixa de entrada", "Setores e feriados", "Transferir, notas internas, respostas prontas e adiar", "Chamados no chat do site", "Assinatura das mensagens da equipe", "Pesquisa de satisfação", "Equipe e papéis", "Meu perfil", "Avisos no WhatsApp para a equipe", "Avisos no celular e no computador", "Área do cliente (portal)", "Relatório mensal", "Evolução mês a mês", "Marca e domínio", "Cliente que veio de outra conta"] },
   { title: "Contatos e campanhas", sections: ["Contatos", "Campanhas no WhatsApp", "Lembretes", "Réguas"] },
   { title: "Preços e cobrança", sections: ["Tamanhos e preços dos chatbots", "O que conta como um atendimento", "Excedente e crédito", "Pacotes da conta", "Assinatura, fatura e cancelamento", "Desistência em 7 dias e a primeira semana", "Pagamento atrasado", "Excluir a conta"] },
-  { title: "Integrações e segurança", sections: ["Integrações: ações, webhooks e API", "Segurança e privacidade (LGPD)"] },
+  { title: "Integrações e segurança", sections: ["Integrações: ações, webhooks e API", "Segurança e privacidade (LGPD)", "Página de status"] },
 ];
 
 /** Blocos de um trecho de markdown simples: parágrafos e listas (- e 1.). Pura. */

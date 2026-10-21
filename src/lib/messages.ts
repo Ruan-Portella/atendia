@@ -343,3 +343,16 @@ export async function sendFailureStats(db: SupabaseClient, since: string): Promi
   const [sent, failed] = await Promise.all([base().not("channel_msg_hash", "is", null), base().not("failed_at", "is", null)]);
   return { sent: (sent.count ?? 0) + (failed.count ?? 0), failed: failed.count ?? 0 };
 }
+
+/** O mesmo, por canal (página de status): as respostas pelo WhatsApp e pelo Instagram desde `since` e as recusadas. */
+export async function sendFailureStatsByChannel(db: SupabaseClient, since: string): Promise<Record<"whatsapp" | "instagram", { sent: number; failed: number }>> {
+  // a lista de colunas como string solta: o tipo do embed !inner estoura a inferência do TypeScript
+  const cols: string = "id, conversations!inner(channel)";
+  const count = async (channel: "whatsapp" | "instagram", failed: boolean) => {
+    const base = db.from("messages").select(cols, { count: "exact", head: true }).in("role", ["assistant", "agent"]).gte("created_at", since).eq("conversations.channel", channel);
+    const { count: n } = await base.not(failed ? "failed_at" : "channel_msg_hash", "is", null);
+    return n ?? 0;
+  };
+  const [waSent, waFailed, igSent, igFailed] = await Promise.all([count("whatsapp", false), count("whatsapp", true), count("instagram", false), count("instagram", true)]);
+  return { whatsapp: { sent: waSent + waFailed, failed: waFailed }, instagram: { sent: igSent + igFailed, failed: igFailed } };
+}
