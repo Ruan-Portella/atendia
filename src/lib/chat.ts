@@ -39,6 +39,7 @@ import { linkColumnsForContact } from "./pairing";
 import { INTERNAL_FALLBACK, internalTerms, stripInternal } from "./internal-guard";
 import { createLinkGuard, knowledgeLookup, type LinkGuard } from "./link-guard";
 import { logGate } from "./gate/log";
+import { clientHolidays } from "./sectors";
 import { endActiveRoutine, routineSession, type RoutineTurn } from "./routine-engine";
 import { DEFAULT_POST_RULE, isPostHit, postPriceNote, postPriceRuleOf, withPostAges, type PostPriceRule } from "./post-context";
 import type { IdentityPort } from "./routine-identity";
@@ -522,7 +523,8 @@ export async function requestHandoff(db: SupabaseClient, bot: BotRow, conversati
     .select("id");
   if (updated?.length) notifyHandoff({ db, bot, conversationId, reason }).catch(() => {});
   else await db.from("conversations").update({ needs_human: true, handled_at: null }).eq("id", conversationId);
-  return handoffNotice(bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message);
+  // feriado do negócio (Caixa de entrada, parte 1) é dia fechado
+  return handoffNotice(bot.human_handoff?.hours, new Date(), bot.human_handoff?.away_message, await clientHolidays(db, bot.client_id));
 }
 
 /** Garante o texto fixo de risco à vida na resposta quando a IA chamou atendente com urgência. */

@@ -1,3 +1,4 @@
+import { clientHolidays } from "./sectors";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { queueHandoffRequested } from "./message-events";
 import { nextOpening } from "./handoff-hours";
@@ -57,7 +58,7 @@ async function markLeadWaiting(db: SupabaseClient, bot: BotRow, conversationId: 
     .or("handoff_requested_at.is.null,handled_at.not.is.null")
     .select("id");
   // já esperando: nada muda (nem webhook de novo)
-  if (updated?.length) await queueHandoffRequested(db, conversationId, { lead: true, outsideHours: nextOpening(bot.human_handoff?.hours) !== null });
+  if (updated?.length) await queueHandoffRequested(db, conversationId, { lead: true, outsideHours: nextOpening(bot.human_handoff?.hours, new Date(), await clientHolidays(db, bot.client_id)) !== null });
 }
 
 /**
@@ -89,7 +90,7 @@ export async function notifyHandoff(opts: { db: SupabaseClient; bot: BotRow; con
   // o motivo (o que o contato disse) não vai por e-mail (leva S): a conversa fica no painel
   const { db, bot, conversationId, urgent } = opts;
   // webhooks: handoff.requested (com ou sem e-mail configurado)
-  await queueHandoffRequested(db, conversationId, { urgent, aiUnavailable: opts.aiUnavailable, outsideHours: nextOpening(bot.human_handoff?.hours) !== null });
+  await queueHandoffRequested(db, conversationId, { urgent, aiUnavailable: opts.aiUnavailable, outsideHours: nextOpening(bot.human_handoff?.hours, new Date(), await clientHolidays(db, bot.client_id)) !== null });
   // risco à vida: assunto destacado e a agência sempre avisada (mesmo com o atendimento delegado)
   const urgentTag = urgent ? "URGENTE (possível risco à vida) · " : "";
   await emailTeam(db, bot, {

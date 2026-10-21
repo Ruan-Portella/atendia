@@ -63,21 +63,38 @@ export function hasHours(hours: BusinessHours | null | undefined): hours is Busi
   return Boolean(hours && Object.values(hours).some((h) => h && h[0] && h[1]));
 }
 
+/** O dia em Brasília daqui a `inDays` dias: "MM-DD" e "AAAA-MM-DD" (para os feriados). */
+function brasiliaDate(now: Date, inDays: number): { md: string; ymd: string } {
+  const local = new Date(now.getTime() + TZ_OFFSET_MIN * 60_000 + inDays * 86_400_000);
+  const md = `${String(local.getUTCMonth() + 1).padStart(2, "0")}-${String(local.getUTCDate()).padStart(2, "0")}`;
+  return { md, ymd: `${local.getUTCFullYear()}-${md}` };
+}
+
+/** O dia (daqui a `inDays`) é feriado do negócio? "MM-DD" vale todo ano; "AAAA-MM-DD", só nele. Pura. */
+export function isHoliday(holidays: readonly string[] | null | undefined, now = new Date(), inDays = 0): boolean {
+  if (!holidays?.length) return false;
+  const { md, ymd } = brasiliaDate(now, inDays);
+  return holidays.includes(md) || holidays.includes(ymd);
+}
+
 /**
  * Quando a equipe volta: null se está no horário agora (ou sem horário configurado); senão,
- * o dia (0 a 6, a partir de hoje) e o horário da próxima abertura.
+ * o dia (0 a 6, a partir de hoje) e o horário da próxima abertura. Feriado do negócio (Caixa de
+ * entrada, parte 1) é dia fechado.
  */
-export function nextOpening(hours: BusinessHours | null | undefined, now = new Date()): { inDays: number; day: number; time: string; until: string } | null {
+export function nextOpening(hours: BusinessHours | null | undefined, now = new Date(), holidays: readonly string[] = []): { inDays: number; day: number; time: string; until: string; date?: string } | null {
   if (!hasHours(hours)) return null;
   const { day, minute } = brasilia(now);
   const today = hours[String(day) as keyof BusinessHours];
-  if (today && minute >= minutesOf(today[0]) && minute < minutesOf(today[1])) return null;
-  for (let inDays = 0; inDays <= 7; inDays++) {
+  if (today && !isHoliday(holidays, now) && minute >= minutesOf(today[0]) && minute < minutesOf(today[1])) return null;
+  // até 3 semanas à frente: uma sequência de feriados não deixa a equipe "sem volta"
+  for (let inDays = 0; inDays <= 21; inDays++) {
     const d = (day + inDays) % 7;
     const h = hours[String(d) as keyof BusinessHours];
-    if (!h) continue;
+    if (!h || isHoliday(holidays, now, inDays)) continue;
     if (inDays === 0 && minute >= minutesOf(h[0])) continue; // hoje já abriu (e fechou)
-    return { inDays, day: d, time: h[0], until: h[1] };
+    const [, mm, dd] = brasiliaDate(now, inDays).ymd.split("-");
+    return { inDays, day: d, time: h[0], until: h[1], date: `${dd}/${mm}` };
   }
   return null;
 }
@@ -92,8 +109,9 @@ const hourLabel = (hhmm: string) => {
  * "hoje, das 14h às 18h", "amanhã, das 9h às 18h", "segunda, das 9h30 às 12h"; o mesmo dia da
  * semana que vem vira "na próxima quinta" (só "quinta", numa quinta, pareceria hoje).
  */
-export function whenLabel(o: { inDays: number; day: number; time: string; until: string }): string {
-  const day = o.inDays === 0 ? "hoje" : o.inDays === 1 ? "amanhã" : o.inDays === 7 ? `${o.day === 0 || o.day === 6 ? "no próximo" : "na próxima"} ${WEEKDAYS[o.day]}` : WEEKDAYS[o.day];
+export function whenLabel(o: { inDays: number; day: number; time: string; until: string; date?: string }): string {
+  // mais de uma semana (feriados no caminho): a data, para não confundir com a semana que vem
+  const day = o.inDays === 0 ? "hoje" : o.inDays === 1 ? "amanhã" : o.inDays === 7 ? `${o.day === 0 || o.day === 6 ? "no próximo" : "na próxima"} ${WEEKDAYS[o.day]}` : o.inDays > 7 && o.date ? `${WEEKDAYS[o.day]}, dia ${o.date}` : WEEKDAYS[o.day];
   return `${day}, das ${hourLabel(o.time)} às ${hourLabel(o.until)}`;
 }
 
@@ -177,8 +195,8 @@ export function renderAiNotice(template: string | null | undefined, bot: { name:
 }
 
 /** Texto que o bot usa ao registrar o pedido de atendente: fora do horário, diz quando a equipe volta. */
-export function handoffNotice(hours: BusinessHours | null | undefined, now = new Date(), awayMessage?: string | null): string {
-  const next = nextOpening(hours, now);
+export function handoffNotice(hours: BusinessHours | null | undefined, now = new Date(), awayMessage?: string | null, holidays: readonly string[] = []): string {
+  const next = nextOpening(hours, now, holidays);
   return next ? (awayMessage?.trim() || DEFAULT_AWAY_MESSAGE).replaceAll("{volta}", whenLabel(next)) : NO_DATE_NOTICE;
 }
 

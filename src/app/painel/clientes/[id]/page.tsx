@@ -30,6 +30,9 @@ import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePo
 import { ClientContacts } from "@/components/client-contacts";
 import { ClientCampaigns } from "@/components/client-campaigns";
 import { ClientIntegrationsSummary } from "@/components/integrations/client-integrations-summary";
+import { ClientSectors } from "@/components/client-sectors";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { clientHolidays, eligibleSectorMembers, listSectors } from "@/lib/sectors";
 
 export const metadata = { title: "Cliente" };
 
@@ -41,6 +44,7 @@ const TABS = [
   ["conversas", "Conversas"],
   ["relatorio", "Relatório e portal"],
   ["acesso", "Acesso do cliente"],
+  ["setores", "Setores"],
   ["conformidade", "Conformidade"],
   ["dados", "Dados do cliente"],
 ] as const;
@@ -349,6 +353,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
 
       {tab === "conformidade" && <ClientCompliance clientId={client.id} clientName={client.name} />}
 
+      {tab === "setores" && <SectorsTab agencyId={agency.id} clientId={client.id} />}
+
       {tab === "dados" && (
         <div className="flex max-w-[560px] flex-col gap-5">
           <ActionForm key={client.name + client.price_cents} action={updateClientRecord.bind(null, client.id)} className="card flex flex-col gap-4 p-6">
@@ -375,4 +381,11 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       )}
     </>
   );
+}
+
+/** Aba Setores (Caixa de entrada, parte 1): tabelas internas, lidas com a service role depois de a RLS confirmar o cliente. */
+async function SectorsTab({ agencyId, clientId }: { agencyId: string; clientId: string }) {
+  const admin = createAdminClient();
+  const [sectors, eligible, holidays] = await Promise.all([listSectors(admin, [clientId]), eligibleSectorMembers(admin, { agencyId, clientId }), clientHolidays(admin, clientId)]);
+  return <ClientSectors clientId={clientId} sectors={sectors} eligible={eligible} holidays={holidays} />;
 }
