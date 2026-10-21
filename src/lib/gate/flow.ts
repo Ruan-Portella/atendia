@@ -18,7 +18,9 @@ import { regulatedDestination } from "./sales-channel";
 import { normalizeGateText } from "./match";
 import { REGULATED_WINDOW_MS } from "./payment";
 import { botGateExemptions } from "./exceptions";
-import { idMapCategories, idMapLinks, openIdMap } from "../action-gate";
+import { conversationIdMap, idMapCategories, idMapLinks, openIdMap } from "../action-gate";
+import { isOrderText, orderWithLabels } from "../order-message";
+import { noticeRegulatedWithoutChannel } from "./regulated-notice";
 import { openNullable, sealField, scopeOfConversation } from "../field-cipher";
 import { activeLinkOf, chatIdentityFromLink, contextSwitchTool, isPairingLink } from "../pairing";
 import { conversationChatIdentity, identityPort, identityPreTurn, loadConversationIdentity, markConsentAsked } from "../routine-identity";
@@ -272,7 +274,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   }
   // já confirmou e tocou em "Ver opções 18+": segue como um "Sim" (o "sim" do Confirmar nunca é resposta de 18+)
   const answered = confirmed ? null : (ageAnswer(q.text, q.button, pending) ?? (q.button === AGE_SHOW ? "sim" : null));
-  let question = asked;
+  // o carrinho da Meta: os códigos que as ações já mostraram ganham o nome (bebida no carrinho é pedido misto)
+  let question = isOrderText(asked) ? orderWithLabels(asked, await conversationIdMap(db, convId)) : asked;
   let storeQuestion = !confirmed;
   let history: UIMessage[];
   if (answered) {
@@ -405,6 +408,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   if (entrance.regulated.length) {
     await logGate(db, { botId: bot.id, conversationId: convId, stage: "entrada", decision: age === "nao" ? "nao_18" : "regulamentado", categories: entrance.regulated });
     await db.from("conversations").update({ regulated_at: new Date().toISOString() }).eq("id", convId);
+    // o primeiro item 18+ num chatbot sem canal para esses pedidos: o dono fica sabendo (uma vez)
+    if (!destinationOf()) await noticeRegulatedWithoutChannel(db, bot, entrance.regulated).catch((e) => console.error("portão: aviso de canal 18+", (e as Error).message));
   }
 
   // item barrado junto com outro assunto: a IA responde à mensagem sem o item (o painel guarda a original)

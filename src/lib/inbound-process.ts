@@ -6,7 +6,7 @@ import { channelMsgHash } from "./hash";
 import { PAYMENT_ISSUE_CODE } from "./whatsapp";
 import { handleEcho, handleInboundBurst, type ChannelRow, type EchoMessage, type InboundMessage, type QueuedMessage } from "./whatsapp-inbound";
 import { recordUsage, type MessageStatus } from "./whatsapp-usage";
-import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
+import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue, markReconnected } from "./whatsapp-access";
 import { handleInstagramBurst, handleInstagramEcho, type IgChannelRow, type IgMessagingEvent } from "./instagram-inbound";
 import { isInstagramAccessError } from "./instagram";
 import { handleInstagramDelete, handleInstagramEdit } from "./instagram-edits";
@@ -62,6 +62,11 @@ const whatsappGroup: GroupHandler = async (db, events) => {
       // ordem, infração ou restrição da Meta: vira medida (a ordem bloqueia o número; o resto fica registrado)
       for (const wabaId of wabaIds) await recordMetaEnforcement(db, { event: p.event ?? "", wabaId, detail: p.detail ?? {} });
       // a conta do cliente deixou de ser nossa: desliga os números dela e avisa a agência
+      // a conta voltou (a inatividade da coexistência acabou): o número volta ao normal sozinho
+      if (p.event === "ACCOUNT_RECONNECTED") {
+        for (const wabaId of wabaIds) await markReconnected(db, wabaId);
+        continue;
+      }
       const lost = ACCESS_LOST_EVENTS[p.event ?? ""];
       if (!lost) continue;
       // PARTNER_REMOVED traz o motivo e quem iniciou: aparece no Diagnóstico do número; na
@@ -70,7 +75,7 @@ const whatsappGroup: GroupHandler = async (db, events) => {
       const extra = disconnectionDetail(p.detail?.disconnection_info);
       const reason = metaReason === "PRIMARY_INACTIVITY" ? PRIMARY_INACTIVITY_TEXT : extra ? `${lost} (${extra})` : lost;
       // webhooks: o código é o motivo da Meta quando vem (ex.: PRIMARY_INACTIVITY), senão o evento
-      for (const wabaId of wabaIds) await markDisconnected(db, { column: "waba_id", value: wabaId }, reason, metaReason ?? p.event ?? "access_lost");
+      for (const wabaId of wabaIds) await markDisconnected(db, { column: "waba_id", value: wabaId }, reason, metaReason ?? p.event ?? "access_lost", { keepToken: metaReason === "PRIMARY_INACTIVITY" });
     } else if (p?.type === "status") {
       if (p.status.status === "failed") {
         console.warn("whatsapp: mensagem não entregue", p.phoneNumberId, p.status.errors?.[0]);

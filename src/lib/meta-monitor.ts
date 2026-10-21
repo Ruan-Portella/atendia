@@ -21,7 +21,7 @@ import { sendFailureStats } from "./messages";
 /** Campos do webhook do WhatsApp que o BoaVoz trata ou confirma de propósito (o histórico sincronizado não é guardado). */
 export const KNOWN_WA_FIELDS: ReadonlySet<string> = new Set(["messages", "account_update", "smb_message_echoes", "user_preferences", "history", "smb_app_state_sync", ...CAMPAIGN_NOTICE_FIELDS]);
 /** Tipos de mensagem do WhatsApp que o BoaVoz trata (os silenciosos também: reação, sistema…). */
-export const KNOWN_WA_MESSAGE_TYPES: ReadonlySet<string> = new Set(["text", "interactive", "button", "audio", "image", "video", "document", "sticker", "location", "contacts", "reaction", "unsupported", "system", "ephemeral", "request_welcome"]);
+export const KNOWN_WA_MESSAGE_TYPES: ReadonlySet<string> = new Set(["text", "interactive", "button", "audio", "image", "video", "document", "sticker", "location", "contacts", "reaction", "unsupported", "system", "ephemeral", "request_welcome", "order"]);
 /** Campos do webhook do Instagram que o BoaVoz trata. */
 export const KNOWN_IG_FIELDS: ReadonlySet<string> = new Set(["messages", "comments", "messaging_postbacks", "messaging_referral", "message_edit", "message_reactions", "messaging_seen", "live_comments"]);
 

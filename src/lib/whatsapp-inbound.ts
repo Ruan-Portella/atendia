@@ -1,4 +1,5 @@
 import { IDENTITY_CHANGED_TEXT, checkIdentityKey, handlePairing, linkColumnsForContact } from "./pairing";
+import { orderText, type OrderPayload } from "./order-message";
 import { handleErasureRequest } from "./data-subject";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, requestHandoff, type BotRow } from "./chat";
@@ -83,6 +84,8 @@ export interface InboundMessage {
   sticker?: { id?: string; mime_type?: string };
   /** Aviso do sistema (ex.: a pessoa trocou de número: user_changed_user_id / user_changed_number). */
   system?: { body?: string; type?: string; wa_id?: string; user_id?: string };
+  /** O carrinho do catálogo da Meta (os códigos dos itens, a quantidade e o preço). */
+  order?: OrderPayload;
 }
 
 export interface ChannelRow extends WaChannel {
@@ -119,6 +122,8 @@ export async function lastContactMessageAt(db: SupabaseClient, botId: string, co
 
 /** Texto da mensagem (texto, botão ou item de lista); null para áudio, imagem, figurinha… */
 export function inboundText(m: InboundMessage): string | null {
+  // o carrinho do catálogo da Meta vira texto (o portão trata bebida e remédio como pedido misto)
+  if (m.type === "order") return orderText(m.order);
   const t = m.text?.body ?? m.button?.text ?? m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title;
   if (t?.trim()) return t.trim();
   // mídia com legenda: o assistente lê a legenda e sabe que veio uma foto que ele não vê

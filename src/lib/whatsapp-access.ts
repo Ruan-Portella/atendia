@@ -75,11 +75,12 @@ export const TOKEN_REJECTED = "a Meta recusou o acesso (o app foi removido ou a 
  * e a política diz que ele sai ao desconectar) e avisa o dono de cada agência, uma vez só.
  * Service role. Devolve quantos números foram marcados agora.
  */
-export async function markDisconnected(db: SupabaseClient, where: { column: "bot_id" | "phone_number_id" | "waba_id"; value: string }, reason: string, code = reason === TOKEN_REJECTED ? "token_rejected" : "access_lost"): Promise<number> {
+export async function markDisconnected(db: SupabaseClient, where: { column: "bot_id" | "phone_number_id" | "waba_id"; value: string }, reason: string, code = reason === TOKEN_REJECTED ? "token_rejected" : "access_lost", o: { keepToken?: boolean } = {}): Promise<number> {
   const at = new Date().toISOString();
+  // na inatividade da coexistência, o acesso fica guardado (cifrado): o ACCOUNT_RECONNECTED volta o número
   const { data: rows } = await db
     .from("whatsapp_channels")
-    .update({ disconnected_at: at, disconnect_reason: reason, access_token_enc: null })
+    .update({ disconnected_at: at, disconnect_reason: reason, ...(o.keepToken ? {} : { access_token_enc: null }) })
     .eq(where.column, where.value)
     .is("disconnected_at", null)
     .select("bot_id, display_phone, phone_number_id, bots(name, client_name, agency_id, client_id)");
@@ -102,4 +103,53 @@ export async function markDisconnected(db: SupabaseClient, where: { column: "bot
     await sendTeamNotice(db, { kind: "canal", agencyId: bot.agency_id, botId: r.bot_id, clientId: bot.client_id ?? null, vars: [botTitle(bot)], path: `painel/bots/${r.bot_id}?tab=whatsapp`, ref: r.bot_id });
   }
   return rows?.length ?? 0;
+}
+
+/**
+ * ACCOUNT_RECONNECTED (spec, Peça 10): a conta voltou depois da inatividade da coexistência (o app
+ * do celular ficou uns 14 dias sem ser aberto). O número volta ao normal sozinho: a inscrição do app
+ * é refeita, sai channel.connected e o dono é avisado. Só para quem caiu por inatividade (o acesso
+ * ficou guardado) e ainda tem tamanho; nas outras desconexões, o caminho é conectar de novo. Se a
+ * Meta recusar o acesso guardado, ele sai e o dono é avisado para conectar de novo.
+ */
+export async function markReconnected(db: SupabaseClient, wabaId: string, deps: { subscribe?: (wabaId: string, token: string) => Promise<void> } = {}): Promise<number> {
+  const { PRIMARY_INACTIVITY_TEXT } = await import("./platform-events");
+  const { data: rows } = await db
+    .from("whatsapp_channels")
+    .select("bot_id, display_phone, phone_number_id, access_token_enc, bots(name, client_name, agency_id, size, quota_override)")
+    .eq("waba_id", wabaId)
+    .eq("disconnect_reason", PRIMARY_INACTIVITY_TEXT)
+    .not("disconnected_at", "is", null)
+    .not("access_token_enc", "is", null);
+  const subscribe = deps.subscribe ?? (async (w: string, token: string) => (await import("./whatsapp")).subscribeApp(w, token));
+  const { unseal } = await import("./secret-box");
+  let back = 0;
+  for (const r of rows ?? []) {
+    const bot = (Array.isArray(r.bots) ? r.bots[0] : r.bots) as { name: string; client_name: string; agency_id: string; size: string | null; quota_override: number | null } | null;
+    if (!bot) continue;
+    // sem tamanho, sem canal: fica desconectado (a configuração continua guardada)
+    if (!bot.size && bot.quota_override === null) continue;
+    try {
+      await subscribe(wabaId, unseal(r.access_token_enc as string));
+    } catch (e) {
+      console.warn("whatsapp: o acesso guardado não voltou", r.phone_number_id, (e as Error).message);
+      await db.from("whatsapp_channels").update({ access_token_enc: null }).eq("bot_id", r.bot_id);
+      await notifyAgencyOwner(db, bot.agency_id, `O WhatsApp de ${bot.client_name} precisa ser conectado de novo`, [
+        `A Meta avisou que a conta do número ${r.display_phone ?? r.phone_number_id} voltou, mas não aceitou o acesso que o BoaVoz tinha.`,
+        "",
+        `Conecte o WhatsApp de novo: ${appUrl(`/painel/bots/${r.bot_id}?tab=whatsapp`)}`,
+      ]).catch(() => false);
+      continue;
+    }
+    const at = new Date().toISOString();
+    await db.from("whatsapp_channels").update({ disconnected_at: null, disconnect_reason: null }).eq("bot_id", r.bot_id);
+    await queueChannelEvent(db, r.bot_id as string, "connected", { type: "whatsapp", phoneNumberId: r.phone_number_id as string, display: (r.display_phone as string | null) ?? null }, { at });
+    await notifyAgencyOwner(db, bot.agency_id, `O WhatsApp de ${bot.client_name} voltou`, [
+      `O número ${r.display_phone ?? r.phone_number_id} do chatbot ${bot.name} (${bot.client_name}) voltou a funcionar: o app WhatsApp Business foi aberto no celular de novo.`,
+      "",
+      "O assistente voltou a responder por esse número. Para não cair de novo, abra o app do celular pelo menos uma vez a cada 14 dias.",
+    ]).catch(() => false);
+    back++;
+  }
+  return back;
 }
