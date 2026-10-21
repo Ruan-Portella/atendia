@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Lock, MessageCircle } from "lucide-react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { change, fmtBRL, periodLabel, periodRange, shiftPeriod, type ClientReport } from "@/lib/report";
+import { CHANNEL_LABEL, change, fmtBRL, periodLabel, periodRange, shiftPeriod, widgetFunnel, type ClientReport } from "@/lib/report";
 import { initials, relativeTime } from "@/lib/utils";
 import { num } from "@/lib/plans";
 import { DailyBars } from "@/components/daily-bars";
@@ -58,6 +58,9 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
   const evolution = await botEvolution(db, botIds, { until: period });
 
   const color = brandColor(report.agency.brand_color);
+  // por canal e o funil do chat do site (Pendências do MVP, parte 4): só números
+  const funnel = widgetFunnel(report.widgetOpens, report.channels.find((ch) => ch.channel === "widget"));
+  const unanswered = report.channels.reduce((n, ch) => n + ch.unanswered, 0);
   const month = periodLabel(period);
   const c = report.current;
   const vs = (d: number | null) => (d === null ? "sem mês anterior para comparar" : d === 0 ? "igual ao mês anterior" : `${d > 0 ? "+" : ""}${d}% vs. mês anterior`);
@@ -129,6 +132,55 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
           <p className="text-xs text-muted">
             A Meta cobra as mensagens do WhatsApp direto no cartão cadastrado no Gerenciador do WhatsApp, não por aqui. O valor é uma estimativa pela tabela de referência{report.whatsapp.partial ? " e pode ficar um pouco abaixo do real" : ""}; o valor exato está na fatura da Meta.
           </p>
+        </section>
+      )}
+
+      {report.channels.length > 0 && (
+        <section className="card flex flex-col gap-4 p-4 sm:p-5">
+          <div>
+            <h2 className="text-base font-bold">Por canal</h2>
+            <p className="text-sm text-muted">De onde vieram as conversas do mês, quantas foram para a equipe e quantas deixaram contato.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="pb-2 font-semibold">Canal</th>
+                  <th className="pb-2 text-right font-semibold">Conversas</th>
+                  <th className="pb-2 text-right font-semibold">Pediram atendente</th>
+                  <th className="pb-2 text-right font-semibold">Contatos</th>
+                  <th className="pb-2 text-right font-semibold">Sem resposta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.channels.map((ch) => (
+                  <tr key={ch.channel} className="border-t border-line-2">
+                    <td className="py-2 font-medium">{CHANNEL_LABEL[ch.channel] ?? ch.channel}</td>
+                    <td className="py-2 text-right tabular">{num(ch.conversations)}</td>
+                    <td className="py-2 text-right tabular">{num(ch.handoffs)}</td>
+                    <td className="py-2 text-right tabular">{num(ch.leads)}</td>
+                    <td className="py-2 text-right tabular">{num(ch.unanswered)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {unanswered > 0 && <p className="text-xs text-muted">{num(unanswered)} pergunta{unanswered === 1 ? "" : "s"} ficou sem resposta no mês: é o que vale ensinar ao assistente.</p>}
+          {funnel && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold">Chat do site</h3>
+              <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {funnel.map((f) => (
+                  <li key={f.label} className="flex flex-col gap-0.5 rounded-lg border border-line-2 px-3 py-2.5">
+                    <span className="kpi-label">{f.label}</span>
+                    <span className="display text-xl font-bold tabular">{num(f.value)}</span>
+                    <span className="text-xs text-muted">{f.pct === null ? <>&nbsp;</> : `${f.pct}% do passo anterior`}</span>
+                  </li>
+                ))}
+              </ol>
+              <p className="text-xs text-muted">Aberturas contadas uma vez por visita ao site, sem guardar nada de quem abriu.</p>
+            </div>
+          )}
         </section>
       )}
 

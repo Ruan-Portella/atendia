@@ -67,6 +67,57 @@ export interface ClientReport {
   resolvedPct: number;
   /** Mensagens do WhatsApp no mês e a estimativa do que a Meta cobra do cliente; null sem uso. */
   whatsapp: WhatsAppMonth | null;
+  /** Conversas, pedidos de atendente, leads e perguntas sem resposta por canal (Pendências do MVP, parte 4). */
+  channels: ChannelMonth[];
+  /** Funil do chat do site: aberturas do widget no mês (as conversas, leads e pedidos vêm de channels). */
+  widgetOpens: number;
+}
+
+export interface ChannelMonth {
+  channel: string;
+  conversations: number;
+  handoffs: number;
+  leads: number;
+  unanswered: number;
+}
+
+/** Nome do canal no relatório. */
+export const CHANNEL_LABEL: Record<string, string> = { widget: "Chat do site", whatsapp: "WhatsApp", instagram: "Instagram", painel: "Teste no painel", demo: "Demonstração" };
+const CHANNEL_ORDER = ["widget", "whatsapp", "instagram", "painel", "demo"];
+
+/** Os totais do mês por canal (o agregado diário mais o ao vivo). */
+export async function channelMonth(db: SupabaseClient, botIds: string[], period: string): Promise<ChannelMonth[]> {
+  if (!botIds.length) return [];
+  const { from, to } = periodRange(period);
+  const { data } = await db.rpc("bots_channel_summary", { p_bot_ids: botIds, p_from: from, p_to: to });
+  const rows = ((data ?? []) as ChannelMonth[]).filter((r) => r.conversations || r.leads || r.handoffs || r.unanswered);
+  const rank = (c: string) => (CHANNEL_ORDER.includes(c) ? CHANNEL_ORDER.indexOf(c) : CHANNEL_ORDER.length);
+  return rows.sort((a, b) => rank(a.channel) - rank(b.channel));
+}
+
+/** Aberturas do widget no mês (soma das linhas do dia; o mês de São Paulo). */
+export async function widgetOpensMonth(db: SupabaseClient, botIds: string[], period: string): Promise<number> {
+  if (!botIds.length) return 0;
+  const { from, to } = periodRange(period);
+  const day = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const { data } = await db.from("widget_opens").select("opens").in("bot_id", botIds).gte("day", day(from)).lt("day", day(to));
+  return (data ?? []).reduce((n, r) => n + Number(r.opens ?? 0), 0);
+}
+
+/**
+ * O funil do chat do site no mês: aberturas → conversas → leads → pedidos de atendente, com a
+ * porcentagem de cada passo sobre o anterior. null quando o chat do site não teve movimento. Pura.
+ */
+export function widgetFunnel(opens: number, widget: ChannelMonth | undefined): Array<{ label: string; value: number; pct: number | null }> | null {
+  const conv = widget?.conversations ?? 0;
+  if (!opens && !conv) return null;
+  const steps = [
+    { label: "Abriram o chat", value: Math.max(opens, conv) },
+    { label: "Conversaram", value: conv },
+    { label: "Deixaram contato", value: widget?.leads ?? 0 },
+    { label: "Pediram atendente", value: widget?.handoffs ?? 0 },
+  ];
+  return steps.map((s, i) => ({ ...s, pct: i === 0 || !steps[i - 1].value ? null : Math.round((s.value / steps[i - 1].value) * 100) }));
 }
 
 export interface WhatsAppMonth {
@@ -117,11 +168,13 @@ export async function getClientReport(db: SupabaseClient, clientId: string, peri
   ]);
   const ids = (bots ?? []).map((b) => b.id);
   const { from, to } = periodRange(period);
-  const [current, previous, daily, whatsapp] = await Promise.all([
+  const [current, previous, daily, whatsapp, channels, widgetOpens] = await Promise.all([
     monthSummary(db, ids, period),
     monthSummary(db, ids, shiftPeriod(period, -1)),
     ids.length ? db.rpc("bots_daily", { p_bot_ids: ids, p_from: from, p_to: to }).then((r) => (r.data ?? []) as ClientReport["daily"]) : Promise.resolve([]),
     whatsappMonth(db, ids, period),
+    channelMonth(db, ids, period),
+    widgetOpensMonth(db, ids, period),
   ]);
   return {
     period,
@@ -133,6 +186,8 @@ export async function getClientReport(db: SupabaseClient, clientId: string, peri
     daily,
     resolvedPct: current.conversations ? Math.round(100 - (current.needsHuman / current.conversations) * 100) : 100,
     whatsapp,
+    channels,
+    widgetOpens,
   };
 }
 
@@ -166,6 +221,11 @@ export function renderReportEmail(r: ClientReport, link: string): { subject: str
     ["Resolvidas sem ajuda", `${r.resolvedPct}%`, "sem precisar de alguém da equipe"],
   ];
   const subject = `${r.client.name}: seu assistente em ${month}`;
+  // conversas por canal e o funil do chat do site (só números)
+  const byChannel = r.channels.filter((c) => c.conversations).map((c) => `${CHANNEL_LABEL[c.channel] ?? c.channel}: ${fmt(c.conversations)}`).join(" · ");
+  const funnel = widgetFunnel(r.widgetOpens, r.channels.find((c) => c.channel === "widget"));
+  const funnelText = funnel ? funnel.map((f) => `${f.label} ${fmt(f.value)}`).join(" → ") : null;
+  const unanswered = r.channels.reduce((n, c) => n + c.unanswered, 0);
   const headline = r.current.conversations
     ? `Em ${month}, o assistente de ${r.client.name} atendeu ${fmt(r.current.conversations)} pessoa${r.current.conversations === 1 ? "" : "s"} e capturou ${fmt(r.current.leads)} contato${r.current.leads === 1 ? "" : "s"}.`
     : `Em ${month}, o assistente de ${r.client.name} ainda não recebeu conversas.`;
@@ -186,6 +246,9 @@ ${kpis.map(([label, value, sub]) => `<td width="33%" valign="top" style="backgro
 <div style="font-size:24px;font-weight:bold;margin:4px 0">${esc(value)}</div>
 <div style="font-size:11px;color:#6b736f">${esc(sub)}</div></td>`).join("")}
 </tr></table></td></tr>
+${byChannel ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">Conversas por canal:</strong> ${esc(byChannel)}</td></tr>` : ""}
+${funnelText ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">Chat do site:</strong> ${esc(funnelText)}</td></tr>` : ""}
+${unanswered ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">Perguntas sem resposta:</strong> ${fmt(unanswered)} (dá para ensinar o assistente pelo painel)</td></tr>` : ""}
 ${r.whatsapp ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5;color:#4c5551"><strong style="color:#1b1f1d">WhatsApp:</strong> ${esc(whatsappSentence(r.whatsapp))}</td></tr>` : ""}
 <tr><td style="padding:14px 24px 24px">
 <a href="${esc(link)}" style="display:inline-block;background:${color};color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 18px;border-radius:9px">Ver relatório completo</a>
@@ -193,7 +256,14 @@ ${r.whatsapp ? `<tr><td style="padding:4px 24px 0;font-size:13px;line-height:1.5
 <tr><td style="padding:14px 24px;border-top:1px solid #efebe2;font-size:12px;color:#8a938e">Relatório preparado por ${esc(r.agency.name)}.</td></tr>
 </table></td></tr></table></body></html>`;
 
-  const text = [headline, "", ...kpis.map(([l, v, s]) => `${l}: ${v}${s ? ` (${s})` : ""}`), ...(r.whatsapp ? ["", `WhatsApp: ${whatsappSentence(r.whatsapp)}`] : []), "", `Relatório completo: ${link}`, "", `Preparado por ${r.agency.name}.`].join("\n");
+  const text = [
+    headline,
+    "",
+    ...kpis.map(([l, v, s]) => `${l}: ${v}${s ? ` (${s})` : ""}`),
+    ...(byChannel ? ["", `Conversas por canal: ${byChannel}`] : []),
+    ...(funnelText ? [`Chat do site: ${funnelText}`] : []),
+    ...(unanswered ? [`Perguntas sem resposta: ${fmt(unanswered)}`] : []),
+    ...(r.whatsapp ? ["", `WhatsApp: ${whatsappSentence(r.whatsapp)}`] : []), "", `Relatório completo: ${link}`, "", `Preparado por ${r.agency.name}.`].join("\n");
   return { subject, html, text };
 }
 

@@ -135,10 +135,20 @@
       btn.setAttribute("aria-label", unread > 0 ? "Abrir chat (" + unread + " nova" + (unread > 1 ? "s" : "") + ")" : "Abrir chat");
     }
 
+    // funil do relatório: a primeira abertura do chat em cada sessão de navegação (sem dado pessoal)
+    function countOpen() {
+      try {
+        var k = "cw-open-" + key;
+        if (sessionStorage.getItem(k) || location.protocol === "file:") return;
+        sessionStorage.setItem(k, "1");
+        fetch(origin + "/api/widget/open", { method: "POST", mode: "no-cors", keepalive: true, body: key });
+      } catch {}
+    }
+
     function set(next) {
       if (next === open) return;
       open = next;
-      if (open) load();
+      if (open) { load(); countOpen(); }
       frame.style.display = open ? "block" : "none";
       btn.innerHTML = open ? icoClose : icoChat;
       btn.setAttribute("aria-expanded", String(open));

@@ -24,6 +24,7 @@ export const TRANSFER_TABLES: Record<string, { muda: boolean; por: string }> = {
   marketing_consents: { muda: true, por: "os aceites de novidades dos contatos" },
   data_subject_requests: { muda: true, por: "os pedidos do titular" },
   report_daily: { muda: true, por: "os relatórios" },
+  widget_opens: { muda: true, por: "as aberturas do chat do site (funil do relatório)" },
   attachments: { muda: true, por: "os arquivos das conversas" },
   business_compliance: { muda: true, por: "a revisão do negócio (é do negócio, não da agência)" },
   enforcement_actions: { muda: true, por: "as medidas de cada chatbot (as da conta de origem ficam)" },

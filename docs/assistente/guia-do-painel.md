@@ -166,7 +166,7 @@ O cliente da agência entra pela área do cliente com um link enviado por e-mail
 
 ## Relatório mensal
 
-Todo mês sai por e-mail o relatório do atendimento, com um link público que mostra só números (conversas, atendimentos, leads e a evolução dos últimos 6 meses), sem conteúdo das conversas. O relatório fica também na aba Relatório e portal do cliente.
+Todo mês sai por e-mail o relatório do atendimento, com um link público que mostra só números (conversas, atendimentos, leads e a evolução dos últimos 6 meses), sem conteúdo das conversas. O relatório também separa as conversas por canal (chat do site, WhatsApp e Instagram), com quantas pediram atendente, quantas deixaram contato e quantas perguntas ficaram sem resposta, e mostra o funil do chat do site: quantas pessoas abriram o chat, quantas conversaram, quantas deixaram contato e quantas pediram atendente. As aberturas são contadas uma vez por visita ao site, sem guardar nada de quem abriu. O relatório fica também na aba Relatório e portal do cliente.
 
 ## Evolução mês a mês
 

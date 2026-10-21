@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { change, currentPeriodBR, isPeriod, periodLabel, periodRange, renderReportEmail, shiftPeriod, type ClientReport } from "../report";
+import { change, currentPeriodBR, isPeriod, periodLabel, periodRange, renderReportEmail, shiftPeriod, widgetFunnel, type ClientReport } from "../report";
 
 describe("períodos", () => {
   it("usa o fuso de São Paulo na virada do mês", () => {
@@ -40,6 +40,8 @@ describe("renderReportEmail", () => {
     daily: [],
     resolvedPct: 91,
     whatsapp: null,
+    channels: [],
+    widgetOpens: 0,
   };
   it("traz os números, a comparação e o link", () => {
     const { subject, html, text } = renderReportEmail(report, "https://x/c/tok?mes=2026-08");
@@ -48,6 +50,23 @@ describe("renderReportEmail", () => {
     expect(text).toContain("+70% vs. mês anterior");
     expect(html).toContain("https://x/c/tok?mes=2026-08");
     expect(html).toContain("#123456");
+  });
+  it("conversas por canal, o funil do chat do site e as perguntas sem resposta", () => {
+    const channels = [
+      { channel: "widget", conversations: 120, handoffs: 6, leads: 18, unanswered: 4 },
+      { channel: "whatsapp", conversations: 220, handoffs: 24, leads: 10, unanswered: 2 },
+    ];
+    const { text } = renderReportEmail({ ...report, channels, widgetOpens: 400 }, "https://x");
+    expect(text).toContain("Conversas por canal: Chat do site: 120 · WhatsApp: 220");
+    expect(text).toContain("Chat do site: Abriram o chat 400 → Conversaram 120 → Deixaram contato 18 → Pediram atendente 6");
+    expect(text).toContain("Perguntas sem resposta: 6");
+    expect(renderReportEmail(report, "https://x").text).not.toContain("Conversas por canal");
+  });
+  it("funil: porcentagem de cada passo sobre o anterior; sem movimento no site, nada", () => {
+    expect(widgetFunnel(0, undefined)).toBeNull();
+    expect(widgetFunnel(200, { channel: "widget", conversations: 50, handoffs: 5, leads: 10, unanswered: 0 })?.map((f) => f.pct)).toEqual([null, 25, 20, 50]);
+    // aberturas contadas desde a migração: nunca menos que as conversas
+    expect(widgetFunnel(3, { channel: "widget", conversations: 10, handoffs: 0, leads: 0, unanswered: 0 })?.[0].value).toBe(10);
   });
   it("sem WhatsApp no mês, o e-mail não fala de WhatsApp", () => {
     expect(renderReportEmail(report, "https://x").text).not.toContain("WhatsApp:");
