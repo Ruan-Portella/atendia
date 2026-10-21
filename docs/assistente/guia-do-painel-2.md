@@ -1,0 +1,93 @@
+# Guia do painel BoaVoz: equipe, contatos, integrações e segurança
+
+Continuação do guia do painel, na base do assistente da BoaVoz no WhatsApp: a equipe e o perfil, a área do cliente, os relatórios, os contatos e as campanhas, as integrações, os roteiros, a segurança e a conta. Cada seção responde a uma dúvida e cabe sozinha.
+
+## Equipe e papéis
+
+Em Equipe, o dono ou o administrador convida pessoas pelo e-mail (o convite vale 7 dias). Os papéis são: dono (tudo, inclusive cobrança), administrador (tudo menos cobrança), editor (configura os clientes e chatbots do escopo e atende) e atendente (só as conversas do escopo). O escopo pode ser todos os clientes ou só alguns clientes e chatbots. Não há limite de pessoas. Celular perdido ou computador emprestado: o dono ou um administrador usa "Encerrar sessões" na pessoa (com o segundo fator), e ela sai do painel em todos os aparelhos e recebe um e-mail; o acesso continua, e basta entrar de novo. As sessões de um administrador só o dono encerra.
+
+## Meu perfil
+
+Em Meu perfil, cada pessoa da equipe põe o nome e a foto que o contato vê quando ela atende, marca se está Disponível ou Ausente para o rodízio dos setores (também dá para trocar na própria Caixa de entrada), escolhe a própria assinatura (nos chatbots que não travam o formato), liga o segundo fator (app autenticador), põe o próprio WhatsApp para receber os avisos da conta e conversar com o assistente da BoaVoz e ativa os avisos no celular e no computador. Também troca o e-mail de acesso: a troca vale depois do link de confirmação, quem tem o app autenticador troca só depois de digitar o código, e o dono da agência é avisado.
+
+## Área do cliente (portal)
+
+O cliente da agência entra pela área do cliente com um link enviado por e-mail (vale 7 dias), no domínio da agência quando ela tem o pacote Domínio próprio. Ele vê o relatório e, se a agência liberar, as conversas, o atendimento e o "ensinar o assistente". Também cuida da privacidade (prazo de guarda, modo dados sensíveis, exportar dados e pedidos de exclusão) e pode desconectar o WhatsApp e o Instagram. O acesso é configurado na aba Acesso do cliente.
+
+## Relatório mensal
+
+Todo mês sai por e-mail o relatório do atendimento, com um link público que mostra só números (conversas, atendimentos, leads e a evolução dos últimos 6 meses), sem conteúdo das conversas. O relatório também separa as conversas por canal (chat do site, WhatsApp e Instagram), com quantas pediram atendente, quantas deixaram contato e quantas perguntas ficaram sem resposta, e mostra o funil do chat do site: quantas pessoas abriram o chat, quantas conversaram, quantas deixaram contato e quantas pediram atendente. As aberturas são contadas uma vez por visita ao site, sem guardar nada de quem abriu. O relatório fica também na aba Relatório e portal do cliente.
+
+## Evolução mês a mês
+
+Na aba Evolução de cada chatbot, uma tabela com os últimos 6 meses: as conversas, quantas o assistente resolveu sem a equipe (com a porcentagem), quantas foram para a equipe, quanto tempo a equipe levou para assumir quem pediu atendimento (a mediana, do pedido até alguém assumir; o pedido deixado fora do horário não entra), a satisfação (a porcentagem de Ótimo entre as respostas da pesquisa) e os contatos capturados. Um traço quer dizer que não houve aquilo no mês. O cliente vê a mesma tabela no relatório (no link e na área do cliente), com os chatbots dele somados, até o mês que estiver aberto. Serve para mostrar ao cliente, mês a mês, o resultado do assistente.
+
+## Marca e domínio
+
+Em Marca e domínio, a agência põe o logo, as cores e o nome que aparecem no painel do cliente, no chat do site e nos e-mails. Com o pacote Domínio próprio, o portal do cliente e o chat abrem num domínio da agência, com a verificação de DNS feita pelo painel.
+
+## Contatos
+
+Na aba Contatos do cliente ficam as pessoas que conversaram pelo WhatsApp, com busca, etiquetas, o aceite de novidades e a resposta de 18+. Dá para importar uma planilha de contatos, informando se cada um aceitou receber novidades. Cada contato do WhatsApp também tem as datas que as réguas (mensagens automáticas) usam: o aniversário (só o dia e o mês), a última visita ou compra e o próximo horário marcado, no fuso do cliente. Elas vêm da ficha do contato ("Datas para as réguas"), das colunas aniversario, ultima_visita e agendamento da planilha (a data de nascimento também dá o aniversário, sem o ano) ou da API (PATCH /v1/contacts/{contact}).
+
+## Campanhas no WhatsApp
+
+Na aba Campanhas do cliente, a agência manda um modelo de mensagem para um público (por etiquetas ou por lista), com a prévia de quem recebe e de quem fica de fora (quem não aceitou, quem pediu para sair, menor de 18 em item de bebida), o custo estimado e o prazo. Dá para mandar na hora ou agendar no fuso do cliente. Marketing só vai para quem aceitou novidades, com a prova do aceite guardada. Depois do envio, a campanha mostra o relatório do resultado.
+
+## Lembretes
+
+Os lembretes de utilidade (consulta amanhã, pedido pronto, vencimento) são enviados por planilha: cada linha é um envio, na data e na hora dela, com um modelo de utilidade aprovado. A agência informa o fuso e declara que os contatos aceitaram receber esses lembretes. Quem parou os lembretes (SAIR) e depois escreve no WhatsApp pedindo para voltar ("quero voltar a receber os lembretes") recebe a pergunta com os botões Sim e Não; o Sim faz os lembretes voltarem, e as promoções continuam paradas se a pessoa também tinha saído delas.
+
+## Réguas
+
+Em Campanhas → Réguas (ou pelo botão Réguas na aba Campanhas do cliente), cada chatbot com o WhatsApp conectado tem cinco réguas, mensagens automáticas que saem sozinhas:
+- Aniversário: no dia do aniversário do contato, na hora escolhida.
+- Faz tempo que você não vem: quando passam N dias (padrão 30) da última visita registrada ou, sem ela, da última mensagem do contato.
+- Pós-atendimento: N horas (padrão 48) depois da visita registrada ou da conversa encerrada pela equipe.
+- Lembrete antes do horário: N horas (padrão 24) antes do horário marcado, nunca depois dele. Horário marcado em cima da hora recebe o lembrete na hora.
+- Sem resposta: N dias (padrão 2) depois da última mensagem da loja (IA ou equipe) que o contato não respondeu. Mensagem de campanha ou de régua não conta.
+As datas vêm da ficha do contato ("Datas para as réguas"), da planilha de contatos ou da API. Cada régua usa um modelo da Meta: o BoaVoz sugere o texto (dá para editar), manda para análise, e a régua só liga com o modelo aprovado. Aniversário e "faz tempo" são promoção e só vão para quem aceitou novidades. Lembrete, pós-atendimento e sem resposta são de utilidade: sem a declaração de consentimento do cliente para lembretes, só vão para quem já escreveu ao chatbot. Os envios saem das 8h às 20h no fuso do cliente, no máximo uma régua por pessoa a cada 24 horas (o lembrete primeiro), e respeitam o SAIR e o limite do número. Se a nota do número cair ou a Meta mudar a categoria do modelo, a régua pausa e o dono recebe um e-mail; o envio que passou da hora por causa da pausa não sai mais. A tela mostra a estimativa dos próximos 30 dias (pessoas e custo na Meta) e os números do que já saiu.
+
+## Integrações: ações, webhooks e API
+
+Com o pacote Integrações:
+- Ações: o assistente consulta o sistema do cliente (pedido, agenda, estoque, segunda via) e executa operações (criar pedido, agendar, cancelar) só depois do Confirmar do contato. Ficam na aba Ações do chatbot. Para proteger o sistema do cliente, há tetos: 15 chamadas por minuto em cada conversa, 600 por minuto no chatbot e, no mês, 10 vezes a cota do chatbot (no mínimo 1.000). Ao bater um teto, o assistente pede para tentar de novo em um minuto (no teto do mês, oferece a equipe), o dono recebe um e-mail e a aba Ações mostra o aviso.
+- Webhooks: o sistema do cliente recebe os eventos (mensagem recebida, lead, pedido de atendente, fim de roteiro e outros), com assinatura, novas tentativas e reenvio. Ficam em Integrações → Webhooks. No máximo 10 entregas saem ao mesmo tempo para o mesmo webhook (o resto espera na fila). Se o endereço do cliente falha, o dono recebe um e-mail com 1 hora de falhas, outro no segundo dia e outro quando o webhook é desativado (3 dias só de falhas), com o link para reativar. Quando o endereço volta a responder, as entregas pendentes saem logo em seguida.
+- API: conversas, mensagens (texto, imagem, documento, modelo e botões), contatos, leads, campanhas, lembretes, uso e fontes de conhecimento, com chave em Integrações → Chaves de API. O aviso do momento também pode ser posto e tirado pela API (bom para o sistema da loja avisar uma queda sozinho). Com o pacote Plataforma, a API também cria clientes e chatbots a partir de um modelo, pede o link de conexão do WhatsApp e do Instagram, lista e desconecta canais (o dono recebe um alerta a cada desconexão pela API) e pausa ou retoma o chatbot. O chat do site também abre dentro do app do cliente (numa webview, em tela cheia), com a pessoa identificada pelo mesmo token do site: a documentação tem o passo a passo em "Chat dentro de apps". Em Integrações → Logs ficam as chamadas à API dos últimos 30 dias (a chave, o caminho, o status e o código do erro, sem o corpo), além das chamadas de ações e das entregas de webhooks. A permissão members (desmarcada por padrão) convida e remove a equipe do portal de cada cliente: a tela das chaves mostra quantas pessoas cada chave convidou, com "remover todas", e o dono recebe o resumo diário desses convites e um alerta quando passam de 20 em 24 horas.
+- Contexto fixo e dados da loja: na aba Ações, cada chatbot pode ter um contexto fixo (por exemplo a loja de uma plataforma, {"loja_id": "42"}), que vai em toda chamada de ação, por cima do contexto do token ou do pareamento, e os dados da loja para a IA (o display da API: nome da unidade, horário, endereço), que o assistente usa como um trecho fixo da base e que não vão para as ações. Só o dono ou um administrador muda, com o segundo fator, e o dono recebe o alerta.
+- Fontes por contexto: pela API, cada fonte pode ter um contexto (por exemplo o cliente de um SaaS). Ela só vale nas conversas daquele contexto, passa pelo portão e não refaz a análise do chatbot. No painel, a base mostra só quantas são.
+A documentação completa fica em boavoz.com/docs.
+
+## Roteiros
+
+Na aba Roteiros do chatbot, a agência define passos que a IA segue quando a conversa entra num assunto: segunda via, troca, orçamento, agendamento, rastreio (há 5 modelos prontos). Os passos podem ser instrução, pedir um dado (CPF, CNPJ, CEP, e-mail, telefone, data, número ou formato próprio), botões, ação no sistema do cliente e pedir uma foto. O BoaVoz confere os dados e escolhe o caminho; a IA conversa dentro de cada passo. A palavra-chave (por exemplo, "2VIA") começa o roteiro na hora. Até 10 roteiros por chatbot, com até 12 passos. No teste ao vivo do chatbot, com roteiro ligado, uma faixa em cima do chat mostra o roteiro e o passo em que a conversa está ("passo 2 de 4"), o que o passo pede, as tentativas do dado e os dados já recebidos; no fim, como o roteiro terminou.
+
+## Identificação pelo roteiro e lembrar o número
+
+Num roteiro com ação, o sistema do cliente pode dizer quem é a pessoa (pelo CPF, por exemplo) e quais contas ela tem: com mais de uma, ela escolhe por botão antes de ver qualquer dado. No WhatsApp e no Instagram, o BoaVoz pergunta se pode lembrar o número; lembrado, a próxima conversa começa por "Estou falando com...?". "Sou outra pessoa" esquece o número, e "desconectar" também. Para quem tem vínculo, as respostas da equipe e as mensagens pela API só chegam ao mesmo WhatsApp de quando o número foi ligado: se o número mudou de dono ou de aparelho, a Meta não entrega, o vínculo é desfeito e a pessoa recebe o pedido de conectar de novo. A loja pode desligar o lembrar o número na aba Roteiros.
+
+## Segurança e privacidade (LGPD)
+
+O que vem do contato fica cifrado com a chave de cada cliente. A agência escolhe o prazo de guarda (6, 12 ou 24 meses), e o modo dados sensíveis (para saúde, por exemplo) apaga em 7 a 90 dias e desliga a leitura de fotos e a memória do assistente. Os pedidos do titular (apagar dados) chegam pelo chat, pelo painel e pela API e são cumpridos num lugar só. Quando há motivo legal para guardar (por exemplo, notas fiscais por 5 anos), dá para recusar o pedido com o motivo, em Segurança ou na Privacidade da área do cliente: nada é apagado, e a pessoa recebe o motivo pelo canal. Em Segurança ficam a auditoria, os acessos, o acesso do suporte da BoaVoz (só com liberação por 24 horas) e o segundo fator. Os dados do cliente podem ser exportados em Dados do cliente.
+
+Perdeu o app autenticador (celular perdido, trocado ou app apagado)? Na tela de verificação, "Perdi o app autenticador" pede a recuperação pelo suporte: confirme pelo link que chega no seu e-mail (vale 24 horas) e, por segurança, o suporte remove o app 48 horas depois da confirmação; aí você cadastra um novo no próximo acesso. O dono da agência recebe o alerta na confirmação e na remoção, o "Não fui eu" do e-mail cancela o pedido, e usar o código do app de novo também cancela. Na área do cliente vale o mesmo, com o nome da agência nos e-mails.
+
+## Avisos no WhatsApp para a equipe
+
+Cada pessoa da equipe pode receber os avisos da conta no próprio WhatsApp, pelo número da BoaVoz: atendimento urgente, pedido de atendente, lead novo, WhatsApp de um cliente desconectado, pagamento atrasado e cota no fim. Para ligar, ponha o número no primeiro acesso, em Meu perfil ou em "Ativar no WhatsApp", na faixa do topo do painel, e toque em Confirmar na mensagem que chega. Os avisos não trazem o conteúdo das conversas, só o que aconteceu e onde ver no painel. Para parar, mande SAIR para o número da BoaVoz ou desligue em Meu perfil. Os clientes da agência nunca recebem mensagens da BoaVoz.
+
+## Avisos no celular e no computador
+
+Em Meu perfil, em Avisos no celular e no computador, cada pessoa ativa os avisos em cada aparelho que usa: eles aparecem na tela mesmo com o painel fechado, e tocar no aviso abre a conversa. Chegam os mesmos avisos do WhatsApp (atendimento urgente, pedido de atendente, lead novo e, conforme o papel, WhatsApp de um cliente desconectado, pagamento atrasado e cota no fim) e também a conversa transferida para você ou para o seu setor. Dá para escolher os tipos, ver os aparelhos que recebem, remover um e tocar em Enviar um teste. No iPhone, os avisos só chegam com o site na tela de início: no Safari, toque em Compartilhar e em Adicionar à Tela de Início, abra pelo ícone novo e ative em Meu perfil. Se o navegador bloquear as notificações, libere nas configurações do site (o cadeado ao lado do endereço). Na área do cliente, quem atende recebe os avisos do atendimento (urgente, atendente, transferência e lead), que abrem na Caixa de entrada dela. Os avisos não levam o conteúdo das conversas.
+
+## Página de status
+
+A página de status (boavoz.com/status, também em status.boavoz.com) mostra como estão agora o painel e a área do cliente, o chat do site, o WhatsApp, o Instagram, as respostas da IA e a API com os webhooks, com o histórico dos últimos 90 dias e os incidentes. O estado é conferido sozinho a cada 5 minutos, pelos sinais do próprio sistema (mensagens paradas na fila, respostas recusadas pelo canal, mensagens que precisaram de outra tentativa), e a equipe da BoaVoz publica ali os avisos de incidente e de manutenção, com as atualizações. Quando alguém pergunta se o BoaVoz está fora, a página é o primeiro lugar para olhar; se algo estiver fora e não aparecer lá, escreva para o suporte.
+
+## Excluir a conta
+
+Só o dono exclui a conta, em Segurança, Excluir a conta (com o segundo fator e o nome da conta digitado). A exclusão acontece 7 dias depois do pedido: até lá, tudo funciona, o painel mostra a data numa faixa e o dono pode desistir na mesma tela. Na data, saem os clientes, os chatbots, as conversas, os contatos, os leads, os arquivos e a equipe; o WhatsApp e o Instagram são desconectados (os números e as contas continuam dos negócios). A assinatura para de renovar no pedido e é cancelada na exclusão, sem reembolso do mês em curso, e o crédito que sobrar se perde. A auditoria fica por 1 ano e os registros de acesso por 6 meses.
+
+## Roadmap e sugestões
+
+No menu Roadmap do painel fica o que estamos fazendo e o que vem por aí, em quatro colunas (Ideias, Vamos fazer, Fazendo e Pronto), sem datas: a ordem muda com o que os clientes pedem. Qualquer pessoa da equipe curte o que mais quer (uma curtida por pessoa; tocar de novo desfaz) e manda ideias. A gente lê todas: as que entram aparecem em Ideias já com a curtida de quem mandou, e uma ideia parecida com outra é juntada a ela. Em "Suas ideias", você vê o que aconteceu com cada uma. O roadmap também fica aberto, sem login, em boavoz.com/roadmap.

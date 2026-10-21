@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { slugify } from "./utils";
 
 /*
  * Central de ajuda de quem usa o painel (Lançamento, parte 2, 19/10/2026): uma página por seção do
- * guia do painel (docs/assistente/guia-do-painel.md), a mesma fonte da base do assistente da
+ * guia do painel (os arquivos de docs/assistente), a mesma fonte da base do assistente da
  * BoaVoz no WhatsApp. Atualizar o guia a cada leva atualiza as duas. Os guias do cliente ficam
  * no portal, com a marca da agência (client-guide.ts).
  */
@@ -62,9 +62,19 @@ export function parseHelpGuide(md: string): HelpArticle[] {
 
 let cache: HelpArticle[] | null = null;
 
-/** As páginas da central, lidas do guia do painel (no build; o arquivo vai junto no deploy). */
+/**
+ * As páginas da central, lidas do guia do painel (no build; os arquivos vão junto no deploy). O guia
+ * tem mais de um arquivo (cada um cabe numa fonte de texto do assistente): todos, na ordem do nome.
+ */
 export function helpArticles(): HelpArticle[] {
-  cache ??= parseHelpGuide(readFileSync(join(process.cwd(), "docs", "assistente", "guia-do-painel.md"), "utf8"));
+  const dir = join(process.cwd(), "docs", "assistente");
+  cache ??= parseHelpGuide(
+    readdirSync(dir)
+      .filter((f) => f.endsWith(".md"))
+      .sort()
+      .map((f) => readFileSync(join(dir, f), "utf8"))
+      .join("\n\n"),
+  );
   return cache;
 }
 

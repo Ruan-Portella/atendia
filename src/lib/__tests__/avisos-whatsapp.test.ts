@@ -257,10 +257,12 @@ describe("assistente da BoaVoz: o guia do painel (docs/assistente)", () => {
     const guides = assistantGuides();
     expect(guides.length).toBeGreaterThan(0);
     for (const g of guides) {
-      expect(g.title).toBe("Guia do painel BoaVoz");
+      expect(g.title.startsWith("Guia do painel BoaVoz"), g.title).toBe(true);
       expect(g.content.length).toBeGreaterThan(2000);
       expect(g.content.length).toBeLessThan(50_000);
     }
+    // cada arquivo é uma fonte do assistente, trocada pelo título: os títulos não se repetem
+    expect(new Set(guides.map((g) => g.title)).size).toBe(guides.length);
     const all = guides.map((g) => g.content).join("\n");
     for (const topic of ["Conta grátis", "Tamanhos e preços", "Conectar o WhatsApp", "Roteiros", "Avisos no WhatsApp", "Equipe e papéis"]) expect(all).toContain(topic);
     // os preços do guia batem com os do produto

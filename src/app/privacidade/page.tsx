@@ -50,7 +50,7 @@ export default function PrivacyPage() {
           <li><strong>Cadastro:</strong> nome, e-mail, nome da agência, logo, cores, telefone de suporte e dados de acesso.</li>
           <li><strong>Pagamento:</strong> tamanhos e pacotes assinados, crédito comprado, histórico de cobranças e identificadores do meio de pagamento. Os dados do cartão são tratados diretamente pela Stripe; não os armazenamos. Para a nota fiscal de cada pagamento, pedimos no checkout o CPF ou CNPJ e o endereço de quem paga, guardados cifrados pelo prazo da lei fiscal, mesmo depois que a conta sai.</li>
           <li><strong>Conteúdo dos assistentes:</strong> páginas de sites, documentos e textos enviados para formar a base de conhecimento e, quando a empresa escolhe, os posts do Instagram dela (legenda, data, link e uma descrição curta de cada foto feita por IA; a imagem não é guardada).</li>
-          <li><strong>Conversas:</strong> mensagens trocadas com os assistentes e com atendentes humanos, data e hora, canal e um identificador técnico do visitante.</li>
+          <li><strong>Conversas:</strong> mensagens trocadas com os assistentes e com atendentes humanos, data e hora, canal e um identificador técnico do visitante. No chamado aberto pelo chat do site, quando a empresa aceita anexo, também a foto ou o PDF enviado, que só a equipe da empresa vê (a IA não lê).</li>
           <li><strong>Arquivos recebidos:</strong> fotos, áudios, vídeos e documentos que o contato envia pelo WhatsApp ou pelo Instagram (até 16 MB), guardados para a empresa ver no histórico da conversa.</li>
           <li>
             <strong>Leitura de fotos:</strong> quando o assistente tem IA, a foto que o contato envia pelo WhatsApp ou pelo Instagram é lida em baixa resolução, e uma descrição curta do que ela mostra passa a fazer parte da conversa. A descrição não identifica pessoas e não copia links, e-mails nem números longos. Comprovantes de pagamento, documentos pessoais, cartões e fotos de saúde não são descritos. No modo dados sensíveis, nenhuma foto é lida.
@@ -206,7 +206,7 @@ export default function PrivacyPage() {
 
       <Section title="13. Seus direitos">
         <p>
-          Você pode pedir confirmação do tratamento, acesso, correção, anonimização, portabilidade, eliminação dos dados, informação sobre compartilhamento e revogação do consentimento, e também reclamar à ANPD. Você pode pedir a exclusão escrevendo no próprio chat (por exemplo, &quot;apaga meus dados&quot;): o pedido é registrado, encaminhado à empresa responsável e concluído no prazo legal, com confirmação a você quando o canal permitir. Veja também <Link href="/exclusao-de-dados">Exclusão de dados</Link>, ou escreva para <a href={`mailto:${email}`}>{email}</a>. Respondemos em até 15 dias.
+          Você pode pedir confirmação do tratamento, acesso, correção, anonimização, portabilidade, eliminação dos dados, informação sobre compartilhamento e revogação do consentimento, e também reclamar à ANPD. Você pode pedir a exclusão escrevendo no próprio chat (por exemplo, &quot;apaga meus dados&quot;): o pedido é registrado, encaminhado à empresa responsável e concluído no prazo legal, com confirmação a você quando o canal permitir. Se a empresa precisar manter algum dado por obrigação legal ou para exercer direitos, ela recusa o pedido com o motivo, e você recebe esse motivo pelo canal. Veja também <Link href="/exclusao-de-dados">Exclusão de dados</Link>, ou escreva para <a href={`mailto:${email}`}>{email}</a>. Respondemos em até 15 dias.
         </p>
       </Section>
 

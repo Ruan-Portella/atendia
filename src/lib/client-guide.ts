@@ -91,7 +91,7 @@ export function clientGuide(access: GuideAccess, names: { agency: string; client
       title: "Privacidade",
       show: access.manager,
       paragraphs: [
-        "Em Privacidade, você escolhe por quanto tempo as conversas ficam guardadas e confirma os pedidos de exclusão que os seus clientes fazem pelo chat.",
+        "Em Privacidade, você escolhe por quanto tempo as conversas ficam guardadas e confirma os pedidos de exclusão que os seus clientes fazem pelo chat (ou recusa, com o motivo, quando a lei pede para guardar algum dado; a pessoa recebe o motivo).",
         "Ali também fica o modo dados sensíveis: as conversas ficam guardadas por menos tempo, e abrir uma delas pede a verificação em duas etapas.",
       ],
     },
@@ -99,7 +99,7 @@ export function clientGuide(access: GuideAccess, names: { agency: string; client
       id: "perfil",
       title: "Meu perfil",
       show: true,
-      paragraphs: ["Em Meu perfil, você troca o nome e a foto que o cliente vê quando você atende, marca se está disponível para receber conversas pelo rodízio dos setores, escolhe a sua assinatura e ativa os avisos no celular e no computador (pedido de atendente, conversa transferida para você e lead novo; no iPhone, com o site adicionado à tela de início). Ali também fica a verificação em duas etapas, pedida para abrir conversas em modo dados sensíveis e para confirmar pedidos de exclusão."],
+      paragraphs: ["Em Meu perfil, você troca o nome e a foto que o cliente vê quando você atende, marca se está disponível para receber conversas pelo rodízio dos setores, escolhe a sua assinatura e ativa os avisos no celular e no computador (pedido de atendente, conversa transferida para você e lead novo; no iPhone, com o site adicionado à tela de início). Ali também fica a verificação em duas etapas, pedida para abrir conversas em modo dados sensíveis e para responder pedidos de exclusão; perdeu o app autenticador? Use \"Perdi o app autenticador\" na tela da verificação."],
     },
   ];
   return sections.filter((s) => s.show).map(({ id, title, paragraphs }) => ({ id, title, paragraphs }));
