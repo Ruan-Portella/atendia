@@ -926,3 +926,10 @@ export async function whatsappLimits(db: SupabaseClient, botIds: string[]): Prom
 /* ------------------------------------------------------------------ chatbot sem tamanho (preços, 18/10) */
 
 export const UNSIZED_SENDS_REASON = "o chatbot está sem tamanho: escolha um tamanho (Atendimento, sem IA, ou com IA) em Cobrança → Assinatura para enviar campanhas e lembretes";
+
+/** Fichas de contato (entre estas) com envio na fila ou saindo: a retenção não apaga a ficha. */
+export async function contactsWithQueuedSends(db: SupabaseClient, contactIds: string[]): Promise<Set<string>> {
+  if (!contactIds.length) return new Set();
+  const { data } = await db.from("campaign_sends").select("contact_id").in("contact_id", contactIds).in("status", ["queued", "sending"]);
+  return new Set((data ?? []).map((r) => r.contact_id as string));
+}

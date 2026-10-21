@@ -47,3 +47,18 @@ describe("diagnóstico do número", () => {
     expect(disconnectionDetail(undefined)).toBeNull();
   });
 });
+
+describe("perfil do WhatsApp", () => {
+  it("com e-mail ou site de contato, ok; sem nenhum, aviso com o atalho (ou o app, na coexistência)", async () => {
+    const { profileLine, profileHasSupport } = await import("../whatsapp-diagnostics");
+    expect(profileHasSupport({ email: "oi@loja.com" })).toBe(true);
+    expect(profileHasSupport({ websites: ["https://loja.com"] })).toBe(true);
+    expect(profileHasSupport({ email: " ", websites: [] })).toBe(false);
+    expect(profileLine({ websites: ["https://loja.com"] }, false)).toMatchObject({ tone: "ok", value: "contato de suporte no perfil: https://loja.com" });
+    const missing = profileLine({ email: "" }, false);
+    expect(missing).toMatchObject({ tone: "atencao", value: "sem e-mail nem site de contato" });
+    expect(missing.hint).toContain("Preencha abaixo");
+    expect(profileLine({}, true).hint).toContain("app WhatsApp Business do celular");
+    expect(profileLine(null, true)).toMatchObject({ tone: "atencao", value: "não consegui ler o perfil agora" });
+  });
+});

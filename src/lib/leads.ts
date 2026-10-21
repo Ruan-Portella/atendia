@@ -391,3 +391,10 @@ export async function apiLeadsPage(db: SupabaseClient, o: { botIds: string[]; ch
   if (error) throw new Error(`leads da API: ${error.message}`);
   return openAll(data);
 }
+
+/** Fichas de contato (entre estas) que têm lead: a retenção não apaga a ficha (retention.ts). */
+export async function contactsWithLeads(db: SupabaseClient, contactIds: string[]): Promise<Set<string>> {
+  if (!contactIds.length) return new Set();
+  const { data } = await db.from("leads").select("contact_id").in("contact_id", contactIds);
+  return new Set((data ?? []).map((r) => r.contact_id as string));
+}

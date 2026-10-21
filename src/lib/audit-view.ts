@@ -85,6 +85,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "canal.desconectar": "Canal desconectado",
   "canal.link_gerar": "Link de conexão gerado",
   "canal.respostas_automaticas_desligadas": "Respostas automáticas do app desligadas",
+  "canal.perfil_whatsapp": "Contato de suporte gravado no perfil do WhatsApp",
   "cifra.recifrar": "Histórico recifrado",
   "cliente.excluir": "Cliente excluído",
   "cliente.retencao": "Prazo de guarda do cliente alterado",

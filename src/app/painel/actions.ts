@@ -39,7 +39,7 @@ import { OVERAGE_CAP_MAX_BRL, OVERAGE_CAP_MIN_BRL, overageMax, parseCapBrl } fro
 import { assistantName, clientFields, isEmail, text } from "@/lib/validation";
 import { addDomainToProject, agencyBaseUrl, checkDomain, parseDomain, removeDomainFromProject } from "@/lib/domain";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
-import { WhatsAppError, waIdVariants, getPhoneNumber, hasPaymentMethod, subscribeApp, whatsappConfigured } from "@/lib/whatsapp";
+import { WhatsAppError, waIdVariants, getPhoneNumber, hasPaymentMethod, subscribeApp, updateBusinessProfile, whatsappConfigured } from "@/lib/whatsapp";
 import { channelBlock } from "@/lib/features";
 import { NEEDS_DOMAIN } from "@/lib/entitlements";
 import { connectFromSignup, type SignupResult } from "@/lib/whatsapp-signup";
@@ -1056,6 +1056,35 @@ export async function recheckWhatsAppPayment(botId: string): Promise<ActionResul
   await admin.from("whatsapp_channels").update({ payment_issue_at: null }).eq("bot_id", botId);
   revalidatePath(`/painel/bots/${botId}`);
   return ok("Cartão encontrado na Meta. O número volta a responder normalmente.");
+}
+
+/**
+ * Perfil do WhatsApp sem contato de suporte (Diagnóstico do número): grava o e-mail e o site
+ * direto no perfil da Meta. Fora da coexistência (lá o perfil é editado no app do celular).
+ */
+export async function saveWhatsAppProfile(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const supabase = await createClient();
+  const { data: bot } = await supabase.from("bots").select("id").eq("id", botId).maybeSingle();
+  if (!bot) return fail("Chatbot não encontrado.");
+  const email = String(formData.get("email") ?? "").trim();
+  let site = String(formData.get("site") ?? "").trim();
+  if (!email && !site) return fail("Informe um e-mail ou um site de contato.");
+  if (email && !isEmail(email)) return fail("E-mail inválido.");
+  if (site && !/^https?:\/\//i.test(site)) site = `https://${site}`;
+  if (site && !/^https?:\/\/[^\s/]+\.[^\s/]+/i.test(site)) return fail("Site inválido (ex.: https://www.minhaloja.com.br).");
+  const admin = createAdminClient();
+  const { data: ch } = await admin.from("whatsapp_channels").select("phone_number_id, waba_id, access_token_enc, coexistence").eq("bot_id", botId).maybeSingle();
+  if (!ch) return fail("Este chatbot não tem WhatsApp conectado.");
+  if (ch.coexistence) return fail("Neste número o perfil é editado no app WhatsApp Business do celular.");
+  try {
+    await updateBusinessProfile(ch, { ...(email ? { email } : {}), ...(site ? { websites: [site] } : {}) });
+  } catch (e) {
+    return fail(e instanceof WhatsAppError ? `A Meta recusou: ${e.message}` : "Não consegui gravar na Meta agora. Tente de novo em alguns minutos.");
+  }
+  await auditPanel("canal.perfil_whatsapp", { type: "bot", id: botId });
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok("Perfil atualizado na Meta.");
 }
 
 export async function disconnectWhatsApp(botId: string): Promise<ActionResult> {

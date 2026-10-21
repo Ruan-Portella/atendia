@@ -102,7 +102,7 @@ O chat do site é instalado com o código da aba Instalação do chatbot (funcio
 
 ## Conectar o WhatsApp de um cliente
 
-Na aba WhatsApp do chatbot, há três jeitos: o cadastro pela tela da Meta (o mais comum), o link de conexão para o próprio cliente fazer (vale 7 dias) e a conexão por ID, para quem já tem o número na Meta. Antes, o painel mostra o aceite das regras do canal e um checklist dos erros comuns. Depois de conectado, o diagnóstico do número mostra o status, o nome de exibição, a qualidade e a forma de pagamento. O chatbot precisa de um tamanho para conectar.
+Na aba WhatsApp do chatbot, há três jeitos: o cadastro pela tela da Meta (o mais comum), o link de conexão para o próprio cliente fazer (vale 7 dias) e a conexão por ID, para quem já tem o número na Meta. Antes, o painel mostra o aceite das regras do canal e um checklist dos erros comuns. Depois de conectado, o diagnóstico do número mostra o status, o nome de exibição, a qualidade, a forma de pagamento e o perfil do WhatsApp: a Meta pede um e-mail ou um site de contato no perfil da empresa, e sem eles o diagnóstico avisa e deixa gravar os dois pelo painel (no número que também está no app do celular, o perfil é editado no app). O chatbot precisa de um tamanho para conectar.
 
 ## WhatsApp com o app do celular (coexistência)
 

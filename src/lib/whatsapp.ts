@@ -343,6 +343,24 @@ export async function hasPaymentMethod(ch: WaChannel & { waba_id: string }): Pro
   return Boolean(res.primary_funding_id);
 }
 
+/** Perfil do WhatsApp Business do número (o que o contato vê ao tocar no nome): contato de suporte e endereço. */
+export interface BusinessProfile {
+  email?: string;
+  websites?: string[];
+  address?: string;
+  about?: string;
+}
+
+export async function businessProfile(ch: WaChannel): Promise<BusinessProfile> {
+  const r = await graph<{ data?: BusinessProfile[] }>(`${ch.phone_number_id}/whatsapp_business_profile?fields=about,address,email,websites`, channelToken(ch));
+  return r.data?.[0] ?? {};
+}
+
+/** Grava e-mail e site no perfil (fora da coexistência: lá o perfil é editado no app do celular). */
+export async function updateBusinessProfile(ch: WaChannel, p: { email?: string; websites?: string[] }): Promise<void> {
+  await graph(`${ch.phone_number_id}/whatsapp_business_profile`, channelToken(ch), { body: { messaging_product: "whatsapp", ...p } });
+}
+
 /** O que a Meta diz do número: nota de qualidade, nome de exibição e situação (Diagnóstico do número). */
 export async function phoneDiagnostics(ch: WaChannel): Promise<import("./whatsapp-diagnostics").PhoneInfo> {
   return graph(`${ch.phone_number_id}?fields=quality_rating,name_status,status,verified_name,code_verification_status`, channelToken(ch));

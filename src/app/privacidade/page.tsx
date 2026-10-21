@@ -12,7 +12,7 @@ export const metadata = { title: "Política de Privacidade" };
  * consentimento para novidades; o envio de campanhas entra com a tela de campanhas. Avisos no
  * WhatsApp (19/10/2026): o número da pessoa da equipe, com o aceite confirmado no WhatsApp. Réguas
  * (20/10/2026): as datas do contato informadas pela empresa (aniversário sem o ano, última visita e
- * próximo horário). Pendências do MVP (20/10/2026): o código do contato que vai ao provedor de IA.
+ * próximo horário). Pendências do MVP (20/10/2026): o código do contato que vai ao provedor de IA e o que segura a ficha do contato.
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -155,7 +155,7 @@ export default function PrivacyPage() {
           <li>
             <strong>Conversas, arquivos recebidos, leads e perguntas:</strong> 12 meses após a última mensagem, ou 6 ou 24 meses, se a empresa atendida escolher (cada empresa tem o seu prazo; sem escolha, vale o padrão da conta que a atende). Quando o prazo diminui, a mudança só vale 30 dias depois do aviso, com opção de exportar. Em assistentes com o modo dados sensíveis, o prazo escolhido pela empresa, de 7 a 90 dias, e arquivos recebidos por até 30 dias.
           </li>
-          <li><strong>Ficha do contato (com as datas informadas pela empresa) e resposta de maioridade:</strong> apagadas quando o contato fica parado pelo prazo acima, sem conversa nem vínculo ativo.</li>
+          <li><strong>Ficha do contato (com as datas informadas pela empresa) e resposta de maioridade:</strong> apagadas quando o contato fica parado pelo prazo acima, sem conversa, vínculo ativo, aceite de novidades em vigor, lead, mensagem agendada nem horário marcado pela frente.</li>
           <li><strong>Registros técnicos de integrações</strong> (chamadas de ações e entregas de webhooks): 30 dias.</li>
           <li><strong>Instagram:</strong> comentários recebidos e as respostas, 90 dias; descrições de stories e posts lidos no momento da mensagem, 30 dias; os posts lidos como base de conhecimento ficam enquanto estiverem entre os 100 mais novos dos últimos 90 dias.</li>
           <li><strong>Auditoria da conta</strong> (sem conteúdo de conversas): 1 ano.</li>

@@ -117,3 +117,24 @@ export function disconnectionDetail(info: { reason?: string; initiated_by?: stri
   const who = info.initiated_by ? ({ BUSINESS: "pelo negócio", PARTNER: "pelo parceiro", META: "pela Meta" } as Record<string, string>)[info.initiated_by.toUpperCase()] ?? `por ${info.initiated_by}` : null;
   return [info.reason ? `motivo informado pela Meta: ${info.reason}` : null, who ? `iniciado ${who}` : null].filter(Boolean).join(", ");
 }
+
+/**
+ * Perfil do WhatsApp Business (spec, Peça 10, Camada 2): a política da Meta pede um contato de
+ * suporte no perfil. Sem e-mail nem site, aviso (não bloqueia), com o atalho de preencher pelo
+ * painel; na coexistência o perfil não passa pela API e o aviso manda editar no app do celular.
+ */
+export function profileHasSupport(p: { email?: string; websites?: string[] } | null): boolean {
+  return Boolean(p?.email?.trim() || p?.websites?.some((w) => w.trim()));
+}
+
+export function profileLine(p: { email?: string; websites?: string[] } | null, coexistence: boolean): DiagLine {
+  const inApp = "Edite no app WhatsApp Business do celular: Configurações → Ferramentas comerciais → Perfil comercial.";
+  if (!p) return { label: "Perfil do WhatsApp", value: "não consegui ler o perfil agora", tone: "atencao", hint: coexistence ? `Confira se o perfil tem e-mail ou site de contato. ${inApp}` : "Abra a aba de novo em alguns minutos." };
+  if (profileHasSupport(p)) return { label: "Perfil do WhatsApp", value: `contato de suporte no perfil: ${[p.email, ...(p.websites ?? [])].filter(Boolean).join(", ")}`, tone: "ok" };
+  return {
+    label: "Perfil do WhatsApp",
+    value: "sem e-mail nem site de contato",
+    tone: "atencao",
+    hint: `A política da Meta pede um contato de suporte no perfil da empresa (o que aparece ao tocar no nome). ${coexistence ? inApp : "Preencha abaixo: vai direto para o perfil na Meta."}`,
+  };
+}

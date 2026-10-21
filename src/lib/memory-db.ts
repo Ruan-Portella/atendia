@@ -118,17 +118,20 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       if (op === "is") this.filters.push((r) => (r[c] ?? null) !== v);
       return this;
     }
-    /** "a.is.null,b.neq.x,c.not.is.null,d.in.(x,y)": basta um bater. */
+    /** "a.is.null,b.neq.x,c.not.is.null,d.in.(x,y),e.lt.\"2026-…\"": basta um bater. */
     or(expr: string) {
       // vírgulas dentro de in.(...) não separam
       const pieces = expr.match(/[^,(]+(?:\([^)]*\))?/g) ?? [];
       const parts = pieces.map((p) => {
-        const m = /^([a-z_]+)\.(not\.)?(eq|neq|is|in)\.(.*)$/.exec(p.trim());
+        const m = /^([a-z_]+)\.(not\.)?(eq|neq|is|in|lt|gt)\.(.*)$/.exec(p.trim());
         if (!m) throw new Error(`banco em memória: or("${p}") não suportado`);
-        const [, col, not, op, raw] = m;
+        const [, col, not, op, quoted] = m;
+        const raw = quoted.replace(/^"|"$/g, "");
         const v = raw === "null" ? null : raw;
         const list = op === "in" ? raw.replace(/^\(|\)$/g, "").split(",") : [];
-        const hit = (r: MemRow) => (op === "in" ? list.includes(String(r[col])) : op === "neq" ? (r[col] ?? null) !== v : (r[col] ?? null) === v);
+        const cmp = (r: MemRow) => (typeof r[col] === "string" ? ((r[col] as string) < raw ? -1 : (r[col] as string) > raw ? 1 : 0) : null);
+        const hit = (r: MemRow) =>
+          op === "in" ? list.includes(String(r[col])) : op === "lt" ? (cmp(r) ?? 0) < 0 : op === "gt" ? (cmp(r) ?? 0) > 0 : op === "neq" ? (r[col] ?? null) !== v : (r[col] ?? null) === v;
         return not ? (r: MemRow) => !hit(r) : hit;
       });
       this.filters.push((r) => parts.some((f) => f(r)));

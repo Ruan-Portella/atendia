@@ -1,18 +1,19 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cn, relativeTime } from "@/lib/utils";
-import { WHATSAPP_BILLING_URL, hasPaymentMethod, phoneDiagnostics } from "@/lib/whatsapp";
-import { nameLine, qualityLine, restrictionLines, statusLine, type DiagLine, type DiagTone } from "@/lib/whatsapp-diagnostics";
+import { WHATSAPP_BILLING_URL, businessProfile, hasPaymentMethod, phoneDiagnostics } from "@/lib/whatsapp";
+import { nameLine, profileHasSupport, profileLine, qualityLine, restrictionLines, statusLine, type DiagLine, type DiagTone } from "@/lib/whatsapp-diagnostics";
 import type { MetaAccountDetail } from "@/lib/meta-enforcement";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { markAutoRepliesOff, recheckWhatsAppPayment } from "@/app/painel/actions";
+import { markAutoRepliesOff, recheckWhatsAppPayment, saveWhatsAppProfile } from "@/app/painel/actions";
 
 const DOT: Record<DiagTone, string> = { ok: "bg-brand", atencao: "bg-amber", problema: "bg-danger" };
 
 /**
  * Diagnóstico do número (L1): situação, nome de exibição e nota de qualidade (consultados na Meta
  * a cada abertura da aba), forma de pagamento (com "Já cadastrei o cartão"), o alerta do erro
- * 131042 e as ordens, restrições e infrações da Meta ativas. Quem renderiza já conferiu o dono.
+ * 131042, as ordens, restrições e infrações da Meta ativas e o perfil do WhatsApp sem contato de
+ * suporte (com o atalho de preencher). Quem renderiza já conferiu o dono.
  */
 export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
   const admin = createAdminClient();
@@ -20,8 +21,9 @@ export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
   if (!ch) return null;
   // número de teste do app (sem portfólio do cliente): não tem pagamento próprio na Meta
   const ownBilling = Boolean(ch.waba_id && ch.business_id);
-  const [info, funded, { data: measures }] = await Promise.all([
+  const [info, profile, funded, { data: measures }] = await Promise.all([
     phoneDiagnostics(ch).catch(() => null),
+    businessProfile(ch).catch(() => null),
     ownBilling ? hasPaymentMethod({ ...ch, waba_id: ch.waba_id! }).catch(() => null) : Promise.resolve(undefined),
     ch.waba_id
       ? admin.from("enforcement_actions").select("source, feature, reason, detail").eq("waba_id", ch.waba_id).is("lifted_at", null).in("source", ["meta_order", "meta_restriction", "meta_violation"])
@@ -59,6 +61,7 @@ export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
       lines.push({ label: "Infração na Meta", value: m.reason.replace(/^infração na Meta: /, ""), tone: "atencao", hint: "A Meta registrou uma infração das regras de comércio. A equipe BoaVoz revisa o caso; veja o aviso no Gerenciador do WhatsApp." });
     }
   }
+  lines.push(profileLine(profile, Boolean(ch.coexistence)));
   if (ch.coexistence) {
     lines.push({ label: "App do celular", value: "o número também está no app WhatsApp Business", tone: "ok", hint: "Abra o app no celular pelo menos 1 vez por semana: parado uns 14 dias, a Meta desconecta o número." });
     lines.push(
@@ -69,6 +72,8 @@ export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
   }
 
   const payable = ownBilling && (paymentIssue || funded === false);
+  // perfil sem e-mail nem site: o atalho grava direto na Meta (na coexistência, só pelo app)
+  const fillProfile = profile !== null && !profileHasSupport(profile) && !ch.coexistence;
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-line-2 px-3 py-3">
       <div className="text-sm font-semibold">Diagnóstico do número</div>
@@ -84,6 +89,19 @@ export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
           </li>
         ))}
       </ul>
+      {fillProfile && (
+        <ActionForm action={saveWhatsAppProfile.bind(null, botId)} className="flex flex-wrap items-end gap-2">
+          <label className="flex min-w-0 flex-col gap-1 text-xs">
+            E-mail de contato
+            <input name="email" type="email" className="input py-1 text-sm" placeholder="contato@minhaloja.com.br" />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 text-xs">
+            Site
+            <input name="site" className="input py-1 text-sm" placeholder="https://www.minhaloja.com.br" />
+          </label>
+          <SubmitButton className="btn-ghost py-1 text-xs" pendingLabel="Gravando na Meta…">Gravar no perfil</SubmitButton>
+        </ActionForm>
+      )}
       <div className="flex flex-wrap items-center gap-3 pt-1">
         {ch.coexistence && !ch.auto_replies_off_at && (
           <ActionForm action={markAutoRepliesOff.bind(null, botId)}>

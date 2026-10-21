@@ -3,10 +3,12 @@ import { audit } from "./audit";
 import { logDeletion } from "./deletions";
 import { notifyAgencyOwner } from "./notify";
 import { reportedUntil } from "./report-daily";
-import { deleteLeads, leadIdsBefore } from "./leads";
+import { contactsWithLeads, deleteLeads, leadIdsBefore } from "./leads";
 import { deleteUnanswered, unansweredIdsBefore } from "./unanswered";
 import { deleteRefusalsBefore } from "./scope-refusals";
 import { deleteContacts, retentionContacts } from "./contacts";
+import { contactsWithQueuedSends } from "./campaigns";
+import { contactsWithConsent } from "./marketing-consent";
 import { deleteAgesOf } from "./gate/age";
 import { appUrl } from "./utils";
 import { SENSITIVE_FILE_DAYS, purgeAttachments } from "./attachments";
@@ -132,7 +134,7 @@ export async function scheduleDefaultRetention(db: SupabaseClient, now = new Dat
       "",
       `A mudança vale a partir de ${dateBR(effective)}. Até lá nada é apagado.`,
       "",
-      "O que muda: conversas paradas há mais tempo que o prazo, com as mensagens, leads, perguntas sem resposta e fichas de contato sem conversa. Os relatórios continuam com os números de todos os meses.",
+      "O que muda: conversas paradas há mais tempo que o prazo, com as mensagens, leads, perguntas sem resposta e fichas de contato sem conversa (a ficha com aceite de novidades, lead, mensagem agendada ou horário marcado fica). Os relatórios continuam com os números de todos os meses.",
       `Se precisar guardar algo mais antigo, exporte os leads antes (planilha com todos os clientes): ${appUrl("/api/leads/export")}`,
       "",
       `Você pode escolher 6, 12 ou 24 meses em Marca e domínio → Privacidade e LGPD, e cada cliente pode ter um prazo próprio: ${appUrl("/painel/marca")}`,
@@ -186,10 +188,10 @@ export async function deleteBotDataBefore(db: SupabaseClient, botId: string, cut
     if (ids.length < BATCH) break;
   }
   if (hasTime()) t.refusals += await deleteRefusalsBefore(db, botId, cutoff);
-  // fichas paradas, sem conversa nem vínculo ativo; a resposta de 18+ sai junto
+  // fichas paradas, sem conversa, vínculo, aceite, lead, envio na fila nem horário marcado; a resposta de 18+ sai junto
   let after: string | undefined;
   while (hasTime()) {
-    const { rows, last } = await retentionContacts(db, botId, cutoff, { after, limit: BATCH });
+    const { rows, last } = await retentionContacts(db, botId, cutoff, { after, limit: BATCH, held: heldContacts(db) });
     if (rows.length) {
       const ids = rows.map((r) => r.id);
       await logDeletion(db, "contacts", ids, RETENTION_CODE);
@@ -204,6 +206,15 @@ export async function deleteBotDataBefore(db: SupabaseClient, botId: string, cut
   }
   return t;
 }
+
+/**
+ * O que segura a ficha do contato além da conversa e do vínculo: o aceite de novidades em vigor,
+ * o lead e o envio na fila (cada um na camada dele).
+ */
+export const heldContacts = (db: SupabaseClient) => async (ids: string[]) => {
+  const sets = await Promise.all([contactsWithConsent(db, ids), contactsWithLeads(db, ids), contactsWithQueuedSends(db, ids)]);
+  return new Set(sets.flatMap((x) => [...x]));
+};
 
 type BotRow = {
   id: string;

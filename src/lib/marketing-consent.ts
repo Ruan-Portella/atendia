@@ -336,3 +336,10 @@ export async function consentStatesMany(db: SupabaseClient, scope: string, conta
   }
   return out;
 }
+
+/** Fichas de contato (entre estas) com aceite de novidades em vigor: a retenção não apaga a ficha. */
+export async function contactsWithConsent(db: SupabaseClient, contactIds: string[]): Promise<Set<string>> {
+  if (!contactIds.length) return new Set();
+  const { data } = await db.from("marketing_consents").select("contact_id").in("contact_id", contactIds).eq("granted", true).is("revoked_at", null);
+  return new Set((data ?? []).map((r) => r.contact_id as string));
+}
