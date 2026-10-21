@@ -14,7 +14,9 @@ export function MemberNav({ clientId, manager, handoff, knowledge, hours, waitin
   const tab = (href: string, label: string, badge = 0) => ({ href, label, active: href === base ? path === base : path.startsWith(href), badge });
   const tabs = [
     ...(manager ? [tab(base, "Relatório")] : []),
-    tab(`${base}/conversas`, handoff ? "Atendimento" : "Conversas", handoff ? waiting : 0),
+    // Caixa de entrada (parte 3): o atendimento aberto, em filas; Conversas fica com o histórico
+    ...(handoff ? [tab(`${base}/caixa`, "Caixa de entrada", waiting)] : []),
+    tab(`${base}/conversas`, "Conversas"),
     ...(manager && knowledge ? [tab(`${base}/aprender`, "Ensinar o assistente")] : []),
     ...(manager && hours ? [tab(`${base}/horario`, "Horário")] : []),
     ...(manager ? [tab(`${base}/equipe`, "Equipe"), tab(`${base}/canais`, "Canais"), tab(`${base}/privacidade`, "Privacidade")] : []),

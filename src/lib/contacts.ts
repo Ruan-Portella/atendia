@@ -917,3 +917,20 @@ export async function whatsappPhonesOf(db: SupabaseClient, botId: string, contac
   }
   return out;
 }
+
+/**
+ * O nome de cada contato para as listas (Caixa de entrada): o nome da empresa (display), senão o
+ * que veio do canal, senão o telefone ou o @. Uma consulta para a lista inteira.
+ */
+export async function contactLabels(db: SupabaseClient, ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return out;
+  const { data } = await db.from("contacts").select("id, name, display, phone_enc").in("id", unique);
+  for (const r of (data ?? []) as Array<{ id: string; name: string | null; display: { name?: unknown } | null; phone_enc: string | null }>) {
+    const display = typeof r.display?.name === "string" ? r.display.name.trim() : "";
+    const label = display || r.name?.trim() || (await openNullable("contacts.phone_enc", r.phone_enc)) || "";
+    if (label) out.set(r.id, label.slice(0, 80));
+  }
+  return out;
+}

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Sparkles, Palette, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug, LifeBuoy, Milestone, LayoutTemplate } from "lucide-react";
+import { Users, Sparkles, Palette, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug, LifeBuoy, Milestone, LayoutTemplate, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, type AgencyRole, type Permission } from "@/lib/roles";
 
 /** Itens do menu e quem vê cada um (equipe, leva B1'). */
 /** pack: só aparece com o pacote (os modelos de chatbot, D', são do Plataforma). */
 const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Permission; also?: string; pack?: string }> = [
+  { href: "/painel/caixa", label: "Caixa de entrada", icon: Inbox, perm: "attend" },
   { href: "/painel/clientes", label: "Clientes", icon: Users, perm: "attend", also: "/painel/bots" },
   { href: "/painel/integracoes", label: "Integrações", icon: Plug, perm: "integrations" },
   { href: "/painel/demos", label: "Demos", icon: Sparkles, perm: "config" },
