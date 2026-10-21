@@ -678,7 +678,7 @@ export function chatTools(exec: {
       execute: exec.registrar_lead,
     }),
     chamar_atendente: tool({
-      description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano ou alguém da equipe, ou com urgente=true quando houver risco à vida ou à integridade.",
+      description: "Avisa a equipe que o visitante quer falar com uma pessoa. Use quando ele pedir atendente, humano, alguém da equipe ou de um setor (ex.: \"alguém do financeiro\"), mesmo que exista um roteiro para o assunto: o pedido de uma pessoa vem antes do roteiro. Use com urgente=true quando houver risco à vida ou à integridade.",
       inputSchema: z.object({
         motivo: z.string().optional().describe("resumo curto do que a pessoa precisa"),
         setor: z.string().optional().describe("o setor da equipe que cuida do pedido, só com um dos nomes de SETORES DA EQUIPE (quando houver); na dúvida, deixe vazio"),

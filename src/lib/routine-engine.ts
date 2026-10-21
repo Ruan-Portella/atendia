@@ -720,7 +720,7 @@ export function routineSession(
 
   const tools: Record<string, Tool> = {
     iniciar_roteiro: tool({
-      description: `Começa um roteiro (os passos que a empresa definiu) quando a conversa entra no assunto dele. Roteiros: ${list}. Chame assim que reconhecer o assunto, antes de responder, e siga o passo que a ferramenta devolver. Não chame para o roteiro que já está em andamento. Com outro roteiro em andamento, chame só se a pessoa mudou para o assunto deste: o outro acaba sozinho (não chame cancelar_roteiro antes).`,
+      description: `Começa um roteiro (os passos que a empresa definiu) quando a conversa entra no assunto dele. Roteiros: ${list}. Chame assim que reconhecer o assunto, antes de responder, e siga o passo que a ferramenta devolver. Se a pessoa pediu para falar com uma pessoa ou com um setor da equipe, não comece o roteiro: chame chamar_atendente. Não chame para o roteiro que já está em andamento. Com outro roteiro em andamento, chame só se a pessoa mudou para o assunto deste: o outro acaba sozinho (não chame cancelar_roteiro antes).`,
       inputSchema: z.object({ nome: z.enum(names).describe("o nome exato do roteiro") }),
       execute: async ({ nome }) => {
         const routine = available.find((r) => r.name === nome);
