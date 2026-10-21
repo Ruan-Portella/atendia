@@ -122,7 +122,7 @@ export default function WebhooksDocs() {
       <Table
         head={["Evento", "Quando", "data"]}
         rows={[
-          [<code key="1">ticket.created</code>, "Alguém abriu um chamado no chat do site.", <><code>ticket</code> {`{protocol, status, subject}`} e <code>requester</code> {`{name, email, phone}`} (quem abriu).</>],
+          [<code key="1">ticket.created</code>, "Alguém abriu um chamado no chat do site.", <><code>ticket</code> {`{protocol, status, subject}`}, <code>requester</code> {`{name, email, phone}`} (quem abriu) e <code>attachment</code> {`{id, mime, size, filename}`} (a foto ou o PDF do chamado, quando o chatbot aceita anexo; baixe por <code>GET /v1/media/{"{id}"}</code>), ou null.</>],
           [<code key="2">ticket.updated</code>, "O chamado mudou: a equipe trocou o status, respondeu, ou a pessoa escreveu de novo pelo acompanhamento.", <><code>ticket</code>, <code>change</code> (<code>status</code>, <code>resposta_equipe</code> ou <code>mensagem_cliente</code>), <code>previous_status</code> e <code>agent</code> (quem da equipe, quando foi a equipe). Status: <code>aberto</code>, <code>em_andamento</code>, <code>aguardando_cliente</code> e <code>resolvido</code>. A nota interna nunca vai.</>],
         ]}
       />

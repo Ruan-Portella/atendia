@@ -656,6 +656,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <textarea id="ticket_subjects" name="ticket_subjects" rows={4} defaultValue={(ticketForm?.subjects ?? []).join("\n")} className="input" placeholder={"Financeiro\nTroca e devolução\nOutro assunto"} />
                   </div>
                 </div>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" name="ticket_attachment" defaultChecked={Boolean(ticketForm?.attachment)} className="mt-1" />
+                  <span>Aceitar um anexo no chamado: uma foto (JPEG, PNG ou WEBP) ou um PDF, até 4 MB. Só a equipe vê, na conversa; a IA não lê.</span>
+                </label>
               </section>
 
               <section className="flex flex-col gap-3 border-t border-line pt-4">

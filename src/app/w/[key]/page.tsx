@@ -12,7 +12,7 @@ export const metadata = { title: { absolute: "Chat" }, robots: { index: false } 
 /** O formulário de chamado para o widget (só o que a tela usa); whatsapp: o aceite do aviso pela resposta (parte 7d). */
 function publicTicket(raw: unknown, whatsapp: boolean) {
   const f = ticketFormOf(raw);
-  return f ? { mode: f.mode, phone: f.phone, subjects: f.subjects, whatsapp: whatsapp && f.phone !== "nao" } : null;
+  return f ? { mode: f.mode, phone: f.phone, subjects: f.subjects, whatsapp: whatsapp && f.phone !== "nao", attachment: Boolean(f.attachment) } : null;
 }
 
 /** Conteúdo do iframe do widget e link direto para Instagram/WhatsApp. */

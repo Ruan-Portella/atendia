@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { imageMimeOf } from "./photo-note";
 import { randomInt } from "node:crypto";
 import { isEmail } from "./validation";
 
@@ -25,6 +26,8 @@ export interface TicketForm {
   phone: TicketPhone;
   /** a lista de assuntos (vazia: sem o campo) */
   subjects: string[];
+  /** aceita um anexo, foto ou PDF (leva das sobras, parte 4; desligado por padrão) */
+  attachment?: boolean;
 }
 
 export const TICKET_SUBJECTS_MAX = 10;
@@ -37,7 +40,21 @@ export function ticketFormOf(raw: unknown): TicketForm | null {
   const r = raw as Record<string, unknown>;
   if (r.enabled !== true) return null;
   const subjects = Array.isArray(r.subjects) ? r.subjects.filter((s): s is string => typeof s === "string" && Boolean(s.trim())).map((s) => s.trim().slice(0, TICKET_SUBJECT_MAX)).slice(0, TICKET_SUBJECTS_MAX) : [];
-  return { enabled: true, mode: r.mode === "sozinho" ? "sozinho" : "aba", phone: r.phone === "opcional" || r.phone === "obrigatorio" ? r.phone : "nao", subjects };
+  return { enabled: true, mode: r.mode === "sozinho" ? "sozinho" : "aba", phone: r.phone === "opcional" || r.phone === "obrigatorio" ? r.phone : "nao", subjects, attachment: r.attachment === true };
+}
+
+/*
+ * O anexo do chamado (leva das sobras, parte 4): um arquivo só, foto (JPEG, PNG ou WEBP) ou PDF,
+ * conferido pelos primeiros bytes (o tipo que o navegador diz não vale), até 4 MB (o corpo de uma
+ * requisição na Vercel vai até 4,5 MB). Fica no armazenamento privado, cifrado, e só a equipe vê na
+ * conversa; a IA não lê.
+ */
+export const TICKET_FILE_MAX_BYTES = 4 * 1024 * 1024;
+
+/** O tipo do anexo pelos primeiros bytes, ou null se não for foto nem PDF. Pura. */
+export function ticketFileMime(d: Uint8Array): "image/jpeg" | "image/png" | "image/webp" | "application/pdf" | null {
+  if (d.byteLength >= 5 && d[0] === 0x25 && d[1] === 0x50 && d[2] === 0x44 && d[3] === 0x46 && d[4] === 0x2d) return "application/pdf";
+  return imageMimeOf(d);
 }
 
 /** Os campos do painel (Bot → Atendimento humano → Chamados no chat do site). Pura. */
@@ -48,7 +65,7 @@ export function parseTicketForm(f: Record<string, string>): { value: TicketForm 
   if (long) return { error: `Assunto muito longo (até ${TICKET_SUBJECT_MAX} caracteres): ${long.slice(0, 50)}` };
   const unique = [...new Map(subjects.map((s) => [s.toLowerCase(), s])).values()];
   if (f.ticket_enabled !== "on") return { value: subjects.length ? { enabled: false, mode: f.ticket_mode === "sozinho" ? "sozinho" : "aba", phone: "nao", subjects: unique } : null };
-  return { value: { enabled: true, mode: f.ticket_mode === "sozinho" ? "sozinho" : "aba", phone: f.ticket_phone === "opcional" || f.ticket_phone === "obrigatorio" ? f.ticket_phone : "nao", subjects: unique } };
+  return { value: { enabled: true, mode: f.ticket_mode === "sozinho" ? "sozinho" : "aba", phone: f.ticket_phone === "opcional" || f.ticket_phone === "obrigatorio" ? f.ticket_phone : "nao", subjects: unique, attachment: f.ticket_attachment === "on" } };
 }
 
 /** Protocolo: 8 letras e números sem os que confundem (0/O, 1/I/L), em dois blocos. */

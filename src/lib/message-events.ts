@@ -394,14 +394,14 @@ export interface TicketRef {
 export async function queueTicketEvent(
   db: SupabaseClient,
   conversationId: string,
-  o: { type: "ticket.created" | "ticket.updated"; ticket: TicketRef; at: string; change?: "status" | "resposta_equipe" | "mensagem_cliente"; previousStatus?: string | null; requester?: { name: string; email: string; phone: string | null } | null; agent?: AgentRef | null },
+  o: { type: "ticket.created" | "ticket.updated"; ticket: TicketRef; at: string; change?: "status" | "resposta_equipe" | "mensagem_cliente"; previousStatus?: string | null; requester?: { name: string; email: string; phone: string | null } | null; agent?: AgentRef | null; attachment?: { id: string; mime: string; size: number; filename: string | null } | null },
 ): Promise<void> {
   try {
     const ctx = await eventContext(db, conversationId);
     if (!ctx) return;
     const { emitEvent } = await import("./webhooks");
     const data: Record<string, unknown> = { ticket: o.ticket };
-    if (o.type === "ticket.created") data.requester = o.requester ?? null;
+    if (o.type === "ticket.created") Object.assign(data, { requester: o.requester ?? null, attachment: o.attachment ?? null });
     else Object.assign(data, { change: o.change ?? "status", previous_status: o.previousStatus ?? null, agent: agentRef(o.agent) });
     await emitEvent(
       db,

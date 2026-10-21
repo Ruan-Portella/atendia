@@ -33,7 +33,11 @@ export interface TicketPublic {
   subjects: string[];
   /** o chatbot tem WhatsApp conectado: o aceite do aviso pela resposta aparece junto do telefone (parte 7d) */
   whatsapp?: boolean;
+  /** aceita um anexo, foto ou PDF, até 4 MB (leva das sobras, parte 4) */
+  attachment?: boolean;
 }
+
+const TICKET_FILE_MAX = 4 * 1024 * 1024;
 
 type HandoffMode = "bot" | "requested" | "agent";
 /**
@@ -699,14 +703,22 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, initialProto
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const get = (k: string) => String(fd.get(k) ?? "").trim();
+    const file = fd.get("file");
+    const hasFile = file instanceof File && file.size > 0;
+    if (hasFile && file.size > TICKET_FILE_MAX) return setError("O anexo vai até 4 MB. Mande uma foto menor ou um PDF mais leve.");
     setState("sending");
     setError(null);
     try {
-      const res = await fetch(`${apiBase}/api/widget/ticket`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: bot.key, visitorId, name: get("name"), email: get("email"), phone: get("phone") || null, subject: get("subject") || null, description: get("description"), whatsapp: fd.get("whatsapp") === "on" }),
-      });
+      const fields = { key: bot.key, visitorId, name: get("name"), email: get("email"), phone: get("phone") || null, subject: get("subject") || null, description: get("description"), whatsapp: fd.get("whatsapp") === "on" };
+      // com anexo, vai como formulário (multipart); sem, como JSON
+      let body: BodyInit = JSON.stringify(fields);
+      if (hasFile) {
+        const multipart = new FormData();
+        for (const [k, v] of Object.entries(fields)) if (v !== null && v !== undefined) multipart.set(k, String(v));
+        multipart.set("file", file);
+        body = multipart;
+      }
+      const res = await fetch(`${apiBase}/api/widget/ticket`, { method: "POST", ...(hasFile ? {} : { headers: { "Content-Type": "application/json" } }), body });
       const j = (await res.json().catch(() => ({}))) as { protocol?: string; message?: string };
       if (!res.ok || !j.protocol) {
         setError(j.message ?? "Confira os dados e tente de novo.");
@@ -789,6 +801,12 @@ function TicketPanel({ bot, ticket, apiBase, visitorId, storageKey, initialProto
       )}
       <label className="sr-only" htmlFor={`t-desc-${bot.key}`}>Descrição</label>
       <textarea id={`t-desc-${bot.key}`} name="description" required minLength={10} maxLength={2000} rows={5} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="O que aconteceu? Quanto mais detalhe, mais rápido a equipe resolve." className={`${field} resize-none`} />
+      {ticket.attachment && (
+        <label className="flex flex-col gap-1 text-[12.5px] text-[#4c5551]" htmlFor={`t-file-${bot.key}`}>
+          <span>Anexo (opcional): uma foto ou um PDF, até 4 MB</span>
+          <input id={`t-file-${bot.key}`} name="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="text-[12.5px]" />
+        </label>
+      )}
       {suggestion && !dismissed && (
         <div className="flex flex-col gap-2 rounded-lg border bg-white p-3 text-sm" style={{ borderColor: bot.color }} role="status">
           <p className="text-[12px] font-semibold" style={{ color: bot.color }}>Isso ajuda?</p>

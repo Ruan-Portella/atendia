@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryDb, type MemRow } from "../memory-db";
-import { assignProtocol, newProtocol, parseProtocol, parseTicketForm, ticketFormOf, ticketInputProblem, type TicketForm } from "../tickets";
+import { TICKET_FILE_MAX_BYTES, assignProtocol, newProtocol, parseProtocol, parseTicketForm, ticketFileMime, ticketFormOf, ticketInputProblem, type TicketForm } from "../tickets";
 import { openTicket } from "../ticket-open";
 import type { BotRow } from "../chat";
 
 // o lead tem a camada própria (leads.ts, cifra e mescla por contato): aqui só confere o que chega nela
 const savedLeads = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+// o anexo vai para o armazenamento cifrado (attachments.ts): aqui só confere o que chega nele
+const stored = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock("../attachments", async (orig) => ({
+  ...(await orig<typeof import("../attachments")>()),
+  storeAttachment: vi.fn(async (_db: unknown, a: Record<string, unknown>) => (stored.push(a), "a1b2c3")),
+}));
 vi.mock("../leads", async (orig) => ({
   ...(await orig<typeof import("../leads")>()),
   saveLead: vi.fn(async (_db: unknown, lead: Record<string, unknown>) => {
@@ -21,11 +27,13 @@ describe("o formulário de chamado do chatbot", () => {
   it("guardado: desligado é null; ligado vem limpo", () => {
     expect(ticketFormOf(null)).toBeNull();
     expect(ticketFormOf({ enabled: false, subjects: ["A"] })).toBeNull();
-    expect(ticketFormOf({ enabled: true, mode: "x", phone: "y", subjects: [" Financeiro ", "", 3] })).toEqual({ enabled: true, mode: "aba", phone: "nao", subjects: ["Financeiro"] });
+    expect(ticketFormOf({ enabled: true, mode: "x", phone: "y", subjects: [" Financeiro ", "", 3] })).toEqual({ enabled: true, mode: "aba", phone: "nao", subjects: ["Financeiro"], attachment: false });
+    expect(ticketFormOf({ enabled: true, subjects: [], attachment: true })?.attachment).toBe(true);
   });
 
   it("os campos do painel: assuntos um por linha, sem repetir; desligado guarda os assuntos", () => {
-    expect(parseTicketForm({ ticket_enabled: "on", ticket_mode: "sozinho", ticket_phone: "obrigatorio", ticket_subjects: "Financeiro\nfinanceiro\n\nTroca" })).toEqual({ value: { enabled: true, mode: "sozinho", phone: "obrigatorio", subjects: ["financeiro", "Troca"] } });
+    expect(parseTicketForm({ ticket_enabled: "on", ticket_mode: "sozinho", ticket_phone: "obrigatorio", ticket_subjects: "Financeiro\nfinanceiro\n\nTroca" })).toEqual({ value: { enabled: true, mode: "sozinho", phone: "obrigatorio", subjects: ["financeiro", "Troca"], attachment: false } });
+    expect(parseTicketForm({ ticket_enabled: "on", ticket_attachment: "on", ticket_subjects: "" })).toMatchObject({ value: { enabled: true, attachment: true } });
     expect(parseTicketForm({ ticket_subjects: "" })).toEqual({ value: null });
     expect(parseTicketForm({ ticket_subjects: "Financeiro" })).toEqual({ value: { enabled: false, mode: "aba", phone: "nao", subjects: ["Financeiro"] } });
     expect(parseTicketForm({ ticket_enabled: "on", ticket_subjects: Array.from({ length: 11 }, (_, i) => `A${i}`).join("\n") })).toHaveProperty("error");
@@ -101,5 +109,36 @@ describe("abrir o chamado", () => {
     expect(savedLeads[0]).toMatchObject({ botId: "b1", conversationId: r.conversationId, name: "Maria Souza", email: "maria@exemplo.com", phone: "(21) 99999-0000", channel: "widget" });
     expect(savedLeads[0].phoneHash).toBeTruthy();
     expect(String(savedLeads[0].notes)).toContain(r.protocol);
+  });
+});
+
+describe("o anexo do chamado (leva das sobras, parte 4)", () => {
+  it("só foto (JPEG, PNG, WEBP) ou PDF, pelos primeiros bytes", () => {
+    expect(ticketFileMime(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, ...new Array(20).fill(0)]))).toBe("application/pdf");
+    expect(ticketFileMime(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(20).fill(1)]))).toBe("image/jpeg");
+    // HTML disfarçado de PDF, e um executável: recusados
+    expect(ticketFileMime(new TextEncoder().encode("<html><script>alert(1)</script></html>"))).toBeNull();
+    expect(ticketFileMime(new Uint8Array([0x4d, 0x5a, 0x90, 0x00, ...new Array(20).fill(0)]))).toBeNull();
+    expect(TICKET_FILE_MAX_BYTES).toBe(4 * 1024 * 1024);
+  });
+
+  it("o arquivo fica com a descrição, no armazenamento privado, e o ticket.created leva o id", async () => {
+    stored.length = 0;
+    const tables: Record<string, MemRow[]> = {
+      bots: [{ id: "b1", agency_id: "ag1", client_id: "c1", name: "Lia", client_name: "Loja", human_handoff: null, lead_capture: null }],
+      sectors: [],
+      sector_members: [],
+      clients: [{ id: "c1", holidays: [] }],
+      conversations: [],
+      messages: [],
+      routine_runs: [],
+      webhooks: [],
+    };
+    const bot = tables.bots[0] as unknown as BotRow;
+    const data = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]);
+    const r = await openTicket(memoryDb(tables), bot, { ...form, attachment: true }, { ...ok, visitorId: "v1", attachment: { data, mime: "application/pdf", filename: "boleto.pdf" } });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ botId: "b1", conversationId: r.conversationId, channel: "widget", mime: "application/pdf", filename: "boleto.pdf", maxBytes: TICKET_FILE_MAX_BYTES });
+    expect(stored[0].messageId).toBe(tables.messages[0].id);
   });
 });
