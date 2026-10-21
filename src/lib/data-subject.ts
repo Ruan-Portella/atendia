@@ -82,7 +82,16 @@ export const ERASURE_TEXTS = {
   already: (company: string, due: string) => `Seu pedido de exclusão já está registrado. A ${company} conclui até ${dueDateBR(due)}.`,
   cancelled: "Tudo bem, nada foi apagado. Pode seguir com o atendimento.",
   done: (company: string) => `Pronto: a ${company} apagou seus dados deste atendimento (conversas e contato). Se você escrever de novo, a conversa começa do zero.`,
+  refused: (company: string, reason: string) => `A ${company} analisou o seu pedido para apagar os dados deste atendimento e não vai apagar agora. Motivo: ${reason} Se tiver dúvida, responda por aqui.`,
 };
+
+/** O motivo da recusa: de 10 a 500 letras (vai ao contato e fica no registro). Pura. */
+export function refuseReasonProblem(reason: string): string | null {
+  const r = reason.replace(/\s+/g, " ").trim();
+  if (r.length < 10) return "Escreva o motivo da recusa (pelo menos 10 letras): ele vai para a pessoa e fica registrado.";
+  if (r.length > 500) return "O motivo vai até 500 letras.";
+  return null;
+}
 
 export const ERASURE_BUTTONS = [
   { id: ERASE_YES, title: "Sim, apagar" },
@@ -346,6 +355,59 @@ export async function executeRequest(db: SupabaseClient, requestId: string, conf
   const now = new Date().toISOString();
   await db.from("data_subject_requests").update({ status: "executado", confirmed_at: now, confirmed_by: confirmedBy, executed_at: now, summary, ...(told ? { contact_notified_at: now } : {}) }).eq("id", req.id).eq("status", "aguardando");
   return summary;
+}
+
+/**
+ * Recusa um pedido do chat com o motivo (leva das sobras, parte 3): nada é apagado, o pedido fica
+ * "recusado" com quem e por quê, e o contato recebe o motivo pelo canal, dentro da janela de 24
+ * horas (no site, a mensagem fica na conversa). A LGPD admite manter dados por obrigação legal ou
+ * exercício de direitos (art. 16), sempre com a justificativa. Devolve se a pessoa foi avisada, ou
+ * null se o pedido não estava aguardando.
+ */
+export async function refuseRequest(db: SupabaseClient, requestId: string, refusedBy: string, rawReason: string): Promise<{ told: boolean } | null> {
+  const reason = rawReason.replace(/\s+/g, " ").trim();
+  const now = new Date().toISOString();
+  const { data } = await db.from("data_subject_requests").update({ status: "recusado", refused_at: now, refused_by: refusedBy, refuse_reason: reason }).eq("id", requestId).eq("status", "aguardando").select("id, bot_id, conversation_id");
+  const req = data?.[0] as { id: string; bot_id: string | null; conversation_id: string | null } | undefined;
+  if (!req) return null;
+  let told = false;
+  if (req.bot_id && req.conversation_id) {
+    const { data: bot } = await db.from("bots").select("id, agency_id, client_id, client_name, name").eq("id", req.bot_id).maybeSingle();
+    if (bot) told = await tellRefusal(db, bot as BotRef, req.conversation_id, ERASURE_TEXTS.refused(bot.client_name as string, reason.endsWith(".") ? reason : `${reason}.`));
+  }
+  if (told) await db.from("data_subject_requests").update({ contact_notified_at: now }).eq("id", req.id);
+  return { told };
+}
+
+/** O motivo da recusa ao contato: pelo canal dentro da janela; no site, na conversa (o widget mostra). */
+async function tellRefusal(db: SupabaseClient, bot: BotRef, conversationId: string, text: string): Promise<boolean> {
+  const { data: conv } = await db.from("conversations").select("id, channel, wa_id, ig_id, last_contact_at").eq("id", conversationId).maybeSingle();
+  if (!conv) return false;
+  const record = { insert: { role: "assistant" as const, content: text, author: "sistema" } };
+  try {
+    if (conv.channel === "widget") {
+      const { saveMessage } = await import("./messages");
+      await saveMessage(db, { conversation_id: conversationId, ...record.insert });
+      return true;
+    }
+    if (!conv.last_contact_at || Date.now() - Date.parse(conv.last_contact_at as string) > DAY) return false;
+    if (conv.channel === "whatsapp" && conv.wa_id) {
+      const { data: ch } = await db.from("whatsapp_channels").select("phone_number_id, access_token_enc, disconnected_at").eq("bot_id", bot.id).maybeSingle();
+      if (!ch || ch.disconnected_at) return false;
+      const r = await deliver(db, { botId: bot.id, channel: "whatsapp", conversationId, kind: "sistema", record, transport: async () => (await sendText(ch, conv.wa_id as string, text)).messages?.[0]?.id ?? null });
+      return r.status === "sent";
+    }
+    if (conv.channel === "instagram" && conv.ig_id) {
+      const { data: ch } = await db.from("instagram_channels").select("bot_id, ig_user_id, access_token_enc, disconnected_at").eq("bot_id", bot.id).maybeSingle();
+      if (!ch || ch.disconnected_at) return false;
+      const { send } = await import("./instagram-inbound");
+      const r = await deliver(db, { botId: bot.id, channel: "instagram", conversationId, kind: "sistema", record, transport: () => send(db, ch as Parameters<typeof send>[1], conv.ig_id as string, text) });
+      return r.status === "sent";
+    }
+  } catch (e) {
+    console.error("pedido do titular: motivo da recusa não saiu", (e as Error).message);
+  }
+  return false;
 }
 
 /** Pedido feito no painel (por e-mail ou telefone): já confirmado, executado pela mesma rotina. */

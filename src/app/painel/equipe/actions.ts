@@ -7,7 +7,8 @@ import { audit, requestMeta } from "@/lib/audit";
 import { sendAsAgency } from "@/lib/notify";
 import { appUrl } from "@/lib/utils";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { INVITE_DAYS, ROLE_LABELS, can, inviteMember, isInvitableRole, memberName, memberOf, removeMember, scopeFromForm, scopesOf, updateMemberAccess, type ScopeInput } from "@/lib/team";
+import { INVITE_DAYS, ROLE_LABELS, can, endMemberSessions, inviteMember, isInvitableRole, memberName, memberOf, removeMember, scopeFromForm, scopesOf, updateMemberAccess, type ScopeInput } from "@/lib/team";
+import { hasMfa } from "@/lib/agency-mfa";
 import { forgetTeamWhatsApp } from "@/lib/team-whatsapp";
 
 /*
@@ -84,6 +85,25 @@ export async function removeTeamMember(memberId: string): Promise<ActionResult> 
   await auditTeam(ctx, "equipe.remover", memberId, { before: { email: r.member.email, papel: r.member.role, aceito: Boolean(r.member.accepted_at) } });
   revalidatePath("/painel/equipe");
   return ok(r.member.accepted_at ? `${memberName(r.member)} saiu da equipe. O acesso acaba na próxima página que a pessoa abrir.` : "Convite cancelado. O link deixou de valer.");
+}
+
+/** Encerra as sessões de outra pessoa da equipe (com o segundo fator); ela recebe um e-mail. */
+export async function endTeamMemberSessions(memberId: string): Promise<ActionResult> {
+  const ctx = await teamContext();
+  if (!ctx) return fail(DENIED);
+  if (!(await hasMfa())) return fail("Faça a verificação em duas etapas (código do app autenticador) e tente de novo.");
+  const r = await endMemberSessions(createAdminClient(), { agencyId: ctx.agency.id, memberId, actorRole: ctx.role, actorMemberId: ctx.member.id });
+  if (!r.ok) return fail(r.message);
+  await auditTeam(ctx, "equipe.encerrar_sessoes", memberId, { after: { email: r.member.email } });
+  await sendAsAgency("BoaVoz", r.member.email, `Suas sessões no painel de ${ctx.agency.name} foram encerradas`, [
+    `${memberName(ctx.member)} encerrou as suas sessões no painel de ${ctx.agency.name} (em todos os aparelhos).`,
+    "",
+    `Para continuar, entre de novo: ${appUrl("/login")}`,
+    "",
+    "Se você não esperava por isso, fale com o dono da agência.",
+  ]).catch(() => false);
+  revalidatePath("/painel/equipe");
+  return ok(`Pronto: ${memberName(r.member)} sai do painel em todos os aparelhos e recebeu um e-mail.`);
 }
 
 /** Convida de novo (convite pendente ou vencido), com o mesmo papel e escopo e um link novo. */

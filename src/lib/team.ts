@@ -33,9 +33,11 @@ export interface AgencyMember {
   available?: boolean | null;
   /** O formato da assinatura que a pessoa escolheu (Caixa de entrada, parte 5); null = o do chatbot. */
   signature?: string | null;
+  /** Sessões encerradas por um dono ou administrador (leva das sobras, parte 3). */
+  sessions_revoked_at?: string | null;
 }
 
-export const MEMBER_COLS = "id, agency_id, user_id, email, role, scope, display_name, avatar_url, invited_by, invited_at, invite_expires_at, accepted_at, removed_at, available, signature";
+export const MEMBER_COLS = "id, agency_id, user_id, email, role, scope, display_name, avatar_url, invited_by, invited_at, invite_expires_at, accepted_at, removed_at, available, signature, sessions_revoked_at";
 
 export const inviteTokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 export const newInviteToken = () => randomBytes(24).toString("base64url");
@@ -241,6 +243,37 @@ export async function removeMember(db: SupabaseClient, o: { agencyId: string; me
   const { error } = await db.from("agency_members").update({ removed_at: new Date().toISOString(), invite_token_hash: null }).eq("id", m.id).is("removed_at", null);
   if (error) return { ok: false, message: "Não foi possível remover. Tente de novo." };
   return { ok: true, member: m };
+}
+
+/**
+ * Encerra as sessões de outra pessoa da equipe (leva das sobras, parte 3: celular perdido, saída da
+ * empresa). A marca derruba no painel, na próxima página, a sessão aberta antes dela; as sessões
+ * também saem do Auth (a renovação deixa de funcionar). Mesma regra de remover: o dono não, a si
+ * mesmo não (para as suas, Segurança → Encerrar as outras sessões), administrador só pelo dono.
+ */
+export async function endMemberSessions(db: SupabaseClient, o: { agencyId: string; memberId: string; actorRole: AgencyRole; actorMemberId: string; now?: Date }): Promise<{ ok: true; member: AgencyMember; ended: number } | { ok: false; message: string }> {
+  const m = await memberOf(db, o.agencyId, o.memberId);
+  if (!m || m.removed_at) return { ok: false, message: "Pessoa não encontrada." };
+  if (!m.user_id || !m.accepted_at) return { ok: false, message: "Essa pessoa ainda não entrou no painel: não há sessão para encerrar." };
+  if (m.id === o.actorMemberId) return { ok: false, message: "Para as suas sessões, use Segurança → Encerrar as outras sessões." };
+  if (m.role === "owner") return { ok: false, message: "As sessões do dono da agência só ele mesmo encerra." };
+  if (m.role === "admin" && o.actorRole !== "owner") return { ok: false, message: "Só o dono da agência encerra as sessões de um administrador." };
+  const { error } = await db.from("agency_members").update({ sessions_revoked_at: (o.now ?? new Date()).toISOString() }).eq("id", m.id);
+  if (error) return { ok: false, message: "Não foi possível encerrar. Tente de novo." };
+  // no Auth: as sessões saem e a renovação do acesso para (-1: sem permissão; a marca vale assim mesmo)
+  const { data: ended } = await db.rpc("end_user_sessions", { p_user: m.user_id });
+  return { ok: true, member: m, ended: typeof ended === "number" ? ended : 0 };
+}
+
+/**
+ * A sessão foi aberta antes do "encerrar as sessões"? Pelo horário da entrada no token (amr).
+ * Sem esse horário no token, não derruba (o Auth já cortou a renovação). Pura.
+ */
+export function sessionRevoked(amr: unknown, revokedAt: string | null | undefined): boolean {
+  if (!revokedAt || !Array.isArray(amr)) return false;
+  const times = amr.map((e) => Number((e as { timestamp?: unknown })?.timestamp ?? 0)).filter((t) => t > 0);
+  if (!times.length) return false;
+  return Math.max(...times) * 1000 < Date.parse(revokedAt);
 }
 
 /** Último acesso ao painel de cada usuário (registros de acesso). */

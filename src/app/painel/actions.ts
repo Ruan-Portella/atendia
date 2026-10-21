@@ -24,7 +24,7 @@ import { attendantAuthor, type Attendant } from "@/lib/authors";
 import { answerQuestion } from "@/lib/knowledge";
 import { PORTAL_ROLE_LABELS, isPortalRole, sendMemberLink, type PortalRole } from "@/lib/member";
 import { appUrl, initials, normalizeUrl } from "@/lib/utils";
-import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest } from "@/lib/data-subject";
+import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest, refuseReasonProblem, refuseRequest } from "@/lib/data-subject";
 import { grantSupport, revokeSupport } from "@/lib/support-access";
 import { cancelAccountDeletion, requestAccountDeletion } from "@/lib/account-deletion";
 import { parseMomentNotice, untilLabel } from "@/lib/moment-notice";
@@ -1671,6 +1671,25 @@ export async function confirmDataSubjectRequest(requestId: string): Promise<Acti
   await auditPanel("titular.confirmar", { type: "data_subject_request", id: requestId }, { after: { ...summary } });
   revalidatePath("/painel/seguranca");
   return ok(`Pedido atendido: ${summary.conversas} conversa(s), ${summary.leads} lead(s) e ${summary.contatos} ficha(s) de contato apagadas.`);
+}
+
+/** Segurança: recusa um pedido do titular com o motivo (nada é apagado; a pessoa recebe o motivo). */
+export async function refuseDataSubjectRequest(requestId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("security"))) return fail(DENIED);
+  const { userId } = await requireAgency();
+  if (!(await hasMfa())) return fail(MFA_NEEDED);
+  const reason = text(formData.get("reason"));
+  const problem = refuseReasonProblem(reason);
+  if (problem) return fail(problem);
+  const supabase = await createClient();
+  // a RLS limita aos pedidos desta agência
+  const { data: req } = await supabase.from("data_subject_requests").select("id, status").eq("id", requestId).maybeSingle();
+  if (!req) return fail("Pedido não encontrado.");
+  const r = await refuseRequest(createAdminClient(), requestId, userId, reason);
+  if (!r) return ok("Este pedido já foi atendido ou recusado.");
+  await auditPanel("titular.recusar", { type: "data_subject_request", id: requestId }, { after: { motivo: reason.slice(0, 200) } });
+  revalidatePath("/painel/seguranca");
+  return ok(r.told ? "Pedido recusado. A pessoa recebeu o motivo pelo canal." : "Pedido recusado. A janela de 24 horas fechou: avise a pessoa por outro meio, com o mesmo motivo.");
 }
 
 /** Política de privacidade (link no chat) e prazo de guarda dos dados dos visitantes. */

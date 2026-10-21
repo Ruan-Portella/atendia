@@ -7,7 +7,7 @@ import { activePacks } from "./entitlements";
 import { slugify } from "./utils";
 import type { AccountProfile } from "./first-access";
 import { botQuotaStatus, type BotQuotaStatus } from "./atendimentos";
-import { activeMembership, can, hadMembership, openInvitesFor, type AgencyMember, type AgencyRole, type Permission } from "./team";
+import { activeMembership, can, hadMembership, openInvitesFor, sessionRevoked, type AgencyMember, type AgencyRole, type Permission } from "./team";
 import { firstName, personName } from "./authors";
 import { DEVICE_COOKIE, recordSignupSignals } from "./person-signals";
 import { requestIp } from "./access-log";
@@ -121,6 +121,8 @@ export const requireAgency = cache(async (): Promise<AgencyContext> => {
   }
   // e-mail trocado na conta: o vínculo acompanha (o convite e a equipe mostram o e-mail atual)
   if (email && member.email !== email) await admin.from("agency_members").update({ email }).eq("id", member.id);
+  // sessões encerradas por um dono ou administrador: a aberta antes cai aqui (leva das sobras, parte 3)
+  if (sessionRevoked(claims.amr, member.sessions_revoked_at)) redirect("/auth/encerrada");
 
   const { data: agency, error } = await admin.from("agencies").select("*").eq("id", member.agency_id).single<Agency>();
   if (error || !agency) throw new Error(error?.message ?? "Agência não encontrada");

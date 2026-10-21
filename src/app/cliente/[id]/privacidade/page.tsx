@@ -5,7 +5,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { ExportLinks } from "@/components/export-links";
 import { SensitiveModeForm } from "@/components/sensitive-mode-form";
 import { dueDateBR } from "@/lib/data-subject";
-import { memberConfirmRequest, memberSetRetention, memberSetSensitive } from "../../actions";
+import { memberConfirmRequest, memberRefuseRequest, memberSetRetention, memberSetSensitive } from "../../actions";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 
 export const metadata = { title: { absolute: "Privacidade" }, robots: { index: false, follow: false } };
@@ -24,7 +24,7 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
     admin.from("clients").select("retention_months, agencies(retention_months)").eq("id", id).maybeSingle(),
     admin.from("bots").select("id, name, sensitive_mode, sensitive_retention_days, sensitive_mode_suggested_at").in("id", ids).order("name"),
     // pedidos de exclusão dos contatos deste negócio (a agência confirma; aqui só acompanha)
-    admin.from("data_subject_requests").select("id, channel, status, requested_at, due_at, executed_at").eq("client_id", id).order("requested_at", { ascending: false }).limit(20),
+    admin.from("data_subject_requests").select("id, channel, status, requested_at, due_at, executed_at, refused_at, refuse_reason").eq("client_id", id).order("requested_at", { ascending: false }).limit(20),
   ]);
   const agency = (Array.isArray(client?.agencies) ? client.agencies[0] : client?.agencies) as { retention_months: number | null } | null | undefined;
   const clientMonths = (client?.retention_months as number | null) ?? null;
@@ -71,18 +71,27 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
               <li key={r.id as string} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <span>{CHANNEL[r.channel as string] ?? (r.channel as string)} · pedido em {dueDateBR(r.requested_at as string)}</span>
                 <span className="flex items-center gap-2 text-xs text-muted">
-                  {r.status === "executado" ? `atendido em ${dueDateBR(r.executed_at as string)}` : `aguardando · prazo até ${dueDateBR(r.due_at as string)}`}
+                  {r.status === "executado" ? `atendido em ${dueDateBR(r.executed_at as string)}` : r.status === "recusado" ? `recusado em ${dueDateBR(r.refused_at as string)}: ${r.refuse_reason as string}` : `aguardando · prazo até ${dueDateBR(r.due_at as string)}`}
                   {r.status === "aguardando" && (
                     mfa ? (
-                      <ConfirmAction
-                        action={memberConfirmRequest.bind(null, id, r.id as string)}
-                        title="Confirmar o pedido de exclusão?"
-                        description="Apaga as conversas, a ficha, os contatos deixados e as perguntas dessa pessoa nos seus assistentes, e avisa ela pelo canal quando ainda der. Não tem desfazer."
-                        confirmLabel="Confirmar e apagar"
-                        className="btn-danger px-2.5 py-1 text-xs"
-                      >
-                        Confirmar
-                      </ConfirmAction>
+                      <>
+                        <ConfirmAction
+                          action={memberConfirmRequest.bind(null, id, r.id as string)}
+                          title="Confirmar o pedido de exclusão?"
+                          description="Apaga as conversas, a ficha, os contatos deixados e as perguntas dessa pessoa nos seus assistentes, e avisa ela pelo canal quando ainda der. Não tem desfazer."
+                          confirmLabel="Confirmar e apagar"
+                          className="btn-danger px-2.5 py-1 text-xs"
+                        >
+                          Confirmar
+                        </ConfirmAction>
+                        <details className="text-xs">
+                          <summary className="cursor-pointer hover:text-ink">Recusar</summary>
+                          <ActionForm action={memberRefuseRequest.bind(null, id, r.id as string)} className="mt-2 flex flex-col gap-2">
+                            <textarea name="reason" required minLength={10} maxLength={500} rows={2} className="input text-sm" placeholder="O motivo (vai para a pessoa): ex.: as notas fiscais ficam guardadas por 5 anos por obrigação legal." />
+                            <SubmitButton className="btn-ghost self-start py-1 text-xs" pendingLabel="Recusando…">Recusar o pedido</SubmitButton>
+                          </ActionForm>
+                        </details>
+                      </>
                     ) : (
                       <a href={`/cliente/${id}/verificar?next=${encodeURIComponent(`/cliente/${id}/privacidade`)}`} className="font-semibold text-brand hover:underline">Verificar para confirmar</a>
                     )

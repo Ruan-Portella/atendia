@@ -13,7 +13,9 @@ import { TeamWhatsAppCard } from "@/components/team-whatsapp-card";
 import { noticeStatus } from "@/lib/team-whatsapp";
 import { PushCard } from "@/components/push-card";
 import { PUSH_KIND_LABEL, agencyPushKinds, listPushDevices, pushConfigured, pushPrefs, vapidPublicKey } from "@/lib/push";
-import { removeMyPushDevice, saveMyPushPrefs, setMyAvailability, setMySignature, subscribeMyPush, testMyPush, unsubscribeMyPush, updateMyProfile } from "./actions";
+import { removeMyPushDevice, requestEmailChange, saveMyPushPrefs, setMyAvailability, setMySignature, subscribeMyPush, testMyPush, unsubscribeMyPush, updateMyProfile } from "./actions";
+import { ActionForm } from "@/components/ui/action-form";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 export const metadata = { title: "Meu perfil" };
 
@@ -22,8 +24,12 @@ export const metadata = { title: "Meu perfil" };
  * você na equipe (papel e escopo) e o seu segundo fator, que todo papel usa ao abrir conversa de
  * chatbot em modo dados sensíveis.
  */
-export default async function ProfilePage() {
+export default async function ProfilePage({ searchParams }: PageProps<"/painel/perfil">) {
   const { agency, member, role, email } = await requireAgency();
+  const sp = await searchParams;
+  // trocar o e-mail: quem tem o app autenticador troca só com o código feito nesta sessão
+  const { data: aal } = await (await createClient()).auth.mfa.getAuthenticatorAssuranceLevel();
+  const emailNeedsMfa = aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2";
   // um cliente que a pessoa atende, só para a prévia do anúncio
   const { data: sample } = await (await createClient()).from("clients").select("name").order("name").limit(1).maybeSingle();
   let scope = "Todos os clientes da agência";
@@ -53,7 +59,27 @@ export default async function ProfilePage() {
         company={(sample?.name as string | undefined) ?? "sua empresa cliente"}
       />
       <section className="card flex flex-col gap-3 p-6 text-sm">
-        <div className="grid gap-1 sm:grid-cols-[140px_1fr]"><span className="text-muted">E-mail</span><span className="font-semibold">{email}</span></div>
+        <div className="grid gap-1 sm:grid-cols-[140px_1fr]">
+          <span className="text-muted">E-mail</span>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="font-semibold">{email}</span>
+            {sp.email === "trocado" && <span className="text-xs text-brand">E-mail confirmado. Daqui em diante, entre com ele.</span>}
+            <details className="text-xs">
+              <summary className="cursor-pointer text-muted hover:text-ink">Trocar o e-mail de acesso</summary>
+              {emailNeedsMfa ? (
+                <p className="mt-2 text-muted">
+                  Você tem o app autenticador: para trocar o e-mail, <a href={`/painel/verificar?next=${encodeURIComponent("/painel/perfil")}`} className="font-semibold text-brand hover:underline">faça a verificação</a> antes.
+                </p>
+              ) : (
+                <ActionForm action={requestEmailChange} className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <input name="email" type="email" required autoComplete="email" placeholder="novo@empresa.com.br" className="input" />
+                  <SubmitButton className="btn-ghost shrink-0" pendingLabel="Enviando…">Pedir a troca</SubmitButton>
+                </ActionForm>
+              )}
+              <p className="mt-1.5 text-muted">A troca vale depois do link de confirmação (no e-mail novo e, se pedir, no atual). O dono da agência é avisado.</p>
+            </details>
+          </div>
+        </div>
         <div className="grid gap-1 sm:grid-cols-[140px_1fr]">
           <span className="text-muted">Papel</span>
           <span><span className="font-semibold">{ROLE_LABELS[role]}</span>{role !== "owner" && <span className="block text-xs text-muted">{ROLE_HINTS[role]}</span>}</span>

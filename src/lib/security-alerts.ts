@@ -24,6 +24,7 @@ export const SECURITY_ALERTS: Record<string, string> = {
   "seguranca.mfa_recuperar_confirmar": "Recuperação do segundo fator confirmada (o suporte remove o app autenticador em 48 horas)",
   "seguranca.mfa_remover_suporte": "Segundo fator removido pelo suporte (recuperação)",
   "equipe.admin_novo": "Novo administrador na equipe",
+  "seguranca.email_trocar": "Pedido para trocar o e-mail de acesso de alguém da equipe",
   "conta.exclusao_pedida": "Exclusão da conta pedida",
 };
 

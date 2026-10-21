@@ -5,7 +5,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { EditMemberButton, InviteMemberButton, ReinviteButton, type ScopeClient } from "@/components/team-forms";
 import { MEMBER_COLS, ROLE_LABELS, inviteOpen, lastAccessOf, memberName, scopesOf, type AgencyMember, type InvitableRole } from "@/lib/team";
 import { initials, relativeTime } from "@/lib/utils";
-import { inviteTeamMember, reinviteTeamMember, removeTeamMember, updateTeamMember } from "./actions";
+import { endTeamMemberSessions, inviteTeamMember, reinviteTeamMember, removeTeamMember, updateTeamMember } from "./actions";
 
 export const metadata = { title: "Equipe" };
 
@@ -99,6 +99,17 @@ export default async function TeamPage() {
                     name={name}
                     defaults={{ role: m.role as InvitableRole, scope: m.scope, clientIds: s.clientIds, botIds: s.botIds }}
                   />
+                )}
+                {canManage && !pending && m.user_id && m.id !== me.id && m.role !== "owner" && (m.role !== "admin" || isOwner) && (
+                  <ConfirmAction
+                    action={endTeamMemberSessions.bind(null, m.id)}
+                    title={`Encerrar as sessões de ${name}?`}
+                    description={`${name} sai do painel em todos os aparelhos (celular perdido, computador emprestado) e recebe um e-mail. Para voltar, basta entrar de novo; o acesso continua. Pede o código do app autenticador.`}
+                    confirmLabel="Encerrar as sessões"
+                    className="btn-ghost text-xs"
+                  >
+                    Encerrar sessões
+                  </ConfirmAction>
                 )}
                 {canManage && (
                   <ConfirmAction

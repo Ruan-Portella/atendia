@@ -13,6 +13,9 @@ import { isSignatureFormat } from "@/lib/signature";
 import { firstExceeded } from "@/lib/rate-limit";
 import { agencyPushKinds, deviceLabel, parseSubscription, pushConfigured, pushTo, removePushDevice, removePushEndpoint, savePushPrefs, savePushSubscription } from "@/lib/push";
 import { headers } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
+import { isEmail, text } from "@/lib/validation";
+import { appUrl } from "@/lib/utils";
 
 const safeJson = (s: string): unknown => {
   try {
@@ -21,6 +24,28 @@ const safeJson = (s: string): unknown => {
     return null;
   }
 };
+
+/**
+ * Trocar o e-mail de acesso (leva das sobras, parte 3; spec, Segurança: "exigir o segundo fator
+ * para trocar e-mail de quem já tem"): quem tem o app autenticador troca só com o código feito nesta
+ * sessão. O Supabase manda o link de confirmação (com a troca segura, para o e-mail atual e o novo);
+ * a troca vale depois do link, e a equipe passa a mostrar o novo. Evento grave: o dono é avisado.
+ */
+export async function requestEmailChange(formData: FormData): Promise<ActionResult> {
+  const { agency, member, email, userId } = await requireAgency();
+  const next = text(formData.get("email")).trim().toLowerCase();
+  if (!isEmail(next)) return fail("Escreva um e-mail válido.");
+  if (next === email) return fail("Esse já é o seu e-mail de acesso.");
+  const supabase = await createClient();
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") return fail("Você tem o app autenticador: faça a verificação (código de 6 dígitos) e tente de novo.");
+  const limited = await firstExceeded(createAdminClient(), [{ key: `email-troca:${userId}`, max: 3, windowSeconds: 3600, message: "Muitos pedidos de troca de e-mail. Tente de novo em 1 hora." }]);
+  if (limited) return fail(limited.message);
+  const { error } = await supabase.auth.updateUser({ email: next }, { emailRedirectTo: appUrl(`/auth/callback?next=${encodeURIComponent("/painel/perfil?email=trocado")}`) });
+  if (error) return fail(/already|registered|exists/i.test(error.message) ? "Esse e-mail já é de outra conta do BoaVoz." : "Não foi possível pedir a troca agora. Tente de novo em alguns minutos.");
+  await audit(createAdminClient(), { agencyId: agency.id, actorType: "user", actorId: userId, action: "seguranca.email_trocar", targetType: "agency_member", targetId: member.id, after: { novo: next }, ...(await requestMeta()) });
+  return ok(`Pronto: confirme pelo link que chega em ${next} (e, se pedir, também em ${email}). A troca vale depois da confirmação.`);
+}
 
 /** Meu perfil: nome de exibição e foto de quem está logado (qualquer papel). */
 export async function updateMyProfile(formData: FormData): Promise<ActionResult> {

@@ -7,7 +7,7 @@ import { hostAgency } from "@/lib/domain-server";
 import { currentOrigin, EMAIL_LINK_TYPES, memberAttendant, memberForAction, memberHasMfa, sendMemberLink, type Membership } from "@/lib/member";
 import { profileProblem } from "@/lib/attendants";
 import { awayMessageProblem, parseHoursForm, type HumanHandoff } from "@/lib/handoff-hours";
-import { executeRequest } from "@/lib/data-subject";
+import { executeRequest, refuseReasonProblem, refuseRequest } from "@/lib/data-subject";
 import { applySensitiveMode, sensitiveChangeText, sensitiveSavedText } from "@/lib/sensitive-mode";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
@@ -522,6 +522,23 @@ export async function memberSetHours(clientId: string, botId: string, formData: 
   await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "portal.horario", targetType: "bot", targetId: botId, before: { hours: handoff.hours ?? null }, after: { hours: parsed.hours }, ...(await requestMeta()) });
   revalidatePath(`/cliente/${clientId}/horario`);
   return ok(parsed.hours ? "Horário salvo. Fora dele, o assistente diz quando a equipe volta." : "Sem horário: o assistente diz que a equipe responde assim que possível.");
+}
+
+/** Gestor recusa um pedido do titular com o motivo (o negócio é o controlador). */
+export async function memberRefuseRequest(clientId: string, requestId: string, fd: FormData): Promise<ActionResult> {
+  const ctx = await memberForAction(clientId, "manager");
+  if (!ctx) return fail("Só o gestor responde os pedidos de exclusão.");
+  if (!(await memberHasMfa())) return fail("Faça a verificação em duas etapas (código do app autenticador) e tente de novo.");
+  const reason = text(fd.get("reason"));
+  const problem = refuseReasonProblem(reason);
+  if (problem) return fail(problem);
+  const { data: req } = await ctx.admin.from("data_subject_requests").select("id").eq("id", requestId).eq("client_id", clientId).maybeSingle();
+  if (!req) return fail("Pedido não encontrado.");
+  const r = await refuseRequest(ctx.admin, requestId, ctx.email, reason);
+  if (!r) return ok("Este pedido já foi atendido ou recusado.");
+  await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "titular.recusar", targetType: "data_subject_request", targetId: requestId, after: { motivo: reason.slice(0, 200) }, ...(await requestMeta()) });
+  revalidatePath(`/cliente/${clientId}/privacidade`);
+  return ok(r.told ? "Pedido recusado. A pessoa recebeu o motivo pelo canal." : "Pedido recusado. A janela de 24 horas fechou: avise a pessoa por outro meio, com o mesmo motivo.");
 }
 
 /** Gestor confirma um pedido do titular feito pelo chat (o negócio é o controlador). */

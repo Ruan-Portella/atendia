@@ -25,7 +25,13 @@ export function AuthForm({ mode, emailEnabled }: { mode: "login" | "signup"; ema
   const [step, setStep] = useState<"email" | "code">("email");
   const [wait, setWait] = useState(0);
   // quem entrava com senha: a sessão antiga saiu (proxy) e o aviso explica o jeito novo
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(params.get("senha") === "1" ? { kind: "ok", text: "O BoaVoz agora entra sem senha: receba um código no e-mail ou use o Google." } : null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
+    params.get("senha") === "1"
+      ? { kind: "ok", text: "O BoaVoz agora entra sem senha: receba um código no e-mail ou use o Google." }
+      : params.get("encerrada") === "1"
+        ? { kind: "ok", text: "Sua sessão foi encerrada por um responsável da sua equipe. Entre de novo para continuar." }
+        : null,
+  );
   const [pending, start] = useTransition();
   const [googleBusy, setGoogleBusy] = useState(false);
 
