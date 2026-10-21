@@ -62,13 +62,14 @@ export const WEBHOOK_EVENTS = [
   "account.credit_depleted",
   "routine.completed",
   "routine.abandoned",
+  "survey.answered",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 /** Grupos do editor de webhooks (spec Peça 2). */
 export const WEBHOOK_EVENT_GROUPS: Array<{ label: string; events: WebhookEvent[] }> = [
   { label: "Mensagens", events: ["message.received", "message.sent", "message.status", "message.failed", "message.deleted"] },
-  { label: "Atendimento", events: ["lead.created", "lead.updated", "handoff.requested", "handoff.returned", "conversation.assigned", "conversation.transferred"] },
+  { label: "Atendimento", events: ["lead.created", "lead.updated", "handoff.requested", "handoff.returned", "conversation.assigned", "conversation.transferred", "survey.answered"] },
   { label: "Chamados", events: ["ticket.created", "ticket.updated"] },
   { label: "Roteiros", events: ["routine.completed", "routine.abandoned"] },
   { label: "Contato", events: ["contact.linked", "contact.unlinked", "contact.opted_in", "contact.opted_out", "contact.deleted"] },
@@ -94,6 +95,8 @@ const DISABLE_AFTER_MS = 3 * 86_400_000;
  * trava vence e a entrega sai no minuto seguinte.
  */
 const LEASE_MS = 30_000;
+/** No máximo 10 entregas ao mesmo tempo por webhook (spec, Peça 2): a 11ª espera o consumidor. */
+export const MAX_IN_FLIGHT = 10;
 const DELIVERY_COLS = "id, webhook_id, event_id, payload_enc, attempts";
 const TIMEOUT_MS = 10_000;
 
@@ -253,6 +256,18 @@ interface DeliveryRow {
  * atualizações condicionais, cada uma atômica no banco: sem trava, ou com a trava vencida.
  */
 async function claimDelivery(db: SupabaseClient, id: string, now = Date.now()): Promise<DeliveryRow | null> {
+  // no banco: a função trava o webhook, confere a vaga (até 10 em andamento) e trava a entrega
+  const { data: claimed, error } = await db.rpc("claim_webhook_delivery", { p_delivery: id, p_lease_seconds: LEASE_MS / 1000, p_max: MAX_IN_FLIGHT });
+  if (!error) {
+    if (claimed !== true) return null;
+    const { data } = await db.from("webhook_deliveries").select(DELIVERY_COLS).eq("id", id).maybeSingle<DeliveryRow>();
+    return data ?? null;
+  }
+  // sem a função (o banco em memória dos testes): as mesmas regras, em duas atualizações condicionais
+  const { data: row } = await db.from("webhook_deliveries").select("webhook_id").eq("id", id).maybeSingle<{ webhook_id: string }>();
+  if (!row) return null;
+  const { count } = await db.from("webhook_deliveries").select("id", { count: "exact", head: true }).eq("webhook_id", row.webhook_id).neq("id", id).gt("locked_until", new Date(now).toISOString());
+  if ((count ?? 0) >= MAX_IN_FLIGHT) return null;
   const until = new Date(now + LEASE_MS).toISOString();
   const free = await db.from("webhook_deliveries").update({ locked_until: until }).eq("id", id).eq("status", "pending").is("locked_until", null).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
   if (free.data) return free.data;
@@ -340,10 +355,12 @@ export async function emitEvent(
     // contact_id: o pedido do titular apaga as entregas do contato (o corpo cifrado não dá para buscar)
     // webhook com falha recente vai direto para o consumidor (não segura nada esperando um endpoint fora do ar)
     const tryNow = !o.consumerOnly && !w.failing_since;
-    // a que sai na hora já nasce travada: o consumidor do minuto não pega a mesma ao mesmo tempo
-    const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, contact_id: e.contactId ?? null, message_id: e.messageId ?? null, ...(tryNow ? { locked_until: new Date(Date.now() + LEASE_MS).toISOString() } : {}) }).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
+    const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, contact_id: e.contactId ?? null, message_id: e.messageId ?? null }).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
     if (error && !/duplicate|unique/i.test(error.message)) console.error("webhook: entrega não registrada", error.message);
-    if (d && tryNow) created.push({ d, w });
+    // a tentativa na hora passa pela trava como o consumidor: com 10 em andamento no webhook (ou o
+    // consumidor já com ela), fica para o minuto seguinte
+    const claimed = d && tryNow ? await claimDelivery(db, d.id) : null;
+    if (claimed) created.push({ d: claimed, w });
   }
   const run = async () => {
     for (const { d, w } of created) await attempt(db, d, w).catch((err) => console.error("webhook: tentativa", (err as Error).message));
@@ -370,9 +387,10 @@ export async function emitAccountEvent(db: SupabaseClient, agencyId: string, e: 
     const payload_enc = await sealField("webhook_deliveries.payload_enc", JSON.stringify(envelope), PLATFORM_SCOPE);
     const created: Array<{ d: DeliveryRow; w: WebhookRow }> = [];
     for (const w of targets) {
-      const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc, ...(!w.failing_since ? { locked_until: new Date(Date.now() + LEASE_MS).toISOString() } : {}) }).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
+      const { data: d, error } = await db.from("webhook_deliveries").insert({ webhook_id: w.id, event_id: id, event_type: e.type, payload_enc }).select(DELIVERY_COLS).maybeSingle<DeliveryRow>();
       if (error && !/duplicate|unique/i.test(error.message)) console.error("webhook: entrega não registrada", error.message);
-      if (d && !w.failing_since) created.push({ d, w });
+      const claimed = d && !w.failing_since ? await claimDelivery(db, d.id) : null;
+      if (claimed) created.push({ d: claimed, w });
     }
     inBackground(async () => {
       for (const { d, w } of created) await attempt(db, d, w).catch((err) => console.error("webhook: tentativa", (err as Error).message));

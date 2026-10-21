@@ -20,6 +20,7 @@ export default function SourcesApiDocs() {
           [<Link key="1" href="#criar"><code>POST /v1/bots/{"{id}"}/sources</code></Link>, "Grava a fonte e lê na hora: a resposta já diz quantos trechos entraram."],
           [<Link key="2" href="#listar"><code>GET /v1/bots/{"{id}"}/sources</code></Link>, "As fontes do chatbot, as mais novas primeiro, com o filtro pelo contexto."],
           [<Link key="3" href="#apagar"><code>DELETE /v1/bots/{"{id}"}/sources/{"{source}"}</code></Link>, "Tira a fonte e os trechos dela."],
+          [<Link key="4" href="#aviso"><code>PUT /v1/bots/{"{id}"}/notice</code></Link>, "Põe o aviso do momento: um texto com prazo (uma queda, uma manutenção) que a IA usa quando perguntam."],
         ]}
       />
 
@@ -62,6 +63,27 @@ export default function SourcesApiDocs() {
         Responde 204. Fonte que não é do chatbot, ou id que não é <code>src_…</code>: 404. Quando um cliente sai do seu sistema, apague as fontes do contexto dele.
       </p>
       <Example page={E} id="apagar" />
+
+      <H2 id="aviso">Aviso do momento</H2>
+      <p>
+        O mesmo aviso do painel (aba Base de conhecimento): um texto com prazo, como &quot;Instabilidade na fibra no bairro Centro; previsão de volta às 18h.&quot;. A IA usa quando o contato pergunta ou quando o assunto tem a ver, nunca como instrução; vencido, some sozinho. Um aviso por chatbot: o novo troca o anterior. Bom para o seu sistema avisar uma queda sem ninguém entrar no painel. Vale também com a permissão <code>provisioning</code>.
+      </p>
+      <Route id="aviso-por" method="PUT" path="/v1/bots/{id}/notice" />
+      <Example page={E} id="aviso" />
+      <Table
+        head={["Campo", "Regra", "Erro"]}
+        rows={[
+          [<code key="1">text</code>, "De 5 a 500 caracteres.", <>400 <code>text</code></>],
+          [<code key="2">until</code>, <>Data e hora em ISO 8601 com o fuso (<code>2026-10-22T18:00:00-03:00</code> ou com <code>Z</code>), de 10 minutos a 30 dias à frente.</>, <>400 <code>until</code></>],
+        ]}
+      />
+      <Route id="aviso-ler" method="GET" path="/v1/bots/{id}/notice" />
+      <p>
+        O aviso que vale agora, ou <code>notice: null</code> (sem aviso ou vencido). <code>set_by</code> diz quem pôs: o nome da chave, a agência ou o e-mail de quem é do cliente.
+      </p>
+      <Example page={E} id="aviso-ler" />
+      <Route id="aviso-tirar" method="DELETE" path="/v1/bots/{id}/notice" />
+      <Example page={E} id="aviso-tirar" />
 
       <NextSteps
         items={[

@@ -141,17 +141,24 @@ export interface SurveyReplyIO {
  */
 export async function handleSatisfactionReplies(io: SurveyReplyIO, items: Array<{ text: string | null; buttonId: string | null }>): Promise<number[]> {
   const handled: number[] = [];
+  const answered: Array<{ id: string; conversation_id: string; score: 1 | 2 | 3; trigger: SurveyTrigger; sent_at: string; answered_at: string }> = [];
   for (let i = 0; i < items.length; i++) {
     const tap = parseSurveyButton(items[i].buttonId);
     if (!tap) continue;
     handled.push(i);
-    await io.db.from("satisfaction_surveys").update({ score: tap.score, answered_at: new Date().toISOString() }).eq("id", tap.surveyId).is("score", null);
+    const { data } = await io.db.from("satisfaction_surveys").update({ score: tap.score, answered_at: new Date().toISOString() }).eq("id", tap.surveyId).is("score", null).select("id, conversation_id, score, trigger, sent_at, answered_at");
+    answered.push(...((data ?? []) as typeof answered));
   }
   if (!handled.length) return handled;
   const convId = await io.conversation();
   if (convId) {
     for (const i of handled) await io.store(i, convId);
     await io.reply(convId, SURVEY_THANKS);
+  }
+  // survey.answered: só a primeira resposta de cada pesquisa (o segundo toque não muda a nota)
+  if (answered.length) {
+    const { queueSurveyAnswered } = await import("./message-events");
+    for (const a of answered) await queueSurveyAnswered(io.db, a.conversation_id, { id: a.id, score: a.score, trigger: a.trigger, sentAt: a.sent_at, answeredAt: a.answered_at });
   }
   return handled;
 }

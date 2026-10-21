@@ -115,6 +115,7 @@ export default function WebhooksDocs() {
           [<code key="4">handoff.returned</code>, "A conversa voltou para a IA.", <><code>reason</code> (<code>agent_resumed</code>, <code>timeout</code>, <code>api</code>) e <code>agent</code>.</>],
           [<code key="5">conversation.assigned</code>, "A conversa chegou a uma pessoa da equipe: ela assumiu, o rodízio do setor entregou ou veio numa transferência.", <><code>agent</code> {`{id, display_name, type}`}, <code>by</code> (<code>agent</code>, <code>rotation</code> ou <code>transfer</code>), <code>previous_agent</code> (quem estava com a conversa, ou null) e <code>sector</code> {`{id, name}`} (ou null).</>],
           [<code key="6">conversation.transferred</code>, "Alguém da equipe transferiu a conversa para outra pessoa ou para um setor. A nota interna não vai no evento.", <><code>from</code> (quem transferiu) e <code>to</code> {`{type, agent, sector}`}: <code>type</code> <code>agent</code> ou <code>sector</code>; no setor com rodízio, <code>agent</code> é quem recebeu.</>],
+          [<code key="7">survey.answered</code>, "O contato respondeu a pesquisa de satisfação (WhatsApp e Instagram). Só a primeira resposta de cada pesquisa.", <><code>survey</code> {`{id, sent_at, trigger}`} (<code>agent_finished</code>: no fim do atendimento humano; <code>ai_idle</code>: depois de 30 minutos de conversa parada com a IA), <code>score</code> (3, 2 ou 1), <code>rating</code> (<code>great</code>, <code>ok</code> ou <code>bad</code>) e <code>answered_at</code>.</>],
         ]}
       />
       <H3 id="chamados">Chamados</H3>
@@ -204,7 +205,7 @@ export default function WebhooksDocs() {
         <li>
           <strong>410 Gone</strong> desativa o webhook na hora. <strong>3 dias seguidos só de falhas</strong> também desativam. O dono da conta recebe um e-mail com 1 hora de falhas, outro no segundo dia e outro quando o webhook é desativado, com o link para reativar. O painel mostra o motivo; reative e use “Reenviar falhas desde” para recuperar o que ficou para trás.
         </li>
-        <li>Até 10 entregas ao mesmo tempo por webhook.</li>
+        <li>Até 10 entregas ao mesmo tempo por webhook: a partir da 11ª, o evento espera na fila e sai no minuto seguinte, na ordem. Os eventos de alto volume (<code>message.status</code> e os envios de campanha) sempre saem pela fila.</li>
         <li>Um pedido do titular (LGPD) apaga as entregas do contato, inclusive as pendentes, antes do <code>contact.deleted</code>.</li>
       </ul>
 

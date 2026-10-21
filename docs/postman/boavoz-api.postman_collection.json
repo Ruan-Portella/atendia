@@ -3467,7 +3467,7 @@
     },
     {
       "name": "11. Fontes",
-      "description": "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, uma página ou um PDF por URL. Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
+      "description": "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, uma página ou um PDF por URL, e o aviso do momento (o texto com prazo que a IA usa quando perguntam; também com **provisioning**). Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
       "item": [
         {
           "name": "Fonte de texto com contexto",
@@ -3696,6 +3696,167 @@
                   "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
                   "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
                   "pm.test(\"aponta o campo\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"content\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pôr o aviso do momento",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/notice",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "notice"
+              ]
+            },
+            "description": "O texto com prazo que a IA usa quando perguntam (o mesmo do painel). `until` em ISO 8601 com o fuso, de 10 minutos a 30 dias à frente; o pré-script põe daqui a 6 horas. Permissão sources ou provisioning.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Instabilidade na fibra no bairro Centro; previsão de volta às 18h.\",\n  \"until\": \"{{notice_until}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"notice_until\", new Date(Date.now() + 6 * 3600 * 1000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"o aviso no ar\", () => pm.expect(pm.response.json().notice.text).to.include(\"Centro\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aviso do momento",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/notice",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "notice"
+              ]
+            },
+            "description": "O aviso que vale agora, ou `notice: null` (sem aviso ou vencido)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tirar o aviso do momento",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/notice",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "notice"
+              ]
+            },
+            "description": "Tira antes do prazo. `removed` diz se havia aviso valendo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"sem aviso\", () => pm.expect(pm.response.json().notice).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aviso com prazo longo demais",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/notice",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "notice"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Manutenção programada da rede.\",\n  \"until\": \"2099-01-01T00:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"erro invalid_request\", () => pm.expect(pm.response.json().error.code).to.eql(\"invalid_request\"));",
+                  "pm.test(\"aponta o campo\", () => pm.expect(pm.response.json().error.details.field).to.eql(\"until\"));"
                 ]
               }
             }

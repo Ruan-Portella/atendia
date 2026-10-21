@@ -21,7 +21,7 @@ vi.mock("../notify", async (orig) => ({
     return true;
   },
 }));
-import { MAX_ATTEMPTS, base32, emitEvent, emitLinkEvent, eventId, nextAttemptAt, retryDueDeliveries, urlWithoutQuery, webhookCovers } from "../webhooks";
+import { MAX_ATTEMPTS, MAX_IN_FLIGHT, base32, emitEvent, emitLinkEvent, eventId, nextAttemptAt, retryDueDeliveries, urlWithoutQuery, webhookCovers } from "../webhooks";
 import { checkIdentityKey, unlinkInactive } from "../pairing";
 import { seal } from "../secret-box";
 
@@ -77,7 +77,19 @@ function memDb(tables: Record<string, Row[]>) {
   };
   // hit_rate_limit em memória: o aviso ao dono vai uma vez por chave
   const hits = new Map<string, number>();
-  const rpc = async (_fn: string, x: { p_key: string; p_max: number }) => {
+  const rpc = async (fn: string, x: { p_key: string; p_max: number; p_delivery: string; p_lease_seconds: number }) => {
+    // claim_webhook_delivery (migração 0164): a vaga do webhook (até p_max em andamento) e a trava, de uma vez
+    if (fn === "claim_webhook_delivery") {
+      const rows = tables.webhook_deliveries ?? [];
+      const d = rows.find((r) => r.id === x.p_delivery && r.status === "pending");
+      if (!d) return { data: false, error: null };
+      const now = new Date().toISOString();
+      const busy = rows.filter((r) => r.webhook_id === d.webhook_id && r.id !== d.id && String(r.locked_until ?? "") > now).length;
+      if (busy >= x.p_max) return { data: false, error: null };
+      if (d.locked_until && String(d.locked_until) > now) return { data: false, error: null };
+      d.locked_until = new Date(Date.now() + x.p_lease_seconds * 1000).toISOString();
+      return { data: true, error: null };
+    }
     const n = (hits.get(x.p_key) ?? 0) + 1;
     hits.set(x.p_key, n);
     return { data: n <= x.p_max, error: null };
@@ -196,7 +208,7 @@ describe("entrega", () => {
     expect(again.tables.webhook_deliveries[0]).toMatchObject({ status: "delivered", locked_until: null });
   });
 
-  it("a entrega que sai na hora já nasce travada; o primeiro 2xx depois de uma falha antecipa as pendentes", async () => {
+  it("a entrega que sai na hora fica travada durante a tentativa; o primeiro 2xx depois de uma falha antecipa as pendentes", async () => {
     const { db, tables } = setup();
     // durante a tentativa na hora, a entrega está travada (o consumidor do minuto pularia)
     let lockedDuringPost: unknown = "nao";
@@ -218,6 +230,26 @@ describe("entrega", () => {
     expect(Date.parse(String(second.next_attempt_at))).toBeLessThanOrEqual(Date.now());
     expect(await retryDueDeliveries(db)).toBe(1);
     expect(second.status).toBe("delivered");
+  });
+
+  it("no máximo 10 entregas ao mesmo tempo por webhook: a 11ª espera o consumidor", async () => {
+    const { db, tables } = setup();
+    // 10 entregas em andamento (a trava de 30 segundos valendo) no mesmo webhook
+    for (let i = 0; i < MAX_IN_FLIGHT; i++) tables.webhook_deliveries.push({ id: `voando${i}`, webhook_id: "w1", event_id: `evt_v${i}`, event_type: "contact.linked", payload_enc: "x", status: "pending", attempts: 0, next_attempt_at: new Date(Date.now() + 3_600_000).toISOString(), locked_until: new Date(Date.now() + 25_000).toISOString() });
+    posted.status = 204;
+    await fire(db);
+    // o evento novo ficou na fila, sem tentativa na hora
+    const fresh = tables.webhook_deliveries.find((d) => !String(d.id).startsWith("voando"))!;
+    expect(posted.calls).toHaveLength(0);
+    expect(fresh).toMatchObject({ status: "pending", attempts: 0 });
+    expect(fresh.locked_until ?? null).toBeNull();
+    // o consumidor também respeita: com as 10 ainda no ar, não sai
+    expect(await retryDueDeliveries(db)).toBe(0);
+    // uma das 10 terminou: a vaga abre e a nova sai
+    tables.webhook_deliveries[0].locked_until = null;
+    tables.webhook_deliveries[0].status = "delivered";
+    expect(await retryDueDeliveries(db)).toBe(1);
+    expect(fresh.status).toBe("delivered");
   });
 
   it("410 Gone ou 3 dias só de falhas desativam o webhook", async () => {

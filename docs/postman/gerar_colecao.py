@@ -79,6 +79,7 @@ DOC_VALUES = {
     "link_id": "lnk_4d5e6f7a-8b9c-4d0e-a1f2-3b4c5d6e7f8a",
     "source_id": "src_3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90",
     "pdf_url": "https://condominio.exemplo.com.br/docs/regulamento.pdf",
+    "notice_until": "2026-10-22T18:00:00-03:00",
     "client_id": "cli_5b2c8e1a-7d3f-4a6b-9c8e-1f2a3b4c5d6e",
     "template_id": "bot_9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
     "store_external_id": "loja-42",
@@ -448,6 +449,9 @@ DOC_OF = {
         "next_cursor": None,
     }),
     "Apagar fonte": ex("fontes", "apagar", "Apagar uma fonte", 204),
+    "Pôr o aviso do momento": ex("fontes", "aviso", "Pôr (ou trocar) o aviso do momento", 200, {"bot_id": DOC_VALUES["bot_id"], "notice": {"text": "Instabilidade na fibra no bairro Centro; previsão de volta às 18h.", "until": "2026-10-22T21:00:00.000Z", "set_by": "API (Sistema do provedor)"}}),
+    "Aviso do momento": ex("fontes", "aviso-ler", "O aviso que vale agora", 200, {"bot_id": DOC_VALUES["bot_id"], "notice": {"text": "Instabilidade na fibra no bairro Centro; previsão de volta às 18h.", "until": "2026-10-22T21:00:00.000Z", "set_by": "API (Sistema do provedor)"}}),
+    "Tirar o aviso do momento": ex("fontes", "aviso-tirar", "Tirar o aviso antes do prazo", 200, {"bot_id": DOC_VALUES["bot_id"], "notice": None, "removed": True}),
     # /docs/api/provisionamento
     "Criar cliente (loja)": ex("provisionamento", "cliente", "Criar o cliente (a loja)", 201, STORE_CLIENT),
     "Criar cliente de novo (mesmo external_id)": ex("provisionamento", "cliente-de-novo", "O mesmo external_id devolve o mesmo cliente", 200, STORE_CLIENT),
@@ -1089,7 +1093,7 @@ SAVE_SOURCE = [
 
 fontes = folder(
     "11. Fontes",
-    "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, uma página ou um PDF por URL. Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
+    "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, uma página ou um PDF por URL, e o aviso do momento (o texto com prazo que a IA usa quando perguntam; também com **provisioning**). Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
     [
         req(
             "Fonte de texto com contexto",
@@ -1117,6 +1121,18 @@ fontes = folder(
         ),
         req("Apagar fonte", "DELETE", f"bots/{BOT}/sources/{{{{source_id}}}}", desc="Tira a fonte e os trechos dela. Responde 204.", tests=expect_status(204)),
         req("Fonte sem conteúdo", "POST", f"bots/{BOT}/sources", body={"kind": "text", "content": "curto"}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o campo", () => pm.expect(pm.response.json().error.details.field).to.eql("content"));']),
+        req(
+            "Pôr o aviso do momento",
+            "PUT",
+            f"bots/{BOT}/notice",
+            body={"text": "Instabilidade na fibra no bairro Centro; previsão de volta às 18h.", "until": "{{notice_until}}"},
+            desc="O texto com prazo que a IA usa quando perguntam (o mesmo do painel). `until` em ISO 8601 com o fuso, de 10 minutos a 30 dias à frente; o pré-script põe daqui a 6 horas. Permissão sources ou provisioning.",
+            pre=['pm.collectionVariables.set("notice_until", new Date(Date.now() + 6 * 3600 * 1000).toISOString());'],
+            tests=expect_status(200) + ['pm.test("o aviso no ar", () => pm.expect(pm.response.json().notice.text).to.include("Centro"));'],
+        ),
+        req("Aviso do momento", "GET", f"bots/{BOT}/notice", desc="O aviso que vale agora, ou `notice: null` (sem aviso ou vencido).", tests=expect_status(200)),
+        req("Tirar o aviso do momento", "DELETE", f"bots/{BOT}/notice", desc="Tira antes do prazo. `removed` diz se havia aviso valendo.", tests=expect_status(200) + ['pm.test("sem aviso", () => pm.expect(pm.response.json().notice).to.eql(null));']),
+        req("Aviso com prazo longo demais", "PUT", f"bots/{BOT}/notice", body={"text": "Manutenção programada da rede.", "until": "2099-01-01T00:00:00Z"}, tests=expect_error(400, "invalid_request") + ['pm.test("aponta o campo", () => pm.expect(pm.response.json().error.details.field).to.eql("until"));']),
     ],
 )
 

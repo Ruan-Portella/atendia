@@ -48,17 +48,31 @@ export function untilLabel(iso: string): string {
   return `${day} às ${time}`;
 }
 
-/** O formulário do aviso: o texto (até 500) e até quando vale (de 10 minutos a 30 dias). */
-export function parseMomentNotice(fd: FormData, now = Date.now()): { ok: true; value: MomentNotice } | { ok: false; message: string } {
-  const text = String(fd.get("moment_notice") ?? "").trim();
-  if (text.length < 5) return { ok: false, message: "Escreva o aviso (pelo menos 5 letras)." };
-  if (text.length > MOMENT_NOTICE_MAX) return { ok: false, message: `O aviso pode ter até ${MOMENT_NOTICE_MAX} caracteres.` };
-  const until = untilFromInput(String(fd.get("moment_notice_until") ?? ""));
-  if (!until) return { ok: false, message: "Escolha até quando o aviso vale (dia e hora)." };
+type NoticeCheck = { ok: true; value: MomentNotice } | { ok: false; message: string; field: "text" | "until" };
+
+/** O texto (de 5 a 500) e até quando vale (de 10 minutos a 30 dias), no painel e na API. Pura. */
+export function checkMomentNotice(rawText: string, until: string | null, now = Date.now()): NoticeCheck {
+  const text = rawText.trim();
+  if (text.length < 5) return { ok: false, field: "text", message: "Escreva o aviso (pelo menos 5 letras)." };
+  if (text.length > MOMENT_NOTICE_MAX) return { ok: false, field: "text", message: `O aviso pode ter até ${MOMENT_NOTICE_MAX} caracteres.` };
+  if (!until) return { ok: false, field: "until", message: "Escolha até quando o aviso vale (dia e hora)." };
   const t = Date.parse(until);
-  if (t < now + 10 * 60_000) return { ok: false, message: "O aviso precisa valer pelo menos até daqui a 10 minutos." };
-  if (t > now + MOMENT_NOTICE_MAX_DAYS * 86_400_000) return { ok: false, message: `O aviso vale no máximo ${MOMENT_NOTICE_MAX_DAYS} dias.` };
-  return { ok: true, value: { text, until } };
+  if (t < now + 10 * 60_000) return { ok: false, field: "until", message: "O aviso precisa valer pelo menos até daqui a 10 minutos." };
+  if (t > now + MOMENT_NOTICE_MAX_DAYS * 86_400_000) return { ok: false, field: "until", message: `O aviso vale no máximo ${MOMENT_NOTICE_MAX_DAYS} dias.` };
+  return { ok: true, value: { text, until: new Date(t).toISOString() } };
+}
+
+/** O formulário do aviso (o prazo no campo datetime-local, horário de Brasília). */
+export function parseMomentNotice(fd: FormData, now = Date.now()): { ok: true; value: MomentNotice } | { ok: false; message: string } {
+  const c = checkMomentNotice(String(fd.get("moment_notice") ?? ""), untilFromInput(String(fd.get("moment_notice_until") ?? "")), now);
+  return c.ok ? c : { ok: false, message: c.message };
+}
+
+/** O prazo pela API: ISO 8601 com o fuso ("2026-10-22T18:00:00-03:00" ou com Z). null se não for. Pura. */
+export function untilFromApi(raw: unknown): string | null {
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(raw)) return null;
+  const t = Date.parse(raw);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
 }
 
 /** O bloco do aviso no prompt (parte que muda por bot): informação para o contato, nunca instrução. */

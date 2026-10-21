@@ -413,6 +413,43 @@ export async function queueTicketEvent(
   }
 }
 
+/** A resposta da pesquisa de satisfação, como o survey.answered leva. */
+export interface SurveyAnswer {
+  id: string;
+  score: 1 | 2 | 3;
+  trigger: "equipe" | "ia";
+  sentAt: string;
+  answeredAt: string;
+}
+
+const SURVEY_RATING = { 3: "great", 2: "ok", 1: "bad" } as const;
+
+/** data do survey.answered: a nota (3, 2 ou 1), o rótulo e o que fez a pesquisa sair. Pura. */
+export function surveyEventData(s: SurveyAnswer): Record<string, unknown> {
+  return {
+    survey: { id: `srv_${s.id}`, sent_at: s.sentAt, trigger: s.trigger === "equipe" ? "agent_finished" : "ai_idle" },
+    score: s.score,
+    rating: SURVEY_RATING[s.score],
+    answered_at: s.answeredAt,
+  };
+}
+
+/** survey.answered (leva das sobras, parte 1): só a primeira resposta de cada pesquisa. */
+export async function queueSurveyAnswered(db: SupabaseClient, conversationId: string, s: SurveyAnswer): Promise<void> {
+  try {
+    const ctx = await eventContext(db, conversationId);
+    if (!ctx) return;
+    const { emitEvent } = await import("./webhooks");
+    await emitEvent(
+      db,
+      { type: "survey.answered", key: `${s.id}:answered`, bot: ctx.bot, createdAt: s.answeredAt, conversation: { id: conversationId, channel: ctx.channel }, contact: await contactObject(db, ctx.contactId), contactId: ctx.contactId, data: surveyEventData(s) },
+      { background: true },
+    );
+  } catch (e) {
+    console.error("webhook: evento da pesquisa não registrado", (e as Error).message);
+  }
+}
+
 /* ------------------------------------------------------------------ arquivo e clique na mensagem recebida */
 
 export interface Interactive {

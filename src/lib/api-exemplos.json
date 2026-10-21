@@ -1135,6 +1135,66 @@
       "binary": false
     },
     {
+      "page": "fontes",
+      "id": "aviso",
+      "title": "Pôr (ou trocar) o aviso do momento",
+      "method": "PUT",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/notice",
+      "query": [],
+      "headers": {},
+      "body": {
+        "text": "Instabilidade na fibra no bairro Centro; previsão de volta às 18h.",
+        "until": "2026-10-22T18:00:00-03:00"
+      },
+      "status": 200,
+      "response": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "notice": {
+          "text": "Instabilidade na fibra no bairro Centro; previsão de volta às 18h.",
+          "until": "2026-10-22T21:00:00.000Z",
+          "set_by": "API (Sistema do provedor)"
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "fontes",
+      "id": "aviso-ler",
+      "title": "O aviso que vale agora",
+      "method": "GET",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/notice",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "notice": {
+          "text": "Instabilidade na fibra no bairro Centro; previsão de volta às 18h.",
+          "until": "2026-10-22T21:00:00.000Z",
+          "set_by": "API (Sistema do provedor)"
+        }
+      },
+      "binary": false
+    },
+    {
+      "page": "fontes",
+      "id": "aviso-tirar",
+      "title": "Tirar o aviso antes do prazo",
+      "method": "DELETE",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/notice",
+      "query": [],
+      "headers": {},
+      "body": null,
+      "status": 200,
+      "response": {
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "notice": null,
+        "removed": true
+      },
+      "binary": false
+    },
+    {
       "page": "provisionamento",
       "id": "cliente",
       "title": "Criar o cliente (a loja)",
