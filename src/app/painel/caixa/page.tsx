@@ -2,7 +2,7 @@ import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isQueue, loadInbox, type InboxBot, type Queue } from "@/lib/inbox";
+import { isQueue, loadInbox, seeAllSectorsIn, visibleSectors, type InboxBot, type Queue } from "@/lib/inbox";
 import { listSectors, sectorsOfMember } from "@/lib/sectors";
 import { InboxView } from "@/components/inbox-view";
 import { AgencyConversation } from "@/components/agency-conversation";
@@ -27,15 +27,16 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   const [sectors, mySectorIds, { data: clients }] = await Promise.all([
     listSectors(admin, clientIds),
     sectorsOfMember(admin, { type: "agency_member", id: member.id }),
-    clientIds.length ? supabase.from("clients").select("id, name, holidays").in("id", clientIds) : Promise.resolve({ data: [] as Array<{ id: string; name: string; holidays: string[] | null }> }),
+    clientIds.length ? supabase.from("clients").select("id, name, holidays, managers_see_all_sectors").in("id", clientIds) : Promise.resolve({ data: [] as Array<{ id: string; name: string; holidays: string[] | null; managers_see_all_sectors: boolean }> }),
   ]);
-  // dono, administrador e editor veem todos os setores; o atendente, os dele (e o que não tem setor)
-  const allSectors = can(role, "config");
+  // cada um vê os setores dele (e o que não tem setor); dono, administrador e editor veem todos só
+  // nos clientes com a opção ligada na aba Setores
+  const canConfig = can(role, "config");
+  const seeAllSectors = seeAllSectorsIn(canConfig, (clients ?? []) as Array<{ id: string; managers_see_all_sectors: boolean }>);
   const holidays = new Map((clients ?? []).map((c) => [c.id as string, (c.holidays as string[] | null) ?? []]));
   const clientName = new Map((clients ?? []).map((c) => [c.id as string, c.name as string]));
-  const items = await loadInbox(admin, { bots, sectors, holidays, meId: member.id, mySectorIds, allSectors });
-  const visibleSectors = sectors.filter((s) => allSectors || mySectorIds.includes(s.id));
-  const queues = visibleSectors.map((s) => ({ key: `setor:${s.id}` as Queue, label: s.name, group: clientIds.length > 1 ? (clientName.get(s.clientId) ?? "Setores") : "Setores" }));
+  const items = await loadInbox(admin, { bots, sectors, holidays, meId: member.id, mySectorIds, seeAllSectors });
+  const queues = visibleSectors(sectors, { mySectorIds, seeAllSectors }).map((s) => ({ key: `setor:${s.id}` as Queue, label: s.name, group: clientIds.length > 1 ? (clientName.get(s.clientId) ?? "Setores") : "Setores" }));
   const queue: Queue = isQueue(sp.fila) && (!sp.fila.startsWith("setor:") || queues.some((q) => q.key === sp.fila)) ? sp.fila : "minhas";
   const selected = typeof sp.c === "string" ? items.find((i) => i.id === sp.c) ?? null : null;
   const hrefFor = (o: { queue: Queue; conversationId?: string }) => `/painel/caixa?fila=${encodeURIComponent(o.queue)}${o.conversationId ? `&c=${o.conversationId}` : ""}`;
@@ -49,7 +50,7 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   return (
     <div className="-mx-4 -my-5 h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]">
       <InboxView items={items} queue={queue} queues={queues} meId={member.id} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={clientIds.length > 1} available={member.available !== false} onAvailability={setMyAvailability}
-        contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(b, c) => `/painel/bots/${b}/conversas/${c}`} contactHref={contact && allSectors && selectedBot?.client_id ? `/painel/clientes/${selectedBot.client_id}/contatos/${contact.contact.id}` : null} />}>
+        contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(b, c) => `/painel/bots/${b}/conversas/${c}`} contactHref={contact && canConfig && selectedBot?.client_id ? `/painel/clientes/${selectedBot.client_id}/contatos/${contact.contact.id}` : null} />}>
         {selected && <AgencyConversation botId={selected.botId} convId={selected.id} embedded back={back} />}
       </InboxView>
     </div>

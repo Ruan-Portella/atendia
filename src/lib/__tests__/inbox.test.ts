@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { memoryDb } from "../memory-db";
-import { inQueue, isQueue, loadInbox, queueCounts, visibleTo, waitLabel, type InboxBot } from "../inbox";
+import { inQueue, isQueue, loadInbox, queueCounts, seeAllSectorsIn, visibleSectors, visibleTo, waitLabel, type InboxBot } from "../inbox";
 import type { Sector } from "../sectors";
 import { contactTitle, loadInboxContact } from "../inbox-contact";
 
@@ -40,7 +40,7 @@ describe("caixa de entrada", () => {
   });
 
   it("as filas, a ordem (urgente primeiro, depois quem espera há mais tempo) e o fora do horário", async () => {
-    const items = await loadInbox(db(), { bots, sectors, holidays: new Map(), meId: "eu", mySectorIds: [], allSectors: true, now });
+    const items = await loadInbox(db(), { bots, sectors, holidays: new Map(), meId: "eu", mySectorIds: [], seeAllSectors: new Set(["c1"]), now });
     expect(items.map((i) => i.id)).toEqual(["urg", "madrugada", "geral", "fin"]);
     const by = Object.fromEntries(items.map((i) => [i.id, i]));
     expect(by.geral).toMatchObject({ contact: "Maria", state: "aguardando", outsideHours: false, sectorName: null });
@@ -49,8 +49,20 @@ describe("caixa de entrada", () => {
     expect(queueCounts(items, ["minhas", "nao_atribuidas", "fora", "todas", "setor:s1"], "eu")).toEqual({ minhas: 1, nao_atribuidas: 2, fora: 1, todas: 4, "setor:s1": 1 });
     expect(inQueue(by.fin, "setor:s1", "eu")).toBe(true);
     // o atendente fora do Financeiro não vê a conversa do setor
-    const agent = await loadInbox(db(), { bots, sectors, holidays: new Map(), meId: "carlos", mySectorIds: [], allSectors: false, now });
+    const agent = await loadInbox(db(), { bots, sectors, holidays: new Map(), meId: "carlos", mySectorIds: [], seeAllSectors: new Set(), now });
     expect(agent.map((i) => i.id)).not.toContain("fin");
+    // quem é do setor vê; quem está com a conversa também
+    expect((await loadInbox(db(), { bots, sectors, holidays: new Map(), meId: "carlos", mySectorIds: ["s1"], seeAllSectors: new Set(), now })).map((i) => i.id)).toContain("fin");
+    expect((await loadInbox(db(), { bots, sectors, holidays: new Map(), meId: "vivi", mySectorIds: [], seeAllSectors: new Set(), now })).map((i) => i.id)).toContain("fin");
+  });
+
+  it("quem configura vê todos os setores só nos clientes com a opção ligada (decisão de 21/10)", () => {
+    const clients = [{ id: "c1", managers_see_all_sectors: false }, { id: "c2", managers_see_all_sectors: true }];
+    expect([...seeAllSectorsIn(true, clients)]).toEqual(["c2"]);
+    expect([...seeAllSectorsIn(false, clients)]).toEqual([]);
+    const two: Sector[] = [sectors[0], { ...sectors[0], id: "s2", clientId: "c2", name: "Vendas" }];
+    expect(visibleSectors(two, { mySectorIds: [], seeAllSectors: new Set() })).toEqual([]);
+    expect(visibleSectors(two, { mySectorIds: ["s1"], seeAllSectors: new Set(["c2"]) }).map((s) => s.name)).toEqual(["Financeiro", "Vendas"]);
   });
 
   it("filas válidas e o tempo de espera curto", () => {

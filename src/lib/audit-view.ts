@@ -98,6 +98,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "conversa.assumir_no_lugar": "Conversa assumida no lugar de outra pessoa",
   "conversa.devolver": "Conversa devolvida ao assistente",
   "conversa.transferir": "Conversa transferida",
+  "cliente.setores_visiveis": "Quem vê todos os setores (aba Setores)",
   "resposta_pronta.criar": "Resposta pronta criada",
   "resposta_pronta.editar": "Resposta pronta editada",
   "resposta_pronta.apagar": "Resposta pronta apagada",

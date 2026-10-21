@@ -4,7 +4,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { HoursFields } from "@/components/hours-fields";
 import { DISTRIBUTION_LABEL, SECTOR_MAX, SECTOR_NAME_MAX, holidaysText, type Distribution, type Sector, type SectorMember } from "@/lib/sectors";
-import { deleteSectorAction, saveHolidaysAction, saveSectorAction } from "@/app/painel/clientes/setores-actions";
+import { deleteSectorAction, saveHolidaysAction, saveSectorAction, setSectorVisibilityAction } from "@/app/painel/clientes/setores-actions";
 
 /** Os campos de um setor (criar e editar). */
 function SectorFields({ sector, eligible }: { sector?: Sector; eligible: SectorMember[] }) {
@@ -65,14 +65,23 @@ function SectorFields({ sector, eligible }: { sector?: Sector; eligible: SectorM
  * Setores e feriados do cliente (Caixa de entrada, parte 1). Os setores valem para todos os
  * chatbots do cliente; os feriados valem no horário do chatbot e no dos setores.
  */
-export function ClientSectors({ clientId, sectors, eligible, holidays }: { clientId: string; sectors: Sector[]; eligible: SectorMember[]; holidays: string[] }) {
+export function ClientSectors({ clientId, sectors, eligible, holidays, seeAll }: { clientId: string; sectors: Sector[]; eligible: SectorMember[]; holidays: string[]; seeAll: boolean }) {
   const nameOf = new Map(eligible.map((m) => [`${m.type}:${m.id}`, m.name]));
   return (
     <div className="flex max-w-[860px] flex-col gap-5">
       <section className="card flex flex-col gap-4 p-5">
         <div>
           <h2 className="text-base font-bold">Setores</h2>
-          <p className="text-sm text-muted">Separe o atendimento humano por área (Vendas, Suporte, Financeiro…). Os setores valem para todos os chatbots deste cliente: cada pessoa vê na Caixa de entrada as conversas dos setores dela. Sem setores, tudo fica numa fila só, como hoje.</p>
+          <p className="text-sm text-muted">Separe o atendimento humano por área (Vendas, Suporte, Financeiro…). Os setores valem para todos os chatbots deste cliente: cada pessoa vê na Caixa de entrada só as conversas dos setores dela (e as que não têm setor). Sem setores, tudo fica numa fila só, como hoje.</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line-2 bg-ground px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">{seeAll ? "Quem configura vê todos os setores" : "Cada pessoa vê só os setores dela"}</p>
+            <p className="text-xs text-muted">{seeAll ? "O dono, os administradores e os editores da agência e o gestor da área do cliente veem as filas e as conversas de todos os setores, mesmo sem fazer parte deles." : "Nem o dono vê a fila de um setor de que não faz parte. Ligue para o dono, os administradores, os editores e o gestor da área do cliente acompanharem todos os setores."}</p>
+          </div>
+          <ActionForm action={setSectorVisibilityAction.bind(null, clientId, !seeAll)}>
+            <SubmitButton className="btn-ghost" pendingLabel="Salvando…">{seeAll ? "Mostrar só os setores de cada um" : "Mostrar todos para quem configura"}</SubmitButton>
+          </ActionForm>
         </div>
         {sectors.length === 0 && <p className="text-sm text-muted">Nenhum setor ainda.</p>}
         <ul className="flex flex-col gap-3">

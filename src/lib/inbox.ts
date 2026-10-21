@@ -9,10 +9,22 @@ import { isSnoozed } from "./snooze";
  * Caixa de entrada (parte 3; spec, Peça 11 e Telas seção 6): o atendimento humano aberto, em filas.
  * Minhas (o que é seu, assumido ou entregue pelo rodízio), Não atribuídas, cada setor, Fora do
  * horário (pedidos que chegaram com a equipe fora), Adiadas (parte 4: saem das outras filas até a
- * data, ou até o contato escrever) e Todas. Quem vê o quê: a conversa sem setor
- * aparece para todos do escopo; a do setor, para as pessoas do setor, para quem está com ela e
- * para quem vê todos os setores (dono, administrador, editor e gestor da área do cliente).
+ * data, ou até o contato escrever) e Todas. Quem vê o quê: a conversa sem setor aparece para todos do
+ * escopo; a do setor, para as pessoas do setor e para quem está com ela. Quem configura (dono,
+ * administrador, editor e gestor da área do cliente) vê todos os setores só com a opção ligada na
+ * aba Setores do cliente (clients.managers_see_all_sectors, decisão do usuário em 21/10/2026).
  */
+
+/**
+ * Os clientes em que a pessoa vê todos os setores: quem configura, nos clientes com a opção ligada.
+ * Pura.
+ */
+export function seeAllSectorsIn(canConfigure: boolean, clients: Array<{ id: string; managers_see_all_sectors?: boolean | null }>): Set<string> {
+  return new Set(canConfigure ? clients.filter((c) => c.managers_see_all_sectors).map((c) => c.id) : []);
+}
+
+/** As filas de setor que a pessoa vê: os setores dela e os dos clientes em que vê todos. Pura. */
+export const visibleSectors = (sectors: Sector[], o: { mySectorIds: string[]; seeAllSectors: Set<string> }): Sector[] => sectors.filter((s) => o.seeAllSectors.has(s.clientId) || o.mySectorIds.includes(s.id));
 
 export type Queue = "minhas" | "nao_atribuidas" | "fora" | "adiadas" | "todas" | `setor:${string}`;
 export const BASE_QUEUES: Array<{ key: Queue; label: string }> = [
@@ -103,7 +115,7 @@ export function inQueue(i: InboxItem, q: Queue, meId: string): boolean {
  * As conversas abertas da Caixa de entrada (últimos 30 dias), já com o que cada pessoa vê, em
  * ordem: urgente primeiro, depois quem espera há mais tempo, depois as em atendimento.
  */
-export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; sectors: Sector[]; holidays: Map<string, string[]>; meId: string; mySectorIds: string[]; allSectors: boolean; now?: Date }): Promise<InboxItem[]> {
+export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; sectors: Sector[]; holidays: Map<string, string[]>; meId: string; mySectorIds: string[]; seeAllSectors: Set<string>; now?: Date }): Promise<InboxItem[]> {
   if (!o.bots.length) return [];
   const now = o.now ?? new Date();
   const { data, error } = await db
@@ -116,8 +128,9 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
     .order("last_message_at", { ascending: false })
     .limit(300);
   if (error) throw new Error(`caixa de entrada: ${error.message}`);
-  const rows = ((data ?? []) as Row[]).filter((r) => visibleTo(r, o)).sort((a, b) => handoffOrder(a, b, now.getTime()));
   const bots = new Map(o.bots.map((b) => [b.id, b]));
+  // quem vê todos os setores é por cliente (a opção da aba Setores)
+  const rows = ((data ?? []) as Row[]).filter((r) => visibleTo(r, { ...o, allSectors: o.seeAllSectors.has(bots.get(r.bot_id)?.client_id ?? "") })).sort((a, b) => handoffOrder(a, b, now.getTime()));
   const sectors = new Map(o.sectors.map((s) => [s.id, s]));
   const names = await contactLabels(db, rows.map((r) => r.contact_id ?? "")).catch(() => new Map<string, string>());
   return rows.flatMap((r) => {

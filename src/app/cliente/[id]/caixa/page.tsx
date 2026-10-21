@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireMember, requireMemberMfa, memberCan } from "@/lib/member";
-import { isQueue, loadInbox, type InboxBot, type Queue } from "@/lib/inbox";
-import { clientHolidays, listSectors, sectorsOfMember } from "@/lib/sectors";
+import { isQueue, loadInbox, seeAllSectorsIn, visibleSectors, type InboxBot, type Queue } from "@/lib/inbox";
+import { listSectors, sectorsOfMember } from "@/lib/sectors";
 import { InboxView } from "@/components/inbox-view";
 import { ClientConversation } from "@/components/client-conversation";
 import { InboxContact } from "@/components/inbox-contact";
@@ -20,10 +20,15 @@ export default async function MemberInboxPage({ params, searchParams }: PageProp
   if (!member.allowHandoff) notFound();
   const { data: botRows } = botIds.length ? await admin.from("bots").select("id, name, client_name, client_id, human_handoff, sensitive_mode").in("id", botIds) : { data: [] };
   const bots = (botRows ?? []) as InboxBot[];
-  const [sectors, mySectorIds, holidays] = await Promise.all([listSectors(admin, [id]), sectorsOfMember(admin, { type: "client_member", id: member.memberId }), clientHolidays(admin, id)]);
-  const allSectors = memberCan(member, "manager");
-  const items = await loadInbox(admin, { bots, sectors, holidays: new Map([[id, holidays]]), meId: member.memberId, mySectorIds, allSectors });
-  const queues = sectors.filter((s) => allSectors || mySectorIds.includes(s.id)).map((s) => ({ key: `setor:${s.id}` as Queue, label: s.name, group: "Setores" }));
+  const [sectors, mySectorIds, { data: client }] = await Promise.all([
+    listSectors(admin, [id]),
+    sectorsOfMember(admin, { type: "client_member", id: member.memberId }),
+    admin.from("clients").select("holidays, managers_see_all_sectors").eq("id", id).maybeSingle(),
+  ]);
+  // cada um vê os setores dele (e o que não tem setor); o gestor vê todos só com a opção da aba Setores
+  const seeAllSectors = seeAllSectorsIn(memberCan(member, "manager"), [{ id, managers_see_all_sectors: Boolean(client?.managers_see_all_sectors) }]);
+  const items = await loadInbox(admin, { bots, sectors, holidays: new Map([[id, (client?.holidays as string[] | null) ?? []]]), meId: member.memberId, mySectorIds, seeAllSectors });
+  const queues = visibleSectors(sectors, { mySectorIds, seeAllSectors }).map((s) => ({ key: `setor:${s.id}` as Queue, label: s.name, group: "Setores" }));
   const queue: Queue = isQueue(sp.fila) && (!sp.fila.startsWith("setor:") || queues.some((q) => q.key === sp.fila)) ? sp.fila : "minhas";
   const selected = typeof sp.c === "string" ? items.find((i) => i.id === sp.c) ?? null : null;
   const hrefFor = (o: { queue: Queue; conversationId?: string }) => `/cliente/${id}/caixa?fila=${encodeURIComponent(o.queue)}${o.conversationId ? `&c=${o.conversationId}` : ""}`;

@@ -150,6 +150,12 @@ export async function eligibleSectorMembers(db: SupabaseClient, o: { agencyId: s
   ];
 }
 
+/** Quem configura vê todos os setores na Caixa de entrada (a opção da aba Setores). */
+export async function setManagersSeeAllSectors(db: SupabaseClient, clientId: string, on: boolean): Promise<boolean> {
+  const { error } = await db.from("clients").update({ managers_see_all_sectors: on }).eq("id", clientId);
+  return !error;
+}
+
 export interface SectorInput {
   name: string;
   hours: BusinessHours | null;

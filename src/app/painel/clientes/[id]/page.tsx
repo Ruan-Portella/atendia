@@ -390,6 +390,11 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
 /** Aba Setores (Caixa de entrada, parte 1): tabelas internas, lidas com a service role depois de a RLS confirmar o cliente. */
 async function SectorsTab({ agencyId, clientId }: { agencyId: string; clientId: string }) {
   const admin = createAdminClient();
-  const [sectors, eligible, holidays] = await Promise.all([listSectors(admin, [clientId]), eligibleSectorMembers(admin, { agencyId, clientId }), clientHolidays(admin, clientId)]);
-  return <ClientSectors clientId={clientId} sectors={sectors} eligible={eligible} holidays={holidays} />;
+  const [sectors, eligible, holidays, { data: client }] = await Promise.all([
+    listSectors(admin, [clientId]),
+    eligibleSectorMembers(admin, { agencyId, clientId }),
+    clientHolidays(admin, clientId),
+    admin.from("clients").select("managers_see_all_sectors").eq("id", clientId).maybeSingle(),
+  ]);
+  return <ClientSectors clientId={clientId} sectors={sectors} eligible={eligible} holidays={holidays} seeAll={Boolean(client?.managers_see_all_sectors)} />;
 }

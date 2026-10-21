@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { audit, requestMeta } from "@/lib/audit";
 import { can } from "@/lib/team";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { deleteSector, parseHolidays, saveHolidays, saveSector, sectorFromForm } from "@/lib/sectors";
+import { deleteSector, parseHolidays, saveHolidays, saveSector, sectorFromForm, setManagersSeeAllSectors } from "@/lib/sectors";
 import { deleteQuickReply, saveQuickReply } from "@/lib/quick-replies";
 
 /* Setores e feriados do cliente (Caixa de entrada, parte 1): quem configura o cliente (dono, administrador e editor no escopo). */
@@ -56,6 +56,16 @@ export async function saveHolidaysAction(clientId: string, formData: FormData): 
   await auditClient(c.ctx, "cliente.feriados", { type: "client", id: clientId }, { feriados: parsed.holidays.length });
   revalidatePath(`/painel/clientes/${clientId}`);
   return ok(parsed.holidays.length ? `${parsed.holidays.length} feriado${parsed.holidays.length === 1 ? "" : "s"} salvo${parsed.holidays.length === 1 ? "" : "s"}.` : "Sem feriados.");
+}
+
+/** Quem configura vê todos os setores na Caixa de entrada (desligado: cada um vê só os setores dele). */
+export async function setSectorVisibilityAction(clientId: string, on: boolean): Promise<ActionResult> {
+  const c = await configClient(clientId);
+  if (!c) return fail(DENIED);
+  if (!(await setManagersSeeAllSectors(createAdminClient(), clientId, on))) return fail("Não foi possível salvar. Tente de novo.");
+  await auditClient(c.ctx, "cliente.setores_visiveis", { type: "client", id: clientId }, { quem_configura_ve_todos: on });
+  revalidatePath(`/painel/clientes/${clientId}`);
+  return ok(on ? "Pronto: dono, administradores, editores e o gestor da área do cliente veem todos os setores." : "Pronto: cada pessoa vê só os setores dela (e as conversas sem setor).");
 }
 
 /* Respostas prontas do cliente (Caixa de entrada, parte 4) */
