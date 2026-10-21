@@ -12,6 +12,7 @@ import { FreeAccountCard } from "@/components/admin/free-account-card";
 import { freeLinksOf } from "@/lib/person-signals";
 import { WithdrawalAdminCard } from "@/components/admin/withdrawal-admin-card";
 import { withdrawalState } from "@/lib/withdrawal";
+import { DisputesAdminCard, type DisputeRow } from "@/components/admin/disputes-admin-card";
 import { nextMonthTarget } from "@/lib/billing-sync";
 import { creditBalance } from "@/lib/billing-credit";
 import { targetMonthlyCents } from "@/lib/billing";
@@ -71,6 +72,9 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
     db.rpc("person_marked", { p_agency_id: id }),
     db.from("withdrawals").select("created_at, via, actor, refunded_cents, status, error").eq("agency_id", id).order("created_at", { ascending: false }).limit(10),
   ]);
+  // contestações no cartão e avisos antecipados de fraude (Trava da conta grátis, parte 5)
+  const { data: disputeRows } = await db.from("disputes").select("id, kind, amount_cents, reason, status, due_by, evidence, evidence_submitted_at, submitted_by, outcome, created_at").eq("agency_id", id).order("created_at", { ascending: false }).limit(10);
+  const disputes: DisputeRow[] = (disputeRows ?? []).map((d) => ({ id: d.id as string, kind: d.kind as DisputeRow["kind"], amountCents: Number(d.amount_cents), reason: (d.reason as string | null) ?? null, status: d.status as string, dueBy: (d.due_by as string | null) ?? null, evidence: (d.evidence as DisputeRow["evidence"]) ?? null, submittedAt: (d.evidence_submitted_at as string | null) ?? null, submittedBy: (d.submitted_by as string | null) ?? null, outcome: (d.outcome as string | null) ?? null, createdAt: d.created_at as string }));
   const waBy = new Map((wa ?? []).map((w) => [w.bot_id as string, w]));
   const igBy = new Map((ig ?? []).map((i) => [i.bot_id as string, i]));
 
@@ -138,6 +142,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         links={freeLinks}
         names={agencyName}
       />
+      <DisputesAdminCard agencyId={id} rows={disputes} />
       <WithdrawalAdminCard
         agencyId={id}
         state={withdrawal}

@@ -207,5 +207,24 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
     case "customer.subscription.deleted":
       await endSubscription(db, customerOf(event.data.object.customer));
       break;
+    // contestação no cartão e aviso antecipado de fraude (Trava da conta grátis, parte 5)
+    case "charge.dispute.created": {
+      if (!stripe) break;
+      const { onDisputeCreated } = await import("./disputes");
+      await onDisputeCreated(db, stripe, event.data.object);
+      break;
+    }
+    case "charge.dispute.updated":
+    case "charge.dispute.closed": {
+      const { onDisputeChanged } = await import("./disputes");
+      await onDisputeChanged(db, event.data.object, event.type === "charge.dispute.closed");
+      break;
+    }
+    case "radar.early_fraud_warning.created": {
+      if (!stripe) break;
+      const { onEarlyFraudWarning } = await import("./disputes");
+      await onEarlyFraudWarning(db, stripe, event.data.object);
+      break;
+    }
   }
 }

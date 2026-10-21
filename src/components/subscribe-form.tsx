@@ -125,9 +125,18 @@ export function SubscribeForm({ bots, fraction, renewal, enabled }: Props) {
             Hoje: cerca de <strong className="text-ink tabular">{brlCents(Math.round(total * fraction * 100) / 100)}</strong>, proporcional até {renewal}. Depois, a fatura vem todo dia 1º. O excedente (opcional) é pago à parte, com crédito pré-pago.
           </div>
         </div>
-        <SubmitButton className="btn-primary" pendingLabel="Abrindo o pagamento…" disabled={!enabled || sized === 0}>
-          Assinar
-        </SubmitButton>
+        <div className="flex flex-col items-end gap-1">
+          <SubmitButton className="btn-primary" pendingLabel="Abrindo o pagamento…" disabled={!enabled || sized === 0}>
+            Assinar
+          </SubmitButton>
+          <span className="max-w-[260px] text-right text-[11px] text-muted">
+            Ao assinar, você aceita os{" "}
+            <a href="/termos" target="_blank" rel="noreferrer" className="underline">
+              Termos de Uso
+            </a>
+            : dá para desistir em 7 dias, com estorno, e cancelar quando quiser.
+          </span>
+        </div>
       </section>
     </ActionForm>
   );

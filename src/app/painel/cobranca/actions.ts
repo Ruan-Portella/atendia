@@ -21,6 +21,8 @@ import { withdraw, withdrawalState } from "@/lib/withdrawal";
 import { company } from "@/lib/company";
 
 const DENIED = "O seu papel na equipe não permite mexer na cobrança. Fale com o dono ou com um administrador da agência.";
+/** A versão dos termos aceita no checkout (a data de atualização da página /termos). */
+const TERMS_VERSION = "21/10/2026";
 const OFF = "A cobrança ainda não está configurada neste servidor.";
 
 /**
@@ -48,6 +50,8 @@ export async function startCheckout(fd: FormData): Promise<ActionResult> {
     const ids = await catalogPrices();
     const customer = await ensureStripeCustomer(db, ctx.agency, ctx.email);
     const { data: change, error } = await db.from("billing_changes").insert({ agency_id: ctx.agency.id, kind: "checkout", target, amount_cents: targetMonthlyCents(target), created_by: ctx.userId }).select("id").single();
+    // o aceite dos termos (com a desistência em 7 dias) fica na auditoria: é prova numa contestação
+    await auditBilling(ctx, "assinatura.aceite_termos", { type: "agency", id: ctx.agency.id }, { after: { termos: TERMS_VERSION } });
     if (error || !change) throw new Error(error?.message ?? "compra não gravada");
     const { anchor, expiresAt } = checkoutTiming();
     const session = await stripe.checkout.sessions.create({

@@ -54,6 +54,7 @@ export const TRANSFER_TABLES: Record<string, { muda: boolean; por: string }> = {
   person_signals: { muda: false, por: "os sinais do dono da conta (trava da conta grátis)" },
   person_marks: { muda: false, por: "a marca da desistência (é da pessoa dona da conta)" },
   withdrawals: { muda: false, por: "as desistências da assinatura da conta" },
+  disputes: { muda: false, por: "as contestações de pagamento da conta" },
   usage: { muda: false, por: "uso do mês da conta" },
   webhooks: { muda: false, por: "webhooks da origem (deixam de receber os eventos do cliente)" },
 };

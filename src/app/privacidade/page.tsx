@@ -17,7 +17,8 @@ export const metadata = { title: "Política de Privacidade" };
  * Memória e avisos no celular (21/10/2026): a memória do assistente na ficha do contato e os aparelhos
  * que recebem os avisos da equipe (com os serviços de notificação dos navegadores). Trava da conta
  * grátis (21/10/2026): os sinais que ligam contas da mesma pessoa (só como código), o cookie do
- * navegador e a marca da desistência em 7 dias.
+ * navegador e a marca da desistência em 7 dias. Contestação no cartão (21/10/2026): o que vai para a
+ * Stripe como prova quando um pagamento é contestado.
  */
 export default function PrivacyPage() {
   const { brand, email } = company;
@@ -70,7 +71,7 @@ export default function PrivacyPage() {
           </li>
           <li><strong>Auditoria:</strong> quem fez o quê na conta (por exemplo, conectar um canal ou mudar um prazo), sem conteúdo de conversas.</li>
           <li>
-            <strong>Sinais contra o abuso da conta grátis:</strong> para o teste grátis valer uma vez por pessoa, guardamos, só como código (HMAC, sem o valor original), o e-mail de quem abre a conta (sem pontos e apelidos do Gmail), um identificador do navegador (um cookie nosso, usado só para isso), o IP do cadastro, o WhatsApp confirmado do dono e, a cada pagamento, o CPF ou CNPJ e a impressão digital do cartão que a Stripe gera (não o número do cartão). Os códigos servem só para ligar contas da mesma pessoa; não fazem rastreamento nem perfil. Quem desiste da assinatura em 7 dias fica com esses códigos marcados por 12 meses.
+            <strong>Sinais contra o abuso da conta grátis:</strong> para o teste grátis valer uma vez por pessoa, guardamos, só como código (HMAC, sem o valor original), o e-mail de quem abre a conta (sem pontos e apelidos do Gmail), um identificador do navegador (um cookie nosso, usado só para isso), o IP do cadastro, o WhatsApp confirmado do dono e, a cada pagamento, o CPF ou CNPJ e a impressão digital do cartão que a Stripe gera (não o número do cartão). Os códigos servem só para ligar contas da mesma pessoa; não fazem rastreamento nem perfil. Quem desiste da assinatura em 7 dias ou contesta um pagamento no banco fica com esses códigos marcados por 12 meses.
           </li>
           <li><strong>Dados técnicos:</strong> tipo de navegador, cookies de sessão do painel, o cookie do navegador contra o abuso da conta grátis (acima) e armazenamento local do navegador para manter a conversa do chat do site.</li>
         </ul>
@@ -111,7 +112,7 @@ export default function PrivacyPage() {
           <li><strong>Prestar o serviço contratado</strong> (execução de contrato; nos dados dos contatos, por instrução da empresa atendida): operar os assistentes, entregar contatos, relatórios e atendimento humano, e enviar aos sistemas que a empresa conectou (Integrações) os dados que ela pediu.</li>
           <li><strong>Verificação de uso e conformidade</strong> (por instrução da empresa atendida, como parte do serviço e para cumprir as políticas da Meta), descrita no item 6.</li>
           <li><strong>Registros de acesso</strong> (obrigação legal: Marco Civil da Internet, art. 15).</li>
-          <li><strong>Cobrança e obrigações fiscais</strong> (execução de contrato e obrigação legal).</li>
+          <li><strong>Cobrança e obrigações fiscais</strong> (execução de contrato e obrigação legal). Quando um pagamento é contestado no banco, enviamos à Stripe, que leva ao banco, as provas da contratação e do uso: o nome e o e-mail de quem assinou, o aceite dos termos, as entradas no painel (data, hora e IP) e contagens de uso do período, nunca o conteúdo das conversas (exercício regular de direitos, art. 7º, VI, da LGPD).</li>
           <li><strong>Segurança e prevenção a fraude</strong> (legítimo interesse, só nos dados da conta e para prevenir fraude): limites de uso, auditoria, investigação de abusos e os sinais que fazem o teste grátis valer uma vez por pessoa.</li>
           <li><strong>Comunicações sobre a conta</strong> (execução de contrato): avisos de cobrança, crédito, cota, segurança e alterações relevantes. Os e-mails de aviso não levam conteúdo de conversa: o de novo contato leva só o nome, o canal e o link para o painel.</li>
           <li><strong>Avisos e assistente no WhatsApp da equipe</strong> (consentimento da pessoa, dado no painel e confirmado no WhatsApp): os avisos que ela escolheu e a conversa com o assistente da {brand}, que responde sobre o painel e sobre a conta (só o que o papel dela vê no painel). Ela retira o consentimento quando quiser, mandando SAIR no WhatsApp ou desligando em Meu perfil.</li>

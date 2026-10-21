@@ -48,6 +48,9 @@ export default function TermsPage() {
             <strong>Desistência em {FIRST_WEEK_DAYS} dias</strong> (art. 49 do Código de Defesa do Consumidor): nos {FIRST_WEEK_DAYS} dias do pagamento que abre a assinatura, você pode desistir em Cobrança. Estornamos tudo o que foi pago desde então (assinatura, subidas e crédito), a assinatura acaba na hora, os assistentes ficam sem tamanho e a conta volta para a conta grátis, sem as respostas de teste. Para evitar abuso, os dados de quem desistiu (o e-mail, o número, o documento, o cartão e o navegador, guardados só como código) ficam marcados por {WITHDRAWAL_MARK_MONTHS} meses: nesse período, nenhuma conta dessa pessoa ganha o teste grátis, e a desistência de uma assinatura nova é feita pelo suporte, que analisa o pedido.
           </li>
           <li>
+            <strong>Contestação no cartão:</strong> se um pagamento for contestado no banco, a assinatura é encerrada na hora (os assistentes ficam sem tamanho; a configuração fica guardada), e enviamos à Stripe, para o banco analisar, as provas da contratação e do uso: o aceite destes termos ao assinar, as entradas no painel (data, hora e IP) e o uso do serviço no período, sem o conteúdo das conversas. Quem contesta fica marcado por {WITHDRAWAL_MARK_MONTHS} meses, como na desistência. Se foi engano, fale com o suporte e retire a contestação no banco: o dinheiro de volta, quando cabe, sai pelo suporte ou pela desistência em {FIRST_WEEK_DAYS} dias.
+          </li>
+          <li>
             <strong>Primeira semana da assinatura:</strong> nos mesmos {FIRST_WEEK_DAYS} dias, cada assistente usa até {Math.round(FIRST_WEEK_QUOTA_SHARE * 100)}% da cota do mês, e a compra de crédito fica em até {brl(FIRST_WEEK_CREDIT_BRL)}. Passou disso, o assistente entra no modo só humano até o 8º dia, quando tudo libera.
           </li>
           <li>

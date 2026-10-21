@@ -74,6 +74,7 @@ describe("qualidade e operação", () => {
       measures: { metaOrders: 0, metaNotices: 0 },
       reviews: { open: 0, holding: 0, overdue: 0 },
       incidentsOpen: 0,
+      disputesOpen: { count: 0, firstDue: null },
       bots: new Map(),
     };
     expect(operationAlerts(base)).toEqual([]);
@@ -84,5 +85,7 @@ describe("qualidade e operação", () => {
       "Tarefa agendada atrasada: Rotina diária.",
       "1 ordem(ns) da Meta bloqueando número(s) de WhatsApp (ver Conformidade).",
     ]);
+    // contestação no cartão esperando a defesa (Trava da conta grátis, parte 5)
+    expect(operationAlerts({ ...base, disputesOpen: { count: 2, firstDue: "2026-10-30T15:00:00.000Z" } })).toEqual(["2 contestação(ões) no cartão esperando a defesa; a primeira vence em 30/10/2026 (ver a ficha da conta)."]);
   });
 });

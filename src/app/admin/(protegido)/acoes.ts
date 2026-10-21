@@ -38,6 +38,7 @@ import { assistantChannel, ensureNoticeTemplate, forgetAssistantCache, refreshAs
 import { NOTICE_KINDS, NOTICE_KIND_ORDER, ensureNoticeKindTemplates, forgetNoticeTemplates } from "@/lib/team-notices";
 import { setFreeRelease } from "@/lib/person-signals";
 import { withdraw } from "@/lib/withdrawal";
+import { EVIDENCE_FIELDS, acceptDispute, submitDisputeEvidence, type Evidence } from "@/lib/disputes";
 import { stripe } from "@/lib/stripe";
 
 /** Auditoria das ações do backoffice (a agência afetada vê na tela de Segurança, leva S). */
@@ -118,6 +119,27 @@ export async function supportWithdraw(agencyId: string, fd: FormData): Promise<A
   if (!r.ok) return fail(r.message);
   revalidatePath(`/admin/clientes/${agencyId}`);
   return ok(`Desistência feita: ${(r.refundedCents / 100).toFixed(2).replace(".", ",")} estornados.`);
+}
+
+/** Envia a defesa da contestação pela Stripe, com o que o suporte revisou no rascunho. */
+export async function sendDisputeEvidence(agencyId: string, disputeId: string, fd: FormData): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (defesa da contestação ${disputeId})`);
+  if (!stripe) return fail("A cobrança não está configurada neste servidor.");
+  const evidence = Object.fromEntries(EVIDENCE_FIELDS.map((f) => [f.key, text(fd.get(f.key)).slice(0, f.key === "access_activity_log" ? 19_000 : 5_000)])) as Evidence;
+  const r = await submitDisputeEvidence(createAdminClient(), stripe, disputeId, evidence, s.email);
+  if (!r.ok) return fail(r.message);
+  revalidatePath(`/admin/clientes/${agencyId}`);
+  return ok("Defesa enviada: a Stripe manda para o banco, e o resultado chega por aqui.");
+}
+
+/** Aceita a contestação (por exemplo, o cartão foi mesmo usado sem o titular saber). */
+export async function acceptDisputeAction(agencyId: string, disputeId: string): Promise<ActionResult> {
+  const s = await requireAdmin(`/admin/clientes/${agencyId} (aceitou a contestação ${disputeId})`);
+  if (!stripe) return fail("A cobrança não está configurada neste servidor.");
+  const r = await acceptDispute(createAdminClient(), stripe, disputeId, s.email);
+  if (!r.ok) return fail(r.message);
+  revalidatePath(`/admin/clientes/${agencyId}`);
+  return ok("Contestação aceita: o valor fica com o cliente.");
 }
 
 export async function lockFreeTest(agencyId: string): Promise<ActionResult> {
