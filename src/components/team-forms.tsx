@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { liveValidation, validateForm } from "@/components/ui/form-errors";
 import { Pencil, UserPlus } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -98,6 +99,7 @@ function useSubmit(action: (fd: FormData) => Promise<Result>, onDone: (r: Result
   const toast = useToast();
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!validateForm(e.currentTarget, (e.nativeEvent as SubmitEvent).submitter)) return;
     const fd = new FormData(e.currentTarget);
     start(async () => {
       try {
@@ -137,7 +139,7 @@ export function InviteMemberButton({ action, clients, allowAdmin, full }: { acti
             </div>
           </div>
         ) : (
-          <form onSubmit={submit} className="flex flex-col gap-4">
+          <form onSubmit={submit} noValidate {...liveValidation} className="flex flex-col gap-4">
             <MemberFields clients={clients} allowAdmin={allowAdmin} withEmail defaults={{ role: "agent", scope: "all", clientIds: [], botIds: [] }} />
             <button type="submit" disabled={pending} className="btn-primary self-start">{pending ? "Convidando…" : "Enviar convite"}</button>
           </form>
@@ -155,7 +157,7 @@ export function EditMemberButton({ action, clients, allowAdmin, defaults, name }
     <>
       <button type="button" onClick={() => setOpen(true)} className="btn-ghost text-xs"><Pencil size={13} />Editar</button>
       <Modal open={open} onClose={() => setOpen(false)} title={`Papel e escopo de ${name}`}>
-        <form onSubmit={submit} className="flex flex-col gap-4">
+        <form onSubmit={submit} noValidate {...liveValidation} className="flex flex-col gap-4">
           <MemberFields clients={clients} allowAdmin={allowAdmin || defaults.role === "admin"} withEmail={false} defaults={defaults} />
           <button type="submit" disabled={pending} className="btn-primary self-start">{pending ? "Salvando…" : "Salvar"}</button>
         </form>
