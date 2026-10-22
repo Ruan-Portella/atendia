@@ -4,15 +4,14 @@ import type { ActionRow } from "@/lib/actions";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { ActionFieldsBody, ActionTestForm } from "@/components/integrations/action-fields";
+import { ActionTestForm } from "@/components/integrations/action-fields";
+import { ActionFieldsBody, ActionWizard } from "@/components/integrations/action-editor";
 import { needsConfirmation } from "@/lib/actions";
 import { actionsTokenWeight, headerNames } from "@/lib/integrations-input";
 import { FlaskConical, KeyRound, Plus, Zap } from "lucide-react";
 import { HowItWorks, StatusPill } from "@/components/ui/form-section";
 import { DialogButton, SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { deleteBotAction, rotateBotActionSecret, saveBotAction, testBotAction } from "@/app/painel/(configuracoes)/integracoes/actions";
-
-const LEVEL_LABEL: Record<string, string> = { anonimo: "qualquer contato", canal: "telefone conhecido", usuario: "identificado pela empresa" };
 
 /** Segredo anterior ainda valendo (troca sem queda): até quando. */
 const previousSecretNote = (until: string | null) => (until && Date.parse(until) > Date.now() ? ` O anterior vale até ${new Date(until).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.` : "");
@@ -62,8 +61,8 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
         </div>
         {/* redesenho, etapa 5 (22/10): criar e editar num painel lateral; os parâmetros em linhas, sem o JSON */}
         {manage && (
-          <DialogButton label="Nova ação" icon={<Plus size={15} />} className="btn-primary" title="Nova ação" description="Uma consulta ou uma ação que executa. Depois de criar, use o Testar da lista." action={saveBotAction.bind(null, bot.id, null)} size="sheet" saveLabel="Criar ação">
-            <ActionFieldsBody />
+          <DialogButton label="Nova ação" icon={<Plus size={15} />} className="btn-primary" title="Nova ação" action={saveBotAction.bind(null, bot.id, null)} size="sheet" footer="none">
+            <ActionWizard />
           </DialogButton>
         )}
       </div>
@@ -114,8 +113,6 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
                 summary={
                   <>
                     {needsConfirmation(a) ? "Executa (com Confirmar)" : "Consulta"}
-                    {a.supports_preview ? " · aceita prévia" : ""} · {LEVEL_LABEL[a.min_level] ?? a.min_level}
-                    {a.routine_only ? " · só no roteiro" : ""}
                     <span className="block sm:hidden">{st ? `última chamada ${relativeTime(st.last!)} · erros ${pct(st.errors, st.total)} em 7 dias` : "sem chamadas em 7 dias"}</span>
                     {a.creates_order && a.type === "query" && <span className="block text-amber-ink">Parece criar pedido, reserva ou cobrança: pede o Confirmar do contato</span>}
                   </>

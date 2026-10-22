@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Braces, Plus, Rows3, Terminal, Trash2 } from "lucide-react";
+import { Braces, ChevronDown, ChevronUp, Plus, Rows3, Terminal, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { parseCurl, type CurlImport } from "@/lib/curl-import";
 import type { ParamsSchema } from "@/lib/actions";
-import { cn } from "@/lib/utils";
 
 /*
  * Os parâmetros e os cabeçalhos de uma ação em linhas (redesenho, etapa 5, a pedido do usuário em
@@ -78,10 +77,15 @@ export function ParamsBuilder({ initial }: { initial?: ParamsSchema | null }) {
   const [rows, setRows] = useState<Row[]>(start ?? []);
   const [json, setJson] = useState(() => JSON.stringify(initial ?? EMPTY, null, 2));
   const [problem, setProblem] = useState<string | null>(null);
+  // as linhas ficam fechadas num resumo; abre uma por vez (a nova já abre). "Só estas opções" aparece quando pedem.
+  const [openKey, setOpenKey] = useState<number | null>(null);
+  const [withOptions, setWithOptions] = useState<Set<number>>(() => new Set((start ?? []).filter((r) => r.options).map((r) => r.key)));
   const root = useRef<HTMLDivElement>(null);
   useCurlImport(root, (imp) => {
     if (!imp.params.length) return;
-    setRows(imp.params.map((p) => ({ key: seq++, name: p.name, type: p.type, description: "", required: false, options: "" })));
+    const next = imp.params.map((p) => ({ key: seq++, name: p.name, type: p.type, description: "", required: false, options: "" }));
+    setRows(next);
+    setOpenKey(next[0]?.key ?? null);
     setProblem(null);
     setMode("rows");
   });
@@ -122,47 +126,86 @@ export function ParamsBuilder({ initial }: { initial?: ParamsSchema | null }) {
       ) : (
         <>
           {rows.length === 0 && <p className="rounded-[12px] border border-dashed border-line-strong px-3 py-3 text-center text-xs text-muted">Sem parâmetros: a IA chama a ação sem mandar dados.</p>}
-          {rows.map((r, i) => (
-            <div key={r.key} className="flex flex-col gap-2 rounded-[14px] border border-line p-3">
-              <div className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1.2fr_1fr_auto_auto] sm:items-end">
-                <div>
-                  <label className="label" htmlFor={`pname-${r.key}`}>Nome</label>
-                  <input id={`pname-${r.key}`} value={r.name} onChange={(e) => patch(r.key, { name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") })} className="input font-mono" placeholder={i === 0 ? "numero_pedido" : "nome_do_parametro"} maxLength={40} />
-                </div>
-                <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} aria-label={`Apagar o parâmetro ${r.name || i + 1}`} className="btn-icon self-end hover:text-danger sm:order-4 sm:mb-1">
+          {rows.map((r, i) =>
+            openKey !== r.key ? (
+              // fechado: o nome, o tipo, se é obrigatório e a descrição numa linha
+              <div key={r.key} className="flex items-center gap-1 rounded-[14px] border border-line transition-colors duration-[120ms] hover:border-line-strong">
+                <button type="button" onClick={() => setOpenKey(r.key)} className="flex min-w-0 flex-1 flex-col items-start px-3 py-2 text-left">
+                  <span className="flex flex-wrap items-center gap-x-2 text-sm">
+                    <span className="font-mono font-medium text-ink">{r.name || "sem nome"}</span>
+                    <span className="text-xs text-muted">
+                      {PARAM_TYPE_LABEL[r.type]}
+                      {r.required ? " · obrigatório" : ""}
+                      {r.options.trim() ? ` · só ${r.options.trim()}` : ""}
+                    </span>
+                  </span>
+                  {r.description.trim() ? <span className="block max-w-full truncate text-xs text-ink-2">{r.description}</span> : <span className="text-xs text-amber-ink">Sem descrição: escreva o que a IA deve mandar</span>}
+                </button>
+                <button type="button" onClick={() => setOpenKey(r.key)} aria-label={`Editar o parâmetro ${r.name || i + 1}`} className="btn-icon shrink-0">
+                  <ChevronDown size={16} />
+                </button>
+                <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} aria-label={`Apagar o parâmetro ${r.name || i + 1}`} className="btn-icon mr-1 shrink-0 hover:text-danger">
                   <Trash2 size={15} />
                 </button>
-                <div className="col-span-2 sm:order-2 sm:col-span-1">
-                  <label className="label" htmlFor={`ptype-${r.key}`}>Tipo</label>
-                  <select id={`ptype-${r.key}`} value={r.type} onChange={(e) => patch(r.key, { type: e.target.value as ParamType })} className="input">
-                    {(Object.keys(PARAM_TYPE_LABEL) as ParamType[]).map((t) => (
-                      <option key={t} value={t}>
-                        {PARAM_TYPE_LABEL[t]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <label className="col-span-2 flex items-center gap-2 text-xs font-medium text-ink-2 sm:order-3 sm:col-span-1 sm:mb-2.5">
-                  <input type="checkbox" role="switch" className="switch" checked={r.required} onChange={(e) => patch(r.key, { required: e.target.checked })} />
-                  Obrigatório
-                </label>
               </div>
-              <div className={cn("grid gap-2", r.type !== "boolean" && "sm:grid-cols-[1.4fr_1fr]")}>
+            ) : (
+              <div key={r.key} className="flex flex-col gap-2.5 rounded-[14px] border border-brand/40 p-3">
+                <div className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1.2fr_1fr_auto] sm:items-end">
+                  <div>
+                    <label className="label" htmlFor={`pname-${r.key}`}>Nome</label>
+                    <input id={`pname-${r.key}`} value={r.name} onChange={(e) => patch(r.key, { name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") })} className="input font-mono" placeholder={i === 0 ? "numero_pedido" : "nome_do_parametro"} maxLength={40} />
+                  </div>
+                  <button type="button" onClick={() => setOpenKey(null)} aria-label={`Fechar o parâmetro ${r.name || i + 1}`} className="btn-icon self-end sm:order-3 sm:mb-1">
+                    <ChevronUp size={16} />
+                  </button>
+                  <div className="col-span-2 sm:order-2 sm:col-span-1">
+                    <label className="label" htmlFor={`ptype-${r.key}`}>Tipo</label>
+                    <select id={`ptype-${r.key}`} value={r.type} onChange={(e) => patch(r.key, { type: e.target.value as ParamType })} className="input">
+                      {(Object.keys(PARAM_TYPE_LABEL) as ParamType[]).map((t) => (
+                        <option key={t} value={t}>
+                          {PARAM_TYPE_LABEL[t]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 <div>
-                  <label className="label" htmlFor={`pdesc-${r.key}`}>Descrição</label>
+                  <label className="label" htmlFor={`pdesc-${r.key}`}>Descrição (o que a IA lê para preencher)</label>
                   <input id={`pdesc-${r.key}`} value={r.description} onChange={(e) => patch(r.key, { description: e.target.value })} maxLength={200} className="input" placeholder={i === 0 ? "o número do pedido, ex.: 1042" : "o que é, com um exemplo"} />
                 </div>
-                {r.type !== "boolean" && (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-ink-2">
+                    <input type="checkbox" role="switch" className="switch" checked={r.required} onChange={(e) => patch(r.key, { required: e.target.checked })} />
+                    Obrigatório
+                  </label>
+                  {r.type !== "boolean" && !withOptions.has(r.key) && !r.options && (
+                    <button type="button" onClick={() => setWithOptions((set) => new Set(set).add(r.key))} className="text-xs font-semibold text-brand hover:underline">
+                      Limitar a algumas opções
+                    </button>
+                  )}
+                </div>
+                {r.type !== "boolean" && (withOptions.has(r.key) || r.options) && (
                   <div>
-                    <label className="label" htmlFor={`popt-${r.key}`}>Só estas opções (opcional)</label>
+                    <label className="label" htmlFor={`popt-${r.key}`}>Só estas opções (separadas por vírgula)</label>
                     <input id={`popt-${r.key}`} value={r.options} onChange={(e) => patch(r.key, { options: e.target.value })} className="input" placeholder="pix, boleto, cartão" />
                   </div>
                 )}
+                <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} className="inline-flex items-center gap-1 self-start text-xs font-semibold text-danger hover:underline">
+                  <Trash2 size={13} /> Apagar o parâmetro
+                </button>
               </div>
-            </div>
-          ))}
+            ),
+          )}
           {rows.length < MAX_PARAMS && (
-            <button type="button" onClick={() => setRows((rs) => [...rs, { key: seq++, name: "", type: "string", description: "", required: false, options: "" }])} className="inline-flex items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line-strong px-3 py-2 text-sm font-medium text-ink-2 transition-colors duration-[120ms] hover:border-brand hover:text-brand">
+            <button
+              type="button"
+              onClick={() => {
+                const key = seq++;
+                setRows((rs) => [...rs, { key, name: "", type: "string", description: "", required: false, options: "" }]);
+                setOpenKey(key);
+              }}
+              className="inline-flex items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line-strong px-3 py-2 text-sm font-medium text-ink-2 transition-colors duration-[120ms] hover:border-brand hover:text-brand"
+            >
               <Plus size={15} /> Parâmetro
             </button>
           )}
@@ -299,7 +342,7 @@ export function TestParams({ schema }: { schema: ParamsSchema }) {
  * preenche o endereço, o nome (se vazio), os cabeçalhos e os parâmetros do corpo. A descrição de
  * cada parâmetro fica para a pessoa escrever.
  */
-export function CurlImportButton() {
+export function CurlImportButton({ big = false }: { big?: boolean }) {
   const toast = useToast();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -325,9 +368,21 @@ export function CurlImportButton() {
 
   return (
     <>
-      <button ref={anchor} type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 self-start text-xs font-semibold text-brand hover:underline">
-        <Terminal size={13} /> Importar de um cURL
-      </button>
+      {big ? (
+        <button ref={anchor} type="button" onClick={() => setOpen(true)} className="flex items-start gap-3 rounded-[14px] border border-dashed border-brand/50 bg-brand-soft/40 p-3 text-left transition-colors duration-[120ms] hover:border-brand">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-brand-soft text-brand">
+            <Terminal size={17} />
+          </span>
+          <span>
+            <span className="block text-sm font-medium text-ink">Tem um cURL na documentação do sistema? Cole aqui</span>
+            <span className="mt-0.5 block text-xs text-muted">O endereço, os cabeçalhos e os parâmetros entram sozinhos.</span>
+          </span>
+        </button>
+      ) : (
+        <button ref={anchor} type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 self-start text-xs font-semibold text-brand hover:underline">
+          <Terminal size={13} /> Importar de um cURL
+        </button>
+      )}
       <Modal
         open={open}
         onClose={() => setOpen(false)}

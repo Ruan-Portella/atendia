@@ -51,8 +51,12 @@ export function EditDialog({
   pendingLabel?: string;
   /** à esquerda do rodapé (ex.: Apagar) */
   footerStart?: React.ReactNode;
-  /** "save": Cancelar e Salvar; "close": só Fechar (para ler, ou quando os formulários de dentro têm o próprio botão) */
-  footer?: "save" | "close";
+  /**
+   * "save": Cancelar e Salvar; "close": só Fechar (para ler, ou quando os formulários de dentro têm
+   * o próprio botão); "none": o conteúdo tem o próprio rodapé (um assistente em etapas), e o
+   * Cancelar dele manda o evento "bv-cancel"
+   */
+  footer?: "save" | "close" | "none";
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -67,14 +71,16 @@ export function EditDialog({
   };
   const tryClose = () => {
     const d = ref.current;
-    if (footer === "save" && d && snapshot.current !== null && fieldsOf(d) !== snapshot.current) setAsking(true);
+    if (footer !== "close" && d && snapshot.current !== null && fieldsOf(d) !== snapshot.current) setAsking(true);
     else close();
   };
   const closeRef = useRef(close);
   const openRef = useRef(onOpen);
+  const tryCloseRef = useRef(tryClose);
   useEffect(() => {
     closeRef.current = close;
     openRef.current = onOpen;
+    tryCloseRef.current = tryClose;
   });
 
   useEffect(() => {
@@ -103,7 +109,13 @@ export function EditDialog({
     // um campo com erro aqui dentro, no Salvar do formulário em volta (ui/form-errors)
     const reopen = () => openRef.current?.();
     d.addEventListener("bv-open", reopen);
-    return () => d.removeEventListener("bv-open", reopen);
+    // o Cancelar de um rodapé próprio (footer "none")
+    const cancel = () => tryCloseRef.current();
+    d.addEventListener("bv-cancel", cancel);
+    return () => {
+      d.removeEventListener("bv-open", reopen);
+      d.removeEventListener("bv-cancel", cancel);
+    };
   }, []);
 
   const inner = (
@@ -122,6 +134,7 @@ export function EditDialog({
             sem, ficam montados porque o formulário em volta envia todos */}
         {(!action || open) && children}
       </div>
+      {footer !== "none" && (
       <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-line-2 bg-panel px-5 py-3 sm:px-6">
         <div className="mr-auto">{footerStart}</div>
         {footer === "close" ? (
@@ -139,6 +152,7 @@ export function EditDialog({
           </>
         )}
       </div>
+      )}
     </>
   );
 
@@ -288,7 +302,7 @@ export function DialogButton({
   action?: (formData: FormData) => Promise<ActionResult | void>;
   size?: Size;
   saveLabel?: string;
-  footer?: "save" | "close";
+  footer?: "save" | "close" | "none";
   footerStart?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);

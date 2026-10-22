@@ -98,12 +98,14 @@ export function parseCurl(text: string): CurlImport | null {
       }
     }
   }
-  let name = "";
+  return { url, headers, params: params.slice(0, 10), name: nameFromUrl(url) };
+}
+
+/** Um nome de ação a partir do endereço: as duas últimas partes do caminho, em snake_case. */
+export function nameFromUrl(url: string): string {
   try {
-    const path = new URL(url).pathname.split("/").filter(Boolean);
-    name = snake(path.slice(-2).join("_"));
+    return snake(new URL(url).pathname.split("/").filter(Boolean).slice(-2).join("_"));
   } catch {
-    // o endereço já foi conferido; sem caminho, sem nome sugerido
+    return "";
   }
-  return { url, headers, params: params.slice(0, 10), name };
 }

@@ -7,7 +7,7 @@ import { MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type MenuItem =
-  | { type?: "item"; label: string; icon?: React.ComponentType<{ size?: number; className?: string }>; onSelect?: () => void; href?: string; external?: boolean; danger?: boolean; disabled?: boolean }
+  | { type?: "item"; label: string; /** uma linha de explicação embaixo do rótulo */ hint?: string; icon?: React.ComponentType<{ size?: number; className?: string }>; onSelect?: () => void; href?: string; external?: boolean; danger?: boolean; disabled?: boolean }
   | { type: "separator" };
 
 interface MenuProps {
@@ -29,6 +29,8 @@ const MENU_WIDTH = 248;
 export function Menu({ items, label = "Mais ações", trigger, triggerClassName, align = "right" }: MenuProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; bottom: number; left: number; up: boolean } | null>(null);
+  // dentro de um modal aberto, o menu abre no próprio modal: fora dele, ficaria atrás e travado
+  const [host, setHost] = useState<Element | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -41,7 +43,8 @@ export function Menu({ items, label = "Mais ações", trigger, triggerClassName,
     }
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
-    const estimatedHeight = items.length * 38 + 12;
+    setHost(btnRef.current?.closest("dialog[open]") ?? null);
+    const estimatedHeight = items.reduce((h, it) => h + (it.type === "separator" ? 9 : "hint" in it && it.hint ? 54 : 38), 12);
     const up = r.bottom + estimatedHeight > window.innerHeight - 8 && r.top > estimatedHeight;
     const left = align === "right" ? Math.max(8, r.right - MENU_WIDTH) : Math.min(r.left, window.innerWidth - MENU_WIDTH - 8);
     setPos({ top: r.bottom + 4, bottom: window.innerHeight - r.top + 4, left, up });
@@ -91,8 +94,15 @@ export function Menu({ items, label = "Mais ações", trigger, triggerClassName,
               const cls = cn("menu-item", it.danger && "text-danger hover:bg-danger-soft");
               const inner = (
                 <>
-                  {Icon && <Icon size={15} className="shrink-0 opacity-80" />}
-                  <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                  {Icon && <Icon size={15} className={cn("shrink-0 opacity-80", it.hint && "self-start mt-0.5")} />}
+                  {it.hint ? (
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{it.label}</span>
+                      <span className="block text-xs font-normal leading-snug text-muted">{it.hint}</span>
+                    </span>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                  )}
                 </>
               );
               if (it.href) {
@@ -119,7 +129,7 @@ export function Menu({ items, label = "Mais ações", trigger, triggerClassName,
               );
             })}
           </div>,
-          document.body,
+          host ?? document.body,
         )}
     </>
   );

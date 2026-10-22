@@ -77,6 +77,12 @@ export function validateForm(form: HTMLFormElement, submitter?: HTMLElement | nu
   // ou dentro de um modal de editar fechado (ui/setting-row): o modal abre
   const dialog = firstBad?.closest("dialog");
   if (dialog && !dialog.open) dialog.dispatchEvent(new Event("bv-open"));
+  // ou numa aba ou etapa escondida (data-panel): ela aparece, e o cursor vai ao campo depois
+  const panel = firstBad?.closest<HTMLElement>("[data-panel]");
+  if (panel?.hidden) {
+    panel.dispatchEvent(new CustomEvent("bv-panel", { bubbles: true, detail: panel.dataset.panel }));
+    setTimeout(() => firstBad?.focus(), 60);
+  }
   firstBad?.focus();
   return !firstBad;
 }
@@ -99,3 +105,12 @@ export const liveValidation = {
     if (isField(e.target) && touched.has(e.target)) showError(e.target);
   },
 };
+
+/** Confere só os campos de dentro de `container` (a etapa de um assistente): mostra os erros e leva o cursor ao primeiro. */
+export function validateWithin(container: HTMLElement): boolean {
+  const fields = Array.from(container.querySelectorAll("input, select, textarea")).filter(isField).filter((f) => leaderOf(f) === f);
+  const valid = fields.map(showError);
+  const firstBad = fields[valid.indexOf(false)];
+  firstBad?.focus();
+  return !firstBad;
+}
