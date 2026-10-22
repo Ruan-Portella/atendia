@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ChartColumn, Check, ChevronsUpDown, CircleUser, Contact, Inbox, LifeBuoy, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
+import { ChartColumn, Check, ChevronsUpDown, CircleUser, Contact, Inbox, LifeBuoy, ListChecks, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { Menu } from "@/components/ui/menu";
 import { NoticeBell } from "@/components/notice-center";
+import { openOnboardingWidget } from "@/components/onboarding-widget";
+import { showOnboarding } from "@/app/painel/actions";
 import { chooseTema, useTema } from "@/components/theme";
 import { DAY_TO_DAY, activeSettingsHref, allowed, firstSettingsHref } from "@/lib/nav";
 import { can, type AgencyRole } from "@/lib/roles";
@@ -83,6 +85,7 @@ const SectionLabel = ({ children, action, collapsed }: { children: React.ReactNo
  */
 export function SidebarNav({ role, packs = [], clients, clientCount, me, extra, collapsed = false, onNavigate }: Props) {
   const path = usePathname();
+  const router = useRouter();
   const waiting = useWaiting();
   const tema = useTema();
   const signOut = useRef<HTMLFormElement>(null);
@@ -213,6 +216,19 @@ export function SidebarNav({ role, packs = [], clients, clientCount, me, extra, 
           }
           items={[
             { label: "Meu perfil", icon: CircleUser, href: "/painel/perfil" },
+            ...(can(role, "config")
+              ? [
+                  {
+                    label: "Primeiros passos",
+                    icon: ListChecks,
+                    // mostra de novo depois do Ocultar: abre o widget, tira o cookie e vai para Clientes
+                    onSelect: () => {
+                      openOnboardingWidget();
+                      void showOnboarding().then(() => router.push("/painel/clientes"));
+                    },
+                  },
+                ]
+              : []),
             { type: "separator" },
             themeItem("escuro", "Tema escuro", Moon),
             themeItem("claro", "Tema claro", Sun),

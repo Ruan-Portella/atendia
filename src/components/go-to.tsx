@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ChartColumn, CircleUser, Contact, Inbox, Loader2, Megaphone, MessageSquare, Plus, Search, Settings, Users } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { chooseTema } from "@/components/theme";
+import { openOnboardingWidget } from "@/components/onboarding-widget";
+import { showOnboarding } from "@/app/painel/actions";
 import { buildGroups, type GoToGroup, type GoToItem } from "@/lib/go-to";
 import type { AgencyRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -117,6 +119,12 @@ export function GoTo({ role, packs, clients }: Props) {
       f.action = "/auth/signout";
       document.body.appendChild(f);
       f.submit();
+      return;
+    }
+    // mostrar os primeiros passos de novo: abre o widget, tira o cookie do Ocultar e vai para Clientes
+    if (item.run === "primeiros-passos") {
+      openOnboardingWidget();
+      void showOnboarding().then(() => router.push("/painel/clientes"));
       return;
     }
     if (item.run) chooseTema(item.run === "tema-escuro" ? "escuro" : item.run === "tema-claro" ? "claro" : "sistema");

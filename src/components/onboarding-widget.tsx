@@ -35,6 +35,11 @@ function write(key: string, value: string) {
   listeners.forEach((l) => l());
 }
 
+/** Deixa o widget aberto (o "Primeiros passos" do menu da conta e do Ctrl K, antes de mostrar de novo). */
+export function openOnboardingWidget() {
+  write(OPEN_KEY, "1");
+}
+
 /** O anel do progresso, no botão fechado. */
 function Ring({ done, total }: { done: number; total: number }) {
   const r = 9;
@@ -169,11 +174,11 @@ export function OnboardingWidget({ steps, goal, changeProfile, hide }: { steps: 
         )}
         <span className="ml-auto">
           {allDone ? (
-            <ConfirmAction action={hide} title="Fechar os primeiros passos?" description="Eles somem para você em todo o painel." confirmLabel="Fechar" danger={false} className="btn-primary py-1.5 text-[13px]">
+            <ConfirmAction action={hide} title="Fechar os primeiros passos?" description="Eles somem para você em todo o painel. Para ver de novo: menu da sua conta → Primeiros passos." confirmLabel="Fechar" danger={false} className="btn-primary py-1.5 text-[13px]">
               Fechar
             </ConfirmAction>
           ) : (
-            <ConfirmAction action={hide} title="Ocultar os primeiros passos?" description="Eles somem para você em todo o painel. Nada muda nos chatbots; os passos que faltam continuam por fazer." confirmLabel="Ocultar" danger={false} className="font-semibold text-muted hover:text-ink">
+            <ConfirmAction action={hide} title="Ocultar os primeiros passos?" description="Eles somem para você em todo o painel. Para ver de novo: no menu da sua conta (o seu nome, embaixo do menu) ou no Ctrl K, em Primeiros passos." confirmLabel="Ocultar" danger={false} className="font-semibold text-muted hover:text-ink">
               Ocultar
             </ConfirmAction>
           )}

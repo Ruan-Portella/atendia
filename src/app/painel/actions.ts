@@ -1866,7 +1866,14 @@ export async function hideOnboarding(): Promise<ActionResult> {
   (await cookies()).set(ONBOARDING_COOKIE, "hidden", { path: "/painel", maxAge: 60 * 60 * 24 * 365, sameSite: "lax", httpOnly: true });
   // o widget mora no layout (redesenho, etapa 5): some em todo o painel
   revalidatePath("/painel", "layout");
-  return ok("Primeiros passos ocultados.");
+  return ok("Primeiros passos ocultados. Para ver de novo: menu da sua conta → Primeiros passos.");
+}
+
+/** Mostra de novo os primeiros passos (o menu da conta e o Ctrl K): tira o cookie do Ocultar. */
+export async function showOnboarding(): Promise<ActionResult> {
+  (await cookies()).delete({ name: ONBOARDING_COOKIE, path: "/painel" });
+  revalidatePath("/painel", "layout");
+  return ok("Primeiros passos de volta.");
 }
 
 /* ------------------------------------------------------------------ limites do plano (leva B1', parte 4b) */
