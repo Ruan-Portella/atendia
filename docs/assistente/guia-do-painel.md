@@ -144,6 +144,10 @@ Na aba WhatsApp do chatbot, há três jeitos: o cadastro pela tela da Meta (o ma
 
 O número pode continuar no app WhatsApp Business do celular do cliente enquanto o BoaVoz atende pela API. Quando alguém responde pelo celular, a resposta aparece no painel e o assistente fica quieto naquela conversa por 1 hora, para não falar por cima da pessoa.
 
+## Contato do WhatsApp sem o número (nome de usuário)
+
+Quem conversa com a empresa pelo nome de usuário do WhatsApp pode chegar sem o número aparecer. Quando precisa do telefone (para registrar o contato ou para a equipe retornar), o assistente manda o botão do WhatsApp para a pessoa compartilhar o número com um toque; ela escolhe se compartilha. O número compartilhado entra na ficha do contato e no lead, e o assistente passa a usar ele. Quem está atendendo a conversa também pede pelo painel e pela área do cliente: em cima do campo de resposta aparece "Pedir o telefone". O botão só vai dentro das 24 horas depois da última mensagem da pessoa.
+
 ## Problemas comuns na conexão
 
 - Entre com o Facebook de quem administra a empresa na Meta (ou de quem tem acesso de administrador ao portfólio): com outro login, a janela da Meta não mostra a conta certa. Quem não tem esse acesso pode mandar o link de conexão para o dono fazer.

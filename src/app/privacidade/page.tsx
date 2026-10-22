@@ -18,7 +18,8 @@ export const metadata = { title: "Política de Privacidade" };
  * que recebem os avisos da equipe (com os serviços de notificação dos navegadores). Trava da conta
  * grátis (21/10/2026): os sinais que ligam contas da mesma pessoa (só como código), o cookie do
  * navegador e a marca da desistência em 7 dias. Arquivo da equipe e mensagem apagada no WhatsApp
- * (21/10/2026): as fotos e os PDFs que a equipe manda e o apagar para todos na coexistência.
+ * (21/10/2026): as fotos e os PDFs que a equipe manda e o apagar para todos na coexistência. O
+ * número compartilhado pelo botão do WhatsApp por quem conversa pelo nome de usuário (21/10/2026).
  * Contestação no cartão (21/10/2026): o que vai para a
  * Stripe como prova quando um pagamento é contestado.
  */
@@ -81,7 +82,7 @@ export default function PrivacyPage() {
 
       <Section title="4. WhatsApp e produtos da Meta">
         <p>
-          Quando uma empresa conecta um número de WhatsApp Business à {brand} (pelo cadastro incorporado da Meta), recebemos e tratamos: identificadores da conta WhatsApp Business e do número, o token de acesso concedido pela empresa, e as mensagens enviadas e recebidas nesse número, incluindo o número de telefone, o nome de perfil do contato, os arquivos enviados e o status de entrega. Mensagens de áudio também são transcritas em texto por um provedor de IA para que o assistente possa responder. Quando a empresa conecta o número que já usa no aplicativo WhatsApp Business do celular (coexistência), também recebemos as mensagens que a equipe envia pelo celular, para mostrar a conversa completa no painel; os contatos e o histórico antigo do aparelho que a Meta sincroniza não são guardados pela plataforma.
+          Quando uma empresa conecta um número de WhatsApp Business à {brand} (pelo cadastro incorporado da Meta), recebemos e tratamos: identificadores da conta WhatsApp Business e do número, o token de acesso concedido pela empresa, e as mensagens enviadas e recebidas nesse número, incluindo o número de telefone, o nome de perfil do contato, os arquivos enviados e o status de entrega. Quem conversa pelo nome de usuário do WhatsApp chega com um identificador da Meta no lugar do número; o número só chega se a pessoa escolher compartilhar pelo botão do WhatsApp que o assistente ou a equipe mandam, e aí fica na ficha do contato como os outros. Mensagens de áudio também são transcritas em texto por um provedor de IA para que o assistente possa responder. Quando a empresa conecta o número que já usa no aplicativo WhatsApp Business do celular (coexistência), também recebemos as mensagens que a equipe envia pelo celular, para mostrar a conversa completa no painel; os contatos e o histórico antigo do aparelho que a Meta sincroniza não são guardados pela plataforma.
         </p>
         <p>
           Usamos esses dados <strong>somente</strong> para receber as mensagens, gerar e enviar as respostas do assistente, permitir o atendimento humano e mostrar o histórico no painel da empresa. Não vendemos esses dados, não os usamos para publicidade e não os usamos para treinar modelos de inteligência artificial. O uso também segue os Termos e as Políticas do WhatsApp Business e da Meta.
