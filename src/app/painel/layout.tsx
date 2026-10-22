@@ -23,6 +23,9 @@ import type { SidebarClient } from "@/components/sidebar-nav";
 import { GoTo } from "@/components/go-to";
 import { cookies } from "next/headers";
 import { MENU_COOKIE } from "@/lib/theme";
+import { OnboardingWidget } from "@/components/onboarding-widget";
+import { getOnboarding, ONBOARDING_COOKIE, ONBOARDING_GOAL } from "@/lib/onboarding";
+import { hideOnboarding } from "@/app/painel/actions";
 
 // o manifest deixa adicionar o painel à tela de início (no iPhone, os avisos no celular só chegam
 // assim; Memória e avisos, parte 2)
@@ -56,6 +59,8 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     const bots = ((c.bots ?? []) as Array<{ id: string; appearance: { color?: string } | null; face: unknown; created_at: string }>).sort((a, b) => a.created_at.localeCompare(b.created_at));
     return { id: c.id as string, name: c.name as string, color: bots[0]?.appearance?.color ?? null, face: bots[0]?.face ?? null, botIds: bots.map((b) => b.id) };
   });
+  // primeiros passos (redesenho, etapa 5): um widget no canto, em todo o painel, para quem configura
+  const onboarding = can(role, "config") && (await cookies()).get(ONBOARDING_COOKIE)?.value !== "hidden" ? await getOnboarding(supabase, agency, { admin: createAdminClient(), packs }).catch(() => null) : null;
   const banners = [
     notices.aiPaused && "A IA da sua conta está pausada pela equipe BoaVoz. As mensagens continuam chegando em Conversas para a sua equipe responder; no site, os visitantes veem o formulário de contato. Dúvidas: fale com o suporte.",
     notices.whatsappDisabled && "O WhatsApp está desligado temporariamente para todos os clientes do BoaVoz. Nada entra nem sai pelo WhatsApp até ser religado; Instagram e site seguem normais.",
@@ -102,6 +107,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     >
       <AppTheme />
       <HandoffWatcher endpoint="/api/painel/pending" />
+      {onboarding && <OnboardingWidget steps={onboarding} goal={ONBOARDING_GOAL[agency.profile ?? "agency"]} changeProfile={role === "owner"} hide={hideOnboarding} />}
       {children}
     </PanelShell>
   );

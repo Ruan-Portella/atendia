@@ -1864,7 +1864,8 @@ export async function undoAgencyRetention(): Promise<ActionResult> {
 /** Esconde o card "Primeiros passos" neste navegador (um ano). */
 export async function hideOnboarding(): Promise<ActionResult> {
   (await cookies()).set(ONBOARDING_COOKIE, "hidden", { path: "/painel", maxAge: 60 * 60 * 24 * 365, sameSite: "lax", httpOnly: true });
-  revalidatePath("/painel/clientes");
+  // o widget mora no layout (redesenho, etapa 5): some em todo o painel
+  revalidatePath("/painel", "layout");
   return ok("Primeiros passos ocultados.");
 }
 
