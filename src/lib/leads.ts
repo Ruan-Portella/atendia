@@ -398,3 +398,10 @@ export async function contactsWithLeads(db: SupabaseClient, contactIds: string[]
   const { data } = await db.from("leads").select("contact_id").in("contact_id", contactIds);
   return new Set((data ?? []).map((r) => r.contact_id as string));
 }
+
+/** As fichas de contato que viraram lead neste chatbot (o filtro Leads da escolha de contatos das campanhas). */
+export async function leadContactIds(db: SupabaseClient, botId: string, limit = 1000): Promise<string[]> {
+  const { data, error } = await db.from("leads").select("contact_id").eq("bot_id", botId).not("contact_id", "is", null).order("created_at", { ascending: false }).limit(limit);
+  if (error) throw new Error(`leads: ${error.message}`);
+  return [...new Set((data ?? []).map((r) => r.contact_id as string))];
+}

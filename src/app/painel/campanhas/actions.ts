@@ -7,7 +7,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { audit, requestMeta } from "@/lib/audit";
 import { can } from "@/lib/team";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { clientContactTags, normalizeTags } from "@/lib/contacts";
+import { clientContactTags, normalizeTags, pickableContacts } from "@/lib/contacts";
+import { contactsWithLeads, leadContactIds } from "@/lib/leads";
+import { consentStatesMany } from "@/lib/marketing-consent";
+import { activeSuppressionsMany, blocks, suppressionScope } from "@/lib/suppression";
 import { listTemplates, loadTemplateChannel, renderTemplate, templateBody, templateVariables, type Template } from "@/lib/whatsapp-templates";
 import { WhatsAppError } from "@/lib/whatsapp";
 import { botGateExemptions } from "@/lib/gate/exceptions";
@@ -86,6 +89,63 @@ export async function campaignOptions(botId: string): Promise<CampaignOptions> {
       return { name: t.name, language: t.language, body, vars: templateVariables(body).length, regulated: gate.regulated, prohibited: gate.prohibited };
     });
   return { ok: true, templates, tags: await clientContactTags(b.admin, [b.bot.id as string]), timezone: b.tz };
+}
+
+/** Um contato na escolha de contatos da campanha ou do lembrete (redesenho, etapa 5). */
+export interface PickContact {
+  id: string;
+  name: string | null;
+  phone: string;
+  tags: string[];
+  /** marketing: aceitou novidades deste número, não aceitou ou saiu (SAIR) */
+  consent: "aceitou" | "nao" | "saiu";
+  /** lembrete: pediu para sair dos lembretes */
+  utilityOut: boolean;
+  lead: boolean;
+  /** o horário marcado da ficha (ISO), para o lembrete vir com a data e a hora */
+  appointment: string | null;
+  /** já mandou mensagem ao chatbot (sem a declaração do cliente, só esses recebem lembrete) */
+  messaged: boolean;
+}
+
+/**
+ * A escolha de contatos da campanha e do lembrete (redesenho, etapa 5, a pedido do usuário em 22/10:
+ * escolher quem já está nos contatos ou nos leads, no lugar de colar números). Mostra quem pode
+ * receber; quem monta o público de verdade continua sendo a prévia, no servidor.
+ */
+export async function campaignContactPicker(botId: string, o: { q?: string; filter?: "todos" | "aceitaram" | "leads"; page?: number }): Promise<{ ok: true; rows: PickContact[]; more: boolean } | { ok: false; message: string }> {
+  const c = await campaignContext();
+  if ("error" in c) return { ok: false, message: c.error! };
+  const b = await campaignBot(botId);
+  if (!b) return { ok: false, message: "Chatbot não encontrado ou sem o WhatsApp conectado." };
+  const id = b.bot.id as string;
+  try {
+    const ids = o.filter === "leads" ? await leadContactIds(b.admin, id) : null;
+    // "aceitaram": filtra depois de ler o aceite, numa página maior
+    const wide = o.filter === "aceitaram";
+    const { rows, more } = await pickableContacts(b.admin, id, { q: o.q, ids, page: o.page, limit: wide ? 120 : 40 });
+    const scope = suppressionScope({ wabaId: b.ch.waba_id, botId: id });
+    const phones = rows.map((r) => r.phone);
+    const [consents, suppressed, leads] = await Promise.all([consentStatesMany(b.admin, scope, phones), activeSuppressionsMany(b.admin, { channel: "whatsapp", scope, contacts: phones }), contactsWithLeads(b.admin, rows.map((r) => r.id))]);
+    const out: PickContact[] = rows.map((r) => {
+      const sup = suppressed.get(r.phone) ?? [];
+      return {
+        id: r.id,
+        name: r.name,
+        phone: r.phone,
+        tags: r.tags,
+        consent: blocks(sup, "MARKETING") ? "saiu" : consents.get(r.phone) === "granted" ? "aceitou" : "nao",
+        utilityOut: blocks(sup, "UTILITY"),
+        lead: leads.has(r.id),
+        appointment: r.appointment_at,
+        messaged: Boolean(r.last_inbound_at),
+      };
+    });
+    return { ok: true, rows: wide ? out.filter((r) => r.consent === "aceitou") : out, more };
+  } catch (e) {
+    console.error("campanhas: escolher contatos", e);
+    return { ok: false, message: "Não foi possível ler os contatos agora. Tente de novo." };
+  }
 }
 
 export interface AudienceInput {

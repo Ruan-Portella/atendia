@@ -13,7 +13,7 @@ export const maxDuration = 60;
 
 const KINDS = [
   { id: "marketing", title: "Marketing", hint: "Promoções e novidades, só para quem aceitou receber." },
-  { id: "lembrete", title: "Lembrete de utilidade", hint: "Consulta, vencimento, revisão: uma planilha com a data e a hora de cada um." },
+  { id: "lembrete", title: "Lembrete de utilidade", hint: "Consulta, vencimento, revisão: escolha os contatos ou digite, com o horário marcado de cada um." },
 ] as const;
 
 /** Nova campanha (leva B3, partes 4a e 5): os chatbots do escopo com o WhatsApp conectado. */

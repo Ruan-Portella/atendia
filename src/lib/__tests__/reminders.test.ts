@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { busiestDay, parseSheetTime, reminderRowsFromCsv, validateReminderRows } from "../reminder-sheet";
+import { appointmentText, busiestDay, parseSheetTime, reminderRowsFromCsv, reminderRowsFromTable, sendFromAppointment, tableRowFromSheet, validateReminderRows } from "../reminder-sheet";
 import { reminderExclusionOf } from "../campaign-audience";
 
 // 09/10/2026 12:00 em Brasília
@@ -44,7 +44,46 @@ describe("planilha de lembretes", () => {
       { vars: 1, tz: "America/Sao_Paulo", now },
     );
     expect(valid).toEqual([]);
-    expect(errors.map((e) => e.message)).toEqual(["telefone inválido (abc)", "data inválida (31/02/2026); use dd/mm/aaaa", "sem hora", "01/10/2026 09:30 já passou", "falta a variável 1 (coluna variavel1)", "agende para no máximo 90 dias à frente"]);
+    expect(errors.map((e) => e.message)).toEqual(["telefone inválido (abc)", "data inválida (31/02/2026); use dd/mm/aaaa", "sem hora", "01/10/2026 09:30 já passou", "falta o campo 1 do modelo", "agende para no máximo 90 dias à frente"]);
+  });
+
+  it("a lista da tela vira as linhas: envio, horário marcado e os campos", () => {
+    const rows = [
+      { name: "Ana Souza", phone: "21 99999-0000", at: "2026-10-15T14:30", date: "", time: "", vars: ["", "", "", "Dra. Lia"] },
+      { name: "", phone: "", at: "", date: "", time: "", vars: [] },
+      { name: "", phone: "21 98888-0000", at: "2026-10-16T09:00", date: "2026-10-12", time: "10:00", vars: [] },
+    ];
+    const slots = [
+      { src: "name" as const, value: "cliente" },
+      { src: "date" as const, value: "" },
+      { src: "time" as const, value: "" },
+      { src: "row" as const, value: "" },
+    ];
+    const before = reminderRowsFromTable(rows, slots, { mode: "before", lead: "1d", at: "" });
+    // a linha vazia fica fora, mas a numeração segue a da lista
+    expect(before.map((r) => r.line)).toEqual([1, 3]);
+    expect(before[0]).toEqual({ line: 1, phone: "21 99999-0000", name: "Ana Souza", date: "2026-10-14", time: "14:30", vars: ["Ana", "15/10", "14h30", "Dra. Lia"] });
+    expect(before[1].vars).toEqual(["cliente", "16/10", "9h", ""]);
+    expect(reminderRowsFromTable(rows, slots, { mode: "same", date: "2026-10-13", time: "08:00" })[1]).toMatchObject({ date: "2026-10-13", time: "08:00" });
+    expect(reminderRowsFromTable(rows, slots, { mode: "each" })[1]).toMatchObject({ date: "2026-10-12", time: "10:00" });
+    // e o servidor lê a data do campo de data (aaaa-mm-dd)
+    const { valid } = validateReminderRows(before.slice(0, 1), { vars: 4, tz: "America/Sao_Paulo", now });
+    expect(valid[0]).toMatchObject({ local: "14/10/2026 14:30", variables: ["Ana", "15/10", "14h30", "Dra. Lia"] });
+  });
+
+  it("antes do horário marcado e o texto do dia e da hora", () => {
+    expect(sendFromAppointment("2026-10-15T08:30", "2h")).toEqual({ date: "2026-10-15", time: "06:30" });
+    expect(sendFromAppointment("2026-10-15T00:30", "1h")).toEqual({ date: "2026-10-14", time: "23:30" });
+    expect(sendFromAppointment("2026-11-01T10:00", "2d")).toEqual({ date: "2026-10-30", time: "10:00" });
+    expect(sendFromAppointment("2026-10-01T10:00", "vespera", "18:00")).toEqual({ date: "2026-09-30", time: "18:00" });
+    expect(sendFromAppointment("", "1d")).toBeNull();
+    expect(appointmentText("2026-10-15T09:05")).toEqual({ date: "15/10", time: "9h05" });
+    expect(appointmentText("2026-10-15T14:00")).toEqual({ date: "15/10", time: "14h" });
+  });
+
+  it("a planilha importada entra na lista com o envio de cada linha", () => {
+    expect(tableRowFromSheet({ line: 2, phone: "21 99999-0000", name: "Ana", date: "15/10/2026", time: "9:30", vars: ["x"] })).toEqual({ name: "Ana", phone: "21 99999-0000", at: "", date: "2026-10-15", time: "09:30", vars: ["x"] });
+    expect(tableRowFromSheet({ line: 3, phone: "1", name: "", date: "31/02/2026", time: "manhã", vars: [] })).toMatchObject({ date: "", time: "" });
   });
 
   it("dia mais cheio, para comparar com o limite de 24 h", () => {

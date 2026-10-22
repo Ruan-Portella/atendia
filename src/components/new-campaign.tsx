@@ -14,7 +14,7 @@ interface BotOption {
 
 const KINDS = [
   { id: "marketing", title: "Marketing", hint: "Promoções e novidades, só para quem aceitou receber.", icon: Megaphone },
-  { id: "lembrete", title: "Lembrete de utilidade", hint: "Consulta, vencimento, revisão: uma planilha com a data e a hora de cada um.", icon: BellRing },
+  { id: "lembrete", title: "Lembrete de utilidade", hint: "Consulta, vencimento, revisão: escolha os contatos ou digite, com o horário marcado de cada um.", icon: BellRing },
 ] as const;
 
 /**

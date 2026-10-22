@@ -2,9 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { campaignOptions, createMarketingCampaign, previewCampaign, type CampaignPreview, type CampaignTemplateOption } from "@/app/painel/campanhas/actions";
+import { X } from "lucide-react";
+import { campaignOptions, createMarketingCampaign, previewCampaign, type CampaignPreview, type CampaignTemplateOption, type PickContact } from "@/app/painel/campanhas/actions";
 import { REGULATED_ADVICE, type VariableSpec } from "@/lib/campaign-text";
+import { displayPhone } from "@/lib/phone";
 import { CLIENT_TIMEZONES } from "@/lib/timezone";
+import { ContactPicker } from "@/components/campaign-contact-picker";
+import { Segmented, TemplateBody, greetingSlot, shortText, slotName } from "@/components/template-slots";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +36,9 @@ export function Step({ n, title, children, muted }: { n: number; title: string; 
  * Nova campanha de marketing (leva B3, parte 4a): chatbot, modelo, público, estimativa e envio (o tipo
  * fica na página). A prévia
  * vem do servidor (público montado lá, com quem fica de fora e por quê); qualquer mudança depois da
- * prévia pede para calcular de novo antes de criar.
+ * prévia pede para calcular de novo antes de criar. Redesenho, etapa 5 (22/10): os campos do modelo
+ * em etiquetas no texto, e o público pelas etiquetas e pelos contatos escolhidos (colar números fica
+ * guardado em "Colar números").
  */
 export function CampaignWizard({ bots }: { bots: BotOption[] }) {
   const router = useRouter();
@@ -45,7 +51,9 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
   const [variables, setVariables] = useState<VariableSpec[]>([]);
   const [regulatedManual, setRegulatedManual] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [picked, setPicked] = useState<PickContact[]>([]);
   const [phones, setPhones] = useState("");
+  const [active, setActive] = useState<number | null>(null);
   const [preview, setPreview] = useState<CampaignPreview | null>(null);
   const [name, setName] = useState("");
   const [when, setWhen] = useState<"now" | "schedule">("now");
@@ -55,7 +63,16 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
 
   const template = options?.templates.find((t) => `${t.name}|${t.language}` === templateKey) ?? null;
   const autoRegulated = Boolean(template?.regulated.length);
-  const input = () => ({ botId, templateName: template?.name ?? "", templateLanguage: template?.language ?? "", tags, phones, variables, regulated: regulatedManual || autoRegulated });
+  // os escolhidos vão como a lista de números (o servidor confere o aceite de cada um)
+  const allPhones = [...picked.map((p) => p.phone), phones].filter(Boolean).join("\n");
+  const input = () => ({ botId, templateName: template?.name ?? "", templateLanguage: template?.language ?? "", tags, phones: allPhones, variables, regulated: regulatedManual || autoRegulated });
+  const slotLabel = (i: number) => {
+    const v = variables[i];
+    if (!v) return slotName(i, variables.length);
+    if (v.mode === "name") return "Primeiro nome";
+    return shortText(v.value) || slotName(i, variables.length);
+  };
+  const setSlot = (i: number, patch: Partial<VariableSpec>) => touched(setVariables)(variables.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   // qualquer mudança depois da prévia: calcular de novo
   const touched = <T,>(set: (v: T) => void) => (v: T) => {
     set(v);
@@ -71,6 +88,7 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
     setTemplateKey("");
     setVariables([]);
     setTags([]);
+    setPicked([]);
     setPreview(null);
     setNight(null);
     if (!id) return;
@@ -88,7 +106,9 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
   function chooseTemplate(key: string) {
     const t = options?.templates.find((x) => `${x.name}|${x.language}` === key);
     setTemplateKey(key);
-    setVariables(Array.from({ length: t?.vars ?? 0 }, (): VariableSpec => ({ mode: "fixed", value: "" })));
+    // "Olá {{1}}" já começa como o primeiro nome, com "cliente" para quem não tem nome
+    const hello = t ? greetingSlot(t.body) : null;
+    setVariables(Array.from({ length: t?.vars ?? 0 }, (_, i): VariableSpec => (i === hello ? { mode: "name", value: "cliente" } : { mode: "fixed", value: "" })));
     setPreview(null);
     setNight(null);
   }
@@ -160,7 +180,7 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
             </select>
             {template && (
               <>
-                <p className="whitespace-pre-line rounded-lg bg-ground p-3 text-sm text-ink-2">{template.body}</p>
+                <TemplateBody body={template.body} label={slotLabel} active={active} />
                 {template.prohibited.length > 0 && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">Este modelo oferece {template.prohibited.join(", ")}, que não pode ser anunciado pelo WhatsApp. A campanha não sai com ele.</p>}
                 {autoRegulated && (
                   <div className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
@@ -168,32 +188,48 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
                   </div>
                 )}
                 {!autoRegulated && (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={regulatedManual} onChange={(e) => touched(setRegulatedManual)(e.target.checked)} />
+                  <label className="flex items-center gap-2.5 text-sm">
+                    <input type="checkbox" role="switch" className="switch" checked={regulatedManual} onChange={(e) => touched(setRegulatedManual)(e.target.checked)} />
                     Esta campanha oferece bebida alcoólica, remédio ou outro item só para maiores de 18
                   </label>
                 )}
-                {variables.map((v, i) => (
-                  <div key={i} className="grid gap-2 sm:grid-cols-[200px_1fr]">
-                    <select
-                      className="input"
-                      aria-label={`Variável ${i + 1}`}
-                      value={v.mode}
-                      onChange={(e) => touched(setVariables)(variables.map((x, j) => (j === i ? { ...x, mode: e.target.value as VariableSpec["mode"] } : x)))}
-                    >
-                      <option value="fixed">{`{{${i + 1}}}`}: texto fixo</option>
-                      <option value="name">{`{{${i + 1}}}`}: primeiro nome do contato</option>
-                    </select>
-                    <input
-                      className="input"
-                      aria-label={`Valor da variável ${i + 1}`}
-                      maxLength={200}
-                      value={v.value}
-                      placeholder={v.mode === "name" ? "Para quem não tem nome (ex.: cliente)" : "Texto que vai no lugar da variável"}
-                      onChange={(e) => touched(setVariables)(variables.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
-                    />
+                {variables.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <span className="label mb-0">O que entra em cada campo</span>
+                    {variables.map((v, i) => (
+                      <div
+                        key={i}
+                        onFocus={() => setActive(i)}
+                        onBlur={() => setActive(null)}
+                        onMouseEnter={() => setActive(i)}
+                        onMouseLeave={() => setActive(null)}
+                        className={cn("flex flex-col gap-2 rounded-[12px] border p-3 transition-colors duration-[120ms]", active === i ? "border-brand/50" : "border-line")}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-medium text-ink">{slotName(i, variables.length)}</span>
+                          <Segmented
+                            label={`O que entra no ${slotName(i, variables.length).toLowerCase()}`}
+                            value={v.mode}
+                            options={[
+                              ["name", "Primeiro nome do contato"],
+                              ["fixed", "Texto fixo"],
+                            ]}
+                            onChange={(mode) => setSlot(i, { mode, value: mode === "name" && !v.value.trim() ? "cliente" : v.value })}
+                          />
+                        </div>
+                        <input
+                          className="input"
+                          aria-label={v.mode === "name" ? `Para quem não tem nome (${slotName(i, variables.length)})` : `Texto do ${slotName(i, variables.length).toLowerCase()}`}
+                          maxLength={200}
+                          value={v.value}
+                          placeholder={v.mode === "name" ? "cliente" : "O texto que vai no lugar"}
+                          onChange={(e) => setSlot(i, { value: e.target.value })}
+                        />
+                        {v.mode === "name" && <p className="text-xs text-muted">Vai o primeiro nome do cadastro; quem não tem nome recebe este texto.</p>}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </>
             )}
           </>
@@ -203,7 +239,7 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
       <Step n={4} title="Público" muted={!template}>
         {template && options && (
           <>
-            <p className="text-sm text-ink-2">Só recebe quem aceitou novidades deste número. Cada pessoa entra uma vez, mesmo se vier por etiqueta e pela lista.</p>
+            <p className="text-sm text-ink-2">Só recebe quem aceitou novidades deste número. Cada pessoa entra uma vez, mesmo se vier pela etiqueta e pela escolha.</p>
             <div>
               <span className="label">Contatos com estas etiquetas (qualquer uma)</span>
               {options.tags.length ? (
@@ -227,11 +263,35 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
                 <p className="text-xs text-muted">Os contatos deste chatbot ainda não têm etiquetas (dá para pôr na aba Contatos do cliente ou pela planilha).</p>
               )}
             </div>
-            <div>
-              <label className="label" htmlFor="campaign-phones">E/ou esta lista de WhatsApps, um por linha</label>
-              <textarea id="campaign-phones" className="input font-mono text-xs" rows={3} value={phones} onChange={(e) => touched(setPhones)(e.target.value)} placeholder={"21 99999-0000\n11 98888-0000"} />
+            <div className="flex flex-col gap-2">
+              <span className="label mb-0">E/ou estes contatos</span>
+              {picked.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {picked.map((p) => (
+                    <span key={p.id} title={p.consent === "aceitou" ? undefined : "Fica de fora: não aceitou novidades ou saiu das promoções"} className={cn("inline-flex items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-1 text-xs", p.consent === "aceitou" ? "border-line bg-panel text-ink" : "border-amber-ink/30 bg-amber-soft text-amber-ink")}>
+                      {p.name || displayPhone(p.phone)}
+                      <button type="button" aria-label={`Tirar ${p.name || displayPhone(p.phone)}`} onClick={() => touched(setPicked)(picked.filter((x) => x.id !== p.id))} className="rounded-full p-0.5 text-muted hover:bg-raised hover:text-ink">
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                  {picked.length > 1 && (
+                    <button type="button" onClick={() => touched(setPicked)([])} className="text-xs font-semibold text-muted hover:text-ink">
+                      Tirar todos
+                    </button>
+                  )}
+                </div>
+              )}
+              <ContactPicker botId={botId} mode="marketing" chosen={new Set(picked.map((p) => p.id))} onAdd={(rows) => touched(setPicked)([...picked, ...rows])} />
             </div>
-            <button type="button" className="btn-ghost self-start" disabled={pending || (!tags.length && !phones.trim()) || Boolean(template.prohibited.length)} onClick={calculate}>
+            <details className="text-sm">
+              <summary className="cursor-pointer text-xs font-semibold text-muted hover:text-ink">Colar números</summary>
+              <div className="mt-2 flex flex-col gap-1.5">
+                <textarea id="campaign-phones" aria-label="Números colados, um por linha" className="input font-mono text-xs" rows={3} value={phones} onChange={(e) => touched(setPhones)(e.target.value)} placeholder={"21 99999-0000\n11 98888-0000"} />
+                <p className="text-xs text-muted">Um por linha. Só recebe quem já é contato deste chatbot e aceitou novidades; número novo fica de fora e não vira contato nem lead.</p>
+              </div>
+            </details>
+            <button type="button" className="btn-ghost self-start" disabled={pending || (!tags.length && !allPhones.trim()) || Boolean(template.prohibited.length)} onClick={calculate}>
               {pending && !preview ? "Calculando…" : "Calcular público"}
             </button>
           </>

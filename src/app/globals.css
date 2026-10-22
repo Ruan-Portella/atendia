@@ -105,6 +105,15 @@ dialog.modal::backdrop { background: rgba(10, 10, 9, 0.6); }
 dialog.modal.palette { margin: 10vh auto auto; }
 dialog.modal[open]::backdrop { animation: fade-in var(--dur-base) var(--ease-out); }
 
+/* a barra de rolagem (redesenho, etapa 5, a pedido do usuário em 22/10): fina, na cor das linhas do
+   tema, arredondada e verde ao passar o mouse; Firefox pelo scrollbar-color, os outros pelo ::-webkit */
+* { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background-color: var(--color-line-strong); border: 3px solid transparent; border-radius: 999px; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--color-brand); }
+*::-webkit-scrollbar-corner { background: transparent; }
+
 /* painel lateral (redesenho, etapa 5): editores longos, como o roteiro e a ação, abrem pela direita */
 dialog.modal.sheet { margin: 0 0 0 auto; width: min(780px, 100%); max-width: none; height: 100%; max-height: 100%; border-radius: 20px 0 0 20px; border-right: 0; }
 dialog.modal.sheet[open] { animation: bv-sheet var(--dur-base) var(--ease-out); }

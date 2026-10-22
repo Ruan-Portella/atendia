@@ -50,7 +50,7 @@ describe("variáveis", () => {
 
   it("todas preenchidas e no formato que a Meta aceita", () => {
     expect(variablesProblem([{ mode: "fixed", value: "x" }], 1)).toBeNull();
-    expect(variablesProblem([], 1)).toMatch(/preencha todas/);
+    expect(variablesProblem([], 1)).toMatch(/preencha todos/);
     expect(variablesProblem([{ mode: "name", value: "" }], 1)).toMatch(/quem não tem nome/);
     expect(variablesProblem([{ mode: "fixed", value: "a\nb" }], 1)).toMatch(/quebra de linha/);
   });

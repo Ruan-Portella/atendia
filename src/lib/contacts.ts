@@ -1025,3 +1025,49 @@ export async function goToContacts(db: SupabaseClient, term: string, limit = 5):
     return { id: r.id as string, name: (r.name as string | null) ?? null, channel: r.channel as string, bot: { id: b.id, name: b.name, client_id: b.client_id, client_name: b.client_name } };
   });
 }
+
+export interface PickableContact {
+  id: string;
+  name: string | null;
+  phone: string;
+  tags: string[];
+  /** o horário marcado da ficha ("Datas para as réguas"), para o lembrete já vir com ele */
+  appointment_at: string | null;
+  last_inbound_at: string | null;
+}
+
+/**
+ * Os contatos do WhatsApp de um chatbot para escolher numa campanha ou num lembrete (redesenho, etapa
+ * 5): a busca pelo nome ou pelo telefone (pelo hash, como na lista), ou só entre `ids` (os que viraram
+ * lead). Os de mensagem mais recente primeiro; só os que têm telefone.
+ */
+export async function pickableContacts(db: SupabaseClient, botId: string, o: { q?: string | null; ids?: string[] | null; page?: number; limit?: number }): Promise<{ rows: PickableContact[]; more: boolean }> {
+  if (o.ids && !o.ids.length) return { rows: [], more: false };
+  const limit = o.limit ?? 40;
+  const from = Math.max(0, o.page ?? 0) * limit;
+  let q = db.from("contacts").select("id, name, tags, phone_enc, appointment_at, last_inbound_at").eq("bot_id", botId).eq("channel", "whatsapp").not("phone_enc", "is", null);
+  if (o.ids) q = q.in("id", o.ids.slice(0, 1000));
+  const term = (o.q ?? "").trim();
+  if (term) {
+    const ph = term.replace(/\D/g, "").length >= 8 ? typedPhoneHash(term) : null;
+    if (ph) q = q.eq("phone_hash", ph);
+    else {
+      const clean = term.replace(/[%_*,()\\]/g, " ").trim();
+      if (clean) q = q.ilike("name", `%${clean}%`);
+    }
+  }
+  const { data, error } = await q.order("last_inbound_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).range(from, from + limit);
+  if (error) throw new Error(`contatos: ${error.message}`);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const out = await Promise.all(
+    rows.slice(0, limit).map(async (r) => ({
+      id: r.id as string,
+      name: (r.name as string | null) ?? null,
+      phone: (await openNullable("contacts.phone_enc", r.phone_enc)) ?? "",
+      tags: (r.tags as string[] | null) ?? [],
+      appointment_at: (r.appointment_at as string | null) ?? null,
+      last_inbound_at: (r.last_inbound_at as string | null) ?? null,
+    })),
+  );
+  return { rows: out.filter((r) => r.phone), more: rows.length > limit };
+}

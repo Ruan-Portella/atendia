@@ -19,8 +19,10 @@ const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whol
  * Relatório da campanha (leva B3, parte 4b): enviadas, entregues, lidas, respostas, erros e
  * descadastros, quem ficou de fora na hora do envio e por quê. Nos chatbots do escopo (RLS).
  */
-export default async function CampaignReportPage({ params }: PageProps<"/painel/campanhas/[id]">) {
-  const [{ id }] = await Promise.all([params, requirePermission("config")]);
+export default async function CampaignReportPage({ params, searchParams }: PageProps<"/painel/campanhas/[id]">) {
+  const [{ id }, sp] = await Promise.all([params, searchParams, requirePermission("config")]);
+  // de onde veio (redesenho, etapa 5): a lista de Campanhas e réguas volta para ela; sem, o cliente
+  const fromList = sp.de === "campanhas";
   const supabase = await createClient();
   const { data: bots } = await supabase.from("bots").select("id, name, client_name, client_id").eq("is_demo", false);
   const botById = new Map((bots ?? []).map((b) => [b.id as string, b]));
@@ -41,8 +43,8 @@ export default async function CampaignReportPage({ params }: PageProps<"/painel/
   return (
     <div className="flex max-w-[960px] flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link href={bot?.client_id ? `/painel/clientes/${bot.client_id as string}?tab=campanhas` : "/painel/campanhas"} className="text-sm font-semibold text-muted">
-          ← {bot?.client_id ? `Campanhas de ${bot.client_name as string}` : "Campanhas"}
+        <Link href={!fromList && bot?.client_id ? `/painel/clientes/${bot.client_id as string}?tab=campanhas` : "/painel/campanhas"} className="text-sm font-semibold text-muted">
+          ← {!fromList && bot?.client_id ? `Campanhas de ${bot.client_name as string}` : "Campanhas e réguas"}
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-normal sm:text-[28px]">{c.name}</h1>

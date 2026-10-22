@@ -51,6 +51,8 @@ export function CampaignList({ items, showClient, changeCampaign }: { items: Cam
   const [ask, setAsk] = useState<{ item: CampaignListItem; to: "paused" | "sending" | "canceled" } | null>(null);
   const [busy, start] = useTransition();
   const active = (c: CampaignListItem) => c.status === "sending" || c.status === "scheduled";
+  // o relatório volta para cá (a lista do menu) ou para a aba Campanhas do cliente
+  const reportHref = (id: string) => `/painel/campanhas/${id}${showClient ? "?de=campanhas" : ""}`;
   const counts = { todas: items.length, ativas: items.filter(active).length, pausadas: items.filter((c) => c.status === "paused").length, terminadas: items.filter((c) => c.status === "finished" || c.status === "canceled").length };
   const q = norm(query.trim());
   const shown = items
@@ -112,7 +114,7 @@ export function CampaignList({ items, showClient, changeCampaign }: { items: Cam
           const readPct = c.audience ? Math.min(100, Math.round((c.read / c.audience) * 100)) : 0;
           return (
             <div key={c.id} className="group relative flex items-center gap-3 border-b border-line-2 px-4 py-3 transition-colors duration-[120ms] last:border-0 hover:bg-raised/40 lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_40px] lg:px-[18px]">
-              <Link href={`/painel/campanhas/${c.id}`} className="absolute inset-0" aria-label={`Abrir o relatório de ${c.name}`} />
+              <Link href={reportHref(c.id)} className="absolute inset-0" aria-label={`Abrir o relatório de ${c.name}`} />
               <span className="pointer-events-none min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="truncate text-[15px] font-medium text-ink">{c.name}</span>
@@ -146,7 +148,7 @@ export function CampaignList({ items, showClient, changeCampaign }: { items: Cam
                 <Menu
                   label={`Mais ações de ${c.name}`}
                   items={[
-                    { label: "Ver o relatório", icon: BarChart3, onSelect: () => router.push(`/painel/campanhas/${c.id}`) },
+                    { label: "Ver o relatório", icon: BarChart3, onSelect: () => router.push(reportHref(c.id)) },
                     ...(active(c) ? [{ label: "Pausar", icon: Pause, onSelect: () => setAsk({ item: c, to: "paused" }) }] : []),
                     ...(c.status === "paused" ? [{ label: "Retomar", icon: Play, onSelect: () => setAsk({ item: c, to: "sending" }) }] : []),
                     ...(active(c) || c.status === "paused" ? [{ type: "separator" as const }, { label: "Cancelar a campanha", icon: XCircle, danger: true, onSelect: () => setAsk({ item: c, to: "canceled" }) }] : []),

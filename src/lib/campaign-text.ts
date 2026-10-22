@@ -20,11 +20,12 @@ export function renderVariables(specs: VariableSpec[], contactName: string | nul
 
 /** Problema nas variáveis (todas preenchidas; o nome precisa de um texto para quem não tem). Pura. */
 export function variablesProblem(specs: VariableSpec[], count: number): string | null {
-  if (specs.length < count) return `O modelo tem ${count} variáve${count === 1 ? "l" : "is"}: preencha todas.`;
+  if (specs.length < count) return `O modelo tem ${count} campo${count === 1 ? "" : "s"}: preencha todos.`;
   for (const [i, v] of specs.slice(0, count).entries()) {
-    if (!v.value.trim()) return v.mode === "name" ? `Variável {{${i + 1}}}: escreva o texto para quem não tem nome no cadastro (ex.: cliente).` : `Variável {{${i + 1}}}: preencha o texto.`;
-    if (v.value.length > 200) return `Variável {{${i + 1}}}: até 200 caracteres.`;
-    if (/[\n\t]| {5,}/.test(v.value)) return `Variável {{${i + 1}}}: a Meta não aceita quebra de linha, tabulação ou muitos espaços seguidos.`;
+    const slot = `Campo ${i + 1} do modelo`;
+    if (!v.value.trim()) return v.mode === "name" ? `${slot}: escreva o texto para quem não tem nome no cadastro (ex.: cliente).` : `${slot}: preencha o texto.`;
+    if (v.value.length > 200) return `${slot}: até 200 caracteres.`;
+    if (/[\n\t]| {5,}/.test(v.value)) return `${slot}: a Meta não aceita quebra de linha, tabulação ou muitos espaços seguidos.`;
   }
   return null;
 }
