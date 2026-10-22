@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appointmentText, busiestDay, parseSheetTime, reminderRowsFromCsv, reminderRowsFromTable, sendFromAppointment, tableRowFromSheet, validateReminderRows } from "../reminder-sheet";
+import { appointmentText, busiestDay, parseSheetTime, reminderRowsFromCsv, reminderRowsFromTable, repeatedLines, sendFromAppointment, tableRowFromSheet, validateReminderRows } from "../reminder-sheet";
 import { reminderExclusionOf } from "../campaign-audience";
 
 // 09/10/2026 12:00 em Brasília
@@ -36,6 +36,18 @@ describe("planilha de lembretes", () => {
   it("a mesma pessoa pode ter dois lembretes", () => {
     const { valid } = validateReminderRows([row(), row({ line: 3, time: "15:00" })], { vars: 1, tz: "America/Sao_Paulo", now });
     expect(valid.map((v) => v.phone)).toEqual(["5521999990000", "5521999990000"]);
+  });
+
+  it("a mesma pessoa no mesmo horário só vale uma vez", () => {
+    const rows = [row({ line: 1 }), row({ line: 2, phone: "+55 (21) 99999-0000", vars: ["Outra"] }), row({ line: 3, time: "15:00" }), row({ line: 4, phone: "21 98888-0000" })];
+    const { valid, errors } = validateReminderRows(rows, { vars: 1, tz: "America/Sao_Paulo", now });
+    expect(valid.map((v) => v.line)).toEqual([1, 3, 4]);
+    expect(errors).toEqual([{ line: 2, message: "repete a linha 1 (mesma pessoa no mesmo horário)" }]);
+    // na tela: a data do campo (aaaa-mm-dd) e a da planilha (dd/mm/aaaa) contam igual
+    expect([...repeatedLines([...rows, row({ line: 5, date: "2026-10-15", time: "9:30" })])]).toEqual([
+      [2, 1],
+      [5, 1],
+    ]);
   });
 
   it("erros por linha", () => {

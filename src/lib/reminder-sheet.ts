@@ -85,11 +85,16 @@ export interface ReminderError {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** Confere as linhas: telefone, data e hora no fuso do cliente, no futuro, e as variáveis do modelo. Pura. */
+/**
+ * Confere as linhas: telefone, data e hora no fuso do cliente, no futuro, e as variáveis do modelo. A
+ * mesma pessoa no mesmo horário de envio só vale uma vez: a repetida é erro (a pedido do usuário em
+ * 22/10). Pura.
+ */
 export function validateReminderRows(rows: RawReminderRow[], o: { vars: number; tz: string; now?: Date }): { valid: ReminderRow[]; errors: ReminderError[] } {
   const now = (o.now ?? new Date()).getTime();
   const valid: ReminderRow[] = [];
   const errors: ReminderError[] = [];
+  const seen = new Map<string, number>();
   for (const r of rows) {
     const fail = (message: string) => errors.push({ line: r.line, message });
     const phone = canonicalPhone(r.phone, { typed: true });
@@ -135,6 +140,12 @@ export function validateReminderRows(rows: RawReminderRow[], o: { vars: number; 
       fail(`campo ${bad + 1} do modelo: até 200 caracteres, sem quebra de linha`);
       continue;
     }
+    const first = seen.get(`${phone}|${sendAt}`);
+    if (first !== undefined) {
+      fail(`repete a linha ${first} (mesma pessoa no mesmo horário)`);
+      continue;
+    }
+    seen.set(`${phone}|${sendAt}`, r.line);
     valid.push({ line: r.line, phone, name: r.name.trim() || null, sendAt, local: `${pad(d)}/${pad(m)}/${y} ${pad(time[0])}:${pad(time[1])}`, offHours: time[0] < 8 || time[0] >= 20, variables });
   }
   return { valid, errors };
@@ -254,4 +265,21 @@ export function tableRowFromSheet(r: RawReminderRow): ReminderTableRow {
     time: t ? `${pad(t[0])}:${pad(t[1])}` : "",
     vars: r.vars,
   };
+}
+
+/** As linhas que repetem outra da lista (mesma pessoa no mesmo horário de envio): linha → a primeira. Pura. */
+export function repeatedLines(rows: RawReminderRow[]): Map<number, number> {
+  const seen = new Map<string, number>();
+  const out = new Map<number, number>();
+  for (const r of rows) {
+    const phone = canonicalPhone(r.phone, { typed: true });
+    const day = parseSheetDate(r.date);
+    const time = parseSheetTime(r.time);
+    if (!phone || !day || !time) continue;
+    const key = `${phone}|${day.toISOString().slice(0, 10)}|${time.join(":")}`;
+    const first = seen.get(key);
+    if (first === undefined) seen.set(key, r.line);
+    else out.set(r.line, first);
+  }
+  return out;
 }

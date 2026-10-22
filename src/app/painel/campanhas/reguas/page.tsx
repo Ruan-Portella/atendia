@@ -36,6 +36,10 @@ export default async function ReguasPage({ searchParams }: PageProps<"/painel/ca
   const header = (
     <>
       <CampaignsHeader active="reguas" />
+      <p className="max-w-[72ch] text-sm text-ink-2">
+        As réguas não precisam ser criadas: cada chatbot com o WhatsApp já tem as 5 prontas (aniversário, faz tempo que não vem, lembrete antes do horário, pós-atendimento e sem resposta). Ligue a que quiser pela chave; para mudar o prazo, a hora ou o texto, toque
+        na régua.
+      </p>
       <HowItWorks label="Como funcionam as réguas">
         <p>
           Cada régua usa um modelo da Meta e sai pelo número do chatbot, das 8h às 20h no fuso do cliente, uma régua por pessoa a cada 24 horas. Promoção (aniversário e &ldquo;faz tempo&rdquo;) só vai para quem

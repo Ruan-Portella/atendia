@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FileUp, Plus, X } from "lucide-react";
 import { createReminderCampaign, previewReminders, reminderOptions, type CampaignTemplateOption, type PickContact, type ReminderPreview } from "@/app/painel/campanhas/actions";
-import { REMINDER_LEADS, REMINDER_MAX_ROWS, reminderRowsFromCsv, reminderRowsFromTable, tableRowFromSheet, type ReminderLead, type ReminderSend, type ReminderSlot, type ReminderSlotSource, type ReminderTableRow } from "@/lib/reminder-sheet";
-import { displayPhone } from "@/lib/phone";
+import { REMINDER_LEADS, REMINDER_MAX_ROWS, reminderRowsFromCsv, reminderRowsFromTable, repeatedLines, tableRowFromSheet, type ReminderLead, type ReminderSend, type ReminderSlot, type ReminderSlotSource, type ReminderTableRow } from "@/lib/reminder-sheet";
+import { canonicalPhone, displayPhone } from "@/lib/phone";
 import { CLIENT_TIMEZONES, isoToLocalInput } from "@/lib/timezone";
 import { ContactPicker } from "@/components/campaign-contact-picker";
 import { Segmented, TemplateBody, greetingSlot, shortText, slotName } from "@/components/template-slots";
@@ -43,10 +43,13 @@ function guessSlots(body: string, n: number): ReminderSlot[] {
   });
 }
 
-type Row = ReminderTableRow & { id: number };
+/** `contactId`: veio da escolha de contatos (a escolha marca quem já está na lista). */
+type Row = ReminderTableRow & { id: number; contactId?: string };
 const blank = (id: number): Row => ({ id, name: "", phone: "", at: "", date: "", time: "", vars: [] });
 const filled = (r: Row) => Boolean(r.phone.trim() || r.name.trim());
-const lines = (ns: number[]) => (ns.length > 1 ? `nas linhas ${ns.slice(0, 8).join(", ")}${ns.length > 8 ? "…" : ""}` : `na linha ${ns[0]}`);
+/** "2", "2 e 3", "2, 3 e 5" (até 8, depois "…"). */
+const listOf = (ns: number[]) => (ns.length > 8 ? `${ns.slice(0, 8).join(", ")}…` : ns.length > 1 ? `${ns.slice(0, -1).join(", ")} e ${ns.at(-1)}` : String(ns[0]));
+const lines = (ns: number[]) => (ns.length > 1 ? `nas linhas ${listOf(ns)}` : `na linha ${ns[0]}`);
 
 /**
  * Lembretes de utilidade (leva B3, parte 5): chatbot, modelo de utilidade, quando sai, quem recebe,
@@ -84,6 +87,8 @@ export function ReminderWizard({ bots }: { bots: Array<{ id: string; name: strin
   const people = rows.filter(filled).length;
   const spec = (): ReminderSend => (send === "same" ? { mode: "same", date: sameDate, time: sameTime } : send === "before" ? { mode: "before", lead, at: eveTime } : { mode: "each" });
   const input = () => ({ botId, templateName: template?.name ?? "", templateLanguage: template?.language ?? "", rows: reminderRowsFromTable(rows, slots, spec()) });
+  // a mesma pessoa no mesmo horário de envio: a linha repetida fica em amarelo e não passa na conferência
+  const repeats = repeatedLines(input().rows);
   // qualquer mudança depois da prévia: conferir de novo
   const dirty = () => {
     setPreview(null);
@@ -147,12 +152,17 @@ export function ReminderWizard({ bots }: { bots: Array<{ id: string; name: strin
 
   function addContacts(list: PickContact[]) {
     const kept = rows.filter(filled);
+    // quem já está na lista (pelo número) não entra de novo; duas vezes a mesma pessoa, só pelo "+ Linha"
+    const there = new Set(kept.map((r) => canonicalPhone(r.phone, { typed: true })).filter(Boolean));
+    const fresh = list.filter((c) => !there.has(c.phone));
     const room = Math.max(0, REMINDER_MAX_ROWS - kept.length);
     const now = Date.now();
-    const added = list.slice(0, room).map((c): Row => ({ ...blank(id()), name: c.name ?? "", phone: displayPhone(c.phone), at: c.appointment && Date.parse(c.appointment) > now ? isoToLocalInput(c.appointment, options?.timezone) : "" }));
+    const added = fresh.slice(0, room).map((c): Row => ({ ...blank(id()), contactId: c.id, name: c.name ?? "", phone: displayPhone(c.phone), at: c.appointment && Date.parse(c.appointment) > now ? isoToLocalInput(c.appointment, options?.timezone) : "" }));
     dirty();
     setRows([...kept, ...added]);
-    setSheetNote(list.length > room ? { text: `A lista chegou ao máximo de ${REMINDER_MAX_ROWS.toLocaleString("pt-BR")} lembretes: ${list.length - room} ficaram de fora.`, warn: true } : null);
+    const skipped = list.length - fresh.length;
+    const notes = [skipped ? `${skipped} já estava${skipped === 1 ? "" : "m"} na lista e não entrou de novo.` : "", fresh.length > room ? `A lista chegou ao máximo de ${REMINDER_MAX_ROWS.toLocaleString("pt-BR")} lembretes: ${fresh.length - room} ficaram de fora.` : ""].filter(Boolean);
+    setSheetNote(notes.length ? { text: notes.join(" "), warn: true } : null);
   }
 
   async function onFile(file: File | undefined) {
@@ -185,6 +195,7 @@ export function ReminderWizard({ bots }: { bots: Array<{ id: string; name: strin
     if (send === "same" && (!sameDate || !sameTime)) return setPreview({ ok: false, message: "Escolha o dia e a hora do envio." });
     const noAt = needsAt ? rows.flatMap((r, i) => (filled(r) && !r.at ? [i + 1] : [])) : [];
     if (noAt.length) return setPreview({ ok: false, message: `Falta o horário marcado ${lines(noAt)}.` });
+    if (repeats.size) return setPreview({ ok: false, message: "Há linhas com a mesma pessoa no mesmo horário: tire as repetidas (em amarelo na lista)." });
     if (new Blob([JSON.stringify(list)]).size > MAX_SEND_BYTES) return setPreview({ ok: false, message: "A lista ficou grande demais para enviar de uma vez. Divida em partes menores." });
     start(async () => {
       try {
@@ -382,8 +393,10 @@ export function ReminderWizard({ bots }: { bots: Array<{ id: string; name: strin
                 </thead>
                 <tbody>
                   {rows.slice(0, SHOWN).map((r, idx) => (
-                    <tr key={r.id} className="border-t border-line-2 align-middle">
-                      <td className="px-2 py-1.5 text-center text-xs tabular-nums text-muted">{idx + 1}</td>
+                    <tr key={r.id} className={cn("border-t border-line-2 align-middle", repeats.has(idx + 1) && "bg-amber-soft")}>
+                      <td className={cn("px-2 py-1.5 text-center text-xs tabular-nums", repeats.has(idx + 1) ? "font-semibold text-amber-ink" : "text-muted")} title={repeats.has(idx + 1) ? `Repete a linha ${repeats.get(idx + 1)}: mesma pessoa no mesmo horário` : undefined}>
+                        {idx + 1}
+                      </td>
                       <td className="px-1 py-1.5">
                         <input className={cn(CELL, "min-w-[8rem]")} aria-label={`Nome, linha ${idx + 1}`} maxLength={120} placeholder="Nome (opcional)" value={r.name} onChange={(e) => patchRow(r.id, { name: e.target.value })} />
                       </td>
@@ -427,8 +440,25 @@ export function ReminderWizard({ bots }: { bots: Array<{ id: string; name: strin
               </table>
               {rows.length > SHOWN && <p className="border-t border-line-2 px-3 py-2 text-xs text-muted">E mais {(rows.length - SHOWN).toLocaleString("pt-BR")} linhas da planilha, que entram na conferência.</p>}
             </div>
+            {repeats.size > 0 && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[12px] bg-amber-soft px-3 py-2 text-xs text-amber-ink">
+                <span className="min-w-0 flex-1">
+                  {repeats.size === 1 ? `A linha ${[...repeats.keys()][0]} repete a linha ${[...repeats.values()][0]}` : `As linhas ${listOf([...repeats.keys()])} repetem outras da lista`}: mesma pessoa no mesmo horário, a mensagem chegaria duas vezes.
+                </span>
+                <button
+                  type="button"
+                  className="font-semibold underline"
+                  onClick={() => {
+                    dirty();
+                    setRows(rows.filter((_, i) => !repeats.has(i + 1)));
+                  }}
+                >
+                  {repeats.size === 1 ? "Tirar a repetida" : `Tirar as ${repeats.size} repetidas`}
+                </button>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
-              <ContactPicker botId={botId} mode="lembrete" declared={options?.declared} chosen={new Set()} onAdd={addContacts} />
+              <ContactPicker botId={botId} mode="lembrete" declared={options?.declared} chosen={new Set(rows.flatMap((r) => (r.contactId ? [r.contactId] : [])))} onAdd={addContacts} />
               <button
                 type="button"
                 className="btn-ghost"
