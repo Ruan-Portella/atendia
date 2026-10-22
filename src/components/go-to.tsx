@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CircleUser, Inbox, Loader2, Megaphone, MessageSquare, Plus, Search, Settings, Users } from "lucide-react";
+import { ArrowRight, ChartColumn, CircleUser, Contact, Inbox, Loader2, Megaphone, MessageSquare, Plus, Search, Settings, Users } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { chooseTema } from "@/components/theme";
 import { buildGroups, type GoToGroup, type GoToItem } from "@/lib/go-to";
@@ -20,7 +20,7 @@ function ItemIcon({ item }: { item: GoToItem }) {
   if (item.kind === "client" || item.kind === "bot") return <BotFace color={item.color} face={item.face} size={30} />;
   if (item.kind === "contact")
     return <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-raised text-[11px] font-semibold text-ink">{item.title.split(/\s+/).slice(0, 2).map((w) => w.charAt(0).toUpperCase()).join("")}</span>;
-  const page = { "/painel/caixa": Inbox, "/painel/campanhas": Megaphone, "/painel/clientes": Users }[item.id];
+  const page = { "/painel/caixa": Inbox, "/painel/contatos": Contact, "/painel/campanhas": Megaphone, "/painel/relatorios": ChartColumn, "/painel/clientes": Users }[item.id];
   const Icon = item.kind === "conversation" ? MessageSquare : item.kind === "action" ? (item.run ? ArrowRight : Plus) : page ?? (item.id === "/painel/perfil" ? CircleUser : Settings);
   const tone = item.kind === "action" ? "bg-brand text-on-brand" : item.kind === "conversation" ? "bg-amber-soft text-amber-ink" : "bg-raised text-ink-2";
   return (

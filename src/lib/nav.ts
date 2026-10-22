@@ -16,9 +16,11 @@ export interface NavLink {
   keywords?: string;
 }
 
-export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "megaphone" | "users" }> = [
+export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "contacts" | "megaphone" | "chart" | "users" }> = [
   { href: "/painel/caixa", label: "Caixa de entrada", perm: "attend", icon: "inbox", keywords: "conversas atendimento fila" },
+  { href: "/painel/contatos", label: "Contatos e leads", perm: "config", icon: "contacts", keywords: "pessoas leads clientes finais etiquetas" },
   { href: "/painel/campanhas", label: "Campanhas e réguas", perm: "config", icon: "megaphone", keywords: "disparo lembrete régua" },
+  { href: "/painel/relatorios", label: "Relatórios", perm: "config", icon: "chart", keywords: "números mês relatório mensal" },
   { href: "/painel/clientes", label: "Clientes", perm: "attend", icon: "users", keywords: "chatbots" },
 ];
 
