@@ -170,12 +170,13 @@ interface RecentConversation extends UnseenMark {
 }
 
 /** Manda a DM e guarda o id dela: o webhook ecoa as nossas mensagens, e assim o eco é ignorado. */
-export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string, quickReplies?: Array<{ title: string; payload: string }>, opts: { humanAgent?: boolean; timeoutMs?: number } = {}): Promise<string | null> {
-  // resposta longa: até 3 DMs cortadas no fim de um parágrafo (as respostas rápidas vão na última)
+export async function send(db: SupabaseClient, ch: IgChannelRow, to: string, text: string, quickReplies?: Array<{ title: string; payload: string }>, opts: { humanAgent?: boolean; timeoutMs?: number; replyTo?: string | null } = {}): Promise<string | null> {
+  // resposta longa: até 3 DMs cortadas no fim de um parágrafo (as respostas rápidas vão na última;
+  // a citação, na primeira)
   const parts = splitDm(text);
   let mid: string | null = null;
   for (let i = 0; i < parts.length; i++) {
-    mid = await sendInstagramText(ch, to, parts[i], i === parts.length - 1 ? quickReplies : undefined, opts);
+    mid = await sendInstagramText(ch, to, parts[i], i === parts.length - 1 ? quickReplies : undefined, { ...opts, replyTo: i === 0 ? opts.replyTo : null });
     if (mid) await markOwnMessage(db, `ig:echo:${mid}`, "instagram");
   }
   return mid;

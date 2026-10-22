@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
+import { QUOTE_EVENT, type QuoteDetail } from "@/components/message-actions";
 import { mentionsPayment } from "@/lib/gate/payment";
 import { renderQuickReply, type QuickReply } from "@/lib/quick-replies";
 import { ActionForm } from "@/components/ui/action-form";
@@ -11,12 +13,23 @@ import { SubmitButton } from "@/components/ui/submit-button";
  * Resposta da equipe na conversa. Numa conversa com bebida ou remédio (paymentCheck), se o texto
  * fala de Pix, boleto ou link de pagamento, pergunta antes de enviar, sem bloquear. As respostas
  * prontas do cliente (Caixa de entrada, parte 4) entram no campo com {nome} e {atendente} trocados,
- * para a pessoa revisar antes de enviar.
+ * para a pessoa revisar antes de enviar. "Responder" numa mensagem (Conversa mais natural) cita
+ * ela na próxima resposta.
  */
 export function AgentReplyForm({ action, paymentCheck = false, quickReplies = [], contactName = null, attendantName = "" }: { action: (fd: FormData) => Promise<ActionResult>; paymentCheck?: boolean; quickReplies?: QuickReply[]; contactName?: string | null; attendantName?: string }) {
   const [asking, setAsking] = useState(false);
   const confirmed = useRef(false);
   const field = useRef<HTMLTextAreaElement>(null);
+  const [quote, setQuote] = useState<QuoteDetail | null>(null);
+
+  useEffect(() => {
+    const onQuote = (e: Event) => {
+      setQuote((e as CustomEvent<QuoteDetail>).detail);
+      field.current?.focus();
+    };
+    window.addEventListener(QUOTE_EVENT, onQuote);
+    return () => window.removeEventListener(QUOTE_EVENT, onQuote);
+  }, []);
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     if (!paymentCheck || confirmed.current) {
@@ -70,7 +83,19 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
           </div>
         </div>
       )}
-      <ActionForm action={action} onSubmit={onSubmit} className="flex items-end gap-2">
+      {quote && (
+        <div className="flex items-start gap-2 rounded-lg border-l-2 border-brand bg-panel px-3 py-1.5 text-xs">
+          <span className="min-w-0 flex-1">
+            <span className="font-semibold text-brand">Respondendo a</span>
+            <span className="block truncate text-muted">{quote.snippet}</span>
+          </span>
+          <button type="button" onClick={() => setQuote(null)} aria-label="Tirar a citação" className="shrink-0 rounded-md p-0.5 text-muted hover:text-ink">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      <ActionForm action={action} onSubmit={onSubmit} onSuccess={() => setQuote(null)} className="flex items-end gap-2">
+        {quote && <input type="hidden" name="reply_to_id" value={quote.id} />}
         <label htmlFor="agent-msg" className="sr-only">Sua resposta</label>
         <textarea ref={field} id="agent-msg" name="content" required maxLength={2000} rows={2} className="input flex-1 resize-y" placeholder="Escreva sua resposta para o visitante…" />
         <SubmitButton pendingLabel="Enviando…" className="btn-primary">Enviar</SubmitButton>

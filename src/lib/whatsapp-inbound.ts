@@ -1,4 +1,6 @@
 import { IDENTITY_CHANGED_TEXT, checkIdentityKey, handlePairing, linkColumnsForContact } from "./pairing";
+import { applyContactReaction, findByChannelId } from "./message-links";
+import { channelMsgHash } from "./hash";
 import { orderText, type OrderPayload } from "./order-message";
 import { handleErasureRequest } from "./data-subject";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -850,6 +852,9 @@ export interface EchoMessage {
   to: string;
   type: string;
   text?: { body?: string };
+  /** respondeu citando (Conversa mais natural) */
+  context?: { id?: string };
+  reaction?: { message_id?: string; emoji?: string };
 }
 
 /**
@@ -858,6 +863,11 @@ export interface EchoMessage {
  * Se ainda não havia conversa com o contato, abre uma. A chave do evento evita gravar duas vezes.
  */
 export async function handleEcho(db: SupabaseClient, channel: ChannelRow, echo: EchoMessage, key: string) {
+  // reação pelo celular: o emoji fica na mensagem, como o da equipe (não entra como mensagem)
+  if (echo.type === "reaction") {
+    if (echo.reaction?.message_id) await applyContactReaction(db, "whatsapp", echo.reaction.message_id, echo.reaction.emoji?.trim() || null, new Date(), "agent");
+    return;
+  }
   const content = (echo.text?.body?.trim() || mediaLabel(echo.type)).slice(0, MAX_MESSAGE_CHARS);
   const { data: bot } = await db.from("bots").select("id, agency_id").eq("id", channel.bot_id).maybeSingle();
   const contact = bot ? await whatsappContact(db, bot, whatsappIdentityOf(echo.to)) : null;
@@ -867,7 +877,9 @@ export async function handleEcho(db: SupabaseClient, channel: ChannelRow, echo: 
     conv = created;
   }
   if (!conv) return;
-  await saveMessage(db, { conversation_id: conv.id, role: "agent", content, author: PHONE_AUTHOR, inbound_key: key }, { touch: "equipe" });
+  // o id do envio (o contato cita, a equipe cita depois) e a mensagem citada, se desta conversa
+  const quoted = echo.context?.id ? await findByChannelId(db, "whatsapp", echo.context.id) : null;
+  await saveMessage(db, { conversation_id: conv.id, role: "agent", content, author: PHONE_AUTHOR, inbound_key: key, channel_msg_hash: channelMsgHash("whatsapp", echo.id), channel_msg_ref: echo.id, ...(quoted && quoted.conversation_id === conv.id ? { reply_to_id: quoted.id } : {}) }, { touch: "equipe" });
   // a equipe respondeu pelo celular: o roteiro em andamento acaba (B2')
   await endActiveRoutine(db, conv.id, "handoff");
   // aprendizado (D', parte 6)

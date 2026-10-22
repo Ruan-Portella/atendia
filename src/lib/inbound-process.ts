@@ -44,7 +44,7 @@ export type WaPayload =
   // avisos da conta que mexem com campanhas: qualidade do número, situação e categoria do modelo
   | { type: "notice"; wabaId?: string; field: string; value: Record<string, unknown> };
 
-export type IgPayload = { type: "msg" | "echo" | "edit" | "delete" | "reaction"; igUserId: string; ev: IgMessagingEvent } | { type: "comment"; igUserId: string; comment: IgComment };
+export type IgPayload = { type: "msg" | "echo" | "edit" | "delete" | "reaction"; igUserId: string; ev: IgMessagingEvent; /** reação da própria conta */ own?: boolean } | { type: "comment"; igUserId: string; comment: IgComment };
 
 /* ------------------------------------------------------------------ WhatsApp */
 
@@ -196,7 +196,7 @@ const instagramGroup: GroupHandler = async (db, events) => {
   try {
     for (const e of all) if (e.payload.type === "echo") await handleInstagramEcho(db, ch, e.payload.ev, e.key_hash);
     // reação do contato (sem resposta da IA): o emoji fica na mensagem reagida
-    for (const e of all) if (e.payload.type === "reaction" && e.payload.ev.reaction?.mid) await applyContactReaction(db, "instagram", e.payload.ev.reaction.mid, e.payload.ev.reaction.action === "unreact" ? null : reactionEmoji(e.payload.ev.reaction));
+    for (const e of all) if (e.payload.type === "reaction" && e.payload.ev.reaction?.mid) await applyContactReaction(db, "instagram", e.payload.ev.reaction.mid, e.payload.ev.reaction.action === "unreact" ? null : reactionEmoji(e.payload.ev.reaction), new Date(), e.payload.own ? "agent" : "contact");
     await handleInstagramBurst(db, ch, igBurst);
     // a citação e o id original de cada DM gravada (a equipe cita e reage pelo painel)
     await linkInbound(db, "instagram", igBurst.map((q) => ({ key: q.key, channelId: q.ev.message?.mid ?? null, quotedId: q.ev.message?.reply_to?.mid ?? null }))).catch((e) => console.error("instagram: citação", (e as Error).message));

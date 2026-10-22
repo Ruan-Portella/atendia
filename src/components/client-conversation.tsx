@@ -10,20 +10,20 @@ import { isSnoozed } from "@/lib/snooze";
 import { TICKET_STATUS_LABEL, type TicketStatus } from "@/lib/tickets";
 import { TicketStatusControl } from "@/components/ticket-status-control";
 import { contactName } from "@/lib/contacts";
-import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
+import { HandoffReply, HandoffStatus, holderView } from "@/components/handoff-controls";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { MessageScroller } from "@/components/message-scroller";
-import { conversationState } from "@/lib/presence";
+import { conversationState, whatsappWindowOpen } from "@/lib/presence";
 import { loadMessages } from "@/lib/messages";
 import { leadsOfConversation } from "@/lib/leads";
 import { attachmentsOfMessages } from "@/lib/attachments";
-import { quotesOf } from "@/lib/message-links";
+import { agentReactionsFor, quotesOf } from "@/lib/message-links";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { authorLabel } from "@/lib/authors";
-import { memberAddNote, memberSetTicketStatus, memberForceTakeOver, memberRelease, memberResumeAi, memberSend, memberSnooze, memberTakeOver, memberTransfer, memberUnsnooze } from "@/app/cliente/actions";
+import { memberAddNote, memberSetTicketStatus, memberForceTakeOver, memberReact, memberRelease, memberResumeAi, memberSend, memberSnooze, memberTakeOver, memberTransfer, memberUnsnooze } from "@/app/cliente/actions";
 
 /**
  * A conversa na área do cliente: a página da conversa e o lado direito da Caixa de entrada do portal
@@ -45,7 +45,7 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   const sensitive = Boolean((Array.isArray(conv.bots) ? conv.bots[0] : conv.bots)?.sensitive_mode);
   if (sensitive) await requireMemberMfa(id, back ?? `/cliente/${id}/conversas/${cid}`);
   const [messages, leads] = await Promise.all([
-    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref", "reply_to_id", "contact_reaction", "agent_reaction"] as const),
+    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref", "reply_to_id", "channel_msg_ref_enc", "contact_reaction", "agent_reaction"] as const),
     leadsOfConversation(admin, cid),
   ]);
   const agencyName = member.agency.name;
@@ -56,7 +56,7 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   const quotes = await quotesOf(admin, (messages ?? []).map((m) => m.reply_to_id));
   // notas internas e transferências (Caixa de entrada, parte 4): só para quem atende
   const notes = member.allowHandoff ? await listNotes(admin, cid).catch(() => []) : [];
-  const allMessages = withNotes((messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id), quote: m.reply_to_id ? (quotes.get(m.reply_to_id) ?? null) : null })) as ThreadMessage[], notes);
+  const allMessages = withNotes((messages ?? []).map(({ channel_msg_ref_enc, ...m }) => ({ ...m, attachments: files.get(m.id), quote: m.reply_to_id ? (quotes.get(m.reply_to_id) ?? null) : null, linkable: Boolean(channel_msg_ref_enc) })) as ThreadMessage[], notes);
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   const handoffOpen = member.allowHandoff && !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com ele
@@ -74,6 +74,8 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
       ])
     : [{ sectors: [], people: [] }, [], null];
   const heldByAnother = !conv.handled_at && Boolean(conv.takeover_at) && Boolean(conv.assigned_to_id) && conv.assigned_to_id !== member.memberId;
+  // citar e reagir (Conversa mais natural, parte 2): quem está com a conversa; reagir, dentro das 24 h
+  const threadActions = contact && member.allowHandoff && holderView(handoffConv, member.memberId) === "mine" ? { onReact: whatsappWindowOpen(handoffConv) ? memberReact.bind(null, id, cid) : null, reactions: agentReactionsFor(conv.channel as string) } : null;
   const snoozedUntil = isSnoozed(conv) ? (conv.snoozed_until as string) : null;
   const coexistence = regulated && conv.channel === "whatsapp" ? Boolean((await admin.from("whatsapp_channels").select("coexistence").eq("bot_id", conv.bot_id).maybeSingle()).data?.coexistence) : false;
 
@@ -105,6 +107,7 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
             leads={leads.map((l) => ({ ...l, requests: l.requests.filter((r) => r.conversation_id === cid) }))}
             agentLabel={(m) => authorLabel(m, { view: "client", meId: member.memberId, meLegacy: email, agencyName })}
             channel={conv.channel as string}
+            actions={threadActions}
           />
         </div>
       </MessageScroller>

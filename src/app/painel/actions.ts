@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agencySlug, requireAgency, type AgencyContext } from "@/lib/agency";
 import { attendantOf, can, type Permission } from "@/lib/team";
-import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { ALREADY_YOURS, postAgentMessage, reactAsAgent, release, takeOver } from "@/lib/handoff";
 import { parseTarget, transferConversation } from "@/lib/transfer";
 import { isSignatureFormat } from "@/lib/signature";
 import { parseTicketForm } from "@/lib/tickets";
@@ -733,7 +733,18 @@ export async function sendAgentMessage(conversationId: string, formData: FormDat
   if (!(await allowed("attend"))) return fail(DENIED);
   const owned = await ownedConversation(conversationId);
   if (!owned) return fail("Conversa não encontrada.");
-  const r = await postAgentMessage(owned.admin, conversationId, text(formData.get("content")), await me());
+  // citação (Conversa mais natural): a mensagem em cima da qual a equipe respondeu
+  const r = await postAgentMessage(owned.admin, conversationId, text(formData.get("content")), await me(), { replyToId: Number(formData.get("reply_to_id")) || null });
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  return r;
+}
+
+/** Reação da equipe a uma mensagem do contato (WhatsApp e Instagram); o mesmo emoji tira. */
+export async function reactToMessage(conversationId: string, messageId: number, emoji: string | null): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const r = await reactAsAgent(owned.admin, conversationId, messageId, emoji, await me());
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return r;
 }
@@ -1239,7 +1250,7 @@ function whatsappNumber(raw: string): string {
  * Manda um modelo aprovado (campos `template` e `param_N` do formulário) e devolve o texto
  * como o contato recebeu, para entrar no histórico da conversa.
  */
-async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: string, formData: FormData): Promise<{ text: string; category: string; msgHash: string | null } | { error: string }> {
+async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: string, formData: FormData): Promise<{ text: string; category: string; wamid: string | null } | { error: string }> {
   // regra de estado: ordem da Meta, desligamento geral ou suspensão pela BoaVoz
   const blocked = await sendBlockedReason(createAdminClient(), botId, "whatsapp");
   if (blocked) return { error: `${blocked} O modelo não foi enviado.` };
@@ -1268,14 +1279,14 @@ async function sendApprovedTemplate(botId: string, ch: TemplateChannel, to: stri
   } catch (e) {
     return { error: `O WhatsApp não aceitou o envio: ${await metaError(botId, e)}` };
   }
-  return { text: renderTemplate(t.body, params), category: t.category, msgHash: wamid ? channelMsgHash("whatsapp", wamid) : null };
+  return { text: renderTemplate(t.body, params), category: t.category, wamid };
 }
 
 /** Grava o modelo enviado como resposta da equipe e atualiza a conversa. */
-async function recordTemplateMessage(admin: ReturnType<typeof createAdminClient>, conversationId: string, content: string, category: string, msgHash: string | null) {
+async function recordTemplateMessage(admin: ReturnType<typeof createAdminClient>, conversationId: string, content: string, category: string, wamid: string | null) {
   // a categoria decide o alcance de um SAIR respondido depois (descadastro da categoria do último modelo)
   try {
-    await saveMessage(admin, { conversation_id: conversationId, role: "agent", content, ...attendantAuthor(await me()), template_category: category, channel_msg_id: "enviada", channel_msg_hash: msgHash }, { touch: "equipe" });
+    await saveMessage(admin, { conversation_id: conversationId, role: "agent", content, ...attendantAuthor(await me()), template_category: category, channel_msg_id: "enviada", channel_msg_hash: wamid ? channelMsgHash("whatsapp", wamid) : null, channel_msg_ref: wamid }, { touch: "equipe" });
   } catch (e) {
     console.error("modelo enviado, mas não gravado na conversa", (e as Error).message);
   }
@@ -1344,7 +1355,7 @@ export async function sendConversationTemplate(conversationId: string, formData:
   if (conv?.channel !== "whatsapp" || !conv.wa_id) return fail("Esta conversa não é do WhatsApp.");
   const sent = await sendApprovedTemplate(owned.conv.bot_id, ch, conv.wa_id, formData);
   if ("error" in sent) return fail(sent.error);
-  await recordTemplateMessage(owned.admin, conversationId, sent.text, sent.category, sent.msgHash);
+  await recordTemplateMessage(owned.admin, conversationId, sent.text, sent.category, sent.wamid);
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return ok("Modelo enviado. Quando o contato responder, a conversa continua aqui.");
 }
@@ -1374,7 +1385,7 @@ export async function startWhatsAppConversation(botId: string, formData: FormDat
     if (error || !created) return fail("A mensagem foi enviada, mas não deu para abrir a conversa aqui. Ela aparece quando o contato responder.");
     conversationId = created.id as string;
   }
-  await recordTemplateMessage(admin, conversationId, sent.text, sent.category, sent.msgHash);
+  await recordTemplateMessage(admin, conversationId, sent.text, sent.category, sent.wamid);
   revalidatePath(`/painel/bots/${botId}`);
   redirect(`/painel/bots/${botId}/conversas/${conversationId}`);
 }

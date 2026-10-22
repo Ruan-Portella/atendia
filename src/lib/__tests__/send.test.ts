@@ -84,7 +84,8 @@ describe("deliver (registro do envio)", () => {
                       ? { plan: "agencia", trial_ends_at: null, ai_paused_at: null }
                       : null,
           }),
-          then: (r: (v: { data: unknown[] }) => unknown) => r({ data: [] }),
+          // a conversa da mensagem (o id do canal é cifrado com a chave dela)
+          then: (r: (v: { data: unknown[] }) => unknown) => r({ data: table === "messages" ? [{ conversation_id: "c1" }] : [] }),
           insert: async (row: Record<string, unknown>) => (writes.push({ op: "insert", row }), { error: null }),
           update: (row: Record<string, unknown>) => ({ eq: async () => (writes.push({ op: "update", row }), { error: null }) }),
         };
@@ -95,15 +96,25 @@ describe("deliver (registro do envio)", () => {
     return { db, writes };
   }
 
-  it("sai: grava o hash do id da Meta (nunca o id em texto)", async () => {
+  it("sai: grava o hash do id da Meta e o id cifrado (nunca o id em texto)", async () => {
     const { deliver } = await import("../send");
-    const { db, writes } = fakeDb();
-    const transport = vi.fn().mockResolvedValue("wamid.HBgN5511999998888");
-    const r = await deliver(db, { botId: "b1", channel: "whatsapp", conversationId: "c1", kind: "ia", record: { update: 7 }, transport });
-    expect(r).toMatchObject({ status: "sent", id: "wamid.HBgN5511999998888" });
-    expect(writes[0].row.channel_msg_id).toBe("enviada");
-    expect(String(writes[0].row.channel_msg_hash)).toMatch(/^[0-9a-f]{64}$/);
-    expect(JSON.stringify(writes)).not.toContain("5511999998888");
+    const { openField, setCipherIdentityForTests } = await import("../field-cipher");
+    // a cifra de verdade: o id original vai cifrado (Conversa mais natural: a equipe cita depois)
+    vi.stubEnv("WHATSAPP_TOKEN_KEY", "chave-de-teste-dos-segredos-123");
+    vi.stubEnv("FIELD_MASTER_KEYS", "");
+    setCipherIdentityForTests(false);
+    try {
+      const { db, writes } = fakeDb();
+      const transport = vi.fn().mockResolvedValue("wamid.HBgN5511999998888");
+      const r = await deliver(db, { botId: "b1", channel: "whatsapp", conversationId: "c1", kind: "ia", record: { update: 7 }, transport });
+      expect(r).toMatchObject({ status: "sent", id: "wamid.HBgN5511999998888" });
+      expect(writes[0].row.channel_msg_id).toBe("enviada");
+      expect(String(writes[0].row.channel_msg_hash)).toMatch(/^[0-9a-f]{64}$/);
+      expect(JSON.stringify(writes)).not.toContain("5511999998888");
+      expect(await openField("messages.channel_msg_ref_enc", String(writes[0].row.channel_msg_ref_enc))).toBe("wamid.HBgN5511999998888");
+    } finally {
+      setCipherIdentityForTests(true);
+    }
   });
 
   it("alguém assumiu enquanto a IA respondia: não chama o canal e grava o motivo", async () => {

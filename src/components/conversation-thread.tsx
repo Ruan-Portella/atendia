@@ -2,6 +2,9 @@ import { Fragment } from "react";
 import { asButtons, cardName, parseComponents } from "@/lib/components";
 import { parsePhotoReading, photoReadingLines } from "@/lib/photo-note";
 import { failureReason } from "@/lib/send-errors";
+import type { ActionResult } from "@/lib/action-result";
+import { MessageActions } from "@/components/message-actions";
+import { quoteSnippet } from "@/lib/message-links";
 
 
 
@@ -41,6 +44,15 @@ export interface ThreadMessage {
   /** A reação do contato e a da equipe (um emoji). */
   contact_reaction?: string | null;
   agent_reaction?: string | null;
+  /** Tem o id do canal: a equipe pode citar e reagir (WhatsApp e Instagram). */
+  linkable?: boolean;
+}
+
+/** Citar e reagir pela conversa (só quem está com ela, no WhatsApp e no Instagram). */
+export interface ThreadActions {
+  /** null: o prazo de 24 h passou (citar ainda vale no Instagram com a tag de atendimento humano) */
+  onReact: ((messageId: number, emoji: string | null) => Promise<ActionResult>) | null;
+  reactions: readonly string[];
 }
 
 /** Nota interna e transferência (Caixa de entrada, parte 4): só a equipe vê. */
@@ -172,7 +184,12 @@ interface Props {
   contextChange?: { at: string; label: string } | null;
   /** O canal da conversa: o motivo de "Não entregue" depende dele. */
   channel?: string | null;
+  /** Responder citando e reagir (Conversa mais natural, parte 2); sem isto, só leitura. */
+  actions?: ThreadActions | null;
 }
+
+/** O trecho que vai para o campo de resposta ao citar (sem o anúncio do começo). Pura. */
+const snippetOf = (m: ThreadMessage) => quoteSnippet(m.content.slice(Math.max(0, m.announce_chars ?? 0)));
 
 /** O trecho da mensagem citada, em cima da resposta (Conversa mais natural). */
 function QuoteView({ quote, mine }: { quote: { snippet: string; fromContact: boolean }; mine: boolean }) {
@@ -195,7 +212,7 @@ function ReactionsView({ contact, agent }: { contact: string | null; agent: stri
 }
 
 /** Conversa (visitante, assistente e atendentes) — painel, portal e área do cliente. */
-export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null }: Props) {
+export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null, actions = null }: Props) {
   const changeAt = contextChange ? Date.parse(contextChange.at) : NaN;
   const firstAfter = Number.isNaN(changeAt) ? -1 : messages.findIndex((m) => m.created_at && Date.parse(m.created_at) >= changeAt);
   return (
@@ -219,7 +236,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
               <span className="h-px flex-1 bg-line" />
             </div>
           )}
-          {isNote(m) ? <NoteView m={m} /> : <div
+          {isNote(m) ? <NoteView m={m} /> : <div className={actions && m.linkable && !m.deleted_at ? "group flex flex-col gap-0.5" : "contents"}><div
             className={
               m.role === "user"
                 ? "max-w-[80%] self-end rounded-[14px_14px_4px_14px] bg-ink px-3.5 py-2.5 text-sm text-ground"
@@ -253,6 +270,10 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
               <div className="mt-1.5 text-[11px] text-muted">Fontes: {(m.sources as Array<{ title?: string; url?: string }>).map((s) => s.title ?? s.url).join(" · ")}</div>
             )}
             {(m.contact_reaction || m.agent_reaction) && !m.deleted_at && <ReactionsView contact={m.contact_reaction ?? null} agent={m.agent_reaction ?? null} />}
+          </div>
+          {actions && m.linkable && !m.deleted_at && (
+            <MessageActions id={m.id} snippet={snippetOf(m)} reactions={m.role === "user" ? actions.reactions : []} current={m.agent_reaction ?? null} onReact={m.role === "user" ? actions.onReact : null} align={m.role === "user" ? "end" : "start"} />
+          )}
           </div>}
           </Fragment>
         ))}

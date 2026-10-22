@@ -74,7 +74,7 @@ async function recordPrivateReply(db: SupabaseClient, bot: { id: string; agency_
   if (!convId) return contact?.id ?? null;
   await saveMessage(
     db,
-    { conversation_id: convId, role: "assistant", content: o.text, author: SYSTEM_AUTHOR, channel_msg_id: o.messageId, channel_msg_hash: o.messageId ? channelMsgHash("instagram", o.messageId) : null, channel_ref: { kind: "comment", id: o.comment.id, title: o.comment.text.slice(0, 300), media_id: o.comment.mediaId } },
+    { conversation_id: convId, role: "assistant", content: o.text, author: SYSTEM_AUTHOR, channel_msg_id: o.messageId, channel_msg_hash: o.messageId ? channelMsgHash("instagram", o.messageId) : null, channel_msg_ref: o.messageId, channel_ref: { kind: "comment", id: o.comment.id, title: o.comment.text.slice(0, 300), media_id: o.comment.mediaId } },
     { touch: "equipe" },
   );
   return contact?.id ?? null;

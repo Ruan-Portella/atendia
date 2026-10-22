@@ -113,11 +113,21 @@ export function graphFor<T>(ch: WaChannel, path: string, init?: { method?: strin
   return graph<T>(path, channelToken(ch), init);
 }
 
-/** callbackData volta nos status da Meta (concilia o envio incerto da API); timeoutMs: prazo da resposta. */
-export async function sendText(ch: WaChannel, to: WaRecipient, body: string, opts: { callbackData?: string; timeoutMs?: number } = {}) {
+/**
+ * callbackData volta nos status da Meta (concilia o envio incerto da API); timeoutMs: prazo da
+ * resposta; replyTo: o id da mensagem citada (a resposta aparece em cima dela no WhatsApp).
+ */
+export async function sendText(ch: WaChannel, to: WaRecipient, body: string, opts: { callbackData?: string; timeoutMs?: number; replyTo?: string | null } = {}) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
-    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true }, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
+    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), ...(opts.replyTo ? { context: { message_id: opts.replyTo } } : {}), type: "text", text: { body: body.slice(0, MAX_BODY), preview_url: true }, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
     timeoutMs: opts.timeoutMs,
+  });
+}
+
+/** Reação da empresa a uma mensagem (um emoji; vazio tira a reação). Devolve o id do envio. */
+export async function sendReaction(ch: WaChannel, to: WaRecipient, messageId: string, emoji: string | null) {
+  return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
+    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), type: "reaction", reaction: { message_id: messageId, emoji: emoji ?? "" } },
   });
 }
 

@@ -53,7 +53,7 @@ export async function sendCheck(db: SupabaseClient, o: { botId: string; channel:
 
 /** O que gravar na conversa: uma linha nova depois do envio, ou a linha já gravada antes (resposta da IA). */
 export type SendRecord =
-  | { insert: { role: "assistant" | "agent"; content: string; author: string | null; template_category?: string | null; author_type?: AuthorType | null; author_id?: string | null; author_display_name?: string | null; announce_chars?: number | null; components?: MessageComponent | null } }
+  | { insert: { role: "assistant" | "agent"; content: string; author: string | null; template_category?: string | null; author_type?: AuthorType | null; author_id?: string | null; author_display_name?: string | null; announce_chars?: number | null; components?: MessageComponent | null; reply_to_id?: number | null } }
   | { update: number; content?: string; announce_chars?: number | null; components?: MessageComponent | null }
   | null;
 
@@ -105,7 +105,8 @@ export async function deliver(
     if (recordFailures) await write({ failed_at: new Date().toISOString(), error_code: errorCode(e) });
     throw e;
   }
-  const messageId = await write({ channel_msg_id: "enviada", channel_msg_hash: id ? channelMsgHash(o.channel, id) : null });
+  // o id original vai cifrado: é o que a Meta pede para citar ou reagir depois (Conversa mais natural)
+  const messageId = await write({ channel_msg_id: "enviada", channel_msg_hash: id ? channelMsgHash(o.channel, id) : null, ...(id ? { channel_msg_ref: id } : {}) });
   // aprendizado (D', parte 6): a resposta da equipe pode virar rascunho para a base (sem o anúncio e a assinatura)
   if (o.kind === "equipe" && o.conversationId && o.record && "insert" in o.record && o.record.insert.role === "agent") {
     const r = o.record.insert;

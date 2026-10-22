@@ -1,5 +1,5 @@
 import { contactDisplayName, contactName as contactNameOf } from "@/lib/contacts";
-import { quotesOf } from "@/lib/message-links";
+import { agentReactionsFor, quotesOf } from "@/lib/message-links";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -12,7 +12,7 @@ import { transferOptions } from "@/lib/transfer";
 import { listQuickReplies } from "@/lib/quick-replies";
 import { isSnoozed } from "@/lib/snooze";
 import { TicketStatusControl } from "@/components/ticket-status-control";
-import { HandoffReply, HandoffStatus } from "@/components/handoff-controls";
+import { HandoffReply, HandoffStatus, holderView } from "@/components/handoff-controls";
 import { leadWaiting } from "@/lib/handoff-status";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ConversationStateBadge } from "@/components/conversation-state";
@@ -34,7 +34,7 @@ import { firstExceeded } from "@/lib/rate-limit";
 import { loadTemplateChannel, type SendableTemplate, conversationTemplates, ensureResumeTemplate, type ResumeStatus } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { addConversationNote, deleteConversation, forceTakeOverConversation, releaseConversation, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, setTicketStatusAction, snoozeConversationAction, takeOverConversation, transferConversationAction, unsnoozeConversationAction } from "@/app/painel/actions";
+import { addConversationNote, deleteConversation, forceTakeOverConversation, reactToMessage, releaseConversation, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, setTicketStatusAction, snoozeConversationAction, takeOverConversation, transferConversationAction, unsnoozeConversationAction } from "@/app/painel/actions";
 import { botGateExemptions, conversationGateCategories } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { GateReviewButton } from "@/components/gate-review-button";
@@ -66,7 +66,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   if (sensitive) await requireAgencyMfa(back ?? `/painel/bots/${id}/conversas/${cid}`);
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
   const [messages, leads, { agency, role, member }] = await Promise.all([
-    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref", "reply_to_id", "contact_reaction", "agent_reaction"] as const),
+    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref", "reply_to_id", "channel_msg_ref_enc", "contact_reaction", "agent_reaction"] as const),
     leadsOfConversation(supabase, cid),
     requireAgency(),
   ]);
@@ -121,7 +121,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   const quotes = await quotesOf(supabase, (messages ?? []).map((m) => m.reply_to_id));
   // notas internas e transferências (Caixa de entrada, parte 4; tabela interna: service role), no meio das mensagens
   const notes = await listNotes(createAdminClient(), cid).catch(() => []);
-  const allMessages = withNotes((messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id), quote: m.reply_to_id ? (quotes.get(m.reply_to_id) ?? null) : null })) as ThreadMessage[], notes);
+  const allMessages = withNotes((messages ?? []).map(({ channel_msg_ref_enc, ...m }) => ({ ...m, attachments: files.get(m.id), quote: m.reply_to_id ? (quotes.get(m.reply_to_id) ?? null) : null, linkable: Boolean(channel_msg_ref_enc) })) as ThreadMessage[], notes);
   // transferir, adiar e respostas prontas (Caixa de entrada, parte 4)
   const handoffOpen = !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
   const [options, quickReplies, nameForReplies] = await Promise.all([
@@ -130,6 +130,8 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
     contactNameOf(createAdminClient(), conv.contact_id).then((n) => n ?? (contactName || null)),
   ]);
   const heldByAnother = !conv.handled_at && Boolean(conv.takeover_at) && Boolean(conv.assigned_to_id) && conv.assigned_to_id !== member.id;
+  // citar e reagir (Conversa mais natural, parte 2): quem está com a conversa; reagir, dentro das 24 h
+  const threadActions = (isWhatsApp || isInstagram) && holderView(handoffConv, member.id) === "mine" ? { onReact: whatsappWindowOpen(handoffConv) ? reactToMessage.bind(null, cid) : null, reactions: agentReactionsFor(conv.channel as string) } : null;
   const snoozedUntil = isSnoozed(conv) ? (conv.snoozed_until as string) : null;
   // conversa com bebida ou remédio (portão): faixa de aviso e pergunta antes de instrução de pagamento
   const regulated = (isWhatsApp || isInstagram) && regulatedConversation(conv.regulated_at as string | null);
@@ -220,6 +222,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
             leads={leads.map((l) => ({ ...l, requests: l.requests.filter((r) => r.conversation_id === cid) }))}
             showSources
             channel={conv.channel as string}
+            actions={threadActions}
             contextChange={conv.context_since ? { at: conv.context_since as string, label: conv.context_display ? `contexto: ${conv.context_display as string}` : "sem conta conectada" } : null}
             agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}
           />

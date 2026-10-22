@@ -256,14 +256,21 @@ export function splitDm(text: string, maxParts = 3): string[] {
 }
 
 /** Manda uma DM. Devolve o id da mensagem (o webhook ecoa as nossas; com ele sabemos ignorar). */
-export async function sendInstagramText(ch: IgChannel, recipientId: string, text: string, quickReplies?: Array<{ title: string; payload: string }>, opts: { humanAgent?: boolean; timeoutMs?: number } = {}): Promise<string | null> {
+export async function sendInstagramText(ch: IgChannel, recipientId: string, text: string, quickReplies?: Array<{ title: string; payload: string }>, opts: { humanAgent?: boolean; timeoutMs?: number; replyTo?: string | null } = {}): Promise<string | null> {
   const message: Record<string, unknown> = { text: fitDm(text) };
   // respostas rápidas: botões embaixo da mensagem (o toque volta com quick_reply.payload)
   if (quickReplies?.length) message.quick_replies = quickReplies.slice(0, 13).map((q) => ({ content_type: "text", title: q.title.slice(0, 20), payload: q.payload }));
   // depois das 24 h, só a resposta da equipe, com a tag human_agent (até 7 dias; revisão própria da Meta)
   const tag = opts.humanAgent ? { messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" } : {};
-  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message, ...tag }, timeoutMs: opts.timeoutMs });
+  // citação: a DM aparece em cima da mensagem citada
+  const reply = opts.replyTo ? { reply_to: { mid: opts.replyTo } } : {};
+  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, ...reply, message, ...tag }, timeoutMs: opts.timeoutMs });
   return r.message_id ?? null;
+}
+
+/** Reação da empresa a uma DM: o Instagram só aceita o coração ("love"); false tira. */
+export async function sendInstagramReaction(ch: IgChannel, recipientId: string, mid: string, react: boolean): Promise<void> {
+  await api("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, sender_action: react ? "react" : "unreact", payload: react ? { message_id: mid, reaction: "love" } : { message_id: mid } } });
 }
 
 /**

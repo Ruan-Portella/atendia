@@ -57,11 +57,15 @@ export function reactionEmoji(r: { emoji?: string | null; reaction?: string | nu
   return e ? e.slice(0, 16) : null;
 }
 
-/** A reação do contato na mensagem (null tira). Devolve se achou a mensagem. */
-export async function applyContactReaction(db: SupabaseClient, channel: MetaChannel, targetId: string, emoji: string | null, at = new Date()): Promise<boolean> {
+/**
+ * A reação do contato na mensagem (null tira). side "agent": a da empresa feita fora do painel
+ * (pelo app do celular na coexistência, ou pela própria conta do Instagram). Devolve se achou a mensagem.
+ */
+export async function applyContactReaction(db: SupabaseClient, channel: MetaChannel, targetId: string, emoji: string | null, at = new Date(), side: "contact" | "agent" = "contact"): Promise<boolean> {
   const target = await findByChannelId(db, channel, targetId);
   if (!target) return false;
-  await updateMessages(db, { id: target.id }, { contact_reaction: emoji, contact_reaction_at: emoji ? at.toISOString() : null });
+  const when = emoji ? at.toISOString() : null;
+  await updateMessages(db, { id: target.id }, side === "agent" ? { agent_reaction: emoji, agent_reaction_at: when } : { contact_reaction: emoji, contact_reaction_at: when });
   return true;
 }
 
@@ -83,4 +87,10 @@ export async function quotesOf(db: SupabaseClient, replyToIds: Array<number | nu
   const rows = await loadMessages(db, { ids }, ["id", "role", "content", "deleted_at"] as const);
   for (const r of rows) out.set(r.id, { snippet: quoteSnippet(String(r.content), Boolean(r.deleted_at)), fromContact: r.role === "user" });
   return out;
+}
+
+/** As reações que a equipe manda: no WhatsApp, a paleta; no Instagram, só o coração (o que a Meta aceita). Pura. */
+const WA_AGENT_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const;
+export function agentReactionsFor(channel: string | null | undefined): readonly string[] {
+  return channel === "whatsapp" ? WA_AGENT_REACTIONS : channel === "instagram" ? ["❤️"] : [];
 }

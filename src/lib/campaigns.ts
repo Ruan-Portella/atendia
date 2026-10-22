@@ -635,7 +635,7 @@ async function recordInConversation(db: SupabaseClient, bot: { id: string; agenc
   }
   if (!conversationId) return;
   // a categoria decide o alcance de um SAIR respondido depois (descadastro da categoria do último modelo)
-  await saveMessage(db, { conversation_id: conversationId, role: "agent", content, author: "campanha", author_type: "system", author_display_name: `Campanha: ${campaignName}`.slice(0, 80), template_category: category, channel_msg_id: "enviada", channel_msg_hash: wamid ? channelMsgHash("whatsapp", wamid) : null }, { touch: "equipe" });
+  await saveMessage(db, { conversation_id: conversationId, role: "agent", content, author: "campanha", author_type: "system", author_display_name: `Campanha: ${campaignName}`.slice(0, 80), template_category: category, channel_msg_id: "enviada", channel_msg_hash: wamid ? channelMsgHash("whatsapp", wamid) : null, channel_msg_ref: wamid }, { touch: "equipe" });
 }
 
 async function updateTotals(db: SupabaseClient, id: string): Promise<Record<string, number>> {

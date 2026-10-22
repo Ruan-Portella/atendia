@@ -125,9 +125,13 @@ export async function POST(req: Request) {
           if (g) groups.push(g);
           continue;
         }
-        // a pessoa reagiu a uma DM (message_reactions): entra na fila; a IA não responde
+        // a pessoa reagiu a uma DM (message_reactions): entra na fila; a IA não responde. A reação
+        // da própria conta (pela BoaVoz ou pelo app do Instagram) fica como a da equipe
         if (ev.reaction?.mid && ev.sender?.id) {
-          const g = await acceptInbound(db, { key: `ig:react:${ev.reaction.mid}:${ev.reaction.action ?? "react"}:${ev.timestamp ?? 0}`, source: "instagram", kind: "reaction", botId: ch.bot_id, contact: ev.sender.id, payload: { type: "reaction", igUserId: ch.ig_user_id, ev } satisfies IgPayload });
+          const own = ev.sender.id === ch.ig_user_id || ev.sender.id === entry.id;
+          const contact = own ? ev.recipient?.id : ev.sender.id;
+          if (!contact) continue;
+          const g = await acceptInbound(db, { key: `ig:react:${ev.reaction.mid}:${ev.reaction.action ?? "react"}:${ev.timestamp ?? 0}${own ? ":own" : ""}`, source: "instagram", kind: "reaction", botId: ch.bot_id, contact, payload: { type: "reaction", igUserId: ch.ig_user_id, ev, ...(own ? { own: true } : {}) } satisfies IgPayload });
           if (g) groups.push(g);
           continue;
         }

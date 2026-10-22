@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
 import { isEmail, text } from "@/lib/validation";
-import { ALREADY_YOURS, postAgentMessage, release, takeOver } from "@/lib/handoff";
+import { ALREADY_YOURS, postAgentMessage, reactAsAgent, release, takeOver } from "@/lib/handoff";
 import { parseTarget, transferConversation } from "@/lib/transfer";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
@@ -104,7 +104,17 @@ export async function memberForceTakeOver(clientId: string, conversationId: stri
 export async function memberSend(clientId: string, conversationId: string, formData: FormData): Promise<ActionResult> {
   const ctx = await ownConversation(clientId, conversationId);
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
-  const r = await postAgentMessage(ctx.admin, conversationId, text(formData.get("content")), memberAttendant(ctx.member, ctx.email));
+  // citação (Conversa mais natural): a mensagem em cima da qual a pessoa respondeu
+  const r = await postAgentMessage(ctx.admin, conversationId, text(formData.get("content")), memberAttendant(ctx.member, ctx.email), { replyToId: Number(formData.get("reply_to_id")) || null });
+  revalidatePath(convPath(clientId, conversationId));
+  return r;
+}
+
+/** Reação a uma mensagem do contato (WhatsApp e Instagram); o mesmo emoji tira. */
+export async function memberReact(clientId: string, conversationId: string, messageId: number, emoji: string | null): Promise<ActionResult> {
+  const ctx = await ownConversation(clientId, conversationId);
+  if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
+  const r = await reactAsAgent(ctx.admin, conversationId, messageId, emoji, memberAttendant(ctx.member, ctx.email));
   revalidatePath(convPath(clientId, conversationId));
   return r;
 }
