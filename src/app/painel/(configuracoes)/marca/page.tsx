@@ -14,6 +14,7 @@ import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { HowItWorks, StatusPill } from "@/components/ui/form-section";
 import { ColorField, LogoField, RetentionField } from "@/components/brand-fields";
 import { CopyButton } from "@/components/copy-button";
+import { ProfileButton } from "@/components/profile-dialog";
 
 export const metadata = { title: "Marca e domínio" };
 
@@ -96,11 +97,7 @@ export default async function MarcaPage() {
             icon={<Compass size={18} />}
             title={`Como você usa o ${company.brand}`}
             summary={profile ? `${profile.label} · muda os primeiros passos` : "Ainda sem resposta · muda os primeiros passos"}
-            trailing={
-              <Link href="/comecar?editar" className="btn-ghost shrink-0 py-1.5 text-xs">
-                Mudar
-              </Link>
-            }
+            trailing={<ProfileButton current={agency.profile ?? "agency"} className="btn-ghost shrink-0 py-1.5 text-xs" />}
           />
         )}
       </SettingGroup>

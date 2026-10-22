@@ -5,9 +5,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { agencySlug, requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fail, type ActionResult } from "@/lib/action-result";
+import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { audit, requestMeta } from "@/lib/audit";
-import { parseFirstAccess } from "@/lib/first-access";
+import { PROFILE_ORDER, parseFirstAccess, type AccountProfile } from "@/lib/first-access";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { requestTeamWhatsApp } from "@/lib/team-whatsapp";
 
@@ -38,4 +38,22 @@ export async function saveFirstAccess(formData: FormData): Promise<ActionResult>
     await audit(db, { agencyId: ctx.agency.id, actorType: "user", actorId: ctx.userId, action: "perfil.avisos_whatsapp_pedido", targetType: "member", targetId: ctx.member.id, ...(await requestMeta()) });
   }
   redirect("/painel/clientes");
+}
+
+/**
+ * Mudar só o perfil, num modal (redesenho, etapa 5, a pedido do usuário em 22/10: o "Mudar" de Marca e
+ * domínio e o "Mudar o perfil" dos primeiros passos não levam mais para outra tela).
+ */
+export async function saveAccountProfile(formData: FormData): Promise<ActionResult> {
+  const ctx = await requireAgency();
+  if (ctx.role !== "owner") return fail("Só o dono da conta muda o perfil.");
+  const profile = String(formData.get("profile") ?? "") as AccountProfile;
+  if (!PROFILE_ORDER.includes(profile)) return fail("Escolha como você usa a conta.");
+  if (profile === ctx.agency.profile) return ok("Nada mudou.");
+  const { error } = await createAdminClient().from("agencies").update({ profile }).eq("id", ctx.agency.id);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  // os primeiros passos do perfil novo aparecem, mesmo para quem tinha ocultado os do outro
+  (await cookies()).delete(ONBOARDING_COOKIE);
+  revalidatePath("/painel", "layout");
+  return ok("Perfil salvo: os primeiros passos mudaram.");
 }

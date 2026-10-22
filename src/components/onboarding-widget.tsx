@@ -6,7 +6,9 @@ import { useEffect, useSyncExternalStore } from "react";
 import { ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, PartyPopper } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import type { OnboardingStep } from "@/lib/onboarding";
+import type { AccountProfile } from "@/lib/first-access";
 import { ConfirmAction } from "@/components/ui/confirm-action";
+import { ProfileButton } from "@/components/profile-dialog";
 import { cn } from "@/lib/utils";
 
 // o que fica neste navegador: aberto ou fechado e quantos passos estavam feitos (para comemorar o próximo)
@@ -59,7 +61,7 @@ function Ring({ done, total }: { done: number; total: number }) {
  * entrada e nas conversas, onde ficaria em cima do campo de resposta), comemora quando um passo é
  * feito e, com tudo pronto, mostra o "Tudo pronto" uma vez antes de sumir.
  */
-export function OnboardingWidget({ steps, goal, changeProfile, hide }: { steps: OnboardingStep[]; goal: string; changeProfile: boolean; hide: () => Promise<ActionResult> }) {
+export function OnboardingWidget({ steps, goal, changeProfile, hide }: { steps: OnboardingStep[]; goal: string; /** o perfil da conta, para o dono mudar (null: quem não é o dono) */ changeProfile: AccountProfile | null; hide: () => Promise<ActionResult> }) {
   const path = usePathname() ?? "";
   const done = steps.filter((s) => s.done).length;
   const total = steps.length;
@@ -168,9 +170,7 @@ export function OnboardingWidget({ steps, goal, changeProfile, hide }: { steps: 
 
       <div className="flex items-center gap-3 border-t border-line-2 px-4 py-2.5 text-xs">
         {changeProfile && !allDone && (
-          <Link href="/comecar?editar" className="font-semibold text-brand hover:underline">
-            Mudar o perfil
-          </Link>
+          <ProfileButton current={changeProfile} label="Mudar o perfil" className="font-semibold text-brand hover:underline" />
         )}
         <span className="ml-auto">
           {allDone ? (

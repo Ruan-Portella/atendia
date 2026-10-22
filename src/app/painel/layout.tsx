@@ -112,7 +112,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       <AppTheme />
       <HandoffWatcher endpoint="/api/painel/pending" />
       {can(role, "config") && <CreateDialogs createClient={member.scope === "all" ? createClientRecord : null} createBot={createBot} clients={clientOptions} suggestedName={agency.profile === "business" ? agency.name : ""} />}
-      {onboarding && <OnboardingWidget steps={onboarding} goal={ONBOARDING_GOAL[agency.profile ?? "agency"]} changeProfile={role === "owner"} hide={hideOnboarding} />}
+      {onboarding && <OnboardingWidget steps={onboarding} goal={ONBOARDING_GOAL[agency.profile ?? "agency"]} changeProfile={role === "owner" ? (agency.profile ?? "agency") : null} hide={hideOnboarding} />}
       {children}
     </PanelShell>
   );

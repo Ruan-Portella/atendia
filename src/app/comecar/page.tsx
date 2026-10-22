@@ -12,7 +12,7 @@ export const metadata = { title: "Primeiro acesso" };
 /**
  * Primeiro acesso (Entrada e docs, parte 1): o dono responde como vai usar o BoaVoz antes do
  * painel (o layout do painel traz para cá enquanto agencies.profile é null). Com ?editar, muda
- * depois (link nos primeiros passos e em Marca).
+ * depois; o painel muda só o perfil num modal (ProfileButton, em Marca e nos primeiros passos).
  */
 export default async function FirstAccessPage({ searchParams }: PageProps<"/comecar">) {
   const [{ agency, member, role, email }, sp] = await Promise.all([requireAgency(), searchParams]);
