@@ -70,6 +70,42 @@ export function hasHours(hours: BusinessHours | null | undefined): hours is Busi
   return Boolean(hours && Object.values(hours).some((h) => h && h[0] && h[1]));
 }
 
+/**
+ * O horário numa linha, para o resumo dos ajustes (redesenho, etapa 5): "seg a sex, 9h às 18h ·
+ * sáb, 9h às 13h". Dias seguidos com o mesmo horário se juntam; null sem horário. Pura.
+ */
+export function hoursSummary(hours: BusinessHours | null | undefined): string | null {
+  if (!hasHours(hours)) return null;
+  const SHORT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+  const time = (v: string) => {
+    const [h, m] = v.split(":");
+    return `${Number(h)}h${m && m !== "00" ? m : ""}`;
+  };
+  const runs: Array<{ days: number[]; range: string }> = [];
+  let last: { days: number[]; range: string } | null = null;
+  for (const d of [1, 2, 3, 4, 5, 6, 0]) {
+    const v = hours[String(d) as keyof BusinessHours];
+    const range = v && v[0] && v[1] ? `${time(v[0])} às ${time(v[1])}` : null;
+    if (!range) {
+      last = null;
+      continue;
+    }
+    if (last && last.range === range) last.days.push(d);
+    else {
+      last = { days: [d], range };
+      runs.push(last);
+    }
+  }
+  return runs
+    .map((r) => {
+      const first = SHORT[r.days[0]];
+      const end = SHORT[r.days[r.days.length - 1]];
+      const days = r.days.length === 1 ? first : r.days.length === 2 ? `${first} e ${end}` : `${first} a ${end}`;
+      return `${days}, ${r.range}`;
+    })
+    .join(" · ");
+}
+
 /** O dia em Brasília daqui a `inDays` dias: "MM-DD" e "AAAA-MM-DD" (para os feriados). */
 function brasiliaDate(now: Date, inDays: number): { md: string; ymd: string } {
   const local = new Date(now.getTime() + TZ_OFFSET_MIN * 60_000 + inDays * 86_400_000);

@@ -189,7 +189,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
       </div>
 
       {adding && (
-        <form onSubmit={submitAdd} className="card flex flex-col gap-3 bg-ground p-4">
+        <form onSubmit={submitAdd} className="card flex flex-col gap-3 bg-raised/40 p-4">
           {adding === "instagram" ? <InstagramFields info={instagram} /> : <SourceFields kind={adding} />}
           <div className="flex items-center gap-3">
             <button type="submit" disabled={saving || (adding === "instagram" && !(instagram?.connected && instagram.withAi))} className="btn-primary">
@@ -203,7 +203,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
       )}
 
       <div className="card overflow-hidden">
-        <div className="hidden grid-cols-[2.4fr_1fr_1fr_1.2fr_auto] gap-3 border-b border-line bg-ground px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.06em] text-muted md:grid">
+        <div className="hidden grid-cols-[2.4fr_1fr_1fr_1.2fr_auto] gap-3 border-b border-line-2 bg-raised/40 px-4 py-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-muted md:grid">
           <span>Fonte</span><span>Tipo</span><span>Trechos</span><span>Atualizado</span><span className="w-8" />
         </div>
         {sources.length === 0 && (
@@ -217,9 +217,9 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
           const processing = busyId === s.id || s.status === "pending";
           const posts = s.kind === "instagram";
           return (
-            <div key={s.id} className={`flex flex-col gap-1.5 border-b border-line-2 px-4 py-3 text-sm last:border-0 md:grid md:grid-cols-[2.4fr_1fr_1fr_1.2fr_auto] md:items-center md:gap-3 ${processing ? "opacity-70" : ""}`}>
+            <div key={s.id} className={`flex flex-col gap-1.5 border-b border-line-2 px-4 py-3 text-sm transition-colors duration-[120ms] last:border-0 hover:bg-raised/30 md:grid md:grid-cols-[2.4fr_1fr_1fr_1.2fr_auto] md:items-center md:gap-3 ${processing ? "opacity-70" : ""}`}>
               <div className="flex min-w-0 items-center gap-2.5 leading-tight">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ground text-muted">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-raised text-ink-2">
                   {processing ? <Loader2 size={15} className="animate-spin" /> : s.status === "error" ? <AlertCircle size={15} className="text-danger" /> : <Icon size={15} />}
                 </span>
                 <span className="min-w-0 flex-1">
@@ -246,7 +246,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
           );
         })}
         {sources.length > 0 && (
-          <div className="flex flex-wrap justify-between gap-2 bg-ground px-4 py-2 text-xs text-muted">
+          <div className="flex flex-wrap justify-between gap-2 border-t border-line-2 bg-raised/40 px-4 py-2 text-xs text-muted">
             <span>{readyCount} de {sources.length} fonte{sources.length === 1 ? "" : "s"} pronta{readyCount === 1 ? "" : "s"} · {totalChunks} trechos indexados</span>
             <span className="hidden sm:inline">Mudou algo no site do cliente? Use “Reler e atualizar”.</span>
           </div>

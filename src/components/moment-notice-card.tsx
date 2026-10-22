@@ -7,7 +7,7 @@ import { MOMENT_NOTICE_MAX, MOMENT_NOTICE_MAX_DAYS, untilLabel, untilToInput, ty
  * Aviso do momento de um chatbot (Lançamento, parte 3), no painel (aba Base de conhecimento) e no
  * portal (Ensinar o assistente): o texto, até quando vale e quem escreveu.
  */
-export function MomentNoticeCard({ notice, lastUntil, author, defaultUntil, save, clear }: {
+export function MomentNoticeCard({ notice, lastUntil, author, defaultUntil, save, clear, bare = false }: {
   /** O aviso que vale agora. */
   notice: MomentNotice | null;
   /** O prazo do último aviso, se ele já venceu. */
@@ -17,11 +17,13 @@ export function MomentNoticeCard({ notice, lastUntil, author, defaultUntil, save
   defaultUntil: string;
   save: (formData: FormData) => Promise<ActionResult>;
   clear: (formData: FormData) => Promise<ActionResult>;
+  /** dentro de um bloco que abre e fecha: sem a moldura e sem o título */
+  bare?: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel px-[18px] py-4">
+    <section className={bare ? "flex flex-col gap-3" : "flex flex-col gap-3 rounded-xl border border-line bg-panel px-[18px] py-4"}>
       <div>
-        <h3 className="text-sm font-semibold">Aviso do momento</h3>
+        {!bare && <h3 className="text-sm font-semibold">Aviso do momento</h3>}
         <p className="text-xs text-muted">
           Um recado com prazo: instabilidade, manutenção, atraso, mudança de horário. O assistente usa quando alguém pergunta ou o assunto tem a ver, e o aviso some sozinho no fim do prazo (até {MOMENT_NOTICE_MAX_DAYS} dias).
         </p>

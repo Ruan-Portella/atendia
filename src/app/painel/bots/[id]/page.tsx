@@ -75,7 +75,7 @@ import { FailedSends } from "@/components/failed-sends";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { HandoffBadge } from "@/components/handoff-badge";
 import { handoffStatus } from "@/lib/handoff-status";
-import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, NO_DATE_NOTICE, nextOpening, whenLabel, type HumanHandoff } from "@/lib/handoff-hours";
+import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, NO_DATE_NOTICE, hoursSummary, nextOpening, whenLabel, type HumanHandoff } from "@/lib/handoff-hours";
 import { SIGNATURE_FORMATS, SIGNATURE_LABEL } from "@/lib/signature";
 import { TICKET_SUBJECTS_MAX, type TicketForm } from "@/lib/tickets";
 import { HUMAN_ONLY_NOTICE } from "@/lib/chat";
@@ -86,7 +86,8 @@ import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 import { BotOverview } from "@/components/bot-overview";
 import { getBotStats, getPendingHandoffs } from "@/lib/panel";
 import { choiceLabel } from "@/lib/billing";
-import { BookOpen, LayoutDashboard, Radio, SlidersHorizontal, Workflow } from "lucide-react";
+import { Ban, BookOpen, Brain, Clock, Image as ImageIcon, LayoutDashboard, Megaphone, MessageCircle, MessageSquareText, PenLine, Phone, Radio, RefreshCw, SlidersHorizontal, Sparkles, Star, Ticket, UserRound, Wine, Workflow } from "lucide-react";
+import { FormSection, SaveBar } from "@/components/ui/form-section";
 import { FaceEditor } from "@/components/face-editor";
 import { BotFace } from "@/components/bot-face";
 import { faceOf } from "@/lib/bot-face";
@@ -228,6 +229,15 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const nextOpen = nextOpening(handoff.hours);
   const awayExample = nextOpen ? whenLabel(nextOpen) : "segunda, das 9h às 18h";
   const regulated = (bot.regulated_channel ?? {}) as RegulatedChannel;
+  // os resumos dos blocos do Atendimento humano (redesenho, etapa 5)
+  const listOf = (parts: Array<string | false | null | undefined>) => {
+    const p = parts.filter(Boolean) as string[];
+    return p.length ? `${p.join(", ").replace(/^./, (c) => c.toUpperCase())}` : "";
+  };
+  const handoffContacts = listOf([handoff.phone && "telefone", handoff.email && "e-mail", handoff.site && "site", handoff.form_url && "formulário", handoff.address && "endereço"]);
+  const customTexts = Boolean((handoff.ai_notice && handoff.ai_notice !== DEFAULT_AI_NOTICE) || (handoff.away_message && handoff.away_message !== DEFAULT_AWAY_MESSAGE));
+  const customNotices = Boolean((handoff.entry_notice && handoff.entry_notice !== DEFAULT_ENTRY_NOTICE) || (handoff.back_notice && handoff.back_notice !== DEFAULT_BACK_NOTICE));
+  const regulatedPaths = listOf([regulated.site && "site", regulated.app && "app de delivery", regulated.phone && "telefone", regulated.pickup && "retirada no local"]);
   const color = appearance.color ?? agency.brand_color;
   // domínio próprio da agência (quando verificado) nos links que o cliente e o prospect veem
   const base = agencyBaseUrl(agency);
@@ -429,11 +439,21 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "fontes" && (
-            <>
+            <div className="flex flex-col gap-4">
               <div>
                 <h2 className="text-[22px] font-medium">Base de conhecimento</h2>
                 <p className="text-sm text-muted">Tudo que {bot.name} sabe vem daqui. Ele não inventa o que não está nas fontes.</p>
               </div>
+              {/* redesenho, etapa 5: o que pede ação vem primeiro; o resto, em blocos que abrem e fecham */}
+              {unanswered && unanswered.length > 0 && (
+                <div className="flex flex-col gap-2.5 rounded-xl border border-amber-line bg-amber-soft px-[18px] py-4">
+                  <div className="text-sm font-semibold text-amber-ink">{unanswered.length} pergunta{unanswered.length > 1 ? "s" : ""} que {bot.name} não soube responder</div>
+                  {unanswered.map((u) => (
+                    <UnansweredItem key={u.id} question={u.question} answer={answerUnanswered.bind(null, u.id, id)} dismiss={resolveUnanswered.bind(null, u.id, id)} suggestion={u.suggestion} suggestedBy={u.suggestedBy} />
+                  ))}
+                  <p className="text-xs text-muted">Clique em “Responder” e escreva o que o assistente deve dizer: ele aprende na hora.</p>
+                </div>
+              )}
               {bot.template_id && <InheritedList kind="fontes" templateId={bot.template_id} configId={bot.template_id} templateName={templateName ?? "modelo"} />}
               {bot.template_id && !opens("base") ? (
                 <p className="max-w-[860px] text-sm text-muted">O modelo não libera base própria: este chatbot usa só a base do modelo.</p>
@@ -449,89 +469,99 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   Mais {num(taggedSources)} fonte{taggedSources === 1 ? "" : "s"} por contexto, enviada{taggedSources === 1 ? "" : "s"} pela API: cada uma vale só nas conversas do contexto dela (o cliente do sistema, a loja). A lista e a remoção ficam na API (<Link href="/docs/api/fontes" className="underline">Fontes</Link>).
                 </p>
               )}
-              {!bot.is_demo && (
-                <MomentNoticeCard
-                  notice={activeMomentNotice(bot)}
-                  lastUntil={bot.moment_notice_until}
-                  author={bot.moment_notice_by === "agência" ? "pela agência" : bot.moment_notice_by ? `por ${bot.moment_notice_by}` : null}
-                  defaultUntil={defaultUntilInput()}
-                  save={saveMomentNotice.bind(null, id)}
-                  clear={clearMomentNotice.bind(null, id)}
-                />
-              )}
-              {sources.some((s) => s.kind === "instagram") && <PostPriceCard rule={bot.post_price_rule ?? "citar"} maxDays={bot.post_price_max_days ?? 30} save={setPostPriceRule.bind(null, id)} />}
-              {!bot.is_demo && sources.some((s) => s.kind === "site" || s.kind === "page") && (
-                <ActionForm key={String(bot.auto_refresh)} action={setAutoRefresh.bind(null, id)} className="flex flex-wrap items-center gap-3 text-sm">
-                  <label className="flex items-center gap-2"><input type="checkbox" name="auto_refresh" defaultChecked={bot.auto_refresh !== false} /> Reler o site do cliente automaticamente toda semana</label>
-                  <SubmitButton pendingLabel="Salvando…" className="text-xs font-semibold text-brand hover:underline disabled:opacity-50">Salvar</SubmitButton>
-                  <span className="w-full text-xs text-muted">Se nada mudou no site, não gasta nada. Se mudou, o assistente aprende sozinho.</span>
-                </ActionForm>
-              )}
-              {unanswered && unanswered.length > 0 && (
-                <div className="flex flex-col gap-2.5 rounded-xl border border-amber-line bg-amber-soft px-[18px] py-4">
-                  <div className="text-sm font-semibold text-amber-ink">{unanswered.length} pergunta{unanswered.length > 1 ? "s" : ""} que {bot.name} não soube responder</div>
-                  {unanswered.map((u) => (
-                    <UnansweredItem key={u.id} question={u.question} answer={answerUnanswered.bind(null, u.id, id)} dismiss={resolveUnanswered.bind(null, u.id, id)} suggestion={u.suggestion} suggestedBy={u.suggestedBy} />
-                  ))}
-                  <p className="text-xs text-muted">Clique em “Responder” e escreva o que o assistente deve dizer: ele aprende na hora.</p>
-                </div>
-              )}
-              {refusals.length > 0 && (
-                <details className="rounded-xl border border-line px-[18px] py-3 text-sm">
-                  <summary className="cursor-pointer font-semibold">
-                    {refusals.length === 1 ? "1 pedido fora do assunto" : `${refusals.length} pedidos fora do assunto`} nos últimos 30 dias
-                  </summary>
-                  <p className="mt-1 text-xs text-muted">
-                    {bot.name} recusou porque não tem a ver com o negócio: não é falta de informação na base. Se algum for do negócio, inclua o assunto em &ldquo;Assuntos do negócio&rdquo;, na aba Personalidade.
-                  </p>
-                  <ul className="mt-2 flex flex-col gap-1.5">
-                    {refusals.map((r) => (
-                      <li key={r.id} className="flex flex-wrap items-baseline gap-x-2">
-                        <span>{r.request || "(pedido sem resumo)"}</span>
-                        <span className="text-xs text-muted">
-                          {r.level === "fixo" ? "regra fixa (tarefa sem relação com o negócio)" : "fora do assunto"} · {relativeTime(r.created_at)}
-                          {r.conversation_id && <> · <Link href={`/painel/bots/${id}/conversas/${r.conversation_id}`} className="underline">ver conversa</Link></>}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </>
+              <div className="flex max-w-[860px] flex-col gap-3">
+                {!bot.is_demo && (
+                  <FormSection title="Aviso do momento" icon={<Megaphone size={16} />} summary={activeMomentNotice(bot) ? `Ligado: “${activeMomentNotice(bot)!.text.slice(0, 60)}${activeMomentNotice(bot)!.text.length > 60 ? "…" : ""}”` : "Nenhum agora"}>
+                    <MomentNoticeCard
+                      bare
+                      notice={activeMomentNotice(bot)}
+                      lastUntil={bot.moment_notice_until}
+                      author={bot.moment_notice_by === "agência" ? "pela agência" : bot.moment_notice_by ? `por ${bot.moment_notice_by}` : null}
+                      defaultUntil={defaultUntilInput()}
+                      save={saveMomentNotice.bind(null, id)}
+                      clear={clearMomentNotice.bind(null, id)}
+                    />
+                  </FormSection>
+                )}
+                {!bot.is_demo && sources.some((s) => s.kind === "site" || s.kind === "page") && (
+                  <FormSection title="Releitura do site" icon={<RefreshCw size={16} />} summary={bot.auto_refresh !== false ? "Toda semana, sozinho" : "Desligada: só quando você pedir"}>
+                    <ActionForm key={String(bot.auto_refresh)} action={setAutoRefresh.bind(null, id)} className="flex flex-wrap items-center gap-3 text-sm">
+                      <label className="flex items-center gap-2"><input type="checkbox" name="auto_refresh" defaultChecked={bot.auto_refresh !== false} /> Reler o site do cliente automaticamente toda semana</label>
+                      <SubmitButton pendingLabel="Salvando…" className="btn-ghost px-3 py-1.5 text-[13px]">Salvar</SubmitButton>
+                      <span className="w-full text-xs text-muted">Se nada mudou no site, não gasta nada. Se mudou, o assistente aprende sozinho.</span>
+                    </ActionForm>
+                  </FormSection>
+                )}
+                {sources.some((s) => s.kind === "instagram") && (
+                  <FormSection title="Preço que aparece nos posts do Instagram" icon={<ImageIcon size={16} />} summary={bot.post_price_rule === "sempre" ? "Sempre cita o preço do post" : bot.post_price_rule === "limite" ? `Cita só em posts de até ${bot.post_price_max_days ?? 30} dias` : "Cita o preço com a data do post"}>
+                    <PostPriceCard bare rule={bot.post_price_rule ?? "citar"} maxDays={bot.post_price_max_days ?? 30} save={setPostPriceRule.bind(null, id)} />
+                  </FormSection>
+                )}
+                {refusals.length > 0 && (
+                  <FormSection title="Pedidos fora do assunto" icon={<Ban size={16} />} summary={refusals.length === 1 ? "1 nos últimos 30 dias" : `${refusals.length} nos últimos 30 dias`}>
+                    <p className="text-xs text-muted">
+                      {bot.name} recusou porque não tem a ver com o negócio: não é falta de informação na base. Se algum for do negócio, inclua o assunto em &ldquo;Assuntos do negócio&rdquo;, na aba Personalidade.
+                    </p>
+                    <ul className="flex flex-col gap-1.5 text-sm">
+                      {refusals.map((r) => (
+                        <li key={r.id} className="flex flex-wrap items-baseline gap-x-2">
+                          <span>{r.request || "(pedido sem resumo)"}</span>
+                          <span className="text-xs text-muted">
+                            {r.level === "fixo" ? "regra fixa (tarefa sem relação com o negócio)" : "fora do assunto"} · {relativeTime(r.created_at)}
+                            {r.conversation_id && <> · <Link href={`/painel/bots/${id}/conversas/${r.conversation_id}`} className="underline">ver conversa</Link></>}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </FormSection>
+                )}
+              </div>
+            </div>
           )}
 
           {tab === "personalidade" && (
-            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
+            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[760px] flex-col gap-3">
               <div><h2 className="text-[22px] font-medium">Personalidade</h2><p className="text-sm text-muted">Como o assistente se apresenta e fala.</p></div>
               {templateRow && <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">O tom, as instruções e os assuntos do negócio vêm do modelo {templateRow.name}. Os campos travados mudam só no modelo.</p>}
-              <div><label htmlFor="name" className="label">Nome do assistente{templateRow ? (owns("nome") ? " (deste chatbot)" : " (do modelo)") : ""}</label><input id="name" name="name" required minLength={2} maxLength={40} defaultValue={bot.name} disabled={!opens("nome")} className="input disabled:opacity-60" /></div>
-              {!bot.is_demo && !bot.is_template && <ClientPicker clients={clients} defaultClientId={bot.client_id} suggestedName={bot.client_id ? "" : bot.client_name} idPrefix="pers" />}
-              <div><label htmlFor="client_site" className="label">Site onde o chatbot fica</label><input id="client_site" name="client_site" maxLength={200} defaultValue={bot.client_site ?? ""} className="input" /></div>
-              {templateRow ? (
-                <div><span className="label">Tom de voz (do modelo)</span><p className="text-sm text-ink-2">{templateRow.persona?.tone ?? "—"}</p></div>
-              ) : (
-                <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" maxLength={200} defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
-              )}
-              <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas{templateRow ? (owns("saudacao") ? " (deste chatbot)" : " (do modelo)") : ""}</label><input id="welcome" name="welcome" maxLength={300} defaultValue={persona.welcome ?? ""} disabled={!opens("saudacao")} className="input disabled:opacity-60" /></div>
-              {templateRow ? (
-                <>
-                  <div><span className="label">Instruções (do modelo)</span><p className="whitespace-pre-wrap rounded-lg bg-ground px-3 py-2 text-sm text-ink-2">{templateRow.persona?.instructions?.trim() || "Nenhuma."}</p></div>
-                  {opens("instrucoes") && <div><label htmlFor="extra_instructions" className="label">Instruções extras deste chatbot (somadas às do modelo)</label><textarea id="extra_instructions" name="extra_instructions" rows={4} maxLength={4000} defaultValue={bot.extra_instructions ?? ""} className="input" /></div>}
-                </>
-              ) : (
-                <div><label htmlFor="instructions" className="label">Instruções extras (o que sempre dizer, o que nunca dizer)</label><textarea id="instructions" name="instructions" rows={5} maxLength={4000} defaultValue={persona.instructions ?? ""} className="input" placeholder="Ex.: Sempre ofereça a avaliação gratuita. Nunca prometa desconto." /></div>
-              )}
-              {templateRow ? (
-                <div><span className="label">Assuntos do negócio (do modelo)</span><p className="text-sm text-ink-2">{templateRow.business_topics?.trim() || "Nenhum além do negócio."}</p></div>
-              ) : (
-              <div>
-                <label htmlFor="business_topics" className="label">Assuntos do negócio (WhatsApp e Instagram)</label>
-                <textarea id="business_topics" name="business_topics" rows={3} maxLength={1000} defaultValue={bot.business_topics ?? ""} className="input" placeholder="Ex.: cuidados com os dentes, dicas de escovação, como funciona o plano odontológico." />
-                <p className="mt-1 text-xs text-muted">No WhatsApp e no Instagram, o assistente conversa só sobre o negócio (regra da Meta contra assistentes de uso geral). Aqui você amplia os assuntos próximos que ele pode tratar. Fazer o trabalho pela pessoa (redação, tradução, programação) ou executar o serviço que a empresa vende continua bloqueado. No chat do site não há essa trava.</p>
-              </div>
-              )}
+              {/* redesenho, etapa 5: os blocos abrem e fecham, com o resumo; um formulário só */}
+              <FormSection title="Quem é" icon={<UserRound size={16} />} summary={`${bot.name} · ${bot.client_name}`} defaultOpen>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div><label htmlFor="name" className="label">Nome do assistente{templateRow ? (owns("nome") ? " (deste chatbot)" : " (do modelo)") : ""}</label><input id="name" name="name" required minLength={2} maxLength={40} defaultValue={bot.name} disabled={!opens("nome")} className="input disabled:opacity-60" /></div>
+                  <div><label htmlFor="client_site" className="label">Site onde o chatbot fica</label><input id="client_site" name="client_site" maxLength={200} defaultValue={bot.client_site ?? ""} className="input" /></div>
+                </div>
+                {!bot.is_demo && !bot.is_template && <ClientPicker clients={clients} defaultClientId={bot.client_id} suggestedName={bot.client_id ? "" : bot.client_name} idPrefix="pers" />}
+                {bot.client_id && <p className="text-xs text-muted">O nome do cliente e quanto você cobra ficam no <Link href={`/painel/clientes/${bot.client_id}?tab=dados`} className="font-semibold text-brand hover:underline">painel do cliente</Link>.</p>}
+              </FormSection>
+              <FormSection title="Como fala" icon={<Sparkles size={16} />} summary={(persona.tone ?? "amigável, direto e profissional").replace(/^./, (c: string) => c.toUpperCase())} defaultOpen>
+                {templateRow ? (
+                  <div><span className="label">Tom de voz (do modelo)</span><p className="text-sm text-ink-2">{templateRow.persona?.tone ?? "—"}</p></div>
+                ) : (
+                  <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" maxLength={200} defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
+                )}
+                <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas{templateRow ? (owns("saudacao") ? " (deste chatbot)" : " (do modelo)") : ""}</label><input id="welcome" name="welcome" maxLength={300} defaultValue={persona.welcome ?? ""} disabled={!opens("saudacao")} className="input disabled:opacity-60" /></div>
+                {templateRow ? (
+                  <>
+                    <div><span className="label">Instruções (do modelo)</span><p className="whitespace-pre-wrap rounded-lg bg-ground px-3 py-2 text-sm text-ink-2">{templateRow.persona?.instructions?.trim() || "Nenhuma."}</p></div>
+                    {opens("instrucoes") && <div><label htmlFor="extra_instructions" className="label">Instruções extras deste chatbot (somadas às do modelo)</label><textarea id="extra_instructions" name="extra_instructions" rows={4} maxLength={4000} defaultValue={bot.extra_instructions ?? ""} className="input" /></div>}
+                  </>
+                ) : (
+                  <div><label htmlFor="instructions" className="label">Instruções extras (o que sempre dizer, o que nunca dizer)</label><textarea id="instructions" name="instructions" rows={5} maxLength={4000} defaultValue={persona.instructions ?? ""} className="input" placeholder="Ex.: Sempre ofereça a avaliação gratuita. Nunca prometa desconto." /></div>
+                )}
+              </FormSection>
+              <FormSection title="Assuntos do negócio" icon={<Ban size={16} />} summary={(templateRow ? templateRow.business_topics : bot.business_topics)?.trim() || "Só o negócio (a trava do WhatsApp e do Instagram)"}>
+                {templateRow ? (
+                  <div><span className="label">Assuntos do negócio (do modelo)</span><p className="text-sm text-ink-2">{templateRow.business_topics?.trim() || "Nenhum além do negócio."}</p></div>
+                ) : (
+                <div>
+                  <label htmlFor="business_topics" className="label">Assuntos do negócio (WhatsApp e Instagram)</label>
+                  <textarea id="business_topics" name="business_topics" rows={3} maxLength={1000} defaultValue={bot.business_topics ?? ""} className="input" placeholder="Ex.: cuidados com os dentes, dicas de escovação, como funciona o plano odontológico." />
+                  <p className="mt-1 text-xs text-muted">No WhatsApp e no Instagram, o assistente conversa só sobre o negócio (regra da Meta contra assistentes de uso geral). Aqui você amplia os assuntos próximos que ele pode tratar. Fazer o trabalho pela pessoa (redação, tradução, programação) ou executar o serviço que a empresa vende continua bloqueado. No chat do site não há essa trava.</p>
+                </div>
+                )}
+              </FormSection>
               {!bot.is_demo && (
-                <div className="flex flex-col gap-1.5 rounded-xl border border-line-2 p-3">
+                <FormSection title="Memória do contato" icon={<Brain size={16} />} summary={bot.sensitive_mode ? "Desligada pelo modo dados sensíveis" : bot.contact_memory ? "Ligada: lembra o nome e as preferências por 180 dias" : "Desligada"}>
+
                   <input type="hidden" name="memory_form" value="1" />
                   <label className="flex items-start gap-2 text-sm">
                     <input type="checkbox" name="contact_memory" defaultChecked={Boolean(bot.contact_memory)} disabled={Boolean(bot.sensitive_mode)} className="mt-1" />
@@ -544,10 +574,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                       </span>
                     </span>
                   </label>
-                </div>
+                
+                </FormSection>
               )}
-              {bot.client_id && <p className="text-xs text-muted">O nome do cliente e quanto você cobra ficam no <Link href={`/painel/clientes/${bot.client_id}?tab=dados`} className="font-semibold text-brand hover:underline">painel do cliente</Link>.</p>}
-              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+              <SaveBar />
             </ActionForm>
           )}
 
@@ -591,85 +621,86 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <div><label htmlFor="notify_email" className="label">Avisar por e-mail (o dono do cliente, por exemplo)</label><input id="notify_email" name="notify_email" type="email" defaultValue={leadCapture.notify_email ?? ""} className="input" placeholder="recepcao@clinicasorriso.com.br" /></div>
               <div><label htmlFor="notify_whatsapp" className="label">WhatsApp para aviso (em breve)</label><input id="notify_whatsapp" name="notify_whatsapp" defaultValue={leadCapture.notify_whatsapp ?? ""} className="input" placeholder="+55 41 9…" /></div>
               <p className="text-xs text-muted">Você também recebe todos os leads no seu e-mail e na aba Leads do painel.</p>
-              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+              <SaveBar />
             </ActionForm>
           )}
 
           {tab === "atendimento" && (
-            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-5">
-              <input type="hidden" name="handoff" value="1" />
+            <div className="flex max-w-[760px] flex-col gap-3">
               <div>
                 <h2 className="text-[22px] font-medium">Atendimento humano</h2>
-                <p className="text-sm text-muted">Quem pedir para falar com uma pessoa sempre consegue: o assistente avisa a equipe e a conversa aparece em Conversas para alguém assumir. Isso não pode ser desligado (regra da Meta no WhatsApp). Aqui você só complementa, tudo opcional.</p>
+                <p className="text-sm text-muted">Quem pedir para falar com uma pessoa sempre consegue: o assistente avisa a equipe e a conversa entra na Caixa de entrada para alguém assumir. Isso não pode ser desligado (regra da Meta no WhatsApp). Aqui você complementa; tudo é opcional. Abra um bloco para mudar.</p>
               </div>
-
-              <section className="flex flex-col gap-3">
-                <h3 className="text-sm font-semibold">Outros jeitos de falar com a equipe</h3>
-                <p className="-mt-2 text-xs text-muted">O assistente oferece estes contatos quando alguém pede para falar com uma pessoa.</p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div><label htmlFor="handoff_phone" className="label">Telefone</label><input id="handoff_phone" name="handoff_phone" maxLength={30} defaultValue={handoff.phone ?? ""} className="input" placeholder="(21) 3333-4444" /></div>
-                  <div><label htmlFor="handoff_email" className="label">E-mail</label><input id="handoff_email" name="handoff_email" type="email" maxLength={200} defaultValue={handoff.email ?? ""} className="input" placeholder="contato@clinicasorriso.com.br" /></div>
-                  <div><label htmlFor="handoff_site" className="label">Site</label><input id="handoff_site" name="handoff_site" maxLength={200} defaultValue={handoff.site ?? ""} className="input" placeholder="clinicasorriso.com.br" /></div>
-                  <div><label htmlFor="handoff_form_url" className="label">Formulário de atendimento (link)</label><input id="handoff_form_url" name="handoff_form_url" maxLength={300} defaultValue={handoff.form_url ?? ""} className="input" placeholder="clinicasorriso.com.br/contato" /></div>
-                </div>
-                <div><label htmlFor="handoff_address" className="label">Atendimento presencial (endereço)</label><input id="handoff_address" name="handoff_address" maxLength={200} defaultValue={handoff.address ?? ""} className="input" placeholder="Rua das Flores, 100, Centro, Rio de Janeiro" /></div>
-                <p className="text-xs text-muted">O telefone precisa ser diferente do número do WhatsApp do assistente (exceto quando o número também está no app WhatsApp Business do celular).</p>
-              </section>
-
-              <section className="flex flex-col gap-3 border-t border-line pt-4">
-                <h3 className="text-sm font-semibold">Horário de atendimento da equipe</h3>
-                <p className="-mt-2 text-xs text-muted">Horário de Brasília. Fora dele, o pedido de atendente fica registrado e o assistente diz quando a equipe volta (ex.: &quot;Nossa equipe volta segunda às 9h&quot;). Deixe o dia em branco para fechado; sem nenhum horário, o assistente só diz que a equipe responde assim que possível.</p>
-                <HoursFields hours={handoff.hours} />
-              </section>
-
-              <section className="flex flex-col gap-4 border-t border-line pt-4">
-                <div>
-                  <h3 className="text-sm font-semibold">Textos do assistente</h3>
+              {/* redesenho, etapa 5: os blocos abrem e fecham, com o resumo do que está configurado; um formulário só */}
+              <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex flex-col gap-3">
+                <input type="hidden" name="handoff" value="1" />
+                <FormSection title="Outros jeitos de falar com a equipe" icon={<Phone size={16} />} summary={handoffContacts || "Nenhum além da conversa"}>
+                  <p className="text-xs text-muted">O assistente oferece estes contatos quando alguém pede para falar com uma pessoa.</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div><label htmlFor="handoff_phone" className="label">Telefone</label><input id="handoff_phone" name="handoff_phone" maxLength={30} defaultValue={handoff.phone ?? ""} className="input" placeholder="(21) 3333-4444" /></div>
+                    <div><label htmlFor="handoff_email" className="label">E-mail</label><input id="handoff_email" name="handoff_email" type="email" maxLength={200} defaultValue={handoff.email ?? ""} className="input" placeholder="contato@clinicasorriso.com.br" /></div>
+                    <div><label htmlFor="handoff_site" className="label">Site</label><input id="handoff_site" name="handoff_site" maxLength={200} defaultValue={handoff.site ?? ""} className="input" placeholder="clinicasorriso.com.br" /></div>
+                    <div><label htmlFor="handoff_form_url" className="label">Formulário de atendimento (link)</label><input id="handoff_form_url" name="handoff_form_url" maxLength={300} defaultValue={handoff.form_url ?? ""} className="input" placeholder="clinicasorriso.com.br/contato" /></div>
+                  </div>
+                  <div><label htmlFor="handoff_address" className="label">Atendimento presencial (endereço)</label><input id="handoff_address" name="handoff_address" maxLength={200} defaultValue={handoff.address ?? ""} className="input" placeholder="Rua das Flores, 100, Centro, Rio de Janeiro" /></div>
+                  <p className="text-xs text-muted">O telefone precisa ser diferente do número do WhatsApp do assistente (exceto quando o número também está no app WhatsApp Business do celular).</p>
+                </FormSection>
+                <FormSection title="Horário da equipe" icon={<Clock size={16} />} summary={hoursSummary(handoff.hours) ?? "Sem horário: a equipe responde assim que possível"}>
+                  <p className="text-xs text-muted">Horário de Brasília. Fora dele, o pedido de atendente fica registrado e o assistente diz quando a equipe volta (ex.: &quot;Nossa equipe volta segunda às 9h&quot;). Deixe o dia em branco para fechado; sem nenhum horário, o assistente só diz que a equipe responde assim que possível.</p>
+                  <HoursFields hours={handoff.hours} />
+                </FormSection>
+                <FormSection title="Textos do assistente" icon={<MessageSquareText size={16} />} summary={customTexts ? "Personalizados" : "Os textos padrão"}>
                   <p className="text-xs text-muted">Vêm preenchidos com o padrão. Para salvar, precisam ter o que é obrigatório: o aviso de IA diz que é um assistente virtual; com horário configurado, a mensagem de fora do horário diz quando a equipe volta.</p>
-                </div>
-                <TemplateField
-                  id="ai_notice"
-                  label="Aviso de IA (começo da primeira resposta no WhatsApp e no Instagram)"
-                  hint="Variáveis: {nome} (o assistente) e {empresa} (o negócio)."
-                  defaultValue={handoff.ai_notice ?? DEFAULT_AI_NOTICE}
-                  fallback={DEFAULT_AI_NOTICE}
-                  vars={{ nome: bot.name, empresa: bot.client_name }}
-                  maxLength={300}
-                />
-                <TemplateField
-                  id="away_message"
-                  label="Mensagem de fora do horário (quando pedem atendente)"
-                  hint="Variável: {volta} (quando a equipe volta, pelo horário acima). No horário, ou sem horário configurado, vai o texto fixo sem data."
-                  defaultValue={handoff.away_message ?? DEFAULT_AWAY_MESSAGE}
-                  fallback={DEFAULT_AWAY_MESSAGE}
-                  vars={{ volta: awayExample }}
-                  maxLength={400}
-                />
-                <div className="flex flex-col gap-1 border-t border-line-2 pt-3">
-                  <h4 className="text-sm font-semibold">Anúncios do atendimento humano</h4>
+                  <TemplateField
+                    id="ai_notice"
+                    label="Aviso de IA (começo da primeira resposta no WhatsApp e no Instagram)"
+                    hint="Variáveis: {nome} (o assistente) e {empresa} (o negócio)."
+                    defaultValue={handoff.ai_notice ?? DEFAULT_AI_NOTICE}
+                    fallback={DEFAULT_AI_NOTICE}
+                    vars={{ nome: bot.name, empresa: bot.client_name }}
+                    maxLength={300}
+                  />
+                  <TemplateField
+                    id="away_message"
+                    label="Mensagem de fora do horário (quando pedem atendente)"
+                    hint="Variável: {volta} (quando a equipe volta, pelo horário acima). No horário, ou sem horário configurado, vai o texto fixo sem data."
+                    defaultValue={handoff.away_message ?? DEFAULT_AWAY_MESSAGE}
+                    fallback={DEFAULT_AWAY_MESSAGE}
+                    vars={{ volta: awayExample }}
+                    maxLength={400}
+                  />
+                  <details className="rounded-lg border border-line-2 px-3 py-2 text-sm">
+                    <summary className="cursor-pointer text-xs font-semibold text-muted">Textos fixos (conformidade, só para consulta)</summary>
+                    <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-ink-2">
+                      <li>Pedido de atendente no horário ou sem horário: &ldquo;{NO_DATE_NOTICE}&rdquo;</li>
+                      <li>Assistente pausado ou modo só humano: &ldquo;{HUMAN_ONLY_NOTICE}&rdquo;</li>
+                      <li>Bebida e remédio no WhatsApp e no Instagram: &ldquo;{GATE_TEXTS.ageQuestion}&rdquo;</li>
+                    </ul>
+                  </details>
+                </FormSection>
+                <FormSection title="Anúncios do atendimento humano" icon={<Megaphone size={16} />} summary={customNotices ? "Personalizados" : "Os anúncios padrão"}>
                   <p className="text-xs text-muted">Nunca saem como mensagem própria: viram o começo de uma mensagem. Assumir a conversa não manda nada ao contato; as mensagens seguintes de quem assumiu saem sem anúncio.</p>
-                </div>
-                <TemplateField
-                  id="entry_notice"
-                  label={`Entrada: começo da primeira mensagem de quem assumir${templateRow ? (owns("anuncio") ? " (deste chatbot)" : " (do modelo)") : ""}`}
-                  hint="Variáveis: {atendente} (o nome de exibição de quem assumiu, obrigatório) e {empresa}. A prévia usa o seu nome."
-                  defaultValue={handoff.entry_notice ?? DEFAULT_ENTRY_NOTICE}
-                  fallback={DEFAULT_ENTRY_NOTICE}
-                  vars={{ atendente: attendantOf(member).name, empresa: bot.client_name }}
-                  maxLength={300}
-                  disabled={!opens("anuncio")}
-                />
-                <TemplateField
-                  id="back_notice"
-                  label="Volta para a IA: começo da próxima resposta do assistente"
-                  hint="Variáveis: {nome} (o assistente) e {empresa}. Precisa dizer “assistente virtual”."
-                  defaultValue={handoff.back_notice ?? DEFAULT_BACK_NOTICE}
-                  fallback={DEFAULT_BACK_NOTICE}
-                  vars={{ nome: bot.name, empresa: bot.client_name }}
-                  maxLength={300}
-                />
-                <div className="flex flex-col gap-2 border-t border-line-2 pt-3">
-                  <h4 className="text-sm font-semibold">Assinatura das mensagens da equipe</h4>
+                  <TemplateField
+                    id="entry_notice"
+                    label={`Entrada: começo da primeira mensagem de quem assumir${templateRow ? (owns("anuncio") ? " (deste chatbot)" : " (do modelo)") : ""}`}
+                    hint="Variáveis: {atendente} (o nome de exibição de quem assumiu, obrigatório) e {empresa}. A prévia usa o seu nome."
+                    defaultValue={handoff.entry_notice ?? DEFAULT_ENTRY_NOTICE}
+                    fallback={DEFAULT_ENTRY_NOTICE}
+                    vars={{ atendente: attendantOf(member).name, empresa: bot.client_name }}
+                    maxLength={300}
+                    disabled={!opens("anuncio")}
+                  />
+                  <TemplateField
+                    id="back_notice"
+                    label="Volta para a IA: começo da próxima resposta do assistente"
+                    hint="Variáveis: {nome} (o assistente) e {empresa}. Precisa dizer “assistente virtual”."
+                    defaultValue={handoff.back_notice ?? DEFAULT_BACK_NOTICE}
+                    fallback={DEFAULT_BACK_NOTICE}
+                    vars={{ nome: bot.name, empresa: bot.client_name }}
+                    maxLength={300}
+                  />
+                </FormSection>
+                <FormSection title="Assinatura das mensagens da equipe" icon={<PenLine size={16} />} summary={`${SIGNATURE_LABEL[handoff.signature ?? "nenhuma"]}${handoff.signature_locked ? " · travada para todos" : ""}`}>
                   <p className="text-xs text-muted">No WhatsApp e no Instagram, o contato não vê quem escreveu: a assinatura põe o nome de quem atende na mensagem. No chat do site não sai assinatura, porque o nome e a foto já aparecem em cada mensagem. A mensagem com o anúncio de entrada ou de transferência sai sem assinatura (o anúncio já diz o nome).</p>
                   <label htmlFor="signature" className="label">Formato</label>
                   <select id="signature" name="signature" defaultValue={handoff.signature ?? "nenhuma"} className="input max-w-[460px]">
@@ -687,75 +718,63 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <input type="checkbox" name="signature_locked" defaultChecked={Boolean(handoff.signature_locked)} className="mt-1" />
                     <span>Travar o formato<span className="block text-xs text-muted">Sem travar, cada pessoa pode escolher o próprio formato em Meu perfil. Travado, vale este para todo mundo.</span></span>
                   </label>
-                </div>
-                <details className="rounded-lg border border-line-2 px-3 py-2 text-sm">
-                  <summary className="cursor-pointer text-xs font-semibold text-muted">Textos fixos (conformidade, só para consulta)</summary>
-                  <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-ink-2">
-                    <li>Pedido de atendente no horário ou sem horário: &ldquo;{NO_DATE_NOTICE}&rdquo;</li>
-                    <li>Assistente pausado ou modo só humano: &ldquo;{HUMAN_ONLY_NOTICE}&rdquo;</li>
-                    <li>Bebida e remédio no WhatsApp e no Instagram: &ldquo;{GATE_TEXTS.ageQuestion}&rdquo;</li>
-                  </ul>
-                </details>
-              </section>
-
-              <section className="flex flex-col gap-2 border-t border-line pt-4">
-                <h3 className="text-sm font-semibold">Chat do site</h3>
-                <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="widget_button" defaultChecked={Boolean(handoff.widget_button)} className="mt-1" />
-                  <span>
-                    Mostrar o botão &ldquo;Falar com uma pessoa&rdquo; no chat do site
-                    <span className="block text-xs text-muted">Com um toque, o visitante pede atendente sem precisar escrever; a conversa aparece em Conversas. Sem o botão, ele ainda pode pedir escrevendo.</span>
-                  </span>
-                </label>
-              </section>
-
-              <section className="flex flex-col gap-3 border-t border-line pt-4">
-                <h3 className="text-sm font-semibold">Chamados no chat do site</h3>
-                <p className="-mt-2 text-xs text-muted">O visitante abre um chamado com nome, e-mail, a descrição e, se você quiser, o telefone e o assunto. Ele recebe um protocolo, vira lead e o pedido entra na Caixa de entrada; a resposta chega no e-mail dele. O assunto com o nome de um setor do cliente vai para esse setor.</p>
-                <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="ticket_enabled" defaultChecked={Boolean(ticketForm?.enabled)} className="mt-1" />
-                  <span>Receber chamados pelo chat do site</span>
-                </label>
-                <fieldset className="flex flex-col gap-1.5 text-sm">
-                  <legend className="label">Como aparece</legend>
-                  <label className="flex items-start gap-2"><input type="radio" name="ticket_mode" value="aba" defaultChecked={ticketForm?.mode !== "sozinho"} className="mt-1" /><span>Na aba &ldquo;Abrir chamado&rdquo;, ao lado da conversa com o assistente</span></label>
-                  <label className="flex items-start gap-2"><input type="radio" name="ticket_mode" value="sozinho" defaultChecked={ticketForm?.mode === "sozinho"} className="mt-1" /><span>Só o formulário de chamado (sem a conversa)</span></label>
-                </fieldset>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="ticket_phone" className="label">Telefone</label>
-                    <select id="ticket_phone" name="ticket_phone" defaultValue={ticketForm?.phone ?? "nao"} className="input">
-                      <option value="nao">Não pedir</option>
-                      <option value="opcional">Pedir, opcional</option>
-                      <option value="obrigatorio">Pedir, obrigatório</option>
-                    </select>
+                </FormSection>
+                <FormSection title="Chat do site" icon={<MessageCircle size={16} />} summary={handoff.widget_button ? "Com o botão “Falar com uma pessoa”" : "Sem o botão (o visitante pede escrevendo)"}>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" name="widget_button" defaultChecked={Boolean(handoff.widget_button)} className="mt-1" />
+                    <span>
+                      Mostrar o botão &ldquo;Falar com uma pessoa&rdquo; no chat do site
+                      <span className="block text-xs text-muted">Com um toque, o visitante pede atendente sem precisar escrever; a conversa aparece em Conversas. Sem o botão, ele ainda pode pedir escrevendo.</span>
+                    </span>
+                  </label>
+                </FormSection>
+                <FormSection title="Chamados no chat do site" icon={<Ticket size={16} />} summary={ticketForm?.enabled ? (ticketForm.mode === "sozinho" ? "Ligados · só o formulário" : "Ligados · na aba “Abrir chamado”") : "Desligados"}>
+                  <p className="text-xs text-muted">O visitante abre um chamado com nome, e-mail, a descrição e, se você quiser, o telefone e o assunto. Ele recebe um protocolo, vira lead e o pedido entra na Caixa de entrada; a resposta chega no e-mail dele. O assunto com o nome de um setor do cliente vai para esse setor.</p>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" name="ticket_enabled" defaultChecked={Boolean(ticketForm?.enabled)} className="mt-1" />
+                    <span>Receber chamados pelo chat do site</span>
+                  </label>
+                  <fieldset className="flex flex-col gap-1.5 text-sm">
+                    <legend className="label">Como aparece</legend>
+                    <label className="flex items-start gap-2"><input type="radio" name="ticket_mode" value="aba" defaultChecked={ticketForm?.mode !== "sozinho"} className="mt-1" /><span>Na aba &ldquo;Abrir chamado&rdquo;, ao lado da conversa com o assistente</span></label>
+                    <label className="flex items-start gap-2"><input type="radio" name="ticket_mode" value="sozinho" defaultChecked={ticketForm?.mode === "sozinho"} className="mt-1" /><span>Só o formulário de chamado (sem a conversa)</span></label>
+                  </fieldset>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="ticket_phone" className="label">Telefone</label>
+                      <select id="ticket_phone" name="ticket_phone" defaultValue={ticketForm?.phone ?? "nao"} className="input">
+                        <option value="nao">Não pedir</option>
+                        <option value="opcional">Pedir, opcional</option>
+                        <option value="obrigatorio">Pedir, obrigatório</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="ticket_subjects" className="label">Assuntos (um por linha, até {TICKET_SUBJECTS_MAX}; vazio: sem o campo)</label>
+                      <textarea id="ticket_subjects" name="ticket_subjects" rows={4} defaultValue={(ticketForm?.subjects ?? []).join("\n")} className="input" placeholder={"Financeiro\nTroca e devolução\nOutro assunto"} />
+                    </div>
                   </div>
-                  <div>
-                    <label htmlFor="ticket_subjects" className="label">Assuntos (um por linha, até {TICKET_SUBJECTS_MAX}; vazio: sem o campo)</label>
-                    <textarea id="ticket_subjects" name="ticket_subjects" rows={4} defaultValue={(ticketForm?.subjects ?? []).join("\n")} className="input" placeholder={"Financeiro\nTroca e devolução\nOutro assunto"} />
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" name="ticket_attachment" defaultChecked={Boolean(ticketForm?.attachment)} className="mt-1" />
+                    <span>Aceitar um anexo no chamado: uma foto (JPEG, PNG ou WEBP) ou um PDF, até 4 MB. Só a equipe vê, na conversa; a IA não lê.</span>
+                  </label>
+                </FormSection>
+                <FormSection title="Bebida alcoólica e remédio" icon={<Wine size={16} />} summary={regulatedPaths || "Sem caminho: usa o que estiver nas fontes"}>
+                  <p className="text-xs text-muted">No WhatsApp e no Instagram, o assistente só fala desses itens com quem confirmou ter 18 anos ou mais, e a compra nunca fecha no chat: ele manda o cliente para um destes caminhos, nesta ordem. Não vale link de WhatsApp nem de mensagem direta. Tudo em branco: o assistente usa o que estiver nas fontes.</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div><label htmlFor="regulated_site" className="label">Link do site (item ou cardápio)</label><input id="regulated_site" name="regulated_site" maxLength={300} defaultValue={regulated.site ?? ""} className="input" placeholder="bardoze.com.br/cardapio" /></div>
+                    <div><label htmlFor="regulated_app" className="label">Link do app de delivery</label><input id="regulated_app" name="regulated_app" maxLength={300} defaultValue={regulated.app ?? ""} className="input" placeholder="ifood.com.br/delivery/…" /></div>
+                    <div><label htmlFor="regulated_phone" className="label">Telefone para pedidos (ligação)</label><input id="regulated_phone" name="regulated_phone" maxLength={30} defaultValue={regulated.phone ?? ""} className="input" placeholder="(21) 3333-4444" /></div>
                   </div>
-                </div>
-                <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="ticket_attachment" defaultChecked={Boolean(ticketForm?.attachment)} className="mt-1" />
-                  <span>Aceitar um anexo no chamado: uma foto (JPEG, PNG ou WEBP) ou um PDF, até 4 MB. Só a equipe vê, na conversa; a IA não lê.</span>
-                </label>
-              </section>
-
-              <section className="flex flex-col gap-3 border-t border-line pt-4">
-                <h3 className="text-sm font-semibold">Bebida alcoólica e remédio: onde o cliente finaliza a compra</h3>
-                <p className="-mt-2 text-xs text-muted">No WhatsApp e no Instagram, o assistente só fala desses itens com quem confirmou ter 18 anos ou mais, e a compra nunca fecha no chat: ele manda o cliente para um destes caminhos, nesta ordem. Não vale link de WhatsApp nem de mensagem direta. Tudo em branco: o assistente usa o que estiver nas fontes.</p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div><label htmlFor="regulated_site" className="label">Link do site (item ou cardápio)</label><input id="regulated_site" name="regulated_site" maxLength={300} defaultValue={regulated.site ?? ""} className="input" placeholder="bardoze.com.br/cardapio" /></div>
-                  <div><label htmlFor="regulated_app" className="label">Link do app de delivery</label><input id="regulated_app" name="regulated_app" maxLength={300} defaultValue={regulated.app ?? ""} className="input" placeholder="ifood.com.br/delivery/…" /></div>
-                  <div><label htmlFor="regulated_phone" className="label">Telefone para pedidos (ligação)</label><input id="regulated_phone" name="regulated_phone" maxLength={30} defaultValue={regulated.phone ?? ""} className="input" placeholder="(21) 3333-4444" /></div>
-                </div>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="regulated_pickup" defaultChecked={Boolean(regulated.pickup)} /> Retirada no local (usa o endereço de Atendimento presencial)</label>
-              </section>
-              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
-            </ActionForm>
-          )}
-          {tab === "atendimento" && !bot.is_demo && (
-            <SatisfactionCard on={Boolean(bot.satisfaction_survey)} summary={await satisfactionSummary(createAdminClient(), [id], daysAgoIso(30))} save={setSatisfactionSurvey.bind(null, id)} />
+                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="regulated_pickup" defaultChecked={Boolean(regulated.pickup)} /> Retirada no local (usa o endereço de Atendimento presencial)</label>
+                </FormSection>
+                <SaveBar />
+              </ActionForm>
+              {!bot.is_demo && (
+                <FormSection title="Pesquisa de satisfação" icon={<Star size={16} />} summary={bot.satisfaction_survey ? "Ligada" : "Desligada"}>
+                  <SatisfactionCard bare on={Boolean(bot.satisfaction_survey)} summary={await satisfactionSummary(createAdminClient(), [id], daysAgoIso(30))} save={setSatisfactionSurvey.bind(null, id)} />
+                </FormSection>
+              )}
+            </div>
           )}
 
           {tab === "heranca" && isTemplate && (

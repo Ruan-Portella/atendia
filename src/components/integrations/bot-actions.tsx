@@ -7,6 +7,8 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ActionFields, ActionTestForm } from "@/components/integrations/action-fields";
 import { needsConfirmation } from "@/lib/actions";
 import { actionsTokenWeight, headerNames } from "@/lib/integrations-input";
+import { KeyRound, Plus } from "lucide-react";
+import { FormSection, HowItWorks, RowSection, StatusPill } from "@/components/ui/form-section";
 import { deleteBotAction, rotateBotActionSecret, saveBotAction, testBotAction } from "@/app/painel/(configuracoes)/integracoes/actions";
 
 const LEVEL_LABEL: Record<string, string> = { anonimo: "qualquer contato", canal: "telefone conhecido", usuario: "identificado pela empresa" };
@@ -38,36 +40,43 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
   }
 
   return (
-    <div className="flex max-w-[860px] flex-col gap-5">
-      <div>
+    <div className="flex max-w-[860px] flex-col gap-4">
+      <div className="flex flex-col gap-1">
         <h2 className="text-[22px] font-medium">Ações</h2>
-        <p className="text-sm text-muted">
-          Chamadas ao sistema do cliente que a IA faz na conversa. Consulta (status do pedido, agenda, saldo): a IA chama quando a descrição combina e responde com o que o endpoint devolver. Executa
-          (criar pedido, agendar, cancelar): a IA mostra ao contato um resumo com Confirmar e Cancelar, e o endpoint só é chamado depois do Confirmar. Ação que o BoaVoz classifica como pedido, reserva ou
-          cobrança sempre pede o Confirmar, mesmo cadastrada como consulta. O retorno pode trazer components (botões, lista ou link): botão com action chama a ação direto no
-          toque do contato, sem a IA. E attachments (até 5 arquivos) vão logo depois do texto, no formato de cada canal.{" "}
-          <a href="/docs/acoes" target="_blank" rel="noopener" className="font-semibold text-brand hover:underline">
+        <p className="text-sm text-muted">Chamadas ao sistema do cliente que a IA faz na conversa: consultar um pedido, agendar, cancelar.</p>
+        {/* redesenho, etapa 5: a explicação longa fica fechada; o segredo e as ações em blocos que abrem e fecham */}
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-1">
+          <HowItWorks>
+            <p>
+              Consulta (status do pedido, agenda, saldo): a IA chama quando a descrição combina e responde com o que o endpoint devolver. Executa (criar pedido, agendar, cancelar): a IA mostra ao contato
+              um resumo com Confirmar e Cancelar, e o endpoint só é chamado depois do Confirmar. Ação que o BoaVoz classifica como pedido, reserva ou cobrança sempre pede o Confirmar, mesmo cadastrada
+              como consulta.
+            </p>
+            <p>O retorno pode trazer components (botões, lista ou link): botão com action chama a ação direto no toque do contato, sem a IA. E attachments (até 5 arquivos) vão logo depois do texto, no formato de cada canal.</p>
+          </HowItWorks>
+          <a href="/docs/acoes" target="_blank" rel="noopener" className="text-[13px] font-medium text-brand hover:underline">
             Documentação das ações ↗
           </a>
-        </p>
+        </div>
       </div>
 
       {manage && (
-        <ResultForm action={rotateBotActionSecret.bind(null, bot.id)} copy className="card p-4">
-          <div className="text-sm font-semibold">Segredo de ações deste chatbot</div>
-          <p className="text-xs text-muted">
-            {bot.action_secret_enc ? "Configurado." : "Ainda não gerado: as ações deste chatbot não funcionam sem ele."}
-            {previousSecretNote(bot.action_secret_prev_until)} Cada chamada vai assinada no padrão Standard Webhooks; o endpoint confere com este segredo. Aparece uma vez só: quem perder, gera outro.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <SubmitButton className="btn-ghost py-1.5" pendingLabel="Gerando…">{bot.action_secret_enc ? "Trocar o segredo" : "Gerar segredo"}</SubmitButton>
-            {Boolean(bot.action_secret_enc) && (
-              <label className="flex items-center gap-1.5 text-xs">
-                <input type="checkbox" name="invalidate" /> invalidar o anterior agora (vazou)
-              </label>
-            )}
-          </div>
-        </ResultForm>
+        <FormSection title="Segredo de ações deste chatbot" icon={<KeyRound size={16} />} summary={bot.action_secret_enc ? "Configurado" : "Ainda não gerado: as ações não funcionam sem ele"} defaultOpen={!bot.action_secret_enc}>
+          <ResultForm action={rotateBotActionSecret.bind(null, bot.id)} copy className="gap-3">
+            <p className="text-xs text-muted">
+              {bot.action_secret_enc ? "Configurado." : "Ainda não gerado: as ações deste chatbot não funcionam sem ele."}
+              {previousSecretNote(bot.action_secret_prev_until)} Cada chamada vai assinada no padrão Standard Webhooks; o endpoint confere com este segredo. Aparece uma vez só: quem perder, gera outro.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <SubmitButton className="btn-ghost py-1.5" pendingLabel="Gerando…">{bot.action_secret_enc ? "Trocar o segredo" : "Gerar segredo"}</SubmitButton>
+              {Boolean(bot.action_secret_enc) && (
+                <label className="flex items-center gap-1.5 text-xs">
+                  <input type="checkbox" name="invalidate" /> invalidar o anterior agora (vazou)
+                </label>
+              )}
+            </div>
+          </ResultForm>
+        </FormSection>
       )}
 
       {weight > 0 && (
@@ -81,36 +90,31 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
           actions.map((a) => {
             const s = stats.get(a.id);
             return (
-              <details key={a.id} className="border-b border-line-2 last:border-0">
-                <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
-                  <span className="font-mono font-semibold">{a.name}</span>
-                  <span className={a.active ? "text-xs text-brand" : "text-xs text-muted"}>{a.active ? "ativa" : "desativada"}</span>
-                  <span className="text-xs text-muted">
-                    {needsConfirmation(a) ? "executa (com Confirmar)" : "consulta"}
-                    {a.supports_preview ? " · aceita prévia" : ""} · {LEVEL_LABEL[a.min_level] ?? a.min_level}
-                    {a.routine_only ? " · só no roteiro" : ""}
-                  </span>
-                  {a.creates_order && a.type === "query" && <span className="text-xs text-amber-ink">parece criar pedido, reserva ou cobrança: pede o Confirmar do contato</span>}
-                  <span className="ml-auto text-xs text-muted">{s ? `última chamada ${relativeTime(s.last!)} · erros ${pct(s.errors, s.total)} em 7 dias` : "sem chamadas em 7 dias"}</span>
-                </summary>
-                <div className="flex flex-col gap-4 border-t border-line-2 px-4 py-4">
-                  {manage ? (
-                    <>
-                      <ActionFields action={saveBotAction.bind(null, bot.id, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
-                      <ActionTestForm action={testBotAction.bind(null, a.id)} a={a} />
-                      <ConfirmAction action={deleteBotAction.bind(null, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="self-start text-xs font-semibold text-danger hover:underline">
-                        Apagar ação
-                      </ConfirmAction>
-                    </>
-                  ) : (
-                    <div className="flex flex-col gap-1 text-sm">
-                      <p className="text-ink-2">{a.description}</p>
-                      <p className="truncate font-mono text-xs text-muted">{a.url}</p>
-                      <p className="text-xs text-muted">Só o dono ou um administrador da agência edita as ações.</p>
-                    </div>
-                  )}
-                </div>
-              </details>
+              <RowSection
+                key={a.id}
+                title={a.name}
+                mono
+                status={<StatusPill tone={a.active ? "ok" : "muted"}>{a.active ? "Ativa" : "Desativada"}</StatusPill>}
+                meta={`${needsConfirmation(a) ? "Executa (com Confirmar)" : "Consulta"}${a.supports_preview ? " · aceita prévia" : ""} · ${LEVEL_LABEL[a.min_level] ?? a.min_level}${a.routine_only ? " · só no roteiro" : ""}`}
+                warn={a.creates_order && a.type === "query" ? "Parece criar pedido, reserva ou cobrança: pede o Confirmar do contato" : null}
+                aside={s ? <>última chamada {relativeTime(s.last!)}<br />erros {pct(s.errors, s.total)} em 7 dias</> : "sem chamadas em 7 dias"}
+              >
+                {manage ? (
+                  <>
+                    <ActionFields action={saveBotAction.bind(null, bot.id, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
+                    <ActionTestForm action={testBotAction.bind(null, a.id)} a={a} />
+                    <ConfirmAction action={deleteBotAction.bind(null, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="self-start text-xs font-semibold text-danger hover:underline">
+                      Apagar ação
+                    </ConfirmAction>
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-1 text-sm">
+                    <p className="text-ink-2">{a.description}</p>
+                    <p className="truncate font-mono text-xs text-muted">{a.url}</p>
+                    <p className="text-xs text-muted">Só o dono ou um administrador da agência edita as ações.</p>
+                  </div>
+                )}
+              </RowSection>
             );
           })
         ) : (
@@ -119,12 +123,9 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
       </div>
 
       {manage && (
-        <details className="card p-4">
-          <summary className="cursor-pointer text-sm font-semibold">+ Nova ação</summary>
-          <div className="mt-3">
-            <ActionFields action={saveBotAction.bind(null, bot.id, null)} label="Criar ação" />
-          </div>
-        </details>
+        <FormSection title="Nova ação" icon={<Plus size={16} />} summary="Uma consulta ou uma ação que executa, com o botão Testar antes de ligar">
+          <ActionFields action={saveBotAction.bind(null, bot.id, null)} label="Criar ação" />
+        </FormSection>
       )}
     </div>
   );

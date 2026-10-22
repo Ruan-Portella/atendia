@@ -10,12 +10,12 @@ import type { ActionResult } from "@/lib/action-result";
  * do Instagram: o post mostra o preço do dia em que foi publicado, e a loja escolhe o que o
  * assistente faz com ele.
  */
-export function PostPriceCard({ rule, maxDays, save }: { rule: string; maxDays: number; save: (formData: FormData) => Promise<ActionResult> }) {
+export function PostPriceCard({ rule, maxDays, save, bare = false }: { rule: string; maxDays: number; save: (formData: FormData) => Promise<ActionResult>; /** dentro de um bloco: sem a moldura e sem o título */ bare?: boolean }) {
   const [choice, setChoice] = useState(rule);
   return (
-    <ActionForm action={save} className="card flex max-w-[860px] flex-col gap-3 p-5">
+    <ActionForm action={save} className={bare ? "flex flex-col gap-3" : "card flex max-w-[860px] flex-col gap-3 p-5"}>
       <div>
-        <div className="font-semibold">Preço que aparece nos posts do Instagram</div>
+        {!bare && <div className="font-semibold">Preço que aparece nos posts do Instagram</div>}
         <p className="text-sm text-muted">O post mostra o preço do dia em que foi publicado. Uma ação de consulta de produto, preço ou estoque, se houver, sempre vale mais que o post.</p>
       </div>
       <fieldset className="flex flex-col gap-2.5 text-sm">

@@ -4,11 +4,11 @@ import type { ActionResult } from "@/lib/action-result";
 import { IDLE_MINUTES, type SatisfactionSummary } from "@/lib/satisfaction";
 
 /** Pesquisa de satisfação do chatbot (Lançamento, parte 4): ligar e o resultado dos últimos 30 dias. */
-export function SatisfactionCard({ on, summary, save }: { on: boolean; summary: SatisfactionSummary; save: (formData: FormData) => Promise<ActionResult> }) {
+export function SatisfactionCard({ on, summary, save, bare = false }: { on: boolean; summary: SatisfactionSummary; save: (formData: FormData) => Promise<ActionResult>; /** dentro de um bloco: sem a linha de cima e sem o título */ bare?: boolean }) {
   return (
-    <section className="flex max-w-[640px] flex-col gap-3 border-t border-line pt-5">
+    <section className={bare ? "flex flex-col gap-3" : "flex max-w-[640px] flex-col gap-3 border-t border-line pt-5"}>
       <div>
-        <h3 className="text-sm font-semibold">Pesquisa de satisfação</h3>
+        {!bare && <h3 className="text-sm font-semibold">Pesquisa de satisfação</h3>}
         <p className="text-xs text-muted">
           No WhatsApp e no Instagram, o contato recebe &quot;Como foi o seu atendimento hoje?&quot; com Ótimo, Regular e Ruim: quando a equipe encerra um atendimento e quando a conversa com o assistente fica parada por {IDLE_MINUTES} minutos. Uma por conversa por dia, dentro da janela de 24 horas (a Meta não cobra), e nunca para quem pediu para sair.
         </p>

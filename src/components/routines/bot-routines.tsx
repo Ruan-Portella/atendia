@@ -7,6 +7,8 @@ import { ROUTINES_PER_BOT, routineUsesActions, type RoutineRow } from "@/lib/rou
 import { runStats, runStatsLine, type RunSummary } from "@/lib/routine-run";
 import { daysAgoIso } from "@/lib/utils";
 import { listSectors } from "@/lib/sectors";
+import { Plus, Smartphone, UserCheck } from "lucide-react";
+import { FormSection, HowItWorks, RowSection, StatusPill } from "@/components/ui/form-section";
 import { deleteRoutine, saveRoutine, setConfirmPairedPerson, setRememberNumber, setRoutineActive } from "@/app/painel/roteiros/actions";
 
 /**
@@ -26,7 +28,7 @@ function statusOf(r: RoutineRow, integrations: boolean, actions: Array<{ name: s
   return { label: "ligado", tone: "ok" };
 }
 
-const TONE = { ok: "text-brand", muted: "text-muted", warn: "text-amber-ink" };
+const PILL = { ok: "Ligado", muted: "Desligado", warn: "Atenção" };
 
 /**
  * Chatbot → Roteiros (B2', parte 1): os roteiros que a IA segue quando a conversa entra num assunto.
@@ -60,14 +62,17 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
   const sectors = bot?.client_id ? (await listSectors(db, [bot.client_id as string]).catch(() => [])).map((s) => s.name) : [];
 
   return (
-    <div className="flex max-w-[860px] flex-col gap-5">
-      <div>
+    <div className="flex max-w-[860px] flex-col gap-4">
+      <div className="flex flex-col gap-1">
         <h2 className="text-[22px] font-medium">Roteiros</h2>
-        <p className="text-sm text-muted">
-          Passos que a IA segue quando a conversa entra num assunto: segunda via, troca, orçamento. A IA conversa com naturalidade dentro de cada passo, mas não pula nenhum. Quem decide o caminho é o
-          BoaVoz: o botão tocado e o resultado da ação levam ao próximo passo, a outro passo, ao fim ou a um atendente. Dados como CPF e CEP são conferidos antes de seguir. A IA reconhece o assunto pelo
-          &quot;Quando usar&quot;; a mensagem que é só uma palavra-chave começa o roteiro na hora.
-        </p>
+        <p className="text-sm text-muted">Passos que a IA segue quando a conversa entra num assunto: segunda via, troca, orçamento.</p>
+        {/* redesenho, etapa 5: a explicação longa fica fechada; a lista e os ajustes em blocos que abrem e fecham */}
+        <HowItWorks>
+          <p>
+            A IA conversa com naturalidade dentro de cada passo, mas não pula nenhum. Quem decide o caminho é o BoaVoz: o botão tocado e o resultado da ação levam ao próximo passo, a outro passo, ao fim
+            ou a um atendente. Dados como CPF e CEP são conferidos antes de seguir. A IA reconhece o assunto pelo &quot;Quando usar&quot;; a mensagem que é só uma palavra-chave começa o roteiro na hora.
+          </p>
+        </HowItWorks>
       </div>
 
       {!integrations && actions.length > 0 && (
@@ -78,31 +83,29 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
         {routines.length ? (
           routines.map((r) => {
             const st = statusOf(r, integrations, actions, photos);
+            const stats = runStats(runsOf.get(r.id) ?? []);
             return (
-              <details key={r.id} className="border-b border-line-2 last:border-0">
-                <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
-                  <span className="font-semibold">{r.name}</span>
-                  <span className={`text-xs ${TONE[st.tone]}`}>{st.label}</span>
-                  <span className="text-xs text-muted">
-                    {r.steps.length} {r.steps.length === 1 ? "passo" : "passos"}
-                    {r.keywords.length ? ` · ${r.keywords.map((k) => k.toUpperCase()).join(", ")}` : ""}
-                  </span>
-                </summary>
-                <div className="flex flex-col gap-4 border-t border-line-2 px-4 py-4">
-                  <p className="text-xs text-muted">{runStatsLine(runStats(runsOf.get(r.id) ?? []))} Desistiram: cancelaram, ficaram 24 horas sem responder ou mudaram de assunto.</p>
-                  <RoutineEditor action={saveRoutine.bind(null, botId, r.id)} initial={r} actions={actions} integrations={integrations} label="Salvar roteiro" sectors={sectors} />
-                  <div className="flex flex-wrap items-center gap-4 border-t border-line-2 pt-3">
-                    <ActionForm action={setRoutineActive.bind(null, r.id, !r.active)}>
-                      <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Salvando…">
-                        {r.active ? "Desligar roteiro" : "Ligar roteiro"}
-                      </SubmitButton>
-                    </ActionForm>
-                    <ConfirmAction action={deleteRoutine.bind(null, r.id)} title={`Apagar o roteiro ${r.name}?`} description="A IA deixa de seguir este roteiro. Não dá para desfazer." confirmLabel="Apagar" className="text-xs font-semibold text-danger hover:underline">
-                      Apagar roteiro
-                    </ConfirmAction>
-                  </div>
+              <RowSection
+                key={r.id}
+                title={r.name}
+                status={<StatusPill tone={st.tone}>{PILL[st.tone]}</StatusPill>}
+                meta={`${r.steps.length} ${r.steps.length === 1 ? "passo" : "passos"}${r.keywords.length ? ` · ${r.keywords.map((k) => k.toUpperCase()).join(", ")}` : ""}`}
+                warn={st.tone === "warn" ? st.label.replace(/^./, (c) => c.toUpperCase()) : null}
+                aside={stats.started ? `${stats.started} em 30 dias` : "sem uso em 30 dias"}
+              >
+                <p className="text-xs text-muted">{runStatsLine(stats)} Desistiram: cancelaram, ficaram 24 horas sem responder ou mudaram de assunto.</p>
+                <RoutineEditor action={saveRoutine.bind(null, botId, r.id)} initial={r} actions={actions} integrations={integrations} label="Salvar roteiro" sectors={sectors} />
+                <div className="flex flex-wrap items-center gap-4 border-t border-line-2 pt-3">
+                  <ActionForm action={setRoutineActive.bind(null, r.id, !r.active)}>
+                    <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Salvando…">
+                      {r.active ? "Desligar roteiro" : "Ligar roteiro"}
+                    </SubmitButton>
+                  </ActionForm>
+                  <ConfirmAction action={deleteRoutine.bind(null, r.id)} title={`Apagar o roteiro ${r.name}?`} description="A IA deixa de seguir este roteiro. Não dá para desfazer." confirmLabel="Apagar" className="text-xs font-semibold text-danger hover:underline">
+                    Apagar roteiro
+                  </ConfirmAction>
                 </div>
-              </details>
+              </RowSection>
             );
           })
         ) : (
@@ -110,11 +113,20 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
         )}
       </div>
 
-      <div className="card flex flex-col gap-2 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold">Lembrar o número depois da identificação</h3>
-          <span className={`text-xs ${offerRemember ? "text-brand" : "text-muted"}`}>{offerRemember ? "ligado" : "desligado"}</span>
-        </div>
+      {routines.length < ROUTINES_PER_BOT ? (
+        <FormSection title="Novo roteiro" icon={<Plus size={16} />} summary="Comece por um modelo pronto ou do zero" defaultOpen={!routines.length}>
+          <RoutineEditor action={saveRoutine.bind(null, botId, null)} actions={actions} integrations={integrations} label="Criar roteiro" withTemplates sectors={sectors} />
+        </FormSection>
+      ) : (
+        <p className="text-xs text-muted">Este chatbot chegou ao limite de {ROUTINES_PER_BOT} roteiros.</p>
+      )}
+
+      <h3 className="mt-2 text-base font-medium">Ajustes dos roteiros</h3>
+      <FormSection
+        title="Lembrar o número depois da identificação"
+        icon={<Smartphone size={16} />}
+        summary={offerRemember ? `Ligado${remembered ? ` · ${remembered} ${remembered === 1 ? "vínculo lembrado" : "vínculos lembrados"}` : ""}` : "Desligado: a identificação vale só para a conversa"}
+      >
         <p className="text-xs text-muted">
           Quando a ação de um roteiro identifica a pessoa no WhatsApp ou no Instagram, o BoaVoz pergunta se pode lembrar o número. Com o número lembrado, cada conversa nova começa por &quot;Estou falando com…?&quot;, e a pessoa não repete os dados. Desligado, a identificação vale só para a conversa.
           {offerRemember && remembered ? ` Hoje: ${remembered} ${remembered === 1 ? "vínculo lembrado" : "vínculos lembrados"}.` : ""}
@@ -138,14 +150,10 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
             </ActionForm>
           )}
         </div>
-      </div>
+      </FormSection>
 
       {integrations && (
-        <div className="card flex flex-col gap-2 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold">Confirmar quem foi conectado pelo código</h3>
-            <span className={`text-xs ${confirmPaired ? "text-brand" : "text-muted"}`}>{confirmPaired ? "ligado" : "desligado"}</span>
-          </div>
+        <FormSection title="Confirmar quem foi conectado pelo código" icon={<UserCheck size={16} />} summary={confirmPaired ? "Ligado: pergunta “Estou falando com…?” antes de usar a conta" : "Desligado: a conta vale direto"}>
           <p className="text-xs text-muted">
             Quando o sistema da loja conecta o WhatsApp ou o Instagram da pessoa à conta dela (o código do pareamento pela API), cada conversa nova também começa por &quot;Estou falando com…?&quot; antes de a IA e as ações usarem a conta. &quot;Sou outra pessoa&quot; deixa a conversa sem a conta, e o vínculo continua. Quem acabou de conectar pelo código não é perguntado. Desligado, a conta vale direto em toda conversa.
           </p>
@@ -156,18 +164,7 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
               </SubmitButton>
             </ActionForm>
           </div>
-        </div>
-      )}
-
-      {routines.length < ROUTINES_PER_BOT ? (
-        <details className="card p-4" open={!routines.length}>
-          <summary className="cursor-pointer text-sm font-semibold">+ Novo roteiro</summary>
-          <div className="mt-3">
-            <RoutineEditor action={saveRoutine.bind(null, botId, null)} actions={actions} integrations={integrations} label="Criar roteiro" withTemplates sectors={sectors} />
-          </div>
-        </details>
-      ) : (
-        <p className="text-xs text-muted">Este chatbot chegou ao limite de {ROUTINES_PER_BOT} roteiros.</p>
+        </FormSection>
       )}
     </div>
   );
