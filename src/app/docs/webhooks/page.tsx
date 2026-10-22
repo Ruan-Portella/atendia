@@ -99,7 +99,7 @@ export default function WebhooksDocs() {
           [<code key="2">message.sent</code>, "Saiu uma mensagem para o contato: da IA, da equipe, da API, de campanha ou do app do celular.", <><code>message</code>, <code>source</code> (<code>ai</code>, <code>human</code>, <code>api</code>, <code>campaign</code>, <code>phone_app</code>) e <code>agent</code> (quem enviou).</>],
           [<code key="3">message.status</code>, "A Meta confirmou entrega ou leitura.", <><code>message</code> {`{id, status}`}: <code>delivered</code> ou <code>read</code>. Desmarcado por padrão: são até 2 eventos por mensagem enviada.</>],
           [<code key="4">message.failed</code>, "A mensagem não chegou ao contato.", <><code>message</code> e <code>error</code> {`{code}`} (o código da Meta).</>],
-          [<code key="5">message.deleted</code>, "Uma mensagem foi desfeita (o contato apagou no Instagram, por exemplo).", <><code>message</code> {`{id}`}. As entregas pendentes dela saem da fila antes.</>],
+          [<code key="5">message.deleted</code>, "Uma mensagem foi desfeita (o contato apagou no Instagram, ou no WhatsApp quando o número também está no app do celular).", <><code>message</code> {`{id}`}. As entregas pendentes dela saem da fila antes.</>],
         ]}
       />
       <p>

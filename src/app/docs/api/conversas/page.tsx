@@ -40,6 +40,9 @@ export default function ConversationsApiDocs() {
       <p>
         Da mais antiga para a mais nova, com <code>limit</code> e <code>cursor</code>. Cada mensagem traz a direção (<code>inbound</code> do contato, <code>outbound</code> para ele), a origem (<code>source</code>: <code>contact</code>, <code>ai</code>, <code>human</code>, <code>api</code>, <code>campaign</code> ou <code>phone_app</code>), quem mandou (<code>agent</code>), o status e o arquivo, se houver.
       </p>
+      <p>
+        No WhatsApp e no Instagram, <code>reply_to</code> é o id da mensagem citada (o contato ou a equipe respondeu em cima dela; null sem citação) e <code>reactions</code> {`{contact, agent}`} traz o emoji que o contato e a empresa deixaram na mensagem (null sem reação). A reação não vira mensagem nova. Mensagem apagada pelo contato vem com <code>deleted</code> true e sem texto.
+      </p>
       <Example page={E} id="historico" />
       <H3 id="arquivos">Arquivos e fotos</H3>
       <p>

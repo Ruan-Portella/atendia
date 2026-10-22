@@ -197,6 +197,8 @@ DOC_OF = {
         "error": None,
         "deleted": False,
         "edited": False,
+        "reply_to": None,
+        "reactions": {"contact": None, "agent": None},
         "created_at": "2026-10-19T15:02:11.481Z",
     }),
     "Modelos do bot": ex("mensagens", "modelos", "Os modelos do número", 200, {
@@ -229,8 +231,8 @@ DOC_OF = {
     "Histórico da conversa": ex("conversas", "historico", "O histórico de uma conversa", 200, {
         "conversation": {"id": CONV, "bot_id": DOC_VALUES["bot_id"], "channel": "whatsapp", "contact": {"id": DOC_VALUES["whatsapp_contact"]}, "status": "ai", "started_at": "2026-10-19T14:58:02.117Z", "last_message_at": "2026-10-19T15:02:11.481Z", "message_count": 2, "ai_paused_until": None, "agent": None, "sector": None, "snoozed_until": None, "ticket": None},
         "data": [
-            {"id": "msg_48209", "conversation_id": CONV, "direction": "inbound", "source": "contact", "text": "Meu pedido já saiu?", "media": None, "agent": None, "status": "received", "error": None, "deleted": False, "edited": False, "created_at": "2026-10-19T14:58:02.117Z"},
-            {"id": "msg_48210", "conversation_id": CONV, "direction": "outbound", "source": "ai", "text": "Saiu sim! A previsão é hoje, até as 20h.", "media": None, "agent": None, "status": "read", "error": None, "deleted": False, "edited": False, "created_at": "2026-10-19T14:58:05.902Z"},
+            {"id": "msg_48209", "conversation_id": CONV, "direction": "inbound", "source": "contact", "text": "Meu pedido já saiu?", "media": None, "agent": None, "status": "received", "error": None, "deleted": False, "edited": False, "reply_to": None, "reactions": {"contact": None, "agent": None}, "created_at": "2026-10-19T14:58:02.117Z"},
+            {"id": "msg_48210", "conversation_id": CONV, "direction": "outbound", "source": "ai", "text": "Saiu sim! A previsão é hoje, até as 20h.", "media": None, "agent": None, "status": "read", "error": None, "deleted": False, "edited": False, "reply_to": None, "reactions": {"contact": "👍", "agent": None}, "created_at": "2026-10-19T14:58:05.902Z"},
         ],
         "next_cursor": None,
     }),
