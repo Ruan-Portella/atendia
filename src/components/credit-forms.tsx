@@ -31,11 +31,7 @@ export function CreditBuyForm({ enabled }: { enabled: boolean }) {
   return (
     <ActionForm
       action={buyCredit}
-      onSubmit={(e) => {
-        const via = ((e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value;
-        if (via === "pix") return;
-        if (!window.confirm(`Cobrar ${brlCents(value)} agora no cartão da assinatura? O crédito vale 12 meses e não é reembolsável.`)) e.preventDefault();
-      }}
+      confirm={(submitter) => (submitter?.value === "pix" ? null : { title: `Cobrar ${brlCents(value)} agora?`, description: "No cartão da assinatura. O crédito vale 12 meses e não é reembolsável.", confirmLabel: "Cobrar no cartão" })}
       className="flex flex-col gap-3"
     >
       <div className="flex flex-wrap gap-2">

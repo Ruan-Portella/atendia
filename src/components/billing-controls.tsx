@@ -38,12 +38,13 @@ export function SizeChangeForm({ botId, botName, current, pendingSize, pendingVo
           : plan.kind === "already_scheduled"
             ? `Agendado para ${renewal}.`
             : null;
-  const confirmCharge = (e: React.FormEvent<HTMLFormElement>) => {
-    if (plan.kind === "upgrade" && plan.amountCents > 0 && !window.confirm(`Cobrar ${brlCents(plan.amountCents / 100)} agora no cartão da assinatura para ${botName} ficar ${choiceLabel(next)}?`)) e.preventDefault();
-  };
+  const confirmCharge = () =>
+    plan.kind === "upgrade" && plan.amountCents > 0
+      ? { title: `Cobrar ${brlCents(plan.amountCents / 100)} agora?`, description: `No cartão da assinatura, para ${botName} ficar ${choiceLabel(next)}. A cota do mês vai para ${num(plan.monthQuota)}.`, confirmLabel: "Cobrar e trocar" }
+      : null;
 
   return (
-    <ActionForm action={changeBotSize.bind(null, botId)} onSubmit={confirmCharge} className="flex flex-col gap-1">
+    <ActionForm action={changeBotSize.bind(null, botId)} confirm={confirmCharge} className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-1.5">
         <select name={`size:${botId}`} value={size} onChange={(e) => setSize(e.target.value as BotSize | "")} aria-label={`Tamanho de ${botName}`} className="input w-auto py-1 text-sm">
           <option value="">sem tamanho</option>
@@ -82,9 +83,7 @@ export function PackButton({ pack, name, state, chargeCents, blockedBy, renewal 
     return (
       <ActionForm
         action={changePack.bind(null, pack, true)}
-        onSubmit={(e) => {
-          if (!window.confirm(`Cobrar ${brlCents(chargeCents / 100)} agora no cartão da assinatura pelo ${name} até ${renewal}?`)) e.preventDefault();
-        }}
+        confirm={() => ({ title: `Assinar o ${name}?`, description: `Cobra ${brlCents(chargeCents / 100)} agora no cartão da assinatura, proporcional até ${renewal}.`, confirmLabel: "Assinar e cobrar" })}
       >
         <SubmitButton className="btn-ghost mt-2 py-1 text-sm" pendingLabel="Assinando…" disabled={Boolean(blockedBy)}>
           Assinar · {brlCents(chargeCents / 100)} agora

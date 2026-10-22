@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { ConfirmModal } from "@/components/ui/modal";
 
 /**
  * Trocar de app autenticador: remove o fator atual (evento grave: e-mail e faixa no painel) e leva
@@ -12,9 +13,9 @@ export function MfaReset({ factorIds, onRemoved, verifyHref }: { factorIds: stri
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
 
   async function reset() {
-    if (!confirm("Remover o app autenticador atual? Você cadastra um novo em seguida (celular novo, app perdido…).")) return;
     setBusy(true);
     setError(null);
     const supabase = createClient();
@@ -34,9 +35,21 @@ export function MfaReset({ factorIds, onRemoved, verifyHref }: { factorIds: stri
 
   return (
     <div className="flex flex-col gap-2">
-      <button type="button" onClick={reset} disabled={busy} className="btn-ghost self-start text-xs">
+      <button type="button" onClick={() => setAsking(true)} disabled={busy} className="btn-ghost self-start text-xs">
         {busy ? "Removendo…" : "Trocar de app autenticador"}
       </button>
+      <ConfirmModal
+        open={asking}
+        onClose={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false);
+          void reset();
+        }}
+        title="Remover o app autenticador atual?"
+        description="Você cadastra um novo em seguida (celular novo, app perdido…)."
+        confirmLabel="Remover e cadastrar outro"
+        danger
+      />
       {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
     </div>
   );
