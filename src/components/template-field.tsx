@@ -11,37 +11,51 @@ const VAR_LABEL: Record<string, string> = {
   volta: "Quando a equipe volta",
   atendente: "Nome de quem atende",
 };
-const labelOf = (key: string) => VAR_LABEL[key] ?? key;
 const DRAG_TYPE = "application/x-boavoz-var";
+/**
+ * Como a variável fica no texto salvo: {nome} nos textos do BoaVoz; {{1}} nos modelos da Meta (as
+ * réguas, redesenho, etapa 5).
+ */
+type Format = { split: RegExp; match: RegExp; wrap: (k: string) => string };
+const FORMATS: Record<"chaves" | "meta", Format> = {
+  chaves: { split: /(\{[a-z_]+\})/, match: /^\{([a-z_]+)\}$/, wrap: (k) => `{${k}}` },
+  meta: { split: /(\{\{\d+\}\})/, match: /^\{\{(\d+)\}\}$/, wrap: (k) => `{{${k}}}` },
+};
 // marca invisível que deixa o cursor parar antes e depois de uma etiqueta no começo ou no fim
 const ZW = "​";
 const PILL = "mx-0.5 inline-flex select-none items-center rounded-full bg-brand-soft px-2 py-px align-baseline text-[12.5px] font-medium text-brand";
 
-function pill(key: string): HTMLSpanElement {
+function pill(key: string, label: string): HTMLSpanElement {
   const s = document.createElement("span");
   s.contentEditable = "false";
   s.dataset.var = key;
   s.className = PILL;
-  s.textContent = labelOf(key);
+  s.textContent = label;
   return s;
 }
 
-/** O texto como é salvo: as etiquetas voltam a ser {nome}. */
-function serialize(root: HTMLElement): string {
+/** O texto como é salvo: as etiquetas voltam a ser {nome} (ou {{1}}); com várias linhas, o <br> vira a quebra. */
+function serialize(root: HTMLElement, fmt: Format, multiline: boolean): string {
   const walk = (n: Node): string => {
     if (n.nodeType === Node.TEXT_NODE) return n.textContent ?? "";
-    if (n instanceof HTMLElement) return n.dataset.var ? `{${n.dataset.var}}` : Array.from(n.childNodes).map(walk).join("");
+    if (n instanceof HTMLBRElement) return multiline ? "\n" : " ";
+    if (n instanceof HTMLElement) return n.dataset.var ? fmt.wrap(n.dataset.var) : Array.from(n.childNodes).map(walk).join("");
     return "";
   };
-  return Array.from(root.childNodes).map(walk).join("").replaceAll(ZW, "").replace(/\s+/g, " ");
+  const text = Array.from(root.childNodes).map(walk).join("").replaceAll(ZW, "");
+  return multiline ? text.replace(/[^\S\n]+/g, " ") : text.replace(/\s+/g, " ");
 }
 
-function build(root: HTMLElement, value: string, keys: string[]) {
+function build(root: HTMLElement, value: string, keys: string[], fmt: Format, labelOf: (k: string) => string) {
   root.replaceChildren();
-  for (const part of value.split(/(\{[a-z_]+\})/)) {
-    const m = /^\{([a-z_]+)\}$/.exec(part);
-    if (m && keys.includes(m[1])) root.append(pill(m[1]));
-    else if (part) root.append(document.createTextNode(part));
+  for (const part of value.split(fmt.split)) {
+    const m = fmt.match.exec(part);
+    if (m && keys.includes(m[1])) root.append(pill(m[1], labelOf(m[1])));
+    else if (part)
+      part.split("\n").forEach((line, i) => {
+        if (i > 0) root.append(document.createElement("br"));
+        if (line) root.append(document.createTextNode(line));
+      });
   }
   if (root.firstChild instanceof HTMLElement) root.prepend(document.createTextNode(ZW));
   if (!root.lastChild || root.lastChild instanceof HTMLElement) root.append(document.createTextNode(ZW));
@@ -75,6 +89,10 @@ export function TemplateField({
   maxLength,
   required = [],
   disabled = false,
+  format = "chaves",
+  labels,
+  multiline = false,
+  name,
 }: {
   id: string;
   label: string;
@@ -89,20 +107,30 @@ export function TemplateField({
   required?: string[];
   /** Travado (o anúncio de um chatbot derivado, quando o modelo não libera). */
   disabled?: boolean;
+  /** "meta": as variáveis ficam {{1}}, {{2}} (modelos da Meta); "chaves": {nome}. */
+  format?: "chaves" | "meta";
+  /** O nome de cada variável na etiqueta (no lugar dos nomes padrão). */
+  labels?: Record<string, string>;
+  /** Aceita várias linhas (Enter quebra a linha). */
+  multiline?: boolean;
+  /** O nome do campo no formulário (sem, o id). */
+  name?: string;
 }) {
+  const fmt = FORMATS[format];
+  const labelOf = (key: string) => labels?.[key] ?? VAR_LABEL[key] ?? key;
   const ref = useRef<HTMLDivElement>(null);
   const last = useRef<Range | null>(null);
   const [value, setValue] = useState(defaultValue);
   const keys = Object.keys(vars);
 
   useEffect(() => {
-    if (ref.current) build(ref.current, defaultValue, Object.keys(vars));
+    if (ref.current) build(ref.current, defaultValue, Object.keys(vars), fmt, labelOf);
     // monta uma vez (e de novo quando o modal desfaz: o componente é recriado)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sync = () => {
-    if (ref.current) setValue(serialize(ref.current));
+    if (ref.current) setValue(serialize(ref.current, fmt, multiline));
   };
   const remember = () => {
     const sel = window.getSelection();
@@ -112,7 +140,7 @@ export function TemplateField({
   const insert = (key: string, at?: Range | null) => {
     const root = ref.current;
     if (!root || disabled) return;
-    if (value.length + key.length + 2 > maxLength) return;
+    if (value.length + fmt.wrap(key).length > maxLength) return;
     let range = at && root.contains(at.startContainer) ? at : last.current && root.contains(last.current.startContainer) ? last.current : null;
     if (!range) {
       range = document.createRange();
@@ -128,7 +156,7 @@ export function TemplateField({
     const next = text[offset];
     const after = document.createTextNode(next && !/[\s.,!?;:)]/.test(next) ? " " : ZW);
     range.insertNode(after);
-    range.insertNode(pill(key));
+    range.insertNode(pill(key, labelOf(key)));
     if (before && !/[\s(]/.test(before)) range.insertNode(document.createTextNode(" "));
     const caret = document.createRange();
     caret.setStart(after, 1);
@@ -141,8 +169,8 @@ export function TemplateField({
     sync();
   };
 
-  const preview = (value.trim() || fallback).split(/(\{[a-z_]+\})/).map((part, i) => {
-    const m = /^\{([a-z_]+)\}$/.exec(part);
+  const preview = (value.trim() || fallback).split(fmt.split).map((part, i) => {
+    const m = fmt.match.exec(part);
     return m && m[1] in vars ? (
       <span key={i} className="font-semibold text-brand">
         {vars[m[1]]}
@@ -151,7 +179,7 @@ export function TemplateField({
       <span key={i}>{part}</span>
     );
   });
-  const missing = required.filter((k) => !value.includes(`{${k}}`));
+  const missing = required.filter((k) => !value.includes(fmt.wrap(k)));
 
   return (
     <div className="flex flex-col gap-2">
@@ -198,8 +226,10 @@ export function TemplateField({
         onMouseUp={remember}
         onBlur={remember}
         onKeyDown={(e) => {
-          // uma linha só: o texto vira o começo de uma mensagem
-          if (e.key === "Enter") e.preventDefault();
+          if (e.key !== "Enter") return;
+          // uma linha só (o texto vira o começo de uma mensagem); com várias, o Enter quebra a linha
+          e.preventDefault();
+          if (multiline) document.execCommand("insertLineBreak");
         }}
         onBeforeInput={(e) => {
           const ev = e.nativeEvent as InputEvent;
@@ -207,7 +237,8 @@ export function TemplateField({
         }}
         onPaste={(e) => {
           e.preventDefault();
-          const text = e.clipboardData.getData("text/plain").replace(/\s+/g, " ");
+          const raw = e.clipboardData.getData("text/plain");
+          const text = multiline ? raw.replace(/\r\n/g, "\n").replace(/[^\S\n]+/g, " ") : raw.replace(/\s+/g, " ");
           document.execCommand("insertText", false, text.slice(0, Math.max(0, maxLength - value.length)));
         }}
         onDragOver={(e) => {
@@ -224,7 +255,7 @@ export function TemplateField({
         }}
         className={cn("input min-h-[64px] whitespace-pre-wrap break-words leading-[1.9]", disabled && "pointer-events-none opacity-60")}
       />
-      <input type="hidden" name={id} value={value} disabled={disabled} />
+      <input type="hidden" name={name ?? id} value={value} disabled={disabled} />
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 text-xs">
         <span id={`${id}-hint`} className="text-muted">
           {missing.length > 0 ? <span className="text-amber-ink">Falta pôr: {missing.map(labelOf).join(", ")}. </span> : null}
@@ -236,7 +267,7 @@ export function TemplateField({
       </div>
       <div className="flex flex-col gap-1.5 rounded-[14px] bg-ground/60 p-3">
         <span className="kpi-label">Como chega para o contato</span>
-        <div className="max-w-[92%] self-start rounded-2xl rounded-tl-md bg-raised px-3.5 py-2 text-sm leading-relaxed text-ink shadow-[inset_0_0_0_1px_var(--color-line-2)]">{preview}</div>
+        <div className="max-w-[92%] self-start whitespace-pre-wrap rounded-2xl rounded-tl-md bg-raised px-3.5 py-2 text-sm leading-relaxed text-ink shadow-[inset_0_0_0_1px_var(--color-line-2)]">{preview}</div>
       </div>
     </div>
   );

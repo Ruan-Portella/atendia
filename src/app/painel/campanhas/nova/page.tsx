@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { cn } from "@/lib/utils";
 import { CampaignWizard } from "@/components/campaign-wizard";
 import { ReminderWizard } from "@/components/reminder-wizard";
+import { campaignBotOptions } from "../bot-options";
 
 export const metadata = { title: "Nova campanha" };
 // a prévia monta o público (até 10.000 contatos ou 2.000 linhas) e consulta a Meta
@@ -23,13 +24,7 @@ export default async function NewCampaignPage({ searchParams }: PageProps<"/pain
   // vindo da aba Campanhas do cliente: só os chatbots dele, e a volta é para lá
   const clientId = typeof sp.cliente === "string" && /^[0-9a-f-]{36}$/i.test(sp.cliente) ? sp.cliente : null;
   const { data: client } = clientId ? await supabase.from("clients").select("id, name").eq("id", clientId).maybeSingle() : { data: null };
-  let botQuery = supabase.from("bots").select("id, name, client_name").eq("is_demo", false).order("name");
-  if (client) botQuery = botQuery.eq("client_id", client.id as string);
-  const { data: bots } = await botQuery;
-  const ids = (bots ?? []).map((b) => b.id as string);
-  const { data: channels } = ids.length ? await createAdminClient().from("whatsapp_channels").select("bot_id").in("bot_id", ids).is("disconnected_at", null).not("waba_id", "is", null) : { data: [] };
-  const connected = new Set((channels ?? []).map((c) => c.bot_id as string));
-  const options = (bots ?? []).filter((b) => connected.has(b.id as string)).map((b) => ({ id: b.id as string, name: b.name as string, clientName: (b.client_name as string | null) ?? "" }));
+  const options = await campaignBotOptions(supabase, createAdminClient(), client ? (client.id as string) : null);
 
   return (
     <div className="flex max-w-[860px] flex-col gap-5">

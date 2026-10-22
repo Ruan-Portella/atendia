@@ -46,7 +46,7 @@ Na aba Contatos do cliente ficam as pessoas que conversaram pelo WhatsApp, com b
 
 ## Campanhas no WhatsApp
 
-Na aba Campanhas do cliente, a agência manda um modelo de mensagem para um público (por etiquetas ou por lista), com a prévia de quem recebe e de quem fica de fora (quem não aceitou, quem pediu para sair, menor de 18 em item de bebida), o custo estimado e o prazo. Dá para mandar na hora ou agendar no fuso do cliente. Marketing só vai para quem aceitou novidades, com a prova do aceite guardada. Depois do envio, a campanha mostra o relatório do resultado.
+No menu, Campanhas e réguas junta as campanhas de todos os clientes, com duas abas (Campanhas e Réguas). Na aba Campanhas ficam o limite de envio da Meta de cada número (quantas pessoas nas últimas 24 horas) e a lista das campanhas, com a busca, os filtros (Saindo ou agendadas, Pausadas, Terminadas) e, em cada uma, a situação, o andamento (entregues e lidas do público) e o menu "…" (ver o relatório, pausar, retomar, cancelar). "Nova campanha" abre um painel ao lado, com o tipo (Marketing ou Lembrete de utilidade) e os passos. Na aba Campanhas do cliente, a agência manda um modelo de mensagem para um público (por etiquetas ou por lista), com a prévia de quem recebe e de quem fica de fora (quem não aceitou, quem pediu para sair, menor de 18 em item de bebida), o custo estimado e o prazo. Dá para mandar na hora ou agendar no fuso do cliente. Marketing só vai para quem aceitou novidades, com a prova do aceite guardada. Depois do envio, a campanha mostra o relatório do resultado.
 
 ## Lembretes
 
@@ -54,7 +54,7 @@ Os lembretes de utilidade (consulta amanhã, pedido pronto, vencimento) são env
 
 ## Réguas
 
-Em Campanhas → Réguas (ou pelo botão Réguas na aba Campanhas do cliente), cada chatbot com o WhatsApp conectado tem cinco réguas, mensagens automáticas que saem sozinhas:
+Em Campanhas e réguas → Réguas (ou pelo botão Réguas na aba Campanhas do cliente), cada chatbot com o WhatsApp conectado tem cinco réguas, mensagens automáticas que saem sozinhas. Cada régua é uma linha com a situação, quando sai e a estimativa, e a chave de ligar e desligar (que libera depois que a Meta aprova o modelo); tocar na linha abre o prazo, a hora, o texto do modelo (com etiquetas como "Primeiro nome" e "Data" no lugar de {{1}}, e a prévia de como chega) e os números. Com mais de um chatbot, a escolha fica no alto:
 - Aniversário: no dia do aniversário do contato, na hora escolhida.
 - Faz tempo que você não vem: quando passam N dias (padrão 30) da última visita registrada ou, sem ela, da última mensagem do contato.
 - Pós-atendimento: N horas (padrão 48) depois da visita registrada ou da conversa encerrada pela equipe.

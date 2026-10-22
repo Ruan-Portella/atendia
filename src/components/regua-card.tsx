@@ -1,92 +1,135 @@
+import { BellRing, Cake, HeartHandshake, Hourglass, MessageCircleQuestion } from "lucide-react";
 import type { ReguaPanelItem } from "@/lib/reguas";
-import { REGUA_CATEGORY, REGUA_DELAY, REGUA_DESCRIPTION, REGUA_HAS_SEND_HOUR, REGUA_LABEL, REGUA_VARIABLES } from "@/lib/regua-kinds";
+import type { ReguaKind } from "@/lib/regua-kinds";
+import { REGUA_CATEGORY, REGUA_DELAY, REGUA_DESCRIPTION, REGUA_EXAMPLES, REGUA_HAS_SEND_HOUR, REGUA_LABEL, REGUA_VARIABLES } from "@/lib/regua-kinds";
 import { costText } from "@/lib/campaigns";
 import type { ActionResult } from "@/lib/action-result";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { StatusPill } from "@/components/ui/form-section";
+import { AutoSwitch, SettingRow } from "@/components/ui/setting-row";
+import { TemplateField } from "@/components/template-field";
 
-const STATE_PILL: Record<ReguaPanelItem["state"], { label: string; className: string }> = {
-  ligada: { label: "ligada", className: "bg-brand-soft text-brand" },
-  pausada: { label: "pausada", className: "bg-amber-soft text-amber-ink" },
-  desligada: { label: "desligada", className: "bg-ground text-muted" },
-};
 const CATEGORY_LABEL: Record<string, string> = { MARKETING: "marketing", UTILITY: "utilidade" };
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 8);
+const ICON: Record<ReguaKind, React.ComponentType<{ size?: number }>> = { aniversario: Cake, sumido: Hourglass, pos_atendimento: HeartHandshake, lembrete: BellRing, sem_resposta: MessageCircleQuestion };
+/** O nome de cada variável do modelo (as {{1}}, {{2}}… da Meta) na etiqueta do editor. */
+const VAR_NAME = (v: string) => (v.startsWith("o primeiro nome") ? "Primeiro nome" : v.startsWith("a data") ? "Data" : v.startsWith("a hora") ? "Hora" : v);
 
 type Act = (formData: FormData) => Promise<ActionResult>;
 
+/** Quando a régua sai, numa frase curta: "48 horas depois", "no dia, às 9h". */
+function timing(it: ReguaPanelItem): string {
+  const d = REGUA_DELAY[it.kind];
+  const n = it.delay ?? d?.default ?? 0;
+  const at = REGUA_HAS_SEND_HOUR[it.kind] ? `, às ${it.sendHour}h` : "";
+  if (it.kind === "aniversario") return `No dia${at}`;
+  if (it.kind === "sumido") return `${n} dias sem vir${at}`;
+  if (it.kind === "pos_atendimento") return `${n} horas depois`;
+  if (it.kind === "lembrete") return `${n} horas antes`;
+  return `${n} dias sem resposta${at}`;
+}
+
 /**
- * Uma régua na tela Réguas (leva Réguas, parte 4): a situação, o prazo e a hora, o modelo da Meta
- * (o texto sugerido, editável, vai para análise), a estimativa dos próximos 30 dias, os números do
- * que já saiu e ligar ou desligar.
+ * Uma régua na tela Réguas (leva Réguas, parte 4; redesenho, etapa 5: uma linha com a situação, quando
+ * sai e a estimativa, a chave de ligar e desligar e o modal com o prazo, o modelo da Meta e os
+ * números). O texto do modelo usa as etiquetas no lugar de {{1}}.
  */
 export function ReguaCard({ item: it, actions }: { item: ReguaPanelItem; actions: { settings: Act; template: Act; on: Act; off: Act } }) {
   const delay = REGUA_DELAY[it.kind];
-  const pill = STATE_PILL[it.state];
+  const Icon = ICON[it.kind];
   const newTemplate = Boolean(it.inUse && it.regua?.template_name && it.inUse !== it.regua.template_name);
+  const approved = it.template.status === "aprovado";
+  const vars = Object.fromEntries(REGUA_VARIABLES[it.kind].map((_, i) => [String(i + 1), REGUA_EXAMPLES[it.kind][i] ?? ""]));
+  const labels = Object.fromEntries(REGUA_VARIABLES[it.kind].map((v, i) => [String(i + 1), VAR_NAME(v)]));
+  const summary =
+    it.state === "pausada"
+      ? `Parou${it.pauseReason ? `: ${it.pauseReason}` : ""}. Ligue de novo para retomar.`
+      : !approved && it.state !== "ligada"
+        ? `${timing(it)} · modelo da Meta: ${it.template.label}`
+        : `${timing(it)} · até ${it.estimate.people} ${it.estimate.people === 1 ? "pessoa" : "pessoas"} em 30 dias`;
+
   return (
-    <section id={it.kind} className="card flex flex-col gap-4 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="font-semibold">{REGUA_LABEL[it.kind]}</h2>
-          <p className="text-sm text-muted">{REGUA_DESCRIPTION[it.kind]}</p>
-        </div>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${pill.className}`}>{pill.label}</span>
-      </div>
-      {it.state === "pausada" && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">A régua parou{it.pauseReason ? `: ${it.pauseReason}` : ""}. Confira e toque em “Retomar”.</p>}
+    <SettingRow
+      icon={<Icon size={18} />}
+      title={REGUA_LABEL[it.kind]}
+      badge={<StatusPill tone={it.state === "ligada" ? "ok" : it.state === "pausada" ? "warn" : "muted"}>{it.state === "ligada" ? "Ligada" : it.state === "pausada" ? "Pausada" : "Desligada"}</StatusPill>}
+      summary={summary}
+      summaryTone={it.state === "pausada" ? "warn" : "muted"}
+      trailing={<AutoSwitch checked={it.state === "ligada"} action={actions.on} offAction={actions.off} disabled={it.state !== "ligada" && !approved} label={`Régua ${REGUA_LABEL[it.kind]}`} />}
+      description={REGUA_DESCRIPTION[it.kind]}
+      size="lg"
+      footer="close"
+    >
+      {it.state === "pausada" && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">A régua parou{it.pauseReason ? `: ${it.pauseReason}` : ""}. Confira e ligue de novo pela chave da linha.</p>}
+      {!approved && it.state !== "ligada" && <p className="rounded-lg bg-raised/60 px-3 py-2 text-sm text-ink-2">A chave libera depois que a Meta aprovar o modelo ({it.template.label}).</p>}
 
       {(delay || REGUA_HAS_SEND_HOUR[it.kind]) && (
-        <ActionForm action={actions.settings} success="Régua salva." className="flex flex-wrap items-end gap-3">
-          {delay && (
-            <div>
-              <label htmlFor={`regua-prazo-${it.kind}`} className="label">
-                {it.kind === "lembrete" ? "Quantas horas antes" : `Prazo (${delay.unit})`}
-              </label>
-              <input id={`regua-prazo-${it.kind}`} name="delay" type="number" min={delay.min} max={delay.max} defaultValue={it.delay ?? delay.default} className="input w-28" />
-            </div>
-          )}
-          {REGUA_HAS_SEND_HOUR[it.kind] && (
-            <div>
-              <label htmlFor={`regua-hora-${it.kind}`} className="label">Hora do envio</label>
-              <select id={`regua-hora-${it.kind}`} name="send_hour" defaultValue={it.sendHour} className="input w-28">
-                {HOURS.map((h) => (
-                  <option key={h} value={h}>
-                    {h}h
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <SubmitButton className="btn-ghost">Salvar</SubmitButton>
-        </ActionForm>
+        <section className="flex flex-col gap-2">
+          <h3 className="kpi-label">Quando sai</h3>
+          <ActionForm action={actions.settings} success="Régua salva." className="flex flex-wrap items-end gap-3">
+            {delay && (
+              <div>
+                <label htmlFor={`regua-prazo-${it.kind}`} className="label">
+                  {it.kind === "lembrete" ? "Quantas horas antes" : `Prazo (${delay.unit})`}
+                </label>
+                <input id={`regua-prazo-${it.kind}`} name="delay" type="number" min={delay.min} max={delay.max} defaultValue={it.delay ?? delay.default} className="input w-28" />
+              </div>
+            )}
+            {REGUA_HAS_SEND_HOUR[it.kind] && (
+              <div>
+                <label htmlFor={`regua-hora-${it.kind}`} className="label">Hora do envio</label>
+                <select id={`regua-hora-${it.kind}`} name="send_hour" defaultValue={it.sendHour} className="input w-28">
+                  {HOURS.map((h) => (
+                    <option key={h} value={h}>
+                      {h}h
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <SubmitButton className="btn-ghost">Salvar</SubmitButton>
+          </ActionForm>
+          <p className="text-xs text-muted">Sai das 8h às 20h no fuso do cliente, uma régua por pessoa a cada 24 horas.</p>
+        </section>
       )}
 
-      <div className="flex flex-col gap-2 rounded-xl border border-line p-3">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <span className="font-semibold">Modelo da Meta</span>
-          <span className="text-muted">
+      <section className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h3 className="kpi-label">Modelo da Meta</h3>
+          <span className="text-xs text-muted">
             {it.regua?.template_name ?? "ainda não criado"} · {it.template.label}
+            {newTemplate ? ` (em uso: ${it.inUse})` : ""}
           </span>
-          {newTemplate && <span className="text-xs text-muted">(em uso: {it.inUse})</span>}
         </div>
         {it.template.reclassified && it.template.category && <p className="text-xs text-amber-ink">A Meta classificou este modelo como {CATEGORY_LABEL[it.template.category] ?? it.template.category}: ligada, a régua só vai para quem aceitou novidades.</p>}
-        <details open={it.template.status === "ausente" || it.template.status === "recusado"}>
-          <summary className="cursor-pointer text-sm font-semibold text-brand">{it.template.status === "ausente" ? "Criar o modelo" : "Trocar o texto"}</summary>
-          <ActionForm action={actions.template} success="Modelo enviado para a Meta." className="mt-2 flex flex-col gap-2">
-            <label htmlFor={`regua-texto-${it.kind}`} className="sr-only">Texto do modelo</label>
-            <textarea id={`regua-texto-${it.kind}`} name="body" rows={4} maxLength={1024} defaultValue={it.draft} className="input" />
-            <p className="text-xs text-muted">
-              Variáveis: {REGUA_VARIABLES[it.kind].map((v, i) => `{{${i + 1}}} ${v}`).join(", ")}. Categoria pedida à Meta: {CATEGORY_LABEL[REGUA_CATEGORY[it.kind]]}
-              {REGUA_CATEGORY[it.kind] === "MARKETING" ? ", com o botão “Parar promoções”" : ", sem oferta nem promoção (senão a Meta muda para marketing)"}. A análise costuma levar minutos.
-            </p>
-            <SubmitButton className="btn-ghost self-start" pendingLabel="Enviando…">
-              Enviar para a Meta
-            </SubmitButton>
+        <ActionForm action={actions.template} success="Modelo enviado para a Meta." className="flex flex-col gap-3">
+          <TemplateField
+            id={`regua-texto-${it.kind}`}
+            name="body"
+            label={it.template.status === "ausente" ? "Texto do modelo (ainda não criado)" : "Texto do modelo"}
+            hint={`Categoria pedida à Meta: ${CATEGORY_LABEL[REGUA_CATEGORY[it.kind]]}${REGUA_CATEGORY[it.kind] === "MARKETING" ? ", com o botão “Parar promoções”" : ", sem oferta nem promoção (senão a Meta muda para marketing)"}. A análise costuma levar minutos.`}
+            defaultValue={it.draft}
+            fallback={it.draft}
+            vars={vars}
+            labels={labels}
+            format="meta"
+            multiline
+            maxLength={1024}
+          />
+          <SubmitButton className="btn-ghost self-start" pendingLabel="Enviando…">
+            {it.template.status === "ausente" ? "Criar o modelo na Meta" : "Enviar o texto novo para a Meta"}
+          </SubmitButton>
+        </ActionForm>
+        {it.state === "ligada" && newTemplate && approved && (
+          <ActionForm action={actions.on} success="A régua passou a usar o modelo novo.">
+            <SubmitButton className="btn-primary self-start">Usar o modelo novo</SubmitButton>
           </ActionForm>
-        </details>
-      </div>
+        )}
+      </section>
 
-      <div className="flex flex-col gap-1 text-sm text-ink-2">
+      <section className="flex flex-col gap-1.5 text-sm text-ink-2">
+        <h3 className="kpi-label">Números</h3>
         <p>
           Próximos 30 dias: até <strong>{it.estimate.people}</strong> {it.estimate.people === 1 ? "pessoa" : "pessoas"} ({costText(it.estimate.costBrl)} na Meta, antes do aceite, do SAIR e da regra de uma régua por dia).
         </p>
@@ -95,29 +138,7 @@ export function ReguaCard({ item: it, actions }: { item: ReguaPanelItem; actions
             Até agora: {it.numbers.sent} enviadas · {it.numbers.delivered} entregues · {it.numbers.read} lidas · {it.numbers.replied} respostas · {it.numbers.optOuts} descadastros · {it.numbers.skipped} ficaram de fora · {it.numbers.pending} na fila
           </p>
         )}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {it.state === "ligada" ? (
-          <ActionForm action={actions.off} success="Régua desligada.">
-            <SubmitButton className="btn-ghost" pendingLabel="Desligando…">
-              Desligar
-            </SubmitButton>
-          </ActionForm>
-        ) : (
-          <ActionForm action={actions.on} success="Régua ligada.">
-            <SubmitButton className="btn-primary" pendingLabel="Ligando…" disabled={it.template.status !== "aprovado"}>
-              {it.state === "pausada" ? "Retomar" : "Ligar"}
-            </SubmitButton>
-          </ActionForm>
-        )}
-        {it.state === "ligada" && newTemplate && it.template.status === "aprovado" && (
-          <ActionForm action={actions.on} success="A régua passou a usar o modelo novo.">
-            <SubmitButton className="btn-ghost">Usar o modelo novo</SubmitButton>
-          </ActionForm>
-        )}
-        {it.template.status !== "aprovado" && it.state !== "ligada" && <span className="self-center text-xs text-muted">Liga depois que a Meta aprovar o modelo.</span>}
-      </div>
-    </section>
+      </section>
+    </SettingRow>
   );
 }
