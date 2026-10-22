@@ -53,6 +53,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "bot.pesquisa": "Pesquisa de satisfação ligada ou desligada",
   "bot.aviso_momento_apagar": "Aviso do momento tirado",
   "bot.contexto_fixo": "Contexto fixo ou dados da loja do chatbot alterados",
+  "bot.dados_loja": "O que a IA sabe da loja alterado (Base de conhecimento)",
   "modelo.criar": "Modelo de chatbot criado",
   "modelo.liberar": "O que os derivados podem mudar foi alterado",
   "modelo.derivar": "Chatbot criado a partir de um modelo",

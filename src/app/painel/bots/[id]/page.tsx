@@ -3,7 +3,7 @@ import { actionCapNotice } from "@/lib/action-limits";
 import { FREE_LINKED_SHORT, freeLinked } from "@/lib/person-signals";
 import { TEST_ANSWERS_FREE, botHasAi, num } from "@/lib/plans";
 import { BotActions } from "@/components/integrations/bot-actions";
-import { FixedContextCard } from "@/components/integrations/fixed-context-card";
+import { FixedContextCard, StoreDataRow } from "@/components/integrations/fixed-context-card";
 import { TemplateInheritance, type DerivedItem } from "@/components/templates/template-inheritance";
 import { InheritedList } from "@/components/templates/inherited-list";
 import { createDerivedAction, publishTemplateAction, setTemplateUnlockedAction, restoreVersionAction } from "@/app/painel/(configuracoes)/modelos/actions";
@@ -52,7 +52,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { MarketingOptInForm } from "@/components/marketing-optin-form";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
-import { saveMomentNotice, clearMomentNotice, setSatisfactionSurvey } from "../../actions";
+import { saveMomentNotice, clearMomentNotice, setSatisfactionSurvey, saveBotDisplay } from "../../actions";
 import { SatisfactionAbout, satisfactionLine } from "@/components/satisfaction-card";
 import { EvolutionTable } from "@/components/evolution-table";
 import { botEvolution } from "@/lib/evolution";
@@ -488,6 +488,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               )}
               <div className="flex max-w-[860px] flex-col gap-4">
                 <SettingGroup title="Ajustes da base">
+                  {/* o que a IA sabe da loja (redesenho, etapa 5: saiu da aba Ações, é conhecimento) */}
+                  {!bot.is_demo && !isTemplate && <StoreDataRow display={bot.fixed_display} save={saveBotDisplay.bind(null, id)} />}
                   {!bot.is_demo && !momentNotice && (
                     <SettingRow
                       icon={<Megaphone size={18} />}
@@ -1130,7 +1132,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 ) : (
                   <BotActions bot={{ id, action_secret_enc: bot.action_secret_enc ?? null, action_secret_prev_until: bot.action_secret_prev_until ?? null }} manage={manageActions} />
                 )}
-                {!isTemplate && <FixedContextCard value={bot.fixed_context} display={bot.fixed_display} manage={manageActions} save={saveFixedContext.bind(null, id)} />}
+                {!isTemplate && <FixedContextCard value={bot.fixed_context} manage={manageActions} save={saveFixedContext.bind(null, id)} />}
               </>
             ))}
 

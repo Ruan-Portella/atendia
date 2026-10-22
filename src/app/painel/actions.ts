@@ -30,6 +30,7 @@ import { emitErasedContacts, eraseTargets, executeRequest, recordPanelRequest, r
 import { grantSupport, revokeSupport } from "@/lib/support-access";
 import { cancelAccountDeletion, requestAccountDeletion } from "@/lib/account-deletion";
 import { parseMomentNotice, untilLabel } from "@/lib/moment-notice";
+import { parseBotDisplay } from "@/lib/bot-context";
 import { hasMfa } from "@/lib/agency-mfa";
 import { RECOVERY_CONFIRM_HOURS, RECOVERY_PROBLEM, cancelOnVerified, requestRecovery } from "@/lib/mfa-recovery";
 import { purgeAttachments } from "@/lib/attachments";
@@ -936,6 +937,31 @@ export async function saveMomentNotice(botId: string, formData: FormData): Promi
   await auditPanel("bot.aviso_momento", { type: "bot", id: botId }, { after: { ate: p.value.until } });
   revalidatePath(`/painel/bots/${botId}`);
   return ok(`Aviso no ar até ${untilLabel(p.value.until)}.`);
+}
+
+/**
+ * O que a IA sabe da loja (o display do chatbot, D' parte 4a), na Base de conhecimento (redesenho,
+ * etapa 5: saiu da aba Ações, junto do contexto fixo). Quem mexe na base salva; vazio tira.
+ */
+export async function saveBotDisplay(botId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("config"))) return fail(DENIED);
+  const raw = text(formData.get("fixed_display"));
+  let parsed: unknown = null;
+  if (raw) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return fail('Os dados da loja precisam ser um JSON, como {"nome": "Pizzaria do Zé, Centro"}.');
+    }
+  }
+  const d = parseBotDisplay(parsed);
+  if ("error" in d) return fail(d.error);
+  const supabase = await createClient();
+  const { error, count } = await supabase.from("bots").update({ fixed_display: d.value }, { count: "exact" }).eq("id", botId).eq("is_demo", false);
+  if (error || !count) return fail("Não foi possível salvar. Tente de novo.");
+  await auditPanel("bot.dados_loja", { type: "bot", id: botId }, { after: { chaves: d.value ? Object.keys(d.value) : [] } });
+  revalidatePath(`/painel/bots/${botId}`);
+  return ok(d.value ? "Salvo: a IA já usa esses dados nas respostas." : "Dados da loja tirados.");
 }
 
 /** Tira o aviso do momento antes do prazo. */

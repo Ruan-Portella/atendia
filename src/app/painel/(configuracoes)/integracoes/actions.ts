@@ -109,20 +109,31 @@ export async function saveFixedContext(botId: string, fd: FormData): Promise<Act
       return { error: `Precisa ser um JSON, como ${example}.` };
     }
   };
-  const rawContext = json("fixed_context", '{"loja_id": "42"}');
-  if ("error" in rawContext) return fail(`Contexto fixo: ${rawContext.error}`);
-  const v = parseFixedContext(rawContext.value);
-  if ("error" in v) return fail(v.error);
-  // os dados da loja para a IA (display, parte 4a) vêm no mesmo formulário
-  const rawDisplay = json("fixed_display", '{"nome": "Pizzaria do Zé, Centro"}');
-  if ("error" in rawDisplay) return fail(`Dados da loja: ${rawDisplay.error}`);
-  const d = parseBotDisplay(rawDisplay.value);
-  if ("error" in d) return fail(d.error);
-  const { error } = await c.db.from("bots").update({ fixed_context: v.value, fixed_display: d.value }).eq("id", bot.id as string);
+  // só o que veio no formulário: a aba Ações manda o contexto; os dados da loja (display) ficaram na
+  // Base de conhecimento (saveBotDisplay), mas o campo ainda vale aqui para quem mandar os dois
+  const patch: { fixed_context?: unknown; fixed_display?: unknown } = {};
+  if (fd.has("fixed_context")) {
+    const rawContext = json("fixed_context", '{"loja_id": "42"}');
+    if ("error" in rawContext) return fail(`Contexto fixo: ${rawContext.error}`);
+    const v = parseFixedContext(rawContext.value);
+    if ("error" in v) return fail(v.error);
+    patch.fixed_context = v.value;
+  }
+  if (fd.has("fixed_display")) {
+    const rawDisplay = json("fixed_display", '{"nome": "Pizzaria do Zé, Centro"}');
+    if ("error" in rawDisplay) return fail(`Dados da loja: ${rawDisplay.error}`);
+    const d = parseBotDisplay(rawDisplay.value);
+    if ("error" in d) return fail(d.error);
+    patch.fixed_display = d.value;
+  }
+  if (!Object.keys(patch).length) return fail("Nada para salvar.");
+  const { error } = await c.db.from("bots").update(patch).eq("id", bot.id as string);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
-  await auditIntegration(c.ctx, "bot.contexto_fixo", { type: "bot", id: bot.id as string }, { chaves: v.value ? Object.keys(v.value) : [], display: d.value ? Object.keys(d.value) : [] });
+  const keys = (v: unknown) => (v && typeof v === "object" ? Object.keys(v) : []);
+  await auditIntegration(c.ctx, "bot.contexto_fixo", { type: "bot", id: bot.id as string }, { ...("fixed_context" in patch ? { chaves: keys(patch.fixed_context) } : {}), ...("fixed_display" in patch ? { display: keys(patch.fixed_display) } : {}) });
   done(bot.id as string);
-  return ok(v.value || d.value ? "Salvo: o contexto vai em toda chamada de ação deste chatbot, e os dados da loja, para a IA." : "Contexto fixo e dados da loja tirados.");
+  if ("fixed_context" in patch && !("fixed_display" in patch)) return ok(patch.fixed_context ? "Salvo: o contexto vai em toda chamada de ação deste chatbot." : "Contexto fixo tirado.");
+  return ok(patch.fixed_context || patch.fixed_display ? "Salvo: o contexto vai em toda chamada de ação deste chatbot, e os dados da loja, para a IA." : "Contexto fixo e dados da loja tirados.");
 }
 
 /** Ação de um chatbot do escopo de quem está logado. */
