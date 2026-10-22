@@ -70,7 +70,7 @@ export default async function AdminNotas({ searchParams }: { searchParams: Promi
   return (
     <>
       <div>
-        <h1 className="text-[26px] font-bold">Notas fiscais</h1>
+        <h1 className="text-[26px] font-normal">Notas fiscais</h1>
         <p className="text-sm text-muted">
           Cada pagamento confirmado pela Stripe (fatura da assinatura, subida de tamanho e crédito, no cartão ou no Pix). Emita no{" "}
           <a href="https://www.nfse.gov.br/EmissorNacional" target="_blank" rel="noopener noreferrer" className="underline">Emissor Nacional da NFS-e</a> copiando os campos e marque como emitida. O CPF ou CNPJ e o endereço vêm do checkout.

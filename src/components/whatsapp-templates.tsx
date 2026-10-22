@@ -40,7 +40,7 @@ export async function WhatsAppTemplates({ botId }: { botId: string }) {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-lg font-bold">Modelos de mensagem</h3>
+        <h3 className="text-lg font-medium">Modelos de mensagem</h3>
         <p className="text-sm text-muted">Fora das 24 h depois da última mensagem do cliente, o WhatsApp só deixa mandar modelos aprovados pela Meta. Os aprovados aparecem para envio dentro das conversas e em “+ Nova conversa”.</p>
       </div>
 

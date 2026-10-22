@@ -14,7 +14,7 @@ export function FixedContextCard({ value, display, manage, save }: { value: unkn
   return (
     <section className="card mt-5 flex max-w-[860px] flex-col gap-3 p-5">
       <div>
-        <h3 className="text-base font-bold">Contexto fixo e dados da loja</h3>
+        <h3 className="text-base font-medium">Contexto fixo e dados da loja</h3>
         <p className="text-sm text-muted">
           O <strong>contexto</strong> vai em toda chamada de ação (no campo <code>context</code> do corpo), por cima do contexto do token ou do pareamento, e escolhe as fontes enviadas pela API com a mesma etiqueta. A IA não vê. Serve para a loja de uma plataforma ou o cliente de um SaaS, por exemplo <code>{'{"loja_id": "42"}'}</code>.
         </p>

@@ -86,7 +86,7 @@ export function TeamWhatsAppStrip({ status, brand, consent }: { status: NoticeSt
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#cfe3d8] bg-brand-soft px-4 py-2.5 text-sm text-ink sm:px-6 lg:px-9">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-brand-line bg-brand-soft px-4 py-2.5 text-sm text-ink sm:px-6 lg:px-9">
       <MessageCircle size={16} className="shrink-0 text-brand" aria-hidden />
       {/* largura mínima no texto: no celular, os botões descem para a linha de baixo em vez de espremer o texto */}
       <span className="min-w-[15rem] flex-1">{text}</span>

@@ -85,7 +85,7 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
           <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir</SubmitButton></ActionForm>
         </div>
       ) : waiting ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-line bg-amber-soft px-3 py-2 text-sm">
           <Headset size={16} className="shrink-0 text-amber-ink" />
           <span className="min-w-0 flex-1 text-amber-ink">
             <strong>{who} {conv.ticket_protocol ? `abriu o chamado ${conv.ticket_protocol}` : leadWaiting(conv) ? "deixou um pedido para a equipe" : "pediu para falar com alguém"}</strong> {relativeTime(conv.handoff_requested_at!)}.{" "}

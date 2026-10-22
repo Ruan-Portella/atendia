@@ -83,7 +83,7 @@ export function Menu({ items, label = "Mais ações", trigger, triggerClassName,
             id={id}
             role="menu"
             style={{ position: "fixed", left: pos.left, width: MENU_WIDTH, ...(pos.up ? { bottom: pos.bottom } : { top: pos.top }) }}
-            className="menu-in z-[80] rounded-xl border border-line bg-panel p-1.5 shadow-[0_12px_32px_rgba(27,31,29,0.14)]"
+            className="menu-in z-[80] rounded-[14px] border border-line bg-panel p-1.5 shadow-[inset_0_1px_0_var(--highlight),var(--shadow-pop)]"
           >
             {items.map((it, i) => {
               if (it.type === "separator") return <div key={i} role="separator" className="my-1 h-px bg-line-2" />;

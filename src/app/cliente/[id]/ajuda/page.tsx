@@ -15,12 +15,12 @@ export default async function MemberHelpPage({ params }: PageProps<"/cliente/[id
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold">Ajuda</h1>
+        <h1 className="text-2xl font-normal">Ajuda</h1>
         <p className="text-sm text-muted">Como usar esta área, do jeito que a {member.agency.name} liberou para você.</p>
       </div>
       <nav aria-label="Assuntos" className="flex flex-wrap gap-2">
         {sections.map((s) => (
-          <a key={s.id} href={`#${s.id}`} className="rounded-full border border-line bg-white px-3 py-1 text-sm text-ink-2 hover:border-brand">
+          <a key={s.id} href={`#${s.id}`} className="rounded-full border border-line bg-panel px-3 py-1 text-sm text-ink-2 hover:border-brand">
             {s.title}
           </a>
         ))}
@@ -28,7 +28,7 @@ export default async function MemberHelpPage({ params }: PageProps<"/cliente/[id
       <div className="flex flex-col gap-4">
         {sections.map((s) => (
           <section key={s.id} id={s.id} className="card flex scroll-mt-6 flex-col gap-2 p-6">
-            <h2 className="text-base font-bold">{s.title}</h2>
+            <h2 className="text-base font-medium">{s.title}</h2>
             {s.paragraphs.map((p) => (
               <p key={p} className="text-sm leading-relaxed text-ink-2">
                 {p}

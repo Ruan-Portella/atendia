@@ -30,7 +30,7 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
     <div className="flex max-w-[720px] flex-col gap-5">
       <section className="card flex flex-col gap-3 p-5">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-base font-bold">Negócio e conformidade</h2>
+          <h2 className="text-base font-medium">Negócio e conformidade</h2>
           {st && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${st.tone}`}>{st.label}</span>}
         </div>
         {compliance && st ? (
@@ -59,7 +59,7 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
       </section>
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Análise do BoaVoz</h2>
+        <h2 className="text-base font-medium">Análise do BoaVoz</h2>
         <p className="text-xs text-muted">
           O BoaVoz analisa a base de conhecimento de cada assistente que atende pelo WhatsApp e pelo Instagram. Abaixo, os itens com regras especiais que achamos, só para consulta: nada precisa ser feito. No WhatsApp e no Instagram, bebida e remédio só aparecem para quem confirma ter 18 anos ou mais e a compra não fecha no chat; os itens proibidos ficam de fora das respostas.
         </p>
@@ -83,7 +83,7 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
       </section>
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Aceites registrados</h2>
+        <h2 className="text-base font-medium">Aceites registrados</h2>
         <p className="text-xs text-muted">Termos do canal e Política de Uso Aceitável, aceitos pelo próprio negócio antes de conectar. Pelo link, o aceite só vale quando a Meta conclui a conexão.</p>
         {acceptances?.length ? (
           <ul className="flex flex-col divide-y divide-line-2 text-sm">

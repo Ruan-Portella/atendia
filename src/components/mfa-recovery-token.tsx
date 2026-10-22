@@ -13,7 +13,7 @@ export function MfaRecoveryToken({ token, view }: { token: string; view: Recover
   const support = view.area === "cliente" ? `a equipe de ${view.agencyName}` : "o suporte do BoaVoz";
   return (
     <div className="card flex w-full max-w-[460px] flex-col gap-4 p-6 sm:p-7">
-      <h1 className="text-xl font-bold">Recuperar o segundo fator</h1>
+      <h1 className="text-xl font-normal">Recuperar o segundo fator</h1>
       {view.status === "pendente" && (
         <>
           <p className="text-sm text-ink-2">

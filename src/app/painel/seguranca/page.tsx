@@ -37,7 +37,7 @@ export default async function SecurityPage({ searchParams }: PageProps<"/painel/
   return (
     <div className="flex max-w-[960px] flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold sm:text-[28px]">Segurança</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Segurança</h1>
         <p className="text-sm text-muted">Pedidos de exclusão dos contatos (LGPD), o que foi feito na sua conta, quem acessou o painel e o acesso do suporte BoaVoz.</p>
       </div>
       <nav aria-label="Seções" className="flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]">

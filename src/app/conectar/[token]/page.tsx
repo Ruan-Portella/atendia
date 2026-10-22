@@ -31,7 +31,7 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
     return (
       <Shell agency={link?.agency}>
         <div className="card flex flex-col gap-2 p-6 text-center">
-          <h1 className="text-xl font-bold">Este link não vale mais</h1>
+          <h1 className="text-xl font-normal">Este link não vale mais</h1>
           <p className="text-sm text-muted">Links de conexão valem por {LINK_DAYS} dias e para uma conexão só. Peça um novo a {link?.agency.name || "quem te enviou"}.</p>
         </div>
       </Shell>
@@ -72,7 +72,7 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
         <Shell agency={link.agency}>
           <div className="flex flex-col items-center gap-2 text-center">
             <CheckCircle2 size={40} style={{ color }} />
-            <h1 className="text-2xl font-bold">Instagram conectado!</h1>
+            <h1 className="text-2xl font-normal">Instagram conectado!</h1>
             <p className="text-[15px] text-ink-2">{ch?.username ? `A conta @${ch.username}` : "A sua conta"} já está ligada ao assistente {bot.name}. Ele responde as mensagens diretas a qualquer hora. Pode fechar esta página.</p>
           </div>
         </Shell>
@@ -82,13 +82,13 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
       <Shell agency={link.agency}>
         <div className="flex flex-col gap-2">
           <p className="text-sm font-semibold uppercase tracking-[0.06em] text-muted">{bot.client_name}</p>
-          <h1 className="text-2xl font-bold sm:text-[28px]">Conecte o seu Instagram ao assistente {bot.name}</h1>
+          <h1 className="text-2xl font-normal sm:text-[28px]">Conecte o seu Instagram ao assistente {bot.name}</h1>
           <p className="text-[15px] text-ink-2">{link.agency.name} preparou um assistente que responde as mensagens diretas do seu Instagram, a qualquer hora. Falta só você conectar a conta: leva 2 minutos, com o login do seu Instagram. As mensagens do Instagram não têm custo.</p>
         </div>
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2.5 text-sm text-danger">{error}</p>}
         {acceptStep ?? (
         <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-lg font-bold">Antes de conectar, confira no app do Instagram</h2>
+          <h2 className="text-lg font-medium">Antes de conectar, confira no app do Instagram</h2>
           <ol className="ml-5 list-decimal space-y-1.5 text-sm text-ink-2">
             <li>A conta precisa ser <strong className="text-ink">profissional</strong> (Empresa ou Criador). Em Configurações → Tipo de conta e ferramentas.</li>
             <li>Ligue <strong className="text-ink">“Permitir acesso às mensagens”</strong>: Configurações → Mensagens e respostas a stories → Ferramentas conectadas.</li>
@@ -115,7 +115,7 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
       <Shell agency={link.agency}>
         <div className="flex flex-col items-center gap-2 text-center">
           <CheckCircle2 size={40} style={{ color }} />
-          <h1 className="text-2xl font-bold">WhatsApp conectado!</h1>
+          <h1 className="text-2xl font-normal">WhatsApp conectado!</h1>
           <p className="text-[15px] text-ink-2">{ch?.display_phone ? `O número ${ch.display_phone}` : "O seu número"} já está ligado ao assistente {bot.name}. Ele responde seus clientes a qualquer hora.</p>
         </div>
         {funded ? (
@@ -135,7 +135,7 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
     <Shell agency={link.agency}>
       <div className="flex flex-col gap-2">
         <p className="text-sm font-semibold uppercase tracking-[0.06em] text-muted">{bot.client_name}</p>
-        <h1 className="text-2xl font-bold sm:text-[28px]">Conecte o seu WhatsApp ao assistente {bot.name}</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Conecte o seu WhatsApp ao assistente {bot.name}</h1>
         <p className="text-[15px] text-ink-2">{link.agency.name} preparou um assistente que responde os seus clientes no WhatsApp, a qualquer hora. Falta só você conectar o número: leva uns 5 minutos, com o login do seu Facebook.</p>
       </div>
 
@@ -144,7 +144,7 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
       {acceptStep ?? (
       <>
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-bold">Como você quer conectar?</h2>
+        <h2 className="text-lg font-medium">Como você quer conectar?</h2>
         <ConnectChecklist />
         <div className="card flex flex-col gap-2.5 p-5">
           <div className="font-semibold">Já atendo pelo WhatsApp Business no celular</div>
@@ -160,7 +160,7 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
       </section>
 
       <section className="flex flex-col gap-2 text-sm text-ink-2">
-        <h2 className="text-base font-bold text-ink">O que acontece na janela do Facebook</h2>
+        <h2 className="text-base font-medium text-ink">O que acontece na janela do Facebook</h2>
         <ol className="ml-5 list-decimal space-y-1">
           <li>Você entra com o seu Facebook (o da pessoa responsável pela empresa).</li>
           <li>Escolhe ou cria a conta da empresa e a conta do WhatsApp Business.</li>
@@ -180,10 +180,10 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
  */
 function CardStep({ color, done = false }: { color: string; done?: boolean }) {
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border-2 border-[#efd9a9] bg-amber-soft p-5">
+    <section className="flex flex-col gap-3 rounded-2xl border-2 border-amber-line bg-amber-soft p-5">
       <div className="flex items-center gap-2.5">
         <CreditCard size={22} className="shrink-0 text-amber-ink" />
-        <h2 className="text-lg font-bold text-amber-ink">{done ? "Último passo: cadastre um cartão na Meta" : "Importante: o WhatsApp cobra pelas mensagens"}</h2>
+        <h2 className="text-lg font-medium text-amber-ink">{done ? "Último passo: cadastre um cartão na Meta" : "Importante: o WhatsApp cobra pelas mensagens"}</h2>
       </div>
       <p className="text-sm text-ink">
         As mensagens do WhatsApp são cobradas <strong>pela Meta (dona do WhatsApp), direto no seu cartão de crédito</strong>, por mensagem enviada, conforme a tabela de preços da Meta. São centavos por mensagem, e esse valor não passa pela agência.

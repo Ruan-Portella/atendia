@@ -21,7 +21,7 @@ export function OnboardingChecklist({ steps, goal, changeProfile = false }: { st
     <section aria-labelledby="onboarding-title" className="card overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-2 px-4 py-4 sm:px-[18px]">
         <div className="min-w-0">
-          <h2 id="onboarding-title" className="text-base font-bold">Primeiros passos</h2>
+          <h2 id="onboarding-title" className="text-base font-medium">Primeiros passos</h2>
           <p className="text-sm text-muted">
             {goal} {doneCount} de {steps.length} feitos.
             {/* o dono troca o perfil do primeiro acesso (os passos mudam junto) */}
@@ -50,7 +50,7 @@ export function OnboardingChecklist({ steps, goal, changeProfile = false }: { st
               <span
                 className={cn(
                   "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
-                  s.done ? "bg-brand text-white" : current ? "border-2 border-brand text-brand" : "border border-line text-muted",
+                  s.done ? "bg-brand text-on-brand" : current ? "border-2 border-brand text-brand" : "border border-line text-muted",
                 )}
               >
                 {s.done ? <Check size={13} strokeWidth={3} aria-label="Feito" /> : i + 1}

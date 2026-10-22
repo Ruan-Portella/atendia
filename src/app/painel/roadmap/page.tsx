@@ -18,7 +18,7 @@ export default async function PanelRoadmapPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold sm:text-[28px]">Roadmap</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Roadmap</h1>
         <p className="max-w-[720px] text-sm text-muted">
           O que estamos fazendo e o que vem por aí, sem datas: a ordem muda com o que os clientes pedem. Curta o que você mais quer (uma curtida por pessoa) e mande ideias. A mesma página fica aberta, sem login, em{" "}
           <Link href="/roadmap" className="font-medium text-brand underline">boavoz.com/roadmap</Link>.
@@ -30,7 +30,7 @@ export default async function PanelRoadmapPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="card flex flex-col gap-4 p-5 sm:p-6">
           <div>
-            <h2 className="text-lg font-bold">Mande uma ideia</h2>
+            <h2 className="text-lg font-medium">Mande uma ideia</h2>
             <p className="text-sm text-muted">A gente lê todas. As que entram aparecem em Ideias, já com a sua curtida; se já existe uma parecida, juntamos as duas.</p>
           </div>
           <ActionForm action={sendRoadmapSuggestion} className="flex flex-col gap-3">
@@ -47,7 +47,7 @@ export default async function PanelRoadmapPage() {
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold">Suas ideias</h2>
+          <h2 className="text-lg font-medium">Suas ideias</h2>
           {mine.length === 0 ? (
             <p className="text-sm text-muted">Você ainda não mandou nenhuma ideia.</p>
           ) : (

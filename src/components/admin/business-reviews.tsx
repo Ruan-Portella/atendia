@@ -26,7 +26,7 @@ function Marked({ answers }: { answers: Record<string, string> }) {
 export function BusinessReviews({ open, recent }: { open: ReviewRow[]; recent: ReviewRow[] }) {
   return (
     <section className="card flex flex-col gap-3 p-5">
-      <h2 className="text-base font-bold">Revisões de negócio</h2>
+      <h2 className="text-base font-medium">Revisões de negócio</h2>
       <p className="text-xs text-muted">Abertas pela pergunta de atividades da tela de aceite. &ldquo;Sim&rdquo; em vender IA como produto segura o WhatsApp até aprovar; os outros casos revisam com o canal funcionando. Prazo para o cliente: 2 dias úteis. Bloquear suspende o WhatsApp e o Instagram dos chatbots do negócio; aprovar levanta essas suspensões.</p>
       {open.length ? (
         <ul className="flex flex-col divide-y divide-line-2 text-sm">
@@ -79,7 +79,7 @@ export function BusinessReviews({ open, recent }: { open: ReviewRow[]; recent: R
 export function AcceptanceList({ rows }: { rows: AcceptanceRow[] }) {
   return (
     <section className="card flex flex-col gap-2 p-5">
-      <h2 className="text-base font-bold">Aceites dos negócios</h2>
+      <h2 className="text-base font-medium">Aceites dos negócios</h2>
       <p className="text-xs text-muted">Tela única de aceite, antes de conectar o WhatsApp ou o Instagram. Pelo link, o aceite fica pendente até a Meta concluir a conexão (apagado depois de 7 dias sem conclusão).</p>
       {rows.length ? (
         <ul className="flex flex-col divide-y divide-line-2 text-sm">

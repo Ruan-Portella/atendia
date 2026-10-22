@@ -37,7 +37,7 @@ export default async function NewCampaignPage({ searchParams }: PageProps<"/pain
         <Link href={client ? `/painel/clientes/${client.id as string}?tab=campanhas` : "/painel/campanhas"} className="text-sm font-semibold text-muted">
           ← {client ? `Campanhas de ${client.name as string}` : "Campanhas"}
         </Link>
-        <h1 className="text-2xl font-bold sm:text-[28px]">Nova campanha</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Nova campanha</h1>
         <p className="text-sm text-muted">
           Antes de enviar, você vê quantos recebem, quem fica de fora e por quê, e o custo estimado na Meta, que cobra direto da conta do cliente. O BoaVoz confere cada envio de novo (SAIR, aceite e 18+).
         </p>

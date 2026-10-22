@@ -71,7 +71,7 @@ export function ClientSectors({ clientId, sectors, eligible, holidays, seeAll }:
     <div className="flex max-w-[860px] flex-col gap-5">
       <section className="card flex flex-col gap-4 p-5">
         <div>
-          <h2 className="text-base font-bold">Setores</h2>
+          <h2 className="text-base font-medium">Setores</h2>
           <p className="text-sm text-muted">Separe o atendimento humano por área (Vendas, Suporte, Financeiro…). Os setores valem para todos os chatbots deste cliente: cada pessoa vê na Caixa de entrada só as conversas dos setores dela (e as que não têm setor). Sem setores, tudo fica numa fila só, como hoje.</p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line-2 bg-ground px-4 py-3">
@@ -122,7 +122,7 @@ export function ClientSectors({ clientId, sectors, eligible, holidays, seeAll }:
 
       <section className="card flex flex-col gap-3 p-5">
         <div>
-          <h2 className="text-base font-bold">Feriados</h2>
+          <h2 className="text-base font-medium">Feriados</h2>
           <p className="text-sm text-muted">Nos feriados, a equipe fica fora do horário: o assistente avisa quando ela volta, no horário do chatbot e no dos setores. Um por linha: <code>25/12</code> vale todo ano; <code>20/11/2026</code>, só nesse dia.</p>
         </div>
         <ActionForm action={saveHolidaysAction.bind(null, clientId)} className="flex flex-col gap-3">

@@ -14,7 +14,7 @@ export default async function AdminRevenue() {
   if (!revenue) {
     return (
       <>
-        <h1 className="text-[26px] font-bold">Receita</h1>
+        <h1 className="text-[26px] font-normal">Receita</h1>
         <p className="card p-5 text-sm text-muted">O Stripe não está configurado neste ambiente (falta STRIPE_SECRET_KEY).</p>
       </>
     );
@@ -22,7 +22,7 @@ export default async function AdminRevenue() {
   if ("error" in revenue) {
     return (
       <>
-        <h1 className="text-[26px] font-bold">Receita</h1>
+        <h1 className="text-[26px] font-normal">Receita</h1>
         <p className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">Não deu para consultar o Stripe: {revenue.error}</p>
       </>
     );
@@ -31,7 +31,7 @@ export default async function AdminRevenue() {
   return (
     <>
       <div>
-        <h1 className="text-[26px] font-bold">Receita</h1>
+        <h1 className="text-[26px] font-normal">Receita</h1>
         <p className="text-sm text-muted">
           Direto do Stripe{revenue.testMode ? " (modo de teste: valores de teste, não dinheiro de verdade)" : ""}. MRR = assinaturas ativas e com pagamento atrasado, sem descontos e cupons.
         </p>
@@ -45,7 +45,7 @@ export default async function AdminRevenue() {
       </section>
 
       <section className="card flex flex-col gap-3 p-5">
-        <h2 className="text-lg font-bold">O que está assinado</h2>
+        <h2 className="text-lg font-medium">O que está assinado</h2>
         {revenue.byPlan.length ? (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Item</th><th className="py-1.5 text-right font-semibold">Quantidade</th><th className="py-1.5 text-right font-semibold">MRR</th></tr></thead>
@@ -61,7 +61,7 @@ export default async function AdminRevenue() {
       </section>
 
       <section className="card flex flex-col gap-3 p-5">
-        <h2 className="text-lg font-bold">Faturas com pagamento falho</h2>
+        <h2 className="text-lg font-medium">Faturas com pagamento falho</h2>
         {revenue.failed.length ? (
           <ul className="flex flex-col divide-y divide-line-2 text-sm">
             {revenue.failed.map((f) => {

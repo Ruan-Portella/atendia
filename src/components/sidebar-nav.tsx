@@ -38,7 +38,7 @@ export function SidebarNav({ role, packs = [], onNavigate }: { role: AgencyRole;
             href={href}
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
-            className={cn("flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors duration-[120ms]", active ? "bg-[#2f3733] font-semibold text-ground" : "font-medium text-[#c8cfcb] hover:bg-[#262c29]")}
+            className={cn("flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors duration-[120ms]", active ? "bg-raised font-semibold text-ink" : "font-medium text-ink-2 hover:bg-raised")}
           >
             <Icon size={17} className="shrink-0" />
             <span>{label}</span>

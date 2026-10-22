@@ -4,6 +4,7 @@ import { handoffStatus } from "@/lib/handoff-status";
 import { AgencyHeader } from "@/components/report-view";
 import { MemberNav } from "@/components/member-nav";
 import { HandoffWatcher } from "@/components/handoff-watcher";
+import { AppTheme } from "@/components/app-theme";
 
 /**
  * Casca da área do cliente: marca da agência, abas conforme as permissões e o papel (gestor ou
@@ -17,6 +18,7 @@ export default async function MemberLayout({ children, params }: LayoutProps<"/c
   const pending = member.allowHandoff ? await getPendingHandoffs(admin, botIds) : [];
   return (
     <div className="flex h-dvh flex-col bg-ground">
+      <AppTheme />
       <AgencyHeader agency={member.agency}>
         <form action="/cliente/sair" method="post"><button type="submit" className="btn-ghost" title={email}>Sair</button></form>
       </AgencyHeader>

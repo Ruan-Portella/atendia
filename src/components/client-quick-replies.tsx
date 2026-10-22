@@ -28,7 +28,7 @@ export function ClientQuickReplies({ clientId, replies }: { clientId: string; re
   return (
     <section className="card flex max-w-[860px] flex-col gap-4 p-5">
       <div>
-        <h2 className="text-base font-bold">Respostas prontas</h2>
+        <h2 className="text-base font-medium">Respostas prontas</h2>
         <p className="text-sm text-muted">Textos que a equipe põe na resposta com um clique, na conversa e na Caixa de entrada (dá para editar antes de enviar). Use <code>{"{nome}"}</code> para o primeiro nome do contato e <code>{"{atendente}"}</code> para o nome de quem responde.</p>
       </div>
       {replies.length === 0 && <p className="text-sm text-muted">Nenhuma resposta pronta ainda.</p>}

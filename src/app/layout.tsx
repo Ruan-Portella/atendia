@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
-import { Familjen_Grotesk, IBM_Plex_Sans } from "next/font/google";
+import { Funnel_Display, Martian_Mono, Onest } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/toast";
 
-const familjen = Familjen_Grotesk({ variable: "--font-familjen", subsets: ["latin"], weight: ["500", "600", "700"] });
-const plex = IBM_Plex_Sans({ variable: "--font-plex", subsets: ["latin"], weight: ["400", "500", "600"] });
+// fontes do redesenho (22/10): Onest no texto, Funnel Display nos títulos, Martian Mono nos rótulos e números
+const onest = Onest({ variable: "--font-onest", subsets: ["latin", "latin-ext"] });
+const funnel = Funnel_Display({ variable: "--font-funnel", subsets: ["latin", "latin-ext"] });
+const martian = Martian_Mono({ variable: "--font-martian", subsets: ["latin"] });
 
 const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz";
 
@@ -21,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="pt-BR" className={`${familjen.variable} ${plex.variable} h-full antialiased`}>
+    <html lang="pt-BR" className={`${onest.variable} ${funnel.variable} ${martian.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <ToastProvider>{children}</ToastProvider>
       </body>

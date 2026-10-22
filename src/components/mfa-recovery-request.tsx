@@ -15,7 +15,7 @@ export function MfaRecoveryRequest({ email, open, action, backHref, support, not
   return (
     <div className="card flex w-full max-w-[460px] flex-col gap-4 p-6">
       <div>
-        <h1 className="text-xl font-bold">Perdi o app autenticador</h1>
+        <h1 className="text-xl font-normal">Perdi o app autenticador</h1>
         <p className="text-sm text-muted">Celular perdido, trocado ou app apagado: {support} remove o app antigo da sua conta e você cadastra um novo.</p>
       </div>
       {open?.status === "pendente" ? (

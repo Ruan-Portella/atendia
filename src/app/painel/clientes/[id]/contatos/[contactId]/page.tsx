@@ -66,7 +66,7 @@ export default async function ContactPage({ params }: PageProps<"/painel/cliente
     <div className="flex max-w-[860px] flex-col gap-5">
       <div className="flex flex-col gap-2">
         <Link href={`/painel/clientes/${id}?tab=contatos`} className="text-sm font-semibold text-muted">← Contatos de {client.name}</Link>
-        <h1 className="text-2xl font-bold sm:text-[28px]">{title}</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">{title}</h1>
         <p className="text-sm text-muted">
           {[CHANNEL_LABEL[contact.channel] ?? contact.channel, contact.name && contact.phone ? `+${contact.phone}` : null, contact.email, botName ? `chatbot ${botName}` : null].filter(Boolean).join(" · ")}
         </p>

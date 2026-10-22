@@ -28,10 +28,10 @@ const BAR: Record<DayLevel, string> = { ok: "bg-brand", instavel: "bg-amber", fo
 const BAR_LABEL: Record<DayLevel, string> = { ok: "sem problemas", instavel: "instabilidade", fora: "fora do ar", sem_registro: "sem registro" };
 
 const OVERALL: Record<ShownState, { text: string; cls: string }> = {
-  operando: { text: "Tudo funcionando", cls: "bg-brand text-white" },
+  operando: { text: "Tudo funcionando", cls: "bg-brand text-on-brand" },
   manutencao: { text: "Manutenção em andamento", cls: "bg-ink-2 text-white" },
   instavel: { text: `Parte do ${company.brand} está instável`, cls: "bg-amber text-ink" },
-  fora: { text: `Parte do ${company.brand} está fora do ar`, cls: "bg-danger text-white" },
+  fora: { text: `Parte do ${company.brand} está fora do ar`, cls: "bg-danger text-on-danger" },
 };
 
 function Incident({ i }: { i: StatusIncident }) {
@@ -78,7 +78,7 @@ export default async function StatusPage() {
 
       <main className="mx-auto flex w-full max-w-[880px] flex-1 flex-col gap-8 px-5 py-8 sm:px-6 lg:py-12">
         <div className="flex flex-col gap-3">
-          <h1 className="display text-3xl font-bold sm:text-4xl">Status do {company.brand}</h1>
+          <h1 className="display text-3xl font-normal sm:text-4xl">Status do {company.brand}</h1>
           <div className={cn("rounded-xl px-5 py-4 text-lg font-semibold", overall.cls)}>{overall.text}</div>
           <p className="text-xs text-muted">
             {page.checkedAt ? `Conferido em ${dt(page.checkedAt)}.` : "Ainda sem conferência."} O estado sai dos sinais do próprio sistema, a cada 5 minutos, e dos avisos da equipe.
@@ -87,7 +87,7 @@ export default async function StatusPage() {
 
         {page.open.length > 0 && (
           <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-bold">Agora</h2>
+            <h2 className="text-lg font-medium">Agora</h2>
             {page.open.map((i) => (
               <Incident key={i.id} i={i} />
             ))}
@@ -95,7 +95,7 @@ export default async function StatusPage() {
         )}
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold">Partes do {company.brand}</h2>
+          <h2 className="text-lg font-medium">Partes do {company.brand}</h2>
           <ul className="card flex flex-col divide-y divide-line-2">
             {page.components.map((c) => (
               <li key={c.id} className="flex flex-col gap-2 px-4 py-3.5">
@@ -125,7 +125,7 @@ export default async function StatusPage() {
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold">Incidentes recentes</h2>
+          <h2 className="text-lg font-medium">Incidentes recentes</h2>
           {page.past.length ? page.past.map((i) => <Incident key={i.id} i={i} />) : <p className="text-sm text-muted">Nenhum incidente nos últimos 90 dias.</p>}
         </section>
 

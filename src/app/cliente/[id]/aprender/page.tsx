@@ -24,7 +24,7 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold">Ensinar o assistente</h1>
+        <h1 className="text-2xl font-normal">Ensinar o assistente</h1>
         <p className="text-sm text-muted">Responda o que ele não soube e mantenha as informações em dia. Tudo vale na próxima conversa. O site e os PDFs continuam com a agência.</p>
       </div>
       {(bots ?? []).length === 0 && <p className="text-sm text-muted">Ainda não há assistente configurado.</p>}
@@ -43,8 +43,8 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
           }));
         return (
           <section key={bot.id} className="flex flex-col gap-4">
-            {(bots ?? []).length > 1 && <h2 className="text-lg font-bold">{bot.name}</h2>}
-            <div className={qs.length ? "flex flex-col gap-2.5 rounded-xl border border-[#efd9a9] bg-amber-soft px-[18px] py-4" : "rounded-xl border border-line bg-panel px-[18px] py-4"}>
+            {(bots ?? []).length > 1 && <h2 className="text-lg font-medium">{bot.name}</h2>}
+            <div className={qs.length ? "flex flex-col gap-2.5 rounded-xl border border-amber-line bg-amber-soft px-[18px] py-4" : "rounded-xl border border-line bg-panel px-[18px] py-4"}>
               <div className={qs.length ? "text-sm font-semibold text-amber-ink" : "text-sm text-muted"}>
                 {qs.length ? `${qs.length} pergunta${qs.length > 1 ? "s" : ""} que ${bot.name} não soube responder` : `Nenhuma pergunta sem resposta. ${bot.name} está dando conta!`}
               </div>

@@ -15,7 +15,7 @@ export default async function AdminMfaPage() {
       <div className="card flex w-full max-w-[400px] flex-col gap-4 p-6">
         <div>
           <p className="eyebrow">Backoffice BoaVoz</p>
-          <h1 className="text-xl font-bold">Verificação em duas etapas</h1>
+          <h1 className="text-xl font-normal">Verificação em duas etapas</h1>
         </div>
         <MfaForm friendlyName="Backoffice BoaVoz" next="/admin" submitLabel="Entrar no backoffice" onResult={recordMfaResult} />
       </div>

@@ -16,6 +16,7 @@ import { SecurityAlertStrip } from "@/components/security-alert-strip";
 import { TeamWhatsAppStrip } from "@/components/team-whatsapp-strip";
 import { NOTICE_CONSENT_SHORT, noticeStatus } from "@/lib/team-whatsapp";
 import { company } from "@/lib/company";
+import { AppTheme } from "@/components/app-theme";
 
 // o manifest deixa adicionar o painel à tela de início (no iPhone, os avisos no celular só chegam
 // assim; Memória e avisos, parte 2)
@@ -75,6 +76,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         </>
       }
     >
+      <AppTheme />
       <HandoffWatcher endpoint="/api/painel/pending" />
       {children}
     </PanelShell>

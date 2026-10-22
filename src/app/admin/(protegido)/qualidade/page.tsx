@@ -34,7 +34,7 @@ const botLabel = (bots: Map<string, BotRef>, id: string) => {
 function Counts({ title, rows, label = (k: string) => k, empty }: { title: string; rows?: Array<{ key: string; n: number }>; label?: (k: string) => string; empty: string }) {
   return (
     <section className="card flex flex-col gap-2 p-5">
-      <h2 className="text-base font-bold">{title}</h2>
+      <h2 className="text-base font-medium">{title}</h2>
       {rows?.length ? (
         <table className="w-full text-sm">
           <tbody>{rows.slice(0, 10).map((r) => <tr key={r.key} className="border-t border-line-2 first:border-0"><td className="py-1.5 pr-2">{label(r.key)}</td><td className="py-1.5 text-right tabular">{num(r.n)}</td></tr>)}</tbody>
@@ -61,7 +61,7 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[26px] font-bold">Qualidade da IA</h1>
+          <h1 className="text-[26px] font-normal">Qualidade da IA</h1>
           <p className="text-sm text-muted">O que o assistente não soube, recusou ou barrou, e os pedidos urgentes. Perguntas sem resposta: as pendentes de sempre; o resto, no período.</p>
         </div>
         <div className="flex flex-wrap gap-1.5 text-sm">
@@ -78,7 +78,7 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
 
       {q.urgent.length > 0 && (
         <section className="card flex flex-col gap-2 border-danger/40 p-5">
-          <h2 className="text-base font-bold text-danger">Pedidos urgentes (risco à vida)</h2>
+          <h2 className="text-base font-medium text-danger">Pedidos urgentes (risco à vida)</h2>
           <ul className="flex flex-col divide-y divide-line-2 text-sm">
             {q.urgent.map((c) => (
               <li key={c.id as string} className="flex flex-wrap justify-between gap-2 py-2">
@@ -93,7 +93,7 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
       <section className="card flex flex-col gap-3 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold">Classificação da base (portão)</h2>
+            <h2 className="text-base font-medium">Classificação da base (portão)</h2>
             <p className="text-sm text-muted">Cada trecho das fontes passa uma vez pela IA, que marca as frases que oferecem bebida, remédio (conferido com a lista da Anvisa) ou item proibido. Sem classificação, o portão usa só o dicionário. Roda sozinha depois de cada fonte nova e na rotina diária (que não roda na dev).</p>
           </div>
           <ActionForm action={classifyBaseNow} className="shrink-0">
@@ -127,7 +127,7 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-bold">Últimas perguntas sem resposta</h2>
+          <h2 className="text-base font-medium">Últimas perguntas sem resposta</h2>
           <ul className="flex flex-col divide-y divide-line-2 text-sm">
             {q.unanswered.map((u) => (
               <li key={u.id as string} className="flex flex-col gap-0.5 py-2">
@@ -139,7 +139,7 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
           </ul>
         </section>
         <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-bold">Últimas recusas de escopo</h2>
+          <h2 className="text-base font-medium">Últimas recusas de escopo</h2>
           <ul className="flex flex-col divide-y divide-line-2 text-sm">
             {q.refusals.map((r) => (
               <li key={r.id as number} className="flex flex-col gap-0.5 py-2">

@@ -45,7 +45,7 @@ export default async function CampaignReportPage({ params }: PageProps<"/painel/
           ← {bot?.client_id ? `Campanhas de ${bot.client_name as string}` : "Campanhas"}
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold sm:text-[28px]">{c.name}</h1>
+          <h1 className="text-2xl font-normal sm:text-[28px]">{c.name}</h1>
           <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_TONE[c.status] ?? "bg-ground text-muted"}`}>{CAMPAIGN_STATUS_LABEL[c.status]}</span>
         </div>
         <p className="text-sm text-muted">

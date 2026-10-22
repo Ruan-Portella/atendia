@@ -22,7 +22,7 @@ export default async function AgencyDomainPage() {
       ) : (
         <span className="display flex h-14 w-14 items-center justify-center rounded-xl text-lg font-bold text-white" style={{ background: agency?.brand_color ?? "#1f4e3d" }}>{initials(name)}</span>
       )}
-      <h1 className="text-2xl font-bold">{name}</h1>
+      <h1 className="text-2xl font-normal">{name}</h1>
       <p className="max-w-sm text-sm text-muted">Este endereço hospeda os assistentes virtuais e relatórios de {agency ? name : "uma agência"}. Se você recebeu um link, confira se ele está completo.</p>
       <div className="flex flex-wrap items-center justify-center gap-2.5">
         {/* clientes da agência entram por aqui (link mágico, sem senha) */}

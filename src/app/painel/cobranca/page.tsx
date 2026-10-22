@@ -47,7 +47,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
 
   return (
     <div className="max-w-[960px]">
-      <h1 className="text-2xl font-bold sm:text-[28px]">Cobrança</h1>
+      <h1 className="text-2xl font-normal sm:text-[28px]">Cobrança</h1>
       <BillingTabs active="/painel/cobranca" />
 
       {sp.ok && !subscribed && <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Pagamento recebido. Estamos confirmando com a Stripe: recarregue a página em alguns segundos.</p>}
@@ -163,7 +163,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
             </table>
           </div>
 
-          <h2 className="mt-8 text-lg font-bold">Pacotes da conta</h2>
+          <h2 className="mt-8 text-lg font-medium">Pacotes da conta</h2>
           <ul className="mt-3 grid gap-3 sm:grid-cols-3">
             {Object.values(PACKS).map((p) => {
               const on = packs.find((x) => x.id === p.id);
@@ -181,7 +181,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
             Subir um tamanho ou assinar um pacote vale na hora: cobramos agora a diferença proporcional ao resto do mês, e a cota do mês sobe na mesma proporção. Descer, tirar o tamanho ou tirar um pacote vale no dia 1º (o mês já foi pago). Chatbot novo começa sem tamanho. O excedente é pago com o <Link href="/painel/cobranca/credito" className="underline">crédito</Link>, fora da assinatura.
           </p>
 
-          <h2 className="mt-8 text-lg font-bold">Faturas</h2>
+          <h2 className="mt-8 text-lg font-medium">Faturas</h2>
           <div className="card mt-3 overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>

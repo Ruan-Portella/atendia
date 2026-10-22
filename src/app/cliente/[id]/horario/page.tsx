@@ -19,7 +19,7 @@ export default async function MemberHoursPage({ params }: PageProps<"/cliente/[i
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold">Horário de atendimento</h1>
+        <h1 className="text-2xl font-normal">Horário de atendimento</h1>
         <p className="text-sm text-muted">
           Quando a equipe de {member.clientName} atende, no horário de Brasília. Fora dele, quem pedir para falar com uma pessoa fica registrado e o assistente diz quando a equipe volta. Dia em branco = fechado; tudo em branco = sem horário (o assistente só diz que a equipe responde assim que possível).
         </p>
@@ -27,7 +27,7 @@ export default async function MemberHoursPage({ params }: PageProps<"/cliente/[i
       {bots.length === 0 && <p className="card p-5 text-sm text-muted">Nenhum assistente ainda.</p>}
       {bots.map((b) => (
         <ActionForm key={b.id} action={memberSetHours.bind(null, id, b.id)} className="card flex flex-col gap-3 p-5">
-          <h2 className="text-base font-bold">{b.name}</h2>
+          <h2 className="text-base font-medium">{b.name}</h2>
           <HoursFields hours={b.human_handoff?.hours} />
           <SubmitButton pendingLabel="Salvando…" className="btn-primary self-start">Salvar horário</SubmitButton>
         </ActionForm>

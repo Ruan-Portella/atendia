@@ -31,14 +31,14 @@ export default async function AdminEval() {
   return (
     <>
       <div>
-        <h1 className="text-[26px] font-bold">Avaliação da IA</h1>
+        <h1 className="text-[26px] font-normal">Avaliação da IA</h1>
         <p className="text-sm text-muted">O conjunto fixo de casos (pasta evals/) roda pelo mesmo caminho do chat, sem gravar conversa. Toda mudança de prompt, modelo ou temperatura passa por aqui antes de produção.</p>
       </div>
 
       <EvalRunner bots={botOptions} files={listCaseFiles()} defaultModel={chatModelId()} lastBotByFile={lastBotByFile} />
 
       <section className="card overflow-x-auto">
-        <h2 className="px-5 pt-4 text-lg font-bold">Histórico</h2>
+        <h2 className="px-5 pt-4 text-lg font-medium">Histórico</h2>
         <table className="mt-2 w-full min-w-[760px] text-sm">
           <thead className="border-b border-line text-left text-xs text-muted">
             <tr>

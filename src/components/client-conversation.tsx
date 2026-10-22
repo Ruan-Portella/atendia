@@ -92,7 +92,7 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
         ) : (
           <Link href={`/cliente/${id}/conversas`} className="text-xs font-semibold text-muted">← Conversas</Link>
         )}
-        <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-bold sm:text-xl">Conversa <ConversationStateBadge conv={conv} withTime /></h1>
+        <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-normal sm:text-xl">Conversa <ConversationStateBadge conv={conv} withTime /></h1>
         <p className="text-xs text-muted">{new Date(conv.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "long", timeStyle: "short" })}{conv.channel === "whatsapp" ? " · WhatsApp" : conv.channel === "instagram" ? " · Instagram" : ""}</p>
         {conv.ticket_protocol && (member.allowHandoff ? (
           <TicketStatusControl protocol={conv.ticket_protocol as string} subject={(conv.ticket_subject as string | null) ?? null} status={(conv.ticket_status as string | null) ?? "aberto"} action={memberSetTicketStatus.bind(null, id, cid)} />

@@ -29,7 +29,7 @@ export default async function InvitePage({ params }: PageProps<"/convite/[token]
   if (!invite || invite.removed_at) {
     return (
       <Card>
-        <h1 className="text-xl font-bold">Este convite não vale mais</h1>
+        <h1 className="text-xl font-normal">Este convite não vale mais</h1>
         <p className="text-sm text-muted">Ele foi cancelado ou trocado por um link novo. Peça para a agência convidar você de novo.</p>
       </Card>
     );
@@ -37,7 +37,7 @@ export default async function InvitePage({ params }: PageProps<"/convite/[token]
   if (invite.accepted_at) {
     return (
       <Card>
-        <h1 className="text-xl font-bold">Convite já aceito</h1>
+        <h1 className="text-xl font-normal">Convite já aceito</h1>
         <p className="text-sm text-muted">Este convite já foi usado. Entre com o seu e-mail para abrir o painel.</p>
         <Link href="/login" className="btn-primary self-start">Entrar</Link>
       </Card>
@@ -46,7 +46,7 @@ export default async function InvitePage({ params }: PageProps<"/convite/[token]
   if (!inviteOpen(invite)) {
     return (
       <Card>
-        <h1 className="text-xl font-bold">O convite venceu</h1>
+        <h1 className="text-xl font-normal">O convite venceu</h1>
         <p className="text-sm text-muted">O link vale por {INVITE_DAYS} dias. Peça para {invite.agency_name} convidar você de novo.</p>
       </Card>
     );
@@ -55,7 +55,7 @@ export default async function InvitePage({ params }: PageProps<"/convite/[token]
   const next = `/convite/${token}`;
   const header = (
     <>
-      <h1 className="text-xl font-bold">Convite para a equipe de {invite.agency_name}</h1>
+      <h1 className="text-xl font-normal">Convite para a equipe de {invite.agency_name}</h1>
       <p className="text-sm text-ink-2">
         Você foi convidado como <strong>{ROLE_LABELS[invite.role].toLowerCase()}</strong>, com o e-mail <strong>{invite.email}</strong>.
       </p>

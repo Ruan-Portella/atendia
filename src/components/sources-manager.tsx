@@ -381,7 +381,7 @@ function UrlInput({ id, defaultValue, autoFocus }: { id: string; defaultValue?: 
     <>
       <input id={id} name="url" defaultValue={defaultValue} required autoFocus={autoFocus} className="input" placeholder="https://" onChange={(e) => setNetwork(socialNetworkOf(e.target.value))} aria-describedby={network ? `${id}-social` : undefined} />
       {network && (
-        <p id={`${id}-social`} role="status" className="mt-2 flex items-start gap-2 rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-xs text-amber-ink">
+        <p id={`${id}-social`} role="status" className="mt-2 flex items-start gap-2 rounded-lg border border-amber-line bg-amber-soft px-3 py-2 text-xs text-amber-ink">
           <AlertCircle size={14} className="mt-px shrink-0" />
           <span>O {network} esconde quase tudo de quem não está logado: o assistente aprende no máximo a bio e as legendas dos posts, e às vezes nem isso. Para horários, produtos, preços e dúvidas comuns, cadastre também um <strong>Texto</strong> ou <strong>FAQ</strong>.</span>
         </p>

@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/platform-admin";
 import { AdminNav } from "@/components/admin/admin-nav";
+import { AppTheme } from "@/components/app-theme";
 
 export const metadata = { title: { default: "Backoffice", template: "%s · Backoffice" } };
 
@@ -8,6 +9,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const s = await requireAdmin();
   return (
     <div className="min-h-dvh bg-ground">
+      <AppTheme />
       <header className="border-b border-line bg-panel">
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 sm:px-6">
           <span className="display font-bold">BoaVoz · Backoffice</span>

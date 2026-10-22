@@ -50,7 +50,7 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
 
   return (
     <div className="max-w-[960px]">
-      <h1 className="text-2xl font-bold sm:text-[28px]">Cobrança</h1>
+      <h1 className="text-2xl font-normal sm:text-[28px]">Cobrança</h1>
       <BillingTabs active="/painel/cobranca/credito" />
       <FirstWeekNote until={firstWeekUntil(agency)} />
 
@@ -81,7 +81,7 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
       )}
 
       <section className="card mt-6 p-5">
-        <h2 className="text-lg font-bold">Comprar crédito</h2>
+        <h2 className="text-lg font-medium">Comprar crédito</h2>
         <p className="mt-1 text-sm text-muted">A partir de {brlCents(CREDIT_MIN_BRL)}: no cartão da assinatura, cobrado na hora, ou pelo Pix (até {brlCents(PIX_MAX_BRL)}), na página de pagamento da Stripe, com o QR e o copia e cola. O código Pix vale 1 hora, e o crédito entra quando o banco confirma.</p>
         <div className="mt-3">
           <CreditBuyForm enabled={billingEnabled && subscribed} />
@@ -89,7 +89,7 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
       </section>
 
       <section className="card mt-4 p-5">
-        <h2 className="text-lg font-bold">Recarga automática</h2>
+        <h2 className="text-lg font-medium">Recarga automática</h2>
         <p className="mt-1 text-sm text-muted">Quando o saldo cai abaixo do valor escolhido, compramos outra recarga no cartão da assinatura, até o limite do mês. Com o pagamento da assinatura atrasado, a recarga não roda.</p>
         <ActionForm action={saveAutoRecharge} className="mt-3 flex flex-wrap items-end gap-3 text-sm">
           <label className="flex items-center gap-2">
@@ -112,7 +112,7 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
         </ActionForm>
       </section>
 
-      <h2 className="mt-8 text-lg font-bold">Uso do mês por chatbot</h2>
+      <h2 className="mt-8 text-lg font-medium">Uso do mês por chatbot</h2>
       <div className="card mt-3 overflow-x-auto">
         <table className="w-full min-w-[480px] text-sm">
           <thead>
@@ -139,7 +139,7 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
         </table>
       </div>
 
-      <h2 className="mt-8 text-lg font-bold">Compras e recargas</h2>
+      <h2 className="mt-8 text-lg font-medium">Compras e recargas</h2>
       <div className="card mt-3 overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">
           <thead>

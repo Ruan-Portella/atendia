@@ -32,7 +32,7 @@ export default async function TemplatesPage() {
   return (
     <div className="flex max-w-[860px] flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold sm:text-[28px]">Modelos de chatbot</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Modelos de chatbot</h1>
         <p className="text-sm text-muted">
           Um modelo junta o que vários chatbots têm em comum: a personalidade, as instruções, as ações, os roteiros e a base de conhecimento. Cada chatbot criado dele (um por cliente ou por loja) recebe as mudanças na hora e muda só o que o modelo libera, como o nome, a saudação e a base própria.
         </p>
@@ -60,7 +60,7 @@ export default async function TemplatesPage() {
           </section>
 
           <section className="card flex flex-col gap-3 p-5">
-            <h2 className="text-base font-bold">Novo modelo</h2>
+            <h2 className="text-base font-medium">Novo modelo</h2>
             <ActionForm action={createTemplateAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="flex-1">
                 <label htmlFor="template-name" className="label">Nome do assistente (os derivados começam com ele)</label>

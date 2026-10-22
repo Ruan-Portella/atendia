@@ -39,7 +39,7 @@ export function GlobalKillSwitch({ flags }: { flags: PlatformFlags }) {
 export function AgencyActions({ agency }: { agency: AgencyRow }) {
   return (
     <section className="card flex flex-col gap-4 p-5">
-      <h2 className="text-lg font-bold">Ações</h2>
+      <h2 className="text-lg font-medium">Ações</h2>
       {agency.aiPausedAt ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-danger-soft px-3 py-2.5 text-sm text-danger">
           <div><strong>IA pausada</strong> desde {relativeTime(agency.aiPausedAt)}{agency.aiPausedReason && <div className="text-xs">Motivo: {agency.aiPausedReason}</div>}</div>
@@ -126,7 +126,7 @@ export function MeasureList({ measures, showAgency = false, empty = "Nenhuma med
 export function ChannelSuspension({ agencyId, bots, measures }: { agencyId: string; bots: Array<{ id: string; label: string }>; measures: MeasureRow[] }) {
   return (
     <section className="card flex flex-col gap-4 p-5">
-      <h2 className="text-lg font-bold">Suspensão de canal</h2>
+      <h2 className="text-lg font-medium">Suspensão de canal</h2>
       <MeasureList measures={measures} empty="Nenhuma medida ativa nesta agência." />
       <ActionForm action={suspendChannel.bind(null, agencyId)} className="flex flex-col gap-2 border-t border-line-2 pt-4">
         <span className="text-sm font-semibold">Suspender</span>

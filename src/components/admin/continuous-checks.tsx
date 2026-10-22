@@ -78,7 +78,7 @@ export function ContinuousChecks({ pending, recent, trends, until, testAllowed, 
     <section className="card flex flex-col gap-3 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-[640px]">
-          <h2 className="text-base font-bold">Verificação contínua por cliente</h2>
+          <h2 className="text-base font-medium">Verificação contínua por cliente</h2>
           <p className="text-xs text-muted">
             Todo dia, só com números agregados (sem abrir conversa), a última semana de cada cliente é comparada com as 4 anteriores: salto de volume, muitos pedidos fora do assunto, itens
             proibidos em alta e mensagens que a Meta cobrou como IA de uso geral. Viram pendência aqui, sem selo nem aviso ao cliente e sem segurar nada. A semana mais recente vai até ontem.

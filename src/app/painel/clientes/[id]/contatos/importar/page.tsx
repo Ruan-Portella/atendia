@@ -52,7 +52,7 @@ export default async function ImportContactsPage({ params }: PageProps<"/painel/
     <div className="flex max-w-[860px] flex-col gap-5">
       <div className="flex flex-col gap-2">
         <Link href={`/painel/clientes/${id}?tab=contatos`} className="text-sm font-semibold text-muted">← Contatos de {client.name}</Link>
-        <h1 className="text-2xl font-bold sm:text-[28px]">Importar contatos</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Importar contatos</h1>
         <p className="text-sm text-muted">
           Traga os contatos que o cliente já tem, com o aceite de novidades e a idade, quando ele tiver. Até {IMPORT_MAX_ROWS.toLocaleString("pt-BR")} por planilha. Telefone que já existe no
           chatbot é completado (nome vazio, etiquetas novas e as datas das réguas), nunca duplicado.

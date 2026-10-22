@@ -35,7 +35,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
   return (
     <>
       <div>
-        <h1 className="text-[26px] font-bold">Conformidade</h1>
+        <h1 className="text-[26px] font-normal">Conformidade</h1>
         <p className="text-sm text-muted">Medidas (suspensões e avisos da Meta), pedidos de exclusão de dados vindos da Meta, descadastros de mensagens e o registro de quem acessou o backoffice (Marco Civil). Contatos aparecem só como contagem.</p>
       </div>
 
@@ -57,7 +57,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
       <ContinuousChecks {...continuous} testAllowed={!cronsScheduledHere()} />
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Medidas: suspensões da BoaVoz e avisos da Meta</h2>
+        <h2 className="text-base font-medium">Medidas: suspensões da BoaVoz e avisos da Meta</h2>
         <p className="text-xs text-muted">Ordem da Meta bloqueia o número (nada entra nem sai) e é levantada sozinha quando a Meta reativa a conta. Infrações e restrições ficam só registradas por enquanto. Suspensões da BoaVoz são criadas na página de cada agência.</p>
         <MeasureList measures={measures} showAgency empty="Nenhuma medida registrada." />
       </section>
@@ -65,7 +65,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
       <AcceptanceList rows={acceptances} />
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Pedidos de exclusão de dados (Meta)</h2>
+        <h2 className="text-base font-medium">Pedidos de exclusão de dados (Meta)</h2>
         {c.deletions.length ? (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Código</th><th className="py-1.5 font-semibold">Origem</th><th className="py-1.5 font-semibold">Recebido</th><th className="py-1.5 font-semibold">Situação</th></tr></thead>
@@ -86,7 +86,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
       </section>
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Descadastros de mensagens</h2>
+        <h2 className="text-base font-medium">Descadastros de mensagens</h2>
         {c.suppressions.length ? (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Canal</th><th className="py-1.5 font-semibold">De quê</th><th className="py-1.5 font-semibold">Motivo</th><th className="py-1.5 text-right font-semibold">Ativos</th><th className="py-1.5 text-right font-semibold">Novos (30 d)</th><th className="py-1.5 text-right font-semibold">Desfeitos (30 d)</th></tr></thead>
@@ -110,7 +110,7 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
 
       <section className="card flex flex-col gap-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-bold">Registro de acessos ao backoffice</h2>
+          <h2 className="text-base font-medium">Registro de acessos ao backoffice</h2>
           <form className="flex gap-2">
             <input name="email" defaultValue={email} placeholder="filtrar por e-mail" className="input w-56 py-1.5" />
             <button type="submit" className="btn-ghost py-1.5">Filtrar</button>

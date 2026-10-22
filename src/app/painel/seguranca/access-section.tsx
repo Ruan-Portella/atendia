@@ -30,7 +30,7 @@ export async function AccessSection({ agencyId, people }: { agencyId: string; pe
     <section className="card flex flex-col gap-4 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-base font-bold">Acessos ao painel</h2>
+          <h2 className="text-base font-medium">Acessos ao painel</h2>
           <p className="text-sm text-muted">Entradas, falhas e acessos com IP, do painel e da área do cliente. Guardados por 6 meses (Marco Civil).</p>
         </div>
         <ConfirmAction

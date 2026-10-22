@@ -45,7 +45,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       <div className="flex flex-col gap-4 p-6">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="display text-lg font-bold leading-tight">{title}</h2>
+            <h2 className="text-lg font-medium leading-tight">{title}</h2>
             {description && <p className="mt-1 text-sm leading-relaxed text-muted">{description}</p>}
           </div>
           <button type="button" onClick={onClose} aria-label="Fechar" className="btn-icon -mr-2 -mt-1">

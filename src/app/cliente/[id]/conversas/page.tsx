@@ -24,7 +24,7 @@ export default async function MemberConversationsPage({ params }: PageProps<"/cl
     <>
       {member.allowHandoff && <AutoRefresh ms={15000} />}
       <div>
-        <h1 className="text-2xl font-bold">{member.allowHandoff ? "Atendimento" : "Conversas"}</h1>
+        <h1 className="text-2xl font-normal">{member.allowHandoff ? "Atendimento" : "Conversas"}</h1>
         <p className="text-sm text-muted">
           {member.allowHandoff
             ? "Quando um visitante pede para falar com alguém, ele aparece aqui. Abra a conversa, assuma e responda: o visitante vê no chat do site em segundos."

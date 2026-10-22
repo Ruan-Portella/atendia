@@ -11,7 +11,7 @@ export function ExportLinks({ clientId, description }: { clientId: string; descr
   return (
     <section className="card flex flex-col gap-3 p-5">
       <div>
-        <h2 className="text-base font-bold">Exportar dados</h2>
+        <h2 className="text-base font-medium">Exportar dados</h2>
         <p className="text-sm text-muted">{description}</p>
       </div>
       <ul className="flex flex-col gap-2 text-sm">

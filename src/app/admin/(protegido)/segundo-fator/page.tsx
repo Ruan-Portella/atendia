@@ -50,14 +50,14 @@ export default async function AdminMfaRecovery() {
   return (
     <>
       <div>
-        <h1 className="text-[26px] font-bold">Segundo fator</h1>
+        <h1 className="text-[26px] font-normal">Segundo fator</h1>
         <p className="text-sm text-muted">
           Pedidos de quem perdeu o app autenticador (painel e área do cliente). O pedido vale depois do link do e-mail; a remoção só libera {RECOVERY_WAIT_HOURS} horas depois da confirmação. Antes de remover, confira com o dono da agência (pelo contato do cadastro) se o pedido é mesmo da equipe dele ou do cliente dele.
         </p>
       </div>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-bold">Em aberto</h2>
+        <h2 className="text-lg font-medium">Em aberto</h2>
         {open.length === 0 && <p className="text-sm text-muted">Nenhum pedido em aberto.</p>}
         {open.map((r) => {
           const ready = recoveryReady(r, now);
@@ -88,7 +88,7 @@ export default async function AdminMfaRecovery() {
       </section>
 
       <section className="card overflow-x-auto">
-        <h2 className="px-4 pt-4 text-lg font-bold">Encerrados</h2>
+        <h2 className="px-4 pt-4 text-lg font-medium">Encerrados</h2>
         {closed.length === 0 ? (
           <p className="px-4 pb-4 pt-2 text-sm text-muted">Nenhum pedido encerrado.</p>
         ) : (

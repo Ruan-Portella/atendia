@@ -99,7 +99,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href="/admin/clientes" className="text-xs font-semibold text-muted">← Agências</Link>
-          <h1 className="text-[26px] font-bold">{agency.name}</h1>
+          <h1 className="text-[26px] font-normal">{agency.name}</h1>
           <p className="text-sm text-muted">{agency.email ?? "sem e-mail"} · desde {new Date(agency.createdAt).toLocaleDateString("pt-BR")} · {AGENCY_STATUS_LABEL[st]}</p>
         </div>
         {agency.stripeCustomerId && (
@@ -161,7 +161,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
       />
 
       <section className="card overflow-x-auto">
-        <h2 className="px-5 pt-4 text-lg font-bold">Chatbots</h2>
+        <h2 className="px-5 pt-4 text-lg font-medium">Chatbots</h2>
         <table className="mt-2 w-full min-w-[880px] text-sm">
           <thead className="border-b border-line text-left text-xs text-muted">
             <tr><th className="px-5 py-2 font-semibold">Chatbot · cliente da agência</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">Tamanho e cota</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-3 py-2 text-right font-semibold">Trechos da base</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
@@ -192,7 +192,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-lg font-bold">Uso e custo por mês</h2>
+          <h2 className="text-lg font-medium">Uso e custo por mês</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Mês</th><th className="py-1.5 text-right font-semibold">Atendimentos</th><th className="py-1.5 text-right font-semibold">Custo de IA</th></tr></thead>
             <tbody>
@@ -213,7 +213,7 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         </section>
 
         <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-lg font-bold">Faturas (Stripe)</h2>
+          <h2 className="text-lg font-medium">Faturas (Stripe)</h2>
           {invoices.length ? (
             <ul className="flex flex-col divide-y divide-line-2 text-sm">
               {invoices.map((inv) => (

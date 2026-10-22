@@ -56,14 +56,14 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
     <>
       <div>
         <Link href={`/admin/clientes/${id}`} className="text-xs font-semibold text-muted">← {agency.name}</Link>
-        <h1 className="text-[26px] font-bold">Campanhas (teste)</h1>
+        <h1 className="text-[26px] font-normal">Campanhas (teste)</h1>
         <p className="text-sm text-muted">
           Motor de campanhas e lembretes do WhatsApp (B3). Cada envio confere na hora: quem respondeu SAIR, o aceite de novidades (modelo de marketing) e o 18+ (campanha de bebida ou remédio). O limite é o nível do número na Meta, em contatos únicos por 24 h, somando os chatbots da mesma conta do WhatsApp. Envio sem resposta da Meta vira incerto e não é reenviado.
         </p>
       </div>
 
       <section className="card flex flex-col gap-3 p-5">
-        <h2 className="text-lg font-bold">Tique</h2>
+        <h2 className="text-lg font-medium">Tique</h2>
         <p className="text-sm text-ink-2">
           O Supabase chama o tique a cada minuto quando há campanha enviando ou agendada (pg_cron, migração 0082, com o endereço e o segredo no cofre).{" "}
           {lock?.last_run_at ? <>Último tique {relativeTime(lock.last_run_at as string)}{lock.last_ok_at && lock.last_ok_at !== lock.last_run_at ? `, último sem erro ${relativeTime(lock.last_ok_at as string)}` : ""}.</> : "Nenhum tique registrado ainda."}
@@ -100,7 +100,7 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
       {channels.map(({ bot, ch, templates, tier, quality, error }) => (
         <section key={bot.id as string} className="card flex flex-col gap-3 p-5">
           <div>
-            <h2 className="text-lg font-bold">{bot.name as string}</h2>
+            <h2 className="text-lg font-medium">{bot.name as string}</h2>
             <p className="text-xs text-muted">
               {bot.client_name as string}
               {ch ? ` · nível na Meta: ${tier ?? "desconhecido"} (${Number.isFinite(tierLimit(tier)) ? `${tierLimit(tier).toLocaleString("pt-BR")} contatos por 24 h` : "sem limite"}) · qualidade: ${QUALITY_LABEL[quality ?? ""] ?? "sem nota"}` : " · sem WhatsApp conectado"}
@@ -140,7 +140,7 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
       ))}
 
       <section className="card overflow-x-auto">
-        <h2 className="px-5 pt-4 text-lg font-bold">Campanhas</h2>
+        <h2 className="px-5 pt-4 text-lg font-medium">Campanhas</h2>
         <table className="mt-2 w-full min-w-[720px] text-sm">
           <thead className="border-b border-line text-left text-xs text-muted">
             <tr><th className="px-5 py-2 font-semibold">Campanha</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">Envios</th><th className="px-5 py-2 font-semibold" /></tr>

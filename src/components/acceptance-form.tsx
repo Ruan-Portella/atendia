@@ -86,7 +86,7 @@ export function AcceptanceForm({
       <div className="flex items-start gap-2.5">
         <ShieldCheck size={20} className="mt-0.5 shrink-0" style={color ? { color } : undefined} />
         <div>
-          <h3 className="text-base font-bold">Antes de conectar: termos do {channelName}</h3>
+          <h3 className="text-base font-medium">Antes de conectar: termos do {channelName}</h3>
           <p className="text-sm text-ink-2">Quem aceita é o próprio negócio ({clientName}), uma vez por canal.</p>
         </div>
       </div>

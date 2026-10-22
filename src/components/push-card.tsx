@@ -132,7 +132,7 @@ export function PushCard({ publicKey, devices, kinds, prefs, subscribe, unsubscr
       <div className="flex items-start gap-2.5">
         <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-brand" aria-hidden />
         <div>
-          <h2 className="text-base font-bold">Avisos no celular e no computador</h2>
+          <h2 className="text-base font-medium">Avisos no celular e no computador</h2>
           <p className="text-sm text-muted">
             O aviso aparece na tela, mesmo com o painel fechado: pedido de atendente, conversa transferida para você, lead novo. Ative em cada aparelho que você usa.
           </p>

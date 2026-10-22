@@ -19,10 +19,11 @@ interface ToastApi {
 const Ctx = createContext<ToastApi | null>(null);
 
 const ICON = { success: CheckCircle2, error: AlertCircle, info: Info } as const;
+// o fundo é sempre o do cartão (opaco); a cor fica no ícone
 const STYLE: Record<ToastKind, string> = {
-  success: "border-[#cfe3d8] bg-brand-soft text-brand",
-  error: "border-[#f0c9c9] bg-danger-soft text-danger",
-  info: "border-line bg-panel text-ink",
+  success: "text-brand",
+  error: "text-danger",
+  info: "text-muted",
 };
 
 /** Avisos curtos no canto da tela. Monte uma vez no layout raiz e use `useToast()`. */
@@ -48,8 +49,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {items.map((t) => {
           const Icon = ICON[t.kind];
           return (
-            <div key={t.id} role="status" className={cn("toast-in pointer-events-auto flex w-full max-w-sm items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm shadow-[0_12px_32px_rgba(27,31,29,0.14)]", STYLE[t.kind])}>
-              <Icon size={17} className="mt-0.5 shrink-0" />
+            <div key={t.id} role="status" className="toast-in pointer-events-auto flex w-full max-w-sm items-start gap-2.5 rounded-[14px] border border-line bg-panel px-3.5 py-2.5 text-sm text-ink shadow-[inset_0_1px_0_var(--highlight),var(--shadow-pop)]">
+              <Icon size={17} className={cn("mt-0.5 shrink-0", STYLE[t.kind])} />
               <span className="min-w-0 flex-1 font-medium leading-snug">{t.message}</span>
               <button type="button" onClick={() => dismiss(t.id)} aria-label="Fechar aviso" className="-mr-1 shrink-0 rounded-md p-0.5 opacity-70 hover:opacity-100">
                 <X size={14} />

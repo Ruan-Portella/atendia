@@ -29,7 +29,7 @@ export default async function HelpArticlePage({ params }: PageProps<"/ajuda/[slu
           ← Central de ajuda
         </Link>
         <span className="eyebrow">{group.title}</span>
-        <h1 className="text-3xl font-bold leading-[1.1] md:text-[40px]">{article.title}</h1>
+        <h1 className="text-3xl font-normal leading-[1.1] md:text-[40px]">{article.title}</h1>
       </div>
       <div className="flex max-w-[680px] flex-col gap-4 text-[16px] leading-relaxed text-ink-2">
         {article.blocks.map((b, i) =>
@@ -52,13 +52,13 @@ export default async function HelpArticlePage({ params }: PageProps<"/ajuda/[slu
       </div>
       {group.articles.length > 1 && (
         <section className="flex flex-col gap-3 border-t border-line pt-6">
-          <h2 className="text-sm font-bold uppercase tracking-[0.06em] text-muted">Mais em {group.title}</h2>
+          <h2 className="text-sm font-medium uppercase tracking-[0.06em] text-muted">Mais em {group.title}</h2>
           <ul className="grid gap-2 sm:grid-cols-2">
             {group.articles
               .filter((a) => a.slug !== slug)
               .map((a) => (
                 <li key={a.slug}>
-                  <Link href={`/ajuda/${a.slug}`} className="block rounded-xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink hover:border-brand">
+                  <Link href={`/ajuda/${a.slug}`} className="block rounded-xl border border-line bg-panel px-4 py-3 text-sm font-semibold text-ink hover:border-brand">
                     {a.title}
                   </Link>
                 </li>

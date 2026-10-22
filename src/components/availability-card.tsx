@@ -13,7 +13,7 @@ export function AvailabilityCard({ available, action }: { available: boolean; ac
       <div className="flex min-w-0 items-start gap-2.5">
         <span className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", available ? "bg-brand" : "bg-muted")} aria-hidden />
         <div>
-          <h2 className="text-base font-bold">{available ? "Disponível para atender" : "Ausente"}</h2>
+          <h2 className="text-base font-medium">{available ? "Disponível para atender" : "Ausente"}</h2>
           <p className="text-sm text-muted">
             {available
               ? "Nos setores com rodízio, as conversas vêm para você enquanto o painel estiver aberto. Saindo para o almoço ou no fim do dia, marque ausente."

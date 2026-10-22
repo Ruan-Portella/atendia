@@ -25,7 +25,7 @@ export default async function MarcaPage() {
   return (
     <div className="flex max-w-[640px] flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold sm:text-[28px]">Marca e domínio</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Marca e domínio</h1>
         <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo, no portal e nos e-mails.</p>
         {role === "owner" && (
           <p className="mt-2 text-sm text-muted">
@@ -48,7 +48,7 @@ export default async function MarcaPage() {
 
       <section className="card flex flex-col gap-4 p-6">
         <div>
-          <h2 className="text-base font-bold">Domínio próprio</h2>
+          <h2 className="text-base font-medium">Domínio próprio</h2>
           <p className="text-sm text-muted">Demos, portal do cliente e o código do widget passam a usar o seu endereço (ex.: <code>chat.suaagencia.com.br</code>) em vez de {appUrl("").replace(/^https?:\/\//, "")}.</p>
         </div>
         <div className="flex gap-2.5 rounded-lg border border-line bg-ground px-3.5 py-3 text-sm text-ink-2">
@@ -99,7 +99,7 @@ export default async function MarcaPage() {
 
       <section className="card flex flex-col gap-4 p-6">
         <div>
-          <h2 className="text-base font-bold">Privacidade e LGPD</h2>
+          <h2 className="text-base font-medium">Privacidade e LGPD</h2>
           <p className="text-sm text-muted">O chat avisa o visitante que a conversa fica registrada para o atendimento. Aqui você coloca o link da sua política de privacidade e decide por quanto tempo guardar os dados.</p>
         </div>
         <ActionForm key={`${agency.privacy_url ?? ""}|${agency.retention_months ?? ""}|${agency.retention_pending_months ?? ""}`} action={updatePrivacy} className="flex flex-col gap-4">

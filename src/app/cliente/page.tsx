@@ -16,7 +16,7 @@ export default async function MemberHome() {
   if (list.length === 1) redirect(`/cliente/${list[0].clientId}`);
   return (
     <main className="mx-auto flex w-full max-w-[560px] flex-1 flex-col gap-4 px-4 py-12">
-      <h1 className="text-2xl font-bold">Área do cliente</h1>
+      <h1 className="text-2xl font-normal">Área do cliente</h1>
       {list.length === 0 ? (
         <p className="text-sm text-muted">O e-mail {session.email} não tem acesso a nenhum assistente aqui. Peça acesso para a agência que cuida do seu atendimento.</p>
       ) : (

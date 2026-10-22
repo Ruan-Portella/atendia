@@ -46,14 +46,14 @@ export function TemplateInheritance({
   return (
     <div className="flex max-w-[860px] flex-col gap-5">
       <div>
-        <h2 className="text-[22px] font-bold">Herança</h2>
+        <h2 className="text-[22px] font-medium">Herança</h2>
         <p className="text-sm text-muted">
           Cada chatbot criado deste modelo recebe na hora o que você muda aqui: a personalidade, as instruções, os assuntos do negócio, as ações, os roteiros e a base de conhecimento. Ele fica com o próprio cliente, os canais, o horário e o destino do atendimento e o contexto fixo.
         </p>
       </div>
 
       <section className="card flex flex-col gap-3 p-5">
-        <h3 className="text-base font-bold">O que cada chatbot derivado pode mudar</h3>
+        <h3 className="text-base font-medium">O que cada chatbot derivado pode mudar</h3>
         <ActionForm action={saveUnlocked} className="flex flex-col gap-3">
           <div className="grid gap-2 sm:grid-cols-2">
             {TEMPLATE_FIELDS.map((f) => (
@@ -69,7 +69,7 @@ export function TemplateInheritance({
       </section>
 
       <section className="card flex flex-col gap-3 p-5">
-        <h3 className="text-base font-bold">
+        <h3 className="text-base font-medium">
           Chatbots derivados <span className="font-normal text-muted">({derived.length})</span>
         </h3>
         {derived.length === 0 ? (
@@ -90,7 +90,7 @@ export function TemplateInheritance({
 
       <section className="card flex flex-col gap-3 p-5">
         <div>
-          <h3 className="text-base font-bold">Versões publicadas</h3>
+          <h3 className="text-base font-medium">Versões publicadas</h3>
           <p className="text-sm text-muted">O que você muda no modelo fica no rascunho, e o teste ao vivo usa ele. Os derivados só recebem ao publicar (o botão no topo). A base de conhecimento e o que vem pela API valem na hora.</p>
         </div>
         {versions.length === 0 ? (
@@ -121,7 +121,7 @@ export function TemplateInheritance({
 
       {manage && (
         <section className="card flex flex-col gap-3 p-5">
-          <h3 className="text-base font-bold">Novo chatbot deste modelo</h3>
+          <h3 className="text-base font-medium">Novo chatbot deste modelo</h3>
           <ActionForm action={createDerived} className="flex flex-col gap-3">
             <ClientPicker clients={clients} defaultClientId={null} idPrefix="deriv" />
             <div>

@@ -11,7 +11,7 @@ export function SignatureCard({ value, action }: { value: SignatureFormat | null
   return (
     <section className="card flex flex-col gap-3 p-5">
       <div>
-        <h2 className="text-base font-bold">Minha assinatura</h2>
+        <h2 className="text-base font-medium">Minha assinatura</h2>
         <p className="text-sm text-muted">Como o seu nome aparece nas suas mensagens pelo WhatsApp e pelo Instagram. Vale nos chatbots que não travam o formato; nos outros, vale o que o chatbot define.</p>
       </div>
       <ActionForm action={action} className="flex flex-wrap items-end gap-2">

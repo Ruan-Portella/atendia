@@ -67,7 +67,7 @@ export function withNotes(messages: ThreadMessage[], notes: Array<{ kind: string
 
 function NoteView({ m }: { m: ThreadMessage }) {
   return (
-    <div className="max-w-[90%] self-center rounded-lg border border-dashed border-[#e3cf9a] bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+    <div className="max-w-[90%] self-center rounded-lg border border-dashed border-amber-line bg-amber-soft px-3 py-2 text-sm text-amber-ink">
       <div className="text-[11px] font-semibold">
         {m.role === "transferencia" ? `${m.author_display_name ?? "Alguém da equipe"} transferiu para ${m.target_label ?? "outra pessoa"}` : `Nota interna · ${m.author_display_name ?? "equipe"}`}
         <span className="font-normal opacity-80"> · só a equipe vê</span>
@@ -141,7 +141,7 @@ function ShownComponent({ json }: { json?: string | null }) {
         <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">carrossel · {c.cards.length} {c.cards.length === 1 ? "card" : "cards"}</span>
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {c.cards.map((card, i) => (
-            <div key={i} className="flex w-[132px] shrink-0 flex-col overflow-hidden rounded-lg border border-line bg-white text-[11px]">
+            <div key={i} className="flex w-[132px] shrink-0 flex-col overflow-hidden rounded-lg border border-line bg-panel text-[11px]">
               {card.media.type === "video" ? (
                 <div className="flex aspect-[4/3] items-center justify-center bg-ground text-muted">vídeo</div>
               ) : (
@@ -160,17 +160,17 @@ function ShownComponent({ json }: { json?: string | null }) {
   }
   if (c.type === "link") {
     return (
-      <a href={c.url} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-block rounded-full border border-line bg-white px-2.5 py-0.5 text-[12px] font-semibold text-brand">
+      <a href={c.url} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-block rounded-full border border-line bg-panel px-2.5 py-0.5 text-[12px] font-semibold text-brand">
         {c.label} ↗
       </a>
     );
   }
   // o botão do WhatsApp para a pessoa compartilhar o número (contato que fala pelo nome de usuário)
-  if (c.type === "contact_request") return <span className="mt-1.5 inline-block rounded-full border border-line bg-white px-2.5 py-0.5 text-[12px] font-semibold text-brand">📞 Compartilhar o número</span>;
+  if (c.type === "contact_request") return <span className="mt-1.5 inline-block rounded-full border border-line bg-panel px-2.5 py-0.5 text-[12px] font-semibold text-brand">📞 Compartilhar o número</span>;
   return (
     <div className="mt-1.5 flex flex-wrap gap-1">
       <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">{asButtons(c.options) ? "botões" : "lista"}</span>
-      {c.options.map((o) => <span key={o.id} className="rounded-full border border-line bg-white px-2 py-0.5 text-[12px]">{o.title}</span>)}
+      {c.options.map((o) => <span key={o.id} className="rounded-full border border-line bg-panel px-2 py-0.5 text-[12px]">{o.title}</span>)}
     </div>
   );
 }
@@ -243,7 +243,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
               m.role === "user"
                 ? "max-w-[80%] self-end rounded-[14px_14px_4px_14px] bg-ink px-3.5 py-2.5 text-sm text-ground"
                 : m.role === "agent"
-                  ? "max-w-[86%] self-start rounded-[14px_14px_14px_4px] border border-[#cfe3d8] bg-brand-soft px-3.5 py-2.5 text-sm"
+                  ? "max-w-[86%] self-start rounded-[14px_14px_14px_4px] border border-brand-line bg-brand-soft px-3.5 py-2.5 text-sm"
                   : "max-w-[86%] self-start rounded-[14px_14px_14px_4px] border border-line bg-panel px-3.5 py-2.5 text-sm"
             }
           >

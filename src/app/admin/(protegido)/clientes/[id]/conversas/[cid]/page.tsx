@@ -26,7 +26,7 @@ export default async function SupportConversation({ params }: { params: Promise<
   if (!grant) {
     return (
       <div className="card flex max-w-[640px] flex-col gap-2 p-6">
-        <h1 className="text-lg font-bold">Sem liberação do suporte</h1>
+        <h1 className="text-lg font-normal">Sem liberação do suporte</h1>
         <p className="text-sm text-muted">A agência não liberou o acesso (ou a liberação acabou). Ela libera em Segurança → Acesso do suporte, por 24 horas e com motivo.</p>
         <Link href={`/admin/clientes/${id}`} className="text-sm font-semibold underline">← Voltar para a agência</Link>
       </div>
@@ -42,7 +42,7 @@ export default async function SupportConversation({ params }: { params: Promise<
     <div className="flex max-w-[760px] flex-col gap-4">
       <div>
         <Link href={`/admin/clientes/${id}`} className="text-xs font-semibold text-muted">← Agência</Link>
-        <h1 className="text-xl font-bold">{bot.name} · {bot.client_name}</h1>
+        <h1 className="text-xl font-normal">{bot.name} · {bot.client_name}</h1>
         <p className="text-xs text-muted">{conv.channel ?? "site"} · começou em {new Date(conv.started_at as string).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
         <p className="mt-2 rounded-lg bg-amber-soft px-3 py-2 text-xs text-amber-ink">Leitura registrada na auditoria da agência. Liberação até {new Date(grant.expires_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}: {grant.reason}</p>
       </div>

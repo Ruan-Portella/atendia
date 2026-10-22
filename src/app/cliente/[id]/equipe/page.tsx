@@ -19,14 +19,14 @@ export default async function MemberTeamPage({ params }: PageProps<"/cliente/[id
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold">Equipe</h1>
+        <h1 className="text-2xl font-normal">Equipe</h1>
         <p className="text-sm text-muted">
           Quem entra na área do cliente de {member.clientName}. Atendentes veem só as conversas{member.allowHandoff ? " e respondem os contatos" : ""}; gestores veem também relatório, canais, privacidade e a equipe. Para incluir outro gestor, fale com {member.agency.name}.
         </p>
       </div>
 
       <section className="card flex flex-col gap-3 p-5">
-        <h2 className="text-base font-bold">Convidar atendente</h2>
+        <h2 className="text-base font-medium">Convidar atendente</h2>
         <ActionForm action={memberInvite.bind(null, id)} className="flex flex-wrap items-end gap-2">
           <div className="min-w-[220px] flex-1">
             <label htmlFor="invite-email" className="label">E-mail</label>

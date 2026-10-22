@@ -37,7 +37,7 @@ export default async function RoadmapPage() {
       <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-8 px-5 py-8 sm:px-6 lg:py-12">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex max-w-[640px] flex-col gap-2">
-            <h1 className="display text-3xl font-bold sm:text-4xl">O que vem por aí</h1>
+            <h1 className="display text-3xl font-normal sm:text-4xl">O que vem por aí</h1>
             <p className="text-[15px] text-ink-2">
               O que estamos fazendo no BoaVoz, sem datas: a ordem muda com o que os clientes pedem. Quem tem conta curte o que mais quer e manda ideias pelo painel.
             </p>

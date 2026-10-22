@@ -48,7 +48,7 @@ export function ProfileForm({ action, folder, name, avatar, entryExample, compan
   return (
     <ActionForm action={action} success="Perfil salvo." className="card flex flex-col gap-4 p-6">
       <div>
-        <h2 className="text-base font-bold">Como os contatos veem você</h2>
+        <h2 className="text-base font-medium">Como os contatos veem você</h2>
         <p className="text-sm text-muted">Quando você atende uma conversa, o contato vê este nome (e a foto, no chat do site). Use o primeiro nome ou como a equipe chama você.</p>
       </div>
       <div>
@@ -72,7 +72,7 @@ export function ProfileForm({ action, folder, name, avatar, entryExample, compan
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg bg-ground p-3 text-sm">
           <div className="mb-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-muted">WhatsApp e Instagram</div>
-          <div className="rounded-lg bg-white px-3 py-2 shadow-sm">
+          <div className="rounded-lg bg-panel px-3 py-2 shadow-sm">
             <span className="text-muted">{entryExample.replaceAll("{atendente}", shown).replaceAll("{empresa}", company)}</span>
             {"\n"}
             <span className="block pt-1.5">Já vi aqui o seu pedido, só um instante.</span>
@@ -86,10 +86,10 @@ export function ProfileForm({ action, folder, name, avatar, entryExample, compan
               // eslint-disable-next-line @next/next/no-img-element
               <img src={url} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
             ) : (
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#cfe3d8] text-[11px] font-bold text-[#1f4e3d]">{shown.charAt(0).toUpperCase()}</span>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-line text-[11px] font-bold text-brand">{shown.charAt(0).toUpperCase()}</span>
             )}
-            <div className="rounded-[14px_14px_14px_4px] border border-[#cfe3d8] bg-[#eef6f1] px-3 py-2">
-              <div className="text-[11px] font-semibold text-[#1f4e3d]">{shown}</div>
+            <div className="rounded-[14px_14px_14px_4px] border border-brand-line bg-brand-soft px-3 py-2">
+              <div className="text-[11px] font-semibold text-brand">{shown}</div>
               Já vi aqui o seu pedido, só um instante.
             </div>
           </div>

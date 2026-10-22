@@ -10,7 +10,7 @@ export function ClientTransferForm({ agencyId, clients, transfers }: { agencyId:
   return (
     <section className="card flex flex-col gap-3 p-5">
       <div>
-        <h2 className="text-lg font-bold">Transferir cliente para outra conta</h2>
+        <h2 className="text-lg font-medium">Transferir cliente para outra conta</h2>
         <p className="text-sm text-muted">
           Só a pedido do negócio (o dono dos dados), também quando a agência sumiu. Vão o cliente, os chatbots, as conversas, os contatos e a base; ficam com esta conta a auditoria, o uso já contado e a cobrança. As chaves, os webhooks e os segredos desta conta deixam de alcançar o cliente, as ações ficam desligadas sem segredo, as campanhas agendadas pausam e o negócio precisa fazer o aceite de novo na conta nova. Chatbot de um modelo daqui vira chatbot comum, com a versão em uso. Não tem desfazer.
         </p>

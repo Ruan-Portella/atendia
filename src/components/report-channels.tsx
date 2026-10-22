@@ -14,7 +14,7 @@ export function ReportChannels({ channels, widgetOpens, tickets }: { channels: C
   return (
     <section className="card flex min-w-0 flex-col gap-4 p-4 sm:p-5">
       <div>
-        <h2 className="text-base font-bold">Por canal</h2>
+        <h2 className="text-base font-medium">Por canal</h2>
         <p className="text-sm text-muted">De onde vieram as conversas do mês, quantas foram para a equipe e quantas deixaram contato.</p>
       </div>
       <div className="min-w-0 overflow-x-auto">

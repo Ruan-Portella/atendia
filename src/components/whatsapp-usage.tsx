@@ -19,7 +19,7 @@ export async function WhatsAppUsage({ botId }: { botId: string }) {
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <h3 className="text-lg font-bold">Consumo de {periodLabel(period)}</h3>
+        <h3 className="text-lg font-medium">Consumo de {periodLabel(period)}</h3>
         <p className="text-sm text-muted">Mensagens enviadas por este número e quantas a Meta cobrou. A Meta cobra direto do cliente; o valor é uma estimativa pela tabela de referência.</p>
       </div>
       {sent === 0 ? (

@@ -18,7 +18,7 @@ export async function InheritedList({ kind, templateId, configId, templateName }
   return (
     <section className="card flex max-w-[860px] flex-col gap-3 p-5">
       <div>
-        <h3 className="text-base font-bold">{what} {kind === "fontes" ? "vem" : "vêm"} do modelo {templateName}</h3>
+        <h3 className="text-base font-medium">{what} {kind === "fontes" ? "vem" : "vêm"} do modelo {templateName}</h3>
         <p className="text-sm text-muted">
           {kind === "fontes" ? "Vale" : "Valem"} para este chatbot como se {kind === "fontes" ? "fosse dele" : "fossem dele"}{kind === "fontes" ? "" : ", na versão publicada em uso,"} e {kind === "fontes" ? "muda" : "mudam"} só no modelo:{" "}
           <Link href={`/painel/bots/${templateId}?tab=${kind}`} className="font-semibold text-brand underline">

@@ -26,7 +26,7 @@ export function FreeAccountCard({ agencyId, view, links, names }: { agencyId: st
   const reason = view.blockReason && view.blockReason in SIGNAL_LABEL ? SIGNAL_LABEL[view.blockReason as keyof typeof SIGNAL_LABEL] : view.blockReason;
   return (
     <section className="card flex flex-col gap-3 p-5 text-sm">
-      <h2 className="text-lg font-bold">Conta grátis</h2>
+      <h2 className="text-lg font-medium">Conta grátis</h2>
       <p>
         {view.billingStatus === "none" ? `Sem assinatura · ${view.testAnswersUsed} de ${TEST_ANSWERS_FREE} respostas de teste usadas` : "Com assinatura: o teste grátis não vale mais"}
         {view.freeUsedAt ? ` · primeiro uso em ${dayBR(view.freeUsedAt)}` : " · ainda não usou o teste"}.

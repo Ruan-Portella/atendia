@@ -62,7 +62,7 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
   return (
     <div className="flex max-w-[860px] flex-col gap-5">
       <div>
-        <h2 className="text-[22px] font-bold">Roteiros</h2>
+        <h2 className="text-[22px] font-medium">Roteiros</h2>
         <p className="text-sm text-muted">
           Passos que a IA segue quando a conversa entra num assunto: segunda via, troca, orçamento. A IA conversa com naturalidade dentro de cada passo, mas não pula nenhum. Quem decide o caminho é o
           BoaVoz: o botão tocado e o resultado da ação levam ao próximo passo, a outro passo, ao fim ou a um atendente. Dados como CPF e CEP são conferidos antes de seguir. A IA reconhece o assunto pelo

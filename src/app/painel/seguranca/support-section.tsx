@@ -24,7 +24,7 @@ export async function SupportSection({ agencyId }: { agencyId: string }) {
   return (
     <section className="card flex flex-col gap-4 p-6">
       <div>
-        <h2 className="text-base font-bold">Acesso do suporte</h2>
+        <h2 className="text-base font-medium">Acesso do suporte</h2>
         <p className="text-sm text-muted">
           A equipe do BoaVoz não lê as conversas da sua conta sem a sua liberação. Libere por {SUPPORT_HOURS} horas quando pedir ajuda com um atendimento; cada conversa lida aparece na Auditoria, e você pode encerrar antes.
         </p>

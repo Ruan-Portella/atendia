@@ -17,7 +17,7 @@ export default async function LinkPolicyPage({ params }: PageProps<"/conectar/[t
     <div className="min-h-full bg-ground">
       <AgencyHeader agency={link.agency} />
       <main className="mx-auto flex max-w-[760px] flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10">
-        <h1 className="text-2xl font-bold sm:text-[28px]">Política de Uso Aceitável</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Política de Uso Aceitável</h1>
         <AcceptableUsePolicy brand="plataforma" contact={<>por meio de {link.agency.name}</>} />
       </main>
     </div>

@@ -5,7 +5,7 @@
 export function RegulatedNotice({ channel, coexistence }: { channel: string; coexistence: boolean }) {
   const name = channel === "instagram" ? "Instagram" : "WhatsApp";
   return (
-    <p className="rounded-lg border border-[#efd9a9] bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+    <p className="rounded-lg border border-amber-line bg-amber-soft px-3 py-2 text-sm text-amber-ink">
       <strong>Conversa com bebida ou remédio:</strong> não feche esta venda pelo {name} nem mande Pix ou link de pagamento; ofereça o site, telefone para ligação, retirada ou o chat do site.
       {coexistence && <> <strong>Responda pelo painel, não pelo celular.</strong></>}
     </p>

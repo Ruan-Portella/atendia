@@ -81,7 +81,7 @@ export function HandoffWatcher({ endpoint }: { endpoint: string }) {
   return (
     <div className="fixed bottom-4 left-4 z-[65] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
       {alerts.map((a) => (
-        <div key={a.id} role="alert" className="toast-in flex items-start gap-3 rounded-xl border border-[#efd9a9] bg-amber-soft px-4 py-3 text-sm shadow-[0_12px_32px_rgba(27,31,29,0.16)]">
+        <div key={a.id} role="alert" className="toast-in flex items-start gap-3 rounded-xl border border-amber-line bg-amber-soft px-4 py-3 text-sm shadow-[0_12px_32px_rgba(27,31,29,0.16)]">
           <Headset size={18} className="mt-0.5 shrink-0 text-amber-ink" />
           <span className="min-w-0 flex-1">
             <strong className="block text-amber-ink">Um visitante quer falar com alguém</strong>

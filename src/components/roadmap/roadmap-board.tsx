@@ -15,7 +15,7 @@ export function RoadmapBoard({ items, liked, like }: { items: RoadmapItem[]; lik
       {boardOf(items).map((col) => (
         <section key={col.status} aria-labelledby={`roadmap-${col.status}`} className="flex min-w-0 flex-col gap-3">
           <div className="flex flex-col gap-0.5">
-            <h2 id={`roadmap-${col.status}`} className="flex items-center gap-2 text-base font-bold">
+            <h2 id={`roadmap-${col.status}`} className="flex items-center gap-2 text-base font-medium">
               <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${DOT[col.status]}`} aria-hidden />
               {col.title}
               <span className="font-normal text-muted tabular-nums">{col.items.length + col.more}</span>

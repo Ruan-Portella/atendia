@@ -55,7 +55,7 @@ export default async function ClientesPage() {
     <>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold sm:text-[28px]">Clientes</h1>
+          <h1 className="text-2xl font-normal sm:text-[28px]">Clientes</h1>
           <p className="text-sm text-muted">{clients.length} cliente{clients.length === 1 ? "" : "s"} · {botCount} chatbot{botCount === 1 ? "" : "s"}. Abra um cliente para ver os chatbots, leads e conversas dele.</p>
         </div>
         {canConfig && (
@@ -76,9 +76,9 @@ export default async function ClientesPage() {
         <Kpi label="Resolvidas sem humano" value={`${pct}%`} sub={`${100 - pct}% pediram atendente`} />
         {seesBilling && (
           <div className="flex flex-col gap-1.5 rounded-xl bg-brand px-4 py-3.5 text-ground sm:px-[18px] sm:py-4">
-            <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#c7d9d1]">Você fatura dos clientes</span>
-            <span className="display text-2xl font-bold leading-tight tabular sm:text-[30px]">{brl(total)}</span>
-            <span className="text-[13px] text-[#c7d9d1]">por mês · {subscriptionBrl ? `sua assinatura ${brl(subscriptionBrl)}` : "conta grátis"}</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.06em] text-on-brand/75">Você fatura dos clientes</span>
+            <span className="font-mono text-[24px] leading-tight tracking-[-0.03em] tabular sm:text-[27px]">{brl(total)}</span>
+            <span className="text-[13px] text-on-brand/75">por mês · {subscriptionBrl ? `sua assinatura ${brl(subscriptionBrl)}` : "conta grátis"}</span>
           </div>
         )}
       </div>

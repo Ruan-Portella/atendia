@@ -63,7 +63,7 @@ export function AgencyFeatures({ agencyId, features }: { agencyId: string; featu
   return (
     <section className="card flex flex-col gap-3 p-5">
       <div>
-        <h2 className="text-lg font-bold">Liberação</h2>
+        <h2 className="text-lg font-medium">Liberação</h2>
         <p className="text-sm text-muted">
           Recursos ligados só para esta agência, sem deploy. Liberar avisa o dono por e-mail; tirar não desconecta o que já está ligado.
         </p>

@@ -15,7 +15,7 @@ const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram:
 function Breakdown({ title, rows, label = (k: string) => k, total }: { title: string; rows: Array<{ key: string; cost: number; calls?: number }>; label?: (k: string) => string; total: number }) {
   return (
     <section className="card flex flex-col gap-3 p-5">
-      <h2 className="text-base font-bold">{title}</h2>
+      <h2 className="text-base font-medium">{title}</h2>
       {rows.length ? (
         <table className="w-full text-sm">
           <tbody>
@@ -52,7 +52,7 @@ export default async function AdminCosts({ searchParams }: { searchParams: Promi
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[26px] font-bold">Custos</h1>
+          <h1 className="text-[26px] font-normal">Custos</h1>
           <p className="text-sm text-muted">IA medida pelo sistema (tabela de uso) e, ao lado, o valor real da conta da OpenAI. Dólar a {brl(fx)}.</p>
         </div>
         <div className="flex flex-wrap gap-1.5 text-sm">
@@ -71,7 +71,7 @@ export default async function AdminCosts({ searchParams }: { searchParams: Promi
 
       <section className="card flex flex-col gap-4 p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-bold">Custo de IA por dia (medido)</h2>
+          <h2 className="text-lg font-medium">Custo de IA por dia (medido)</h2>
           <span className="text-xs text-muted">{range.label}{s.audioMinutes ? ` · ${num(Math.round(s.audioMinutes))} min de áudio` : ""}</span>
         </div>
         <DayBars caption="Custo de IA por dia" days={daily.map((d) => ({ day: d.day, value: d.cost, detail: `${num(d.calls)} chamadas` }))} format={(v) => usd(v, v < 1 ? 4 : 2)} />
@@ -88,7 +88,7 @@ export default async function AdminCosts({ searchParams }: { searchParams: Promi
 
       <section className="card flex flex-col gap-4 p-5">
         <div>
-          <h2 className="text-lg font-bold">WhatsApp (Meta) · {waPeriod}</h2>
+          <h2 className="text-lg font-medium">WhatsApp (Meta) · {waPeriod}</h2>
           <p className="text-sm text-muted">A Meta cobra no cartão de cada cliente, não da BoaVoz: não entra na margem. Serve para o suporte (quem está gastando com modelos, por exemplo). Estimativa pela tabela de referência (WHATSAPP_PRICES_BRL).</p>
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
@@ -111,7 +111,7 @@ export default async function AdminCosts({ searchParams }: { searchParams: Promi
       </section>
 
       <section className="card flex flex-col gap-4 p-5">
-        <h2 className="text-lg font-bold">Conta da OpenAI (valor real)</h2>
+        <h2 className="text-lg font-medium">Conta da OpenAI (valor real)</h2>
         {!openai && (
           <div className="flex flex-col gap-2 text-sm text-muted">
             <p>Para ver o valor real cobrado pela OpenAI, crie uma chave de admin e coloque na Vercel:</p>

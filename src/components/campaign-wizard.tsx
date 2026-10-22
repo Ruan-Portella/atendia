@@ -216,7 +216,7 @@ export function CampaignWizard({ bots }: { bots: BotOption[] }) {
                         type="button"
                         aria-pressed={on}
                         onClick={() => touched(setTags)(on ? tags.filter((x) => x !== t) : [...tags, t])}
-                        className={cn("rounded-full border px-3 py-1 text-xs font-semibold", on ? "border-brand bg-brand text-ground" : "border-line bg-panel text-ink-2 hover:bg-ground")}
+                        className={cn("rounded-full border px-3 py-1 text-xs font-semibold", on ? "border-brand bg-brand text-on-brand" : "border-line bg-panel text-ink-2 hover:bg-ground")}
                       >
                         {t}
                       </button>

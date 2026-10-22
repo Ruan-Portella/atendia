@@ -48,7 +48,7 @@ export function DocPage({ title, intro, eyebrow = "Documentação · Integraçõ
     <article className="flex max-w-[760px] flex-col gap-8">
       <div className="flex flex-col gap-3">
         <span className="eyebrow">{eyebrow}</span>
-        <h1 className="text-3xl font-bold leading-[1.1] md:text-[40px]">{title}</h1>
+        <h1 className="text-3xl font-normal leading-[1.1] md:text-[40px]">{title}</h1>
         {intro && <p className="text-[17px] leading-relaxed text-ink-2">{intro}</p>}
       </div>
       <div className={PROSE}>{children}</div>
@@ -59,7 +59,7 @@ export function DocPage({ title, intro, eyebrow = "Documentação · Integraçõ
 /** Título de seção com âncora (o link do título copia o endereço da seção). */
 export function H2({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <h2 id={id} className="display scroll-mt-6 pt-4 text-xl font-bold text-ink">
+    <h2 id={id} className="display scroll-mt-6 pt-4 text-xl font-medium text-ink">
       <a href={`#${id}`} className="!text-ink !no-underline">
         {children}
       </a>
@@ -69,7 +69,7 @@ export function H2({ id, children }: { id: string; children: ReactNode }) {
 
 export function H3({ id, children }: { id?: string; children: ReactNode }) {
   return (
-    <h3 id={id} className="scroll-mt-6 pt-2 text-base font-bold text-ink">
+    <h3 id={id} className="scroll-mt-6 pt-2 text-base font-medium text-ink">
       {children}
     </h3>
   );
@@ -162,7 +162,7 @@ export function Access({ permission, extra, platform = false }: { permission: st
 /** Título de uma rota: o método e o caminho, com âncora. */
 export function Route({ id, method, path }: { id: string; method: string; path: string }) {
   return (
-    <h3 id={id} className="flex scroll-mt-6 flex-wrap items-center gap-2 pt-4 text-base font-bold text-ink">
+    <h3 id={id} className="flex scroll-mt-6 flex-wrap items-center gap-2 pt-4 text-base font-medium text-ink">
       <span className="rounded-md bg-brand px-2 py-0.5 font-mono text-[12px] font-semibold text-ground">{method}</span>
       <a href={`#${id}`} className="font-mono text-[15px] !text-ink !no-underline">
         {path}

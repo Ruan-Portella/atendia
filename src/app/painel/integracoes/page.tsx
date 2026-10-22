@@ -57,7 +57,7 @@ export default async function IntegrationsPage({ searchParams }: PageProps<"/pai
   return (
     <div className="flex max-w-[960px] flex-col gap-5">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold sm:text-[28px]">Integrações</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Integrações</h1>
         <p className="text-sm text-muted">
           Webhooks que avisam o sistema do cliente do que acontece e chaves para ele usar a API. As ações de consulta que a IA chama na conversa ficam em cada chatbot, na aba Ações.{" "}
           <a href="/docs" target="_blank" rel="noopener" className="font-semibold text-brand hover:underline">

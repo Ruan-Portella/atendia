@@ -87,7 +87,7 @@ export function AuthForm({ mode, emailEnabled }: { mode: "login" | "signup"; ema
 
   return (
     <div className="card w-full max-w-[420px] p-7">
-      <h1 className="text-2xl font-bold">{step === "code" ? "Confira o seu e-mail" : title}</h1>
+      <h1 className="text-2xl font-normal">{step === "code" ? "Confira o seu e-mail" : title}</h1>
       <p className="mt-1 text-sm text-muted">
         {step === "code" ? (
           <>

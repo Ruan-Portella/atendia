@@ -1,66 +1,112 @@
 @import "tailwindcss";
 
+/*
+ * Cores do redesenho (22/10): cada cor vem em par, claro e escuro, com light-dark(). Quem escolhe o
+ * par é o color-scheme da página: as páginas públicas ficam no claro; o painel, a área do cliente
+ * e o backoffice seguem a escolha da pessoa (escuro por padrão, ver lib/theme.ts).
+ */
 @theme {
-  --color-ground: #f6f4ee;
-  --color-panel: #fffdf8;
-  --color-line: #e3dfd4;
-  --color-line-2: #efebe2;
-  --color-ink: #1b1f1d;
-  --color-ink-2: #4c5551;
-  --color-muted: #6a736e;
-  --color-brand: #1f4e3d;
-  --color-brand-2: #163a2d;
-  --color-brand-soft: #e4efe9;
-  --color-brand-tint: #9fd3bf;
-  --color-amber: #e9a23b;
-  --color-amber-soft: #fdf0d3;
-  --color-amber-ink: #a5691a;
-  --color-danger: #b23a3a;
-  --color-danger-soft: #fbe6e6;
-  --font-sans: var(--font-plex), system-ui, sans-serif;
-  --font-display: var(--font-familjen), var(--font-plex), system-ui, sans-serif;
+  --color-ground: light-dark(#f6f5f1, #0f0f0e);
+  --color-panel: light-dark(#ffffff, #161615);
+  --color-field: light-dark(#ffffff, #1c1c1b);
+  --color-raised: light-dark(#ebeae4, #2a2a28);
+  --color-line: light-dark(#e2e0d8, #ffffff1c);
+  --color-line-2: light-dark(#ecebe5, #ffffff10);
+  --color-line-strong: light-dark(#cfcdc4, #ffffff2e);
+  --color-ink: light-dark(#161615, #efefec);
+  --color-ink-2: light-dark(#3f3f3a, #c8c8c3);
+  --color-muted: light-dark(#66665f, #a3a39e);
+  --color-brand: light-dark(#17845a, #4ed19b);
+  --color-brand-2: light-dark(#116a48, #7fe3b8);
+  --color-brand-soft: light-dark(#e3f3ea, #4ed19b1f);
+  --color-brand-line: light-dark(#bfe2cf, #4ed19b40);
+  --color-brand-tint: light-dark(#9fd3bf, #4ed19b);
+  --color-on-brand: light-dark(#ffffff, #04281a);
+  --color-amber: light-dark(#b7791f, #f2b04a);
+  --color-amber-soft: light-dark(#fbf0dc, #f2b04a1f);
+  --color-amber-ink: light-dark(#8a5a12, #f2b04a);
+  --color-amber-line: light-dark(#efd9a9, #f2b04a40);
+  --color-danger: light-dark(#c53d3d, #f07a7a);
+  --color-danger-2: light-dark(#a33030, #f59a9a);
+  --color-danger-soft: light-dark(#fbe8e8, #f07a7a1f);
+  --color-danger-line: light-dark(#f0c9c9, #f07a7a40);
+  --color-on-danger: light-dark(#ffffff, #2a0909);
+  --color-info: light-dark(#2f6fd1, #7cb4ff);
+  --color-info-soft: light-dark(#e6effc, #7cb4ff1f);
+  /* blocos de código: escuros nos dois temas */
+  --color-code: light-dark(#1b1c1a, #0a0a09);
+  --color-code-ink: #e6e6e1;
+  /* fundo atrás de menu e diálogo */
+  --color-scrim: light-dark(#16161573, #000000a6);
+  --font-sans: var(--font-onest), system-ui, sans-serif;
+  --font-display: var(--font-funnel), var(--font-onest), system-ui, sans-serif;
+  --font-mono: var(--font-martian), ui-monospace, "Cascadia Mono", monospace;
 }
 
 :root {
-  /* movimento: três durações, três curvas (ver components/ui) */
+  /* movimento: três durações, duas curvas (a de mola é para o que "pula", como um botão) */
   --dur-fast: 120ms;
   --dur-base: 220ms;
   --dur-slow: 420ms;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  /* brilho de cima dos cartões no escuro (no claro não aparece) */
+  --highlight: light-dark(#ffffff00, #ffffff0d);
+  --shadow-pop: light-dark(0 12px 32px rgba(22, 22, 21, 0.14), 0 18px 40px -12px rgba(0, 0, 0, 0.7));
 }
 
 html { color-scheme: light; }
+/* o tema do painel: a marca fica num elemento do layout (components/theme.tsx) */
+html:has([data-tema="escuro"]) { color-scheme: dark; }
+html:has([data-tema="sistema"]) { color-scheme: light dark; }
 body { background: var(--color-ground); color: var(--color-ink); font-family: var(--font-sans); }
 
-h1, h2, h3, .display { font-family: var(--font-display); letter-spacing: -0.01em; }
+h1, h2, h3, .display { font-family: var(--font-display); letter-spacing: -0.015em; text-wrap: balance; }
+h1 { letter-spacing: -0.02em; }
+
+::selection { background: color-mix(in oklab, var(--color-brand) 35%, transparent); }
 
 @keyframes rise-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+/* o vocabulário de movimento da versão 2 do redesenho */
+@keyframes bv-dot { 0%, 60%, 100% { opacity: 0.35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+@keyframes bv-pop { 0% { transform: scale(0.4); } 60% { transform: scale(1.15); } 100% { transform: none; } }
+@keyframes bv-halo { 0% { opacity: 0.9; transform: scale(0.97); } 100% { opacity: 0; transform: scale(1.08); } }
+@keyframes bv-blink { 0%, 90%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.12); } }
+@keyframes bv-look { 0%, 20%, 85%, 100% { transform: translateX(0); } 30%, 45% { transform: translateX(-8%); } 55%, 75% { transform: translateX(8%); } }
+@keyframes bv-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+@keyframes bv-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@keyframes bv-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes bv-pulse { 50% { opacity: 0.4; } }
+@keyframes bv-flash { 0% { background-color: color-mix(in oklab, var(--color-brand) 15%, transparent); } 100% { background-color: transparent; } }
+@keyframes bv-palette { from { opacity: 0; transform: translateY(8px) scale(0.97); } to { opacity: 1; transform: none; } }
 
 /* Modal nativo (<dialog>) */
 dialog.modal {
   margin: auto;
   width: calc(100% - 32px);
   border: 1px solid var(--color-line);
-  border-radius: 16px;
+  border-radius: 20px;
   background: var(--color-panel);
   color: var(--color-ink);
   padding: 0;
-  box-shadow: 0 24px 60px rgba(27, 31, 29, 0.22);
+  box-shadow: inset 0 1px 0 var(--highlight), var(--shadow-pop);
 }
-dialog.modal[open] { animation: rise-in var(--dur-base) var(--ease-out); }
-dialog.modal::backdrop { background: rgba(27, 31, 29, 0.45); }
+dialog.modal[open] { animation: bv-palette var(--dur-base) var(--ease-spring); }
+dialog.modal::backdrop { background: rgba(10, 10, 9, 0.6); }
 dialog.modal[open]::backdrop { animation: fade-in var(--dur-base) var(--ease-out); }
 
-.toast-in { animation: rise-in var(--dur-base) var(--ease-out); }
+.toast-in { animation: bv-palette var(--dur-base) var(--ease-spring); }
 .menu-in { animation: rise-in var(--dur-fast) var(--ease-out); }
+.rise-in { animation: rise-in var(--dur-base) var(--ease-out) both; }
+.flash-in { animation: bv-flash 1.2s var(--ease-out); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -72,18 +118,18 @@ dialog.modal[open]::backdrop { animation: fade-in var(--dur-base) var(--ease-out
   }
 }
 
-@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none; }
-@utility btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-brand text-ground hover:bg-brand-2; }
-@utility btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-ink text-ground hover:bg-black; }
-@utility btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-panel text-ink border border-line hover:bg-ground; }
-@utility btn-danger { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-panel text-danger border border-line hover:bg-danger-soft; }
-@utility btn-danger-solid { @apply inline-flex items-center justify-center gap-2 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform] duration-[120ms] active:translate-y-px disabled:opacity-50 disabled:pointer-events-none bg-danger text-white hover:bg-[#932f2f]; }
-@utility btn-icon { @apply inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-[color,background-color] duration-[120ms] hover:bg-ground hover:text-ink active:translate-y-px disabled:opacity-50 disabled:pointer-events-none; }
-@utility menu-item { @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink transition-colors duration-[120ms] hover:bg-ground disabled:opacity-50 disabled:pointer-events-none; }
-@utility input { @apply w-full rounded-[9px] border border-line bg-panel px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand; }
-@utility label { @apply block text-xs font-semibold text-muted mb-1.5; }
-@utility card { @apply bg-panel border border-line rounded-xl; }
-@utility eyebrow { @apply text-xs font-semibold uppercase tracking-[0.08em] text-brand; }
-@utility kpi-label { @apply text-xs font-semibold uppercase tracking-[0.06em] text-muted; }
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-sm font-medium transition-[color,background-color,border-color,transform,filter] duration-[120ms] ease-[var(--ease-spring)] active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none; }
+@utility btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform,filter] duration-[120ms] ease-[var(--ease-spring)] active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none bg-brand text-on-brand hover:bg-brand-2 shadow-[0_10px_24px_-14px_var(--color-brand)]; }
+@utility btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform,filter] duration-[120ms] ease-[var(--ease-spring)] active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none bg-ink text-ground hover:opacity-90; }
+@utility btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-sm font-medium transition-[color,background-color,border-color,transform,filter] duration-[120ms] ease-[var(--ease-spring)] active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none bg-panel text-ink border border-line-strong hover:bg-raised; }
+@utility btn-danger { @apply inline-flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform,filter] duration-[120ms] ease-[var(--ease-spring)] active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none bg-danger-soft text-danger border border-danger-line hover:brightness-110; }
+@utility btn-danger-solid { @apply inline-flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-sm font-semibold transition-[color,background-color,border-color,transform,filter] duration-[120ms] ease-[var(--ease-spring)] active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none bg-danger text-on-danger hover:bg-danger-2; }
+@utility btn-icon { @apply inline-flex h-8 w-8 items-center justify-center rounded-[10px] text-muted transition-[color,background-color,transform] duration-[120ms] hover:bg-raised hover:text-ink active:scale-[0.94] disabled:opacity-50 disabled:pointer-events-none; }
+@utility menu-item { @apply flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2 text-left text-sm font-medium text-ink transition-colors duration-[120ms] hover:bg-raised disabled:opacity-50 disabled:pointer-events-none; }
+@utility input { @apply w-full rounded-[12px] border border-line-strong bg-field px-3.5 py-2.5 text-sm text-ink placeholder:text-muted transition-[border-color,box-shadow] duration-[120ms] focus:outline-none focus:ring-[3px] focus:ring-brand/25 focus:border-brand aria-[invalid=true]:border-danger aria-[invalid=true]:focus:ring-danger/25 user-invalid:border-danger; }
+@utility label { @apply block text-[13px] font-medium text-ink mb-1.5; }
+@utility card { @apply bg-panel border border-line rounded-[16px] shadow-[inset_0_1px_0_var(--highlight)]; }
+@utility eyebrow { @apply font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-brand; }
+@utility kpi-label { @apply font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-muted; }
 @utility tabular { font-variant-numeric: tabular-nums; }
-@utility skeleton { @apply animate-pulse rounded-md bg-line/70; }
+@utility skeleton { @apply rounded-md bg-[linear-gradient(90deg,var(--color-raised)_0%,var(--color-line-2)_40%,var(--color-raised)_80%)] bg-[length:250%_100%] animate-[bv-sweep_1.4s_linear_infinite]; }

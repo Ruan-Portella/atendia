@@ -7,7 +7,7 @@ import { AlertTriangle } from "lucide-react";
  */
 export function NoticeStrip({ tone = "danger", action, children }: { tone?: "danger" | "warn"; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5 text-sm sm:px-6 lg:px-9 ${tone === "danger" ? "border-[#f0c9c9] bg-danger-soft text-danger" : "border-[#efd9a9] bg-amber-soft text-amber-ink"}`}>
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5 text-sm sm:px-6 lg:px-9 ${tone === "danger" ? "border-danger-line bg-danger-soft text-danger" : "border-amber-line bg-amber-soft text-amber-ink"}`}>
       <AlertTriangle size={16} className="shrink-0" />
       <span className="min-w-0 flex-1">{children}</span>
       {action}

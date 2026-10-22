@@ -23,7 +23,7 @@ export default async function MemberLoginPage({ searchParams }: PageProps<"/clie
             <span className="display flex h-12 w-12 items-center justify-center rounded-xl font-bold text-white" style={{ background: agency?.brand_color ?? "#1f4e3d" }}>{initials(name)}</span>
           ) : null}
           <div>
-            <h1 className="text-xl font-bold">Área do cliente</h1>
+            <h1 className="text-xl font-normal">Área do cliente</h1>
             <p className="text-sm text-muted">Acompanhe e atenda as conversas do seu assistente{name ? `, com ${name}` : ""}.</p>
           </div>
         </div>

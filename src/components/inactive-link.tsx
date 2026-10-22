@@ -8,7 +8,7 @@ export function InactiveLink({ title, text }: { title: string; text: string }) {
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-3 bg-ground px-6 py-16 text-center">
       <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-line-2 text-muted"><Link2Off size={24} /></span>
-      <h1 className="text-2xl font-bold">{title}</h1>
+      <h1 className="text-2xl font-normal">{title}</h1>
       <p className="max-w-sm text-sm text-muted">{text}</p>
     </main>
   );

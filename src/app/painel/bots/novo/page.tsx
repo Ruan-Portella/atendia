@@ -19,7 +19,7 @@ export default async function NewBotPage({ searchParams }: PageProps<"/painel/bo
   return (
     <div className="max-w-[560px]">
       <Link href={back.href} className="text-sm font-semibold text-muted">{back.label}</Link>
-      <h1 className="mt-3 text-2xl font-bold sm:text-[28px]">Novo chatbot</h1>
+      <h1 className="mt-3 text-2xl font-normal sm:text-[28px]">Novo chatbot</h1>
       <p className="text-sm text-muted">Um cliente pode ter vários chatbots (ex.: um para vendas e outro para suporte). Você adiciona o site e os documentos no próximo passo.</p>
       <ActionForm action={createBot} className="card mt-6 flex flex-col gap-4 p-6">
         {/* o próprio negócio: o cliente do chatbot é ele mesmo (o nome vem do primeiro acesso) */}

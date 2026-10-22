@@ -24,7 +24,7 @@ export default async function MemberProfilePage({ params }: PageProps<"/cliente/
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold">Meu perfil</h1>
+        <h1 className="text-2xl font-normal">Meu perfil</h1>
         <p className="text-sm text-muted">{email} · {PORTAL_ROLE_LABELS[member.role]} em {member.clientName}</p>
       </div>
       <ProfileForm

@@ -63,7 +63,7 @@ export function InstallGuide({ widgetSrc, publicKey, directLink, brand, isLive, 
         {/* passo a passo */}
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h3 className="display text-lg font-bold">{current.name}</h3>
+            <h3 className="display text-lg font-medium">{current.name}</h3>
             <p className="text-sm text-muted">{current.intro}</p>
           </div>
           <ol className="flex flex-col gap-2.5">
@@ -121,7 +121,7 @@ export function InstallGuide({ widgetSrc, publicKey, directLink, brand, isLive, 
 function InstallStatus({ installed, isLive }: { installed: Props["installed"]; isLive: boolean }) {
   if (installed) {
     return (
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#cfe3d8] bg-brand-soft px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-line bg-brand-soft px-4 py-3 text-sm">
         <CheckCircle2 size={18} className="text-brand" />
         <span className="text-ink-2">
           <strong className="text-brand">Instalado em {installed.host}</strong> · detectado {relativeTime(installed.at)}
@@ -154,10 +154,10 @@ function CodeBlock({ label, code }: { label: string; code: string }) {
     }
   }
   return (
-    <div className="overflow-hidden rounded-xl bg-ink text-ground">
+    <div className="overflow-hidden rounded-xl bg-code text-code-ink">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2 text-xs">
-        <span className="font-mono text-[#9aa39e]">{label}</span>
-        <button type="button" onClick={copy} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-semibold text-ground transition-colors duration-[120ms] hover:bg-white/10">
+        <span className="font-mono text-code-ink/60">{label}</span>
+        <button type="button" onClick={copy} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-semibold text-code-ink transition-colors duration-[120ms] hover:bg-white/10">
           {done ? <Check size={13} /> : <Copy size={13} />}
           {done ? "Copiado" : "Copiar"}
         </button>

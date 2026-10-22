@@ -35,7 +35,7 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold">Privacidade</h1>
+        <h1 className="text-2xl font-normal">Privacidade</h1>
         <p className="text-sm text-muted">
           Por quanto tempo as conversas e os contatos dos seus assistentes ficam guardados. A LGPD pede guardar dados pessoais só pelo tempo necessário: todo dia, o que passou do prazo é apagado (conversas paradas, com as mensagens, leads, perguntas sem resposta e fichas de contato sem conversa). Os relatórios continuam com os números.
         </p>
@@ -43,7 +43,7 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
 
       <section className="card flex flex-col gap-4 p-5">
         <div>
-          <h2 className="text-base font-bold">Prazo de guarda</h2>
+          <h2 className="text-base font-medium">Prazo de guarda</h2>
           <p className="text-sm text-muted">Hoje: {retentionLabel(current.days)}{clientMonths ? "" : ` (o padrão de ${member.agency.name})`}.</p>
         </div>
         <ActionForm key={String(clientMonths)} action={memberSetRetention.bind(null, id)} className="flex flex-col gap-3">
@@ -64,7 +64,7 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
 
       {(requests ?? []).length > 0 && (
         <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-bold">Pedidos de exclusão dos seus contatos</h2>
+          <h2 className="text-base font-medium">Pedidos de exclusão dos seus contatos</h2>
           <p className="text-sm text-muted">Quem pede pelo chat para apagar os dados aparece aqui. Você (ou {member.agency.name}) confirma, e o BoaVoz apaga e avisa a pessoa. Confirmar pede o código do app autenticador.</p>
           <ul className="flex flex-col gap-1.5 text-sm">
             {(requests ?? []).map((r) => (
@@ -107,7 +107,7 @@ export default async function MemberPrivacyPage({ params }: PageProps<"/cliente/
 
       <section className="flex flex-col gap-3">
         <div>
-          <h2 className="text-base font-bold">Modo dados sensíveis</h2>
+          <h2 className="text-base font-medium">Modo dados sensíveis</h2>
           <p className="text-sm text-muted">
             Para quem recebe dados de saúde pelo chat (clínicas, consultórios, terapias, farmácias): as conversas do assistente são apagadas num prazo curto, de 7 a 90 dias, antes do prazo acima. Os contatos não recebem aviso. {member.agency.name} também pode ligar pelo painel dela; quem não mudou recebe um e-mail.
           </p>

@@ -16,7 +16,7 @@ export async function ClientPrivacy({ clientId, clientName, clientMonths, agency
   return (
     <section className="card flex flex-col gap-4 p-6">
       <div>
-        <h2 className="text-base font-bold">Privacidade</h2>
+        <h2 className="text-base font-medium">Privacidade</h2>
         <p className="text-sm text-muted">Por quanto tempo guardar as conversas e os contatos de {clientName}. O prazo é decisão do negócio: ele também pode mudar na área do cliente, e quem não mudou recebe um e-mail quando o prazo diminui.</p>
       </div>
       <ActionForm key={String(clientMonths)} action={setClientRetention.bind(null, clientId)} className="flex flex-col gap-3">

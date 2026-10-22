@@ -52,7 +52,7 @@ export function SubscribeForm({ bots, fraction, renewal, enabled }: Props) {
   return (
     <ActionForm action={startCheckout} className="mt-6 flex flex-col gap-6">
       <section>
-        <h2 className="text-lg font-bold">Tamanho de cada chatbot</h2>
+        <h2 className="text-lg font-medium">Tamanho de cada chatbot</h2>
         <p className="mt-1 text-sm text-muted">A cota do mês é de cada chatbot. O Atendimento não tem IA nenhuma: é a caixa de entrada da sua equipe (conversas, contatos e campanhas). Todo chatbot no ar tem um tamanho, e conectar os canais não custa nada a mais.</p>
         <div className="card mt-3 overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
@@ -102,7 +102,7 @@ export function SubscribeForm({ bots, fraction, renewal, enabled }: Props) {
       </section>
 
       <section>
-        <h2 className="text-lg font-bold">Pacotes da conta</h2>
+        <h2 className="text-lg font-medium">Pacotes da conta</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           {Object.values(PACKS).map((p) => (
             <label key={p.id} className="card flex cursor-pointer gap-3 p-4 text-sm">

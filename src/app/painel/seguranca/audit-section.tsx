@@ -27,7 +27,7 @@ export async function AuditSection({ agencyId, people, filters, page }: { agency
   return (
     <section className="card flex flex-col gap-4 p-6">
       <div>
-        <h2 className="text-base font-bold">Auditoria</h2>
+        <h2 className="text-base font-medium">Auditoria</h2>
         <p className="text-sm text-muted">Quem fez o quê na sua conta, guardado por 1 ano, sem conteúdo de conversa. Os eventos graves também vão por e-mail na hora.</p>
       </div>
       <form method="get" className="flex flex-wrap items-end gap-2">

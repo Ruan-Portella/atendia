@@ -108,7 +108,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-bold text-brand">{initials(client.name)}</span>
           <div className="min-w-0 flex-1 leading-tight">
-            <h1 className="truncate text-2xl font-bold sm:text-[28px]">{client.name}</h1>
+            <h1 className="truncate text-2xl font-normal sm:text-[28px]">{client.name}</h1>
             <p className="truncate text-sm text-muted">
               {client.site ? <a href={/^https?:\/\//.test(client.site) ? client.site : `https://${client.site}`} target="_blank" rel="noopener" className="hover:underline">{client.site.replace(/^https?:\/\//, "")}</a> : "sem site"} · cliente desde {new Date(client.created_at).toLocaleDateString("pt-BR")}
               {client.external_id ? <> · no sistema da plataforma: <code>{client.external_id}</code></> : null}
@@ -212,7 +212,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
         <div className="flex max-w-[720px] flex-col gap-5">
           <section className="card flex flex-col gap-3 p-5">
             <div>
-              <h2 className="text-base font-bold">Link do cliente</h2>
+              <h2 className="text-base font-medium">Link do cliente</h2>
               <p className="text-sm text-muted">Uma página com a sua marca onde {client.name} vê os números do mês. Sem login: quem tiver o link consegue abrir, por isso ela não mostra contatos nem conversas. Esses ficam na área do cliente, com login pelo e-mail (aba Acesso do cliente).</p>
             </div>
             {client.portal_token ? (
@@ -236,7 +236,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
 
           <section className="card flex flex-col gap-3 p-5">
             <div>
-              <h2 className="text-base font-bold">Relatório mensal por e-mail</h2>
+              <h2 className="text-base font-medium">Relatório mensal por e-mail</h2>
               <p className="text-sm text-muted">Todo dia 1º, {client.name} recebe um resumo do mês anterior (pessoas atendidas, contatos, % resolvido sozinho) com a sua marca e o link acima (ou a entrada da área do cliente, se o link estiver desligado). O e-mail leva só números, nunca contatos. É o que mostra para o cliente por que ele paga você.</p>
             </div>
             <ActionForm key={client.report_email ?? ""} action={saveReportEmail.bind(null, client.id)} className="flex flex-wrap items-end gap-2">
@@ -277,7 +277,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
         <div className="flex max-w-[720px] flex-col gap-5">
           <section className="card flex flex-col gap-3 p-5">
             <div>
-              <h2 className="text-base font-bold">O que {client.name} pode fazer</h2>
+              <h2 className="text-base font-medium">O que {client.name} pode fazer</h2>
               <p className="text-sm text-muted">As pessoas abaixo entram na área do cliente (<code>{base.replace(/^https?:\/\//, "")}/cliente</code>) com um link no e-mail, sem senha. O <strong>gestor</strong> vê o relatório, as conversas, os canais, a privacidade e a equipe (convida atendentes); o <strong>atendente</strong> vê só as conversas. Aqui você decide o que o portal pode fazer, para os dois papéis.</p>
             </div>
             <ActionForm key={`${client.allow_handoff}${client.allow_knowledge}${client.allow_hours}${client.handoff_notify}`} action={setClientPermissions.bind(null, client.id)} className="flex flex-col gap-3">
@@ -311,7 +311,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
 
           <section className="card flex flex-col gap-3 p-5">
             <div>
-              <h2 className="text-base font-bold">Pessoas com acesso</h2>
+              <h2 className="text-base font-medium">Pessoas com acesso</h2>
               <p className="text-sm text-muted">Adicione o e-mail de cada pessoa (dono, recepção…). Ela recebe um convite com o link de entrada. O gestor também convida atendentes pelo portal.</p>
             </div>
             <ActionForm action={addClientMember.bind(null, client.id)} className="flex flex-wrap items-end gap-2">

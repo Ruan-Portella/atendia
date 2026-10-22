@@ -47,7 +47,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/painel/p
   return (
     <div className="flex max-w-[720px] flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold sm:text-[28px]">Meu perfil</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Meu perfil</h1>
         <p className="text-sm text-muted">Como você aparece para os contatos e como entra no painel de {agency.name}.</p>
       </div>
       <ProfileForm

@@ -31,7 +31,7 @@ export default async function DemosPage() {
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold sm:text-[28px]">Demos</h1>
+        <h1 className="text-2xl font-normal sm:text-[28px]">Demos</h1>
         <p className="text-sm text-muted">Cole o site de um prospect. Em um minuto você tem um link para mandar no WhatsApp dele. Cada demo vale {DEMO_DAYS} dias e responde até {DEMO_ANSWERS} vezes.</p>
         <p className="mt-1 text-sm text-muted tabular">
           Neste mês: {usedThisMonth} de {monthLimit} demos{agency.billing_status === "none" ? ` (com assinatura, até ${DEMOS_PER_MONTH})` : ""}.

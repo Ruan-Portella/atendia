@@ -14,7 +14,7 @@ export function LegalPage({ title, intro, updatedAt = LEGAL_UPDATED_AT, children
       <main className="mx-auto flex w-full max-w-[760px] flex-col gap-8 px-5 py-12 sm:px-6 sm:py-16">
         <div className="flex flex-col gap-3">
           <span className="eyebrow">Última atualização: {updatedAt}</span>
-          <h1 className="text-3xl font-bold leading-[1.1] md:text-[40px]">{title}</h1>
+          <h1 className="text-3xl font-normal leading-[1.1] md:text-[40px]">{title}</h1>
           {intro && <p className="text-[17px] leading-relaxed text-ink-2">{intro}</p>}
         </div>
         {children}
@@ -27,7 +27,7 @@ export function LegalPage({ title, intro, updatedAt = LEGAL_UPDATED_AT, children
 export function Section({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
   return (
     <section id={id} className="flex flex-col gap-3 text-[15px] leading-relaxed text-ink-2 [&_a]:font-medium [&_a]:text-brand [&_a]:underline [&_li]:ml-5 [&_li]:list-disc [&_strong]:text-ink">
-      <h2 className="display text-xl font-bold text-ink">{title}</h2>
+      <h2 className="display text-xl font-medium text-ink">{title}</h2>
       {children}
     </section>
   );

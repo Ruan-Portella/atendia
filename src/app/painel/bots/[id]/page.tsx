@@ -351,7 +351,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "fontes" && (
             <>
               <div>
-                <h2 className="text-[22px] font-bold">Base de conhecimento</h2>
+                <h2 className="text-[22px] font-medium">Base de conhecimento</h2>
                 <p className="text-sm text-muted">Tudo que {bot.name} sabe vem daqui. Ele não inventa o que não está nas fontes.</p>
               </div>
               {bot.template_id && <InheritedList kind="fontes" templateId={bot.template_id} configId={bot.template_id} templateName={templateName ?? "modelo"} />}
@@ -388,7 +388,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 </ActionForm>
               )}
               {unanswered && unanswered.length > 0 && (
-                <div className="flex flex-col gap-2.5 rounded-xl border border-[#efd9a9] bg-amber-soft px-[18px] py-4">
+                <div className="flex flex-col gap-2.5 rounded-xl border border-amber-line bg-amber-soft px-[18px] py-4">
                   <div className="text-sm font-semibold text-amber-ink">{unanswered.length} pergunta{unanswered.length > 1 ? "s" : ""} que {bot.name} não soube responder</div>
                   {unanswered.map((u) => (
                     <UnansweredItem key={u.id} question={u.question} answer={answerUnanswered.bind(null, u.id, id)} dismiss={resolveUnanswered.bind(null, u.id, id)} suggestion={u.suggestion} suggestedBy={u.suggestedBy} />
@@ -422,7 +422,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
           {tab === "personalidade" && (
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
-              <div><h2 className="text-[22px] font-bold">Personalidade</h2><p className="text-sm text-muted">Como o assistente se apresenta e fala.</p></div>
+              <div><h2 className="text-[22px] font-medium">Personalidade</h2><p className="text-sm text-muted">Como o assistente se apresenta e fala.</p></div>
               {templateRow && <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">O tom, as instruções e os assuntos do negócio vêm do modelo {templateRow.name}. Os campos travados mudam só no modelo.</p>}
               <div><label htmlFor="name" className="label">Nome do assistente{templateRow ? (owns("nome") ? " (deste chatbot)" : " (do modelo)") : ""}</label><input id="name" name="name" required minLength={2} maxLength={40} defaultValue={bot.name} disabled={!opens("nome")} className="input disabled:opacity-60" /></div>
               {!bot.is_demo && !bot.is_template && <ClientPicker clients={clients} defaultClientId={bot.client_id} suggestedName={bot.client_id ? "" : bot.client_name} idPrefix="pers" />}
@@ -487,7 +487,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
           {tab === "aparencia" && (
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
-              <div><h2 className="text-[22px] font-bold">Aparência e marca</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"} nunca aparece.</p></div>
+              <div><h2 className="text-[22px] font-medium">Aparência e marca</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"} nunca aparece.</p></div>
               {!opens("aparencia") && <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">A aparência vem do modelo {templateRow?.name}: muda só lá.</p>}
               <fieldset disabled={!opens("aparencia")} className="contents">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -507,7 +507,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
           {tab === "leads" && (
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
-              <div><h2 className="text-[22px] font-bold">Captura de leads</h2><p className="text-sm text-muted">Quando o visitante quer agendar, orçar ou falar com alguém, o assistente pede nome e contato. {leadCount ?? 0} leads até agora.</p></div>
+              <div><h2 className="text-[22px] font-medium">Captura de leads</h2><p className="text-sm text-muted">Quando o visitante quer agendar, orçar ou falar com alguém, o assistente pede nome e contato. {leadCount ?? 0} leads até agora.</p></div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="lead_enabled" defaultChecked={leadCapture.enabled !== false} /> Ativar captura de leads na conversa</label>
               <div><label htmlFor="notify_email" className="label">Avisar por e-mail (o dono do cliente, por exemplo)</label><input id="notify_email" name="notify_email" type="email" defaultValue={leadCapture.notify_email ?? ""} className="input" placeholder="recepcao@clinicasorriso.com.br" /></div>
               <div><label htmlFor="notify_whatsapp" className="label">WhatsApp para aviso (em breve)</label><input id="notify_whatsapp" name="notify_whatsapp" defaultValue={leadCapture.notify_whatsapp ?? ""} className="input" placeholder="+55 41 9…" /></div>
@@ -520,7 +520,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-5">
               <input type="hidden" name="handoff" value="1" />
               <div>
-                <h2 className="text-[22px] font-bold">Atendimento humano</h2>
+                <h2 className="text-[22px] font-medium">Atendimento humano</h2>
                 <p className="text-sm text-muted">Quem pedir para falar com uma pessoa sempre consegue: o assistente avisa a equipe e a conversa aparece em Conversas para alguém assumir. Isso não pode ser desligado (regra da Meta no WhatsApp). Aqui você só complementa, tudo opcional.</p>
               </div>
 
@@ -697,7 +697,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "evolucao" && (
             <section className="flex flex-col gap-4">
               <div>
-                <h2 className="text-[22px] font-bold">Evolução</h2>
+                <h2 className="text-[22px] font-medium">Evolução</h2>
                 <p className="max-w-[720px] text-sm text-muted">Os últimos 6 meses deste chatbot: quanto o assistente resolveu sem a equipe, quanto foi para a equipe, quanto tempo a equipe levou para assumir quem pediu atendimento (a mediana) e a satisfação de quem respondeu à pesquisa.{bot.client_id && !bot.is_demo ? " O cliente vê a mesma tabela no relatório, com os chatbots dele somados." : ""}</p>
               </div>
               <EvolutionTable months={await botEvolution(createAdminClient(), [id])} />
@@ -707,7 +707,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "conversas" && (
             <>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h2 className="text-[22px] font-bold">Conversas</h2><p className="text-sm text-muted">Últimas 30. Abra uma conversa para assumir e responder como pessoa da equipe.</p></div>
+                <div><h2 className="text-[22px] font-medium">Conversas</h2><p className="text-sm text-muted">Últimas 30. Abra uma conversa para assumir e responder como pessoa da equipe.</p></div>
                 {newChatTemplates && (
                   <details className="group w-full sm:w-auto">
                     <summary className="btn-primary cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ Nova conversa</summary>
@@ -736,15 +736,15 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "whatsapp" && (
             <div className="flex max-w-[640px] flex-col gap-4">
               <div>
-                <h2 className="text-[22px] font-bold">WhatsApp</h2>
+                <h2 className="text-[22px] font-medium">WhatsApp</h2>
                 <p className="text-sm text-muted">{bot.name} responde no WhatsApp do cliente com a mesma base de conhecimento. Pedidos de atendente aparecem em Conversas, e a sua resposta sai pelo WhatsApp.</p>
               </div>
               {bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
               ) : whatsapp?.disconnected_at ? (
-                <div className="flex flex-col gap-4 rounded-xl border border-[#efd9a9] bg-amber-soft p-5">
+                <div className="flex flex-col gap-4 rounded-xl border border-amber-line bg-amber-soft p-5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-amber-ink">desconectado</span>
+                    <span className="rounded-full bg-panel px-2.5 py-0.5 text-xs font-semibold text-amber-ink">desconectado</span>
                     <span className="display text-lg font-bold">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
                   </div>
                   <p className="text-sm text-amber-ink">
@@ -799,7 +799,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <div className="card flex flex-col gap-4 p-5">
                   {signup ? (
                     <>
-                      <div className="flex flex-col gap-2 rounded-xl border border-[#cfe3d8] bg-brand-soft p-4">
+                      <div className="flex flex-col gap-2 rounded-xl border border-brand-line bg-brand-soft p-4">
                         <div className="text-sm font-semibold">Mande um link para o cliente conectar</div>
                         <p className="text-sm text-ink-2">Quem conecta é o dono do WhatsApp, com o Facebook dele. O link abre uma página com a sua marca, explica o passo a passo e o cadastro do cartão na Meta. Não precisa de conta nem de senha.</p>
                         <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
@@ -855,7 +855,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "instagram" && (
             <div className="flex max-w-[640px] flex-col gap-4">
               <div>
-                <h2 className="text-[22px] font-bold">Instagram</h2>
+                <h2 className="text-[22px] font-medium">Instagram</h2>
                 <p className="text-sm text-muted">{bot.name} responde as mensagens diretas do Instagram do cliente com a mesma base de conhecimento. As mensagens do Instagram não são cobradas pela Meta.</p>
               </div>
               {sp.ig === "ok" && <p className="rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Instagram conectado. Mande uma DM para a conta para testar.</p>}
@@ -898,7 +898,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                       <li>ter ligado <strong>“Permitir acesso às mensagens”</strong> em Configurações → Mensagens e respostas a stories → Ferramentas conectadas.</li>
                     </ul>
                   </div>
-                  <div className="flex flex-col gap-2 rounded-xl border border-[#cfe3d8] bg-brand-soft p-4">
+                  <div className="flex flex-col gap-2 rounded-xl border border-brand-line bg-brand-soft p-4">
                     <div className="text-sm font-semibold">Mande um link para o cliente conectar</div>
                     <p className="text-sm text-ink-2">Quem conecta é o dono da conta, com o login do Instagram dele. O link abre uma página com a sua marca e o passo a passo. Não precisa de conta nem de senha no painel.</p>
                     <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id, "instagram")} clientName={bot.client_name} channelName="Instagram" />
@@ -947,7 +947,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "instalacao" && (
             <div className="flex max-w-[860px] flex-col gap-5">
               <div>
-                <h2 className="text-[22px] font-bold">Instalação</h2>
+                <h2 className="text-[22px] font-medium">Instalação</h2>
                 <p className="text-sm text-muted">Escolha onde o site do cliente foi feito e siga o passo a passo. O código é o mesmo em todo lugar; o que muda é onde colar.</p>
               </div>
               {bot.status !== "live" && !bot.is_demo && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O chatbot ainda não está publicado. Você pode instalar agora: o balão fica invisível no site do cliente até você clicar em “Publicar” no topo.</p>}
@@ -963,7 +963,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
         </section>
 
-        {tab !== "evolucao" && <aside className="hidden border-l border-line bg-[#ecebe4] p-5 lg:block">
+        {tab !== "evolucao" && <aside className="hidden border-l border-line bg-raised p-5 lg:block">
           {/* o fundo ocupa a coluna inteira; o chat de teste acompanha a rolagem */}
           <div className="sticky top-5 flex flex-col gap-3">
             <div className="flex items-center justify-between text-xs">

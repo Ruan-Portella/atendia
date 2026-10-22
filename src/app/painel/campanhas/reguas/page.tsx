@@ -32,7 +32,7 @@ export default async function ReguasPage({ searchParams }: PageProps<"/painel/ca
   const header = (
     <div className="flex flex-col gap-2">
       <Link href="/painel/campanhas" className="text-sm font-semibold text-muted">← Campanhas</Link>
-      <h1 className="text-2xl font-bold sm:text-[28px]">Réguas</h1>
+      <h1 className="text-2xl font-normal sm:text-[28px]">Réguas</h1>
       <p className="max-w-[720px] text-sm text-muted">
         Mensagens automáticas do WhatsApp: aniversário, “faz tempo que você não vem”, pós-atendimento, lembrete antes do horário e “sem resposta”. Cada régua usa um modelo da Meta e sai pelo número do chatbot, das 8h às 20h no fuso do cliente, uma régua por pessoa a cada 24 horas. Promoção só vai para quem aceitou novidades, e quem mandou SAIR fica de fora.
       </p>

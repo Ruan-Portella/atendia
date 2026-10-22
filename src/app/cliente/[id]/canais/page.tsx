@@ -30,7 +30,7 @@ export default async function MemberChannelsPage({ params }: PageProps<"/cliente
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold">Canais</h1>
+        <h1 className="text-2xl font-normal">Canais</h1>
         <p className="text-sm text-muted">
           WhatsApp e Instagram ligados aos assistentes de {member.clientName}. Desconectar faz o assistente parar de responder por ali na hora; o número e a conta continuam seus na Meta, e as conversas antigas ficam guardadas. Para conectar de novo, fale com {member.agency.name}.
         </p>

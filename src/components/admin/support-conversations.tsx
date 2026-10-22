@@ -16,7 +16,7 @@ export async function SupportConversations({ agencyId, bots }: { agencyId: strin
   if (!grant) {
     return (
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-lg font-bold">Conversas (acesso do suporte)</h2>
+        <h2 className="text-lg font-medium">Conversas (acesso do suporte)</h2>
         <p className="text-sm text-muted">Sem liberação. A agência libera em Segurança → Acesso do suporte, por 24 horas e com motivo; cada conversa aberta aqui aparece na auditoria dela.</p>
       </section>
     );
@@ -28,7 +28,7 @@ export async function SupportConversations({ agencyId, bots }: { agencyId: strin
   return (
     <section className="card flex flex-col gap-3 p-5">
       <div>
-        <h2 className="text-lg font-bold">Conversas (acesso do suporte)</h2>
+        <h2 className="text-lg font-medium">Conversas (acesso do suporte)</h2>
         <p className="rounded-lg bg-amber-soft px-3 py-2 text-xs text-amber-ink">
           Liberado pela agência até {when(grant.expires_at)}. Motivo: {grant.reason}. Abra só o que o motivo pede: cada conversa aberta vai para a auditoria da agência.
         </p>

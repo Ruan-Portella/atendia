@@ -39,7 +39,7 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[26px] font-bold">Agências</h1>
+          <h1 className="text-[26px] font-normal">Agências</h1>
           <p className="text-sm text-muted">Quem assina a BoaVoz (cada agência tem os próprios clientes e chatbots). Uso e custo do mês corrente; margem = mensalidade − custo de IA (dólar a {brl(fx)}).</p>
         </div>
         {/* download de arquivo (rota com a segunda etapa e a auditoria), não navegação: <a> comum */}
@@ -47,7 +47,7 @@ export default async function AdminClients({ searchParams }: { searchParams: Pro
       </div>
 
       {shared.length > 0 && (
-        <section className="rounded-xl border border-[#efd9a9] bg-amber-soft px-4 py-3 text-sm text-amber-ink">
+        <section className="rounded-xl border border-amber-line bg-amber-soft px-4 py-3 text-sm text-amber-ink">
           <strong>Mesmo portfólio da Meta em clientes diferentes.</strong> Pode ser a agência conectando o WhatsApp com o portfólio dela (o cliente perde o número se sair, e a Meta proíbe revenda) ou um negócio com várias lojas. Nada foi bloqueado.
           <ul className="mt-1.5 list-disc pl-5">
             {shared.map((p) => (

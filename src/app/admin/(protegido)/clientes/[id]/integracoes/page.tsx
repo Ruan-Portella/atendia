@@ -65,7 +65,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
     <>
       <div>
         <Link href={`/admin/clientes/${id}`} className="text-xs font-semibold text-muted">← {agency.name}</Link>
-        <h1 className="text-[26px] font-bold">Integrações (piloto)</h1>
+        <h1 className="text-[26px] font-normal">Integrações (piloto)</h1>
         <p className="text-sm text-muted">
           Ações que a IA chama durante a conversa, configuradas à mão pela equipe BoaVoz (pilotos). Cada chamada é assinada no padrão Standard Webhooks com o segredo de ações do chatbot; prazo de 8 s nas consultas e de 20 s nas &quot;executa&quot;, resposta até 32 KB. &quot;Executa&quot; (e o que o BoaVoz classifica como pedido, reserva ou cobrança) só é chamada depois do Confirmar do contato.
         </p>
@@ -76,7 +76,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
         return (
           <section key={b.id as string} className="card flex flex-col gap-4 p-5">
             <div>
-              <h2 className="text-lg font-bold">{b.name as string}</h2>
+              <h2 className="text-lg font-medium">{b.name as string}</h2>
               <p className="text-xs text-muted">{b.client_name as string} · bot_{b.id as string}</p>
             </div>
 
@@ -126,7 +126,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
 
       <section className="card flex flex-col gap-4 p-5">
         <div>
-          <h2 className="text-lg font-bold">Chaves de API</h2>
+          <h2 className="text-lg font-medium">Chaves de API</h2>
           <p className="text-xs text-muted">
             Para a API pública (/api/v1), com escopo de chatbots e permissões. Na P1 só existe <span className="font-mono">PUT /api/v1/contacts/{"{contact}"}/age</span> (permissão contacts). A chave aparece uma vez; o dono da agência recebe um aviso a cada chave criada.
           </p>
@@ -181,7 +181,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
 
       <section className="card flex flex-col gap-4 p-5">
         <div>
-          <h2 className="text-lg font-bold">Identidade (chat do site)</h2>
+          <h2 className="text-lg font-medium">Identidade (chat do site)</h2>
           <p className="text-xs text-muted">
             O servidor do SaaS assina um token (JWT HS256, com o kid no cabeçalho) e o widget manda em toda mensagem: a pessoa vira nível usuário, a conversa fica presa a ela e ao contexto (workspace), e as ações recebem external_id e contexto. No site: <span className="font-mono">window.ChatWidgetConfig = {"{ getToken }"}</span>.
           </p>
@@ -230,7 +230,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
 
       <section className="card flex flex-col gap-4 p-5">
         <div>
-          <h2 className="text-lg font-bold">Webhook do piloto</h2>
+          <h2 className="text-lg font-medium">Webhook do piloto</h2>
           <p className="text-xs text-muted">
             Na P2 saem só contact.linked e contact.unlinked (o resto dos eventos chega na C pública). Envelope assinado no padrão Standard Webhooks; 2xx em até 10 s é entrega; novas tentativas em 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h e 24 h; 410 ou 3 dias só de falhas desativam.
           </p>
@@ -311,7 +311,7 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
       </section>
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Últimas chamadas</h2>
+        <h2 className="text-base font-medium">Últimas chamadas</h2>
         {calls?.length ? (
           <table className="w-full text-xs">
             <thead className="text-left text-muted"><tr><th className="py-1 font-semibold">Quando</th><th className="py-1 font-semibold">Ação</th><th className="py-1 font-semibold">Modo</th><th className="py-1 font-semibold">Resultado</th><th className="py-1 text-right font-semibold">Tempo</th></tr></thead>

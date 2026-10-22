@@ -23,7 +23,7 @@ export interface WithdrawalRow {
 export function WithdrawalAdminCard({ agencyId, state, marked, subscribed, rows }: { agencyId: string; state: WithdrawalState; marked: boolean; subscribed: boolean; rows: WithdrawalRow[] }) {
   return (
     <section className="card flex flex-col gap-3 p-5 text-sm">
-      <h2 className="text-lg font-bold">Desistência em 7 dias</h2>
+      <h2 className="text-lg font-medium">Desistência em 7 dias</h2>
       <p>
         {state.kind === "open" && `Janela aberta até ${dayBR(state.until)}: o dono vê o botão em Cobrança.`}
         {state.kind === "support" && `Janela aberta até ${dayBR(state.until)}, pelo suporte: a pessoa está marcada por uma desistência recente.`}

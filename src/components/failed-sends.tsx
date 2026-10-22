@@ -18,7 +18,7 @@ export async function FailedSends({ botId, channel }: { botId: string; channel: 
   return (
     <section className="card flex flex-col gap-2 p-5">
       <div>
-        <h3 className="text-base font-bold">Envios que falharam</h3>
+        <h3 className="text-base font-medium">Envios que falharam</h3>
         <p className="text-xs text-muted">Mensagens deste chatbot que não chegaram pelo {label} nos últimos {DAYS} dias (as 50 mais novas), com o motivo.</p>
       </div>
       {rows.length === 0 ? (

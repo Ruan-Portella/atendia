@@ -24,7 +24,7 @@ export default async function AdminStatus() {
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[26px] font-bold">Status</h1>
+          <h1 className="text-[26px] font-normal">Status</h1>
           <p className="text-sm text-muted">
             O que sai em <Link href="/status" className="underline" target="_blank">/status</Link> (e status.boavoz.com). O automático confere a cada {STATUS_THRESHOLDS.checkEveryMinutes} minutos e só muda com duas leituras iguais; o incidente escrito aqui vale por cima.
           </p>
@@ -63,7 +63,7 @@ export default async function AdminStatus() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-bold">Em aberto</h2>
+        <h2 className="text-lg font-medium">Em aberto</h2>
         {page.open.length === 0 && <p className="text-sm text-muted">Nenhum incidente em aberto.</p>}
         {page.open.map((i) => (
           <article key={i.id} className="card flex flex-col gap-3 p-4 text-sm">
@@ -88,7 +88,7 @@ export default async function AdminStatus() {
       </section>
 
       <section className="card flex flex-col gap-3 p-5 text-sm">
-        <h2 className="text-lg font-bold">Abrir incidente</h2>
+        <h2 className="text-lg font-medium">Abrir incidente</h2>
         <ActionForm action={createStatusIncident} className="flex flex-col gap-3">
           <input name="title" required minLength={3} maxLength={120} placeholder="Título (ex.: Atraso nas respostas do WhatsApp)" className="input" />
           <select name="level" defaultValue="instabilidade" className="input w-auto" aria-label="Tipo">
@@ -111,7 +111,7 @@ export default async function AdminStatus() {
 
       {page.past.length > 0 && (
         <section className="flex flex-col gap-2 text-sm">
-          <h2 className="text-lg font-bold">Resolvidos (90 dias)</h2>
+          <h2 className="text-lg font-medium">Resolvidos (90 dias)</h2>
           {page.past.map((i) => (
             <p key={i.id} className="text-muted">
               {dt(i.startedAt)} · <span className="font-semibold text-ink">{i.title}</span> · {LEVEL_LABEL[i.level]} · resolvido em {i.resolvedAt ? dt(i.resolvedAt) : "?"}

@@ -23,9 +23,9 @@ export function ChatPreviewSheet({ children, disabledReason }: { children: React
         Testar assistente
       </button>
       {open && (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-ink/50 lg:hidden" role="dialog" aria-modal="true" aria-label="Teste ao vivo">
+        <div className="fixed inset-0 z-[60] flex flex-col bg-scrim lg:hidden" role="dialog" aria-modal="true" aria-label="Teste ao vivo">
           <button type="button" aria-label="Fechar" onClick={() => setOpen(false)} className="flex-1" />
-          <div className="menu-in flex h-[85dvh] flex-col overflow-hidden rounded-t-2xl bg-[#ecebe4] shadow-2xl sm:mx-auto sm:w-[440px] sm:rounded-2xl sm:mb-4">
+          <div className="menu-in flex h-[85dvh] flex-col overflow-hidden rounded-t-2xl bg-raised shadow-2xl sm:mx-auto sm:w-[440px] sm:rounded-2xl sm:mb-4">
             <div className="flex items-center justify-between px-4 py-2.5 text-xs">
               <span className="font-semibold uppercase tracking-[0.06em] text-muted">Teste ao vivo</span>
               <button type="button" onClick={() => setOpen(false)} aria-label="Fechar" className="btn-icon"><X size={16} /></button>

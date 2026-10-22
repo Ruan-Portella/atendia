@@ -14,7 +14,7 @@ const LEVEL: Record<string, string> = { regulamentado: "regulamentado (18+)", pr
 export function GateReviews({ open, recent, exceptions }: { open: GateReviewRow[]; recent: GateReviewRow[]; exceptions: GateExceptionRow[] }) {
   return (
     <section className="card flex flex-col gap-3 p-5">
-      <h2 className="text-base font-bold">Revisões do portão (&ldquo;isto não é…&rdquo;)</h2>
+      <h2 className="text-base font-medium">Revisões do portão (&ldquo;isto não é…&rdquo;)</h2>
       <p className="text-xs text-muted">
         A agência pede quando o portão acusou um item que o negócio não vende. Aprovar libera a categoria só naquele chatbot (entrada, base, histórico e saída); recusar mantém a regra. O dono recebe a decisão por e-mail.
       </p>

@@ -33,7 +33,7 @@ export function BotAnalyses({ pending, recent, due }: { pending: BotAnalysisRow[
     <section className="card flex flex-col gap-3 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold">Análise do bot</h2>
+          <h2 className="text-base font-medium">Análise do bot</h2>
           <p className="text-xs text-muted">
             Uma análise por chatbot: itens da base (da classificação dos trechos), fontes e as perguntas &ldquo;a IA é o produto?&rdquo; e &ldquo;o modelo de negócio é proibido?&rdquo;. &ldquo;Sim&rdquo; ou &ldquo;incerto&rdquo; vira pendência aqui, sem selo para o cliente e sem segurar nada. Roda na rotina diária, ~10 minutos depois de mudar instruções, assuntos, canais ou modelos.
           </p>

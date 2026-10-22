@@ -31,7 +31,7 @@ export function FixedCosts({ costs, totalBrl }: { costs: FixedCost[]; totalBrl: 
   return (
     <section className="card flex flex-col gap-3 p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-bold">Custos fixos mensais</h2>
+        <h2 className="text-lg font-medium">Custos fixos mensais</h2>
         <span className="text-sm text-muted">total ativo: <strong className="text-ink tabular">{brl(totalBrl)}</strong> por mês (entra na margem)</span>
       </div>
       <p className="-mt-1 text-xs text-muted">Hospedagem, banco, e-mail, domínio, ferramentas. Em dólar, a conta usa o USD_BRL.</p>

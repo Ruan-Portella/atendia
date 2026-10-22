@@ -19,7 +19,7 @@ export default async function CampaignsPage() {
     <div className="flex max-w-[1080px] flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold sm:text-[28px]">Campanhas</h1>
+          <h1 className="text-2xl font-normal sm:text-[28px]">Campanhas</h1>
           <p className="text-sm text-muted">
             Todas as campanhas e lembretes dos seus clientes, num lugar só. Cada cliente também tem a aba Campanhas, com os dele, o fuso e a declaração para lembretes.
           </p>

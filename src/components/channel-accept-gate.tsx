@@ -44,7 +44,7 @@ export async function ChannelAcceptGate({
   if (connected) {
     if (accepted) return null;
     return (
-      <details className="rounded-xl border border-[#efd9a9] bg-amber-soft p-4 text-sm">
+      <details className="rounded-xl border border-amber-line bg-amber-soft p-4 text-sm">
         <summary className="cursor-pointer font-semibold text-amber-ink">Falta o aceite do negócio para este canal</summary>
         <p className="mt-2 text-ink-2">O canal continua funcionando. O aceite registra que {clientName} concorda com os termos do canal e a Política de Uso Aceitável; faça com o cliente do lado ou mande o link de conexão para ele.</p>
         <div className="mt-3 rounded-xl bg-panel p-4">{form}</div>

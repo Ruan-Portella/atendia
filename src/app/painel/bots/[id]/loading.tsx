@@ -16,7 +16,7 @@ export default function BotEditorLoading() {
           <div className="skeleton h-4 w-80 max-w-full" />
           <div className="skeleton mt-2 h-40 w-full rounded-xl" />
         </div>
-        <div className="hidden border-l border-line bg-[#ecebe4] p-5 lg:block">
+        <div className="hidden border-l border-line bg-raised p-5 lg:block">
           <div className="skeleton h-[560px] w-full rounded-2xl" />
         </div>
       </div>

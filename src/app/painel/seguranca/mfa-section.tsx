@@ -13,7 +13,7 @@ export async function MfaSection({ onRemoved = recordMfaRemoved, verifyHref = `/
   return (
     <section className="card flex flex-col gap-4 p-6">
       <div>
-        <h2 className="text-base font-bold">Segundo fator</h2>
+        <h2 className="text-base font-medium">Segundo fator</h2>
         <p className="text-sm text-muted">{text}</p>
       </div>
       {factors.length ? (

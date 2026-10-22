@@ -18,7 +18,7 @@ export default async function MemberVerifyPage({ params, searchParams }: PagePro
     <div className="flex justify-center py-6">
       <div className="card flex w-full max-w-[420px] flex-col gap-4 p-6">
         <div>
-          <h1 className="text-xl font-bold">Verificação em duas etapas</h1>
+          <h1 className="text-xl font-normal">Verificação em duas etapas</h1>
           <p className="text-sm text-muted">Conversas com dados sensíveis e a confirmação de pedidos de exclusão pedem o código do app autenticador. O resto da área do cliente continua sem o código.</p>
         </div>
         <MfaForm friendlyName={`Área do cliente ${member.clientName}`.slice(0, 60)} next={next} submitLabel="Continuar" onResult={recordMemberMfa.bind(null, id)} recoverHref={`/cliente/${id}/verificar/recuperar`} />

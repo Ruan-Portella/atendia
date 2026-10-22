@@ -45,7 +45,7 @@ export function HelpSearch({ entries, children }: { entries: HelpEntry[]; childr
         <ul className="flex flex-col gap-2" aria-live="polite">
           {found.map((e) => (
             <li key={e.slug}>
-              <Link href={`/ajuda/${e.slug}`} className="block rounded-xl border border-line bg-white p-4 hover:border-brand">
+              <Link href={`/ajuda/${e.slug}`} className="block rounded-xl border border-line bg-panel p-4 hover:border-brand">
                 <span className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">{e.group}</span>
                 <span className="block font-semibold text-ink">{e.title}</span>
                 <span className="block text-sm text-muted">{e.summary}</span>

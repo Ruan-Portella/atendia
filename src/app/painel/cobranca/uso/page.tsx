@@ -70,7 +70,7 @@ export default async function UsoPage() {
 
   return (
     <div className="max-w-[960px]">
-      <h1 className="text-2xl font-bold sm:text-[28px]">Cobrança</h1>
+      <h1 className="text-2xl font-normal sm:text-[28px]">Cobrança</h1>
       <BillingTabs active="/painel/cobranca/uso" />
       <FirstWeekNote until={firstWeekUntil(agency)} />
 
@@ -102,7 +102,7 @@ export default async function UsoPage() {
         </p>
       </details>
 
-      <h2 className="mt-8 text-lg font-bold">Por cliente e chatbot</h2>
+      <h2 className="mt-8 text-lg font-medium">Por cliente e chatbot</h2>
       <div className="card mt-3 overflow-x-auto">
         <table className="w-full min-w-[820px] text-sm">
           <thead>

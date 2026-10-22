@@ -16,7 +16,7 @@ const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: 
 export function IncidentRegister({ incidents }: { incidents: IncidentRow[] }) {
   return (
     <section className="card flex flex-col gap-3 p-5">
-      <h2 className="text-base font-bold">Incidentes de segurança</h2>
+      <h2 className="text-base font-medium">Incidentes de segurança</h2>
       <p className="text-xs text-muted">
         Suspeita de dado acessado, vazado ou perdido sem autorização: registre na hora e siga o roteiro (docs/incidentes.md): conter, avaliar o risco, avisar as agências em até 48 h e, quando a BoaVoz é a controladora e há risco relevante, a ANPD em até 3 dias úteis. Nunca escreva dado pessoal aqui: use contagens e tipos. Severidade alta avisa o e-mail de alertas da plataforma.
       </p>

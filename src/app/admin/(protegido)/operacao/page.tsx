@@ -44,7 +44,7 @@ export default async function AdminOperations() {
   return (
     <>
       <div>
-        <h1 className="text-[26px] font-bold">Operação</h1>
+        <h1 className="text-[26px] font-normal">Operação</h1>
         <p className="text-sm text-muted">Saúde do banco, fila de mensagens da Meta, canais conectados e tarefas agendadas. Erros do código ficam no Sentry.</p>
       </div>
 
@@ -59,7 +59,7 @@ export default async function AdminOperations() {
 
       {assistant && (
         <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-base font-bold">Assistente da BoaVoz (avisos no WhatsApp)</h2>
+          <h2 className="text-base font-medium">Assistente da BoaVoz (avisos no WhatsApp)</h2>
           <p className="text-xs text-muted">
             Um chatbot normal, com número próprio de WhatsApp, que manda os avisos da conta para a equipe das agências (cada pessoa confirma o número pelo botão do modelo) e responde sobre o app com a base dele. Sem ele, o painel não mostra o cartão dos avisos. A área do cliente nunca recebe. A base vem do guia do painel (docs/assistente no repositório): atualize a cada leva.
           </p>
@@ -124,7 +124,7 @@ export default async function AdminOperations() {
       )}
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Cifra por campo</h2>
+        <h2 className="text-base font-medium">Cifra por campo</h2>
         <p className="text-xs text-muted">
           O que vem do contato vai cifrado com a chave do cliente; tokens e segredos, com a chave mestra (versões: {versions.join(", ") || "nenhuma"}; a atual é a maior). O que foi gravado antes da cifra é cifrado em lotes pela rotina diária.
         </p>
@@ -139,7 +139,7 @@ export default async function AdminOperations() {
       </section>
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Totais diários dos relatórios</h2>
+        <h2 className="text-base font-medium">Totais diários dos relatórios</h2>
         <p className="text-xs text-muted">
           Relatórios, portal e painel somam os totais por dia (sem dado do contato) com a contagem ao vivo dos dias seguintes. A rotina diária recalcula os 2 últimos dias antes da limpeza, e a limpeza não apaga nada depois do último dia somado.
         </p>
@@ -150,7 +150,7 @@ export default async function AdminOperations() {
       </section>
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Limpeza por prazo (retenção)</h2>
+        <h2 className="text-base font-medium">Limpeza por prazo (retenção)</h2>
         <p className="text-xs text-muted">
           Prazo de cada chatbot: o do modo dados sensíveis (7 a 90 dias), senão o do cliente, senão o da agência (6, 12 ou 24 meses); demonstração, 30 dias. A rotina diária promove os prazos vencidos, agenda 12 meses (com e-mail) para quem estava em “Não apagar” e apaga o que passou do prazo, sem passar do último dia somado.
         </p>
@@ -173,7 +173,7 @@ export default async function AdminOperations() {
       </section>
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Tarefas agendadas</h2>
+        <h2 className="text-base font-medium">Tarefas agendadas</h2>
         {!ops.cronsScheduled && <p className="text-xs text-muted">Neste ambiente as tarefas não rodam sozinhas: a Vercel só agenda em produção. Aqui elas só rodam se alguém chamar a rota à mão, então não contam como atrasadas.</p>}
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Tarefa</th><th className="py-1.5 font-semibold">Última execução</th><th className="py-1.5 font-semibold">Último sucesso</th></tr></thead>
@@ -190,7 +190,7 @@ export default async function AdminOperations() {
       </section>
 
       <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-bold">Eventos da Meta com erro (7 dias)</h2>
+        <h2 className="text-base font-medium">Eventos da Meta com erro (7 dias)</h2>
         {ops.queue.failed.length ? (
           <ul className="flex flex-col divide-y divide-line-2 text-sm">
             {ops.queue.failed.map((f) => (
@@ -207,7 +207,7 @@ export default async function AdminOperations() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-bold">WhatsApp</h2>
+          <h2 className="text-base font-medium">WhatsApp</h2>
           {ch.waPayment.map((w) => <p key={`p${w.bot_id}`} className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">Sem pagamento na Meta: {(w.display_phone as string | null) ?? "número"} · {botLabel(ops.bots, w.bot_id as string)} · desde {relativeTime(w.payment_issue_at as string)}</p>)}
           {ch.waDisconnected.length ? (
             <ul className="flex flex-col divide-y divide-line-2 text-sm">
@@ -223,7 +223,7 @@ export default async function AdminOperations() {
           )}
         </section>
         <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-bold">Instagram</h2>
+          <h2 className="text-base font-medium">Instagram</h2>
           {ch.igExpiring.map((i) => <p key={`e${i.bot_id}`} className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Token vence {relativeTime(i.token_expires_at as string)}: @{(i.username as string | null) ?? "conta"} · {botLabel(ops.bots, i.bot_id as string)}</p>)}
           {ch.igDisconnected.length ? (
             <ul className="flex flex-col divide-y divide-line-2 text-sm">

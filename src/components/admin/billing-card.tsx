@@ -25,7 +25,7 @@ export function BillingCard({ agencyId, status, cancelAt, subscriptionId, testMo
   return (
     <section className="card flex flex-col gap-3 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-bold">Cobrança</h2>
+        <h2 className="text-lg font-medium">Cobrança</h2>
         {subscriptionId && (
           <a href={`https://dashboard.stripe.com/${testMode ? "test/" : ""}subscriptions/${subscriptionId}`} target="_blank" rel="noreferrer" className="btn-ghost py-1 text-sm">
             Assinatura na Stripe ↗

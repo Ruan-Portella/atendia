@@ -14,7 +14,7 @@ export function AccountSection({ agency }: { agency: { name: string; deletion_sc
     return (
       <section className="card flex flex-col gap-4 p-6">
         <div>
-          <h2 className="text-base font-bold">Exclusão agendada</h2>
+          <h2 className="text-base font-medium">Exclusão agendada</h2>
           <p className="text-sm text-muted">
             A conta <strong className="text-ink">{agency.name}</strong> será excluída em <strong className="text-ink">{dateBR(agency.deletion_scheduled_for)}</strong>. Até lá, tudo continua funcionando: os chatbots respondem, e a equipe e os clientes entram normalmente. A assinatura não renova mais.
           </p>
@@ -29,7 +29,7 @@ export function AccountSection({ agency }: { agency: { name: string; deletion_sc
   return (
     <section className="card flex flex-col gap-4 p-6">
       <div>
-        <h2 className="text-base font-bold">Excluir a conta</h2>
+        <h2 className="text-base font-medium">Excluir a conta</h2>
         <p className="text-sm text-muted">A exclusão acontece {ACCOUNT_DELETION_DAYS} dias depois do pedido; até lá, dá para desistir aqui. Na data, apagamos:</p>
       </div>
       <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-ink-2">
@@ -41,7 +41,7 @@ export function AccountSection({ agency }: { agency: { name: string; deletion_sc
       <p className="text-sm text-muted">
         A assinatura para de renovar no pedido e é cancelada na exclusão, sem reembolso do mês em curso; o crédito que sobrar se perde. A auditoria fica por 1 ano e os registros de acesso por 6 meses, como pede a lei. Antes, exporte os leads e o que mais quiser guardar.
       </p>
-      <ActionForm action={requestAccountDeletionAction} className="flex flex-col gap-3 rounded-xl border border-[#f0c9c9] bg-danger-soft/40 p-4">
+      <ActionForm action={requestAccountDeletionAction} className="flex flex-col gap-3 rounded-xl border border-danger-line bg-danger-soft/40 p-4">
         <label htmlFor="confirm_name" className="label">
           Para confirmar, digite o nome da conta: <strong className="text-ink">{agency.name}</strong>
         </label>

@@ -26,7 +26,7 @@ export default async function MemberAuthPage({ searchParams }: PageProps<"/clien
           <span className="display flex h-12 w-12 items-center justify-center rounded-xl font-bold text-white" style={{ background: agency?.brand_color ?? "#1f4e3d" }}>{initials(name)}</span>
         ) : null}
         <div>
-          <h1 className="text-xl font-bold">Entrar na área do cliente</h1>
+          <h1 className="text-xl font-normal">Entrar na área do cliente</h1>
           <p className="text-sm text-muted">Clique no botão para concluir o acesso{name ? ` com ${name}` : ""}.</p>
         </div>
         <ActionForm action={confirmAccess.bind(null, str(sp.token_hash), str(sp.type), str(sp.next))} className="w-full">

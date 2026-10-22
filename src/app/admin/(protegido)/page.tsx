@@ -35,7 +35,7 @@ export default async function AdminHome() {
   return (
     <>
       <div>
-        <h1 className="text-[26px] font-bold">Visão geral</h1>
+        <h1 className="text-[26px] font-normal">Visão geral</h1>
         <p className="text-sm text-muted">Sem os bots de demonstração da landing. Custo e margem do mês corrente; dólar a {brl(usdBrl())} (USD_BRL).</p>
       </div>
 
@@ -75,7 +75,7 @@ export default async function AdminHome() {
 
       <section className="card flex flex-col gap-4 p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-bold">Mensagens por dia</h2>
+          <h2 className="text-lg font-medium">Mensagens por dia</h2>
           <span className="text-xs text-muted">contato + bot + equipe, últimos 30 dias</span>
         </div>
         <DayBars caption="Mensagens por dia" days={activity.daily.map((d) => ({ day: d.day, value: messages(d), detail: `${d.contact} do contato · ${d.bot} do bot · ${d.team} da equipe` }))} format={(v) => num(Math.round(v))} />
@@ -83,11 +83,11 @@ export default async function AdminHome() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card flex flex-col gap-4 p-5">
-          <h2 className="text-lg font-bold">Conversas por dia</h2>
+          <h2 className="text-lg font-medium">Conversas por dia</h2>
           <DayBars caption="Conversas por dia" days={activity.daily.map((d) => ({ day: d.day, value: d.conversations }))} format={(v) => num(Math.round(v))} />
         </section>
         <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-lg font-bold">Conversas por canal (30 dias)</h2>
+          <h2 className="text-lg font-medium">Conversas por canal (30 dias)</h2>
           {activity.channels.length ? (
             <ul className="flex flex-col gap-2.5">
               {activity.channels.map((c) => (

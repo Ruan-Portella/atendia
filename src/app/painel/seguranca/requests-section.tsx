@@ -49,7 +49,7 @@ export async function RequestsSection() {
   return (
       <section className="card flex flex-col gap-3 p-6">
         <div>
-          <h2 className="text-base font-bold">Pedidos do titular</h2>
+          <h2 className="text-base font-medium">Pedidos do titular</h2>
           <p className="text-sm text-muted">
             O contato pede pelo chat (“apaga meus dados”) e confirma. Ao confirmar aqui, o BoaVoz apaga as conversas, a ficha do contato, os leads e o que ele informou, põe o número na lista de quem não recebe mensagens da empresa e avisa a pessoa pelo canal, quando a janela de 24 horas ainda está aberta. A LGPD dá {DSR_DAYS} dias para atender.
           </p>

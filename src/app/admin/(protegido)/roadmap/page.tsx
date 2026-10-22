@@ -38,13 +38,13 @@ export default async function AdminRoadmap() {
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[26px] font-bold">Roadmap</h1>
+          <h1 className="text-[26px] font-normal">Roadmap</h1>
           <p className="text-sm text-muted">O que aparece em <Link href="/roadmap" className="underline">/roadmap</Link> e no painel: o quê, sem datas nem como. As ideias de quem tem conta chegam aqui antes de aparecer.</p>
         </div>
       </div>
 
       <section className="card flex flex-col gap-4 p-5">
-        <h2 className="text-lg font-bold">Ideias para moderar <span className="font-normal text-muted">({pending.length})</span></h2>
+        <h2 className="text-lg font-medium">Ideias para moderar <span className="font-normal text-muted">({pending.length})</span></h2>
         {pending.length === 0 && <p className="text-sm text-muted">Nenhuma ideia nova.</p>}
         <ul className="flex flex-col gap-4">
           {pending.map((s) => (
@@ -85,14 +85,14 @@ export default async function AdminRoadmap() {
       </section>
 
       <section className="card flex flex-col gap-4 p-5">
-        <h2 className="text-lg font-bold">Itens <span className="font-normal text-muted">({items.length})</span></h2>
+        <h2 className="text-lg font-medium">Itens <span className="font-normal text-muted">({items.length})</span></h2>
         <ActionForm action={saveRoadmapItem.bind(null, null)} success="Item criado." className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <ItemFields />
           <SubmitButton className="btn-primary shrink-0" pendingLabel="…">Adicionar</SubmitButton>
         </ActionForm>
         {columns.map((c) => (
           <div key={c.status} className="flex flex-col gap-2 border-t border-line-2 pt-4">
-            <h3 className="text-sm font-bold">{c.title} <span className="font-normal text-muted">({c.items.length})</span></h3>
+            <h3 className="text-sm font-medium">{c.title} <span className="font-normal text-muted">({c.items.length})</span></h3>
             {c.items.length === 0 && <p className="text-sm text-muted">Nada.</p>}
             <ul className="flex flex-col gap-2">
               {c.items.map((i) => (

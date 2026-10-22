@@ -81,7 +81,7 @@ export function InboxView({
 
       <section className={cn("flex w-full min-w-0 flex-col border-r border-line bg-ground md:w-[340px] md:shrink-0", selectedId && "hidden lg:flex")}>
         <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
-          <h1 className="text-lg font-bold">{label}</h1>
+          <h1 className="text-lg font-normal">{label}</h1>
           {/* no celular, as filas viram uma linha de botões */}
           <div className={cn("flex gap-1.5 overflow-x-auto pb-1", !compact && "md:hidden")}>
             {all.map((q) => (

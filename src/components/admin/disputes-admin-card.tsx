@@ -42,7 +42,7 @@ export function DisputesAdminCard({ agencyId, rows }: { agencyId: string; rows: 
   if (!rows.length) return null;
   return (
     <section className="card flex flex-col gap-4 p-5 text-sm">
-      <h2 className="text-lg font-bold">Contestações no cartão</h2>
+      <h2 className="text-lg font-medium">Contestações no cartão</h2>
       {rows.map((d) => {
         const open = d.kind === "contestacao" && disputeNeedsResponse(d.status) && !d.submittedAt;
         return (

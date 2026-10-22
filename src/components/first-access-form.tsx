@@ -26,7 +26,7 @@ export function FirstAccessForm({ brand, profile: answered, accountName, display
 
   return (
     <div className="card w-full max-w-[520px] p-7">
-      <h1 className="text-2xl font-bold">{editing ? `Como você usa o ${brand}` : `Boas-vindas ao ${brand}`}</h1>
+      <h1 className="text-2xl font-normal">{editing ? `Como você usa o ${brand}` : `Boas-vindas ao ${brand}`}</h1>
       <p className="mt-1 text-sm text-muted">{editing ? "Os primeiros passos do painel mudam conforme a resposta." : "Umas respostas rápidas e o painel já começa pelo que importa para você."}</p>
 
       <ActionForm action={saveFirstAccess} className="mt-6 flex flex-col gap-5">

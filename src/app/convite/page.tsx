@@ -31,7 +31,7 @@ export default async function NoAgencyPage() {
       <div className="card flex w-full max-w-[460px] flex-col gap-4 p-7">
         {(
           <>
-            <h1 className="text-xl font-bold">{invites.length ? "Você tem um convite" : "Você não está em nenhuma equipe"}</h1>
+            <h1 className="text-xl font-normal">{invites.length ? "Você tem um convite" : "Você não está em nenhuma equipe"}</h1>
             {invites.length > 0 ? (
               <p className="text-sm text-ink-2">
                 {names} convidou você ({email}) para a equipe. Para aceitar, abra o link do convite que chegou no seu e-mail (vale {INVITE_DAYS} dias). Se não encontrar, peça para a agência convidar de novo.

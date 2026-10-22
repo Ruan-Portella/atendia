@@ -43,7 +43,7 @@ export default async function TeamPage() {
     <div className="flex max-w-[960px] flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold sm:text-[28px]">Equipe</h1>
+          <h1 className="text-2xl font-normal sm:text-[28px]">Equipe</h1>
           <p className="text-sm text-muted">
             {used} {used === 1 ? "pessoa" : "pessoas"} na equipe, sem limite. Cada pessoa entra com o próprio e-mail e vê só o que o papel e o escopo dela permitem.
           </p>
@@ -129,7 +129,7 @@ export default async function TeamPage() {
       </div>
 
       <div className="card flex flex-col gap-2 p-5 text-sm text-ink-2">
-        <h2 className="text-base font-bold text-ink">O que cada papel faz</h2>
+        <h2 className="text-base font-medium text-ink">O que cada papel faz</h2>
         <p><strong>Dono:</strong> tudo, inclusive cobrança e o papel de administrador.</p>
         <p><strong>Administrador:</strong> clientes, chatbots, equipe, marca e domínio, Segurança e exportações. Não vê a cobrança.</p>
         <p><strong>Editor:</strong> configura os clientes e chatbots do escopo (base, personalidade, canais, área do cliente) e atende as conversas.</p>

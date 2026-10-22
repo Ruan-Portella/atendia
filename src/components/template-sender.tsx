@@ -55,7 +55,7 @@ export function TemplateSender({ templates, action, askPhone = false, submitLabe
         </div>
       )}
       {t && (
-        <div className="rounded-xl bg-[#e7f7dc] px-3.5 py-2.5 text-sm text-ink">
+        <div className="rounded-xl bg-brand-soft px-3.5 py-2.5 text-sm text-ink">
           <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">Prévia</div>
           <p className="whitespace-pre-line">{renderTemplate(t.body, values)}</p>
         </div>

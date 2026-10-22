@@ -74,7 +74,7 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.06em] text-muted">Assistente virtual</p>
-          <h1 className="text-2xl font-bold sm:text-[30px]">{report.client.name}</h1>
+          <h1 className="text-2xl font-normal sm:text-[30px]">{report.client.name}</h1>
         </div>
         <div className="flex items-center gap-2">
           <PrintButton />
@@ -111,7 +111,7 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
         <section className="card flex flex-col gap-3 p-4 sm:p-5">
           <div className="flex items-center gap-2">
             <MessageCircle size={17} style={{ color }} />
-            <h2 className="text-base font-bold">WhatsApp</h2>
+            <h2 className="text-base font-medium">WhatsApp</h2>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-0.5">
@@ -136,13 +136,13 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
       <ReportChannels channels={report.channels} widgetOpens={report.widgetOpens} tickets={report.tickets} />
 
       <section className="card flex flex-col gap-3 p-4 sm:p-5">
-        <h2 className="text-base font-bold">Conversas por dia</h2>
+        <h2 className="text-base font-medium">Conversas por dia</h2>
         <DailyBars days={report.daily} color={color} />
       </section>
 
       <section className="flex flex-col gap-3">
         <div>
-          <h2 className="text-base font-bold">Evolução</h2>
+          <h2 className="text-base font-medium">Evolução</h2>
           <p className="text-sm text-muted">Os 6 meses até {month}: quanto o assistente resolveu sem a equipe, quanto tempo a equipe levou para assumir quem pediu atendimento e a satisfação de quem respondeu à pesquisa.</p>
         </div>
         <EvolutionTable months={evolution} color={color} />
@@ -153,7 +153,7 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
           <div className="flex min-w-0 items-start gap-2.5">
             <Lock size={17} className="mt-0.5 shrink-0 text-muted" />
             <div>
-              <h2 className="text-base font-bold">Contatos e conversas</h2>
+              <h2 className="text-base font-medium">Contatos e conversas</h2>
               <p className="text-sm text-muted">Por segurança, nomes, telefones e conversas só aparecem na área do cliente, com login pelo e-mail.</p>
             </div>
           </div>
@@ -164,7 +164,7 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
       {people && (
         <>
           <section className="flex flex-col gap-3">
-            <h2 className="text-base font-bold">Contatos capturados <span className="font-normal text-muted">({leads.length})</span></h2>
+            <h2 className="text-base font-medium">Contatos capturados <span className="font-normal text-muted">({leads.length})</span></h2>
             <div className="card overflow-hidden">
               {leads.length === 0 && <p className="p-5 text-sm text-muted">Nenhum contato neste mês.</p>}
               {leads.map((l) => (
@@ -183,7 +183,7 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
           </section>
 
           <section className="flex flex-col gap-3 print:hidden">
-            <h2 className="text-base font-bold">Últimas conversas</h2>
+            <h2 className="text-base font-medium">Últimas conversas</h2>
             <div className="card overflow-hidden">
               {(conversations ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma conversa neste mês.</p>}
               {(conversations ?? []).map((cv) => (

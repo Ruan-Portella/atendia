@@ -56,7 +56,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
         <div className="flex flex-col gap-5">
           <span className="self-start rounded-full bg-amber-soft px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-amber-ink">Demonstração preparada para {bot.client_name}</span>
           {bot.demo_expires_at && !ended && <span className="-mt-3 text-xs text-muted">Esta demonstração vale até {dayBR(bot.demo_expires_at)}.</span>}
-          <h1 className="text-3xl font-bold leading-[1.08] md:text-[44px]" style={{ textWrap: "balance" }}>Um assistente que responde seus clientes 24 horas, treinado no seu próprio site.</h1>
+          <h1 className="text-3xl font-normal leading-[1.08] md:text-[44px]" style={{ textWrap: "balance" }}>Um assistente que responde seus clientes 24 horas, treinado no seu próprio site.</h1>
           <p className="max-w-[600px] text-[17px] leading-relaxed text-ink-2">
             Montamos este assistente lendo o site {bot.client_site?.replace(/^https?:\/\//, "") ?? "da empresa"}. Ele já sabe o que vocês oferecem, horários, valores e como chegar. Teste ao lado com qualquer pergunta que um cliente faria.
           </p>

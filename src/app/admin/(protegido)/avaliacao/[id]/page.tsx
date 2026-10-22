@@ -15,7 +15,7 @@ export default async function AdminEvalRun({ params }: { params: Promise<{ id: s
     <>
       <div>
         <Link href="/admin/avaliacao" className="text-xs font-semibold text-muted">← Avaliação da IA</Link>
-        <h1 className="text-[26px] font-bold">{run.passed}/{run.total} casos · {run.model}</h1>
+        <h1 className="text-[26px] font-normal">{run.passed}/{run.total} casos · {run.model}</h1>
         <p className="text-sm text-muted">
           {run.bot_name ?? "bot apagado"} · {run.case_file}{run.categories?.length ? ` · ${run.categories.join(", ")}` : ""} · {run.runs} rodadas · {new Date(run.created_at).toLocaleString("pt-BR")}{run.created_by ? ` · por ${run.created_by}` : ""}
         </p>
