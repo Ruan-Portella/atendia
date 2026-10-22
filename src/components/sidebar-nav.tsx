@@ -15,8 +15,9 @@ import { cn } from "@/lib/utils";
 export interface SidebarClient {
   id: string;
   name: string;
-  /** Cor do primeiro chatbot (o rosto do cliente no menu). */
+  /** Cor e rosto do primeiro chatbot (o rosto do cliente no menu). */
   color: string | null;
+  face?: unknown;
   botIds: string[];
 }
 
@@ -153,7 +154,7 @@ export function SidebarNav({ role, packs = [], clients, clientCount, me, extra, 
                 const active = openClient?.id === c.id;
                 return (
                   <Link key={c.id} href={`/painel/clientes/${c.id}`} onClick={onNavigate} aria-current={active ? "page" : undefined} title={collapsed ? c.name : undefined} className={itemClass(active, collapsed)}>
-                    <BotFace color={c.color} size={collapsed ? 24 : 20} alive={active} />
+                    <BotFace color={c.color} face={c.face} size={collapsed ? 24 : 20} alive={active} />
                     {label(c.name)}
                   </Link>
                 );

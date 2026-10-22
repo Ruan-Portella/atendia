@@ -195,7 +195,7 @@ interface Props {
   /** O nome do contato (as iniciais e o nome em cima das mensagens dele). */
   contactName?: string | null;
   /** O chatbot (redesenho): o rosto e o nome nas respostas da IA. */
-  bot?: { name: string; color?: string | null } | null;
+  bot?: { name: string; color?: string | null; face?: unknown } | null;
   /** "O que a IA fez" em cima de cada resposta (painel da agência; precisa do tool_results). */
   showTrace?: boolean;
   /** a resposta mais recente vem com o quadro aberto (nas conversas anteriores, não) */
@@ -290,7 +290,7 @@ function handoffEvent(m: ThreadMessage): string | null {
 }
 
 function Avatar({ m, contactName, bot }: { m: ThreadMessage; contactName: string; bot: Props["bot"] }) {
-  if (m.role === "assistant") return <BotFace color={bot?.color} size={30} className="mt-5" />;
+  if (m.role === "assistant") return <BotFace color={bot?.color} face={bot?.face} size={30} className="mt-5" />;
   const label = m.role === "agent" ? (m.author_display_name ?? "Equipe") : contactName;
   return (
     <span className={`mt-5 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${m.role === "agent" ? "bg-info-soft text-info" : "bg-raised text-ink shadow-[inset_0_0_0_1px_var(--color-line)]"}`}>

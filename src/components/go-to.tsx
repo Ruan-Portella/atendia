@@ -13,11 +13,11 @@ interface Props {
   role: AgencyRole;
   packs: string[];
   /** Os clientes do menu: filtram na hora, sem esperar o servidor. */
-  clients: Array<{ id: string; name: string; color: string | null }>;
+  clients: Array<{ id: string; name: string; color: string | null; face?: unknown }>;
 }
 
 function ItemIcon({ item }: { item: GoToItem }) {
-  if (item.kind === "client" || item.kind === "bot") return <BotFace color={item.color} size={30} />;
+  if (item.kind === "client" || item.kind === "bot") return <BotFace color={item.color} face={item.face} size={30} />;
   if (item.kind === "contact")
     return <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-raised text-[11px] font-semibold text-ink">{item.title.split(/\s+/).slice(0, 2).map((w) => w.charAt(0).toUpperCase()).join("")}</span>;
   const page = { "/painel/caixa": Inbox, "/painel/campanhas": Megaphone, "/painel/clientes": Users }[item.id];
@@ -93,7 +93,7 @@ export function GoTo({ role, packs, clients }: Props) {
     };
   }, [term, open]);
 
-  const clientItems = useMemo<GoToItem[]>(() => clients.map((c) => ({ id: c.id, kind: "client", title: c.name, sub: "Cliente", href: `/painel/clientes/${c.id}`, color: c.color })), [clients]);
+  const clientItems = useMemo<GoToItem[]>(() => clients.map((c) => ({ id: c.id, kind: "client", title: c.name, sub: "Cliente", href: `/painel/clientes/${c.id}`, color: c.color, face: c.face })), [clients]);
   const groups = useMemo(() => buildGroups({ query, role, packs, clients: clientItems, remote: term.length >= 2 && remote.q === term ? remote.groups : [] }), [query, role, packs, clientItems, remote, term]);
   const flat = groups.flatMap((g) => g.items);
   const current = Math.min(picked, Math.max(0, flat.length - 1));

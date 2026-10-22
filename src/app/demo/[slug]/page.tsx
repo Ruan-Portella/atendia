@@ -91,7 +91,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
           ) : (
           <ChatWindow
             channel="demo"
-            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou o assistente de ${bot.client_name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button) }}
+            bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), face: bot.face ?? null, welcome: bot.persona?.welcome ?? `Olá! Sou o assistente de ${bot.client_name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button) }}
           />
           )}
         </div>

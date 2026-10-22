@@ -51,8 +51,9 @@ export interface InboxBot {
   client_id: string | null;
   human_handoff?: { hours?: BusinessHours | null } | null;
   sensitive_mode?: boolean | null;
-  /** a cor do chatbot (o rosto na lista) */
+  /** a cor e o rosto do chatbot (na lista) */
   appearance?: { color?: string | null } | null;
+  face?: unknown;
 }
 
 export interface InboxItem {
@@ -87,6 +88,7 @@ export interface InboxItem {
   snoozeEnded: boolean;
   /** A cor do chatbot (redesenho: o rosto ao lado do contato). */
   botColor?: string | null;
+  botFace?: unknown;
   /** O começo da última mensagem (fora do modo sensível, que pede o segundo fator). */
   last?: LastMessage | null;
 }
@@ -242,7 +244,7 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
   // só aparece depois do segundo fator, na conversa
   const open = items.filter((i) => !bots.get(i.botId)?.sensitive_mode).map((i) => i.id);
   const last = await lastMessagesOf(db, open).catch(() => new Map<string, LastMessage>());
-  return items.map((i) => ({ ...i, botColor: bots.get(i.botId)?.appearance?.color ?? null, last: last.get(i.id) ?? null }));
+  return items.map((i) => ({ ...i, botColor: bots.get(i.botId)?.appearance?.color ?? null, botFace: bots.get(i.botId)?.face ?? null, last: last.get(i.id) ?? null }));
 }
 
 /** Quantas conversas em cada fila (o número ao lado do nome). Pura. */

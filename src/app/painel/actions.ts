@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseFace } from "@/lib/bot-face";
 import { sizeRequiredBlock } from "@/lib/free-account";
 import { queueChannelEvent, queueConsentEvent, trackCompliance } from "@/lib/platform-events";
 import { resumeConversationAi } from "@/lib/api-pause";
@@ -353,6 +354,12 @@ export async function updateBot(botId: string, formData: FormData): Promise<Acti
     if (!/^#[0-9a-fA-F]{6}$/.test(f.color)) return fail("Cor inválida.");
     const offset = Math.min(200, Math.max(0, Math.round(Number(f.offset)) || 20));
     patch.appearance = { color: f.color, avatar_text: (f.avatar_text || "AI").slice(0, 2).toUpperCase(), suggested_questions: list(formData.get("suggested")), position: f.position === "left" ? "left" : "right", offset };
+  }
+  // o rosto do chatbot (redesenho, etapa 3): olhos e acessório; a cor é a cor principal, acima
+  if ("face_eyes" in f) {
+    const face = parseFace(f.face_eyes, f.face_acc);
+    if (!face) return fail("Escolha os olhos e o acessório entre as opções.");
+    patch.face = face;
   }
   if ("lead_enabled" in f || "notify_email" in f) {
     const email = f.notify_email?.trim() || null;

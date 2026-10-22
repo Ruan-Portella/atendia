@@ -152,7 +152,7 @@ export function InboxView({
                 >
                   <span className="relative mt-0.5 shrink-0">
                     <span className="flex h-9 w-9 items-center justify-center rounded-full bg-raised text-[12px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)]">{initials(name) || "?"}</span>
-                    <BotFace color={i.botColor} size={16} className="absolute -bottom-1 -right-1 outline-2 outline-panel" />
+                    <BotFace color={i.botColor} face={i.botFace} size={16} className="absolute -bottom-1 -right-1 outline-2 outline-panel" />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="flex items-baseline gap-2">

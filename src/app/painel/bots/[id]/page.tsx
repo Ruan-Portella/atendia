@@ -83,13 +83,21 @@ import { GATE_TEXTS } from "@/lib/gate/rules";
 import { TemplateField } from "@/components/template-field";
 import { HoursFields } from "@/components/hours-fields";
 import type { RegulatedChannel } from "@/lib/gate/sales-channel";
+import { BotOverview } from "@/components/bot-overview";
+import { getBotStats, getPendingHandoffs } from "@/lib/panel";
+import { choiceLabel } from "@/lib/billing";
+import { BookOpen, LayoutDashboard, Radio, SlidersHorizontal, Workflow } from "lucide-react";
+import { FaceEditor } from "@/components/face-editor";
+import { BotFace } from "@/components/bot-face";
+import { faceOf } from "@/lib/bot-face";
 
 export const metadata = { title: "Editor do chatbot" };
 
 const TABS = [
+  ["visao", "Resumo"],
   ["fontes", "Base de conhecimento"],
   ["personalidade", "Personalidade"],
-  ["aparencia", "Aparência e marca"],
+  ["aparencia", "Rosto e aparência"],
   ["leads", "Captura de leads"],
   ["atendimento", "Atendimento humano"],
   ["roteiros", "Roteiros"],
@@ -98,15 +106,27 @@ const TABS = [
   ["evolucao", "Evolução"],
   ["whatsapp", "WhatsApp"],
   ["instagram", "Instagram"],
-  ["instalacao", "Instalação"],
+  ["instalacao", "Chat do site"],
   ["heranca", "Herança"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
+
+/**
+ * As 5 seções do chatbot (redesenho, etapa 3), no lugar das 13 abas: cada uma junta as abas que
+ * andam juntas. Os endereços (?tab=) continuam os mesmos.
+ */
+const SECTIONS: Array<{ key: string; label: string; icon: typeof BookOpen; tabs: Tab[] }> = [
+  { key: "visao", label: "Visão geral", icon: LayoutDashboard, tabs: ["visao", "conversas", "evolucao", "heranca"] },
+  { key: "conhecimento", label: "Conhecimento", icon: BookOpen, tabs: ["fontes"] },
+  { key: "comportamento", label: "Comportamento", icon: SlidersHorizontal, tabs: ["personalidade", "aparencia", "atendimento", "leads"] },
+  { key: "automacao", label: "Automação", icon: Workflow, tabs: ["roteiros", "acoes"] },
+  { key: "canais", label: "Canais", icon: Radio, tabs: ["instalacao", "whatsapp", "instagram"] },
+];
 /** O bot modelo (D', parte 2b) não atende: só a configuração comum e a Herança. */
 const TEMPLATE_TABS = new Set<string>(["fontes", "personalidade", "aparencia", "atendimento", "roteiros", "acoes", "heranca"]);
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
-  const [{ id }, sp, { agency: owner, role, member, packs }] = await Promise.all([params, searchParams, requireAgency()]);
+  const [{ id }, sp, { agency: owner, role, member, packs, bots: quotaList }] = await Promise.all([params, searchParams, requireAgency()]);
   // equipe (leva B1'): o atendente vê só as conversas do chatbot
   const canConfig = can(role, "config");
   // canais da Meta: liberação da agência no backoffice, ou abertura geral
@@ -117,7 +137,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const { data: kind } = await (await createClient()).from("bots").select("is_template").eq("id", id).maybeSingle();
   const isTemplate = Boolean(kind?.is_template);
   const tabs = TABS.filter(([t]) => (canConfig || t === "conversas") && (t === "whatsapp" ? waAllowed : t === "instagram" ? igAllowed : true) && (isTemplate ? TEMPLATE_TABS.has(t) : t !== "heranca"));
-  const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : canConfig ? "fontes" : "conversas") as Tab;
+  const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : canConfig ? (isTemplate ? "fontes" : "visao") : "conversas") as Tab;
+  // as seções com o que a pessoa pode ver, e a seção da aba aberta
+  const label = new Map<string, string>(tabs.map(([t, l]) => [t, l]));
+  const sections = SECTIONS.map((s) => ({ ...s, tabs: s.tabs.filter((t) => label.has(t)) })).filter((s) => s.tabs.length);
+  const section = sections.find((s) => s.tabs.includes(tab)) ?? sections[0];
   // Ações (C pública): dono e administrador mexem com o segundo fator; o editor só vê. Cadastrar e
   // testar não precisa do pacote; a IA só usa as ações com o Integrações
   const manageActions = can(role, "integrations");
@@ -139,8 +163,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? countLeads(supabase, id) : Promise.resolve(null),
     // a aba Fontes também: os posts do Instagram são uma fonte (E1)
-    tab === "instagram" || (tab === "fontes" && igAllowed) ? supabase.from("instagram_channels").select("ig_user_id, username, previous_username, username_changed_at, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
-    tab === "whatsapp" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
+    tab === "instagram" || tab === "visao" || (tab === "fontes" && igAllowed) ? supabase.from("instagram_channels").select("ig_user_id, username, previous_username, username_changed_at, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
+    tab === "whatsapp" || tab === "visao" ? supabase.from("whatsapp_channels").select("phone_number_id, business_id, display_phone, verified_name, created_at, disconnected_at, disconnect_reason, coexistence").eq("bot_id", id).maybeSingle() : none,
   ]);
   if (!bot) notFound();
   // uma versão publicada do modelo (parte 3) não se edita: o editor é o do modelo
@@ -216,6 +240,11 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     newChatTemplates = ch ? await listSendable(ch, { marketing: true }).catch(() => []) : null;
   }
   const embedSnippet = `<script src="${base}/widget.js" data-key="${bot.public_key}" async></script>`;
+  // Visão geral (redesenho, etapa 3): os números dos últimos 30 dias e quem espera agora
+  const overview = tab === "visao"
+    ? await Promise.all([getBotStats(supabase, daysAgoIso(30), [id]), getPendingHandoffs(supabase, [id])]).then(([stats, pending]) => ({ stats: stats.of(id), waiting: pending.filter((h) => handoffStatus(h)?.waiting).length }))
+    : null;
+  const quotaRow = quotaList.find((q) => q.botId === id) ?? null;
 
   return (
     <div className="-mx-4 -my-5 flex min-h-full flex-col sm:-mx-6 sm:-my-7 lg:-mx-9">
@@ -228,7 +257,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           <Link href={bot.is_demo ? "/painel/demos" : "/painel/clientes"} className="text-sm font-semibold text-muted">← {bot.is_demo ? "Demos" : "Clientes"}</Link>
         )}
         <span className="hidden text-line sm:inline">/</span>
-        <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: color }}>{appearance.avatar_text ?? initials(bot.client_name)}</span>
+        <BotFace color={color} face={bot.face} size={28} alive />
         <span className="display min-w-0 truncate text-base font-bold sm:text-lg">{bot.name} · {bot.client_name}</span>
         <Status status={bot.is_template ? "template" : bot.is_demo ? "demo" : bot.status} />
         {canConfig && <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
@@ -324,13 +353,42 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
       {/* a aba Evolução (a tabela) usa a largura toda, sem o teste ao vivo */}
       <div className={`grid flex-1 ${tab === "evolucao" ? "lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]" : "lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]"}`}>
         {/* no desktop as abas ficam presas no topo ao rolar; a linha divisória fica no conteúdo */}
-        <nav className="flex flex-row items-center gap-1 overflow-x-auto border-b border-line px-3 py-2 [scrollbar-width:none] lg:sticky lg:top-0 lg:max-h-dvh lg:flex-col lg:items-stretch lg:self-start lg:overflow-y-auto lg:border-b-0 lg:p-3.5">
-          {tabs.map(([key, label]) => (
-            <Link key={key} href={`/painel/bots/${id}?tab=${key}`} className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm lg:py-2.5 ${tab === key ? "bg-brand-soft font-semibold text-brand" : "font-medium text-ink-2 hover:bg-ground"}`}>
-              {label}
-            </Link>
-          ))}
-          {canConfig && <div className="ml-auto shrink-0 lg:ml-0 lg:mt-3 lg:border-t lg:border-line-2 lg:pt-3">
+        {/* as 5 seções (redesenho, etapa 3): no computador, a coluna com as abas da seção aberta embaixo;
+            no celular, a fileira das seções e a das abas */}
+        <nav aria-label="Seções do chatbot" className="flex flex-col gap-2 border-b border-line px-3 py-2 lg:sticky lg:top-0 lg:max-h-dvh lg:self-start lg:overflow-y-auto lg:border-b-0 lg:p-3.5">
+          <div className="flex flex-row gap-1 overflow-x-auto [scrollbar-width:none] lg:flex-col lg:overflow-visible">
+            {sections.map((s) => {
+              const on = s.key === section.key;
+              const Icon = s.icon;
+              return (
+                <div key={s.key} className="flex shrink-0 flex-col">
+                  <Link href={`/painel/bots/${id}?tab=${s.tabs[0]}`} aria-current={on && s.tabs.length === 1 ? "page" : undefined} className={`flex items-center gap-2.5 whitespace-nowrap rounded-[10px] px-3 py-2 text-sm transition-colors duration-[120ms] lg:py-2.5 ${on ? "bg-raised font-medium text-ink" : "text-ink-2 hover:bg-raised/60 hover:text-ink"}`}>
+                    <Icon size={16} className={on ? "text-brand" : "text-muted"} />
+                    {s.label}
+                  </Link>
+                  {on && s.tabs.length > 1 && (
+                    <div className="ml-[21px] mt-1 hidden flex-col gap-0.5 border-l border-line pl-2.5 lg:flex">
+                      {s.tabs.map((t) => (
+                        <Link key={t} href={`/painel/bots/${id}?tab=${t}`} aria-current={t === tab ? "page" : undefined} className={`rounded-[8px] px-2.5 py-1.5 text-[13px] transition-colors duration-[120ms] ${t === tab ? "bg-brand-soft font-medium text-brand" : "text-muted hover:text-ink"}`}>
+                          {label.get(t)}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {section.tabs.length > 1 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] lg:hidden">
+              {section.tabs.map((t) => (
+                <Link key={t} href={`/painel/bots/${id}?tab=${t}`} aria-current={t === tab ? "page" : undefined} className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] ${t === tab ? "bg-ink font-medium text-ground" : "bg-raised/70 text-ink-2"}`}>
+                  {label.get(t)}
+                </Link>
+              ))}
+            </div>
+          )}
+          {canConfig && <div className="hidden shrink-0 lg:mt-3 lg:block lg:border-t lg:border-line-2 lg:pt-3">
             <ConfirmAction
               action={deleteBot.bind(null, id, bot.client_id ? `/painel/clientes/${bot.client_id}` : bot.is_demo ? "/painel/demos" : "/painel/clientes")}
               title={`Excluir ${bot.is_template ? "este modelo" : bot.is_demo ? "esta demo" : "este chatbot"}?`}
@@ -348,6 +406,28 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         </nav>
 
         <section className="flex min-w-0 flex-col gap-5 px-4 py-5 pb-24 sm:px-5 md:px-7 md:py-6 lg:border-l lg:border-line lg:pb-6">
+          {tab === "visao" && overview && (
+            <BotOverview
+              botId={id}
+              name={bot.name}
+              clientName={bot.client_name}
+              status={bot.is_template ? "template" : bot.is_demo ? "demo" : bot.status}
+              color={color}
+              face={bot.face}
+              paused={Boolean(bot.paused_at)}
+              readySources={readySources}
+              canConfig={canConfig}
+              stats={overview.stats}
+              waiting={overview.waiting}
+              quota={quotaRow ? { used: quotaRow.used, quota: quotaRow.quota, sizeLabel: choiceLabel({ size: quotaRow.size, volumePacks: quotaRow.volumePacks }) } : null}
+              canBill={can(role, "billing")}
+              site={bot.installed_at && bot.installed_host ? { host: bot.installed_host as string, lastSeen: (bot.last_seen_at as string | null) ?? null } : null}
+              whatsapp={waAllowed ? { label: (whatsapp?.display_phone as string | null) ?? null, connected: Boolean(whatsapp && !whatsapp.disconnected_at) } : null}
+              instagram={igAllowed ? { label: (instagram?.username as string | null) ?? null, connected: Boolean(instagram && !instagram.disconnected_at) } : null}
+              hasFace={Boolean(bot.face)}
+            />
+          )}
+
           {tab === "fontes" && (
             <>
               <div>
@@ -486,14 +566,13 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "aparencia" && (
-            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[640px] flex-col gap-4">
-              <div><h2 className="text-[22px] font-medium">Aparência e marca</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"} nunca aparece.</p></div>
-              {!opens("aparencia") && <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">A aparência vem do modelo {templateRow?.name}: muda só lá.</p>}
+            <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex max-w-[760px] flex-col gap-4">
+              <div><h2 className="text-[22px] font-medium">Rosto e aparência</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"} nunca aparece.</p></div>
+              {!opens("aparencia") && <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">A aparência vem do modelo {templateRow?.name}: muda só lá. O rosto (olhos e acessório) é deste chatbot.</p>}
+              {/* o rosto do chatbot (redesenho, etapa 3): a cor, os olhos e o acessório, com as prévias */}
+              <FaceEditor initialColor={color} initialFace={faceOf(bot.face)} botName={bot.name} clientName={bot.client_name} colorLocked={!opens("aparencia")} />
               <fieldset disabled={!opens("aparencia")} className="contents">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div><label htmlFor="color" className="label">Cor principal</label><input id="color" name="color" type="color" defaultValue={color} className="input h-11 p-1" /></div>
-                <div><label htmlFor="avatar_text" className="label">Iniciais do avatar</label><input id="avatar_text" name="avatar_text" maxLength={2} defaultValue={appearance.avatar_text ?? initials(bot.client_name)} className="input" /></div>
-              </div>
+              <input type="hidden" name="avatar_text" value={appearance.avatar_text ?? initials(bot.client_name)} />
               <div><label htmlFor="suggested" className="label">Perguntas sugeridas (uma por linha, até 6)</label><textarea id="suggested" name="suggested" rows={4} defaultValue={(appearance.suggested_questions ?? []).join("\n")} className="input" /></div>
               <div className="border-t border-line pt-4">
                 <h3 className="text-sm font-semibold">Balão no site do cliente</h3>
@@ -501,7 +580,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <WidgetPositionPicker position={appearance.position === "left" ? "left" : "right"} offset={Number(appearance.offset ?? 20)} color={color} />
               </div>
               </fieldset>
-              {opens("aparencia") && <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>}
+              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
             </ActionForm>
           )}
 
@@ -972,7 +1051,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             </div>
             {readySources ? (
               // com roteiro em andamento no teste, a faixa do passo atual fica em cima do chat
-              <LiveTest botId={bot.id} hasRoutines={hasLiveRoutines} chatClassName="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]" bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
+              <LiveTest botId={bot.id} hasRoutines={hasLiveRoutines} chatClassName="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]" bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), face: bot.face ?? null, welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
               />
             ) : (
               <div className="h-[560px] overflow-hidden rounded-2xl shadow-[0_12px_32px_rgba(27,31,29,0.12)]">
@@ -984,7 +1063,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
         {/* abaixo de lg o teste ao vivo abre por um botão flutuante */}
         <ChatPreviewSheet disabledReason={!readySources ? "Adicione uma fonte para testar o assistente." : null}>
-          <LiveTest botId={bot.id} hasRoutines={hasLiveRoutines} className="h-full gap-0" chatClassName="min-h-0 flex-1" bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
+          <LiveTest botId={bot.id} hasRoutines={hasLiveRoutines} className="h-full gap-0" chatClassName="min-h-0 flex-1" bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color, avatarText: appearance.avatar_text ?? initials(bot.client_name), face: bot.face ?? null, welcome: persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: appearance.suggested_questions ?? [], poweredBy: agency.name, privacyUrl: agency.privacy_url, handoffButton: Boolean(handoff.widget_button) }}
           />
         </ChatPreviewSheet>
       </div>

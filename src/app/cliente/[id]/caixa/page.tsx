@@ -18,7 +18,7 @@ export default async function MemberInboxPage({ params, searchParams }: PageProp
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const { member, admin, botIds } = await requireMember(id);
   if (!member.allowHandoff) notFound();
-  const { data: botRows } = botIds.length ? await admin.from("bots").select("id, name, client_name, client_id, human_handoff, sensitive_mode, appearance").in("id", botIds) : { data: [] };
+  const { data: botRows } = botIds.length ? await admin.from("bots").select("id, name, client_name, client_id, human_handoff, sensitive_mode, appearance, face").in("id", botIds) : { data: [] };
   const bots = (botRows ?? []) as InboxBot[];
   const [sectors, mySectorIds, { data: client }] = await Promise.all([
     listSectors(admin, [id]),

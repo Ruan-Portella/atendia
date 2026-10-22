@@ -23,7 +23,7 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   const [sp, { member, role }] = await Promise.all([searchParams, requireAgency()]);
   const supabase = await createClient();
   const admin = createAdminClient();
-  const { data: botRows } = await supabase.from("bots").select("id, name, client_name, client_id, human_handoff, sensitive_mode, appearance").eq("is_demo", false).eq("is_template", false);
+  const { data: botRows } = await supabase.from("bots").select("id, name, client_name, client_id, human_handoff, sensitive_mode, appearance, face").eq("is_demo", false).eq("is_template", false);
   const bots = (botRows ?? []) as InboxBot[];
   const clientIds = [...new Set(bots.map((b) => b.client_id).filter((c): c is string => Boolean(c)))];
   const [sectors, mySectorIds, { data: clients }] = await Promise.all([

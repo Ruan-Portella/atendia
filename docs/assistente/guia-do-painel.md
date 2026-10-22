@@ -29,7 +29,7 @@ O painel abre no tema escuro. Para trocar, clique no seu nome no rodapé do menu
 3. No painel, em Clientes, crie o cliente e um chatbot para ele (no perfil do próprio negócio, o cliente é o próprio negócio).
 4. No chatbot, aba Base de conhecimento, adicione o site, PDFs, textos ou perguntas frequentes do cliente.
 5. Ajuste a aba Personalidade (nome do assistente, tom, instruções) e teste no "teste ao vivo".
-6. Quando estiver bom, escolha um tamanho para o chatbot (em Cobrança) e conecte os canais: o chat do site (aba Instalação), o WhatsApp e o Instagram.
+6. Quando estiver bom, escolha um tamanho para o chatbot (em Cobrança) e conecte os canais: o chat do site (em Canais → Chat do site, na página do chatbot), o WhatsApp e o Instagram.
 
 ## Conta grátis
 
@@ -72,6 +72,14 @@ Nos 7 dias do pagamento que abre a assinatura, o dono pode desistir em Cobrança
 
 Se o pagamento da assinatura falhar, a IA fica pausada em todos os chatbots até a fatura ser paga: as mensagens continuam chegando em Conversas para a equipe responder. Para resolver, pague a fatura em aberto ou troque o cartão em Cobrança. Para assinar de novo, primeiro paga a fatura em aberto.
 
+## A página do chatbot
+
+A página de cada chatbot tem 5 seções, na coluna da esquerda (no celular, numa fileira no alto): Visão geral (o resumo, as conversas, a evolução mês a mês e, no modelo, a herança), Conhecimento (a base, o aviso do momento e as perguntas sem resposta), Comportamento (personalidade, rosto e aparência, atendimento humano e captura de leads), Automação (roteiros e ações) e Canais (chat do site, WhatsApp e Instagram). A seção aberta mostra as abas dela logo abaixo. O resumo, que abre primeiro, mostra o rosto, a situação, os números dos últimos 30 dias (conversas, leads, resolvidas sem humano e os atendimentos do mês com a cota), os canais (instalado, conectado ou não) e o que falta para ele ficar pronto: uma fonte pronta na base, o rosto, o tamanho, um canal ligado e estar no ar, cada um com o atalho para resolver.
+
+## Rosto do chatbot
+
+Cada chatbot tem um rosto: um ícone na cor dele, com os olhos escolhidos (pílula, redondo, feliz, sonolento ou piscadinha) e, no rosto grande, um acessório (chapéu de chef, óculos ou fone de atendimento). Ele aparece no menu (ao lado de cada cliente), na lista da Caixa de entrada, nas respostas da IA na conversa, no Ir para e no topo do chat do site (em branco com os olhos na cor, no lugar das iniciais). Para mudar, abra o chatbot, Comportamento → Rosto e aparência (ou "Mudar o rosto" na Visão geral): escolha a cor (uma das prontas ou qualquer outra), os olhos e o acessório, veja como ele fica no menu, na conversa e no chat do site, e salve. A cor é a mesma do balão e do topo do chat do site. No chatbot que segue um modelo, a cor vem do modelo, mas os olhos e o acessório são dele.
+
 ## Modelos de chatbot
 
 Com o pacote Plataforma, o menu Modelos junta o que vários chatbots têm em comum: a personalidade, as instruções, os assuntos do negócio, as ações, os roteiros e a base de conhecimento. Cada chatbot criado do modelo (na aba Herança do modelo, um por cliente ou por loja, com o contexto fixo opcional) usa a versão publicada do modelo. O que você muda no modelo (personalidade, instruções, assuntos, ações e roteiros) fica no rascunho, e o teste ao vivo do modelo usa o rascunho; os derivados só recebem ao clicar em Publicar, no topo do modelo, que mostra quantos chatbots a publicação afeta. Cada publicação vira uma versão, e a aba Herança deixa voltar os derivados para uma versão anterior em um clique. A base de conhecimento, o que o modelo libera e o que vem pela API valem na hora, sem publicar. O modelo decide o que cada derivado pode mudar: o nome do assistente, a saudação, a aparência, o anúncio dos atendentes, instruções extras (somadas às do modelo) e uma base própria. Na saudação do modelo, {empresa} vira o nome do cliente de cada derivado e {assistente}, o nome do assistente. O derivado usa a base do modelo: o teste ao vivo e o Publicar dele contam as fontes do modelo. No derivado, os campos travados aparecem só para leitura, com o valor do modelo, e as abas Ações e Roteiros mostram os do modelo, com o link para mudar lá. Um campo liberado que o derivado mudou fica como valor próprio, e "Voltar ao modelo" desfaz. "Desligar do modelo", na faixa do topo do derivado, deixa o chatbot independente, com uma cópia das ações, dos roteiros e da base do modelo, e não dá para ligar de novo. O modelo não atende ninguém: não tem canais, tamanho nem cobrança, e o teste ao vivo dele fica no painel. Um modelo com derivados não pode ser excluído. Se um cliente for levado para outra conta (só pelo suporte do BoaVoz, a pedido do próprio negócio), o chatbot dele vira chatbot comum, com uma cópia da versão do modelo que usava. Pela API (pacote Plataforma, rotas POST /v1/clients e POST /v1/bots), o sistema da plataforma cria sozinho cada cliente e o chatbot dele a partir do modelo, com o contexto e os dados da loja (o chatbot já nasce no ar quando o modelo tem fonte pronta); o id do modelo para a API fica na aba Herança, e o cliente criado assim mostra o id dele no sistema da plataforma, ao lado do nome.
@@ -98,7 +106,7 @@ Quando o assistente não acha a resposta na base, ele diz que não tem a informa
 
 ## Personalidade e instruções
 
-Na aba Personalidade ficam o nome do assistente, o tom (por exemplo, amigável e direto), o idioma, as instruções da empresa e os assuntos que o negócio também atende. O "teste ao vivo" mostra como o assistente responde antes de ligar os canais. A aparência do chat do site (cores, logo, saudação, perguntas sugeridas) fica na aba Aparência e marca.
+Na aba Personalidade ficam o nome do assistente, o tom (por exemplo, amigável e direto), o idioma, as instruções da empresa e os assuntos que o negócio também atende. O "teste ao vivo" mostra como o assistente responde antes de ligar os canais. A aparência do chat do site (cores, logo, saudação, perguntas sugeridas) fica em Comportamento → Rosto e aparência, junto do rosto do chatbot.
 
 ## Memória do assistente
 
@@ -162,7 +170,7 @@ Na aba Atendimento humano do chatbot, dá para ligar a pesquisa de satisfação 
 
 ## Chat do site (widget)
 
-O chat do site é instalado com o código da aba Instalação do chatbot (funciona em WordPress, Wix, Webflow, Shopify e qualquer HTML), ou pelo link de página própria. Ele guarda a conversa, mostra quando alguém da equipe entra e, quando a IA para (pausa, cota cheia, pagamento), mostra um formulário de contato que vira lead. Um app ou site com login pode identificar a pessoa (ChatWidget.identify), para o assistente saber quem é.
+O chat do site é instalado com o código de Canais → Chat do site, na página do chatbot (funciona em WordPress, Wix, Webflow, Shopify e qualquer HTML), ou pelo link de página própria. Ele guarda a conversa, mostra quando alguém da equipe entra e, quando a IA para (pausa, cota cheia, pagamento), mostra um formulário de contato que vira lead. Um app ou site com login pode identificar a pessoa (ChatWidget.identify), para o assistente saber quem é.
 
 ## Conectar o WhatsApp de um cliente
 

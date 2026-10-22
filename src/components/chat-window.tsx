@@ -1,6 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
+import { BotFace } from "@/components/bot-face";
 import { useRouter } from "next/navigation";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -14,6 +15,8 @@ export interface ChatBotPublic {
   clientName: string;
   color: string;
   avatarText: string;
+  /** o rosto do chatbot (redesenho, etapa 3): com ele, o topo mostra o rosto no lugar das iniciais */
+  face?: unknown;
   welcome: string;
   suggestedQuestions: string[];
   poweredBy?: string | null; // nome da agência (white-label) ou null para esconder
@@ -526,9 +529,13 @@ export function ChatWindow({
   return (
     <div className="flex h-full flex-col bg-white text-[#1b1f1d]" style={{ fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" }}>
       <div className="flex items-center gap-2.5 px-4 py-3 text-white" style={{ background: bot.color }}>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold" style={{ color: bot.color }}>
-          {bot.avatarText}
-        </div>
+        {bot.face ? (
+          <BotFace color={bot.color} face={bot.face} size={36} inverted />
+        ) : (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold" style={{ color: bot.color }}>
+            {bot.avatarText}
+          </div>
+        )}
         <div className="min-w-0 leading-tight">
           <div className="text-[15px] font-semibold">{bot.name}</div>
           <div className="text-xs opacity-85">{bot.clientName} · {bot.ticket?.mode === "sozinho" ? "abra um chamado" : "responde na hora"}</div>

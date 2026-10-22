@@ -81,7 +81,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, origin_label, last_contact_at, snoozed_until, snoozed_at, ticket_protocol, ticket_status, ticket_subject, bots(name, client_id, client_name, sensitive_mode, appearance)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, origin_label, last_contact_at, snoozed_until, snoozed_at, ticket_protocol, ticket_status, ticket_subject, bots(name, client_id, client_name, sensitive_mode, appearance, face)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -98,7 +98,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
     leadsOfConversation(supabase, cid),
     requireAgency(),
   ]);
-  const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { name: string; client_id: string | null; client_name: string; appearance: { color?: string | null } | null } | null;
+  const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { name: string; client_id: string | null; client_name: string; appearance: { color?: string | null } | null; face: unknown } | null;
   const takeOver = takeOverConversation.bind(null, cid);
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com
@@ -249,7 +249,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
             moreHref={earlierHref ?? ((n) => `/painel/bots/${id}/conversas/${cid}?ant=${n}`)}
             agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}
             contactName={who}
-            bot={bot ? { name: bot.name, color: bot.appearance?.color ?? null } : null}
+            bot={bot ? { name: bot.name, color: bot.appearance?.color ?? null, face: bot.face } : null}
             showTrace
           />
           <ConversationThread
@@ -261,7 +261,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
             contextChange={conv.context_since ? { at: conv.context_since as string, label: conv.context_display ? `contexto: ${conv.context_display as string}` : "sem conta conectada" } : null}
             agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}
             contactName={who}
-            bot={bot ? { name: bot.name, color: bot.appearance?.color ?? null } : null}
+            bot={bot ? { name: bot.name, color: bot.appearance?.color ?? null, face: bot.face } : null}
             showTrace
           />
         </div>

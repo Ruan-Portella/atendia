@@ -42,7 +42,7 @@ export default async function WidgetPage({ params, searchParams }: PageProps<"/w
           embedded
           identity={identity}
           initialProtocol={initialProtocol}
-          bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color: bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d", avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), welcome: bot.persona?.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button), ticket: publicTicket(bot.ticket_form, Boolean(wa && !wa.disconnected_at)) }}
+          bot={{ key: bot.public_key, name: bot.name, clientName: bot.client_name, color: bot.appearance?.color ?? agency?.brand_color ?? "#1f4e3d", avatarText: bot.appearance?.avatar_text ?? initials(bot.client_name), face: bot.face ?? null, welcome: bot.persona?.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`, suggestedQuestions: bot.appearance?.suggested_questions ?? [], poweredBy: agency?.name ?? null, privacyUrl: agency?.privacy_url ?? null, handoffButton: Boolean((bot.human_handoff as { widget_button?: boolean } | null)?.widget_button), ticket: publicTicket(bot.ticket_form, Boolean(wa && !wa.disconnected_at)) }}
         />
       )}
     </WidgetFrame>

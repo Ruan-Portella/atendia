@@ -58,7 +58,7 @@ export async function EarlierConversations({
   moreHref: (n: number) => string;
   agentLabel: (m: ThreadMessage) => string;
   contactName: string | null;
-  bot: { name: string; color?: string | null } | null;
+  bot: { name: string; color?: string | null; face?: unknown } | null;
   showTrace?: boolean;
   withNotes?: boolean;
 }) {

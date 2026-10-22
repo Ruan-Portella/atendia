@@ -1,28 +1,73 @@
+import type { CSSProperties } from "react";
+import { faceOf, type EyeStyle } from "@/lib/bot-face";
 import { cn } from "@/lib/utils";
 
+const INK = "#141413";
+/** o fone fica em volta do rosto, fora da cor dele: um cinza que aparece no tema escuro e no claro */
+const HEADSET = "#76766f";
+
+function eyeStyle(kind: EyeStyle | "linha", s: number, color: string): CSSProperties {
+  if (kind === "redondo") return { width: s * 0.17, height: s * 0.17, borderRadius: "50%", background: color };
+  if (kind === "feliz") {
+    const t = Math.max(1.5, s * 0.055);
+    return { width: s * 0.15, height: s * 0.15, borderTop: `${t}px solid ${color}`, borderLeft: `${t}px solid ${color}`, borderRadius: s * 0.02, transform: `rotate(45deg) translate(${s * 0.03}px, ${s * 0.03}px)` };
+  }
+  if (kind === "linha") return { width: s * 0.18, height: Math.max(2, s * 0.05), borderRadius: s * 0.03, background: color };
+  const w = Math.max(2, Math.round(s * 0.13));
+  return { width: w, height: Math.max(4, Math.round(s * 0.27)), borderRadius: w, background: color };
+}
+
 /**
- * Rosto do chatbot (redesenho): o ícone de app, um quadrado arredondado na cor do chatbot com
- * dois olhos brancos. Aparece no menu, na Caixa de entrada e nos relatórios. `alive` pisca e
- * olha para os lados (só onde ajuda a achar o chatbot; quem pede menos movimento não vê).
+ * Rosto do chatbot (redesenho): o ícone de app, um quadrado arredondado na cor do chatbot com os
+ * olhos escolhidos (e o acessório, nos tamanhos grandes). Aparece no menu, na Caixa de entrada, no
+ * Ir para, na conversa, no editor e no chat do site. `alive` pisca e olha para os lados (quem pede
+ * menos movimento não vê); `inverted` é o rosto em branco com os olhos na cor (no topo do chat do site).
  */
-export function BotFace({ color, size = 28, alive = false, className, title }: { color: string | null | undefined; size?: number; alive?: boolean; className?: string; title?: string }) {
-  const eyeW = Math.max(2, Math.round(size * 0.13));
-  const eyeH = Math.max(4, Math.round(size * 0.27));
+export function BotFace({ color, face, size = 28, alive = false, inverted = false, className, title }: { color: string | null | undefined; face?: unknown; size?: number; alive?: boolean; inverted?: boolean; className?: string; title?: string }) {
+  const f = faceOf(face);
+  const s = size;
+  const bg = color || "#4ed19b";
+  const eyeColor = inverted ? bg : "#fff";
+  const left: EyeStyle | "linha" = f.eyes === "sonolento" ? "linha" : f.eyes === "piscadinha" ? "pilula" : f.eyes;
+  const right: EyeStyle | "linha" = f.eyes === "sonolento" || f.eyes === "piscadinha" ? "linha" : f.eyes;
+  // os acessórios só nos tamanhos grandes: no menu e na lista eles virariam um borrão
+  const acc = s >= 40 ? f.acc : "nenhum";
   return (
     <span
       role={title ? "img" : undefined}
       aria-label={title}
       aria-hidden={title ? undefined : true}
       className={cn("relative inline-flex shrink-0 items-center justify-center", className)}
-      style={{ width: size, height: size, borderRadius: Math.round(size * 0.3), background: color || "#4ed19b", boxShadow: `inset 0 -${Math.max(1, Math.round(size / 20))}px 0 #00000033, inset 0 1px 0 #ffffff40` }}
+      style={{ width: s, height: s, borderRadius: Math.round(s * 0.3), background: inverted ? "#fff" : bg, boxShadow: inverted ? undefined : `inset 0 -${Math.max(1, Math.round(s / 20))}px 0 #00000033, inset 0 1px 0 #ffffff40` }}
     >
-      <span className="flex items-center" style={{ gap: Math.max(2, Math.round(size * 0.14)), animation: alive ? "bv-look 6s ease-in-out infinite" : undefined }}>
-        {[0, 1].map((i) => (
-          <span key={i} className="inline-flex" style={{ animation: alive ? "bv-blink 4s infinite" : undefined }}>
-            <span style={{ width: eyeW, height: eyeH, borderRadius: eyeW, background: "#fff" }} />
+      <span className="flex items-center" style={{ gap: Math.max(2, Math.round(s * 0.14)), animation: alive ? "bv-look 6s ease-in-out infinite" : undefined }}>
+        {[left, right].map((k, i) => (
+          <span key={i} className="inline-flex items-center" style={{ animation: alive ? "bv-blink 4s infinite" : undefined }}>
+            <span style={eyeStyle(k, s, eyeColor)} />
           </span>
         ))}
       </span>
+      {acc === "chef" && (
+        <span aria-hidden className="absolute left-1/2 flex flex-col items-center" style={{ top: -s * 0.3, width: s * 0.62, marginLeft: -s * 0.31 }}>
+          <span style={{ width: s * 0.62, height: s * 0.32, borderRadius: `${s * 0.18}px ${s * 0.18}px ${s * 0.08}px ${s * 0.08}px`, background: "#f7f6f2", boxShadow: "inset 0 -3px 0 #00000014" }} />
+          <span style={{ width: s * 0.48, height: s * 0.1, marginTop: -2, borderRadius: s * 0.03, background: "#e6e4dc" }} />
+        </span>
+      )}
+      {acc === "oculos" && (
+        <span aria-hidden className="absolute left-1/2 top-1/2 flex items-center" style={{ width: s * 0.8, height: s * 0.32, marginLeft: -s * 0.4, marginTop: -s * 0.16 }}>
+          <span style={{ width: s * 0.32, height: s * 0.29, borderRadius: s * 0.09, border: `${Math.max(2, s * 0.032)}px solid ${INK}`, background: "#ffffff14" }} />
+          <span style={{ flex: 1, height: Math.max(2, s * 0.032), background: INK }} />
+          <span style={{ width: s * 0.32, height: s * 0.29, borderRadius: s * 0.09, border: `${Math.max(2, s * 0.032)}px solid ${INK}`, background: "#ffffff14" }} />
+        </span>
+      )}
+      {acc === "fone" && (
+        <>
+          <span aria-hidden className="absolute" style={{ top: -s * 0.12, left: -s * 0.08, width: s * 1.16, height: s * 0.68, borderTop: `${Math.max(2, s * 0.055)}px solid ${HEADSET}`, borderLeft: `${Math.max(2, s * 0.055)}px solid ${HEADSET}`, borderRight: `${Math.max(2, s * 0.055)}px solid ${HEADSET}`, borderRadius: `${s * 0.58}px ${s * 0.58}px 0 0` }} />
+          <span aria-hidden className="absolute" style={{ top: s * 0.4, left: -s * 0.12, width: s * 0.14, height: s * 0.3, borderRadius: s * 0.05, background: HEADSET }} />
+          <span aria-hidden className="absolute" style={{ top: s * 0.4, right: -s * 0.12, width: s * 0.14, height: s * 0.3, borderRadius: s * 0.05, background: HEADSET }} />
+          <span aria-hidden className="absolute" style={{ top: s * 0.66, right: -s * 0.02, width: s * 0.38, height: Math.max(2, s * 0.045), borderRadius: s * 0.03, background: HEADSET, transform: "rotate(18deg)", transformOrigin: "right center" }} />
+        </>
+      )}
     </span>
   );
 }

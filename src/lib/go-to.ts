@@ -17,8 +17,9 @@ export interface GoToItem {
   href?: string;
   /** Ações que não são um endereço (tema, sair): o componente resolve pelo id. */
   run?: "tema-escuro" | "tema-claro" | "tema-sistema" | "sair";
-  /** Cor do chatbot (cliente e chatbot aparecem com o rosto). */
+  /** Cor e rosto do chatbot (cliente e chatbot aparecem com o rosto). */
   color?: string | null;
+  face?: unknown;
   keywords?: string;
 }
 

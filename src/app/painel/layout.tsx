@@ -47,14 +47,14 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
   const supabase = await createClient();
   const { data: clientRows, count: clientCount } = await supabase
     .from("clients")
-    .select("id, name, bots(id, appearance, is_demo, created_at)", { count: "exact" })
+    .select("id, name, bots(id, appearance, face, is_demo, created_at)", { count: "exact" })
     .eq("agency_id", agency.id)
     .eq("bots.is_demo", false)
     .order("name")
     .limit(50);
   const sidebarClients: SidebarClient[] = (clientRows ?? []).map((c) => {
-    const bots = ((c.bots ?? []) as Array<{ id: string; appearance: { color?: string } | null; created_at: string }>).sort((a, b) => a.created_at.localeCompare(b.created_at));
-    return { id: c.id as string, name: c.name as string, color: bots[0]?.appearance?.color ?? null, botIds: bots.map((b) => b.id) };
+    const bots = ((c.bots ?? []) as Array<{ id: string; appearance: { color?: string } | null; face: unknown; created_at: string }>).sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return { id: c.id as string, name: c.name as string, color: bots[0]?.appearance?.color ?? null, face: bots[0]?.face ?? null, botIds: bots.map((b) => b.id) };
   });
   const banners = [
     notices.aiPaused && "A IA da sua conta está pausada pela equipe BoaVoz. As mensagens continuam chegando em Conversas para a sua equipe responder; no site, os visitantes veem o formulário de contato. Dúvidas: fale com o suporte.",
@@ -75,7 +75,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       clients={sidebarClients}
       clientCount={clientCount ?? sidebarClients.length}
       me={{ name: memberName(member), email: member.email, avatarUrl: member.avatar_url ?? null }}
-      goTo={<GoTo role={role} packs={packs} clients={sidebarClients.map(({ id, name, color }) => ({ id, name, color }))} />}
+      goTo={<GoTo role={role} packs={packs} clients={sidebarClients.map(({ id, name, color, face }) => ({ id, name, color, face }))} />}
       menuCollapsed={(await cookies()).get(MENU_COOKIE)?.value === "fechado"}
       notices={
         <>

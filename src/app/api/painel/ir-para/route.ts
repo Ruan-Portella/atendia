@@ -5,8 +5,8 @@ import type { GoToGroup, GoToItem } from "@/lib/go-to";
 
 const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Chat do site" };
 
-type BotRow = { id: string; name: string; client_name: string | null; appearance: { color?: string } | null; status: string; is_demo: boolean };
-type ClientRow = { id: string; name: string; bots: Array<{ appearance: { color?: string } | null; is_demo: boolean; created_at: string }> | null };
+type BotRow = { id: string; name: string; client_name: string | null; appearance: { color?: string } | null; face: unknown; status: string; is_demo: boolean };
+type ClientRow = { id: string; name: string; bots: Array<{ appearance: { color?: string } | null; face: unknown; is_demo: boolean; created_at: string }> | null };
 
 /**
  * Busca do Ir para (Ctrl K): contatos, a conversa mais recente de cada um, clientes e chatbots.
@@ -25,8 +25,8 @@ export async function POST(req: Request) {
 
   const [contacts, clientRes, botRes] = await Promise.all([
     goToContacts(supabase, term).catch(() => []),
-    supabase.from("clients").select("id, name, bots(appearance, is_demo, created_at)").ilike("name", like).order("name").limit(5),
-    supabase.from("bots").select("id, name, client_name, appearance, status, is_demo").ilike("name", like).order("name").limit(5),
+    supabase.from("clients").select("id, name, bots(appearance, face, is_demo, created_at)").ilike("name", like).order("name").limit(5),
+    supabase.from("bots").select("id, name, client_name, appearance, face, status, is_demo").ilike("name", like).order("name").limit(5),
   ]);
 
   const ids = contacts.map((c) => c.id);
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
   });
   const clientItems: GoToItem[] = ((clientRes.data ?? []) as ClientRow[]).map((c) => {
     const first = (c.bots ?? []).filter((b) => !b.is_demo).sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
-    return { id: c.id, kind: "client", title: c.name, sub: "Cliente", href: `/painel/clientes/${c.id}`, color: first?.appearance?.color ?? null };
+    return { id: c.id, kind: "client", title: c.name, sub: "Cliente", href: `/painel/clientes/${c.id}`, color: first?.appearance?.color ?? null, face: first?.face ?? null };
   });
   const botItems: GoToItem[] = ((botRes.data ?? []) as BotRow[]).map((b) => ({
     id: `bot-${b.id}`,
@@ -60,6 +60,7 @@ export async function POST(req: Request) {
     sub: [b.is_demo ? "Demo" : b.client_name, b.status === "live" ? "no ar" : null].filter(Boolean).join(" · "),
     href: `/painel/bots/${b.id}`,
     color: b.appearance?.color ?? null,
+    face: b.face ?? null,
   }));
 
   const groups: GoToGroup[] = [
