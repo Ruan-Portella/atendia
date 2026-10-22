@@ -41,11 +41,22 @@ export function PanelShell({ agency, role, packs = [], accountLabel, usage, limi
   const [open, setOpen] = useState(false);
   // recolher o menu do computador (redesenho): só os ícones; a escolha fica no navegador
   const [collapsed, setCollapsed] = useState(menuCollapsed);
-  const toggleMenu = () => {
-    const next = !collapsed;
-    setCollapsed(next);
-    document.cookie = `${MENU_COOKIE}=${next ? "fechado" : "aberto"}; path=/; max-age=31536000; samesite=lax`;
-  };
+  const toggleMenu = () => setCollapsed((c) => !c);
+  useEffect(() => {
+    document.cookie = `${MENU_COOKIE}=${collapsed ? "fechado" : "aberto"}; path=/; max-age=31536000; samesite=lax`;
+  }, [collapsed]);
+  // Ctrl B (⌘B no Mac): recolhe e abre o menu no computador; no celular, abre e fecha o menu deslizante
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "b") return;
+      if ((e.target as HTMLElement | null)?.isContentEditable) return;
+      e.preventDefault();
+      if (window.matchMedia("(min-width: 1024px)").matches) setCollapsed((c) => !c);
+      else setOpen((o) => !o);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const pct = Math.min(100, Math.round((usage / Math.max(1, limit)) * 100));
 
   const brandBlock = (small = false) => (
@@ -105,7 +116,7 @@ export function PanelShell({ agency, role, packs = [], accountLabel, usage, limi
       <aside className={cn("hidden shrink-0 flex-col gap-3 bg-panel p-3 text-ink shadow-[inset_-1px_0_0_var(--color-line)] transition-[width] duration-[220ms] ease-[var(--ease-out)] lg:sticky lg:top-0 lg:flex lg:h-dvh", collapsed ? "w-[68px] px-2" : "w-[256px]")}>
         <div className={cn("flex items-center gap-1 pt-1", collapsed && "flex-col")}>
           <div className="min-w-0 flex-1">{brandBlock(collapsed)}</div>
-          <button type="button" onClick={toggleMenu} aria-label={collapsed ? "Abrir o menu" : "Recolher o menu"} title={collapsed ? "Abrir o menu" : "Recolher o menu"} aria-expanded={!collapsed} className="btn-icon h-8 w-8 shrink-0">
+          <button type="button" onClick={toggleMenu} aria-label={collapsed ? "Abrir o menu" : "Recolher o menu"} aria-keyshortcuts="Control+B" title={collapsed ? "Abrir o menu (Ctrl B)" : "Recolher o menu (Ctrl B)"} aria-expanded={!collapsed} className="btn-icon h-8 w-8 shrink-0">
             {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
         </div>

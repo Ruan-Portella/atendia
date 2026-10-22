@@ -8,6 +8,7 @@ import { BotFace } from "@/components/bot-face";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ScrollRow } from "@/components/ui/scroll-row";
+import { ContactPane } from "@/components/contact-pane";
 
 const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site", painel: "Teste", demo: "Demo" };
 const FROM: Record<string, string> = { ia: "IA: ", equipe: "Equipe: ", contato: "" };
@@ -57,6 +58,7 @@ export function InboxView({
   onAvailability,
   compact = false,
   contact,
+  contactOpen = true,
   children,
 }: {
   items: InboxItem[];
@@ -74,6 +76,8 @@ export function InboxView({
   compact?: boolean;
   /** o painel do contato da conversa aberta: coluna à direita nas telas largas, senão uma faixa que abre */
   contact?: React.ReactNode;
+  /** a coluna do contato começa aberta (o cookie da pessoa; ela esconde e mostra pelo botão) */
+  contactOpen?: boolean;
   /** a conversa aberta (lado direito) */
   children?: React.ReactNode;
 }) {
@@ -204,7 +208,7 @@ export function InboxView({
             )}
             <div className="flex min-h-0 flex-1">
               <div className="min-h-0 min-w-0 flex-1">{children}</div>
-              {contact && !compact && <aside className="hidden w-[300px] shrink-0 overflow-y-auto bg-panel shadow-[inset_1px_0_0_var(--color-line)] min-[1400px]:block">{contact}</aside>}
+              {contact && !compact && <ContactPane initialOpen={contactOpen} name={selected?.contact ?? null}>{contact}</ContactPane>}
             </div>
           </>
         ) : (

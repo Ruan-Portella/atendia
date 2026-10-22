@@ -10,6 +10,8 @@ import { InboxContact } from "@/components/inbox-contact";
 import { loadInboxContact } from "@/lib/inbox-contact";
 import { requireAgencyMfa } from "@/lib/agency-mfa";
 import { setMyAvailability } from "../perfil/actions";
+import { cookies } from "next/headers";
+import { CONTACT_COOKIE } from "@/lib/theme";
 
 export const metadata = { title: "Caixa de entrada" };
 
@@ -49,7 +51,7 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
 
   return (
     <div className="-mx-4 -my-5 h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]">
-      <InboxView items={items} queue={queue} queues={queues} meId={member.id} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={clientIds.length > 1} available={member.available !== false} onAvailability={setMyAvailability}
+      <InboxView contactOpen={(await cookies()).get(CONTACT_COOKIE)?.value !== "fechado"} items={items} queue={queue} queues={queues} meId={member.id} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={clientIds.length > 1} available={member.available !== false} onAvailability={setMyAvailability}
         contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(b, c) => `/painel/bots/${b}/conversas/${c}`} contactHref={contact && canConfig && selectedBot?.client_id ? `/painel/clientes/${selectedBot.client_id}/contatos/${contact.contact.id}` : null} />}>
         {selected && <AgencyConversation botId={selected.botId} convId={selected.id} embedded back={back} />}
       </InboxView>
