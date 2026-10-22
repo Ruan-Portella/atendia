@@ -40,6 +40,13 @@ function memDb(tables: Record<string, Row[]>) {
       in: (k: string, vs: unknown[]) => (filters.push((r) => vs.includes(r[k])), b),
       limit: (n: number) => ((max = n), b),
       update: (p: Row) => ((patch = p), b),
+      upsert: async (r: Row, o?: { onConflict?: string }) => {
+        const key = o?.onConflict ?? "id";
+        const hit = rows.find((x) => x[key] === r[key]);
+        if (hit) Object.assign(hit, r);
+        else rows.push({ ...r });
+        return { error: null };
+      },
       insert: (r: Row | Row[]) => ((inserted = (Array.isArray(r) ? r : [r]).map((x) => ({ id: randomUUID(), created_at: new Date().toISOString(), linked_at: new Date().toISOString(), ...x }))), b),
       maybeSingle: async () => ({ data: run()[0] ?? null, error: null }),
       single: async () => {
@@ -148,6 +155,9 @@ describe("pareamento no WhatsApp", () => {
     expect(link).toMatchObject({ contact_id: CONTACT, channel: "whatsapp", display: { name: "Ruan", workspace_name: "Família Portella" } });
     expect(s.tables.contacts[0].active_link_id).toBe(link.id);
     expect(s.tables.conversations[0]).toMatchObject({ context_source: "pairing", context_display: "Família Portella" });
+    // quem conectou pelo código nesta conversa já está confirmado (sem o "Estou falando com...?" nela)
+    expect(s.tables.conversation_identities).toEqual([expect.objectContaining({ contact_id: CONTACT, pairing_hash: link.external_id_hash, pairing_no_at: null })]);
+    expect(s.tables.conversation_identities[0].pairing_ok_at).toBeTruthy();
     // uso único
     await handlePairing(s.io, [{ text: `Conectar ${p.code}`, buttonId: null }]);
     expect(s.replies[1].text).toBe(PAIRING_TEXTS.invalid);

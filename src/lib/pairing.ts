@@ -468,11 +468,24 @@ async function finishPairing(io: PairingIO, p: PairingRow, contactId: string, co
     return;
   }
   await setActiveLink(io.db, contactId, link.id, link.display);
-  if (convId) await applyLinkToConversation(io.db, convId, link);
+  if (convId) {
+    await applyLinkToConversation(io.db, convId, link);
+    await markPairedHere(io.db, { conversationId: convId, botId: io.bot.id, contactId, hash: link.external_id_hash });
+  }
   await io.reply(convId, PAIRING_TEXTS.linked(io.channel, linkLabel(link.display)));
   // depois da resposta: o webhook do SaaS ("WhatsApp 9xxxx-1234 conectado. Foi você?") e a checagem de identidade
   await emitLinkEvent(io.db, link.id, "linked", { conversationId: convId }).catch((e) => console.error("webhook: contact.linked", (e as Error).message));
   await io.onLinked?.().catch((e) => console.error("pareamento: depois de vincular", (e as Error).message));
+}
+
+/**
+ * Quem conectou pelo código nesta conversa já provou que é a pessoa: o "Estou falando com...?" do
+ * pareamento não vem nela (routine-identity.ts, pairingStatus).
+ */
+async function markPairedHere(db: SupabaseClient, w: { conversationId: string; botId: string; contactId: string; hash: string }): Promise<void> {
+  const at = new Date().toISOString();
+  const { error } = await db.from("conversation_identities").upsert({ conversation_id: w.conversationId, bot_id: w.botId, contact_id: w.contactId, pairing_hash: w.hash, pairing_ok_at: at, pairing_no_at: null, updated_at: at }, { onConflict: "conversation_id" });
+  if (error) console.error("pareamento: confirmação da conversa não gravada", error.message);
 }
 
 /** Texto ao contato quando a identidade do WhatsApp mudou (número reciclado ou aparelho novo). */

@@ -24,7 +24,7 @@ import { isOrderText, orderWithLabels } from "../order-message";
 import { noticeRegulatedWithoutChannel } from "./regulated-notice";
 import { openNullable, sealField, scopeOfConversation } from "../field-cipher";
 import { activeLinkOf, chatIdentityFromLink, contextSwitchTool, isPairingLink } from "../pairing";
-import { conversationChatIdentity, identityPort, identityPreTurn, loadConversationIdentity, markConsentAsked } from "../routine-identity";
+import { conversationChatIdentity, identityPort, identityPreTurn, loadConversationIdentity, markConsentAsked, pairingStatus } from "../routine-identity";
 import { callerFor, shapeActionResult } from "../action-tools";
 import { isConfirmComponent, parseConfirmButton, resolveConfirmClick } from "../action-confirm";
 import { setRefStatus } from "../button-refs";
@@ -174,6 +174,18 @@ async function linkIdentity(db: SupabaseClient, contactId: string | null) {
   return { links: found ? { active, all } : null, identity };
 }
 
+/** Com a pergunta ligada no chatbot (padrão), o vínculo do pareamento que precisa do "Sim, sou eu" nesta conversa. */
+const pairingCheckOf = (bot: Pick<BotRow, "confirm_paired_person">, active: { id: string; external_id_hash: string; display: { name?: string } | null } | null, identity: unknown) =>
+  bot.confirm_paired_person !== false && active && identity ? { linkId: active.id, hash: active.external_id_hash, name: active.display?.name ?? null } : null;
+
+/** A identidade do pareamento nesta conversa: sem a pergunta, sempre; com ela, depois do "Sim, sou eu". */
+async function confirmedLinkIdentity(db: SupabaseClient, bot: Pick<BotRow, "confirm_paired_person">, conversationId: string, contactId: string | null) {
+  const { links, identity } = await linkIdentity(db, contactId);
+  const check = pairingCheckOf(bot, links?.active ?? null, identity);
+  const ok = !check || pairingStatus(await loadConversationIdentity(db, conversationId), check.hash) === "ok";
+  return ok ? identity : null;
+}
+
 /** Responde à pergunta passando pelo portão. Erro sobe para o canal (acesso, pagamento, cota). */
 /** O que aconteceu na vez da IA (undefined: a IA não respondeu, ex.: pergunta de 18+ ou envio bloqueado). */
 export interface GateAnswer {
@@ -211,8 +223,8 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const destinationOf = () => regulatedDestination(bot.regulated_channel, bot.human_handoff?.address);
   const callerNow = async () => {
     const { data: row } = await db.from("conversations").select("contact_id").eq("id", convId).maybeSingle();
-    const { identity } = await linkIdentity(db, (row?.contact_id as string | null | undefined) ?? null);
-    // sem pareamento, a identidade que o roteiro deu a esta conversa (parte 2c)
+    // o pareamento confirmado nesta conversa ("Estou falando com...?"), ou o que o roteiro identificou (parte 2c)
+    const identity = await confirmedLinkIdentity(db, bot, convId, (row?.contact_id as string | null | undefined) ?? null);
     return callerFor(db, { bot, conversationId: convId, channel, waPhone, age: await getAge(db, who), contactKey: contact, identity: identity ?? (await conversationChatIdentity(db, convId)) });
   };
   /** Anexos das ações, logo depois do texto (barrado ou falho: o aviso fixo). */
@@ -325,11 +337,13 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   // identificação pelo roteiro (B2', parte 2c): a escolha da conta, a licença para lembrar o número e
   // o "Estou falando com...?" (a mensagem de um número lembrado espera a resposta), antes do roteiro
   const contactId = (pendingRow?.contact_id as string | null | undefined) ?? null;
-  const { links, identity: pairingIdentity } = await linkIdentity(db, contactId);
+  const { links, identity: linkedIdentity } = await linkIdentity(db, contactId);
+  // pareamento (P2) com a pergunta ligada: a conta só vale depois do "Sim, sou eu" desta conversa
+  const pairingCheck = pairingCheckOf(bot, links?.active ?? null, linkedIdentity);
   let turnTexts = q.texts?.length ? q.texts : [q.text];
   let routineButton = q.button ?? null;
   const offerRemember = bot.offer_remember_number !== false;
-  const idTurn = await identityPreTurn(db, { bot, channel, conversationId: convId, contactId, buttonId: q.button ?? null, text: q.text, texts: turnTexts, consume: !confirmed && !answered, external: Boolean(pairingIdentity?.externalId), onLinked: io.onLinked, offerRemember });
+  const idTurn = await identityPreTurn(db, { bot, channel, conversationId: convId, contactId, buttonId: q.button ?? null, text: q.text, texts: turnTexts, consume: !confirmed && !answered, external: Boolean(linkedIdentity?.externalId), pairingCheck, onLinked: io.onLinked, offerRemember });
   if (idTurn.kind === "fixed") {
     await storeOnce(db, convId, q.text, q.key, q.photos);
     await sendFixed(idTurn.text, undefined, idTurn.component);
@@ -344,7 +358,9 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     turnTexts = idTurn.texts.length ? idTurn.texts : [idTurn.text];
     routineButton = null;
   }
-  const port = identityPort(db, { conversationId: convId, botId: bot.id, contactId, channel, initial: await loadConversationIdentity(db, convId), external: pairingIdentity, offerRemember });
+  const initialIdentity = await loadConversationIdentity(db, convId);
+  const pairingIdentity = pairingCheck && pairingStatus(initialIdentity, pairingCheck.hash) !== "ok" ? null : linkedIdentity;
+  const port = identityPort(db, { conversationId: convId, botId: bot.id, contactId, channel, initial: initialIdentity, external: pairingIdentity, offerRemember });
 
   // roteiros (B2'): botão do passo, escolha digitada, dado conferido, palavra-chave e fim por prazo,
   // antes da IA; depois do Confirmar ou da resposta de 18+, a mensagem já foi usada (só o estado vale)

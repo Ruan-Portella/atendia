@@ -28,6 +28,11 @@ import type { ChatIdentity } from "./widget-identity";
  *   pessoa" esquece o número (o titular pode ter mudado e falar pelo mesmo número);
  * - quantos dados pedir para identificar é decisão do sistema da empresa (o roteiro pede, a ação
  *   decide).
+ * - pareamento da P2 (código do sistema da empresa), com confirm_paired_person ligado no chatbot:
+ *   a conversa nova também começa por "Estou falando com Ana?", e a conta só vale nesta conversa
+ *   depois do "Sim, sou eu" (quem conectou pelo código na própria conversa já está confirmado).
+ *   "Sou outra pessoa" deixa a conversa sem conta, mas o vínculo continua (quem conectou foi o
+ *   titular, pelo sistema da empresa); 24 horas depois, pergunta de novo;
  * A identidade vale 24 horas desde a identificação ou a confirmação. Fica em
  * conversation_identities, cifrada com a chave do cliente, fora das colunas do token e do
  * pareamento (que prendem a conversa do site ao token).
@@ -61,6 +66,8 @@ export interface ConversationIdentity {
   consent: "due" | "asked" | null;
   check: PendingCheck | null;
   checkAt: string | null;
+  /** A resposta ao "Estou falando com...?" do pareamento: a pessoa (hash do id externo) e quando. */
+  pairing: { hash: string | null; okAt: string | null; noAt: string | null };
 }
 
 export const CHECK_YES = "Sim, sou eu";
@@ -73,7 +80,7 @@ export const IDENTITY_TEXTS = {
   consent: (c: MetaChannel) => `Posso lembrar deste ${thing(c)} para as próximas conversas? Nas próximas, eu pergunto se é você antes de mostrar qualquer dado da conta. Para esquecer depois, é só mandar "desconectar".`,
   remembered: (c: MetaChannel) => `Combinado: vou lembrar deste ${thing(c)}. Nas próximas conversas, eu confirmo se é você antes de mostrar dados da conta.`,
   notRemembered: "Tudo bem, não vou lembrar. A identificação vale só para esta conversa.",
-  check: (name: string | null, c: MetaChannel) => (name ? `Estou falando com ${name}?` : `Estou falando com a pessoa que se identificou por este ${thing(c)}?`),
+  check: (name: string | null, c: MetaChannel, paired = false) => (name ? `Estou falando com ${name}?` : paired ? `Estou falando com a pessoa que conectou este ${thing(c)} à conta?` : `Estou falando com a pessoa que se identificou por este ${thing(c)}?`),
   stale: "Esse botão não vale mais. Se precisar de alguma coisa, é só me dizer.",
 } as const;
 
@@ -83,6 +90,9 @@ export const IDENTITY_NOTES = {
   otherPerson:
     "A pessoa disse que não é quem estava lembrado neste número: o número foi esquecido e a conversa segue sem conta identificada. Responda à mensagem dela sem dados de conta; se ela precisar de algo da conta, a identificação é pelo roteiro.",
   checkPending: "Este número está lembrado, mas a pessoa ainda não confirmou se é ela (os botões estão numa mensagem anterior): responda sem dados de conta.",
+  otherPaired:
+    "A pessoa disse que não é quem conectou este número à conta: a conversa segue sem conta identificada (o vínculo continua, porque quem conectou foi o titular). Responda à mensagem dela sem dados de conta.",
+  checkPendingPaired: "Este número está conectado a uma conta, mas a pessoa ainda não confirmou se é ela (os botões estão numa mensagem anterior): responda sem dados de conta.",
 } as const;
 
 /* ------------------------------------------------------------------ puras */
@@ -199,9 +209,20 @@ interface IdentityRow {
   consent: "due" | "asked" | null;
   check_enc: string | null;
   check_at: string | null;
+  pairing_hash?: string | null;
+  pairing_ok_at?: string | null;
+  pairing_no_at?: string | null;
 }
 
-const EMPTY: ConversationIdentity = { state: null, consent: null, check: null, checkAt: null };
+const NO_PAIRING = { hash: null, okAt: null, noAt: null };
+const EMPTY: ConversationIdentity = { state: null, consent: null, check: null, checkAt: null, pairing: NO_PAIRING };
+
+/** A resposta desta conversa ao "Estou falando com...?" do pareamento, para esta pessoa, nas últimas 24 horas. Pura. */
+export function pairingStatus(c: Pick<ConversationIdentity, "pairing">, hash: string, now = Date.now()): "ok" | "no" | null {
+  if (c.pairing.hash !== hash) return null;
+  const fresh = (at: string | null) => Boolean(at) && now - Date.parse(at!) <= IDENTITY_TTL_MS;
+  return fresh(c.pairing.okAt) ? "ok" : fresh(c.pairing.noAt) ? "no" : null;
+}
 
 async function openJson<T>(field: "conversation_identities.state_enc" | "conversation_identities.check_enc" | "contact_links.context_enc", raw: string | null | undefined): Promise<T | null> {
   const s = await openNullable(field, raw ?? null);
@@ -215,11 +236,12 @@ async function openJson<T>(field: "conversation_identities.state_enc" | "convers
 
 /** A identidade da conversa (a que venceu, 24 horas depois, não vale). */
 export async function loadConversationIdentity(db: SupabaseClient, conversationId: string, now = Date.now()): Promise<ConversationIdentity> {
-  const { data } = await db.from("conversation_identities").select("conversation_id, state_enc, identified_at, consent, check_enc, check_at").eq("conversation_id", conversationId).maybeSingle<IdentityRow>();
+  const { data } = await db.from("conversation_identities").select("conversation_id, state_enc, identified_at, consent, check_enc, check_at, pairing_hash, pairing_ok_at, pairing_no_at").eq("conversation_id", conversationId).maybeSingle<IdentityRow>();
   if (!data) return EMPTY;
   const fresh = Boolean(data.identified_at) && now - Date.parse(data.identified_at!) <= IDENTITY_TTL_MS;
   const state = fresh ? await openJson<IdentityState>("conversation_identities.state_enc", data.state_enc) : null;
-  return { state, consent: state ? (data.consent ?? null) : null, check: await openJson<PendingCheck>("conversation_identities.check_enc", data.check_enc), checkAt: data.check_at ?? null };
+  const pairing = { hash: data.pairing_hash ?? null, okAt: data.pairing_ok_at ?? null, noAt: data.pairing_no_at ?? null };
+  return { state, consent: state ? (data.consent ?? null) : null, check: await openJson<PendingCheck>("conversation_identities.check_enc", data.check_enc), checkAt: data.check_at ?? null, pairing };
 }
 
 /** Só a identidade, para a IA e as ações (o Confirmar de uma ação, fora da vez da IA). */
@@ -231,7 +253,7 @@ export async function conversationChatIdentity(db: SupabaseClient, conversationI
 async function saveIdentity(
   db: SupabaseClient,
   w: Where,
-  patch: { state?: IdentityState | null; identifiedAt?: string | null; consent?: "due" | "asked" | null; check?: PendingCheck | null; checkAt?: string | null },
+  patch: { state?: IdentityState | null; identifiedAt?: string | null; consent?: "due" | "asked" | null; check?: PendingCheck | null; checkAt?: string | null; pairing?: { hash: string; okAt: string | null; noAt: string | null } },
 ): Promise<void> {
   const scope = await scopeOfBot(w.botId);
   const row: Record<string, unknown> = { conversation_id: w.conversationId, bot_id: w.botId, contact_id: w.contactId, updated_at: new Date().toISOString() };
@@ -244,6 +266,7 @@ async function saveIdentity(
   if (patch.consent !== undefined) row.consent = patch.consent;
   if (patch.check !== undefined) row.check_enc = patch.check ? await sealField("conversation_identities.check_enc", JSON.stringify(patch.check), scope) : null;
   if (patch.checkAt !== undefined) row.check_at = patch.checkAt;
+  if (patch.pairing) Object.assign(row, { pairing_hash: patch.pairing.hash, pairing_ok_at: patch.pairing.okAt, pairing_no_at: patch.pairing.noAt });
   const { error } = await db.from("conversation_identities").upsert(row, { onConflict: "conversation_id" });
   if (error) console.error("identidade: conversa não gravada", error.message);
 }
@@ -434,6 +457,11 @@ export async function identityPreTurn(
     consume: boolean;
     /** A conversa já tem identidade de fora (pareamento ou token do site): nada daqui vale. */
     external: boolean;
+    /**
+     * Pareamento com a pergunta ligada no chatbot (confirm_paired_person): o vínculo ativo e a
+     * pessoa dele. Com ele, a identidade de fora só vale depois do "Sim, sou eu" desta conversa.
+     */
+    pairingCheck?: { linkId: string; hash: string; name: string | null } | null;
     /** Depois de lembrar o número (no WhatsApp, liga a checagem de identidade da Meta). */
     onLinked?: () => Promise<void>;
     /** A loja oferece lembrar o número (padrão: sim). Desligado: nem a licença nem o "Estou falando com...?". */
@@ -441,7 +469,9 @@ export async function identityPreTurn(
   },
   now = Date.now(),
 ): Promise<IdentityTurn> {
-  if (!i.consume || i.external) return NONE;
+  if (!i.consume) return NONE;
+  // pareamento sem a pergunta (desligada no chatbot) ou o token do site: a identidade de fora vale
+  if (i.external && !i.pairingCheck) return NONE;
   const w: Where = { conversationId: i.conversationId, botId: i.bot.id, contactId: i.contactId };
   const cur = await loadConversationIdentity(db, i.conversationId, now);
   const stale: IdentityTurn = { kind: "fixed", text: IDENTITY_TEXTS.stale, component: null };
@@ -461,6 +491,8 @@ export async function identityPreTurn(
       if (pick !== null) click = parseIdentityButton(comp.options[pick].id);
     }
   }
+
+  if (i.pairingCheck) return pairingTurn(db, { ...i, pairingCheck: i.pairingCheck }, w, cur, click, now);
 
   if (click?.kind === "conta") {
     const s = cur.state;
@@ -513,6 +545,40 @@ export async function identityPreTurn(
     }
   }
   return cur.check && !cur.state ? { kind: "none", note: IDENTITY_NOTES.checkPending, consumed: false } : NONE;
+}
+
+/**
+ * O "Estou falando com...?" do pareamento: a resposta (o vínculo continua no "Sou outra pessoa") e
+ * a pergunta, uma vez a cada 24 horas, na conversa ainda sem resposta.
+ */
+async function pairingTurn(
+  db: SupabaseClient,
+  i: { channel: string; contactId: string | null; buttonId: string | null; text: string; texts: string[]; pairingCheck: { linkId: string; hash: string; name: string | null } },
+  w: Where,
+  cur: ConversationIdentity,
+  click: IdentityClick | null,
+  now: number,
+): Promise<IdentityTurn> {
+  const p = i.pairingCheck;
+  if (!isMeta(i.channel) || !i.contactId) return NONE;
+  const stale: IdentityTurn = { kind: "fixed", text: IDENTITY_TEXTS.stale, component: null };
+  if (click?.kind === "eu" || click?.kind === "outra") {
+    if (!cur.check || cur.check.linkId !== click.linkId || click.linkId !== p.linkId) return stale;
+    const pending = cur.check;
+    const at = new Date(now).toISOString();
+    await saveIdentity(db, w, { check: null, pairing: click.kind === "eu" ? { hash: p.hash, okAt: at, noAt: null } : { hash: p.hash, okAt: null, noAt: at } });
+    if (click.kind === "eu") await db.from("contact_links").update({ last_used_at: at }).eq("id", p.linkId);
+    return { kind: "resume", text: pending.text, texts: pending.texts, note: click.kind === "outra" ? IDENTITY_NOTES.otherPaired : null };
+  }
+  // os botões da identificação pelo roteiro não valem com o pareamento
+  if (i.buttonId?.startsWith(IDENTITY_BUTTON_PREFIX)) return stale;
+  if (pairingStatus(cur, p.hash, now)) return NONE;
+  const asked = cur.checkAt && now - Date.parse(cur.checkAt) <= IDENTITY_TTL_MS;
+  if (!asked && !i.buttonId) {
+    await saveIdentity(db, w, { check: { linkId: p.linkId, text: i.text, texts: i.texts }, checkAt: new Date(now).toISOString() });
+    return { kind: "fixed", text: IDENTITY_TEXTS.check(p.name, i.channel, true), component: checkButtons(p.linkId) };
+  }
+  return cur.check?.linkId === p.linkId ? { kind: "none", note: IDENTITY_NOTES.checkPendingPaired, consumed: false } : NONE;
 }
 
 /** Depois de pedir a licença: não pergunta de novo nesta conversa. */

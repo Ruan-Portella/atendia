@@ -86,6 +86,8 @@ export interface BotRow {
   marketing_optin_offer?: boolean | null;
   /** Identificação pelo roteiro: o BoaVoz oferece lembrar o número (padrão: sim). */
   offer_remember_number?: boolean | null;
+  /** "Estou falando com...?" também para quem foi conectado pelo código (P2); padrão: ligado. */
+  confirm_paired_person?: boolean | null;
   /** Tamanho (null = sem tamanho) e cota sob medida da BoaVoz: sem tamanho de IA, nada de IA (botHasAi). */
   size?: string | null;
   /** Regra do preço de post do Instagram (E1): citar a data (padrão), limite de dias ou sempre. */

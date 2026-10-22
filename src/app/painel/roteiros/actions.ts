@@ -114,6 +114,19 @@ export async function setRememberNumber(botId: string, on: boolean): Promise<Act
   return ok(forgotten ? `Desligado: ${forgotten === 1 ? "1 vínculo de número lembrado foi esquecido" : `${forgotten} vínculos de números lembrados foram esquecidos`}.` : "Desligado: o BoaVoz não pede mais para lembrar o número.");
 }
 
+/** O "Estou falando com...?" também para quem foi conectado pelo código (pareamento da P2). */
+export async function setConfirmPairedPerson(botId: string, on: boolean): Promise<ActionResult> {
+  const ctx = await context();
+  if (!ctx) return fail(DENIED);
+  const bot = await scopedBot(botId);
+  if (!bot) return fail("Chatbot não encontrado.");
+  const { error } = await createAdminClient().from("bots").update({ confirm_paired_person: on }).eq("id", bot.id);
+  if (error) return fail("Não foi possível salvar. Tente de novo.");
+  await auditRoutine(ctx, "roteiros.confirmar_pareado", bot.id, { ligado: on });
+  revalidatePath(`/painel/bots/${bot.id}`);
+  return ok(on ? "Ligado: a conversa nova de quem foi conectado pelo código começa por \"Estou falando com…?\"." : "Desligado: a conta de quem foi conectado pelo código vale direto em toda conversa.");
+}
+
 export async function deleteRoutine(routineId: string): Promise<ActionResult> {
   const ctx = await context();
   if (!ctx) return fail(DENIED);

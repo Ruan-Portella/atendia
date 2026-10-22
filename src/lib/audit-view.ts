@@ -169,6 +169,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "roteiros.desativar": "Roteiro desligado",
   "roteiros.apagar": "Roteiro apagado",
   "roteiros.lembrar_numero": "Lembrar o número (identificação pelo roteiro)",
+  "roteiros.confirmar_pareado": "Confirmar quem foi conectado pelo código (pareamento)",
   "instagram.perguntas_prontas": "Perguntas prontas do direct alteradas",
   "instagram.link_origem": "Link ig.me com origem criado",
   "instagram.link_origem_removido": "Link ig.me com origem removido",

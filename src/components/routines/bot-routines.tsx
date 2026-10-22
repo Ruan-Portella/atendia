@@ -7,7 +7,7 @@ import { ROUTINES_PER_BOT, routineUsesActions, type RoutineRow } from "@/lib/rou
 import { runStats, runStatsLine, type RunSummary } from "@/lib/routine-run";
 import { daysAgoIso } from "@/lib/utils";
 import { listSectors } from "@/lib/sectors";
-import { deleteRoutine, saveRoutine, setRememberNumber, setRoutineActive } from "@/app/painel/roteiros/actions";
+import { deleteRoutine, saveRoutine, setConfirmPairedPerson, setRememberNumber, setRoutineActive } from "@/app/painel/roteiros/actions";
 
 /**
  * Situação do roteiro para a IA: ligado, desligado, pausado sem o pacote, com ação que não existe
@@ -39,7 +39,7 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
   const [{ data: rows }, { data: acts }, { data: bot }, { count: remembered }, { data: runRows }] = await Promise.all([
     db.from("routines").select("*").eq("bot_id", botId).order("name"),
     db.from("actions").select("name, outcomes, active").eq("bot_id", botId).order("name"),
-    db.from("bots").select("offer_remember_number, sensitive_mode, client_id").eq("id", botId).maybeSingle(),
+    db.from("bots").select("offer_remember_number, confirm_paired_person, sensitive_mode, client_id").eq("id", botId).maybeSingle(),
     db.from("contact_links").select("id", { count: "exact", head: true }).eq("bot_id", botId).eq("source", "routine").is("unlinked_at", null),
     // números de cada roteiro nos últimos 30 dias
     db.from("routine_runs").select("routine_id, status, end_reason").eq("bot_id", botId).gte("started_at", since).limit(20_000),
@@ -50,6 +50,8 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
     runsOf.set(r.routine_id, [...(runsOf.get(r.routine_id) ?? []), r]);
   }
   const offerRemember = (bot?.offer_remember_number as boolean | null | undefined) !== false;
+  // o "Estou falando com...?" também para quem foi conectado pelo código (pareamento da P2)
+  const confirmPaired = (bot?.confirm_paired_person as boolean | null | undefined) !== false;
   // leitura de fotos: desligada no modo dados sensíveis (o passo de foto é pulado)
   const photos = !bot?.sensitive_mode;
   const routines = (rows ?? []) as unknown as RoutineRow[];
@@ -137,6 +139,25 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
           )}
         </div>
       </div>
+
+      {integrations && (
+        <div className="card flex flex-col gap-2 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold">Confirmar quem foi conectado pelo código</h3>
+            <span className={`text-xs ${confirmPaired ? "text-brand" : "text-muted"}`}>{confirmPaired ? "ligado" : "desligado"}</span>
+          </div>
+          <p className="text-xs text-muted">
+            Quando o sistema da loja conecta o WhatsApp ou o Instagram da pessoa à conta dela (o código do pareamento pela API), cada conversa nova também começa por &quot;Estou falando com…?&quot; antes de a IA e as ações usarem a conta. &quot;Sou outra pessoa&quot; deixa a conversa sem a conta, e o vínculo continua. Quem acabou de conectar pelo código não é perguntado. Desligado, a conta vale direto em toda conversa.
+          </p>
+          <div>
+            <ActionForm action={setConfirmPairedPerson.bind(null, botId, !confirmPaired)}>
+              <SubmitButton className={confirmPaired ? "text-xs font-semibold text-danger hover:underline" : "btn-ghost py-1.5 text-xs"} pendingLabel="Salvando…">
+                {confirmPaired ? "Desligar" : "Ligar"}
+              </SubmitButton>
+            </ActionForm>
+          </div>
+        </div>
+      )}
 
       {routines.length < ROUTINES_PER_BOT ? (
         <details className="card p-4" open={!routines.length}>

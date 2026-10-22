@@ -23,6 +23,7 @@ import {
   loadConversationIdentity,
   markConsentAsked,
   matchAccount,
+  pairingStatus,
   parseIdentityButton,
   stateOf,
   typedYesNo,
@@ -321,8 +322,8 @@ function world() {
 
 const pre = (db: SupabaseClient, conv: string, texts: string[], o: { buttonId?: string | null; identity?: { identified: boolean; choosing: boolean } } = {}) =>
   routinePreTurn(db, { bot: BOT, conversationId: conv, texts, buttonId: o.buttonId ?? null, waPhone: null, identity: o.identity });
-const idPre = (db: SupabaseClient, conv: string, text: string, o: { buttonId?: string | null; channel?: string; external?: boolean } = {}) =>
-  identityPreTurn(db, { bot: BOT, channel: o.channel ?? "whatsapp", conversationId: conv, contactId: CONTACT, buttonId: o.buttonId ?? null, text, texts: [text], consume: true, external: o.external ?? false });
+const idPre = (db: SupabaseClient, conv: string, text: string, o: { buttonId?: string | null; channel?: string; external?: boolean; pairingCheck?: { linkId: string; hash: string; name: string | null } } = {}) =>
+  identityPreTurn(db, { bot: BOT, channel: o.channel ?? "whatsapp", conversationId: conv, contactId: CONTACT, buttonId: o.buttonId ?? null, text, texts: [text], consume: true, external: o.external ?? Boolean(o.pairingCheck), pairingCheck: o.pairingCheck ?? null });
 const portOf = async (db: SupabaseClient, conv: string, channel = "whatsapp") =>
   identityPort(db, { conversationId: conv, botId: BOT.id, contactId: CONTACT, channel, initial: await loadConversationIdentity(db, conv), external: null });
 
@@ -569,5 +570,50 @@ describe("identificação pelo roteiro: a loja desliga o lembrar o número", () 
     const [yes] = opts(consentButtons("whatsapp", stateOf(ONE, false)));
     expect(await off("conv-3", yes.title, yes.id)).toEqual({ kind: "fixed", text: IDENTITY_TEXTS.stale, component: null });
     expect(tables.contact_links.filter((l) => !l.unlinked_at)).toHaveLength(0);
+  });
+});
+
+describe("pareamento da P2: o \"Estou falando com...?\" na conversa nova", () => {
+  beforeEach(() => vi.stubEnv("CONTACT_HASH_KEY", "chave-de-teste-com-mais-de-16"));
+  const LINK = "11111111-2222-4333-8444-555555555555";
+  const ANA = { linkId: LINK, hash: "hash-da-ana", name: "Ana" };
+
+  it("pergunta antes de usar a conta; 'Sim, sou eu' responde à mensagem que esperava e vale 24 horas nesta conversa", async () => {
+    const { tables, db } = world();
+    tables.contact_links.push({ id: LINK, contact_id: CONTACT, source: "pairing", unlinked_at: null });
+    const ask = await idPre(db, "conv-1", "qual o saldo?", { pairingCheck: ANA });
+    expect(ask).toEqual({ kind: "fixed", text: "Estou falando com Ana?", component: checkButtons(LINK) });
+    // sem resposta, a próxima mensagem segue sem conta
+    expect(await idPre(db, "conv-1", "oi?", { pairingCheck: ANA })).toEqual({ kind: "none", note: IDENTITY_NOTES.checkPendingPaired, consumed: false });
+    const [eu] = opts(checkButtons(LINK));
+    expect(await idPre(db, "conv-1", eu.title, { buttonId: eu.id, pairingCheck: ANA })).toEqual({ kind: "resume", text: "qual o saldo?", texts: ["qual o saldo?"], note: null });
+    const cur = await loadConversationIdentity(db, "conv-1");
+    expect(pairingStatus(cur, ANA.hash)).toBe("ok");
+    // a conta de outra pessoa (outro vínculo ativo) pergunta de novo; 24 horas depois também
+    expect(pairingStatus(cur, "outra-pessoa")).toBeNull();
+    expect(pairingStatus(cur, ANA.hash, Date.now() + IDENTITY_TTL_MS + 60_000)).toBeNull();
+    // confirmada: nada mais a perguntar nesta conversa
+    expect(await idPre(db, "conv-1", "e a fatura?", { pairingCheck: ANA })).toEqual({ kind: "none", note: null, consumed: false });
+    expect(tables.contact_links[0].last_used_at).toBeTruthy();
+  });
+
+  it("'Sou outra pessoa': a conversa segue sem conta e o vínculo continua (quem conectou foi o titular)", async () => {
+    const { tables, db } = world();
+    tables.contact_links.push({ id: LINK, contact_id: CONTACT, source: "pairing", unlinked_at: null });
+    await idPre(db, "conv-1", "oi", { pairingCheck: ANA });
+    const [, outra] = opts(checkButtons(LINK));
+    expect(await idPre(db, "conv-1", outra.title, { buttonId: outra.id, pairingCheck: ANA })).toEqual({ kind: "resume", text: "oi", texts: ["oi"], note: IDENTITY_NOTES.otherPaired });
+    expect(pairingStatus(await loadConversationIdentity(db, "conv-1"), ANA.hash)).toBe("no");
+    expect(tables.contact_links[0].unlinked_at).toBeNull();
+    // não pergunta de novo nesta conversa; o botão antigo não vale mais
+    expect(await idPre(db, "conv-1", "e agora?", { pairingCheck: ANA })).toEqual({ kind: "none", note: null, consumed: false });
+    expect(await idPre(db, "conv-1", outra.title, { buttonId: outra.id, pairingCheck: ANA })).toEqual({ kind: "fixed", text: IDENTITY_TEXTS.stale, component: null });
+  });
+
+  it("sem nome do sistema, a pergunta fala do número conectado; no site não pergunta; desligada, a conta vale direto", async () => {
+    const { db } = world();
+    expect(await idPre(db, "conv-1", "oi", { pairingCheck: { ...ANA, name: null } })).toMatchObject({ kind: "fixed", text: "Estou falando com a pessoa que conectou este número à conta?" });
+    expect(await idPre(db, "conv-2", "oi", { pairingCheck: ANA, channel: "widget" })).toEqual({ kind: "none", note: null, consumed: false });
+    expect(await idPre(db, "conv-3", "oi", { external: true })).toEqual({ kind: "none", note: null, consumed: false });
   });
 });
