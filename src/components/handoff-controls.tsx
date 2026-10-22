@@ -151,7 +151,7 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
     <>
       {active ? (
         <div className={docked ? "flex flex-col gap-2" : "sticky bottom-0 flex flex-col gap-2 border-t border-line bg-ground py-3"}>
-          <AgentReplyForm action={onSend} paymentCheck={paymentCheck} quickReplies={quickReplies} contactName={contactName} attendantName={attendantName} />
+          <AgentReplyForm action={onSend} paymentCheck={paymentCheck} quickReplies={quickReplies} contactName={contactName} attendantName={attendantName} allowFile={!conv.ticket_protocol} />
           <ActionForm action={onRelease} className="self-end">
             <SubmitButton pendingLabel="Encerrando…" className="text-xs font-semibold text-muted hover:underline">Encerrar atendimento e devolver ao assistente</SubmitButton>
           </ActionForm>

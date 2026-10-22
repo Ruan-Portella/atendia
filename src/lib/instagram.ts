@@ -284,8 +284,11 @@ export async function sendInstagramTemplate(ch: IgChannel, recipientId: string, 
 }
 
 /** Anexo pela URL (o Instagram baixa): imagem (PNG ou JPEG) ou arquivo (só PDF). Devolve o id da mensagem. */
-export async function sendInstagramAttachment(ch: IgChannel, recipientId: string, a: { type: "image" | "file"; url: string }, opts: { timeoutMs?: number } = {}): Promise<string | null> {
-  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, message: { attachment: { type: a.type, payload: { url: a.url } } } }, timeoutMs: opts.timeoutMs });
+export async function sendInstagramAttachment(ch: IgChannel, recipientId: string, a: { type: "image" | "file"; url: string }, opts: { timeoutMs?: number; humanAgent?: boolean; replyTo?: string | null } = {}): Promise<string | null> {
+  // a equipe depois das 24 h (tag human_agent) e a citação, como no texto
+  const tag = opts.humanAgent ? { messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" } : {};
+  const reply = opts.replyTo ? { reply_to: { mid: opts.replyTo } } : {};
+  const r = await api<{ message_id?: string }>("me/messages", tokenOf(ch), { body: { recipient: { id: recipientId }, ...reply, message: { attachment: { type: a.type, payload: { url: a.url } } }, ...tag }, timeoutMs: opts.timeoutMs });
   return r.message_id ?? null;
 }
 

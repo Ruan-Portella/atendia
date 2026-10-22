@@ -74,7 +74,7 @@ const errorCode = (e: unknown) => {
  */
 export async function deliver(
   db: SupabaseClient,
-  o: { botId: string; channel: SendChannel; conversationId: string | null; kind: SendKind; record: SendRecord; recordFailures?: boolean; deferEvent?: boolean; transport: () => Promise<string | null> },
+  o: { botId: string; channel: SendChannel; conversationId: string | null; kind: SendKind; record: SendRecord; recordFailures?: boolean; deferEvent?: boolean; learn?: boolean; transport: () => Promise<string | null> },
 ): Promise<SendOutcome> {
   const recordFailures = o.recordFailures ?? true;
   const write = async (fields: MessagePatch): Promise<number | null> => {
@@ -107,8 +107,9 @@ export async function deliver(
   }
   // o id original vai cifrado: é o que a Meta pede para citar ou reagir depois (Conversa mais natural)
   const messageId = await write({ channel_msg_id: "enviada", channel_msg_hash: id ? channelMsgHash(o.channel, id) : null, ...(id ? { channel_msg_ref: id } : {}) });
-  // aprendizado (D', parte 6): a resposta da equipe pode virar rascunho para a base (sem o anúncio e a assinatura)
-  if (o.kind === "equipe" && o.conversationId && o.record && "insert" in o.record && o.record.insert.role === "agent") {
+  // aprendizado (D', parte 6): a resposta da equipe pode virar rascunho para a base (sem o anúncio e a assinatura;
+  // learn false: só um arquivo, sem texto)
+  if (o.kind === "equipe" && o.learn !== false && o.conversationId && o.record && "insert" in o.record && o.record.insert.role === "agent") {
     const r = o.record.insert;
     learnLater(db, { conversationId: o.conversationId, text: withoutSignatureSuffix(r.content.slice(r.announce_chars ?? 0)), author: r.author_display_name ?? r.author });
   }

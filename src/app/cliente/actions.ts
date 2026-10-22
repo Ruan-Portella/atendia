@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
 import { isEmail, text } from "@/lib/validation";
 import { ALREADY_YOURS, postAgentMessage, reactAsAgent, release, takeOver } from "@/lib/handoff";
+import { agentUpload } from "@/lib/agent-files";
 import { parseTarget, transferConversation } from "@/lib/transfer";
 import { addNote } from "@/lib/conversation-notes";
 import { snoozeConversation, snoozeTarget, unsnoozeConversation } from "@/lib/snooze";
@@ -104,8 +105,10 @@ export async function memberForceTakeOver(clientId: string, conversationId: stri
 export async function memberSend(clientId: string, conversationId: string, formData: FormData): Promise<ActionResult> {
   const ctx = await ownConversation(clientId, conversationId);
   if (!ctx) return fail("Você não tem permissão para atender esta conversa.");
-  // citação (Conversa mais natural): a mensagem em cima da qual a pessoa respondeu
-  const r = await postAgentMessage(ctx.admin, conversationId, text(formData.get("content")), memberAttendant(ctx.member, ctx.email), { replyToId: Number(formData.get("reply_to_id")) || null });
+  // foto ou PDF junto (até 4 MB) e a citação (Conversa mais natural)
+  const up = await agentUpload(formData.get("file"));
+  if (!up.ok) return fail(up.message);
+  const r = await postAgentMessage(ctx.admin, conversationId, text(formData.get("content")), memberAttendant(ctx.member, ctx.email), { replyToId: Number(formData.get("reply_to_id")) || null, upload: up.upload });
   revalidatePath(convPath(clientId, conversationId));
   return r;
 }

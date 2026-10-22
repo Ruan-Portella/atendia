@@ -135,12 +135,12 @@ export async function sendReaction(ch: WaChannel, to: WaRecipient, messageId: st
  * Imagem ou documento pelo link (a Meta baixa da URL). Legenda até 1.024 caracteres; o documento
  * leva o nome do arquivo. callbackData e timeoutMs como no texto.
  */
-export async function sendMedia(ch: WaChannel, to: WaRecipient, m: { type: "image" | "document"; link: string; caption?: string | null; filename?: string | null }, opts: { callbackData?: string; timeoutMs?: number } = {}) {
+export async function sendMedia(ch: WaChannel, to: WaRecipient, m: { type: "image" | "document"; link: string; caption?: string | null; filename?: string | null }, opts: { callbackData?: string; timeoutMs?: number; replyTo?: string | null } = {}) {
   const media: Record<string, string> = { link: m.link };
   if (m.caption) media.caption = m.caption.slice(0, 1024);
   if (m.type === "document" && m.filename) media.filename = m.filename;
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
-    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), type: m.type, [m.type]: media, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
+    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), ...(opts.replyTo ? { context: { message_id: opts.replyTo } } : {}), type: m.type, [m.type]: media, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
     timeoutMs: opts.timeoutMs,
   });
 }

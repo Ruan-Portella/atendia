@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Paperclip, X } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import { QUOTE_EVENT, type QuoteDetail } from "@/components/message-actions";
 import { EmojiPicker } from "@/components/emoji-picker";
+import { AGENT_FILE_ACCEPT } from "@/lib/agent-file-rules";
+import { fileSizeLabel, prepareAgentFile } from "@/lib/image-shrink";
 import { mentionsPayment } from "@/lib/gate/payment";
 import { renderQuickReply, type QuickReply } from "@/lib/quick-replies";
 import { ActionForm } from "@/components/ui/action-form";
@@ -15,13 +17,60 @@ import { SubmitButton } from "@/components/ui/submit-button";
  * fala de Pix, boleto ou link de pagamento, pergunta antes de enviar, sem bloquear. As respostas
  * prontas do cliente (Caixa de entrada, parte 4) entram no campo com {nome} e {atendente} trocados,
  * para a pessoa revisar antes de enviar. "Responder" numa mensagem (Conversa mais natural) cita
- * ela na próxima resposta; o botão de emoji insere onde o cursor está.
+ * ela na próxima resposta; o botão de emoji insere onde o cursor está. O clipe (ou colar uma foto
+ * no campo) manda uma foto ou um PDF de até 4 MB junto, com o texto como legenda; foto maior é
+ * reduzida aqui antes de sair. allowFile false: no chamado do site (a resposta vai por e-mail).
  */
-export function AgentReplyForm({ action, paymentCheck = false, quickReplies = [], contactName = null, attendantName = "" }: { action: (fd: FormData) => Promise<ActionResult>; paymentCheck?: boolean; quickReplies?: QuickReply[]; contactName?: string | null; attendantName?: string }) {
+export function AgentReplyForm({ action, paymentCheck = false, quickReplies = [], contactName = null, attendantName = "", allowFile = true }: { action: (fd: FormData) => Promise<ActionResult>; paymentCheck?: boolean; quickReplies?: QuickReply[]; contactName?: string | null; attendantName?: string; allowFile?: boolean }) {
   const [asking, setAsking] = useState(false);
   const confirmed = useRef(false);
   const field = useRef<HTMLTextAreaElement>(null);
   const [quote, setQuote] = useState<QuoteDetail | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [picked, setPicked] = useState<{ name: string; size: number } | null>(null);
+  const [fileNote, setFileNote] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+
+  // o formulário volta ao estado inicial depois de cada envio (o React limpa os campos): o arquivo sai junto
+  useEffect(() => {
+    const form = fileInput.current?.form;
+    if (!form) return;
+    const onReset = () => {
+      setPicked(null);
+      setFileNote(null);
+    };
+    form.addEventListener("reset", onReset);
+    return () => form.removeEventListener("reset", onReset);
+  }, [allowFile]);
+
+  const takeFile = async (f: File | null | undefined) => {
+    const input = fileInput.current;
+    if (!input) return;
+    setFileNote(null);
+    if (!f) {
+      input.value = "";
+      setPicked(null);
+      return;
+    }
+    setPreparing(true);
+    const r = await prepareAgentFile(f);
+    setPreparing(false);
+    if (!r.ok) {
+      input.value = "";
+      setPicked(null);
+      setFileNote(r.message);
+      return;
+    }
+    // foto reduzida (ou colada no campo): o arquivo pronto entra no campo do formulário
+    if (r.file !== f || input.files?.[0] !== f) {
+      const dt = new DataTransfer();
+      dt.items.add(r.file);
+      input.files = dt.files;
+    }
+    setPicked({ name: r.file.name, size: r.file.size });
+    if (r.file !== f) setFileNote(`Foto reduzida para ${fileSizeLabel(r.file.size)} para caber no limite de 4 MB.`);
+    field.current?.focus();
+  };
 
   useEffect(() => {
     const onQuote = (e: Event) => {
@@ -33,6 +82,11 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
   }, []);
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    // a foto ainda está sendo reduzida: espera
+    if (preparing) {
+      e.preventDefault();
+      return;
+    }
     if (!paymentCheck || confirmed.current) {
       confirmed.current = false;
       setAsking(false);
@@ -105,11 +159,51 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
           </button>
         </div>
       )}
+      {(picked || fileNote || preparing) && (
+        <div className="flex items-start gap-2 rounded-lg border border-line bg-panel px-3 py-1.5 text-xs">
+          <span className="min-w-0 flex-1">
+            {preparing ? (
+              <span className="text-muted">Preparando o arquivo…</span>
+            ) : picked ? (
+              <span className="block truncate"><span className="font-semibold">📎 {picked.name}</span> <span className="text-muted">· {fileSizeLabel(picked.size)}</span></span>
+            ) : null}
+            {fileNote && <span className={`block ${picked ? "text-muted" : "font-semibold text-danger"}`}>{fileNote}</span>}
+          </span>
+          {(picked || fileNote) && (
+            <button type="button" onClick={() => void takeFile(null)} aria-label="Tirar o arquivo" className="shrink-0 rounded-md p-0.5 text-muted hover:text-ink">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
       <ActionForm action={action} onSubmit={onSubmit} onSuccess={() => setQuote(null)} className="flex items-end gap-2">
         {quote && <input type="hidden" name="reply_to_id" value={quote.id} />}
         <EmojiPicker onPick={insertEmoji} />
+        {allowFile && (
+          <label className="btn-ghost cursor-pointer self-end px-2.5" title="Anexar foto ou PDF (até 4 MB)">
+            <Paperclip size={18} />
+            <span className="sr-only">Anexar foto ou PDF</span>
+            <input ref={fileInput} type="file" name="file" accept={AGENT_FILE_ACCEPT} className="sr-only" onChange={(e) => void takeFile(e.currentTarget.files?.[0])} />
+          </label>
+        )}
         <label htmlFor="agent-msg" className="sr-only">Sua resposta</label>
-        <textarea ref={field} id="agent-msg" name="content" required maxLength={2000} rows={2} className="input flex-1 resize-y" placeholder="Escreva sua resposta para o visitante…" />
+        <textarea
+          ref={field}
+          id="agent-msg"
+          name="content"
+          required={!picked}
+          maxLength={2000}
+          rows={2}
+          className="input flex-1 resize-y"
+          placeholder={picked ? "Legenda (opcional)…" : "Escreva sua resposta para o visitante…"}
+          onPaste={(e) => {
+            // foto colada no campo vira o anexo
+            const f = allowFile ? Array.from(e.clipboardData.files).find((x) => x.type.startsWith("image/")) : undefined;
+            if (!f) return;
+            e.preventDefault();
+            void takeFile(f);
+          }}
+        />
         <SubmitButton pendingLabel="Enviando…" className="btn-primary">Enviar</SubmitButton>
       </ActionForm>
     </div>

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // foto ou PDF da equipe na conversa (até 4 MB): o pedido cabe no limite de 4,5 MB da Vercel
+  experimental: { serverActions: { bodySizeLimit: "4.5mb" } },
   // o conjunto fixo de casos é lido do disco pela rota de avaliação e pela tela dela no backoffice
   // o guia do painel (base do assistente da BoaVoz) é lido do disco pelo botão do backoffice, em Operação
   outputFileTracingIncludes: { "/api/eval": ["./evals/**/*"], "/admin/avaliacao": ["./evals/**/*"], "/admin/operacao": ["./docs/assistente/**/*"], "/ajuda": ["./docs/assistente/**/*"], "/ajuda/[slug]": ["./docs/assistente/**/*"] },

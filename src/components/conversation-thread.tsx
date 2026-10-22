@@ -80,14 +80,14 @@ function NoteView({ m }: { m: ThreadMessage }) {
 const kb = (n: number) => (n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 /** Foto, áudio e vídeo na própria conversa; documento como link para baixar. */
-function AttachmentView({ a }: { a: NonNullable<ThreadMessage["attachments"]>[number] }) {
+function AttachmentView({ a, fromContact }: { a: NonNullable<ThreadMessage["attachments"]>[number]; fromContact: boolean }) {
   const src = `/api/files/${a.id}`;
   if (a.doc_type === "image" || a.doc_type === "sticker") {
     return (
       <a href={src} target="_blank" rel="noopener" className="mt-1.5 block">
         {/* arquivo do contato, pela rota autenticada (sem otimização de imagem) */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={a.filename ?? "Imagem enviada pelo contato"} loading="lazy" className={a.doc_type === "sticker" ? "h-24 w-24 object-contain" : "max-h-72 max-w-full rounded-lg"} />
+        <img src={src} alt={a.filename ?? (fromContact ? "Imagem enviada pelo contato" : "Imagem enviada pela empresa")} loading="lazy" className={a.doc_type === "sticker" ? "h-24 w-24 object-contain" : "max-h-72 max-w-full rounded-lg"} />
       </a>
     );
   }
@@ -250,7 +250,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
             <MessageText m={m} />
             <ShownComponent json={m.components_enc} />
             {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
-            {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} />)}
+            {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} fromContact={m.role === "user"} />)}
             {!m.deleted_at && m.role === "user" && <PhotoReadingView json={m.photo_reading_enc} />}
             {/* resposta privada a um comentário (E1, parte 4): o comentário que começou a conversa */}
             {!m.deleted_at && m.channel_ref?.kind === "comment" && <div className="mt-1 text-[11px] opacity-80">Resposta ao comentário{m.channel_ref.title ? ` “${m.channel_ref.title}”` : ""}</div>}

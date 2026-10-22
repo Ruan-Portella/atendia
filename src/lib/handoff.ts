@@ -1,11 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { linkedRecipient } from "./pairing";
 import { API_PAUSE_CLEAR } from "./api-pause";
-import { queueConversationAssigned, queueHandoffReturned } from "./message-events";
+import { queueConversationAssigned, queueHandoffReturned, queueMessageEvent } from "./message-events";
 import { fail, ok, type ActionResult } from "./action-result";
-import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendReaction, sendText, type WaChannel, type WaRecipient } from "./whatsapp";
+import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendMedia, sendReaction, sendText, type WaChannel, type WaRecipient } from "./whatsapp";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
-import { isInstagramAccessError, isOutsideWindow, sendInstagramReaction } from "./instagram";
+import { isInstagramAccessError, isOutsideWindow, sendInstagramAttachment, sendInstagramReaction } from "./instagram";
+import { markOwnMessage } from "./inbound-queue";
+import { linkAttachments, purgeAttachments, storeAttachment } from "./attachments";
+import { signedFileUrl } from "./file-links";
+import { AGENT_FILE_MAX_BYTES, AGENT_FILE_TEXTS, WA_CAPTION_MAX, agentFileLabel, checkAgentFile } from "./agent-files";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { send as sendInstagram, type IgChannelRow } from "./instagram-inbound";
 import { sendBlockedReason } from "./conversation-mode";
@@ -97,14 +101,20 @@ export async function takeOver(admin: SupabaseClient, conversationId: string, wh
   return { ...ok(previous ? `Você assumiu no lugar de ${previous}. A próxima mensagem sai com o anúncio com o seu nome.` : "Você assumiu a conversa. O assistente pausou até você devolver."), previous };
 }
 
-export async function postAgentMessage(admin: SupabaseClient, conversationId: string, rawContent: string, who: Attendant, opts: { replyToId?: number | null } = {}): Promise<ActionResult> {
+export async function postAgentMessage(admin: SupabaseClient, conversationId: string, rawContent: string, who: Attendant, opts: { replyToId?: number | null; upload?: { data: Uint8Array; filename: string | null } | null } = {}): Promise<ActionResult> {
   const content = rawContent.trim();
-  if (!content) return fail("Escreva uma mensagem.");
+  // foto ou PDF da equipe: o texto vira a legenda no WhatsApp e vai antes, numa DM, no Instagram
+  const checked = opts.upload ? checkAgentFile(opts.upload.data, opts.upload.filename) : null;
+  if (checked && !checked.ok) return fail(checked.message);
+  const file = checked?.ok ? checked.file : null;
+  if (!content && !file) return fail("Escreva uma mensagem.");
   if (content.length > 2000) return fail("Mensagem muito longa (até 2.000 caracteres).");
-  const { data: conv } = await admin.from("conversations").select(`${HOLDER_COLS}, channel, transfer_from_name, bots(client_name, human_handoff), sectors(name)`).eq("id", conversationId).maybeSingle();
+  const { data: conv } = await admin.from("conversations").select(`${HOLDER_COLS}, bot_id, channel, transfer_from_name, ticket_protocol, bots(client_name, human_handoff), sectors(name)`).eq("id", conversationId).maybeSingle();
   if (!conv) return fail("Conversa não encontrada.");
   // só quem está com a conversa responde
   if (heldByOther(conv as Holder, who.id)) return fail(`${otherName(conv as Holder)} está atendendo esta conversa. Para responder, use “Assumir no lugar”.`);
+  // chamado do site: a resposta vai por e-mail, e o arquivo não iria junto
+  if (file && conv.ticket_protocol) return fail(AGENT_FILE_TEXTS.ticket);
   // citação (Conversa mais natural): a mensagem citada é desta conversa e tem o id do canal
   const replyTo = opts.replyToId ? await linkableMessage(admin, conversationId, opts.replyToId) : null;
   if (opts.replyToId && !replyTo) return fail("A mensagem citada não está mais disponível. Tire a citação e envie de novo.");
@@ -113,6 +123,14 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
     const t = await takeOver(admin, conversationId, who);
     if (!t.ok) return t;
   }
+  // o arquivo fica guardado (cifrado) antes do envio: a Meta busca pelo link assinado da rota de arquivos
+  const channel = conv.channel === "whatsapp" || conv.channel === "instagram" ? (conv.channel as "whatsapp" | "instagram") : "widget";
+  const fileId = file ? await storeAttachment(admin, { botId: conv.bot_id as string, conversationId, messageId: null, channel, data: file.data, mime: file.mime, filename: file.filename, maxBytes: AGENT_FILE_MAX_BYTES }) : null;
+  if (file && !fileId) return fail(AGENT_FILE_TEXTS.notStored);
+  const fileUrl = fileId ? signedFileUrl(fileId).url : "";
+  const dropFile = async () => {
+    if (fileId) await purgeAttachments(admin, { ids: [fileId] }).catch(() => 0);
+  };
   // anúncio de entrada: só na primeira mensagem de quem assumiu (a marca sai antes do envio, para
   // duas mensagens seguidas não saírem as duas com o anúncio; volta se o envio falhar)
   const { data: claimed } = await admin.from("conversations").update({ announce_pending: false, transfer_from_name: null }).eq("id", conversationId).eq("announce_pending", true).eq("assigned_to_id", who.id).select("id");
@@ -125,39 +143,68 @@ export async function postAgentMessage(admin: SupabaseClient, conversationId: st
   const hh = bot?.human_handoff ?? null;
   const format = effectiveSignature(hh, await memberSignature(admin, who));
   let signed = { text: content, prefixChars: 0 };
-  if (!announce && format !== "nenhuma") {
+  if (!announce && format !== "nenhuma" && content) {
     const smart = hh?.signature_smart !== false;
     const last = smart ? await findMessage(admin, { conversationId, roles: ["user", "agent", "assistant"], newestFirst: true }, ["role", "author_id"] as const) : null;
     if (!smart || startsSequence(last, who.id)) signed = signText(content, { format, name: who.name, sector: hh?.signature_sector ? sector?.name : null, channel: conv.channel as string | null });
   }
-  const text = announce ? `${announce}\n\n${content}` : signed.text;
-  const record = { role: "agent" as const, content: text, ...attendantAuthor(who), announce_chars: announce ? announce.length + 2 : signed.prefixChars || null, ...(replyTo ? { reply_to_id: replyTo.id } : {}) };
+  // só o arquivo: o anúncio (se houver) vai sozinho como legenda
+  const text = announce ? (content ? `${announce}\n\n${content}` : announce) : signed.text;
+  const record = { role: "agent" as const, content: text || agentFileLabel(file!), ...attendantAuthor(who), announce_chars: announce ? announce.length + (content ? 2 : 0) : signed.prefixChars || null, ...(replyTo ? { reply_to_id: replyTo.id } : {}) };
   const restoreAnnounce = async () => {
     if (announce) await admin.from("conversations").update({ announce_pending: true, transfer_from_name: passedBy }).eq("id", conversationId).eq("assigned_to_id", who.id);
   };
+  // o arquivo ligado à mensagem, e o message.sent com ele (por isso o evento sai depois)
+  const attach = async (messageId: number | null) => {
+    if (!fileId || !messageId) return;
+    await linkAttachments(admin, [fileId], messageId);
+    await queueMessageEvent(admin, messageId, { conversation_id: conversationId, ...record }, { withMedia: true });
+  };
   const sent = await deliverOutside(admin, conversationId, { insert: record }, {
     noun: "mensagem",
-    whatsapp: async (channel, to) => (await sendText(channel, to, text, { replyTo: replyTo?.ref })).messages?.[0]?.id ?? null,
-    instagram: (ch, igsid, humanAgent) => sendInstagram(admin, ch, igsid, text, undefined, { replyTo: replyTo?.ref, ...(humanAgent ? { humanAgent: true } : {}) }),
+    deferEvent: Boolean(file),
+    learn: Boolean(content),
+    onSaved: attach,
+    whatsapp: async (ch, to) => {
+      if (!file) return (await sendText(ch, to, text, { replyTo: replyTo?.ref })).messages?.[0]?.id ?? null;
+      // a legenda vai até 1.024 letras: texto maior sai antes, numa mensagem própria
+      const caption = text && text.length <= WA_CAPTION_MAX ? text : null;
+      if (text && !caption) await sendText(ch, to, text, { replyTo: replyTo?.ref });
+      return (await sendMedia(ch, to, { type: file.kind, link: fileUrl, caption, filename: file.filename }, { replyTo: caption || !text ? replyTo?.ref : null })).messages?.[0]?.id ?? null;
+    },
+    instagram: async (ch, igsid, humanAgent) => {
+      const tag = humanAgent ? { humanAgent: true } : {};
+      if (!file) return sendInstagram(admin, ch, igsid, text, undefined, { replyTo: replyTo?.ref, ...tag });
+      // o Instagram não tem legenda: o texto vai antes, numa DM própria
+      if (text) await sendInstagram(admin, ch, igsid, text, undefined, { replyTo: replyTo?.ref, ...tag });
+      const mid = await sendInstagramAttachment(ch, igsid, { type: file.kind === "image" ? "image" : "file", url: fileUrl }, { ...tag, replyTo: text ? null : replyTo?.ref });
+      // o eco do anexo volta pelo webhook: é nosso, não é o app do Instagram
+      if (mid) await markOwnMessage(admin, `ig:echo:${mid}`, "instagram");
+      return mid;
+    },
   });
   if (sent !== "widget" && sent !== "gravada") {
     await restoreAnnounce();
+    await dropFile();
     return sent;
   }
   // no WhatsApp e no Instagram a camada de envio já gravou (com o hash do id da Meta); no site, grava aqui
   if (sent === "widget") {
+    let id: number | null;
     try {
-      await saveMessage(admin, { conversation_id: conversationId, ...record });
+      id = await saveMessage(admin, { conversation_id: conversationId, ...record }, { deferEvent: Boolean(file) });
     } catch {
       await restoreAnnounce();
+      await dropFile();
       return fail("A mensagem não foi enviada. Tente de novo.");
     }
+    await attach(id);
   }
   await touchConversation(admin, conversationId);
   // aprendizado (D', parte 6): no WhatsApp e no Instagram, a camada de envio já cuidou
-  if (sent === "widget") learnLater(admin, { conversationId, text: content, author: who.name });
+  if (sent === "widget" && content) learnLater(admin, { conversationId, text: content, author: who.name });
   // chamado do site (parte 7c): a resposta vai por e-mail e o chamado fica aguardando o cliente
-  if (sent === "widget") await import("./ticket-follow").then((m) => m.afterTicketReply(admin, conversationId, content, who)).catch((e) => console.error("chamado: depois da resposta", (e as Error).message));
+  if (sent === "widget" && content) await import("./ticket-follow").then((m) => m.afterTicketReply(admin, conversationId, content, who)).catch((e) => console.error("chamado: depois da resposta", (e as Error).message));
   return ok("Enviada. O visitante vê em alguns segundos.");
 }
 
@@ -181,6 +228,12 @@ interface OutsideSend {
   instagram: (ch: IgChannelRow, igsid: string, humanAgent: boolean) => Promise<string | null>;
   /** sem a segunda tentativa com a tag (a reação não vai com ela) */
   noHumanAgent?: boolean;
+  /** o message.sent sai depois, por quem chamou (o arquivo é ligado antes) */
+  deferEvent?: boolean;
+  /** false: não vira sugestão para a base (só um arquivo, sem texto) */
+  learn?: boolean;
+  /** depois de gravada, com o id da mensagem */
+  onSaved?: (messageId: number | null) => Promise<void>;
 }
 
 /**
@@ -210,9 +263,12 @@ async function deliverOutside(admin: SupabaseClient, conversationId: string, rec
       recordFailures: false,
       record,
       // contato com vínculo: o hash de identidade vai junto (número reciclado não recebe)
+      deferEvent: how.deferEvent,
+      learn: how.learn,
       transport: async () => how.whatsapp(channel, await linkedRecipient(admin, conv.contact_id as string | null, conv.wa_id!)),
     });
     if (r.status === "blocked") return fail(`${(await sendBlockedReason(admin, conv.bot_id, "whatsapp")) ?? `Envio barrado: ${r.reason}.`} A ${noun} não foi enviada.`);
+    await how.onSaved?.(r.messageId);
     return "gravada";
   } catch (e) {
     if (isAccessError(e)) {
@@ -245,6 +301,8 @@ async function deliverToInstagram(admin: SupabaseClient, botId: string, conversa
       recordFailures: false,
       record,
       // passadas as 24 h: a resposta da equipe vai com a tag human_agent (até 7 dias), quando liberada
+      deferEvent: how.deferEvent,
+      learn: how.learn,
       transport: async () => {
         try {
           return await how.instagram(ch, igsid, false);
@@ -255,6 +313,7 @@ async function deliverToInstagram(admin: SupabaseClient, botId: string, conversa
       },
     });
     if (r.status === "blocked") return fail(`${(await sendBlockedReason(admin, botId, "instagram")) ?? `Envio barrado: ${r.reason}.`} A ${noun} não foi enviada.`);
+    await how.onSaved?.(r.messageId);
     return "gravada";
   } catch (e) {
     if (isInstagramAccessError(e)) {
