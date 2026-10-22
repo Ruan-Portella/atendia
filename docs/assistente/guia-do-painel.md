@@ -6,6 +6,18 @@ Base de conhecimento do assistente da BoaVoz no WhatsApp: responde a quem usa o 
 
 O BoaVoz é uma plataforma para agências e freelancers criarem chatbots com IA para os clientes deles, com a marca da agência. Cada chatbot aprende com o site, os PDFs e os textos do cliente e atende no chat do site, no WhatsApp oficial e no Instagram Direct. A agência cobra o preço que quiser do cliente; o BoaVoz cobra da agência pelo tamanho de cada chatbot. A IA já vem incluída: ninguém precisa de chave da OpenAI.
 
+## Onde fica cada coisa no painel
+
+O menu do lado esquerdo tem o dia a dia: Caixa de entrada (com o número de quem está esperando alguém da equipe), Campanhas e réguas e Clientes. Logo abaixo vêm os clientes, como uma lista de canais, cada um com o rosto do chatbot; o + cria um cliente novo. No rodapé ficam Configurações, Ajuda e novidades (a central de ajuda e o roadmap) e o seu nome, que abre Meu perfil, a escolha do tema e o Sair. Configurações é uma tela só, com o menu de ajustes ao lado: Conta (Marca e domínio, Equipe e papéis, Segurança e auditoria), Cobrança (Assinatura e pacotes, Uso e custo, Crédito), Integrações (ações, webhooks e API) e Biblioteca (Modelos de chatbot e Demos para prospects). Cada pessoa só vê o que o papel dela permite. No celular, o menu abre pelo botão do canto de cima.
+
+## Ir para (Ctrl K)
+
+Para achar qualquer coisa sem procurar no menu, aperte Ctrl K (⌘K no Mac) ou clique em "Ir para…" no alto do menu; no celular, é a lupa do canto de cima. Digite parte do nome de um contato (ou o telefone), de um cliente, de um chatbot ou de um ajuste, como "assinatura" ou "webhook": os resultados vêm separados em Contatos, Conversas, Clientes, Chatbots, Ações e Ajustes. As setas escolhem, Enter abre e Esc fecha. Também dá para criar um cliente ou uma campanha, trocar o tema e sair por ali. Contatos dos chatbots em modo dados sensíveis não aparecem na busca.
+
+## Tema escuro e claro
+
+O painel abre no tema escuro. Para trocar, clique no seu nome no rodapé do menu e escolha Tema escuro, Tema claro ou Tema do aparelho (segue o celular ou o computador); também dá em Meu perfil, no quadro Aparência, e pelo Ctrl K. A escolha vale para aquele navegador. A área do cliente tem a mesma escolha em Meu perfil.
+
 ## Como começar (primeiros passos)
 
 1. Crie a conta grátis em boavoz.com: com o Google, ou com o seu e-mail e o código que chega nele (o BoaVoz não usa senha; entrar e criar conta é a mesma tela, e o código vale por 1 hora).

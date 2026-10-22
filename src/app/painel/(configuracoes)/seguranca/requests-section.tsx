@@ -5,7 +5,7 @@ import { DSR_DAYS, dueDateBR } from "@/lib/data-subject";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { confirmDataSubjectRequest, refuseDataSubjectRequest } from "../actions";
+import { confirmDataSubjectRequest, refuseDataSubjectRequest } from "@/app/painel/actions";
 
 /** Prazo da LGPD já passou? */
 const overdue = (iso: string) => Date.parse(iso) < Date.now();

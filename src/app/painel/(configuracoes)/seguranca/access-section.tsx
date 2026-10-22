@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { endOtherSessions } from "../actions";
+import { endOtherSessions } from "@/app/painel/actions";
 import { deviceOf } from "@/lib/access-log";
 import { actorText, type AuditPeople } from "@/lib/audit-view";
 

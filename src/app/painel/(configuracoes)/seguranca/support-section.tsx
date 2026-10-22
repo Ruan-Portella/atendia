@@ -3,7 +3,7 @@ import { SUPPORT_HOURS, readsPerGrant, type SupportGrant } from "@/lib/support-a
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { grantSupportAccess, revokeSupportAccess } from "../actions";
+import { grantSupportAccess, revokeSupportAccess } from "@/app/painel/actions";
 
 const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 

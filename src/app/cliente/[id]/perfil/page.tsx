@@ -2,7 +2,7 @@ import { memberAttendant, requireMember, PORTAL_ROLE_LABELS } from "@/lib/member
 import { DEFAULT_ENTRY_NOTICE } from "@/lib/handoff-hours";
 import { isOurAvatarUrl } from "@/lib/attendants";
 import { ProfileForm } from "@/components/profile-form";
-import { MfaSection } from "@/app/painel/seguranca/mfa-section";
+import { MfaSection } from "@/app/painel/(configuracoes)/seguranca/mfa-section";
 import { memberPushPrefs, memberPushRemove, memberPushSubscribe, memberPushTest, memberPushUnsubscribe, memberSetAvailability, memberSetSignature, memberUpdateProfile, recordMemberMfaRemoved } from "../../actions";
 import { PushCard } from "@/components/push-card";
 import { CLIENT_PUSH_KINDS, PUSH_KIND_LABEL, listPushDevices, pushConfigured, pushPrefs, vapidPublicKey } from "@/lib/push";
@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { AvailabilityCard } from "@/components/availability-card";
 import { SignatureCard } from "@/components/signature-card";
 import { isSignatureFormat } from "@/lib/signature";
+import { ThemeChoice } from "@/components/theme";
 
 export const metadata = { title: { absolute: "Meu perfil" }, robots: { index: false, follow: false } };
 
@@ -35,6 +36,13 @@ export default async function MemberProfilePage({ params }: PageProps<"/cliente/
         entryExample={DEFAULT_ENTRY_NOTICE}
         company={member.clientName}
       />
+      <section className="card flex flex-col gap-3 p-5">
+        <div>
+          <h2 className="text-base font-medium">Aparência</h2>
+          <p className="text-sm text-muted">O tema vale para este navegador. O escuro é o padrão.</p>
+        </div>
+        <ThemeChoice className="max-w-[420px]" />
+      </section>
       {member.allowHandoff && <AvailabilityCard available={member.available} action={memberSetAvailability.bind(null, id)} />}
       {member.allowHandoff && <SignatureCard value={isSignatureFormat(member.signature) ? member.signature : null} action={memberSetSignature.bind(null, id)} />}
       {member.allowHandoff && pushConfigured() && (

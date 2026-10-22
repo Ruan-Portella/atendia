@@ -3,7 +3,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ACCOUNT_DELETION_DAYS } from "@/lib/account-deletion";
 import { dateBR } from "@/lib/retention";
-import { cancelAccountDeletionAction, requestAccountDeletionAction } from "../actions";
+import { cancelAccountDeletionAction, requestAccountDeletionAction } from "@/app/painel/actions";
 
 /**
  * Excluir a conta (Lançamento, parte 1): só o dono, com o segundo fator da Segurança. O pedido

@@ -994,3 +994,34 @@ export async function expireContactMemories(db: SupabaseClient, before: string, 
   if (error) throw new Error(`memória do contato: ${error.message}`);
   return ids.length;
 }
+
+export interface GoToContact {
+  id: string;
+  name: string | null;
+  channel: string;
+  bot: { id: string; name: string; client_id: string | null; client_name: string | null };
+}
+
+/**
+ * Contatos para o Ir para (Ctrl K): pelo nome, ou pelo telefone (pelo hash, como na lista do
+ * cliente). Com o cliente da pessoa logada (a RLS limita ao escopo dela); os chatbots em modo
+ * sensível ficam de fora, porque lá ver o contato pede o segundo fator.
+ */
+export async function goToContacts(db: SupabaseClient, term: string, limit = 5): Promise<GoToContact[]> {
+  const t = term.trim();
+  if (t.length < 2) return [];
+  let q = db.from("contacts").select("id, name, channel, bots!inner(id, name, client_id, client_name, sensitive_mode)").eq("bots.sensitive_mode", false);
+  const ph = t.replace(/\D/g, "").length >= 8 ? typedPhoneHash(t) : null;
+  if (ph) q = q.eq("phone_hash", ph);
+  else {
+    const clean = t.replace(/[%_*,()\\]/g, " ").trim();
+    if (!clean) return [];
+    q = q.ilike("name", `%${clean}%`);
+  }
+  const { data, error } = await q.order("last_inbound_at", { ascending: false, nullsFirst: false }).limit(limit);
+  if (error) throw new Error(`contatos: ${error.message}`);
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+    const b = (Array.isArray(r.bots) ? r.bots[0] : r.bots) as GoToContact["bot"];
+    return { id: r.id as string, name: (r.name as string | null) ?? null, channel: r.channel as string, bot: { id: b.id, name: b.name, client_id: b.client_id, client_name: b.client_name } };
+  });
+}

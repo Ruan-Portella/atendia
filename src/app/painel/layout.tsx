@@ -17,6 +17,10 @@ import { TeamWhatsAppStrip } from "@/components/team-whatsapp-strip";
 import { NOTICE_CONSENT_SHORT, noticeStatus } from "@/lib/team-whatsapp";
 import { company } from "@/lib/company";
 import { AppTheme } from "@/components/app-theme";
+import { createClient } from "@/lib/supabase/server";
+import { memberName } from "@/lib/team";
+import type { SidebarClient } from "@/components/sidebar-nav";
+import { GoTo } from "@/components/go-to";
 
 // o manifest deixa adicionar o painel à tela de início (no iPhone, os avisos no celular só chegam
 // assim; Memória e avisos, parte 2)
@@ -37,6 +41,19 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
   // avisos e ajuda no WhatsApp: a faixa do convite fica no topo até a pessoa confirmar ou fechar
   const whatsappNotice = await noticeStatus(createAdminClient(), member.id).catch(() => null);
   const channelNames = notices.suspended.map((c) => SUSPENDED_LABEL[c] ?? c).join(", ");
+  // os clientes no menu, como canais (a RLS deixa só os do escopo de quem entrou)
+  const supabase = await createClient();
+  const { data: clientRows, count: clientCount } = await supabase
+    .from("clients")
+    .select("id, name, bots(id, appearance, is_demo, created_at)", { count: "exact" })
+    .eq("agency_id", agency.id)
+    .eq("bots.is_demo", false)
+    .order("name")
+    .limit(50);
+  const sidebarClients: SidebarClient[] = (clientRows ?? []).map((c) => {
+    const bots = ((c.bots ?? []) as Array<{ id: string; appearance: { color?: string } | null; created_at: string }>).sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return { id: c.id as string, name: c.name as string, color: bots[0]?.appearance?.color ?? null, botIds: bots.map((b) => b.id) };
+  });
   const banners = [
     notices.aiPaused && "A IA da sua conta está pausada pela equipe BoaVoz. As mensagens continuam chegando em Conversas para a sua equipe responder; no site, os visitantes veem o formulário de contato. Dúvidas: fale com o suporte.",
     notices.whatsappDisabled && "O WhatsApp está desligado temporariamente para todos os clientes do BoaVoz. Nada entra nem sai pelo WhatsApp até ser religado; Instagram e site seguem normais.",
@@ -53,6 +70,10 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       usage={usage}
       limit={quota}
       usageLabel={`${num(usage)} / ${num(quota)}`}
+      clients={sidebarClients}
+      clientCount={clientCount ?? sidebarClients.length}
+      me={{ name: memberName(member), email: member.email, avatarUrl: member.avatar_url ?? null }}
+      goTo={<GoTo role={role} packs={packs} clients={sidebarClients.map(({ id, name, color }) => ({ id, name, color }))} />}
       notices={
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}

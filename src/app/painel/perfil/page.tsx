@@ -8,7 +8,8 @@ import { ROLE_HINTS, ROLE_LABELS, attendantOf, scopesOf } from "@/lib/team";
 import { DEFAULT_ENTRY_NOTICE } from "@/lib/handoff-hours";
 import { isOurAvatarUrl } from "@/lib/attendants";
 import { ProfileForm } from "@/components/profile-form";
-import { MfaSection } from "../seguranca/mfa-section";
+import { MfaSection } from "@/app/painel/(configuracoes)/seguranca/mfa-section";
+import { ThemeChoice } from "@/components/theme";
 import { TeamWhatsAppCard } from "@/components/team-whatsapp-card";
 import { noticeStatus } from "@/lib/team-whatsapp";
 import { PushCard } from "@/components/push-card";
@@ -58,6 +59,13 @@ export default async function ProfilePage({ searchParams }: PageProps<"/painel/p
         entryExample={DEFAULT_ENTRY_NOTICE}
         company={(sample?.name as string | undefined) ?? "sua empresa cliente"}
       />
+      <section className="card flex flex-col gap-3 p-5">
+        <div>
+          <h2 className="text-base font-medium">Aparência</h2>
+          <p className="text-sm text-muted">O tema vale para este navegador. O escuro é o padrão.</p>
+        </div>
+        <ThemeChoice className="max-w-[420px]" />
+      </section>
       <section className="card flex flex-col gap-3 p-6 text-sm">
         <div className="grid gap-1 sm:grid-cols-[140px_1fr]">
           <span className="text-muted">E-mail</span>

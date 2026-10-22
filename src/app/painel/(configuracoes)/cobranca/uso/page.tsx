@@ -11,7 +11,6 @@ import { currentPeriodBR, periodLabel } from "@/lib/report";
 import { CATEGORY_LABEL, referencePrices } from "@/lib/whatsapp-usage";
 import { cn } from "@/lib/utils";
 import { Kpi } from "@/components/kpi";
-import { BillingTabs } from "@/components/billing-tabs";
 import { OverageForm } from "@/components/overage-form";
 import { SpikeButtons } from "@/components/credit-forms";
 import { renewalLabel } from "@/lib/billing";
@@ -71,7 +70,6 @@ export default async function UsoPage() {
   return (
     <div className="max-w-[960px]">
       <h1 className="text-2xl font-normal sm:text-[28px]">Cobrança</h1>
-      <BillingTabs active="/painel/cobranca/uso" />
       <FirstWeekNote until={firstWeekUntil(agency)} />
 
       <p className="mt-5 text-sm text-muted">

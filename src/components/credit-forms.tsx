@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { buyCredit, resolveSpike } from "@/app/painel/cobranca/actions";
+import { buyCredit, resolveSpike } from "@/app/painel/(configuracoes)/cobranca/actions";
 import { CREDIT_MIN_BRL, CREDIT_SHORTCUTS_BRL, PIX_MAX_BRL, brlCents } from "@/lib/plans";
 
 /** Botão de uma forma de pagamento: só ele mostra o "enviando" quando é o escolhido. */

@@ -7,7 +7,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ActionFields, ActionTestForm } from "@/components/integrations/action-fields";
 import { needsConfirmation } from "@/lib/actions";
 import { actionsTokenWeight, headerNames } from "@/lib/integrations-input";
-import { deleteBotAction, rotateBotActionSecret, saveBotAction, testBotAction } from "@/app/painel/integracoes/actions";
+import { deleteBotAction, rotateBotActionSecret, saveBotAction, testBotAction } from "@/app/painel/(configuracoes)/integracoes/actions";
 
 const LEVEL_LABEL: Record<string, string> = { anonimo: "qualquer contato", canal: "telefone conhecido", usuario: "identificado pela empresa" };
 

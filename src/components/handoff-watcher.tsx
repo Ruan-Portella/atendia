@@ -31,6 +31,8 @@ export function HandoffWatcher({ endpoint }: { endpoint: string }) {
         if (!res.ok) return;
         const { items } = (await res.json()) as { items: PendingItem[] };
         if (stopped) return;
+        // o número ao lado de "Caixa de entrada" no menu
+        window.dispatchEvent(new CustomEvent("bv-esperando", { detail: items.length }));
         const ids = new Set(items.map((i) => i.id));
         // primeira consulta só aprende o que já estava pendente (sem alarme ao abrir o painel)
         if (known.current) {

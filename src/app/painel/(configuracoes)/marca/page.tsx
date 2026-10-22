@@ -3,7 +3,7 @@ import { CheckCircle2, Clock, Info } from "lucide-react";
 import { requirePermission } from "@/lib/agency";
 import { ACCOUNT_PROFILES } from "@/lib/first-access";
 import { company } from "@/lib/company";
-import { saveCustomDomain, undoAgencyRetention, updateAgency, updatePrivacy, verifyCustomDomain } from "../actions";
+import { saveCustomDomain, undoAgencyRetention, updateAgency, updatePrivacy, verifyCustomDomain } from "@/app/painel/actions";
 import { DEFAULT_RETENTION_MONTHS, RETENTION_MONTHS, dateBR } from "@/lib/retention";
 import { LogoUpload } from "@/components/logo-upload";
 import { appUrl } from "@/lib/utils";

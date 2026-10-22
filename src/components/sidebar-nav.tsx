@@ -2,49 +2,204 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Sparkles, Palette, CreditCard, ShieldCheck, UsersRound, CircleUser, Plug, LifeBuoy, Milestone, LayoutTemplate, Inbox } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronsUpDown, CircleUser, Inbox, LifeBuoy, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
+import { BotFace } from "@/components/bot-face";
+import { Menu } from "@/components/ui/menu";
+import { chooseTema, useTema } from "@/components/theme";
+import { DAY_TO_DAY, activeSettingsHref, allowed, firstSettingsHref } from "@/lib/nav";
+import { can, type AgencyRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
-import { can, type AgencyRole, type Permission } from "@/lib/roles";
 
-/** Itens do menu e quem vê cada um (equipe, leva B1'). */
-/** pack: só aparece com o pacote (os modelos de chatbot, D', são do Plataforma). */
-const ITEMS: Array<{ href: string; label: string; icon: typeof Users; perm: Permission; also?: string; pack?: string }> = [
-  { href: "/painel/caixa", label: "Caixa de entrada", icon: Inbox, perm: "attend" },
-  { href: "/painel/clientes", label: "Clientes", icon: Users, perm: "attend", also: "/painel/bots" },
-  { href: "/painel/integracoes", label: "Integrações", icon: Plug, perm: "integrations" },
-  { href: "/painel/demos", label: "Demos", icon: Sparkles, perm: "config" },
-  { href: "/painel/modelos", label: "Modelos", icon: LayoutTemplate, perm: "config", pack: "plataforma" },
-  { href: "/painel/marca", label: "Marca e domínio", icon: Palette, perm: "brand" },
-  { href: "/painel/equipe", label: "Equipe", icon: UsersRound, perm: "team" },
-  { href: "/painel/seguranca", label: "Segurança", icon: ShieldCheck, perm: "security" },
-  { href: "/painel/cobranca", label: "Cobrança", icon: CreditCard, perm: "billing" },
-  { href: "/painel/perfil", label: "Meu perfil", icon: CircleUser, perm: "attend" },
-  // a central de ajuda é pública (Lançamento, parte 2): sai do painel
-  { href: "/painel/roadmap", label: "Roadmap", icon: Milestone, perm: "attend" },
-  { href: "/ajuda", label: "Ajuda", icon: LifeBuoy, perm: "attend" },
-];
+export interface SidebarClient {
+  id: string;
+  name: string;
+  /** Cor do primeiro chatbot (o rosto do cliente no menu). */
+  color: string | null;
+  botIds: string[];
+}
 
-/** Navegação do painel (menu deslizante no celular/tablet, sidebar no desktop). */
-export function SidebarNav({ role, packs = [], onNavigate }: { role: AgencyRole; packs?: string[]; onNavigate?: () => void }) {
+export interface SidebarPerson {
+  name: string;
+  email: string;
+  avatarUrl: string | null;
+}
+
+interface Props {
+  role: AgencyRole;
+  packs?: string[];
+  clients: SidebarClient[];
+  clientCount: number;
+  me: SidebarPerson;
+  /** Vai logo acima do rodapé (o uso do mês). */
+  extra?: React.ReactNode;
+  onNavigate?: () => void;
+}
+
+const ICONS = { inbox: Inbox, megaphone: Megaphone, users: Users } as const;
+/** Quantos clientes cabem no menu; o resto fica em "Todos os clientes" e no Ir para. */
+export const SIDEBAR_CLIENTS = 8;
+
+/** Abre o Ir para (Ctrl K), que mora no PanelShell. */
+export const openGoTo = () => window.dispatchEvent(new Event("bv-ir-para"));
+
+/** Atendimentos esperando alguém da equipe: o HandoffWatcher avisa a cada consulta. */
+function useWaiting() {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const on = (e: Event) => setN(Number((e as CustomEvent<number>).detail) || 0);
+    window.addEventListener("bv-esperando", on);
+    return () => window.removeEventListener("bv-esperando", on);
+  }, []);
+  return n;
+}
+
+function itemClass(active: boolean) {
+  return cn(
+    "group flex min-w-0 items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm transition-colors duration-[120ms]",
+    active ? "bg-raised font-medium text-ink" : "text-ink-2 hover:bg-raised/60 hover:text-ink",
+  );
+}
+
+const SectionLabel = ({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) => (
+  <div className="flex items-center justify-between px-2.5 pb-1 pt-4">
+    <span className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted">{children}</span>
+    {action}
+  </div>
+);
+
+/**
+ * Navegação do painel (redesenho, etapa 1), no menu deslizante do celular e na barra do
+ * computador: o dia a dia, os clientes como canais (com o rosto do chatbot) e, no rodapé,
+ * Configurações, Ajuda e novidades e você (perfil, tema e sair).
+ */
+export function SidebarNav({ role, packs = [], clients, clientCount, me, extra, onNavigate }: Props) {
   const path = usePathname();
+  const waiting = useWaiting();
+  const tema = useTema();
+  const signOut = useRef<HTMLFormElement>(null);
+  const settingsHref = firstSettingsHref(role, packs);
+  const inSettings = activeSettingsHref(path, role, packs) !== null;
+  const openClient = clients.find((c) => path.startsWith(`/painel/clientes/${c.id}`) || c.botIds.some((b) => path.startsWith(`/painel/bots/${b}`)));
+
+  const themeItem = (value: "escuro" | "claro" | "sistema", label: string, Icon: typeof Moon) => ({ label, icon: tema === value ? Check : Icon, onSelect: () => chooseTema(value) });
+
   return (
-    <nav className="flex flex-col gap-1">
-      {ITEMS.filter((i) => can(role, i.perm) && (!i.pack || packs.includes(i.pack))).map(({ href, label, icon: Icon, also }) => {
-        // chatbots moram dentro do cliente, então o editor de bot acende "Clientes"
-        const active = path.startsWith(href) || (also ? path.startsWith(also) : false);
-        return (
-          <Link
-            key={href}
-            href={href}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={cn("flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors duration-[120ms]", active ? "bg-raised font-semibold text-ink" : "font-medium text-ink-2 hover:bg-raised")}
-          >
-            <Icon size={17} className="shrink-0" />
-            <span>{label}</span>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <button type="button" onClick={() => (onNavigate?.(), openGoTo())} className="mb-1 flex items-center gap-2 rounded-[10px] bg-field px-2.5 py-2 text-left text-sm text-muted shadow-[inset_0_0_0_1px_var(--color-line)] transition-colors duration-[120ms] hover:text-ink">
+        <Search size={15} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">Ir para…</span>
+        <kbd className="rounded-md bg-raised px-1.5 py-0.5 font-mono text-[10px] text-muted">Ctrl K</kbd>
+      </button>
+
+      <nav aria-label="Principal" className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-width:thin]">
+        <SectionLabel>Dia a dia</SectionLabel>
+        <div className="flex flex-col gap-0.5">
+          {DAY_TO_DAY.filter((i) => allowed(i, role, packs)).map((i) => {
+            const Icon = ICONS[i.icon];
+            // o editor do chatbot mora dentro do cliente: acende Clientes
+            const active = path.startsWith(i.href) || (i.href === "/painel/clientes" && path.startsWith("/painel/bots"));
+            return (
+              <Link key={i.href} href={i.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={itemClass(active && !openClient)}>
+                <Icon size={17} className={cn("shrink-0", active && !openClient ? "text-brand" : "text-muted group-hover:text-ink-2")} />
+                <span className="min-w-0 flex-1 truncate">{i.label}</span>
+                {i.icon === "inbox" && waiting > 0 && (
+                  <span key={waiting} className="rounded-full bg-amber px-1.5 py-px font-mono text-[11px] font-medium text-ground [animation:bv-pop_var(--dur-slow)_var(--ease-spring)]" aria-label={`${waiting} esperando`}>
+                    {waiting}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+
+        {clients.length > 0 && (
+          <>
+            <SectionLabel
+              action={
+                can(role, "config") ? (
+                  <Link href="/painel/clientes/novo" onClick={onNavigate} aria-label="Novo cliente" title="Novo cliente" className="btn-icon h-6 w-6">
+                    <Plus size={14} />
+                  </Link>
+                ) : null
+              }
+            >
+              Clientes
+            </SectionLabel>
+            <div className="flex flex-col gap-0.5">
+              {clients.slice(0, SIDEBAR_CLIENTS).map((c) => {
+                const active = openClient?.id === c.id;
+                return (
+                  <Link key={c.id} href={`/painel/clientes/${c.id}`} onClick={onNavigate} aria-current={active ? "page" : undefined} className={itemClass(active)}>
+                    <BotFace color={c.color} size={20} alive={active} />
+                    <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                  </Link>
+                );
+              })}
+              {clientCount > SIDEBAR_CLIENTS && (
+                <Link href="/painel/clientes" onClick={onNavigate} className="px-2.5 py-1.5 text-[13px] font-medium text-muted hover:text-ink">
+                  Todos os clientes ({clientCount})
+                </Link>
+              )}
+            </div>
+          </>
+        )}
+      </nav>
+
+      {extra && <div className="mt-3">{extra}</div>}
+      <div className="mt-3 flex flex-col gap-0.5 border-t border-line pt-3">
+        {settingsHref && (
+          <Link href={settingsHref} onClick={onNavigate} aria-current={inSettings ? "page" : undefined} className={itemClass(inSettings)}>
+            <Settings size={17} className={cn("shrink-0", inSettings ? "text-brand" : "text-muted group-hover:text-ink-2")} />
+            <span>Configurações</span>
           </Link>
-        );
-      })}
-    </nav>
+        )}
+        <Menu
+          align="left"
+          label="Ajuda e novidades"
+          triggerClassName={cn(itemClass(path.startsWith("/painel/roadmap")), "w-full text-left")}
+          trigger={
+            <>
+              <LifeBuoy size={17} className="shrink-0 text-muted group-hover:text-ink-2" />
+              <span>Ajuda e novidades</span>
+            </>
+          }
+          items={[
+            { label: "Central de ajuda", icon: LifeBuoy, href: "/ajuda" },
+            { label: "Novidades e roadmap", icon: Milestone, href: "/painel/roadmap" },
+          ]}
+        />
+        <Menu
+          align="left"
+          label="Você"
+          triggerClassName="mt-1 flex w-full items-center gap-2.5 rounded-[12px] px-2 py-2 text-left transition-colors duration-[120ms] hover:bg-raised/60"
+          trigger={
+            <>
+              {me.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={me.avatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+              ) : (
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-raised text-[12px] font-semibold text-ink">{me.name.charAt(0).toUpperCase()}</span>
+              )}
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block truncate text-sm font-medium text-ink">{me.name}</span>
+                <span className="block truncate text-[11.5px] text-muted">{me.email}</span>
+              </span>
+              <ChevronsUpDown size={14} className="shrink-0 text-muted" />
+            </>
+          }
+          items={[
+            { label: "Meu perfil", icon: CircleUser, href: "/painel/perfil" },
+            { type: "separator" },
+            themeItem("escuro", "Tema escuro", Moon),
+            themeItem("claro", "Tema claro", Sun),
+            themeItem("sistema", "Tema do aparelho", MonitorSmartphone),
+            { type: "separator" },
+            { label: "Sair", icon: LogOut, onSelect: () => signOut.current?.requestSubmit() },
+          ]}
+        />
+        <form ref={signOut} action="/auth/signout" method="post" hidden />
+      </div>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { MfaReset } from "@/components/mfa-reset";
-import { recordMfaRemoved } from "../actions";
+import { recordMfaRemoved } from "@/app/painel/actions";
 
 const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 

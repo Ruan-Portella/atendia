@@ -10,7 +10,6 @@ import { billingEnabled } from "@/lib/stripe";
 import { dateBR } from "@/lib/retention";
 import { periodLabel } from "@/lib/report";
 import { Kpi } from "@/components/kpi";
-import { BillingTabs } from "@/components/billing-tabs";
 import { CreditBuyForm } from "@/components/credit-forms";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -51,7 +50,6 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
   return (
     <div className="max-w-[960px]">
       <h1 className="text-2xl font-normal sm:text-[28px]">Cobrança</h1>
-      <BillingTabs active="/painel/cobranca/credito" />
       <FirstWeekNote until={firstWeekUntil(agency)} />
 
       <p className="mt-5 text-sm text-muted">

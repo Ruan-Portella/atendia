@@ -4,7 +4,6 @@ import { PACKS, brlCents, isPackId, num } from "@/lib/plans";
 import { billingEnabled } from "@/lib/stripe";
 import { choiceLabel, nextChoice, packChargeCents, remainingFraction, renewalLabel, sizeMonthlyCents } from "@/lib/billing";
 import { sizeLabel } from "@/lib/atendimentos";
-import { BillingTabs } from "@/components/billing-tabs";
 import { SubscribeForm } from "@/components/subscribe-form";
 import { PackButton, SizeChangeForm } from "@/components/billing-controls";
 import { ActionForm } from "@/components/ui/action-form";
@@ -48,7 +47,6 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
   return (
     <div className="max-w-[960px]">
       <h1 className="text-2xl font-normal sm:text-[28px]">Cobrança</h1>
-      <BillingTabs active="/painel/cobranca" />
 
       {sp.ok && !subscribed && <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Pagamento recebido. Estamos confirmando com a Stripe: recarregue a página em alguns segundos.</p>}
       {sp.ok && subscribed && <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Assinatura ativada. Obrigado!</p>}

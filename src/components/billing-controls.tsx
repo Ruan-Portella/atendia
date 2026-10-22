@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { changeBotSize, changePack } from "@/app/painel/cobranca/actions";
+import { changeBotSize, changePack } from "@/app/painel/(configuracoes)/cobranca/actions";
 import { choiceLabel, nextChoice, planSizeChange, type SizeChoice } from "@/lib/billing";
 import { BOT_SIZES, brlCents, num, sizeOption, type BotSize, type PackId } from "@/lib/plans";
 

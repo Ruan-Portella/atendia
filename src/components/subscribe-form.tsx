@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { startCheckout } from "@/app/painel/cobranca/actions";
+import { startCheckout } from "@/app/painel/(configuracoes)/cobranca/actions";
 import { BOT_SIZES, PACKS, brlCents, num, sizeOption, type BotSize, type PackId } from "@/lib/plans";
 
 interface BotRow {

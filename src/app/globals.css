@@ -101,6 +101,8 @@ dialog.modal {
 }
 dialog.modal[open] { animation: bv-palette var(--dur-base) var(--ease-spring); }
 dialog.modal::backdrop { background: rgba(10, 10, 9, 0.6); }
+/* o Ir para fica preso no topo: não pula quando os resultados mudam */
+dialog.modal.palette { margin: 10vh auto auto; }
 dialog.modal[open]::backdrop { animation: fade-in var(--dur-base) var(--ease-out); }
 
 .toast-in { animation: bv-palette var(--dur-base) var(--ease-spring); }

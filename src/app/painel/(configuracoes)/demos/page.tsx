@@ -6,7 +6,7 @@ import { CopyButton } from "@/components/copy-button";
 import { relativeTime } from "@/lib/utils";
 import { agencyBaseUrl } from "@/lib/domain";
 import { BotRowActions } from "@/components/bot-row-actions";
-import { deleteBot } from "../actions";
+import { deleteBot } from "@/app/painel/actions";
 import { DEMOS_PER_MONTH, DEMOS_PER_MONTH_FREE, DEMO_ANSWERS, DEMO_DAYS } from "@/lib/plans";
 import { monthBoundsBR } from "@/lib/billing";
 import { FREE_LINKED_DEMO, freeLinked } from "@/lib/person-signals";
