@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { botHint, caseLine, checkRun, inventedValues, loadCases, runCases, type EvalCase } from "../eval-cases";
+import { botHint, caseBot, caseLine, checkRun, inventedValues, loadCases, runCases, type EvalCase } from "../eval-cases";
+import { activeMomentNotice } from "../moment-notice";
 import type { EvalRun } from "../eval";
 
 /** Ferramentas do chat que um caso pode exigir (ferramenta) ou proibir (nao_usar). */
@@ -29,6 +30,9 @@ describe.each(caseFiles)("conjunto fixo de casos (evals/%s)", (file, name) => {
       if (!c.foto) expect(c.pergunta.length, c.id).toBeGreaterThan(1);
       if (c.historico) expect(c.historico.length % 2, `${c.id}: histórico alterna contato e assistente`).toBe(0);
       if (c.canal) expect(["whatsapp", "instagram", "widget"], c.id).toContain(c.canal);
+      // aviso do momento: o vencido precisa do texto, e o texto cabe no limite do painel
+      if (c.aviso_vencido) expect(c.aviso, c.id).toBeTruthy();
+      if (c.aviso) expect(c.aviso.length, c.id).toBeLessThanOrEqual(500);
       for (const t of [...(c.ferramenta?.split("|") ?? []), c.nao_usar]) if (t) expect(TOOLS, c.id).toContain(t);
       for (const re of [c.deve_conter, c.nao_deve_conter]) {
         if (!re) continue;
@@ -123,5 +127,23 @@ describe("checagem de cada rodada", () => {
 
   it("nome de arquivo de casos só com letras, números e hífen", () => {
     expect(() => loadCases("../segredo")).toThrow();
+  });
+});
+
+describe("aviso do momento no caso", () => {
+  const bot = { id: "b1", moment_notice: null as string | null, moment_notice_until: null as string | null };
+  const now = Date.parse("2026-10-21T15:00:00Z");
+
+  it("o caso liga o aviso por 6 horas; o vencido não vale; sem aviso, o chatbot fica como está", () => {
+    const on = caseBot(bot, { aviso: "Instabilidade no Centro; volta às 18h." }, now);
+    expect(activeMomentNotice(on, now)).toEqual({ text: "Instabilidade no Centro; volta às 18h.", until: "2026-10-21T21:00:00.000Z" });
+    expect(activeMomentNotice(caseBot(bot, { aviso: "x", aviso_vencido: true }, now), now)).toBeNull();
+    expect(caseBot(bot, {}, now)).toBe(bot);
+  });
+
+  it("os casos do aviso estão no Conecta Fibra", () => {
+    const cases = loadCases("internet").filter((c) => c.categoria === "aviso");
+    expect(cases.length).toBeGreaterThanOrEqual(6);
+    expect(cases.some((c) => c.aviso_vencido)).toBe(true);
   });
 });

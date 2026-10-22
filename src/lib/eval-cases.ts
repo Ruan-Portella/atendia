@@ -63,6 +63,13 @@ export interface EvalCase extends RoutineCaseFields {
   tipo_comentario?: string;
   com_direct?: boolean;
   sem_resposta?: boolean;
+  /**
+   * Aviso do momento só neste caso (o texto da empresa, valendo as próximas 6 horas): a IA usa
+   * quando o contato pergunta ou o assunto tem a ver. aviso_vencido: o mesmo aviso, já vencido
+   * (some sozinho, a IA não vê).
+   */
+  aviso?: string;
+  aviso_vencido?: boolean;
   notas?: string;
 }
 
@@ -78,6 +85,12 @@ export function loadCases(name?: string): EvalCase[] {
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("//"))
     .map((l) => JSON.parse(l) as EvalCase);
+}
+
+/** O chatbot do caso: com o aviso do momento do caso, quando ele tem um. Pura. */
+export function caseBot<B extends { moment_notice?: string | null; moment_notice_until?: string | null }>(bot: B, c: Pick<EvalCase, "aviso" | "aviso_vencido">, now = Date.now()): B {
+  if (!c.aviso) return bot;
+  return { ...bot, moment_notice: c.aviso, moment_notice_until: new Date(now + (c.aviso_vencido ? -1 : 6) * 3_600_000).toISOString() };
 }
 
 /** A foto de um caso (evals/fotos/NOME), em bytes. */
@@ -187,8 +200,10 @@ export async function runCases(
         }
         const evalOpts: EvalOptions = { runs: opts.runs, model: opts.model, temperature: opts.temperature, effort: opts.effort, classifierModel: opts.classifierModel, onUsage: opts.onUsage, channel: c.canal ?? "whatsapp", history: c.historico, age: c.idade ?? null, foreign: c.fora };
         // caso com foto: a leitura roda em cada rodada, como no canal; o texto da foto também vale como fonte
-        const r = c.foto ? await evaluatePhotoQuestion(db, bot, loadCasePhoto(c.foto), c.pergunta, evalOpts) : { ...(await evaluateQuestion(db, bot, c.pergunta, evalOpts)), notes: [] as string[] };
-        const allowed = [r.context, c.pergunta, ...(c.historico ?? []), ...r.notes].join("\n");
+        const b = caseBot(bot, c);
+        const r = c.foto ? await evaluatePhotoQuestion(db, b, loadCasePhoto(c.foto), c.pergunta, evalOpts) : { ...(await evaluateQuestion(db, b, c.pergunta, evalOpts)), notes: [] as string[] };
+        // o aviso que vale também é fonte (o vencido não: a IA não o vê)
+        const allowed = [r.context, c.pergunta, ...(c.historico ?? []), ...r.notes, c.aviso && !c.aviso_vencido ? c.aviso : ""].join("\n");
         // erro de chamada (ex.: limite da OpenAI) não é falha de comportamento: fica à parte
         const errors = r.runs.filter((run) => run.verdict === "erro").length;
         const failures = r.runs
@@ -210,7 +225,7 @@ const caseIcon = (r: CaseResult) => (r.failures.length ? "❌" : r.errors ? "⚠
 
 /** Uma linha por caso (a mesma do relatório e do andamento). */
 export function caseLine(r: CaseResult): string {
-  return `  ${caseIcon(r)} ${r.c.id} (${r.passed}/${r.runs}${r.errors ? `, ${r.errors} com erro de chamada` : ""}) — ${r.c.foto ? `📷 ${r.c.foto} ` : ""}${r.c.comentario !== undefined ? `💬 comentário: “${r.c.comentario}” · ` : ""}${r.c.turnos ? `💬 ${r.c.turnos.length} mensagens · ` : ""}${r.c.pergunta}`;
+  return `  ${caseIcon(r)} ${r.c.id} (${r.passed}/${r.runs}${r.errors ? `, ${r.errors} com erro de chamada` : ""}) — ${r.c.foto ? `📷 ${r.c.foto} ` : ""}${r.c.comentario !== undefined ? `💬 comentário: “${r.c.comentario}” · ` : ""}${r.c.turnos ? `💬 ${r.c.turnos.length} mensagens · ` : ""}${r.c.aviso ? `📢 aviso${r.c.aviso_vencido ? " vencido" : ""} · ` : ""}${r.c.pergunta}`;
 }
 
 /** Passou: nenhuma rodada errou o comportamento e pelo menos uma rodou (⚠️ = só erro de chamada). */

@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPrompt, chatModel, chatModelId, chatReasoningEffort, fixedInstructions, modelCallOptions, offTopicReminder, scopeReminder, type ReasoningEffort } from "./ai";
 import { CHAT_TEMPERATURE, ageAskRefusal, chatCacheKey, channelNoteFor, chatTools, gatePrompt, handoffPrompt, linkHostsFor, postNoteFor, refusalAck, retrieveContext, withRiskText, type BotRow } from "./chat";
 import { postPriceRuleOf } from "./post-context";
+import { activeMomentNotice } from "./moment-notice";
 import { checkLeadInput, leadSavedNote } from "./lead-input";
 import { isScopeRefusalText, isTextRefusal } from "./refusal-text";
 import { cardName, joinShownText, normalizeLink, normalizeOptions, optionsFromText, type MessageComponent } from "./components";
@@ -144,6 +145,8 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         businessTopics: bot.business_topics,
         gateChannel: scopeLock ? (opts.channel as "whatsapp" | "instagram") : null,
         gateNotes: gated.gateNotes,
+        // o aviso do momento, como no chat (o do chatbot, ou o do caso)
+        momentNotice: activeMomentNotice(bot),
         postNote: postNoteFor(bot, retrieval.hits, question),
       });
       const r = await generateText({

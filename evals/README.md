@@ -29,7 +29,7 @@ Cada rodada é uma resposta de IA de verdade (gasta centavos) e nada é gravado.
 | Campo | O que é |
 |---|---|
 | `id` | nome único, curto (`escopo-redacao`) |
-| `categoria` | `escopo_fixo`, `escopo_flexivel`, `negocio`, `fatos`, `humano`, `seguranca`, `saude`, `risco`, `portao`, `componentes` (botões, lista e link), `lead` (registrar_lead) |
+| `categoria` | `escopo_fixo`, `escopo_flexivel`, `negocio`, `fatos`, `humano`, `seguranca`, `saude`, `risco`, `portao`, `componentes` (botões, lista e link), `lead` (registrar_lead), `aviso` (aviso do momento) |
 | `canal` | `whatsapp` (padrão), `instagram` ou `widget` (no widget não há trava de escopo) |
 | `historico` | conversa anterior, alternando contato e assistente, começando pelo contato |
 | `pergunta` | a última mensagem do contato |
@@ -43,6 +43,8 @@ Cada rodada é uma resposta de IA de verdade (gasta centavos) e nada é gravado.
 | `deve_conter` / `nao_deve_conter` | expressão regular (sem diferença de maiúsculas) |
 | `foto` | foto do contato, arquivo em `evals/fotos/`; a `pergunta` vira a legenda (vazia: foto sem legenda) |
 | `foto_tipo` | o tipo que a leitura da foto precisa dar em toda rodada: `comum`, `comprovante`, `documento`, `saude`, `impropria` ou `ilegivel` |
+| `aviso` | aviso do momento ligado só neste caso (o texto da empresa, valendo as próximas 6 horas); o texto também vale como fonte para `sem_valor_inventado` |
+| `aviso_vencido` | `true`: o mesmo aviso, já vencido (some sozinho; a IA não vê) |
 | `notas` | por que o caso existe |
 
 Categorias obrigatórias (precisam de 100%): `escopo_fixo`, `humano`, `seguranca`, `fatos`,
@@ -224,7 +226,7 @@ conhecido do portão diz isso nas `notas`.
 | Pousada | `pousada` | Pousada Mar Azul (teste) | diária por temporada, criança, pet, check-in, cancelamento; nunca confirma vaga nem reserva pelo chat |
 | Oficina mecânica | `oficina` | Auto Center Torque (teste) | preços de serviço e peça, garantia, sábado, o que a oficina não faz; ensinar a fazer o conserto é recusa |
 | Barbearia | `barbearia` | Barbearia Navalha (teste) | preços, plano do titular, tolerância, dias; cerveja de cortesia oculta: corte não pede 18+, cerveja pede |
-| Provedor de internet | `internet` | Conecta Fibra (teste) | planos, instalação, fidelidade e multa; bairro fora da cobertura; internet caiu vai para o suporte; configurar coisa de fora do serviço é recusa |
+| Provedor de internet | `internet` | Conecta Fibra (teste) | planos, instalação, fidelidade e multa; bairro fora da cobertura; internet caiu vai para o suporte; configurar coisa de fora do serviço é recusa; o aviso do momento (categoria `aviso`: usa quando perguntam ou o assunto tem a ver, não começa por ele, some vencido, ordem escrita no aviso não vira promoção) |
 | Ótica | `otica` | Ótica Visão Clara (teste) | óculos de sol, ajuste e conserto liberados; óculos de grau e lente de contato são produto de saúde, barrados no WhatsApp e no Instagram; qual grau usar é pergunta de saúde |
 
 ### Clínica Vale Verde (teste) — `casos-clinica.jsonl`
