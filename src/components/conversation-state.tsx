@@ -11,6 +11,6 @@ export function ConversationStateBadge({ conv, withTime = false }: { conv: Prese
       </span>
     );
   }
-  if (state === "active") return <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-ink-2">Ativa</span>;
-  return <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-muted">Encerrada{withTime ? ` · saiu ${relativeTime(lastSeen(conv))}` : ""}</span>;
+  if (state === "active") return <span className="rounded-full bg-raised px-2 py-0.5 text-xs font-medium text-ink-2">Ativa</span>;
+  return <span className="rounded-full bg-raised px-2 py-0.5 text-xs font-medium text-muted">Encerrada{withTime && <span className="hidden sm:inline"> · saiu {relativeTime(lastSeen(conv))}</span>}</span>;
 }

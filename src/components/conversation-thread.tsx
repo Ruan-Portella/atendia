@@ -261,8 +261,8 @@ function TraceView({ m, before, botName, open }: { m: ThreadMessage; before: Thr
     <details open={open} className="group/trace w-full max-w-[440px] self-end overflow-hidden rounded-[14px] bg-panel text-left shadow-[inset_0_0_0_1px_var(--color-line),inset_0_1px_0_var(--highlight)]">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[12.5px] [&::-webkit-details-marker]:hidden">
         <Sparkles size={14} className="shrink-0 text-brand" aria-hidden />
-        <span className="font-medium text-ink">O que {botName} fez</span>
-        <span className="font-mono text-[10.5px] text-muted">
+        <span className="min-w-0 truncate font-medium text-ink">O que {botName} fez</span>
+        <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] text-muted">
           {n} {n === 1 ? "passo" : "passos"}{t.seconds !== null ? ` · ${durationLabel(t.seconds)}` : ""}
         </span>
         <ChevronDown size={14} className="ml-auto shrink-0 text-muted transition-transform duration-[220ms] group-open/trace:rotate-180" aria-hidden />

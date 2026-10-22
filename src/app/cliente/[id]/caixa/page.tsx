@@ -45,9 +45,9 @@ export default async function MemberInboxPage({ params, searchParams }: PageProp
 
   return (
     <div className="-mx-4 -my-6 flex min-h-0 flex-1 flex-col sm:-mx-6 sm:-my-8">
-      <InboxView compact items={items} queue={queue} queues={queues} meId={member.memberId} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={false} available={member.available} onAvailability={memberSetAvailability.bind(null, id)}
+      <InboxView compact backInHeader items={items} queue={queue} queues={queues} meId={member.memberId} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={false} available={member.available} onAvailability={memberSetAvailability.bind(null, id)}
         contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(_b, c) => hrefFor({ queue, conversationId: c })} />}>
-        {selected && <ClientConversation clientId={id} convId={selected.id} embedded back={back} earlier={Math.min(50, Number(sp.ant) || 0)} earlierHref={(n) => `${hrefFor({ queue, conversationId: selected.id })}&ant=${n}`} />}
+        {selected && <ClientConversation clientId={id} convId={selected.id} embedded back={back} mobileBack={hrefFor({ queue })} contactToggle earlier={Math.min(50, Number(sp.ant) || 0)} earlierHref={(n) => `${hrefFor({ queue, conversationId: selected.id })}&ant=${n}`} />}
       </InboxView>
     </div>
   );

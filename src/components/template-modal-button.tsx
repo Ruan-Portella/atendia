@@ -18,9 +18,9 @@ export function TemplateModalButton({ templates, action, defaults, highlight = f
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={highlight ? "btn-primary" : "btn-ghost"}>
+      <button type="button" onClick={() => setOpen(true)} aria-label="Enviar modelo" title="Enviar modelo" className={`${highlight ? "btn-primary" : "btn-ghost"} max-sm:h-9 max-sm:w-9 max-sm:px-0`}>
         <FileText size={15} />
-        Enviar modelo
+        <span className="hidden sm:inline">Enviar modelo</span>
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title="Enviar modelo de mensagem" description="Modelos aprovados pela Meta podem ser enviados a qualquer momento, inclusive depois das 24 h.">
         <TemplateSender templates={templates} action={action} defaults={defaults} onSent={() => setOpen(false)} />

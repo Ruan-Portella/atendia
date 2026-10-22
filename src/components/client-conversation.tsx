@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { memberAttendant, requireMember, requireMemberMfa } from "@/lib/member";
 import { ConversationThread, withNotes, type ThreadMessage } from "@/components/conversation-thread";
 import { EarlierConversations } from "@/components/earlier-conversations";
+import { ContactToggle } from "@/components/contact-pane";
+import { ArrowLeft, Maximize2 } from "lucide-react";
 import { ConversationTools } from "@/components/conversation-tools";
 import { listNotes } from "@/lib/conversation-notes";
 import { transferOptions } from "@/lib/transfer";
@@ -37,7 +39,7 @@ function botOf(rel: unknown): { name: string; color: string | null } | null {
  * A conversa na área do cliente: a página da conversa e o lado direito da Caixa de entrada do portal
  * (embedded: preenche a coluna; `back` é para onde o segundo fator volta).
  */
-export async function ClientConversation({ clientId: id, convId: cid, embedded = false, back, earlier = 0, earlierHref }: { clientId: string; convId: string; embedded?: boolean; back?: string; /** quantas conversas anteriores da pessoa mostrar em cima (?ant=) */ earlier?: number; earlierHref?: (n: number) => string }) {
+export async function ClientConversation({ clientId: id, convId: cid, embedded = false, back, earlier = 0, earlierHref, mobileBack, contactToggle = false }: { clientId: string; convId: string; embedded?: boolean; back?: string; /** a volta para a fila no celular (seta no topo) */ mobileBack?: string; /** o botão "Contato" (o painel do contato da Caixa) */ contactToggle?: boolean; /** quantas conversas anteriores da pessoa mostrar em cima (?ant=) */ earlier?: number; earlierHref?: (n: number) => string }) {
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
@@ -93,19 +95,30 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   // cabeçalho e resposta fixos, e só as mensagens rolam.
   return (
     <div className={embedded ? "flex h-full min-h-0 flex-col px-4 sm:px-6" : "-my-6 flex min-h-0 flex-1 flex-col sm:-my-8"}>
-      <header className="border-b border-line py-3">
-        {embedded ? (
-          <Link href={`/cliente/${id}/conversas/${cid}`} className="text-xs font-semibold text-muted hover:underline">Abrir em tela cheia</Link>
-        ) : (
-          <Link href={`/cliente/${id}/conversas`} className="text-xs font-semibold text-muted">← Conversas</Link>
+      <header className="flex items-start gap-2 border-b border-line py-2.5 sm:py-3">
+        {mobileBack && (
+          <Link href={mobileBack} aria-label="Voltar para a fila" title="Voltar para a fila" className="btn-icon -ml-1 h-9 w-9 shrink-0 lg:hidden">
+            <ArrowLeft size={18} />
+          </Link>
         )}
-        <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-normal sm:text-xl">Conversa <ConversationStateBadge conv={conv} withTime /></h1>
+        <div className="min-w-0 flex-1">
+        {!embedded && <Link href={`/cliente/${id}/conversas`} className="text-xs font-medium text-muted hover:text-ink">← Conversas</Link>}
+        <h1 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-normal leading-tight sm:text-lg"><span className="min-w-0 max-w-full truncate">{nameForReplies || "Conversa"}</span> <ConversationStateBadge conv={conv} withTime /></h1>
         <p className="text-xs text-muted">{new Date(conv.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "long", timeStyle: "short" })}{conv.channel === "whatsapp" ? " · WhatsApp" : conv.channel === "instagram" ? " · Instagram" : ""}</p>
         {conv.ticket_protocol && (member.allowHandoff ? (
           <TicketStatusControl protocol={conv.ticket_protocol as string} subject={(conv.ticket_subject as string | null) ?? null} status={(conv.ticket_status as string | null) ?? "aberto"} action={memberSetTicketStatus.bind(null, id, cid)} />
         ) : (
           <p className="text-xs font-semibold text-brand">Chamado <span className="font-mono">{conv.ticket_protocol as string}</span>{conv.ticket_subject ? ` · ${conv.ticket_subject as string}` : ""} · {TICKET_STATUS_LABEL[(conv.ticket_status as TicketStatus) ?? "aberto"]}</p>
         ))}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {embedded && (
+            <Link href={`/cliente/${id}/conversas/${cid}`} aria-label="Abrir em tela cheia" title="Abrir em tela cheia" className="btn-icon h-9 w-9">
+              <Maximize2 size={15} />
+            </Link>
+          )}
+          {contactToggle && <ContactToggle />}
+        </div>
       </header>
 
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={handoffOpen} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />

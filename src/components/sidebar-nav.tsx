@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, ChevronsUpDown, CircleUser, Inbox, LifeBuoy, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { Menu } from "@/components/ui/menu";
+import { NoticeBell } from "@/components/notice-center";
 import { chooseTema, useTema } from "@/components/theme";
 import { DAY_TO_DAY, activeSettingsHref, allowed, firstSettingsHref } from "@/lib/nav";
 import { can, type AgencyRole } from "@/lib/roles";
@@ -93,16 +94,20 @@ export function SidebarNav({ role, packs = [], clients, clientCount, me, extra, 
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <button
-        type="button"
-        onClick={() => (onNavigate?.(), openGoTo())}
-        title={collapsed ? "Ir para (Ctrl K)" : undefined}
-        className={cn("mb-1 flex items-center rounded-[10px] bg-field text-sm text-muted shadow-[inset_0_0_0_1px_var(--color-line)] transition-colors duration-[120ms] hover:text-ink", collapsed ? "mx-auto h-10 w-10 justify-center" : "gap-2 px-2.5 py-2 text-left")}
-      >
-        <Search size={15} className="shrink-0" />
-        {label("Ir para…")}
-        {!collapsed && <kbd className="rounded-md bg-raised px-1.5 py-0.5 font-mono text-[10px] text-muted">Ctrl K</kbd>}
-      </button>
+      <div className={cn("mb-1 flex gap-1.5", collapsed ? "flex-col items-center" : "items-center")}>
+        <button
+          type="button"
+          onClick={() => (onNavigate?.(), openGoTo())}
+          title={collapsed ? "Ir para (Ctrl K)" : undefined}
+          className={cn("flex items-center rounded-[10px] bg-field text-sm text-muted shadow-[inset_0_0_0_1px_var(--color-line)] transition-colors duration-[120ms] hover:text-ink", collapsed ? "h-10 w-10 justify-center" : "min-w-0 flex-1 gap-2 px-2.5 py-2 text-left")}
+        >
+          <Search size={15} className="shrink-0" />
+          {label("Ir para…")}
+          {!collapsed && <kbd className="rounded-md bg-raised px-1.5 py-0.5 font-mono text-[10px] text-muted">Ctrl K</kbd>}
+        </button>
+        {/* os avisos (cota, pagamento, canal, segurança…), que antes eram faixas fixas no topo */}
+        <NoticeBell className="h-10 w-10 shrink-0" />
+      </div>
 
       <nav aria-label="Principal" className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
         <SectionLabel collapsed={collapsed}>Dia a dia</SectionLabel>

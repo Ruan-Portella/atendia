@@ -16,6 +16,8 @@ import { HandoffReply, HandoffStatus, holderView } from "@/components/handoff-co
 import { leadWaiting } from "@/lib/handoff-status";
 import { ConversationMenu } from "@/components/conversation-menu";
 import { EarlierConversations } from "@/components/earlier-conversations";
+import { ContactToggle } from "@/components/contact-pane";
+import { ArrowLeft } from "lucide-react";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { conversationState, whatsappWindowOpen, humanAgentEnabled, humanAgentUntil, timeLeft } from "@/lib/presence";
@@ -53,8 +55,8 @@ function RoutineChips({ runs }: { runs: RunSummary[] }) {
   const main = runs.find((r) => r.status === "active") ?? runs[0];
   const rest = runs.filter((r) => r !== main);
   return (
-    <span className="inline-flex items-center gap-1">
-      <span className={`rounded-full px-2 py-0.5 ${main.status === "active" ? "bg-brand-soft font-medium text-brand" : "bg-raised text-ink-2"}`}>Roteiro · {runBandText(main)}</span>
+    <span className="inline-flex min-w-0 items-center gap-1">
+      <span title={runBandText(main)} className={`max-w-[min(260px,62vw)] truncate rounded-full px-2 py-0.5 sm:max-w-none ${main.status === "active" ? "bg-brand-soft font-medium text-brand" : "bg-raised text-ink-2"}`}>Roteiro · {runBandText(main)}</span>
       {rest.length > 0 && (
         <details className="relative">
           <summary className="cursor-pointer list-none rounded-full bg-raised px-2 py-0.5 font-mono text-[11px] text-muted hover:text-ink [&::-webkit-details-marker]:hidden" title="Os roteiros anteriores desta conversa">+{rest.length}</summary>
@@ -75,7 +77,7 @@ const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram:
  * (embedded: preenche a coluna, com o link para abrir em tela cheia; `back` é para onde o segundo
  * fator volta).
  */
-export async function AgencyConversation({ botId: id, convId: cid, embedded = false, back, earlier = 0, earlierHref }: { botId: string; convId: string; embedded?: boolean; back?: string; /** quantas conversas anteriores da pessoa mostrar em cima (?ant=) */ earlier?: number; earlierHref?: (n: number) => string }) {
+export async function AgencyConversation({ botId: id, convId: cid, embedded = false, back, earlier = 0, earlierHref, mobileBack, contactToggle = false }: { botId: string; convId: string; embedded?: boolean; back?: string; /** a volta para a fila no celular (seta no topo) */ mobileBack?: string; /** o botão "Contato" (o painel do contato da Caixa) */ contactToggle?: boolean; /** quantas conversas anteriores da pessoa mostrar em cima (?ant=) */ earlier?: number; earlierHref?: (n: number) => string }) {
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
@@ -176,21 +178,27 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   // quando há, mede --panel-notices-h), cabeçalho e resposta fixos, e só as mensagens rolam.
   return (
     <div className={embedded ? "flex h-full min-h-0 flex-col" : "-mx-4 -my-5 flex h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 flex-col sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]"}>
-      <header className="flex flex-col gap-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-6">
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-raised text-[13px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)]">{initials(who) || "?"}</span>
+      <header className="flex flex-col gap-2 border-b border-line bg-panel px-3 py-2.5 sm:px-5 sm:py-3 md:px-6">
+        <div className="flex items-start gap-2 sm:gap-3">
+          {mobileBack && (
+            <Link href={mobileBack} aria-label="Voltar para a fila" title="Voltar para a fila" className="btn-icon -ml-1 h-9 w-9 shrink-0 lg:hidden">
+              <ArrowLeft size={18} />
+            </Link>
+          )}
+          <span className="mt-0.5 hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-raised text-[13px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)] sm:flex">{initials(who) || "?"}</span>
           <div className="min-w-0 flex-1">
             {!embedded && <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-medium text-muted hover:text-ink">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>}
-            <h1 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-lg font-normal leading-tight">
-              <span className="min-w-0 truncate">{who}</span>
+            <h1 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-normal leading-tight sm:text-lg">
+              <span className="min-w-0 max-w-full truncate">{who}</span>
               <span className="rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)]">{CHANNEL_LABEL[conv.channel as string] ?? conv.channel}</span>
               <ConversationStateBadge conv={conv} withTime />
               {sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-medium text-amber-ink">dados sensíveis</span>}
             </h1>
-            <p className="mt-0.5 line-clamp-2 text-[12.5px] text-muted">{bot ? bot.name : "Conversa"}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:text-ink">{bot.client_name}</Link></> : null} · começou {relativeTime(conv.started_at)}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}</p>
+            <p className="mt-0.5 hidden text-[12.5px] text-muted line-clamp-2 sm:block">{bot ? bot.name : "Conversa"}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:text-ink">{bot.client_name}</Link></> : null} · começou {relativeTime(conv.started_at)}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1">
             {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
+            {contactToggle && <ContactToggle />}
             <ConversationMenu
               fullHref={embedded ? `/painel/bots/${id}/conversas/${cid}` : null}
               resetAge={age ? { action: resetConversationAge.bind(null, cid), description: `${age.source === "empresa" ? `A empresa informou pela API que o contato ${age.status === "sim" ? "tem 18 anos ou mais" : "não tem 18 anos"}${age.origin ? ` (${age.origin})` : ""}` : `O contato ${age.status === "sim" ? "confirmou ter 18 anos ou mais" : "disse que não tem 18 anos"}`} (${relativeTime(age.decidedAt)}). Zerando, na próxima vez que pedir bebida ou remédio o assistente pergunta de novo.` } : null}
@@ -200,7 +208,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
         </div>
         {/* o resto fica numa linha de etiquetas pequenas (redesenho): novidades, 18+, roteiros, chamado e portão */}
         {(consent || age || runs.length > 0 || conv.ticket_protocol || gateCats.length > 0) && (
-          <div className="flex flex-wrap items-center gap-1.5 text-[12px] sm:pl-[52px]">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] sm:pl-[52px]">
             {consent && (
               <span
                 className={`rounded-full px-2 py-0.5 font-medium ${consent.state === "granted" ? "bg-brand-soft text-brand" : "bg-raised text-muted"}`}

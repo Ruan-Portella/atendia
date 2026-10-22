@@ -59,6 +59,7 @@ export function InboxView({
   compact = false,
   contact,
   contactOpen = true,
+  backInHeader = false,
   children,
 }: {
   items: InboxItem[];
@@ -78,6 +79,8 @@ export function InboxView({
   contact?: React.ReactNode;
   /** a coluna do contato começa aberta (o cookie da pessoa; ela esconde e mostra pelo botão) */
   contactOpen?: boolean;
+  /** a volta para a fila (no celular) fica no topo da conversa, e não numa linha em cima dela */
+  backInHeader?: boolean;
   /** a conversa aberta (lado direito) */
   children?: React.ReactNode;
 }) {
@@ -196,19 +199,16 @@ export function InboxView({
       <div className={cn("min-w-0 flex-1 flex-col bg-ground", selectedId ? "flex" : "hidden lg:flex")}>
         {selectedId ? (
           <>
-            <Link href={hrefFor({ queue })} className="flex items-center gap-1.5 border-b border-line bg-panel px-4 py-2 text-[13px] font-medium text-muted lg:hidden">
-              <ArrowLeft size={14} />
-              {label}
-            </Link>
-            {contact && (
-              <details className={cn("border-b border-line bg-panel", !compact && "min-[1400px]:hidden")}>
-                <summary className="cursor-pointer px-4 py-2 text-[13px] font-medium text-muted">Contato{selected?.contact ? `: ${selected.contact}` : ""}</summary>
-                <div className="max-h-[45dvh] overflow-y-auto border-t border-line-2">{contact}</div>
-              </details>
+            {!backInHeader && (
+              <Link href={hrefFor({ queue })} className="flex items-center gap-1.5 border-b border-line bg-panel px-4 py-2 text-[13px] font-medium text-muted lg:hidden">
+                <ArrowLeft size={14} />
+                {label}
+              </Link>
             )}
             <div className="flex min-h-0 flex-1">
               <div className="min-h-0 min-w-0 flex-1">{children}</div>
-              {contact && !compact && <ContactPane initialOpen={contactOpen} name={selected?.contact ?? null}>{contact}</ContactPane>}
+              {/* o contato: coluna nas telas largas; nas outras, desliza da direita pelo botão do topo da conversa */}
+              {contact && <ContactPane initialOpen={contactOpen} name={selected?.contact ?? null} wide={!compact}>{contact}</ContactPane>}
             </div>
           </>
         ) : (

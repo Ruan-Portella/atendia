@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 import { SidebarNav, openGoTo, type SidebarClient, type SidebarPerson } from "@/components/sidebar-nav";
+import { NoticeBell, NoticeCenter } from "@/components/notice-center";
 import { can, type AgencyRole } from "@/lib/roles";
 import { MENU_COOKIE } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,7 @@ interface Props {
   /** O menu do computador começa recolhido (o cookie da pessoa). */
   menuCollapsed?: boolean;
   children: React.ReactNode;
-  /** Faixas de aviso no topo do conteúdo (fora do espaçamento das páginas). */
+  /** Os avisos (plano, pausa, suspensão, segurança…): ficam nos Avisos, atrás do sino. */
   notices?: React.ReactNode;
 }
 
@@ -93,6 +94,7 @@ export function PanelShell({ agency, role, packs = [], accountLabel, usage, limi
           <MenuIcon size={20} />
         </button>
         <div className="min-w-0 flex-1">{brandBlock()}</div>
+        <NoticeBell className="h-10 w-10" />
         <button type="button" onClick={openGoTo} aria-label="Ir para" className="btn-icon h-10 w-10">
           <Search size={18} />
         </button>
@@ -124,33 +126,10 @@ export function PanelShell({ agency, role, packs = [], accountLabel, usage, limi
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* avisos (plano, pausa, suspensão): faixa de ponta a ponta acima do conteúdo */}
-        <NoticeArea>{notices}</NoticeArea>
         <main className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-5 sm:px-6 sm:py-7 md:gap-6 lg:px-9">{children}</main>
       </div>
       {goTo}
+      <NoticeCenter>{notices}</NoticeCenter>
     </div>
   );
-}
-
-/**
- * Mede a faixa de avisos e expõe a altura em --panel-notices-h: telas de altura fixa (a conversa)
- * descontam, para o rodapé com a resposta e o "Assumir" não sair da tela.
- */
-function NoticeArea({ children }: { children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const root = document.documentElement;
-    const set = () => root.style.setProperty("--panel-notices-h", `${el.offsetHeight}px`);
-    set();
-    const observer = new ResizeObserver(set);
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      root.style.removeProperty("--panel-notices-h");
-    };
-  }, []);
-  return <div ref={ref}>{children}</div>;
 }

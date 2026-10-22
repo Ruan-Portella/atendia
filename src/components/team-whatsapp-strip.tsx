@@ -9,8 +9,8 @@ import type { NoticeStatus } from "@/lib/team-whatsapp";
 import { dismissNoticeWhatsAppCard, requestNoticeWhatsApp, resendNoticeWhatsApp } from "@/app/painel/perfil/actions";
 
 /**
- * A faixa do topo do painel com o convite para os avisos no WhatsApp (leva de 19/10/2026): uma linha
- * só, como as outras faixas; o campo do número abre no "Ativar no WhatsApp". Some quando a pessoa
+ * O convite para os avisos no WhatsApp (leva de 19/10/2026), num cartão dentro dos Avisos do painel
+ * (o sino; redesenho, 22/10); o campo do número abre no "Ativar no WhatsApp". Some quando a pessoa
  * confirma ou toca em "Agora não" (o cartão completo fica em Meu perfil) e volta quando o WhatsApp
  * do número muda, mesmo depois do "Agora não": os avisos pararam e só ela resolve. Sem o assistente
  * pronto, nada aparece.
@@ -86,11 +86,10 @@ export function TeamWhatsAppStrip({ status, brand, consent }: { status: NoticeSt
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-brand-line bg-brand-soft px-4 py-2.5 text-sm text-ink sm:px-6 lg:px-9">
-      <MessageCircle size={16} className="shrink-0 text-brand" aria-hidden />
-      {/* largura mínima no texto: no celular, os botões descem para a linha de baixo em vez de espremer o texto */}
-      <span className="min-w-[15rem] flex-1">{text}</span>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div data-aviso data-tom={identityAlert ? "warn" : "info"} className="flex flex-wrap items-start gap-x-2.5 gap-y-3 rounded-[14px] border border-brand-line bg-brand-soft p-3.5 text-sm leading-relaxed text-ink">
+      <MessageCircle size={16} className="mt-0.5 shrink-0 text-brand" aria-hidden />
+      <span className="min-w-0 flex-1">{text}</span>
+      <div className="flex basis-full flex-wrap items-center gap-x-3 gap-y-2 pl-[26px]">
         {action}
         {/* o alerta de identidade não fecha: some quando ela confirma de novo ou para os avisos */}
         {!identityAlert && (
@@ -102,7 +101,7 @@ export function TeamWhatsAppStrip({ status, brand, consent }: { status: NoticeSt
         )}
       </div>
       {open && status.status === null && (
-        <div className="flex basis-full flex-col gap-1.5 sm:pl-7">
+        <div className="flex basis-full flex-col gap-1.5 pl-[26px]">
           <ActionForm action={requestNoticeWhatsApp} success="Mensagem enviada." className="flex flex-wrap items-center gap-2">
             <label htmlFor="aviso_phone_top" className="sr-only">
               Seu WhatsApp
