@@ -3,7 +3,7 @@ import { needsConfirmation, type ActionRow } from "@/lib/actions";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { SwitchField } from "@/components/ui/setting-row";
-import { HeadersBuilder, ParamsBuilder, TestParams } from "@/components/integrations/params-builder";
+import { CurlImportButton, HeadersBuilder, ParamsBuilder, TestParams } from "@/components/integrations/params-builder";
 
 /** Opções em cartões (um rádio por cartão), com a explicação de cada uma. */
 function RadioCards({ name, defaultValue, options }: { name: string; defaultValue: string; options: Array<{ value: string; label: string; hint: string }> }) {
@@ -32,7 +32,10 @@ export function ActionFieldsBody({ a, savedHeaders = [] }: { a?: ActionRow; save
   return (
     <>
       <section className="flex flex-col gap-3">
-        <h3 className="kpi-label">O que a ação faz</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="kpi-label">O que a ação faz</h3>
+          <CurlImportButton />
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="label" htmlFor={`name-${p}`}>Nome (snake_case)</label>

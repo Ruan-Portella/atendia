@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ListChecks } from "lucide-react";
+import { ListChecks, RotateCcw } from "lucide-react";
 import { ChatWindow, type ChatBotPublic } from "@/components/chat-window";
 import { routineTestTitle, type RoutineTestView } from "@/lib/routine-test-view";
 import { cn } from "@/lib/utils";
@@ -11,10 +11,13 @@ const POLL_MS = 3_000;
 /**
  * O teste ao vivo do chatbot: o chat e, com roteiro ligado, a faixa do passo atual (itens menores
  * da conferência de 20/10, parte 5). A faixa pergunta a cada 3 segundos, só com a aba visível e
- * depois da primeira mensagem.
+ * depois da primeira mensagem. "Recomeçar" abre uma conversa nova (redesenho, etapa 5): para ver a
+ * saudação e o tom novos depois de salvar.
  */
 export function LiveTest({ botId, bot, hasRoutines, className, chatClassName }: { botId: string; bot: ChatBotPublic; hasRoutines: boolean; className?: string; chatClassName?: string }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
+  // a conversa do teste: trocar a chave monta o chat de novo, do zero
+  const [chat, setChat] = useState(0);
   // a leitura fica presa à conversa: conversa nova (ou nenhuma) não mostra a faixa da anterior
   const [read, setRead] = useState<{ conversationId: string; run: RoutineTestView | null } | null>(null);
   const run = read && read.conversationId === conversationId ? read.run : null;
@@ -41,9 +44,22 @@ export function LiveTest({ botId, bot, hasRoutines, className, chatClassName }: 
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
+      {conversationId && (
+        <button
+          type="button"
+          onClick={() => {
+            setChat((n) => n + 1);
+            setConversationId(null);
+          }}
+          className="inline-flex shrink-0 items-center gap-1.5 self-end px-1 text-xs font-semibold text-brand hover:underline"
+        >
+          <RotateCcw size={13} />
+          Recomeçar a conversa
+        </button>
+      )}
       {run && <RoutineStrip run={run} />}
       <div className={chatClassName}>
-        <ChatWindow channel="painel" bot={bot} onConversation={setConversationId} />
+        <ChatWindow key={chat} channel="painel" bot={bot} onConversation={setConversationId} />
       </div>
     </div>
   );

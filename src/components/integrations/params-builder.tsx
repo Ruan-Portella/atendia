@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Braces, Plus, Rows3, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Braces, Plus, Rows3, Terminal, Trash2 } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
+import { parseCurl, type CurlImport } from "@/lib/curl-import";
 import type { ParamsSchema } from "@/lib/actions";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +56,21 @@ function schemaOf(rows: Row[]): ParamsSchema {
   return { type: "object", properties, required: rows.filter((r) => r.required && r.name.trim()).map((r) => r.name.trim()) };
 }
 
+/** Ouve o cURL importado (evento "bv-curl" no formulário em volta, de CurlImportButton). */
+function useCurlImport(ref: React.RefObject<HTMLElement | null>, onImport: (imp: CurlImport) => void) {
+  const handler = useRef(onImport);
+  useEffect(() => {
+    handler.current = onImport;
+  });
+  useEffect(() => {
+    const form = ref.current?.closest("form");
+    if (!form) return;
+    const listen = (e: Event) => handler.current((e as CustomEvent<CurlImport>).detail);
+    form.addEventListener("bv-curl", listen);
+    return () => form.removeEventListener("bv-curl", listen);
+  }, [ref]);
+}
+
 /** Os parâmetros que a IA manda para a ação, em linhas; vai como JSON Schema no campo params_schema. */
 export function ParamsBuilder({ initial }: { initial?: ParamsSchema | null }) {
   const [start] = useState(() => rowsOf(initial ?? EMPTY));
@@ -60,6 +78,13 @@ export function ParamsBuilder({ initial }: { initial?: ParamsSchema | null }) {
   const [rows, setRows] = useState<Row[]>(start ?? []);
   const [json, setJson] = useState(() => JSON.stringify(initial ?? EMPTY, null, 2));
   const [problem, setProblem] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  useCurlImport(root, (imp) => {
+    if (!imp.params.length) return;
+    setRows(imp.params.map((p) => ({ key: seq++, name: p.name, type: p.type, description: "", required: false, options: "" })));
+    setProblem(null);
+    setMode("rows");
+  });
 
   const patch = (key: number, p: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
   const value = mode === "rows" ? JSON.stringify(schemaOf(rows)) : json;
@@ -82,7 +107,7 @@ export function ParamsBuilder({ initial }: { initial?: ParamsSchema | null }) {
   };
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div ref={root} className="flex flex-col gap-2.5">
       <input type="hidden" name="params_schema" value={value} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted">O que a IA manda para a ação (até {MAX_PARAMS}). A descrição é o que a IA lê para preencher.</p>
@@ -153,12 +178,16 @@ export function ParamsBuilder({ initial }: { initial?: ParamsSchema | null }) {
  */
 export function HeadersBuilder({ saved }: { saved: string[] }) {
   const [rows, setRows] = useState<Array<{ key: number; name: string; value: string }>>([]);
+  const root = useRef<HTMLDivElement>(null);
+  useCurlImport(root, (imp) => {
+    if (imp.headers.length) setRows(imp.headers.map((h) => ({ key: seq++, ...h })));
+  });
   const text = rows
     .filter((r) => r.name.trim())
     .map((r) => `${r.name.trim()}: ${r.value}`)
     .join("\n");
   return (
-    <div className="flex flex-col gap-2.5">
+    <div ref={root} className="flex flex-col gap-2.5">
       <input type="hidden" name="headers" value={text} />
       {saved.length > 0 ? (
         <div className="flex flex-col gap-2 rounded-[12px] bg-raised/50 px-3 py-2.5 text-xs text-muted">
@@ -262,5 +291,71 @@ export function TestParams({ schema }: { schema: ParamsSchema }) {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Importar de um cURL (redesenho, etapa 5): cola o comando que o sistema do cliente documenta e
+ * preenche o endereço, o nome (se vazio), os cabeçalhos e os parâmetros do corpo. A descrição de
+ * cada parâmetro fica para a pessoa escrever.
+ */
+export function CurlImportButton() {
+  const toast = useToast();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const apply = () => {
+    const imp = parseCurl(text);
+    if (!imp) return setProblem("Não achei um endereço HTTPS no comando. Cole o cURL inteiro, começando por curl.");
+    const form = anchor.current?.closest("form");
+    if (form) {
+      const url = form.elements.namedItem("url");
+      if (url instanceof HTMLInputElement) url.value = imp.url;
+      const name = form.elements.namedItem("name");
+      if (name instanceof HTMLInputElement && !name.value.trim() && imp.name) name.value = imp.name;
+      form.dispatchEvent(new CustomEvent("bv-curl", { detail: imp }));
+    }
+    toast.success(`Importado: o endereço, ${imp.headers.length} ${imp.headers.length === 1 ? "cabeçalho" : "cabeçalhos"} e ${imp.params.length} ${imp.params.length === 1 ? "parâmetro" : "parâmetros"}. Escreva a descrição de cada um.`);
+    setOpen(false);
+    setText("");
+    setProblem(null);
+  };
+
+  return (
+    <>
+      <button ref={anchor} type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 self-start text-xs font-semibold text-brand hover:underline">
+        <Terminal size={13} /> Importar de um cURL
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Importar de um cURL"
+        description="Cole o comando da documentação do sistema do cliente. O endereço, os cabeçalhos e os parâmetros do corpo entram nos campos; confira antes de salvar."
+        size="lg"
+        footer={
+          <>
+            <button type="button" onClick={() => setOpen(false)} className="btn-ghost">
+              Cancelar
+            </button>
+            <button type="button" onClick={apply} disabled={!text.trim()} className="btn-primary">
+              Importar
+            </button>
+          </>
+        }
+      >
+        <textarea
+          aria-label="Comando cURL"
+          rows={8}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          spellCheck={false}
+          className="input font-mono text-xs"
+          placeholder={"curl -X POST https://api.loja.com/pedidos/consultar \\\n  -H 'x-api-key: SUA_CHAVE' \\\n  -d '{\"numero_pedido\": \"1042\"}'"}
+        />
+        {problem && <p className="text-xs text-danger">{problem}</p>}
+      </Modal>
+    </>
   );
 }

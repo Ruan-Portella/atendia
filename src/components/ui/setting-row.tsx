@@ -20,8 +20,9 @@ type Size = "sm" | "md" | "lg" | "sheet";
 /**
  * O modal de editar: título, campos e o rodapé fixo com Cancelar e Salvar. Com `action`, o modal
  * tem o próprio formulário; sem, os campos são do formulário em volta (o Salvar envia aquele).
- * Fechar sem salvar desfaz o que foi mexido (os campos voltam ao valor salvo). Um formulário de
- * dentro que salva (ActionForm, evento "bv-saved") fecha o modal. Para mais de um modal na mesma
+ * Fechar sem salvar desfaz o que foi mexido (os campos voltam ao valor salvo); com algo mexido,
+ * pergunta antes ("Descartar as alterações?"). Um formulário de dentro que salva (ActionForm,
+ * evento "bv-saved") fecha o modal. Para mais de um modal na mesma
  * linha (editar e testar), cada um fica fora do formulário do outro.
  */
 export function EditDialog({
@@ -56,9 +57,18 @@ export function EditDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [gen, setGen] = useState(0);
+  // os valores dos campos ao abrir: fechar com algo diferente pergunta antes de descartar
+  const snapshot = useRef<string | null>(null);
+  const [asking, setAsking] = useState(false);
   const close = () => {
+    snapshot.current = null;
     onClose();
     setGen((g) => g + 1);
+  };
+  const tryClose = () => {
+    const d = ref.current;
+    if (footer === "save" && d && snapshot.current !== null && fieldsOf(d) !== snapshot.current) setAsking(true);
+    else close();
   };
   const closeRef = useRef(close);
   const openRef = useRef(onOpen);
@@ -70,8 +80,13 @@ export function EditDialog({
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
-    else if (!open && d.open) d.close();
+    if (open && !d.open) {
+      d.showModal();
+      // depois de os campos montarem (e acertarem os valores calculados)
+      requestAnimationFrame(() => {
+        snapshot.current = fieldsOf(d);
+      });
+    } else if (!open && d.open) d.close();
   }, [open]);
 
   useEffect(() => {
@@ -98,7 +113,7 @@ export function EditDialog({
           <h2 className="text-lg font-medium leading-tight">{title}</h2>
           {description && <p className="mt-1 text-sm leading-relaxed text-muted">{description}</p>}
         </div>
-        <button type="button" onClick={close} aria-label="Fechar" className="btn-icon -mr-2 -mt-1">
+        <button type="button" onClick={tryClose} aria-label="Fechar" className="btn-icon -mr-2 -mt-1">
           <X size={16} />
         </button>
       </div>
@@ -115,7 +130,7 @@ export function EditDialog({
           </button>
         ) : (
           <>
-            <button type="button" onClick={close} className="btn-ghost">
+            <button type="button" onClick={tryClose} className="btn-ghost">
               Cancelar
             </button>
             <SubmitButton className="btn-primary px-5" pendingLabel={pendingLabel}>
@@ -132,9 +147,9 @@ export function EditDialog({
       ref={ref}
       data-edit-dialog
       onCancel={(e) => {
-        // Esc: fecha e desfaz o que não foi salvo
+        // Esc: fecha e desfaz o que não foi salvo (com algo mexido, pergunta antes)
         e.preventDefault();
-        close();
+        tryClose();
       }}
       className={cn("modal", size === "sheet" ? "sheet" : size === "lg" ? "max-w-2xl" : size === "sm" ? "max-w-sm" : "max-w-lg")}
     >
@@ -145,8 +160,29 @@ export function EditDialog({
       ) : (
         <div className="flex min-h-full flex-col">{inner}</div>
       )}
+      <ConfirmModal
+        open={asking}
+        onClose={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false);
+          close();
+        }}
+        title="Descartar as alterações?"
+        description="O que você mexeu aqui ainda não foi salvo."
+        confirmLabel="Descartar"
+        cancelLabel="Continuar editando"
+        danger
+      />
     </dialog>
   );
+}
+
+/** Os valores dos campos deste modal (sem os de um modal de dentro), para saber se algo mudou. */
+function fieldsOf(d: HTMLDialogElement): string {
+  return Array.from(d.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea"))
+    .filter((el) => el.closest("dialog") === d && (el.name || el.id))
+    .map((el) => `${el.name || el.id}=${el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio") ? String(el.checked) : el.value}`)
+    .join("\n");
 }
 
 /** Um grupo de linhas de ajuste, num cartão só, com um título opcional em cima. */

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AlertCircle, Eye, FileText, Globe, Images, Link2, ListChecks, Loader2, Pencil, Plus, RefreshCw, Trash2, Type } from "lucide-react";
+import { AlertCircle, Eye, FileText, Globe, Images, Link2, ListChecks, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Type } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { socialNetworkOf } from "@/lib/social-links";
 import { Modal, ConfirmModal } from "@/components/ui/modal";
@@ -10,6 +10,7 @@ import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { liveValidation, validateForm } from "@/components/ui/form-errors";
 import { InstagramPostsModal } from "@/components/instagram-posts-modal";
+import { FaqFields } from "@/components/faq-fields";
 
 export interface SourceItem {
   id: string;
@@ -71,6 +72,8 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
   const [adding, setAdding] = useState<Kind | null>(null);
   // o modal de adicionar começa pela escolha do tipo (redesenho, etapa 5)
   const [picking, setPicking] = useState(false);
+  // a busca na lista, a partir de 6 fontes (redesenho, etapa 5)
+  const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<SourceItem | null>(null);
   const [removing, setRemoving] = useState<SourceItem | null>(null);
   const [postsOf, setPostsOf] = useState<string | null>(null); // a fonte do Instagram com a lista dos posts aberta
@@ -177,15 +180,24 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
   }
 
   const readyCount = sources.filter((s) => s.status === "ready").length;
+  // a busca: pelo título, pelo endereço e pelo tipo, sem diferença de acento e maiúscula
+  const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const shown = query.trim() ? sources.filter((s) => norm(`${s.title} ${s.url ?? ""} ${KIND[s.kind as Kind]?.label ?? ""}`).includes(norm(query.trim()))) : sources;
   const totalChunks = sources.reduce((a, s) => a + s.chunk_count, 0);
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => setPicking(true)} className="btn-primary">
           <Plus size={15} />
           Adicionar fonte
         </button>
+        {sources.length > 5 && (
+          <label className="relative ml-auto w-full sm:w-64">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar nas fontes" placeholder="Buscar nas fontes" className="input pl-9" />
+          </label>
+        )}
       </div>
 
       {/* adicionar num modal (redesenho, etapa 5, a pedido do usuário em 22/10): primeiro o tipo, depois os campos */}
@@ -261,7 +273,8 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
             <button type="button" onClick={() => setAdding("site")} className="btn-primary"><Globe size={15} />Adicionar site</button>
           </div>
         )}
-        {sources.map((s) => {
+        {sources.length > 0 && shown.length === 0 && <p className="px-5 py-6 text-center text-sm text-muted">Nenhuma fonte com &ldquo;{query.trim()}&rdquo;.</p>}
+        {shown.map((s) => {
           const Icon = KIND[s.kind as Kind]?.icon ?? Type;
           const processing = busyId === s.id || s.status === "pending";
           const posts = s.kind === "instagram";
@@ -333,9 +346,10 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
                 <UrlInput id="edit-url" defaultValue={editing.url ?? ""} />
               </div>
             )}
-            {(editing.kind === "text" || editing.kind === "faq") && (
+            {editing.kind === "faq" && <FaqFields id="edit-content" defaultValue={editing.content ?? ""} />}
+            {editing.kind === "text" && (
               <div>
-                <label htmlFor="edit-content" className="label">{editing.kind === "faq" ? "Uma pergunta e resposta por parágrafo (P: … / R: …)" : "Texto"}</label>
+                <label htmlFor="edit-content" className="label">Texto</label>
                 <textarea id="edit-content" name="content" defaultValue={editing.content ?? ""} required rows={14} className="input font-mono text-[13px]" />
               </div>
             )}
@@ -399,10 +413,14 @@ function SourceFields({ kind }: { kind: Kind }) {
             <label htmlFor="src-title" className="label">Título</label>
             <input id="src-title" name="title" autoFocus className="input" placeholder={kind === "faq" ? "Perguntas frequentes" : "Convênios aceitos e horários"} />
           </div>
-          <div>
-            <label htmlFor="src-content" className="label">{kind === "faq" ? "Uma pergunta e resposta por parágrafo (P: … / R: …)" : "Texto"}</label>
-            <textarea id="src-content" name="content" required rows={8} className="input font-mono text-[13px]" placeholder={kind === "faq" ? "P: Aceitam Unimed?\nR: Sim, para consultas e limpeza.\n\nP: Tem estacionamento?\nR: Sim, gratuito no subsolo." : "Tudo que o assistente precisa saber e que não está no site."} />
-          </div>
+          {kind === "faq" ? (
+            <FaqFields id="src-content" />
+          ) : (
+            <div>
+              <label htmlFor="src-content" className="label">Texto</label>
+              <textarea id="src-content" name="content" required rows={8} className="input font-mono text-[13px]" placeholder="Tudo que o assistente precisa saber e que não está no site." />
+            </div>
+          )}
         </>
       )}
     </>

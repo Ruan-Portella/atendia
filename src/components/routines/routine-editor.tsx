@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, Camera, MessageSquare, MousePointerClick, Plus, TextCursorInput, Trash2, Zap } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Camera, MessageSquare, MousePointerClick, Play, Plus, TextCursorInput, Trash2, Zap } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
+import { RoutineSimulator } from "@/components/routines/routine-simulator";
 import { cn } from "@/lib/utils";
 import {
   DATA_KINDS,
@@ -109,6 +111,8 @@ export function RoutineFields({
   const p = (initial as { id?: string } | undefined)?.id ?? "novo";
   const [r, setR] = useState<RoutineInput>(() => (initial ? structuredClone({ name: initial.name, when_to_use: initial.when_to_use, keywords: initial.keywords, steps: initial.steps, active: initial.active, template: initial.template, handoff_sector: initial.handoff_sector ?? null }) : blank()));
   const [keywords, setKeywords] = useState(() => (initial?.keywords ?? []).map((k) => k.toUpperCase()).join(", "));
+  // simular a conversa (redesenho, etapa 5): monta de novo a cada abertura, com o roteiro de agora
+  const [simulating, setSimulating] = useState(false);
 
   const setSteps = (fn: (steps: RoutineStep[]) => RoutineStep[]) => setR((cur) => ({ ...cur, steps: fn(cur.steps) }));
   const patchStep = (i: number, patch: Partial<RoutineStep>) => setSteps((steps) => steps.map((s, j) => (j === i ? ({ ...s, ...patch } as RoutineStep) : s)));
@@ -207,7 +211,15 @@ export function RoutineFields({
       </section>
 
       <section className="flex flex-col gap-3">
-        <h3 className="kpi-label">Passos</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="kpi-label">Passos</h3>
+          <button type="button" onClick={() => setSimulating(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline">
+            <Play size={13} /> Simular a conversa
+          </button>
+        </div>
+        <Modal open={simulating} onClose={() => setSimulating(false)} title="Simular a conversa" description="Responda como a pessoa: toque nos botões, mande os dados e escolha o que a ação devolve." size="lg">
+          {simulating && <RoutineSimulator routine={r} outcomesOf={(name) => actions.find((a) => a.name === name)?.outcomes ?? []} />}
+        </Modal>
         <ol className="flex flex-col">
           {r.steps.map((s, i) => (
             <li key={s.id} className="flex gap-3">

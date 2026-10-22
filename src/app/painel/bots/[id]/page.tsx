@@ -82,6 +82,7 @@ import { TICKET_SUBJECTS_MAX, type TicketForm } from "@/lib/tickets";
 import { HUMAN_ONLY_NOTICE } from "@/lib/chat";
 import { GATE_TEXTS } from "@/lib/gate/rules";
 import { TemplateField } from "@/components/template-field";
+import { ToneField } from "@/components/tone-field";
 import { HoursFields } from "@/components/hours-fields";
 import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 import { BotOverview } from "@/components/bot-overview";
@@ -575,7 +576,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   {templateRow ? (
                     <div><span className="label">Tom de voz (do modelo)</span><p className="text-sm text-ink-2">{templateRow.persona?.tone ?? "—"}</p></div>
                   ) : (
-                    <div><label htmlFor="tone" className="label">Tom de voz</label><input id="tone" name="tone" maxLength={200} defaultValue={persona.tone ?? "amigável, direto e profissional"} className="input" /></div>
+                    <ToneField defaultValue={persona.tone ?? "amigável, direto e profissional"} />
                   )}
                   <div><label htmlFor="welcome" className="label">Mensagem de boas-vindas{templateRow ? (owns("saudacao") ? " (deste chatbot)" : " (do modelo)") : ""}</label><input id="welcome" name="welcome" maxLength={300} defaultValue={persona.welcome ?? ""} disabled={!opens("saudacao")} className="input disabled:opacity-60" /></div>
                   {templateRow ? (
