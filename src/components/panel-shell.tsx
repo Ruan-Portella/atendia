@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Menu as MenuIcon, Search, X } from "lucide-react";
+import { Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 import { SidebarNav, openGoTo, type SidebarClient, type SidebarPerson } from "@/components/sidebar-nav";
 import { can, type AgencyRole } from "@/lib/roles";
+import { MENU_COOKIE } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
 interface Props {
   agency: { name: string; logo_url: string | null; brand_color: string; initials: string };
@@ -23,6 +25,8 @@ interface Props {
   me?: SidebarPerson;
   /** O Ir para (Ctrl K): fica montado aqui e abre pelo atalho ou pelo botão do menu. */
   goTo?: React.ReactNode;
+  /** O menu do computador começa recolhido (o cookie da pessoa). */
+  menuCollapsed?: boolean;
   children: React.ReactNode;
   /** Faixas de aviso no topo do conteúdo (fora do espaçamento das páginas). */
   notices?: React.ReactNode;
@@ -33,19 +37,26 @@ interface Props {
  *  - celular e tablet (< lg): barra no topo com o menu, a conta e a busca; o menu desliza;
  *  - desktop (lg+): barra lateral fixa com a navegação inteira.
  */
-export function PanelShell({ agency, role, packs = [], accountLabel, usage, limit, usageLabel, clients = [], clientCount = 0, me = { name: "Você", email: "", avatarUrl: null }, goTo, children, notices }: Props) {
+export function PanelShell({ agency, role, packs = [], accountLabel, usage, limit, usageLabel, clients = [], clientCount = 0, me = { name: "Você", email: "", avatarUrl: null }, goTo, menuCollapsed = false, children, notices }: Props) {
   const [open, setOpen] = useState(false);
+  // recolher o menu do computador (redesenho): só os ícones; a escolha fica no navegador
+  const [collapsed, setCollapsed] = useState(menuCollapsed);
+  const toggleMenu = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    document.cookie = `${MENU_COOKIE}=${next ? "fechado" : "aberto"}; path=/; max-age=31536000; samesite=lax`;
+  };
   const pct = Math.min(100, Math.round((usage / Math.max(1, limit)) * 100));
 
-  const brandBlock = (
-    <Link href="/painel/clientes" onClick={() => setOpen(false)} className="flex min-w-0 items-center gap-2.5 rounded-[12px] px-1.5 py-1 transition-colors duration-[120ms] hover:bg-raised/60">
+  const brandBlock = (small = false) => (
+    <Link href="/painel/clientes" onClick={() => setOpen(false)} title={small ? agency.name : undefined} className={cn("flex min-w-0 items-center gap-2.5 rounded-[12px] py-1 transition-colors duration-[120ms] hover:bg-raised/60", small ? "justify-center px-1" : "px-1.5")}>
       {agency.logo_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={agency.logo_url} alt="" className="h-8 w-8 shrink-0 rounded-[10px] object-cover" />
       ) : (
         <span className="display flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[13px] font-semibold text-white" style={{ background: agency.brand_color === "#1f4e3d" ? "#17845a" : agency.brand_color }}>{agency.initials}</span>
       )}
-      <span className="min-w-0 leading-tight">
+      <span className={small ? "sr-only" : "min-w-0 leading-tight"}>
         <span className="block truncate text-sm font-semibold text-ink">{agency.name}</span>
         <span className="block font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted">{accountLabel}</span>
       </span>
@@ -61,7 +72,7 @@ export function PanelShell({ agency, role, packs = [], accountLabel, usage, limi
     </div>
   ) : null;
 
-  const nav = <SidebarNav role={role} packs={packs} clients={clients} clientCount={clientCount} me={me} extra={usageBlock} onNavigate={() => setOpen(false)} />;
+  const nav = (small: boolean) => <SidebarNav role={role} packs={packs} clients={clients} clientCount={clientCount} me={me} extra={usageBlock} collapsed={small} onNavigate={() => setOpen(false)} />;
 
   return (
     <div className="flex min-h-full flex-col lg:flex-row">
@@ -70,7 +81,7 @@ export function PanelShell({ agency, role, packs = [], accountLabel, usage, limi
         <button type="button" onClick={() => setOpen(true)} aria-label="Abrir menu" aria-expanded={open} className="btn-icon h-10 w-10">
           <MenuIcon size={20} />
         </button>
-        <div className="min-w-0 flex-1">{brandBlock}</div>
+        <div className="min-w-0 flex-1">{brandBlock()}</div>
         <button type="button" onClick={openGoTo} aria-label="Ir para" className="btn-icon h-10 w-10">
           <Search size={18} />
         </button>
@@ -82,18 +93,23 @@ export function PanelShell({ agency, role, packs = [], accountLabel, usage, limi
           <button type="button" aria-label="Fechar menu" onClick={() => setOpen(false)} className="absolute inset-0 bg-scrim [animation:fade-in_var(--dur-base)_var(--ease-out)]" />
           <aside className="menu-in absolute inset-y-0 left-0 flex w-[300px] max-w-[85vw] flex-col gap-3 bg-panel p-3 text-ink shadow-2xl">
             <div className="flex items-center justify-between gap-2">
-              {brandBlock}
+              {brandBlock()}
               <button type="button" onClick={() => setOpen(false)} aria-label="Fechar" className="btn-icon h-9 w-9"><X size={18} /></button>
             </div>
-            {nav}
+            {nav(false)}
           </aside>
         </div>
       )}
 
       {/* barra lateral do computador: altura da tela e presa no topo */}
-      <aside className="hidden w-[256px] shrink-0 flex-col gap-3 bg-panel p-3 text-ink shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:top-0 lg:flex lg:h-dvh">
-        <div className="pt-1">{brandBlock}</div>
-        {nav}
+      <aside className={cn("hidden shrink-0 flex-col gap-3 bg-panel p-3 text-ink shadow-[inset_-1px_0_0_var(--color-line)] transition-[width] duration-[220ms] ease-[var(--ease-out)] lg:sticky lg:top-0 lg:flex lg:h-dvh", collapsed ? "w-[68px] px-2" : "w-[256px]")}>
+        <div className={cn("flex items-center gap-1 pt-1", collapsed && "flex-col")}>
+          <div className="min-w-0 flex-1">{brandBlock(collapsed)}</div>
+          <button type="button" onClick={toggleMenu} aria-label={collapsed ? "Abrir o menu" : "Recolher o menu"} title={collapsed ? "Abrir o menu" : "Recolher o menu"} aria-expanded={!collapsed} className="btn-icon h-8 w-8 shrink-0">
+            {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
+        </div>
+        {nav(collapsed)}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

@@ -7,6 +7,9 @@ export type Tema = "escuro" | "claro" | "sistema";
 
 export const TEMA_COOKIE = "bv_tema";
 
+/** O menu lateral recolhido no computador ("fechado"), também por navegador. */
+export const MENU_COOKIE = "bv_menu";
+
 export const TEMAS: Array<{ value: Tema; label: string }> = [
   { value: "escuro", label: "Escuro" },
   { value: "claro", label: "Claro" },

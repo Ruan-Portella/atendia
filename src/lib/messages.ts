@@ -396,18 +396,17 @@ const FROM: Record<string, LastMessage["from"]> = { user: "contato", assistant: 
 
 /**
  * A última mensagem de cada conversa, para a lista da Caixa de entrada (redesenho, etapa 2): o
- * começo do texto (até 160 caracteres) e quem mandou, numa chamada só (função
- * inbox_last_messages, migração 0168; só o servidor chama).
+ * começo do texto (até 160 caracteres, depois de abrir a cifra) e quem mandou, numa chamada só
+ * (função inbox_last_messages, migrações 0168 e 0169; só o servidor chama).
  */
 export async function lastMessagesOf(db: SupabaseClient, conversationIds: string[]): Promise<Map<string, LastMessage>> {
   const out = new Map<string, LastMessage>();
   for (let i = 0; i < conversationIds.length; i += 500) {
     const { data, error } = await db.rpc("inbox_last_messages", { conv_ids: conversationIds.slice(i, i + 500) });
     if (error) throw new Error(`última mensagem: ${error.message}`);
-    for (const r of (data ?? []) as Array<{ conversation_id: string; role: string; content: string | null; created_at: string }>) {
-      const from = FROM[r.role];
-      if (from) out.set(r.conversation_id, { from, text: (r.content ?? "").replace(/\s+/g, " ").trim(), at: r.created_at });
-    }
+    const rows = ((data ?? []) as Array<{ conversation_id: string; role: string; content: string | null; created_at: string }>).filter((r) => FROM[r.role]);
+    const texts = await Promise.all(rows.map((r) => (r.content ? openField("messages.content", r.content).catch(() => "") : Promise.resolve(""))));
+    rows.forEach((r, k) => out.set(r.conversation_id, { from: FROM[r.role], text: texts[k].replace(/\s+/g, " ").trim().slice(0, 160), at: r.created_at }));
   }
   return out;
 }

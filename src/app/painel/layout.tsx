@@ -21,6 +21,8 @@ import { createClient } from "@/lib/supabase/server";
 import { memberName } from "@/lib/team";
 import type { SidebarClient } from "@/components/sidebar-nav";
 import { GoTo } from "@/components/go-to";
+import { cookies } from "next/headers";
+import { MENU_COOKIE } from "@/lib/theme";
 
 // o manifest deixa adicionar o painel à tela de início (no iPhone, os avisos no celular só chegam
 // assim; Memória e avisos, parte 2)
@@ -74,6 +76,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       clientCount={clientCount ?? sidebarClients.length}
       me={{ name: memberName(member), email: member.email, avatarUrl: member.avatar_url ?? null }}
       goTo={<GoTo role={role} packs={packs} clients={sidebarClients.map(({ id, name, color }) => ({ id, name, color }))} />}
+      menuCollapsed={(await cookies()).get(MENU_COOKIE)?.value === "fechado"}
       notices={
         <>
           {alerts.length > 0 && <SecurityAlertStrip alerts={alerts} />}

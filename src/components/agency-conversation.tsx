@@ -2,7 +2,6 @@ import { contactDisplayName, contactName as contactNameOf } from "@/lib/contacts
 import { agentReactionsFor, quotesOf } from "@/lib/message-links";
 import { needsPhone } from "@/lib/handoff";
 import Link from "next/link";
-import { Maximize2, Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { initials, relativeTime } from "@/lib/utils";
@@ -15,7 +14,7 @@ import { isSnoozed } from "@/lib/snooze";
 import { TicketStatusControl } from "@/components/ticket-status-control";
 import { HandoffReply, HandoffStatus, holderView } from "@/components/handoff-controls";
 import { leadWaiting } from "@/lib/handoff-status";
-import { ConfirmAction } from "@/components/ui/confirm-action";
+import { ConversationMenu } from "@/components/conversation-menu";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { conversationState, whatsappWindowOpen, humanAgentEnabled, humanAgentUntil, timeLeft } from "@/lib/presence";
@@ -44,6 +43,29 @@ import { CONSENT_LABEL, SOURCE_LABEL, consentHistory, consentStateOf } from "@/l
 import { suppressionScope } from "@/lib/suppression";
 import { accountLabel, loadConversationIdentity } from "@/lib/routine-identity";
 import { runBandText, type RunSummary } from "@/lib/routine-run";
+
+/**
+ * Os roteiros da conversa numa etiqueta só (redesenho): o que está em andamento (ou o último) e,
+ * no "+N", os anteriores.
+ */
+function RoutineChips({ runs }: { runs: RunSummary[] }) {
+  const main = runs.find((r) => r.status === "active") ?? runs[0];
+  const rest = runs.filter((r) => r !== main);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={`rounded-full px-2 py-0.5 ${main.status === "active" ? "bg-brand-soft font-medium text-brand" : "bg-raised text-ink-2"}`}>Roteiro · {runBandText(main)}</span>
+      {rest.length > 0 && (
+        <details className="relative">
+          <summary className="cursor-pointer list-none rounded-full bg-raised px-2 py-0.5 font-mono text-[11px] text-muted hover:text-ink [&::-webkit-details-marker]:hidden" title="Os roteiros anteriores desta conversa">+{rest.length}</summary>
+          <div className="menu-in absolute left-0 top-full z-30 mt-1.5 flex w-[min(320px,80vw)] flex-col gap-1 rounded-[14px] border border-line bg-panel p-2 shadow-[inset_0_1px_0_var(--highlight),var(--shadow-pop)]">
+            <span className="px-1.5 pb-0.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted">Roteiros anteriores</span>
+            {rest.map((r, k) => <span key={k} className="rounded-[9px] px-1.5 py-1 text-[12.5px] text-ink-2">{runBandText(r)}</span>)}
+          </div>
+        </details>
+      )}
+    </span>
+  );
+}
 
 const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site", painel: "Teste", demo: "Demo" };
 
@@ -153,78 +175,55 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   // quando há, mede --panel-notices-h), cabeçalho e resposta fixos, e só as mensagens rolam.
   return (
     <div className={embedded ? "flex h-full min-h-0 flex-col" : "-mx-4 -my-5 flex h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 flex-col sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]"}>
-      <header className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-6">
-        <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-raised text-[13px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)]">{initials(who) || "?"}</span>
-        <div className="min-w-0 flex-1">
-          {!embedded && <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-medium text-muted hover:text-ink">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>}
-          <h1 className="flex flex-wrap items-center gap-2 text-lg font-normal leading-tight">
-            <span className="min-w-0 truncate">{who}</span>
-            <span className="rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)]">{CHANNEL_LABEL[conv.channel as string] ?? conv.channel}</span>
-            <ConversationStateBadge conv={conv} withTime />
-            {sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-medium text-amber-ink">dados sensíveis</span>}
-          </h1>
-          <p className="mt-0.5 text-[12.5px] text-muted">{bot ? bot.name : "Conversa"}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:text-ink">{bot.client_name}</Link></> : null} · começou {relativeTime(conv.started_at)}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}</p>
-          {conv.ticket_protocol && <TicketStatusControl protocol={conv.ticket_protocol as string} subject={(conv.ticket_subject as string | null) ?? null} status={(conv.ticket_status as string | null) ?? "aberto"} action={setTicketStatusAction.bind(null, cid)} />}
-          {gateCats.length > 0 && (
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-              <span>O portão acusou:</span>
-              {gateCats.map((c) => (
-                <span key={c} className="inline-flex items-center gap-1.5 rounded-full bg-ground px-2 py-0.5">
-                  {CATEGORIES[c].label} ·{" "}
-                  {reviewing.has(c) ? <span className="font-semibold">revisão pedida</span> : <GateReviewButton label={CATEGORIES[c].label} action={requestGateReview.bind(null, cid, c)} />}
-                </span>
-              ))}
-            </p>
-          )}
-          {runs.length > 0 && (
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-              <span>Roteiros:</span>
-              {runs.map((r, k) => (
-                <span key={k} className={`rounded-full px-2 py-0.5 ${r.status === "active" ? "bg-brand-soft font-semibold text-brand" : "bg-ground"}`}>
-                  {runBandText(r)}
-                </span>
-              ))}
-            </p>
-          )}
+      <header className="flex flex-col gap-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-6">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-raised text-[13px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)]">{initials(who) || "?"}</span>
+          <div className="min-w-0 flex-1">
+            {!embedded && <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-medium text-muted hover:text-ink">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>}
+            <h1 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-lg font-normal leading-tight">
+              <span className="min-w-0 truncate">{who}</span>
+              <span className="rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)]">{CHANNEL_LABEL[conv.channel as string] ?? conv.channel}</span>
+              <ConversationStateBadge conv={conv} withTime />
+              {sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-medium text-amber-ink">dados sensíveis</span>}
+            </h1>
+            <p className="mt-0.5 line-clamp-2 text-[12.5px] text-muted">{bot ? bot.name : "Conversa"}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:text-ink">{bot.client_name}</Link></> : null} · começou {relativeTime(conv.started_at)}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
+            <ConversationMenu
+              fullHref={embedded ? `/painel/bots/${id}/conversas/${cid}` : null}
+              resetAge={age ? { action: resetConversationAge.bind(null, cid), description: `${age.source === "empresa" ? `A empresa informou pela API que o contato ${age.status === "sim" ? "tem 18 anos ou mais" : "não tem 18 anos"}${age.origin ? ` (${age.origin})` : ""}` : `O contato ${age.status === "sim" ? "confirmou ter 18 anos ou mais" : "disse que não tem 18 anos"}`} (${relativeTime(age.decidedAt)}). Zerando, na próxima vez que pedir bebida ou remédio o assistente pergunta de novo.` } : null}
+              remove={can(role, "config") ? deleteConversation.bind(null, cid) : null}
+            />
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {embedded && (
-            <Link href={`/painel/bots/${id}/conversas/${cid}`} aria-label="Abrir em tela cheia" title="Abrir em tela cheia" className="btn-icon h-9 w-9">
-              <Maximize2 size={15} />
-            </Link>
-          )}
-          {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
-          {consent && (
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${consent.state === "granted" ? "bg-brand-soft text-brand" : "bg-ground text-muted"}`}
-              title={`${SOURCE_LABEL[consent.row.source]}, ${new Date(consent.row.revoked_at ?? consent.row.collected_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}: ${consent.row.text}`}
-            >
-              Novidades: {CONSENT_LABEL[consent.state]}
-            </span>
-          )}
-          {age && (
-            <ConfirmAction
-              action={resetConversationAge.bind(null, cid)}
-              title="Zerar a confirmação de 18+?"
-              description={`${age.source === "empresa" ? `A empresa informou pela API que o contato ${age.status === "sim" ? "tem 18 anos ou mais" : "não tem 18 anos"}${age.origin ? ` (${age.origin})` : ""}` : `O contato ${age.status === "sim" ? "confirmou ter 18 anos ou mais" : "disse que não tem 18 anos"}`} (${relativeTime(age.decidedAt)}). Zerando, na próxima vez que pedir bebida ou remédio o assistente pergunta de novo.`}
-              confirmLabel="Zerar 18+"
-              danger={false}
-              className="btn-ghost"
-            >
-              18+: {age.status === "sim" ? "sim" : "não"} · zerar
-            </ConfirmAction>
-          )}
-          {can(role, "config") && <ConfirmAction
-            action={deleteConversation.bind(null, cid)}
-            title="Excluir esta conversa?"
-            description="As mensagens e os contatos capturados nela são apagados de vez (ex.: a pessoa pediu para apagar os dados dela). Não tem desfazer."
-            confirmLabel="Excluir conversa"
-            className="btn-ghost text-danger"
-          >
-            <Trash2 size={15} />
-            Excluir
-          </ConfirmAction>}
-        </div>
+        {/* o resto fica numa linha de etiquetas pequenas (redesenho): novidades, 18+, roteiros, chamado e portão */}
+        {(consent || age || runs.length > 0 || conv.ticket_protocol || gateCats.length > 0) && (
+          <div className="flex flex-wrap items-center gap-1.5 text-[12px] sm:pl-[52px]">
+            {consent && (
+              <span
+                className={`rounded-full px-2 py-0.5 font-medium ${consent.state === "granted" ? "bg-brand-soft text-brand" : "bg-raised text-muted"}`}
+                title={`${SOURCE_LABEL[consent.row.source]}, ${new Date(consent.row.revoked_at ?? consent.row.collected_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}: ${consent.row.text}`}
+              >
+                Novidades: {CONSENT_LABEL[consent.state]}
+              </span>
+            )}
+            {age && <span className="rounded-full bg-raised px-2 py-0.5 text-ink-2" title="Para zerar, use o … no canto">18+: {age.status === "sim" ? "sim" : "não"}</span>}
+            {runs.length > 0 && <RoutineChips runs={runs} />}
+            {conv.ticket_protocol && <TicketStatusControl protocol={conv.ticket_protocol as string} subject={(conv.ticket_subject as string | null) ?? null} status={(conv.ticket_status as string | null) ?? "aberto"} action={setTicketStatusAction.bind(null, cid)} />}
+            {gateCats.length > 0 && (
+              <span className="inline-flex flex-wrap items-center gap-1.5 text-muted">
+                Portão:
+                {gateCats.map((c) => (
+                  <span key={c} className="inline-flex items-center gap-1.5 rounded-full bg-raised px-2 py-0.5 text-ink-2">
+                    {CATEGORIES[c].label} ·{" "}
+                    {reviewing.has(c) ? <span className="font-medium">revisão pedida</span> : <GateReviewButton label={CATEGORIES[c].label} action={requestGateReview.bind(null, cid, c)} />}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+        )}
       </header>
 
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={!conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at)} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />

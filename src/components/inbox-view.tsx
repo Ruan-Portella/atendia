@@ -7,6 +7,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { BotFace } from "@/components/bot-face";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { ScrollRow } from "@/components/ui/scroll-row";
 
 const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site", painel: "Teste", demo: "Demo" };
 const FROM: Record<string, string> = { ia: "IA: ", equipe: "Equipe: ", contato: "" };
@@ -98,8 +99,8 @@ export function InboxView({
               </SubmitButton>
             </ActionForm>
           </div>
-          {/* as filas: pílulas que rolam de lado, com o número de cada uma */}
-          <nav aria-label="Filas" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]">
+          {/* as filas: pílulas que rolam de lado (dedo, mouse, rodinha ou setas), com o número de cada uma */}
+          <ScrollRow label="Filas" className="-mx-4" innerClassName="px-4">
             {all.map((q, k) => {
               const n = count(q.key);
               const on = q.key === queue;
@@ -118,7 +119,7 @@ export function InboxView({
                 </span>
               );
             })}
-          </nav>
+          </ScrollRow>
         </div>
         <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3">
           {list.length === 0 && (
