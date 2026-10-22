@@ -78,7 +78,7 @@ A página de cada chatbot tem 5 seções, na coluna da esquerda (no celular, num
 
 ## Rosto do chatbot
 
-Cada chatbot tem um rosto: um ícone na cor dele, com os olhos escolhidos (pílula, redondo, feliz, sonolento ou piscadinha) e, no rosto grande, um acessório (chapéu de chef, óculos ou fone de atendimento). Ele aparece no menu (ao lado de cada cliente), na lista da Caixa de entrada, nas respostas da IA na conversa, no Ir para e no topo do chat do site (em branco com os olhos na cor, no lugar das iniciais). Para mudar, abra o chatbot, Comportamento → Rosto e aparência (ou "Mudar o rosto" na Visão geral): escolha a cor (uma das prontas ou qualquer outra), os olhos e o acessório, veja como ele fica no menu, na conversa e no chat do site, e salve. A cor é a mesma do balão e do topo do chat do site. No chatbot que segue um modelo, a cor vem do modelo, mas os olhos e o acessório são dele.
+Cada chatbot tem um rosto: um ícone na cor dele, com os olhos escolhidos (pílula, redondo, feliz, sonolento ou piscadinha) e um acessório (chapéu de chef, óculos ou fone de atendimento), completo no rosto grande e numa versão simples nos ícones pequenos. Ele aparece no menu (ao lado de cada cliente), na lista da Caixa de entrada, nas respostas da IA na conversa, no Ir para e no topo do chat do site (em branco com os olhos na cor, no lugar das iniciais). Para mudar, abra o chatbot, Comportamento → Rosto e aparência (ou "Mudar o rosto" na Visão geral): escolha a cor (uma das prontas ou qualquer outra), os olhos e o acessório, veja como ele fica no menu, na conversa e no chat do site, e salve. A cor é a mesma do balão e do topo do chat do site. No chatbot que segue um modelo, a cor vem do modelo, mas os olhos e o acessório são dele.
 
 ## Modelos de chatbot
 

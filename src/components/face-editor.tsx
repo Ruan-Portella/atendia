@@ -104,7 +104,7 @@ export function FaceEditor({ initialColor, initialFace, botName, clientName, col
               );
             })}
           </div>
-          <p className="text-[12px] text-muted">O acessório aparece no rosto grande (aqui e na visão geral do chatbot); no menu e na lista ficam só os olhos.</p>
+          <p className="text-[12px] text-muted">No rosto grande (aqui e na visão geral), o acessório aparece completo; nos ícones pequenos (menu, lista e conversa), numa versão simples.</p>
         </div>
       </div>
     </div>
