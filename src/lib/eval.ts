@@ -251,7 +251,7 @@ export async function evaluateQuestion(db: SupabaseClient, bot: BotRow, question
         if (g.component !== component) tools.push("saida:componente");
         component = g.component;
       }
-      if (component) text += component.type === "options" ? ` [opções: ${component.options.map((o) => o.title).join(" | ")}]` : component.type === "link" ? ` [link: ${component.label} → ${component.url}]` : ` [carrossel: ${component.cards.map(cardName).join(" | ")}]`;
+      if (component) text += component.type === "options" ? ` [opções: ${component.options.map((o) => o.title).join(" | ")}]` : component.type === "link" ? ` [link: ${component.label} → ${component.url}]` : component.type === "contact_request" ? " [botão: compartilhar o número]" : ` [carrossel: ${component.cards.map(cardName).join(" | ")}]`;
       if (exit?.offerAdult && !exit.emptied) text += ` [botão: ${GATE_TEXTS.showAdultOptions}]`;
       if (entrance?.kind === "ia" && entrance.prefix) text = `${entrance.prefix}\n\n${text}`;
       return { verdict: verdictOf(text, tools.filter((t) => t !== "pedir_confirmacao_18"), { question, clientName: bot.client_name }), text, tools, ...usage };

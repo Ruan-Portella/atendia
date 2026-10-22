@@ -156,6 +156,12 @@ export async function contactPhone(db: SupabaseClient, contactId: string): Promi
   return openNullable("contacts.phone_enc", data?.phone_enc);
 }
 
+/** O contato já tem telefone (o do WhatsApp, ou o que a pessoa compartilhou pelo botão)? */
+export async function contactHasPhone(db: SupabaseClient, contactId: string): Promise<boolean> {
+  const { data } = await db.from("contacts").select("phone_hash").eq("id", contactId).maybeSingle();
+  return Boolean(data?.phone_hash);
+}
+
 /** Nome que a empresa mandou para o contato identificado (display.name), para o painel. */
 export async function contactDisplayName(db: SupabaseClient, contactId: string): Promise<string | null> {
   const { data } = await db.from("contacts").select("display").eq("id", contactId).maybeSingle();

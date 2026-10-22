@@ -19,11 +19,12 @@ import { loadMessages } from "@/lib/messages";
 import { leadsOfConversation } from "@/lib/leads";
 import { attachmentsOfMessages } from "@/lib/attachments";
 import { agentReactionsFor, quotesOf } from "@/lib/message-links";
+import { needsPhone } from "@/lib/handoff";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { authorLabel } from "@/lib/authors";
-import { memberAddNote, memberSetTicketStatus, memberForceTakeOver, memberReact, memberRelease, memberResumeAi, memberSend, memberSnooze, memberTakeOver, memberTransfer, memberUnsnooze } from "@/app/cliente/actions";
+import { memberAddNote, memberSetTicketStatus, memberForceTakeOver, memberReact, memberRelease, memberRequestPhone, memberResumeAi, memberSend, memberSnooze, memberTakeOver, memberTransfer, memberUnsnooze } from "@/app/cliente/actions";
 
 /**
  * A conversa na área do cliente: a página da conversa e o lado direito da Caixa de entrada do portal
@@ -74,6 +75,8 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
       ])
     : [{ sectors: [], people: [] }, [], null];
   const heldByAnother = !conv.handled_at && Boolean(conv.takeover_at) && Boolean(conv.assigned_to_id) && conv.assigned_to_id !== member.memberId;
+  // quem conversa pelo nome de usuário (o número não aparece): "Pedir o telefone", dentro das 24 h
+  const askPhone = member.allowHandoff && conv.channel === "whatsapp" && whatsappWindowOpen(handoffConv) && (await needsPhone(admin, conv));
   // citar e reagir (Conversa mais natural, parte 2): quem está com a conversa; reagir, dentro das 24 h
   const threadActions = contact && member.allowHandoff && holderView(handoffConv, member.memberId) === "mine" ? { onReact: whatsappWindowOpen(handoffConv) ? memberReact.bind(null, id, cid) : null, reactions: agentReactionsFor(conv.channel as string) } : null;
   const snoozedUntil = isSnoozed(conv) ? (conv.snoozed_until as string) : null;
@@ -116,7 +119,7 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
         <footer className="flex flex-col gap-2 border-t border-line py-3">
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
           <HandoffStatus conv={handoffConv} onTakeOver={takeOver} onResumeAi={memberResumeAi.bind(null, id, cid)} meId={member.memberId} />
-          <HandoffReply conv={handoffConv} meId={member.memberId} onTakeOver={takeOver} onForceTakeOver={memberForceTakeOver.bind(null, id, cid)} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked paymentCheck={regulated} quickReplies={quickReplies} contactName={nameForReplies} attendantName={me.name} />
+          <HandoffReply conv={handoffConv} meId={member.memberId} onTakeOver={takeOver} onForceTakeOver={memberForceTakeOver.bind(null, id, cid)} onSend={memberSend.bind(null, id, cid)} onRelease={memberRelease.bind(null, id, cid)} docked paymentCheck={regulated} quickReplies={quickReplies} contactName={nameForReplies} attendantName={me.name} onRequestPhone={askPhone ? memberRequestPhone.bind(null, id, cid) : undefined} />
           <ConversationTools
             canTransfer={handoffOpen && !heldByAnother}
             canSnooze={handoffOpen && conv.assigned_to_id === member.memberId}

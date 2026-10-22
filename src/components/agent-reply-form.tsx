@@ -21,7 +21,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
  * no campo) manda uma foto ou um PDF de até 4 MB junto, com o texto como legenda; foto maior é
  * reduzida aqui antes de sair. allowFile false: no chamado do site (a resposta vai por e-mail).
  */
-export function AgentReplyForm({ action, paymentCheck = false, quickReplies = [], contactName = null, attendantName = "", allowFile = true }: { action: (fd: FormData) => Promise<ActionResult>; paymentCheck?: boolean; quickReplies?: QuickReply[]; contactName?: string | null; attendantName?: string; allowFile?: boolean }) {
+export function AgentReplyForm({ action, paymentCheck = false, quickReplies = [], contactName = null, attendantName = "", allowFile = true, onRequestPhone }: { action: (fd: FormData) => Promise<ActionResult>; paymentCheck?: boolean; quickReplies?: QuickReply[]; contactName?: string | null; attendantName?: string; allowFile?: boolean; /** quem conversa pelo nome de usuário (o número não aparece): o botão para a pessoa compartilhar */ onRequestPhone?: () => Promise<ActionResult> }) {
   const [asking, setAsking] = useState(false);
   const confirmed = useRef(false);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -119,6 +119,14 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
 
   return (
     <div className="flex flex-col gap-2">
+      {onRequestPhone && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          <span>O número desta pessoa não aparece (ela conversa pelo nome de usuário).</span>
+          <ActionForm action={onRequestPhone}>
+            <SubmitButton pendingLabel="Pedindo…" className="btn-ghost py-1 text-xs">📞 Pedir o telefone</SubmitButton>
+          </ActionForm>
+        </div>
+      )}
       {quickReplies.length > 0 && (
         <label className="flex items-center gap-2 self-start text-xs text-muted">
           <span className="sr-only">Respostas prontas</span>

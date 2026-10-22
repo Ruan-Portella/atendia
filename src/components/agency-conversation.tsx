@@ -1,5 +1,6 @@
 import { contactDisplayName, contactName as contactNameOf } from "@/lib/contacts";
 import { agentReactionsFor, quotesOf } from "@/lib/message-links";
+import { needsPhone } from "@/lib/handoff";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -34,7 +35,7 @@ import { firstExceeded } from "@/lib/rate-limit";
 import { loadTemplateChannel, type SendableTemplate, conversationTemplates, ensureResumeTemplate, type ResumeStatus } from "@/lib/whatsapp-templates";
 import { TemplateModalButton } from "@/components/template-modal-button";
 import { MessageScroller } from "@/components/message-scroller";
-import { addConversationNote, deleteConversation, forceTakeOverConversation, reactToMessage, releaseConversation, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, setTicketStatusAction, snoozeConversationAction, takeOverConversation, transferConversationAction, unsnoozeConversationAction } from "@/app/painel/actions";
+import { addConversationNote, deleteConversation, forceTakeOverConversation, reactToMessage, releaseConversation, requestContactPhone, requestGateReview, resetConversationAge, resumeConversationAiFromPanel, sendAgentMessage, sendConversationTemplate, setTicketStatusAction, snoozeConversationAction, takeOverConversation, transferConversationAction, unsnoozeConversationAction } from "@/app/painel/actions";
 import { botGateExemptions, conversationGateCategories } from "@/lib/gate/exceptions";
 import { CATEGORIES } from "@/lib/gate/rules";
 import { GateReviewButton } from "@/components/gate-review-button";
@@ -130,6 +131,8 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
     contactNameOf(createAdminClient(), conv.contact_id).then((n) => n ?? (contactName || null)),
   ]);
   const heldByAnother = !conv.handled_at && Boolean(conv.takeover_at) && Boolean(conv.assigned_to_id) && conv.assigned_to_id !== member.id;
+  // quem conversa pelo nome de usuário (o número não aparece): "Pedir o telefone", dentro das 24 h
+  const askPhone = isWhatsApp && whatsappWindowOpen(handoffConv) && (await needsPhone(createAdminClient(), conv));
   // citar e reagir (Conversa mais natural, parte 2): quem está com a conversa; reagir, dentro das 24 h
   const threadActions = (isWhatsApp || isInstagram) && holderView(handoffConv, member.id) === "mine" ? { onReact: whatsappWindowOpen(handoffConv) ? reactToMessage.bind(null, cid) : null, reactions: agentReactionsFor(conv.channel as string) } : null;
   const snoozedUntil = isSnoozed(conv) ? (conv.snoozed_until as string) : null;
@@ -250,7 +253,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
           )}
           {regulated && <RegulatedNotice channel={conv.channel as string} coexistence={coexistence} />}
           <HandoffStatus conv={handoffConv} onTakeOver={takeOver} onResumeAi={resumeConversationAiFromPanel.bind(null, cid)} meId={member.id} />
-          <HandoffReply conv={handoffConv} meId={member.id} onTakeOver={takeOver} onForceTakeOver={forceTakeOverConversation.bind(null, cid)} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked paymentCheck={regulated} quickReplies={quickReplies} contactName={nameForReplies} attendantName={attendantOf(member).name} />
+          <HandoffReply conv={handoffConv} meId={member.id} onTakeOver={takeOver} onForceTakeOver={forceTakeOverConversation.bind(null, cid)} onSend={sendAgentMessage.bind(null, cid)} onRelease={releaseConversation.bind(null, cid)} docked paymentCheck={regulated} quickReplies={quickReplies} contactName={nameForReplies} attendantName={attendantOf(member).name} onRequestPhone={askPhone ? requestContactPhone.bind(null, cid) : undefined} />
           <ConversationTools
             canTransfer={handoffOpen && !heldByAnother}
             canSnooze={handoffOpen && conv.assigned_to_id === member.id}

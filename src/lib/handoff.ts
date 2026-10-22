@@ -3,7 +3,7 @@ import { linkedRecipient } from "./pairing";
 import { API_PAUSE_CLEAR } from "./api-pause";
 import { queueConversationAssigned, queueHandoffReturned, queueMessageEvent } from "./message-events";
 import { fail, ok, type ActionResult } from "./action-result";
-import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendMedia, sendReaction, sendText, type WaChannel, type WaRecipient } from "./whatsapp";
+import { OUTSIDE_WINDOW_CODE, WhatsAppError, sendContactRequest, sendMedia, sendReaction, sendText, type WaChannel, type WaRecipient } from "./whatsapp";
 import { TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue } from "./whatsapp-access";
 import { isInstagramAccessError, isOutsideWindow, sendInstagramAttachment, sendInstagramReaction } from "./instagram";
 import { markOwnMessage } from "./inbound-queue";
@@ -16,6 +16,7 @@ import { sendBlockedReason } from "./conversation-mode";
 import { deliver, type SendRecord } from "./send";
 import { findMessage, saveMessage, touchConversation, updateMessages } from "./messages";
 import { agentReactionsFor } from "./message-links";
+import { contactHasPhone } from "./contacts";
 import { effectiveSignature, isSignatureFormat, signText, startsSequence, type SignatureFormat } from "./signature";
 import { learnLater } from "./learning";
 import { attendantAuthor, type Attendant } from "./authors";
@@ -324,6 +325,37 @@ async function deliverToInstagram(admin: SupabaseClient, botId: string, conversa
     console.error(`instagram: ${noun} do atendente falhou`, e);
     return fail(`O Instagram não aceitou a ${noun}. Tente de novo em instantes.`);
   }
+}
+
+/** O texto que vai com o botão de compartilhar o número, quando a equipe pede pelo painel. */
+export const PHONE_REQUEST_TEXT = "Pode compartilhar o seu número de telefone? É só tocar no botão abaixo.";
+
+/** A conversa do WhatsApp é de quem fala pelo nome de usuário e ainda não compartilhou o número. */
+export async function needsPhone(db: SupabaseClient, conv: { channel?: string | null; wa_id?: string | null; contact_id?: string | null }): Promise<boolean> {
+  if (conv.channel !== "whatsapp" || !conv.wa_id || /^\d+$/.test(conv.wa_id)) return false;
+  return !conv.contact_id || !(await contactHasPhone(db, conv.contact_id));
+}
+
+/**
+ * A equipe pede o número de quem conversa pelo nome de usuário (só o BSUID): o botão do WhatsApp
+ * para a pessoa compartilhar com um toque. Só quem está com a conversa, dentro das 24 horas.
+ */
+export async function requestPhoneAsAgent(admin: SupabaseClient, conversationId: string, who: Attendant): Promise<ActionResult> {
+  const { data: conv } = await admin.from("conversations").select(`${HOLDER_COLS}, channel, wa_id, contact_id`).eq("id", conversationId).maybeSingle();
+  if (!conv) return fail("Conversa não encontrada.");
+  if (!holdsConversation(conv as Holder, who.id)) return fail(heldByOther(conv as Holder, who.id) ? `${otherName(conv as Holder)} está atendendo esta conversa.` : "Assuma a conversa para pedir o telefone.");
+  if (!(await needsPhone(admin, conv))) return fail("O número desta pessoa já aparece na conversa.");
+  const record = { role: "agent" as const, content: PHONE_REQUEST_TEXT, ...attendantAuthor(who), components: { type: "contact_request" as const } };
+  const sent = await deliverOutside(admin, conversationId, { insert: record }, {
+    noun: "mensagem",
+    learn: false,
+    whatsapp: async (ch, to) => (await sendContactRequest(ch, to, PHONE_REQUEST_TEXT)).messages?.[0]?.id ?? null,
+    // só no WhatsApp (needsPhone)
+    instagram: async () => null,
+  });
+  if (sent !== "gravada") return sent === "widget" ? fail("Pedir o telefone é só no WhatsApp.") : sent;
+  await touchConversation(admin, conversationId);
+  return ok("Pedido enviado: quando a pessoa tocar no botão, o número aparece na conversa.");
 }
 
 /**

@@ -200,6 +200,7 @@ function ComponentView({ component, color, active, onPick }: { component: Messag
       </a>
     );
   }
+  if (component.type !== "options") return null;
   return (
     <div className="flex max-w-[88%] flex-wrap gap-1.5 self-start">
       {component.options.map((o) => (

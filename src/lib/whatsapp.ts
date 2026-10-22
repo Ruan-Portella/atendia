@@ -124,6 +124,19 @@ export async function sendText(ch: WaChannel, to: WaRecipient, body: string, opt
   });
 }
 
+/**
+ * O botão para a pessoa compartilhar o número (request_contact_info): para quem conversa pelo nome
+ * de usuário e o número não aparece (só o BSUID). A pessoa toca e escolhe compartilhar; o número
+ * volta como um contato compartilhado com origin "contact_request". O WhatsApp escreve o botão; só
+ * dentro das 24 horas (fora delas, só um modelo com o botão).
+ */
+export async function sendContactRequest(ch: WaChannel, to: WaRecipient, body: string, opts: { callbackData?: string; timeoutMs?: number } = {}) {
+  return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
+    body: { messaging_product: "whatsapp", recipient_type: "individual", ...recipientOf(to), type: "interactive", interactive: { type: "request_contact_info", body: { text: body.slice(0, 1024) }, action: { name: "request_contact_info" } }, ...(opts.callbackData ? { biz_opaque_callback_data: opts.callbackData } : {}) },
+    timeoutMs: opts.timeoutMs,
+  });
+}
+
 /** Reação da empresa a uma mensagem (um emoji; vazio tira a reação). Devolve o id do envio. */
 export async function sendReaction(ch: WaChannel, to: WaRecipient, messageId: string, emoji: string | null) {
   return graph<{ messages?: Array<{ id: string }> }>(`${ch.phone_number_id}/messages`, channelToken(ch), {
@@ -245,6 +258,7 @@ export async function sendCarousel(ch: WaChannel, to: WaRecipient, body: string,
 
 /** Botões, lista, link ou carrossel já convertidos para o WhatsApp (whatsappPlan), com o texto no corpo. */
 export async function sendPlan(ch: WaChannel, to: WaRecipient, body: string, plan: WhatsAppPlan, opts: InteractiveOpts = {}) {
+  if (plan.kind === "contact_request") return sendContactRequest(ch, to, body, opts);
   if (plan.kind === "buttons") return sendButtons(ch, to, body, plan.buttons, opts);
   if (plan.kind === "list") return sendList(ch, to, body, plan.button, plan.rows, opts);
   if (plan.kind === "carousel") return sendCarousel(ch, to, body, plan.cards, opts);

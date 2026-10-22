@@ -127,7 +127,7 @@ export interface GateIO {
   /** Anexo devolvido por uma ação (imagem ou documento pela URL): devolve o id da mensagem na Meta. */
   sendFile: (f: { kind: OutboundKind; url: string; filename: string | null }) => Promise<string | null>;
   /** Dados do contato para o runChat (nome do perfil no WhatsApp). */
-  chat: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: InstagramChat };
+  chat: { whatsapp?: { waId: string; profileName?: string | null; phone?: string | null }; instagram?: InstagramChat };
   historySize: number;
   /** Depois de lembrar o número pelo roteiro (no WhatsApp, liga a checagem de identidade da Meta). */
   onLinked?: () => Promise<void>;

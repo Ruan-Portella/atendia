@@ -8,7 +8,7 @@ import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, r
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withoutAi, type Mode } from "./conversation-mode";
 import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
-import { changeWhatsAppIdentity, contactLastInbound, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf, markMarketingOffer } from "./contacts";
+import { changeWhatsAppIdentity, contactLastInbound, contactPhone, previousBsuid, touchInbound, whatsappContact, whatsappIdentityOf, markMarketingOffer } from "./contacts";
 import { firstExceeded, noticeOnce } from "./rate-limit";
 import { LONG_AUDIO_ASK, LONG_AUDIO_LABEL, audioLimit, longAudioAskDue } from "./audio-limits";
 import { withContactId } from "./ai-contact";
@@ -92,6 +92,8 @@ export interface InboundMessage {
   context?: { id?: string; from?: string; forwarded?: boolean; frequently_forwarded?: boolean };
   /** Reação do contato a uma mensagem (sem emoji: tirou a reação). */
   reaction?: { message_id?: string; emoji?: string };
+  /** Contato compartilhado: com origin "contact_request", é o número da própria pessoa (o botão de compartilhar). */
+  contacts?: Array<{ origin?: string; phones?: Array<{ phone?: string; wa_id?: string; type?: string }> }>;
   /** O contato apagou a mensagem para todos (só na coexistência; Conversa mais natural, parte 3). */
   revoke?: { original_message_id?: string };
 }
@@ -128,8 +130,23 @@ export async function lastContactMessageAt(db: SupabaseClient, botId: string, co
   return (await findMessage(db, { conversationIds: ids, roles: ["user"], newestFirst: true }, ["created_at"] as const))?.created_at ?? null;
 }
 
+/**
+ * O número que a pessoa compartilhou pelo botão (origin contact_request): o dela, nunca o de um
+ * contato de outra pessoa que ela encaminhou (origin other). Pura.
+ */
+export function sharedPhoneOf(m: InboundMessage): string | null {
+  if (m.type !== "contacts") return null;
+  const card = m.contacts?.find((c) => c.origin === "contact_request");
+  const raw = card?.phones?.find((p) => p.wa_id)?.wa_id ?? card?.phones?.[0]?.phone ?? "";
+  const digits = raw.replace(/\D/g, "");
+  return digits.length >= 8 && digits.length <= 15 ? digits : null;
+}
+
 /** Texto da mensagem (texto, botão ou item de lista); null para áudio, imagem, figurinha… */
 export function inboundText(m: InboundMessage): string | null {
+  // o número compartilhado pelo botão: a IA lê e segue (registra o contato, por exemplo)
+  const shared = sharedPhoneOf(m);
+  if (shared) return `📞 Número compartilhado: +${shared}`;
   // o carrinho do catálogo da Meta vira texto (o portão trata bebida e remédio como pedido misto)
   if (m.type === "order") return orderText(m.order);
   const t = m.text?.body ?? m.button?.text ?? m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title;
@@ -239,7 +256,11 @@ async function inboundBurst(db: SupabaseClient, channel: ChannelRow, all: Queued
   const reply = (body: string) => sendText(channel, waId, toWhatsAppText(body));
 
   // o contato (achado pelo BSUID ou pelo telefone canônico) e a conversa recente dele
-  const contact = await whatsappContact(db, bot, { phone: last.msg.from ?? null, bsuid: last.msg.from_user_id ?? null, name: profileName });
+  // o número compartilhado pelo botão completa o contato que só tinha o BSUID
+  const shared = last.msg.from ? null : (burst.map((q) => sharedPhoneOf(q.msg)).find(Boolean) ?? null);
+  const contact = await whatsappContact(db, bot, { phone: last.msg.from ?? shared, bsuid: last.msg.from_user_id ?? null, name: profileName });
+  // quem conversa pelo nome de usuário (o waId é o BSUID): o número que já compartilhou vale para a IA e o lead
+  const knownPhone = !/^\d+$/.test(waId) && contact?.phone_hash ? await contactPhone(db, contact.id).catch(() => null) : null;
   const contactId = contact?.id ?? null;
   let conv = await recentConversation(db, bot.id, waId, contactId);
   // chatbot sem IA (Atendimento ou sem tamanho): tudo vai para a equipe, sem IA nenhuma (nem transcrição)
@@ -667,7 +688,7 @@ async function inboundBurst(db: SupabaseClient, channel: ChannelRow, all: Queued
         },
         // anexo devolvido por uma ação: a Meta busca o arquivo na URL do dev
         sendFile: async (f) => (await sendMedia(channel, waId, { type: f.kind, link: f.url, filename: f.filename })).messages?.[0]?.id ?? null,
-        chat: { whatsapp: { waId, profileName } },
+        chat: { whatsapp: { waId, profileName, phone: knownPhone } },
         historySize: HISTORY,
         // número lembrado pelo roteiro (parte 2c): a checagem de identidade passa a valer
         onLinked: enableIdentityCheckOnce,

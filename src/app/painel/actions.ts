@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agencySlug, requireAgency, type AgencyContext } from "@/lib/agency";
 import { attendantOf, can, type Permission } from "@/lib/team";
-import { ALREADY_YOURS, postAgentMessage, reactAsAgent, release, takeOver } from "@/lib/handoff";
+import { ALREADY_YOURS, postAgentMessage, reactAsAgent, release, requestPhoneAsAgent, takeOver } from "@/lib/handoff";
 import { agentUpload } from "@/lib/agent-files";
 import { parseTarget, transferConversation } from "@/lib/transfer";
 import { isSignatureFormat } from "@/lib/signature";
@@ -738,6 +738,16 @@ export async function sendAgentMessage(conversationId: string, formData: FormDat
   const up = await agentUpload(formData.get("file"));
   if (!up.ok) return fail(up.message);
   const r = await postAgentMessage(owned.admin, conversationId, text(formData.get("content")), await me(), { replyToId: Number(formData.get("reply_to_id")) || null, upload: up.upload });
+  revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
+  return r;
+}
+
+/** O botão para quem conversa pelo nome de usuário compartilhar o número (só no WhatsApp). */
+export async function requestContactPhone(conversationId: string): Promise<ActionResult> {
+  if (!(await allowed("attend"))) return fail(DENIED);
+  const owned = await ownedConversation(conversationId);
+  if (!owned) return fail("Conversa não encontrada.");
+  const r = await requestPhoneAsAgent(owned.admin, conversationId, await me());
   revalidatePath(`/painel/bots/${owned.conv.bot_id}/conversas/${conversationId}`);
   return r;
 }

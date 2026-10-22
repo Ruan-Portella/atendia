@@ -165,6 +165,8 @@ function ShownComponent({ json }: { json?: string | null }) {
       </a>
     );
   }
+  // o botão do WhatsApp para a pessoa compartilhar o número (contato que fala pelo nome de usuário)
+  if (c.type === "contact_request") return <span className="mt-1.5 inline-block rounded-full border border-line bg-white px-2.5 py-0.5 text-[12px] font-semibold text-brand">📞 Compartilhar o número</span>;
   return (
     <div className="mt-1.5 flex flex-wrap gap-1">
       <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">{asButtons(c.options) ? "botões" : "lista"}</span>

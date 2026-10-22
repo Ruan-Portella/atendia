@@ -42,7 +42,12 @@ export interface CarouselCard {
 export type MessageComponent =
   | { type: "options"; options: OptionItem[]; list?: boolean; button?: string }
   | { type: "link"; url: string; label: string }
-  | { type: "carousel"; cards: CarouselCard[] };
+  | { type: "carousel"; cards: CarouselCard[] }
+  /**
+   * O botão do WhatsApp para a pessoa compartilhar o número (request_contact_info), para quem
+   * conversa pelo nome de usuário e o número não aparece. Só no WhatsApp, dentro das 24 horas.
+   */
+  | { type: "contact_request" };
 
 export const LIMITS = { buttons: 3, buttonTitle: 20, list: 10, listTitle: 24, listDetail: 72, title: 60, linkLabel: 20, body: 1024, text: 600, cards: 10, cardButtons: 2, cardTitle: 80, cardText: 300, waCardText: 160 } as const;
 
@@ -152,6 +157,7 @@ export function joinShownText(stepText: string, toolText: string | null | undefi
 /** O que a IA vê no histórico depois de mostrar opções ou link (para entender "2" ou "o segundo"). Pura. */
 export function componentsNote(c: MessageComponent | null): string {
   if (!c) return "";
+  if (c.type === "contact_request") return "\n[botão mostrado: compartilhar o número de telefone]";
   if (c.type === "link") return `\n[link mostrado: ${c.label} (${c.url})]`;
   if (c.type === "carousel") return `\n[carrossel mostrado: ${c.cards.map((card, i) => `${i + 1}) ${cardName(card)}${card.buttons?.length ? ` (botões: ${card.buttons.map((b) => b.title).join(", ")})` : card.link ? ` (link: ${card.link.url})` : ""}`).join("; ")}]`;
   return `\n[opções mostradas: ${c.options.map((o, i) => `${i + 1}) ${o.title}`).join("; ")}]`;
@@ -168,7 +174,7 @@ export function cardName(card: CarouselCard): string {
  * (com o nome do card no título, para o resumo numerado e as respostas rápidas). Link: nenhuma. Pura.
  */
 export function choicesOf(c: MessageComponent | null | undefined): OptionItem[] {
-  if (!c || c.type === "link") return [];
+  if (!c || c.type === "link" || c.type === "contact_request") return [];
   if (c.type === "options") return c.options;
   return c.cards.flatMap((card) => (card.buttons ?? []).map((b) => ({ id: b.id, title: card.buttons!.length > 1 ? `${cardName(card)}: ${b.title}` : cardName(card) })));
 }
@@ -201,6 +207,7 @@ export function parseComponents(json: string | null | undefined): MessageCompone
     if (v?.type === "options" && Array.isArray(v.options) && v.options.every((o) => typeof o?.id === "string" && typeof o?.title === "string")) return v;
     if (v?.type === "link" && typeof v.url === "string" && /^https:\/\//.test(v.url) && typeof v.label === "string") return v;
     if (v?.type === "carousel" && Array.isArray(v.cards) && v.cards.length && v.cards.every(validCard)) return v;
+    if (v?.type === "contact_request") return { type: "contact_request" };
   } catch {
     // guardado com defeito: sem componente
   }
@@ -222,7 +229,9 @@ export type WhatsAppPlan =
   /** carrossel de mídia (2 a 10 cards) */
   | { kind: "carousel"; cards: WhatsAppCard[] }
   /** carrossel de 1 card: mensagem com a imagem (ou o vídeo) em cima, o texto do card e os botões */
-  | { kind: "media"; card: WhatsAppCard };
+  | { kind: "media"; card: WhatsAppCard }
+  /** o botão para a pessoa compartilhar o número (o WhatsApp escreve o botão) */
+  | { kind: "contact_request" };
 
 /**
  * Texto do card no WhatsApp: o título no começo, no máximo 2 quebras de linha e 160 caracteres
@@ -245,6 +254,7 @@ const waCard = (card: CarouselCard): WhatsAppCard => ({
 export const LIST_BUTTON = "Ver opções";
 
 export function whatsappPlan(c: MessageComponent): WhatsAppPlan {
+  if (c.type === "contact_request") return { kind: "contact_request" };
   if (c.type === "link") return { kind: "link", label: c.label, url: c.url };
   if (c.type === "carousel") return c.cards.length === 1 ? { kind: "media", card: waCard(c.cards[0]) } : { kind: "carousel", cards: c.cards.slice(0, LIMITS.cards).map(waCard) };
   if (!c.list && asButtons(c.options)) return { kind: "buttons", buttons: c.options.map((o) => ({ id: o.id, title: o.title })) };
@@ -261,7 +271,7 @@ export function whatsappPlan(c: MessageComponent): WhatsAppPlan {
 }
 
 /** Corpo curto quando o texto passa do limite da mensagem com botões (o texto vai antes, inteiro). */
-export const SHORT_BODY = { options: "Escolha uma opção:", link: "Toque para abrir:", carousel: "Veja as opções:" } as const;
+export const SHORT_BODY = { options: "Escolha uma opção:", link: "Toque para abrir:", carousel: "Veja as opções:", contact_request: "Toque no botão para compartilhar o seu número:" } as const;
 
 /**
  * Instagram: respostas rápidas (até 13, título de até 20) e o resumo numerado numa mensagem

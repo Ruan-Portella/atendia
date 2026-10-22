@@ -474,13 +474,13 @@ export interface InstagramChat {
 }
 
 /** Regra do canal no prompt (WhatsApp com ou sem telefone, Instagram; o site não tem). */
-export function channelNoteFor(opts: { whatsapp?: { waId: string; profileName?: string | null }; instagram?: InstagramChat }): string | undefined {
+export function channelNoteFor(opts: { whatsapp?: { waId: string; profileName?: string | null; phone?: string | null }; instagram?: InstagramChat }): string | undefined {
   const wa = opts.whatsapp;
-  const waPhone = wa && /^\d+$/.test(wa.waId) ? wa.waId : null;
+  const waPhone = waPhoneOf(wa);
   return wa && !waPhone
-    ? `A conversa é pelo WhatsApp, mas o número da pessoa não aparece para você: para registrar o contato, peça nome e telefone. Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
+    ? `A conversa é pelo WhatsApp, mas o número da pessoa não aparece para você (ela conversa pelo nome de usuário): quando precisar do telefone (para registrar o contato ou para a equipe retornar), use pedir_telefone, que mostra o botão para ela compartilhar o número com um toque; se ela preferir, pode digitar. Para registrar o contato, peça também o nome. Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
     : wa
-    ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${wa.waId}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil do WhatsApp dela é "${wa.profileName}", mas pode não ser o nome real: não chame a pessoa por ele; quando for registrar o contato, pergunte se pode usar esse nome (ex.: "Posso anotar seu nome como ${wa.profileName}?").` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
+    ? `A conversa é pelo WhatsApp: você já tem o número da pessoa (${waPhone}), então não peça WhatsApp, peça só o nome.${wa.profileName ? ` O nome no perfil do WhatsApp dela é "${wa.profileName}", mas pode não ser o nome real: não chame a pessoa por ele; quando for registrar o contato, pergunte se pode usar esse nome (ex.: "Posso anotar seu nome como ${wa.profileName}?").` : ""} Use a formatação do WhatsApp (*negrito*), nada de markdown. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio.`
     : opts.instagram
       ? `A conversa é pelo Direct do Instagram: a conta da pessoa já é conhecida, então para registrar o contato basta o nome (peça o WhatsApp só se ela quiser deixar). O Instagram não tem formatação: escreva texto simples, sem asteriscos nem markdown, em mensagens curtas. Mensagens que começam com 🎤 são áudios da pessoa já transcritos: responda normalmente, por texto, sem comentar que era áudio. Linhas com 📎 são o contexto do Instagram (o story ou o post de que a pessoa fala): responda sobre ele; preço que só aparece no post segue a regra dos posts. Se a pessoa marcou a loja num story, agradeça em uma frase, com simpatia, e ofereça ajuda.${opts.instagram.origin ? ` ${originNote(opts.instagram.origin)}` : ""}`
       : undefined;
@@ -735,6 +735,9 @@ export function chatTools(exec: {
   };
 }
 
+/** O número da pessoa no WhatsApp: o do contato, ou o que ela compartilhou pelo botão (só pelo nome de usuário, o waId é o BSUID). Pura. */
+export const waPhoneOf = (wa: { waId: string; phone?: string | null } | undefined) => (wa ? (/^\d+$/.test(wa.waId) ? wa.waId : wa.phone && /^\d+$/.test(wa.phone) ? wa.phone : null) : null);
+
 /** O @ de quem escreveu pelo Direct, pela conta do Instagram ligada ao chatbot (null se não der). */
 async function directUsername(db: SupabaseClient, botId: string, igsid: string): Promise<string | null> {
   const { data: ch } = await db.from("instagram_channels").select("ig_user_id, access_token_enc").eq("bot_id", botId).is("disconnected_at", null).maybeSingle();
@@ -833,8 +836,11 @@ export async function runChat(opts: {
   identityColumns?: Record<string, unknown>;
   /** Ferramentas a mais desta vez (ex.: trocar_contexto, com duas contas conectadas). */
   extraTools?: Record<string, Tool>;
-  /** Contato do WhatsApp: o número já é conhecido, o assistente só pede o nome. */
-  whatsapp?: { waId: string; profileName?: string | null };
+  /**
+   * Contato do WhatsApp: o número já é conhecido, o assistente só pede o nome. phone: o número que
+   * a pessoa compartilhou pelo botão (quem conversa pelo nome de usuário: o waId é o BSUID).
+   */
+  whatsapp?: { waId: string; profileName?: string | null; phone?: string | null };
   /** Contato do Instagram Direct (IGSID). O WhatsApp da pessoa não é conhecido. */
   instagram?: InstagramChat;
   /** Evento da fila (inbound_events): a pergunta é gravada uma vez só, mesmo no reprocesso. */
@@ -885,7 +891,7 @@ export async function runChat(opts: {
   const agentRows = opts.conversationId ? await loadMessages(db, { conversationId, roles: ["agent"], newestFirst: true, limit: 6 }, ["content"] as const) : [];
   const agentMessages = agentRows.map((r) => r.content.slice(0, 500)).reverse();
   const wa = opts.whatsapp;
-  const waPhone = wa && /^\d+$/.test(wa.waId) ? wa.waId : null;
+  const waPhone = waPhoneOf(wa);
   const channelNote = channelNoteFor(opts);
   // trava de escopo só nos canais da Meta (no widget do site não há trava)
   const scopeLock = channel === "whatsapp" || channel === "instagram";
@@ -1129,6 +1135,22 @@ export async function runChat(opts: {
         return { ok: true, componente: shown, texto };
       },
     }),
+    // contato que conversa pelo nome de usuário (o número não aparece): o botão para ele compartilhar o número
+    ...((wa && !waPhone
+      ? {
+          pedir_telefone: tool({
+            description:
+              "Mostra o botão do WhatsApp para a pessoa compartilhar o número de telefone dela com um toque (o número dela não aparece para você). Use quando precisar do telefone (para registrar o contato, para a equipe retornar ou para marcar um horário), em vez de pedir para digitar. Escreva em texto a mensagem inteira que vai junto (peça para tocar no botão para compartilhar o número) e não escreva nada fora da ferramenta. Não use se ela já mandou o número.",
+            inputSchema: z.object({ texto: z.string().min(1).describe("a mensagem inteira que vai junto do botão") }),
+            execute: async ({ texto }) => {
+              if (actionComponent) return { ok: false, instrucao: "Os botões da ação já vão nesta resposta: peça o número em texto." };
+              shown ??= { type: "contact_request" };
+              shownText ??= texto;
+              return { ok: true, componente: shown, texto };
+            },
+          }),
+        }
+      : {}) as Record<string, Tool>),
     ...(routine?.tools ?? {}),
     ...actionTools,
     ...(opts.extraTools ?? {}),

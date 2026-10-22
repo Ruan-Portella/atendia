@@ -105,7 +105,7 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
 }
 
 /** Caixa de resposta e botões de assumir/encerrar. Vai embaixo da conversa. */
-export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, onRelease, docked = false, paymentCheck = false, quickReplies, contactName, attendantName }: {
+export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, onRelease, docked = false, paymentCheck = false, quickReplies, contactName, attendantName, onRequestPhone }: {
   conv: HandoffConversation;
   /** id de quem vê a tela como atendente (agency_members ou client_members) */
   meId: string;
@@ -122,6 +122,8 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
   quickReplies?: QuickReply[];
   contactName?: string | null;
   attendantName?: string;
+  /** WhatsApp de quem conversa pelo nome de usuário, sem o número: "Pedir o telefone" */
+  onRequestPhone?: () => Promise<ActionResult>;
 }) {
   const open = !conv.handled_at;
   const active = open && Boolean(conv.takeover_at);
@@ -151,7 +153,7 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
     <>
       {active ? (
         <div className={docked ? "flex flex-col gap-2" : "sticky bottom-0 flex flex-col gap-2 border-t border-line bg-ground py-3"}>
-          <AgentReplyForm action={onSend} paymentCheck={paymentCheck} quickReplies={quickReplies} contactName={contactName} attendantName={attendantName} allowFile={!conv.ticket_protocol} />
+          <AgentReplyForm action={onSend} paymentCheck={paymentCheck} quickReplies={quickReplies} contactName={contactName} attendantName={attendantName} allowFile={!conv.ticket_protocol} onRequestPhone={onRequestPhone} />
           <ActionForm action={onRelease} className="self-end">
             <SubmitButton pendingLabel="Encerrando…" className="text-xs font-semibold text-muted hover:underline">Encerrar atendimento e devolver ao assistente</SubmitButton>
           </ActionForm>
