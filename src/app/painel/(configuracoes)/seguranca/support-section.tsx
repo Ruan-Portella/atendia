@@ -1,8 +1,9 @@
+import { ChevronDown, LifeBuoy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { SUPPORT_HOURS, readsPerGrant, type SupportGrant } from "@/lib/support-access";
-import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
+import { DialogButton } from "@/components/ui/setting-row";
+import { StatusPill } from "@/components/ui/form-section";
 import { grantSupportAccess, revokeSupportAccess } from "@/app/painel/actions";
 
 const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
@@ -12,7 +13,8 @@ const isActive = (g: SupportGrant) => !g.revoked_at && Date.parse(g.expires_at) 
 
 /**
  * Acesso do suporte: a equipe do BoaVoz só lê conversas da sua conta com a sua liberação (24 horas,
- * com motivo). Cada conversa lida aparece na auditoria.
+ * com motivo). Cada conversa lida aparece na auditoria. Redesenho, etapa 5: a situação numa linha e o
+ * liberar num modal com o motivo.
  */
 export async function SupportSection({ agencyId }: { agencyId: string }) {
   const supabase = await createClient();
@@ -22,38 +24,46 @@ export async function SupportSection({ agencyId }: { agencyId: string }) {
   const reads = await readsPerGrant(supabase, agencyId, grants);
 
   return (
-    <section className="card flex flex-col gap-4 p-6">
-      <div>
-        <h2 className="text-base font-medium">Acesso do suporte</h2>
-        <p className="text-sm text-muted">
-          A equipe do BoaVoz não lê as conversas da sua conta sem a sua liberação. Libere por {SUPPORT_HOURS} horas quando pedir ajuda com um atendimento; cada conversa lida aparece na Auditoria, e você pode encerrar antes.
-        </p>
-      </div>
-      {active ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-amber-ink">
-          <span>
-            <strong>Liberado até {when(active.expires_at)}.</strong> Motivo: {active.reason}. {reads.get(active.id) ? `${reads.get(active.id)} conversa(s) lida(s) até agora.` : "Nenhuma conversa lida ainda."}
+    <section className="flex flex-col gap-3">
+      <p className="text-sm text-muted">A equipe do BoaVoz não lê as conversas da sua conta sem a sua liberação. Libere por {SUPPORT_HOURS} horas quando pedir ajuda com um atendimento; cada conversa lida aparece na Auditoria, e você pode encerrar antes.</p>
+      <div className="card flex flex-wrap items-center gap-3 px-4 py-3.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-raised text-ink-2">
+          <LifeBuoy size={18} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[15px] font-medium text-ink">Acesso do suporte</span>
+            <StatusPill tone={active ? "warn" : "muted"}>{active ? `Liberado até ${when(active.expires_at)}` : "Fechado"}</StatusPill>
           </span>
+          <span className="mt-0.5 block text-[12.5px] leading-snug text-muted">
+            {active ? `Motivo: ${active.reason} · ${reads.get(active.id) ? `${reads.get(active.id)} conversa(s) lida(s) até agora` : "nenhuma conversa lida ainda"}` : "O suporte não vê as conversas da sua conta."}
+          </span>
+        </span>
+        {active ? (
           <ConfirmAction action={revokeSupportAccess} title="Encerrar o acesso do suporte agora?" description="A equipe do BoaVoz deixa de ver as conversas da sua conta na hora." confirmLabel="Encerrar" className="btn-ghost py-1.5 text-xs">
             Encerrar agora
           </ConfirmAction>
-        </div>
-      ) : (
-        <ActionForm action={grantSupportAccess} className="flex flex-col gap-3">
-          <div>
-            <label htmlFor="support-reason" className="label">Motivo (o que o suporte vai ver)</label>
-            <input id="support-reason" name="reason" required minLength={10} maxLength={300} className="input" placeholder="Ex.: o assistente respondeu errado no WhatsApp do cliente Pizzaria, conversa de hoje às 14h" />
-          </div>
-          <SubmitButton className="btn-primary self-start">Liberar acesso do suporte por {SUPPORT_HOURS} horas</SubmitButton>
-        </ActionForm>
-      )}
+        ) : (
+          <DialogButton label={`Liberar por ${SUPPORT_HOURS} horas`} className="btn-primary py-1.5 text-xs" title="Liberar o acesso do suporte" description={`Por ${SUPPORT_HOURS} horas, a equipe do BoaVoz pode ler as conversas da sua conta para ajudar. Cada conversa lida aparece na Auditoria, e você encerra quando quiser.`} action={grantSupportAccess} saveLabel={`Liberar por ${SUPPORT_HOURS} horas`}>
+            <div>
+              <label htmlFor="support-reason" className="label">
+                Motivo (o que o suporte vai ver)
+              </label>
+              <textarea id="support-reason" name="reason" required minLength={10} maxLength={300} rows={3} className="input text-sm" placeholder="Ex.: o assistente respondeu errado no WhatsApp do cliente Pizzaria, conversa de hoje às 14h" />
+            </div>
+          </DialogButton>
+        )}
+      </div>
       {grants.length > 0 && (
-        <details className="border-t border-line pt-3 text-sm" open={!active}>
-          <summary className="cursor-pointer font-semibold">Histórico ({grants.length})</summary>
-          <ul className="mt-2 flex flex-col gap-1.5">
+        <details className="group/hist">
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden">
+            Histórico ({grants.length})
+            <ChevronDown size={14} className="transition-transform duration-[220ms] group-open/hist:rotate-180" />
+          </summary>
+          <ul className="card mt-2 flex flex-col divide-y divide-line-2 overflow-hidden">
             {grants.map((g) => (
-              <li key={g.id} className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <span className="min-w-0">{g.reason}</span>
+              <li key={g.id} className="flex flex-col gap-0.5 px-4 py-2.5">
+                <span className="text-sm text-ink">{g.reason}</span>
                 <span className="text-xs text-muted">
                   {when(g.created_at)} → {g.revoked_at ? `encerrado em ${when(g.revoked_at)}` : `até ${when(g.expires_at)}`} · {reads.get(g.id) ?? 0} conversa(s) lida(s)
                 </span>

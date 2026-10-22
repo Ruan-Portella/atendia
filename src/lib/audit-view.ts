@@ -257,6 +257,106 @@ export interface AuditRow {
   created_at: string;
 }
 
+/** O nome de cada campo do antes e depois da auditoria, como a pessoa lê (o resto: o código, sem o "_"). */
+const FIELD_LABELS: Record<string, string> = {
+  email: "E-mail",
+  papel: "Papel",
+  escopo: "O que vê",
+  nome: "Nome",
+  name: "Nome",
+  titulo: "Título",
+  url: "Endereço",
+  site: "Site",
+  ativo: "Ligado",
+  ligado: "Ligado",
+  aceito: "Aceitou o convite",
+  modelo: "Modelo",
+  regua: "Régua",
+  motivo: "Motivo",
+  texto: "Texto",
+  origem: "Origem",
+  valor_centavos: "Valor",
+  valor_reais: "Valor",
+  channel: "Canal",
+  via: "Por onde",
+  por: "Por",
+  para: "Para",
+  de: "De",
+  ate: "Até",
+  palavras: "Palavras",
+  campos: "Campos",
+  pacotes: "Pacotes",
+  pacote: "Pacote",
+  chatbots: "Chatbots",
+  events: "Eventos",
+  permissoes: "Permissões",
+  prefix: "Começo da chave",
+  tipo: "Tipo",
+  passos: "Passos",
+  versao: "Versão",
+  situacao: "Situação",
+  descricao: "Descrição",
+  external_id: "ID externo",
+  leads: "Leads",
+  atendente: "Atendente",
+  phone: "Telefone",
+  size: "Tamanho",
+  tamanho: "Tamanho",
+  feriados: "Feriados",
+  pessoas: "Pessoas",
+  distribuicao: "Distribuição",
+  bot: "Chatbot",
+  cliente: "Cliente",
+};
+
+/** Os códigos que têm nome (o papel, o escopo, o canal). */
+const VALUE_LABELS: Record<string, Record<string, string>> = {
+  papel: { owner: "Dono", admin: "Administrador", editor: "Editor", agent: "Atendente", gestor: "Gestor" },
+  escopo: { all: "Todos os clientes", selected: "Alguns clientes" },
+  channel: { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Chat do site" },
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+const fieldLabel = (k: string) => FIELD_LABELS[k] ?? (k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()));
+
+/** Um valor do antes e depois como texto curto: sim e não, reais, datas, ids encurtados e listas. Pura. */
+function fieldValue(v: unknown, key = "", depth = 0): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "Sim" : "Não";
+  if (typeof v === "number") return /centavos|cents/.test(key) ? (v / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : /reais|brl/.test(key) ? v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : v.toLocaleString("pt-BR");
+  if (typeof v === "string") {
+    if (VALUE_LABELS[key]?.[v]) return VALUE_LABELS[key][v];
+    if (UUID.test(v)) return `${v.slice(0, 8)}…`;
+    if (ISO.test(v) && !Number.isNaN(Date.parse(v))) return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+    return v.length > 160 ? `${v.slice(0, 159)}…` : v;
+  }
+  if (Array.isArray(v)) {
+    if (!v.length) return "nenhum";
+    if (v.every((x) => x === null || typeof x !== "object")) return v.map((x) => fieldValue(x, key, depth + 1)).join(", ");
+    return `${v.length} ${v.length === 1 ? "item" : "itens"}`;
+  }
+  if (typeof v === "object") {
+    if (depth > 0) return "…";
+    const parts = Object.entries(v as Record<string, unknown>).map(([k, x]) => `${fieldLabel(k).toLowerCase()}: ${fieldValue(x, k, depth + 1)}`);
+    return parts.length ? parts.join("; ") : "—";
+  }
+  return String(v);
+}
+
+/**
+ * O antes e depois de um evento como linhas de campo, antes e depois (redesenho, etapa 5: sem JSON à
+ * mostra). Com os dois lados, `changed` marca o que mudou. Pura.
+ */
+export function auditFields(before: Record<string, unknown> | null, after: Record<string, unknown> | null): Array<{ label: string; before: string | null; after: string | null; changed: boolean }> {
+  const keys = [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])];
+  return keys.map((k) => {
+    const b = before ? fieldValue(before[k], k) : null;
+    const a = after ? fieldValue(after[k], k) : null;
+    return { label: fieldLabel(k), before: b, after: a, changed: Boolean(before && after && b !== a) };
+  });
+}
+
 export const PERIODS = [7, 30, 90, 365] as const;
 
 /** Lê os filtros da URL (valores fora da lista viram o padrão). Pura. */

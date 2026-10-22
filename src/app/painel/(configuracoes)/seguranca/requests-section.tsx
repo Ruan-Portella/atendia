@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { ChevronDown, UserX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { relativeTime } from "@/lib/utils";
 import { DSR_DAYS, dueDateBR } from "@/lib/data-subject";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
+import { DialogButton } from "@/components/ui/setting-row";
+import { HowItWorks, StatusPill } from "@/components/ui/form-section";
 import { confirmDataSubjectRequest, refuseDataSubjectRequest } from "@/app/painel/actions";
 
 /** Prazo da LGPD já passou? */
@@ -31,7 +32,8 @@ interface Row {
 
 /**
  * Pedidos do titular: a agência confirma como operadora, em nome do negócio (o controlador); a
- * rotina apaga e avisa o contato.
+ * rotina apaga e avisa o contato. Redesenho, etapa 5: cada pedido numa linha com o prazo em pílula,
+ * o Confirmar e apagar e o Recusar num modal com o motivo.
  */
 export async function RequestsSection() {
   const supabase = await createClient();
@@ -45,78 +47,112 @@ export async function RequestsSection() {
   const botName = new Map((bots ?? []).map((b) => [b.id as string, b.name as string]));
   const pending = rows.filter((r) => r.status === "aguardando");
   const done = rows.filter((r) => r.status !== "aguardando");
+  const whose = (r: Row) => `${(r.client_id && clientName.get(r.client_id)) || "Demonstração"}${r.bot_id && botName.get(r.bot_id) ? ` · ${botName.get(r.bot_id)}` : ""}`;
 
   return (
-      <section className="card flex flex-col gap-3 p-6">
-        <div>
-          <h2 className="text-base font-medium">Pedidos do titular</h2>
-          <p className="text-sm text-muted">
-            O contato pede pelo chat (“apaga meus dados”) e confirma. Ao confirmar aqui, o BoaVoz apaga as conversas, a ficha do contato, os leads e o que ele informou, põe o número na lista de quem não recebe mensagens da empresa e avisa a pessoa pelo canal, quando a janela de 24 horas ainda está aberta. A LGPD dá {DSR_DAYS} dias para atender.
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <p className="text-sm text-muted">O contato pede pelo chat (&ldquo;apaga meus dados&rdquo;) e confirma; você confirma aqui, em nome do negócio. A LGPD dá {DSR_DAYS} dias para atender.</p>
+        <HowItWorks label="O que acontece ao confirmar">
+          <p>
+            O BoaVoz apaga as conversas do contato naquele assistente (com as mensagens), a ficha do contato, os leads e o que ele informou, põe o número na lista de quem não recebe mensagens da empresa e avisa a pessoa pelo canal, quando a janela de 24 horas
+            ainda está aberta. Não tem desfazer.
           </p>
-        </div>
-        {pending.length === 0 ? (
-          <p className="text-sm text-muted">Nenhum pedido aguardando.</p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-line">
-            {pending.map((r) => {
-              const late = overdue(r.due_at);
-              return (
-                <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                  <div className="min-w-0 text-sm">
-                    <div className="font-semibold">{(r.client_id && clientName.get(r.client_id)) || "Demonstração"}{r.bot_id && botName.get(r.bot_id) ? ` · ${botName.get(r.bot_id)}` : ""}</div>
-                    <div className="text-xs text-muted">
-                      {CHANNEL[r.channel] ?? r.channel} · pedido {relativeTime(r.requested_at)} ·{" "}
-                      <span className={late ? "font-semibold text-danger" : ""}>{late ? `prazo venceu em ${dueDateBR(r.due_at)}` : `prazo até ${dueDateBR(r.due_at)}`}</span>
-                      {r.conversation_id && r.bot_id ? <> · <Link href={`/painel/bots/${r.bot_id}/conversas/${r.conversation_id}`} className="underline">ver conversa</Link></> : null}
+          <p>Recusar só cabe com motivo: a LGPD admite manter dados por obrigação legal ou para exercer direitos. O motivo vai para a pessoa pelo canal (dentro das 24 horas) e fica registrado.</p>
+        </HowItWorks>
+      </div>
+
+      {pending.length === 0 ? (
+        <p className="card flex items-center justify-center gap-2 px-5 py-8 text-sm text-muted">
+          <UserX size={16} /> Nenhum pedido aguardando.
+        </p>
+      ) : (
+        <ul className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+          {pending.map((r) => {
+            const late = overdue(r.due_at);
+            return (
+              <li key={r.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-[15px] font-medium text-ink">{whose(r)}</span>
+                    <StatusPill tone={late ? "danger" : "warn"}>{late ? `prazo venceu em ${dueDateBR(r.due_at)}` : `prazo até ${dueDateBR(r.due_at)}`}</StatusPill>
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted">
+                    {CHANNEL[r.channel] ?? r.channel} · pedido {relativeTime(r.requested_at)}
+                    {r.conversation_id && r.bot_id ? (
+                      <>
+                        {" · "}
+                        <Link href={`/painel/bots/${r.bot_id}/conversas/${r.conversation_id}`} className="font-medium text-brand hover:underline">
+                          ver a conversa
+                        </Link>
+                      </>
+                    ) : null}
+                  </span>
+                </span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <DialogButton
+                    label="Recusar"
+                    className="btn-ghost py-1.5 text-xs"
+                    title="Recusar o pedido"
+                    description="A LGPD admite manter dados por obrigação legal ou para exercer direitos, sempre com o motivo. Ele vai para a pessoa pelo canal (dentro das 24 horas) e fica registrado."
+                    action={refuseDataSubjectRequest.bind(null, r.id)}
+                    saveLabel="Recusar o pedido"
+                  >
+                    <div>
+                      <label htmlFor={`reason-${r.id}`} className="label">
+                        Motivo
+                      </label>
+                      <textarea id={`reason-${r.id}`} name="reason" required minLength={10} maxLength={500} rows={3} className="input text-sm" placeholder="Ex.: as notas fiscais ficam guardadas por 5 anos por obrigação legal; o resto foi apagado no atendimento." />
                     </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ConfirmAction
-                      action={confirmDataSubjectRequest.bind(null, r.id)}
-                      title="Apagar os dados deste contato?"
-                      description="Saem as conversas dele neste assistente (com as mensagens), a ficha do contato, os leads, as perguntas e a resposta de 18+. O número entra na lista de quem não recebe mensagens da empresa. Não tem desfazer."
-                      confirmLabel="Apagar os dados"
-                      className="btn-primary py-1.5 text-xs"
-                    >
-                      Confirmar e apagar
-                    </ConfirmAction>
-                  </div>
-                  <details className="w-full text-xs">
-                    <summary className="cursor-pointer text-muted hover:text-ink">Recusar com motivo</summary>
-                    <ActionForm action={refuseDataSubjectRequest.bind(null, r.id)} className="mt-2 flex flex-col gap-2">
-                      <textarea name="reason" required minLength={10} maxLength={500} rows={2} className="input text-sm" placeholder="Ex.: as notas fiscais ficam guardadas por 5 anos por obrigação legal; o resto foi apagado no atendimento." />
-                      <p className="text-muted">A LGPD admite manter dados por obrigação legal ou para exercer direitos, sempre com o motivo. Ele vai para a pessoa pelo canal (dentro das 24 horas) e fica registrado.</p>
-                      <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Recusando…">Recusar o pedido</SubmitButton>
-                    </ActionForm>
-                  </details>
-                </li>
-              );
-            })}
+                  </DialogButton>
+                  <ConfirmAction
+                    action={confirmDataSubjectRequest.bind(null, r.id)}
+                    title="Apagar os dados deste contato?"
+                    description="Saem as conversas dele neste assistente (com as mensagens), a ficha do contato, os leads, as perguntas e a resposta de 18+. O número entra na lista de quem não recebe mensagens da empresa. Não tem desfazer."
+                    confirmLabel="Apagar os dados"
+                    className="btn-primary py-1.5 text-xs"
+                  >
+                    Confirmar e apagar
+                  </ConfirmAction>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {done.length > 0 && (
+        <details className="group/done">
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden">
+            Atendidos e recusados ({done.length})
+            <ChevronDown size={14} className="transition-transform duration-[220ms] group-open/done:rotate-180" />
+          </summary>
+          <ul className="card mt-2 flex flex-col divide-y divide-line-2 overflow-hidden">
+            {done.map((r) => (
+              <li key={r.id} className="flex flex-col gap-0.5 px-4 py-2.5">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-sm text-ink">{whose(r)}</span>
+                  <StatusPill tone={r.status === "recusado" ? "muted" : "ok"}>{r.status === "recusado" ? "Recusado" : "Atendido"}</StatusPill>
+                  <span className="text-xs text-muted">
+                    {CHANNEL[r.channel] ?? r.channel} · {r.status === "recusado" ? (r.refused_at ? relativeTime(r.refused_at) : "") : r.executed_at ? relativeTime(r.executed_at) : ""}
+                  </span>
+                </span>
+                {r.status === "recusado" ? (
+                  <span className="text-xs text-muted">
+                    Motivo: {r.refuse_reason}
+                    {r.contact_notified_at ? " · contato avisado" : " · contato não avisado pelo canal"}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted">
+                    Apagados: {r.summary?.conversas ?? 0} conversa(s), {r.summary?.leads ?? 0} lead(s), {r.summary?.contatos ?? 0} ficha(s)
+                    {r.origin !== "chat" ? "" : r.contact_notified_at ? " · contato avisado" : r.channel === "widget" ? " · pelo site (a pessoa viu o prazo no pedido)" : " · janela de 24 h fechada, contato não avisado"}
+                  </span>
+                )}
+              </li>
+            ))}
           </ul>
-        )}
-        {done.length > 0 && (
-          <details className="border-t border-line pt-3 text-sm">
-            <summary className="cursor-pointer font-semibold">Atendidos e recusados ({done.length})</summary>
-            <ul className="mt-2 flex flex-col gap-1.5">
-              {done.map((r) => (
-                <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-3">
-                  <span>{(r.client_id && clientName.get(r.client_id)) || "Demonstração"} · {CHANNEL[r.channel] ?? r.channel}</span>
-                  {r.status === "recusado" ? (
-                    <span className="text-xs text-muted">
-                      recusado {r.refused_at ? relativeTime(r.refused_at) : ""} · {r.refuse_reason}
-                      {r.contact_notified_at ? " · contato avisado" : " · contato não avisado pelo canal"}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted">
-                      atendido {r.executed_at ? relativeTime(r.executed_at) : ""} · {r.summary?.conversas ?? 0} conversa(s), {r.summary?.leads ?? 0} lead(s), {r.summary?.contatos ?? 0} ficha(s)
-                      {r.origin !== "chat" ? "" : r.contact_notified_at ? " · contato avisado" : r.channel === "widget" ? " · pelo site (a pessoa viu o prazo no pedido)" : " · janela de 24 h fechada, contato não avisado"}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </section>
+        </details>
+      )}
+    </section>
   );
 }

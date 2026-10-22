@@ -37,6 +37,7 @@ export function EditDialog({
   pendingLabel = "Salvando…",
   footerStart,
   footer = "save",
+  danger = false,
   children,
 }: {
   open: boolean;
@@ -57,6 +58,8 @@ export function EditDialog({
    * Cancelar dele manda o evento "bv-cancel"
    */
   footer?: "save" | "close" | "none";
+  /** o Salvar em vermelho (ex.: excluir a conta) */
+  danger?: boolean;
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -155,7 +158,7 @@ export function EditDialog({
             <button type="button" onClick={tryClose} className="btn-ghost">
               Cancelar
             </button>
-            <SubmitButton className="btn-primary px-5" pendingLabel={pendingLabel}>
+            <SubmitButton className={cn(danger ? "btn-danger-solid" : "btn-primary", "px-5")} pendingLabel={pendingLabel}>
               {saveLabel}
             </SubmitButton>
           </>
@@ -313,6 +316,7 @@ export function DialogButton({
   saveLabel?: string;
   footer?: "save" | "close" | "none";
   footerStart?: React.ReactNode;
+  danger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
