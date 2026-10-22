@@ -60,6 +60,8 @@ export function ActionForm({ action, success = "Salvo.", onSuccess, onSubmit, co
     if (r.ok) {
       toast.success(r.message ?? success);
       onSuccess?.();
+      // o modal de editar em volta (ui/setting-row) fecha quando o formulário de dentro salva
+      formRef.current?.dispatchEvent(new Event("bv-saved", { bubbles: true }));
     } else toast.error(r.message);
     return r;
   }, null);

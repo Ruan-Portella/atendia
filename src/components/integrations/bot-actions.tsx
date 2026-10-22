@@ -4,11 +4,12 @@ import type { ActionRow } from "@/lib/actions";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { ActionFields, ActionTestForm } from "@/components/integrations/action-fields";
+import { ActionFieldsBody, ActionTestForm } from "@/components/integrations/action-fields";
 import { needsConfirmation } from "@/lib/actions";
 import { actionsTokenWeight, headerNames } from "@/lib/integrations-input";
-import { KeyRound, Plus } from "lucide-react";
-import { FormSection, HowItWorks, RowSection, StatusPill } from "@/components/ui/form-section";
+import { FlaskConical, KeyRound, Plus, Zap } from "lucide-react";
+import { HowItWorks, StatusPill } from "@/components/ui/form-section";
+import { DialogButton, SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { deleteBotAction, rotateBotActionSecret, saveBotAction, testBotAction } from "@/app/painel/(configuracoes)/integracoes/actions";
 
 const LEVEL_LABEL: Record<string, string> = { anonimo: "qualquer contato", canal: "telefone conhecido", usuario: "identificado pela empresa" };
@@ -41,42 +42,56 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
 
   return (
     <div className="flex max-w-[860px] flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-[22px] font-medium">Ações</h2>
-        <p className="text-sm text-muted">Chamadas ao sistema do cliente que a IA faz na conversa: consultar um pedido, agendar, cancelar.</p>
-        {/* redesenho, etapa 5: a explicação longa fica fechada; o segredo e as ações em blocos que abrem e fecham */}
-        <div className="flex flex-wrap items-start gap-x-4 gap-y-1">
-          <HowItWorks>
-            <p>
-              Consulta (status do pedido, agenda, saldo): a IA chama quando a descrição combina e responde com o que o endpoint devolver. Executa (criar pedido, agendar, cancelar): a IA mostra ao contato
-              um resumo com Confirmar e Cancelar, e o endpoint só é chamado depois do Confirmar. Ação que o BoaVoz classifica como pedido, reserva ou cobrança sempre pede o Confirmar, mesmo cadastrada
-              como consulta.
-            </p>
-            <p>O retorno pode trazer components (botões, lista ou link): botão com action chama a ação direto no toque do contato, sem a IA. E attachments (até 5 arquivos) vão logo depois do texto, no formato de cada canal.</p>
-          </HowItWorks>
-          <a href="/docs/acoes" target="_blank" rel="noopener" className="text-[13px] font-medium text-brand hover:underline">
-            Documentação das ações ↗
-          </a>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h2 className="text-[22px] font-medium">Ações</h2>
+          <p className="text-sm text-muted">Chamadas ao sistema do cliente que a IA faz na conversa: consultar um pedido, agendar, cancelar.</p>
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-1">
+            <HowItWorks>
+              <p>
+                Consulta (status do pedido, agenda, saldo): a IA chama quando a descrição combina e responde com o que o endpoint devolver. Executa (criar pedido, agendar, cancelar): a IA mostra ao contato
+                um resumo com Confirmar e Cancelar, e o endpoint só é chamado depois do Confirmar. Ação que o BoaVoz classifica como pedido, reserva ou cobrança sempre pede o Confirmar, mesmo cadastrada
+                como consulta.
+              </p>
+              <p>O retorno pode trazer components (botões, lista ou link): botão com action chama a ação direto no toque do contato, sem a IA. E attachments (até 5 arquivos) vão logo depois do texto, no formato de cada canal.</p>
+            </HowItWorks>
+            <a href="/docs/acoes" target="_blank" rel="noopener" className="text-[13px] font-medium text-brand hover:underline">
+              Documentação das ações ↗
+            </a>
+          </div>
         </div>
+        {/* redesenho, etapa 5 (22/10): criar e editar num painel lateral; os parâmetros em linhas, sem o JSON */}
+        {manage && (
+          <DialogButton label="Nova ação" icon={<Plus size={15} />} className="btn-primary" title="Nova ação" description="Uma consulta ou uma ação que executa. Depois de criar, use o Testar da lista." action={saveBotAction.bind(null, bot.id, null)} size="sheet" saveLabel="Criar ação">
+            <ActionFieldsBody />
+          </DialogButton>
+        )}
       </div>
 
       {manage && (
-        <FormSection title="Segredo de ações deste chatbot" icon={<KeyRound size={16} />} summary={bot.action_secret_enc ? "Configurado" : "Ainda não gerado: as ações não funcionam sem ele"} defaultOpen={!bot.action_secret_enc}>
-          <ResultForm action={rotateBotActionSecret.bind(null, bot.id)} copy className="gap-3">
-            <p className="text-xs text-muted">
-              {bot.action_secret_enc ? "Configurado." : "Ainda não gerado: as ações deste chatbot não funcionam sem ele."}
-              {previousSecretNote(bot.action_secret_prev_until)} Cada chamada vai assinada no padrão Standard Webhooks; o endpoint confere com este segredo. Aparece uma vez só: quem perder, gera outro.
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <SubmitButton className="btn-ghost py-1.5" pendingLabel="Gerando…">{bot.action_secret_enc ? "Trocar o segredo" : "Gerar segredo"}</SubmitButton>
+        <SettingGroup>
+          <SettingRow
+            icon={<KeyRound size={18} />}
+            title="Segredo de ações deste chatbot"
+            summary={bot.action_secret_enc ? `Configurado.${previousSecretNote(bot.action_secret_prev_until)}` : "Ainda não gerado: as ações deste chatbot não funcionam sem ele"}
+            summaryTone={bot.action_secret_enc ? "muted" : "warn"}
+            description="Cada chamada vai assinada no padrão Standard Webhooks; o endpoint confere com este segredo. Aparece uma vez só: quem perder, gera outro."
+            footer="close"
+          >
+            <ResultForm action={rotateBotActionSecret.bind(null, bot.id)} copy className="gap-3">
               {Boolean(bot.action_secret_enc) && (
-                <label className="flex items-center gap-1.5 text-xs">
-                  <input type="checkbox" name="invalidate" /> invalidar o anterior agora (vazou)
+                <label className="flex items-center justify-between gap-4 text-sm">
+                  <span>
+                    <span className="block font-medium text-ink">Invalidar o anterior agora</span>
+                    <span className="block text-xs text-muted">Só quando o segredo vazou. Sem isso, o anterior vale por mais um tempo, para trocar sem queda.</span>
+                  </span>
+                  <input type="checkbox" name="invalidate" className="mt-0.5" />
                 </label>
               )}
-            </div>
-          </ResultForm>
-        </FormSection>
+              <SubmitButton className="btn-primary self-start" pendingLabel="Gerando…">{bot.action_secret_enc ? "Trocar o segredo" : "Gerar segredo"}</SubmitButton>
+            </ResultForm>
+          </SettingRow>
+        </SettingGroup>
       )}
 
       {weight > 0 && (
@@ -85,48 +100,75 @@ export async function BotActions({ bot, manage }: { bot: { id: string; action_se
         </p>
       )}
 
-      <div className="card overflow-hidden">
+      <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
         {actions.length ? (
           actions.map((a) => {
-            const s = stats.get(a.id);
+            const st = stats.get(a.id);
             return (
-              <RowSection
+              <SettingRow
                 key={a.id}
+                icon={<Zap size={18} />}
                 title={a.name}
                 mono
-                status={<StatusPill tone={a.active ? "ok" : "muted"}>{a.active ? "Ativa" : "Desativada"}</StatusPill>}
-                meta={`${needsConfirmation(a) ? "Executa (com Confirmar)" : "Consulta"}${a.supports_preview ? " · aceita prévia" : ""} · ${LEVEL_LABEL[a.min_level] ?? a.min_level}${a.routine_only ? " · só no roteiro" : ""}`}
-                warn={a.creates_order && a.type === "query" ? "Parece criar pedido, reserva ou cobrança: pede o Confirmar do contato" : null}
-                aside={s ? <>última chamada {relativeTime(s.last!)}<br />erros {pct(s.errors, s.total)} em 7 dias</> : "sem chamadas em 7 dias"}
-              >
-                {manage ? (
+                badge={<StatusPill tone={a.active ? "ok" : "muted"}>{a.active ? "Ativa" : "Desativada"}</StatusPill>}
+                summary={
                   <>
-                    <ActionFields action={saveBotAction.bind(null, bot.id, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
-                    <ActionTestForm action={testBotAction.bind(null, a.id)} a={a} />
-                    <ConfirmAction action={deleteBotAction.bind(null, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="self-start text-xs font-semibold text-danger hover:underline">
+                    {needsConfirmation(a) ? "Executa (com Confirmar)" : "Consulta"}
+                    {a.supports_preview ? " · aceita prévia" : ""} · {LEVEL_LABEL[a.min_level] ?? a.min_level}
+                    {a.routine_only ? " · só no roteiro" : ""}
+                    <span className="block sm:hidden">{st ? `última chamada ${relativeTime(st.last!)} · erros ${pct(st.errors, st.total)} em 7 dias` : "sem chamadas em 7 dias"}</span>
+                    {a.creates_order && a.type === "query" && <span className="block text-amber-ink">Parece criar pedido, reserva ou cobrança: pede o Confirmar do contato</span>}
+                  </>
+                }
+                trailing={
+                  <>
+                    <span className="hidden shrink-0 text-right text-xs text-muted sm:block">
+                      {st ? (
+                        <>
+                          última chamada {relativeTime(st.last!)}
+                          <br />
+                          erros {pct(st.errors, st.total)} em 7 dias
+                        </>
+                      ) : (
+                        "sem chamadas em 7 dias"
+                      )}
+                    </span>
+                    {manage && (
+                      <DialogButton label="Testar" icon={<FlaskConical size={14} />} className="btn-ghost shrink-0 px-3 py-1.5 text-[13px]" title={`Testar ${a.name}`} description="Chama o endpoint de verdade, com test: true. O resultado aparece aqui embaixo." footer="close" size="lg">
+                        <ActionTestForm action={testBotAction.bind(null, a.id)} a={a} />
+                      </DialogButton>
+                    )}
+                  </>
+                }
+                dialogTitle={a.name}
+                description={manage ? undefined : "Só o dono ou um administrador da agência edita as ações."}
+                action={manage ? saveBotAction.bind(null, bot.id, a.id) : undefined}
+                size="sheet"
+                footer={manage ? "save" : "close"}
+                saveLabel="Salvar ação"
+                footerStart={
+                  manage ? (
+                    <ConfirmAction action={deleteBotAction.bind(null, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="text-sm font-semibold text-danger hover:underline">
                       Apagar ação
                     </ConfirmAction>
-                  </>
+                  ) : undefined
+                }
+              >
+                {manage ? (
+                  <ActionFieldsBody a={a} savedHeaders={headerNames(a.headers_enc)} />
                 ) : (
                   <div className="flex flex-col gap-1 text-sm">
                     <p className="text-ink-2">{a.description}</p>
                     <p className="truncate font-mono text-xs text-muted">{a.url}</p>
-                    <p className="text-xs text-muted">Só o dono ou um administrador da agência edita as ações.</p>
                   </div>
                 )}
-              </RowSection>
+              </SettingRow>
             );
           })
         ) : (
-          <p className="px-5 py-6 text-center text-sm text-muted">Nenhuma ação neste chatbot.</p>
+          <p className="px-5 py-6 text-center text-sm text-muted">Nenhuma ação neste chatbot.{manage ? " Toque em “Nova ação” para cadastrar a primeira." : ""}</p>
         )}
       </div>
-
-      {manage && (
-        <FormSection title="Nova ação" icon={<Plus size={16} />} summary="Uma consulta ou uma ação que executa, com o botão Testar antes de ligar">
-          <ActionFields action={saveBotAction.bind(null, bot.id, null)} label="Criar ação" />
-        </FormSection>
-      )}
     </div>
   );
 }

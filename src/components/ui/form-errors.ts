@@ -69,11 +69,14 @@ export function validateForm(form: HTMLFormElement, submitter?: HTMLElement | nu
   if (submitter instanceof HTMLButtonElement && submitter.formNoValidate) return true;
   const fields = Array.from(form.elements).filter(isField).filter((f) => leaderOf(f) === f);
   const valid = fields.map(showError);
-  // campo com erro dentro de um bloco fechado (FormSection): o bloco abre para o erro aparecer
+  // campo com erro dentro de um <details> fechado: o bloco abre para o erro aparecer
   fields.forEach((f, i) => {
     if (!valid[i]) f.closest("details")?.setAttribute("open", "");
   });
   const firstBad = fields[valid.indexOf(false)];
+  // ou dentro de um modal de editar fechado (ui/setting-row): o modal abre
+  const dialog = firstBad?.closest("dialog");
+  if (dialog && !dialog.open) dialog.dispatchEvent(new Event("bv-open"));
   firstBad?.focus();
   return !firstBad;
 }

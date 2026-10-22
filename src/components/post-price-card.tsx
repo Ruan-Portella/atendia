@@ -1,23 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
-import type { ActionResult } from "@/lib/action-result";
 
 /**
- * Regra do preço de post do Instagram (E1, parte 1; spec Peça 9), na aba Fontes de quem tem a fonte
- * do Instagram: o post mostra o preço do dia em que foi publicado, e a loja escolhe o que o
- * assistente faz com ele.
+ * Regra do preço de post do Instagram (E1, parte 1; spec Peça 9), na Base de conhecimento de quem
+ * tem a fonte do Instagram: o post mostra o preço do dia em que foi publicado, e a loja escolhe o que
+ * o assistente faz com ele. Só as opções: o modal da linha tem o formulário e o Salvar.
  */
-export function PostPriceCard({ rule, maxDays, save, bare = false }: { rule: string; maxDays: number; save: (formData: FormData) => Promise<ActionResult>; /** dentro de um bloco: sem a moldura e sem o título */ bare?: boolean }) {
+export function PostPriceFields({ rule, maxDays }: { rule: string; maxDays: number }) {
   const [choice, setChoice] = useState(rule);
   return (
-    <ActionForm action={save} className={bare ? "flex flex-col gap-3" : "card flex max-w-[860px] flex-col gap-3 p-5"}>
-      <div>
-        {!bare && <div className="font-semibold">Preço que aparece nos posts do Instagram</div>}
-        <p className="text-sm text-muted">O post mostra o preço do dia em que foi publicado. Uma ação de consulta de produto, preço ou estoque, se houver, sempre vale mais que o post.</p>
-      </div>
+    <>
       <fieldset className="flex flex-col gap-2.5 text-sm">
         <legend className="sr-only">O que o assistente faz com o preço de um post</legend>
         <label className="flex items-start gap-2">
@@ -45,9 +38,6 @@ export function PostPriceCard({ rule, maxDays, save, bare = false }: { rule: str
           </span>
         </label>
       </fieldset>
-      <SubmitButton pendingLabel="Salvando…" className="btn-ghost self-start">
-        Salvar
-      </SubmitButton>
-    </ActionForm>
+    </>
   );
 }

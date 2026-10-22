@@ -8,6 +8,7 @@ import { socialNetworkOf } from "@/lib/social-links";
 import { Modal, ConfirmModal } from "@/components/ui/modal";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
+import { liveValidation, validateForm } from "@/components/ui/form-errors";
 import { InstagramPostsModal } from "@/components/instagram-posts-modal";
 
 export interface SourceItem {
@@ -41,13 +42,13 @@ export interface InstagramSourceInfo {
 
 type Kind = "site" | "page" | "pdf" | "text" | "faq" | "instagram";
 
-const KIND: Record<Kind, { label: string; add: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
-  site: { label: "Site", add: "Adicionar site", icon: Globe },
-  page: { label: "Página", add: "Uma página", icon: Link2 },
-  pdf: { label: "PDF", add: "Enviar PDF", icon: FileText },
-  text: { label: "Texto", add: "Escrever texto", icon: Type },
-  faq: { label: "FAQ", add: "Perguntas e respostas", icon: ListChecks },
-  instagram: { label: "Instagram", add: "Posts do Instagram", icon: Images },
+const KIND: Record<Kind, { label: string; add: string; hint: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
+  site: { label: "Site", add: "Adicionar site", hint: "Lê até 40 páginas do mesmo domínio.", icon: Globe },
+  page: { label: "Página", add: "Uma página", hint: "Só uma página, sem seguir os links.", icon: Link2 },
+  pdf: { label: "PDF", add: "Enviar PDF", hint: "Até 15 MB, com texto selecionável.", icon: FileText },
+  text: { label: "Texto", add: "Escrever texto", hint: "O que o assistente precisa saber e não está no site.", icon: Type },
+  faq: { label: "FAQ", add: "Perguntas e respostas", hint: "As dúvidas de sempre, com a resposta certa.", icon: ListChecks },
+  instagram: { label: "Instagram", add: "Posts do Instagram", hint: "Os posts da conta conectada, com a foto descrita.", icon: Images },
 };
 const KINDS = Object.keys(KIND) as Kind[];
 
@@ -68,6 +69,8 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
   const router = useRouter();
   const toast = useToast();
   const [adding, setAdding] = useState<Kind | null>(null);
+  // o modal de adicionar começa pela escolha do tipo (redesenho, etapa 5)
+  const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState<SourceItem | null>(null);
   const [removing, setRemoving] = useState<SourceItem | null>(null);
   const [postsOf, setPostsOf] = useState<string | null>(null); // a fonte do Instagram com a lista dos posts aberta
@@ -91,6 +94,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
   /* ---------- adicionar ---------- */
   async function submitAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!validateForm(e.currentTarget)) return;
     const fd = new FormData(e.currentTarget);
     fd.set("kind", adding!);
     setSaving(true);
@@ -102,6 +106,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
       } else {
         toast.success(j.queued ? "Lendo os posts do Instagram. Leva alguns minutos; a lista mostra o andamento." : `Pronto: ${j.chunks} trechos de ${j.pages} página${j.pages === 1 ? "" : "s"}.`);
         setAdding(null);
+        setPicking(false);
       }
     } catch {
       toast.error("Sem resposta do servidor. Verifique a conexão e tente de novo.");
@@ -176,31 +181,75 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
-        {kinds.map((k) => {
-          const Icon = KIND[k].icon;
-          return (
-            <button key={k} type="button" onClick={() => setAdding(adding === k ? null : k)} aria-pressed={adding === k} className={adding === k ? "btn-dark" : "btn-ghost"}>
-              <Icon size={15} />
-              {KIND[k].add}
-            </button>
-          );
-        })}
+      <div>
+        <button type="button" onClick={() => setPicking(true)} className="btn-primary">
+          <Plus size={15} />
+          Adicionar fonte
+        </button>
       </div>
 
-      {adding && (
-        <form onSubmit={submitAdd} className="card flex flex-col gap-3 bg-raised/40 p-4">
-          {adding === "instagram" ? <InstagramFields info={instagram} /> : <SourceFields kind={adding} />}
-          <div className="flex items-center gap-3">
-            <button type="submit" disabled={saving || (adding === "instagram" && !(instagram?.connected && instagram.withAi))} className="btn-primary">
-              {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-              {saving ? "Processando…" : adding === "instagram" ? "Ler os posts" : "Adicionar e treinar"}
-            </button>
-            <button type="button" onClick={() => setAdding(null)} disabled={saving} className="text-sm text-muted">Cancelar</button>
+      {/* adicionar num modal (redesenho, etapa 5, a pedido do usuário em 22/10): primeiro o tipo, depois os campos */}
+      <Modal
+        open={picking || adding !== null}
+        onClose={() => {
+          if (saving) return;
+          setAdding(null);
+          setPicking(false);
+        }}
+        title={adding ? KIND[adding].add : "Adicionar à base"}
+        description={adding ? KIND[adding].hint : "O que o assistente vai ler. Dá para juntar várias fontes."}
+        size={adding === "text" || adding === "faq" ? "lg" : "md"}
+        footer={
+          adding ? (
+            <>
+              {picking && (
+                <button type="button" onClick={() => setAdding(null)} disabled={saving} className="btn-ghost mr-auto">
+                  Outro tipo
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setAdding(null);
+                  setPicking(false);
+                }}
+                disabled={saving}
+                className="btn-ghost"
+              >
+                Cancelar
+              </button>
+              <button type="submit" form="src-add" disabled={saving || (adding === "instagram" && !(instagram?.connected && instagram.withAi))} className="btn-primary">
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                {saving ? "Processando…" : adding === "instagram" ? "Ler os posts" : "Adicionar e treinar"}
+              </button>
+            </>
+          ) : undefined
+        }
+      >
+        {adding ? (
+          <form id="src-add" key={adding} onSubmit={submitAdd} noValidate {...liveValidation} className="flex flex-col gap-3">
+            {adding === "instagram" ? <InstagramFields info={instagram} /> : <SourceFields kind={adding} />}
+            {saving && adding !== "instagram" && <p className="text-xs text-muted">Lendo, quebrando em trechos e gerando embeddings. Sites grandes levam até um minuto.</p>}
+          </form>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {kinds.map((k) => {
+              const Icon = KIND[k].icon;
+              return (
+                <button key={k} type="button" onClick={() => setAdding(k)} className="flex items-start gap-3 rounded-[14px] border border-line p-3 text-left transition-colors duration-[120ms] hover:border-brand hover:bg-raised/40">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-raised text-ink-2">
+                    <Icon size={17} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-ink">{KIND[k].add}</span>
+                    <span className="mt-0.5 block text-xs leading-snug text-muted">{KIND[k].hint}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-          {saving && adding !== "instagram" && <p className="text-xs text-muted">Lendo, quebrando em trechos e gerando embeddings. Sites grandes levam até um minuto.</p>}
-        </form>
-      )}
+        )}
+      </Modal>
 
       <div className="card overflow-hidden">
         <div className="hidden grid-cols-[2.4fr_1fr_1fr_1.2fr_auto] gap-3 border-b border-line-2 bg-raised/40 px-4 py-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-muted md:grid">
