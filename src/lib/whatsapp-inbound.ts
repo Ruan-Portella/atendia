@@ -92,6 +92,8 @@ export interface InboundMessage {
   context?: { id?: string; from?: string; forwarded?: boolean; frequently_forwarded?: boolean };
   /** Reação do contato a uma mensagem (sem emoji: tirou a reação). */
   reaction?: { message_id?: string; emoji?: string };
+  /** O contato apagou a mensagem para todos (só na coexistência; Conversa mais natural, parte 3). */
+  revoke?: { original_message_id?: string };
 }
 
 export interface ChannelRow extends WaChannel {
@@ -106,8 +108,8 @@ export interface ChannelRow extends WaChannel {
 /** Quem mandou: o telefone, ou o BSUID quando a Meta não manda o telefone. null = nenhum dos dois. */
 export const contactOf = (m: { from?: string; from_user_id?: string }): string | null => m.from ?? m.from_user_id ?? null;
 
-/** Tipos que nunca recebem resposta: reação ("joinha"), mensagem não suportada e aviso do sistema. */
-const SILENT_TYPES = new Set(["reaction", "unsupported", "system", "ephemeral"]);
+/** Tipos que nunca recebem resposta: reação ("joinha"), mensagem apagada, não suportada e aviso do sistema. */
+const SILENT_TYPES = new Set(["reaction", "revoke", "unsupported", "system", "ephemeral"]);
 
 /**
  * Quando o contato escreveu por último para este chatbot, em qualquer conversa (a janela de 24 h

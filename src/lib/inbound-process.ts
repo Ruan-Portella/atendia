@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { applyContactReaction, linkInbound, reactionEmoji } from "./message-links";
+import { applyContactReaction, inboundKeyOf, linkInbound, reactionEmoji } from "./message-links";
 import { IDENTITY_MISMATCH_CODE } from "./whatsapp";
 import { PRIMARY_INACTIVITY_TEXT, queueTemplateEvent } from "./platform-events";
 import { expectInbound, igInboundExtra, queueStatusEvent, releaseInbound, waInboundExtra } from "./message-events";
@@ -11,7 +11,7 @@ import { recordUsage, type MessageStatus } from "./whatsapp-usage";
 import { ACCESS_LOST_EVENTS, TOKEN_REJECTED, isAccessError, isPaymentError, markDisconnected, markPaymentIssue, markReconnected } from "./whatsapp-access";
 import { handleInstagramBurst, handleInstagramEcho, type IgChannelRow, type IgMessagingEvent } from "./instagram-inbound";
 import { isInstagramAccessError } from "./instagram";
-import { handleInstagramDelete, handleInstagramEdit } from "./instagram-edits";
+import { deleteByContact, handleInstagramDelete, handleInstagramEdit } from "./instagram-edits";
 import { handleInstagramComment, type IgComment } from "./instagram-comments";
 import { IG_TOKEN_REJECTED, markInstagramDisconnected } from "./instagram-channel";
 import { captureInstagramMedia, captureWhatsAppMedia } from "./media-capture";
@@ -167,9 +167,14 @@ const whatsappGroup: GroupHandler = async (db, events) => {
     for (const e of contact) if (e.payload.type === "echo") await handleEcho(db, channel, e.payload.echo, e.key_hash);
     // reação do contato (sem resposta da IA): o emoji fica na mensagem reagida
     for (const q of burst) if (q.msg.type === "reaction" && q.msg.reaction?.message_id) await applyContactReaction(db, "whatsapp", q.msg.reaction.message_id, q.msg.reaction.emoji?.trim() || null);
+    // o contato apagou a mensagem para todos (coexistência): lápide, como o desfazer do Instagram
+    for (const q of burst) {
+      const original = q.msg.type === "revoke" ? q.msg.revoke?.original_message_id : undefined;
+      if (original) console.log("whatsapp: mensagem apagada pelo contato", (await deleteByContact(db, inboundKeyOf("whatsapp", original))) ? "apagada" : "não está no painel");
+    }
     await handleInboundBurst(db, channel, burst);
     // a citação e o id original de cada mensagem gravada (a equipe cita e reage pelo painel)
-    await linkInbound(db, "whatsapp", burst.filter((q) => q.msg.type !== "reaction").map((q) => ({ key: q.key, channelId: q.msg.id, quotedId: q.msg.context?.id ?? null }))).catch((e) => console.error("whatsapp: citação", (e as Error).message));
+    await linkInbound(db, "whatsapp", burst.filter((q) => q.msg.type !== "reaction" && q.msg.type !== "revoke").map((q) => ({ key: q.key, channelId: q.msg.id, quotedId: q.msg.context?.id ?? null }))).catch((e) => console.error("whatsapp: citação", (e as Error).message));
     // mídia recebida: guardada cifrada depois da resposta (falha aqui não refaz a conversa)
     await captureWhatsAppMedia(db, channel, burst).catch((e) => console.error("whatsapp: mídia", (e as Error).message));
   } catch (err) {

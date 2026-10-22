@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import { QUOTE_EVENT, type QuoteDetail } from "@/components/message-actions";
+import { EmojiPicker } from "@/components/emoji-picker";
 import { mentionsPayment } from "@/lib/gate/payment";
 import { renderQuickReply, type QuickReply } from "@/lib/quick-replies";
 import { ActionForm } from "@/components/ui/action-form";
@@ -14,7 +15,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
  * fala de Pix, boleto ou link de pagamento, pergunta antes de enviar, sem bloquear. As respostas
  * prontas do cliente (Caixa de entrada, parte 4) entram no campo com {nome} e {atendente} trocados,
  * para a pessoa revisar antes de enviar. "Responder" numa mensagem (Conversa mais natural) cita
- * ela na próxima resposta.
+ * ela na próxima resposta; o botão de emoji insere onde o cursor está.
  */
 export function AgentReplyForm({ action, paymentCheck = false, quickReplies = [], contactName = null, attendantName = "" }: { action: (fd: FormData) => Promise<ActionResult>; paymentCheck?: boolean; quickReplies?: QuickReply[]; contactName?: string | null; attendantName?: string }) {
   const [asking, setAsking] = useState(false);
@@ -41,6 +42,16 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
       e.preventDefault();
       setAsking(true);
     }
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const el = field.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    el.value = el.value.slice(0, start) + emoji + el.value.slice(end);
+    el.focus();
+    el.setSelectionRange(start + emoji.length, start + emoji.length);
   };
 
   const insert = (id: string) => {
@@ -96,6 +107,7 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
       )}
       <ActionForm action={action} onSubmit={onSubmit} onSuccess={() => setQuote(null)} className="flex items-end gap-2">
         {quote && <input type="hidden" name="reply_to_id" value={quote.id} />}
+        <EmojiPicker onPick={insertEmoji} />
         <label htmlFor="agent-msg" className="sr-only">Sua resposta</label>
         <textarea ref={field} id="agent-msg" name="content" required maxLength={2000} rows={2} className="input flex-1 resize-y" placeholder="Escreva sua resposta para o visitante…" />
         <SubmitButton pendingLabel="Enviando…" className="btn-primary">Enviar</SubmitButton>

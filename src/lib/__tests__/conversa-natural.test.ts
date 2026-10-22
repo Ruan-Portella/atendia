@@ -3,6 +3,8 @@ import { memoryDb, type MemRow } from "../memory-db";
 import { channelMsgHash } from "../hash";
 import { applyContactReaction, inboundKeyOf, linkInbound, quoteSnippet, quotedNote, quotesOf, reactionEmoji } from "../message-links";
 import { conversationHistory } from "../chat";
+import { DELETED_LABEL, deleteByContact } from "../instagram-edits";
+import { KNOWN_WA_MESSAGE_TYPES } from "../meta-monitor";
 
 /*
  * Conversa mais natural, parte 1: a citação e a reação do contato no WhatsApp e no Instagram (a
@@ -69,5 +71,20 @@ describe("citar e reagir", () => {
     const last = history.at(-1)!;
     expect(last.role).toBe("user");
     expect((last.parts[0] as { text: string }).text).toBe('[O contato respondeu em cima desta mensagem: "Temos a pizza de calabresa (R$ 45) e a de frango (R$ 42)."]\nquero essa');
+  });
+});
+
+describe("apagada pelo contato no WhatsApp (coexistência)", () => {
+  it("type revoke: a mensagem vira lápide, a citação mostra que foi apagada", async () => {
+    const { t, db } = setup();
+    await linkInbound(db, "whatsapp", [{ key: inboundKeyOf("whatsapp", "wamid.B"), channelId: "wamid.B", quotedId: "wamid.A" }]);
+    expect(KNOWN_WA_MESSAGE_TYPES.has("revoke")).toBe(true);
+    expect(await deleteByContact(db, inboundKeyOf("whatsapp", "wamid.B"))).toBe(true);
+    expect(t.messages[1]).toMatchObject({ content: DELETED_LABEL });
+    expect(t.messages[1].deleted_at).toBeTruthy();
+    expect(t.deletion_log).toEqual([expect.objectContaining({ table_name: "message_content", row_id: "2" })]);
+    expect((await quotesOf(db, [2])).get(2)?.snippet).toBe("(mensagem apagada)");
+    // a mensagem que não está no painel: nada muda
+    expect(await deleteByContact(db, inboundKeyOf("whatsapp", "wamid.nao-existe"))).toBe(false);
   });
 });

@@ -13,6 +13,8 @@ import type { IgMessagingEvent } from "./instagram-inbound";
  *   - mensagem editada (message_edit): o conteúdo é atualizado e marcado como editado;
  *   - mensagem desfeita (is_deleted): vira lápide (o conteúdo some, a linha fica, com deleted_at)
  *     e vai para o registro de exclusões; se o aviso chega antes da mensagem, ela já é gravada assim.
+ * A lápide vale também para a mensagem que o contato apagou no WhatsApp (coexistência, type
+ * revoke; Conversa mais natural, parte 3).
  */
 
 export const DELETED_LABEL = "(mensagem apagada pelo contato)";
@@ -78,19 +80,26 @@ export async function handleInstagramDelete(db: SupabaseClient, ev: IgMessagingE
   const mid = ev.message?.mid;
   if (!mid) return "marcada";
   const key = igMessageKey(mid);
+  if (await deleteByContact(db, key)) return "apagada";
+  await logDeletion(db, "inbound_key", [key]);
+  return "marcada";
+}
+
+/**
+ * A mensagem do contato (pela chave do evento) vira lápide: registro de exclusões, conteúdo,
+ * post e leitura de foto fora, arquivos apagados e message.deleted. false: não está gravada.
+ */
+export async function deleteByContact(db: SupabaseClient, key: string): Promise<boolean> {
   const rows = await loadMessages(db, { inboundKey: key }, ["id", "conversation_id"] as const);
   const ids = rows.map((r) => String(r.id));
-  if (!ids.length) {
-    await logDeletion(db, "inbound_key", [key]);
-    return "marcada";
-  }
+  if (!ids.length) return false;
   await logDeletion(db, "message_content", ids);
-  await updateMessages(db, { ids }, { content: DELETED_LABEL, channel_ref: null, photo_reading: null, deleted_at: new Date().toISOString() });
+  await updateMessages(db, { ids: rows.map((r) => r.id) }, { content: DELETED_LABEL, channel_ref: null, photo_reading: null, deleted_at: new Date().toISOString() });
   // lápide: os arquivos da mensagem saem também (objeto e linha)
   await purgeAttachments(db, { messageIds: ids.map(Number) });
   // webhooks: as entregas dessa mensagem saem antes, e o sistema do cliente recebe message.deleted
   await queueDeletedEvent(db, ids.map(Number), String(rows[0].conversation_id));
-  return "apagada";
+  return true;
 }
 
 /** Destas DMs, quais foram desfeitas antes de chegar (o aviso veio primeiro)? */

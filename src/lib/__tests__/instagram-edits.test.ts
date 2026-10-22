@@ -41,7 +41,7 @@ function fakeDb(messages: Array<Record<string, unknown>>) {
         update: (v: Record<string, unknown>) => ((patch = v), chain),
         eq: (k: string, v: unknown) => (filters.push((r) => r[k] === v), chain),
         is: (k: string, v: unknown) => (filters.push((r) => (r[k] ?? null) === v), chain),
-        in: (k: string, v: unknown[]) => (filters.push((r) => v.includes(String(r[k]))), chain),
+        in: (k: string, v: unknown[]) => (filters.push((r) => v.map(String).includes(String(r[k]))), chain),
         order: () => chain,
         limit: () => chain,
         then: (resolve: (x: { data: unknown[]; error: null }) => unknown) => {
