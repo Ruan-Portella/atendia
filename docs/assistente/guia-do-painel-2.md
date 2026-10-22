@@ -38,7 +38,7 @@ Na aba Evolução de cada chatbot, uma tabela com os últimos 6 meses: as conver
 
 ## Marca e domínio
 
-Em Marca e domínio, a agência põe o logo, as cores e o nome que aparecem no painel do cliente, no chat do site e nos e-mails. Com o pacote Domínio próprio, o portal do cliente e o chat abrem num domínio da agência, com a verificação de DNS feita pelo painel.
+Em Marca e domínio, a agência põe o nome, o logo, a cor dos chatbots novos e o WhatsApp de contato, que aparecem no portal do cliente, na demo, no chat do site e nos e-mails. A tela tem três grupos (Sua marca, Domínio próprio e Privacidade e LGPD), e cada ajuste é uma linha com o resumo do que está salvo: tocar abre um modal com o campo e o Salvar. O logo mostra a prévia, com Trocar e Tirar; a cor mostra como ficam o botão e o balão do chat, com sugestões prontas; a cor dos chatbots que já existem muda no Rosto de cada um. Sem o WhatsApp, a demo e o portal ficam sem o botão de falar com a agência. Com o pacote Domínio próprio, as demos, o portal do cliente e o chat abrem num domínio da agência: enquanto falta o DNS, a linha "Apontar o DNS" mostra o registro para criar, com o Copiar e o "Verificar agora". Em Privacidade e LGPD ficam o link da política de privacidade e o prazo de guarda (6, 12 ou 24 meses); diminuir o prazo vale em 30 dias, e até lá a linha mostra a mudança com o Desfazer. O dono da conta muda ali também como usa o BoaVoz (o perfil dos primeiros passos).
 
 ## Contatos
 

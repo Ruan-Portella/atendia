@@ -1,19 +1,26 @@
 import Link from "next/link";
-import { CheckCircle2, Clock, Info } from "lucide-react";
+import { Archive, Building2, Clock, Compass, FileText, Globe, ImageIcon, MessageCircle } from "lucide-react";
 import { requirePermission } from "@/lib/agency";
 import { ACCOUNT_PROFILES } from "@/lib/first-access";
 import { company } from "@/lib/company";
 import { saveCustomDomain, undoAgencyRetention, updateAgency, updatePrivacy, verifyCustomDomain } from "@/app/painel/actions";
 import { DEFAULT_RETENTION_MONTHS, RETENTION_MONTHS, dateBR } from "@/lib/retention";
-import { LogoUpload } from "@/components/logo-upload";
+import { displayPhone } from "@/lib/phone";
 import { appUrl } from "@/lib/utils";
 import { isApexDomain, recommendedDnsRecord, vercelDomainsEnabled } from "@/lib/domain";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
+import { HowItWorks, StatusPill } from "@/components/ui/form-section";
+import { ColorField, LogoField, RetentionField } from "@/components/brand-fields";
 import { CopyButton } from "@/components/copy-button";
 
 export const metadata = { title: "Marca e domínio" };
 
+/**
+ * Marca e domínio (redesenho, etapa 5): a marca, o domínio próprio e a privacidade em linhas, cada uma
+ * com o resumo do que está configurado e o modal para editar.
+ */
 export default async function MarcaPage() {
   const { agency, packs, role } = await requirePermission("brand");
   const domain = agency.custom_domain;
@@ -21,118 +28,195 @@ export default async function MarcaPage() {
   const apex = domain ? isApexDomain(domain) : false;
   // só pergunta à Vercel enquanto falta configurar o DNS
   const record = domain && !verified ? await recommendedDnsRecord(domain) : null;
+  const live = Boolean(domain && (verified || !record));
+  const host = appUrl("").replace(/^https?:\/\//, "");
+  const profile = agency.profile ? ACCOUNT_PROFILES[agency.profile] : null;
+  const nameLabel = profile?.nameLabel ?? "Nome da agência";
+  const pending = agency.retention_pending_months && agency.retention_effective_at ? { months: agency.retention_pending_months, at: dateBR(agency.retention_effective_at) } : null;
+  const now = agency.retention_months ? `${agency.retention_months} meses` : "sem prazo";
 
   return (
-    <div className="flex max-w-[640px] flex-col gap-6">
-      <div>
+    <div className="flex max-w-[720px] flex-col gap-6">
+      <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-normal sm:text-[28px]">Marca e domínio</h1>
         <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo, no portal e nos e-mails.</p>
-        {role === "owner" && (
-          <p className="mt-2 text-sm text-muted">
-            Como você usa o {company.brand}: <span className="font-semibold text-ink">{agency.profile ? ACCOUNT_PROFILES[agency.profile].label.replace(/^./, (c) => c.toLowerCase()) : "ainda sem resposta"}</span> (muda os primeiros passos).{" "}
-            <Link href="/comecar?editar" className="font-semibold text-brand hover:underline">
-              Mudar
-            </Link>
-          </p>
-        )}
       </div>
-      <ActionForm key={[agency.name, agency.brand_color, agency.logo_url, agency.support_whatsapp].join("|")} action={updateAgency} className="card flex flex-col gap-4 p-6">
-        <div><label htmlFor="name" className="label">Nome da agência</label><input id="name" name="name" defaultValue={agency.name} required minLength={2} maxLength={80} className="input" /></div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div><label htmlFor="brand_color" className="label">Cor padrão dos novos chatbots</label><input id="brand_color" name="brand_color" type="color" defaultValue={agency.brand_color} className="input h-11 p-1" /></div>
-          <div><label htmlFor="support_whatsapp" className="label">Seu WhatsApp (botão na demo e no portal)</label><input id="support_whatsapp" name="support_whatsapp" defaultValue={agency.support_whatsapp ?? ""} maxLength={30} className="input" placeholder="5541999999999" /></div>
-        </div>
-        <LogoUpload current={agency.logo_url} agencyId={agency.id} />
-        <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
-      </ActionForm>
 
-      <section className="card flex flex-col gap-4 p-6">
-        <div>
-          <h2 className="text-base font-medium">Domínio próprio</h2>
-          <p className="text-sm text-muted">Demos, portal do cliente e o código do widget passam a usar o seu endereço (ex.: <code>chat.suaagencia.com.br</code>) em vez de {appUrl("").replace(/^https?:\/\//, "")}.</p>
-        </div>
-        <div className="flex gap-2.5 rounded-lg border border-line bg-ground px-3.5 py-3 text-sm text-ink-2">
-          <Info size={16} className="mt-0.5 shrink-0 text-muted" />
-          <p>
-            <strong className="text-ink">O domínio próprio é para os seus clientes.</strong> Por ele, eles e os prospects acessam as demos, o portal com o relatório, a área do cliente e o chat do site. Este painel, onde você configura tudo, continua em{" "}
-            <strong className="text-ink">{appUrl("").replace(/^https?:\/\//, "")}</strong>. Abrir o painel pelo seu domínio mostra só uma página com a sua marca.
-          </p>
-        </div>
-        {!packs.includes("dominio") ? (
-          <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O domínio próprio é um pacote (R$ 29 por mês). <Link href="/painel/cobranca" className="font-semibold underline">Assinar em Cobrança</Link></p>
-        ) : (
-          <>
-            <ActionForm key={domain ?? ""} action={saveCustomDomain} className="flex flex-wrap items-end gap-2">
-              <div className="min-w-[220px] flex-1">
-                <label htmlFor="custom_domain" className="label">Domínio</label>
-                <input id="custom_domain" name="custom_domain" defaultValue={domain ?? ""} maxLength={120} className="input" placeholder="chat.suaagencia.com.br" />
-              </div>
-              <SubmitButton className="btn-ghost">Salvar domínio</SubmitButton>
-            </ActionForm>
-            {verified && <p className="text-xs text-muted">Atenção: trocar ou apagar o domínio faz o widget parar nos sites onde foi instalado com o domínio atual. Reinstale o código novo nesses sites.</p>}
+      <SettingGroup title="Sua marca">
+        <SettingRow icon={<Building2 size={18} />} title={nameLabel} summary={agency.name} description="Aparece para os clientes e prospects no portal, nas demos e nos e-mails." action={updateAgency}>
+          <div>
+            <label htmlFor="name" className="label">
+              {nameLabel}
+            </label>
+            <input id="name" name="name" defaultValue={agency.name} required minLength={2} maxLength={80} className="input" />
+          </div>
+        </SettingRow>
+        <SettingRow
+          icon={
+            agency.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={agency.logo_url} alt="" className="h-7 w-7 object-contain" />
+            ) : (
+              <ImageIcon size={18} />
+            )
+          }
+          title="Logo"
+          summary={agency.logo_url ? "No rodapé do chat, na demo, no portal e nos e-mails" : "Sem logo: no lugar dele vai o nome"}
+          description="Aparece no rodapé do chat, na página de demo, no portal do cliente e nos e-mails."
+          action={updateAgency}
+        >
+          <LogoField current={agency.logo_url} agencyId={agency.id} />
+        </SettingRow>
+        <SettingRow
+          icon={<span className="h-5 w-5 rounded-full shadow-[inset_0_0_0_1px_rgb(0_0_0/0.12)]" style={{ background: agency.brand_color }} />}
+          title="Cor dos chatbots novos"
+          summary={`${agency.brand_color.toUpperCase()} · os chatbots novos começam com ela; cada um pode ter a sua`}
+          description="A cor do botão e dos balões do chat nos chatbots que você criar daqui em diante. A dos chatbots que já existem muda na página de cada um (Rosto do chatbot)."
+          action={updateAgency}
+        >
+          <ColorField name="brand_color" defaultValue={agency.brand_color} />
+        </SettingRow>
+        <SettingRow
+          icon={<MessageCircle size={18} />}
+          title="Seu WhatsApp"
+          summary={agency.support_whatsapp ? `${displayPhone(agency.support_whatsapp)} · o botão de falar com você na demo e no portal` : "Sem número: a demo e o portal ficam sem o botão de falar com você"}
+          summaryTone={agency.support_whatsapp ? undefined : "warn"}
+          description="Quem vê a demo ou o portal fala com você por este número. Vazio, o botão não aparece."
+          action={updateAgency}
+        >
+          <div>
+            <label htmlFor="support_whatsapp" className="label">
+              WhatsApp com o DDD
+            </label>
+            <input id="support_whatsapp" name="support_whatsapp" inputMode="tel" defaultValue={agency.support_whatsapp ? displayPhone(agency.support_whatsapp) : ""} maxLength={30} className="input" placeholder="41 99999-9999" />
+          </div>
+        </SettingRow>
+        {role === "owner" && (
+          <SettingRow
+            icon={<Compass size={18} />}
+            title={`Como você usa o ${company.brand}`}
+            summary={profile ? `${profile.label} · muda os primeiros passos` : "Ainda sem resposta · muda os primeiros passos"}
+            trailing={
+              <Link href="/comecar?editar" className="btn-ghost shrink-0 py-1.5 text-xs">
+                Mudar
+              </Link>
+            }
+          />
+        )}
+      </SettingGroup>
 
-            {domain && (
-              verified || !record ? (
-                <p className="flex items-center gap-2 rounded-lg bg-brand-soft px-3 py-2 text-sm font-semibold text-brand"><CheckCircle2 size={16} />https://{domain} está no ar.</p>
-              ) : (
-                <div className="flex flex-col gap-3 rounded-xl border border-line bg-ground p-4 text-sm">
-                  <p className="flex items-center gap-2 font-semibold"><Clock size={16} className="text-amber-ink" />Falta apontar o DNS</p>
-                  <p className="text-ink-2">No painel onde o domínio foi registrado (Registro.br, GoDaddy, Cloudflare, Hostinger…), crie este registro:</p>
-                  <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-lg border border-line bg-panel p-3 font-mono text-[13px]">
-                    <span className="text-muted">Tipo</span><span>{record.type}</span>
-                    <span className="text-muted">Nome</span><span>{record.name}</span>
-                    <span className="text-muted">Valor</span><span className="flex items-center gap-2 break-all">{record.value}<CopyButton text={record.value} label="Copiar" className="btn-icon h-auto w-auto px-1.5 py-0.5 text-xs" icon={false} /></span>
+      <div className="flex flex-col gap-2">
+        <SettingGroup title="Domínio próprio">
+          {!packs.includes("dominio") ? (
+            <SettingRow
+              icon={<Globe size={18} />}
+              title="Domínio próprio"
+              badge={<StatusPill>pacote</StatusPill>}
+              summary={`R$ 29 por mês: as demos, o portal e o chat do site no seu endereço, em vez de ${host}`}
+              trailing={
+                <Link href="/painel/cobranca" className="btn-ghost shrink-0 py-1.5 text-xs">
+                  Assinar
+                </Link>
+              }
+            />
+          ) : (
+            <>
+              <SettingRow
+                icon={<Globe size={18} />}
+                title="Domínio"
+                badge={domain ? <StatusPill tone={live ? "ok" : "warn"}>{live ? "No ar" : "Falta o DNS"}</StatusPill> : undefined}
+                summary={domain ? `https://${domain}` : `Nenhum: os links usam ${host}`}
+                description={`As demos, o portal do cliente e o código do chat do site passam a usar o seu endereço em vez de ${host}. Este painel continua em ${host}.`}
+                action={saveCustomDomain}
+                saveLabel="Salvar domínio"
+              >
+                <div>
+                  <label htmlFor="custom_domain" className="label">
+                    Domínio
+                  </label>
+                  <input id="custom_domain" name="custom_domain" defaultValue={domain ?? ""} maxLength={120} className="input" placeholder="chat.suaagencia.com.br" />
+                  <p className="mt-1 text-xs text-muted">Um subdomínio, como chat.suaagencia.com.br, é o mais simples. Para voltar ao endereço padrão, apague e salve.</p>
+                </div>
+                {verified && <p className="rounded-[12px] bg-amber-soft px-3 py-2 text-xs text-amber-ink">Trocar ou apagar o domínio faz o chat parar nos sites onde o código foi instalado com o domínio atual: reinstale o código novo nesses sites.</p>}
+              </SettingRow>
+              {domain && !live && record && (
+                <SettingRow icon={<Clock size={18} />} title="Apontar o DNS" summary="Crie o registro no painel do domínio e clique em Verificar" summaryTone="warn" description="No painel onde o domínio foi registrado (Registro.br, GoDaddy, Cloudflare, Hostinger…), crie este registro:" footer="close" size="lg">
+                  <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-[12px] border border-line bg-ground p-3 font-mono text-[13px]">
+                    <span className="text-muted">Tipo</span>
+                    <span>{record.type}</span>
+                    <span className="text-muted">Nome</span>
+                    <span>{record.name}</span>
+                    <span className="text-muted">Valor</span>
+                    <span className="flex items-center gap-2 break-all">
+                      {record.value}
+                      <CopyButton text={record.value} label="Copiar" className="btn-icon h-auto w-auto px-1.5 py-0.5 text-xs" icon={false} />
+                    </span>
                   </div>
                   {apex && <p className="text-xs text-muted">Domínio raiz usa registro A. Se preferir, use um subdomínio (ex.: chat.{domain}) com CNAME; costuma ser mais simples.</p>}
                   {record.type === "CNAME" && <p className="text-xs text-muted">Na Cloudflare, deixe a nuvem cinza (“DNS only”).</p>}
                   {!vercelDomainsEnabled() && <p className="text-xs text-muted">Este servidor não tem a integração com a Vercel configurada: o domínio também precisa ser adicionado em Vercel → Project → Settings → Domains.</p>}
-                  <ActionForm action={verifyCustomDomain} className="self-start">
-                    <SubmitButton pendingLabel="Verificando…" className="btn-primary">Verificar agora</SubmitButton>
-                  </ActionForm>
                   <p className="text-xs text-muted">O DNS pode levar de alguns minutos a algumas horas. Até verificar, os links continuam no endereço padrão.</p>
-                </div>
-              )
-            )}
-          </>
-        )}
-      </section>
+                  <ActionForm action={verifyCustomDomain} className="self-start">
+                    <SubmitButton pendingLabel="Verificando…" className="btn-primary">
+                      Verificar agora
+                    </SubmitButton>
+                  </ActionForm>
+                </SettingRow>
+              )}
+            </>
+          )}
+        </SettingGroup>
+        <HowItWorks label="Para quem é o domínio próprio">
+          <p>
+            O domínio próprio é para os seus clientes: por ele, eles e os prospects acessam as demos, o portal com o relatório, a área do cliente e o chat do site. Este painel, onde você configura tudo, continua em {host}. Abrir o painel pelo seu
+            domínio mostra só uma página com a sua marca.
+          </p>
+        </HowItWorks>
+      </div>
 
-      <section className="card flex flex-col gap-4 p-6">
-        <div>
-          <h2 className="text-base font-medium">Privacidade e LGPD</h2>
-          <p className="text-sm text-muted">O chat avisa o visitante que a conversa fica registrada para o atendimento. Aqui você coloca o link da sua política de privacidade e decide por quanto tempo guardar os dados.</p>
-        </div>
-        <ActionForm key={`${agency.privacy_url ?? ""}|${agency.retention_months ?? ""}|${agency.retention_pending_months ?? ""}`} action={updatePrivacy} className="flex flex-col gap-4">
+      <SettingGroup title="Privacidade e LGPD">
+        <SettingRow
+          icon={<FileText size={18} />}
+          title="Política de privacidade"
+          summary={agency.privacy_url ?? "Sem link: o chat só avisa que a conversa fica registrada"}
+          description="O chat avisa o visitante que a conversa fica registrada para o atendimento. Com o link, aparece também “Privacidade” embaixo do chat, em todos os seus chatbots."
+          action={updatePrivacy}
+        >
           <div>
-            <label htmlFor="privacy_url" className="label">Link da política de privacidade (opcional)</label>
+            <label htmlFor="privacy_url" className="label">
+              Link da política de privacidade
+            </label>
             <input id="privacy_url" name="privacy_url" type="url" maxLength={400} defaultValue={agency.privacy_url ?? ""} className="input" placeholder="https://suaagencia.com.br/privacidade" />
-            <p className="mt-1 text-xs text-muted">Aparece como “Privacidade” embaixo do chat, em todos os seus chatbots.</p>
+            <p className="mt-1 text-xs text-muted">Opcional. Para tirar, apague e salve.</p>
           </div>
-          <div>
-            <label htmlFor="retention_months" className="label">Guardar conversas e contatos por</label>
-            <select id="retention_months" name="retention_months" defaultValue={String(agency.retention_pending_months ?? agency.retention_months ?? DEFAULT_RETENTION_MONTHS)} className="input max-w-[260px]">
-              {RETENTION_MONTHS.map((m) => <option key={m} value={m}>{m} meses</option>)}
-            </select>
-            <p className="mt-1 text-xs text-muted">
-              A LGPD pede guardar só pelo tempo necessário. Todo dia o BoaVoz apaga as conversas paradas há mais tempo que o prazo (com as mensagens), os leads, as perguntas sem resposta e as fichas de contato sem conversa. Diminuir o prazo vale em 30 dias (dá para desfazer até lá); aumentar vale na hora. Cada cliente pode ter um prazo próprio (Clientes → Dados do cliente), e o modo dados sensíveis de um chatbot vale antes dos dois. Os relatórios continuam com os números de todos os meses.
-            </p>
-          </div>
-          <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
-        </ActionForm>
-        {agency.retention_pending_months && agency.retention_effective_at && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-amber-ink">
-            <span>
-              O prazo muda para <strong>{agency.retention_pending_months} meses</strong> em {dateBR(agency.retention_effective_at)}. Até lá vale {agency.retention_months ? `${agency.retention_months} meses` : "o “Não apagar”"}.{" "}
-              <a href="/api/leads/export" className="underline">Exportar os leads</a>
-            </span>
-            {agency.retention_months && (
+        </SettingRow>
+        <SettingRow
+          icon={<Archive size={18} />}
+          title="Guardar conversas e contatos"
+          summary={pending ? `Muda para ${pending.months} meses em ${pending.at}; até lá, ${now}` : agency.retention_months ? `Por ${now}; depois, apaga sozinho` : "Sem prazo: nada é apagado sozinho"}
+          summaryTone={pending ? "warn" : undefined}
+          trailing={
+            pending && agency.retention_months ? (
               <ActionForm action={undoAgencyRetention}>
                 <SubmitButton className="btn-ghost py-1.5 text-xs">Desfazer</SubmitButton>
               </ActionForm>
-            )}
-          </div>
-        )}
-      </section>
+            ) : undefined
+          }
+          description="A LGPD pede guardar só pelo tempo necessário. Todo dia o BoaVoz apaga as conversas paradas há mais tempo que o prazo (com as mensagens), os leads, as perguntas sem resposta e as fichas de contato sem conversa. Os relatórios continuam com os números de todos os meses."
+          action={updatePrivacy}
+        >
+          <RetentionField name="retention_months" value={pending?.months ?? agency.retention_months ?? DEFAULT_RETENTION_MONTHS} options={RETENTION_MONTHS} />
+          <p className="text-xs text-muted">Diminuir o prazo vale em 30 dias (dá para desfazer até lá); aumentar vale na hora. Cada cliente pode ter um prazo próprio (Clientes → Dados do cliente), e o modo dados sensíveis de um chatbot vale antes dos dois.</p>
+          {pending && (
+            <p className="rounded-[12px] bg-amber-soft px-3 py-2 text-xs text-amber-ink">
+              O prazo muda para {pending.months} meses em {pending.at}; até lá vale {agency.retention_months ? now : "o “Não apagar”"}.{" "}
+              <a href="/api/leads/export" className="font-semibold underline">
+                Exportar os leads
+              </a>
+            </p>
+          )}
+        </SettingRow>
+      </SettingGroup>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agencySlug, requireAgency, type AgencyContext } from "@/lib/agency";
+import { canonicalPhone } from "@/lib/phone";
 import { attendantOf, can, type Permission } from "@/lib/team";
 import { ALREADY_YOURS, postAgentMessage, reactAsAgent, release, requestPhoneAsAgent, takeOver } from "@/lib/handoff";
 import { agentUpload } from "@/lib/agent-files";
@@ -621,20 +622,30 @@ export async function deleteLead(id: string): Promise<ActionResult> {
   return ok("Lead excluído.");
 }
 
-/** Marca da agência (white-label). */
+/**
+ * Marca da agência (white-label). Só muda o que veio no formulário (redesenho, etapa 5: cada linha de
+ * Marca e domínio tem o próprio modal, com um campo só).
+ */
 export async function updateAgency(formData: FormData): Promise<ActionResult> {
   if (!(await allowed("brand"))) return fail(DENIED);
   const { agency } = await requireAgency();
   const supabase = await createClient();
   const parsed = z
-    .object({ name: z.string().trim().min(2, "Nome muito curto.").max(80), brand_color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida."), support_whatsapp: z.string().max(30).optional(), logo_url: z.string().max(400).optional() })
+    .object({ name: z.string().trim().min(2, "Nome muito curto.").max(80).optional(), brand_color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida.").optional(), support_whatsapp: z.string().max(30).optional(), logo_url: z.string().max(400).optional() })
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados inválidos.");
   const d = parsed.data;
-  const { error } = await supabase
-    .from("agencies")
-    .update({ name: d.name, slug: agencySlug(agency.slug, d.name), brand_color: d.brand_color, support_whatsapp: d.support_whatsapp?.replace(/\D/g, "") || null, logo_url: d.logo_url || null })
-    .eq("id", agency.id);
+  const patch: Record<string, string | null> = {};
+  if (d.name !== undefined) Object.assign(patch, { name: d.name, slug: agencySlug(agency.slug, d.name) });
+  if (d.brand_color !== undefined) patch.brand_color = d.brand_color;
+  if (d.support_whatsapp !== undefined) {
+    const digits = d.support_whatsapp.replace(/\D/g, "");
+    if (digits && (digits.length < 10 || digits.length > 15)) return fail("Use o WhatsApp com o DDD (ex.: 41 99999-9999).");
+    patch.support_whatsapp = digits ? (canonicalPhone(digits, { typed: true }) ?? digits) : null;
+  }
+  if (d.logo_url !== undefined) patch.logo_url = d.logo_url || null;
+  if (!Object.keys(patch).length) return ok("Nada mudou.");
+  const { error } = await supabase.from("agencies").update(patch).eq("id", agency.id);
   if (error) return fail("Não foi possível salvar a marca. Tente de novo.");
   revalidatePath("/painel", "layout");
   return ok("Marca atualizada.");
@@ -1750,17 +1761,24 @@ export async function refuseDataSubjectRequest(requestId: string, formData: Form
 }
 
 /** Política de privacidade (link no chat) e prazo de guarda dos dados dos visitantes. */
+/** O link da política e o prazo de guarda; cada um só muda quando vem no formulário (são dois modais). */
 export async function updatePrivacy(formData: FormData): Promise<ActionResult> {
   if (!(await allowed("security"))) return fail(DENIED);
   const { agency } = await requireAgency();
-  const url = text(formData.get("privacy_url"));
-  if (url && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(url)) return fail("Use o endereço completo da política, começando com https://");
-  if (url.length > 400) return fail("Endereço longo demais.");
+  if (formData.has("privacy_url")) {
+    const url = text(formData.get("privacy_url"));
+    if (url && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(url)) return fail("Use o endereço completo da política, começando com https://");
+    if (url.length > 400) return fail("Endereço longo demais.");
+    const supabase = await createClient();
+    const { error } = await supabase.from("agencies").update({ privacy_url: url || null }).eq("id", agency.id);
+    if (error) return fail("Não foi possível salvar. Tente de novo.");
+    if (!formData.has("retention_months")) {
+      revalidatePath("/painel", "layout");
+      return ok(url ? "Link da política salvo." : "Link da política removido.");
+    }
+  }
   const months = Number(formData.get("retention_months"));
   if (!isRetentionMonths(months)) return fail("Escolha 6, 12 ou 24 meses.");
-  const supabase = await createClient();
-  const { error } = await supabase.from("agencies").update({ privacy_url: url || null }).eq("id", agency.id);
-  if (error) return fail("Não foi possível salvar. Tente de novo.");
   // prazo: só pelo servidor (redução espera 30 dias, com aviso e desfazer; aumento vale na hora)
   const before = { months: agency.retention_months, pendingMonths: agency.retention_pending_months, effectiveAt: agency.retention_effective_at };
   const plan = planAgencyRetention(before, months);
