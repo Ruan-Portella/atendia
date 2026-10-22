@@ -36,6 +36,11 @@ export interface ThreadMessage {
   photo_reading_enc?: string | null;
   /** Transferência (role "transferencia", Caixa de entrada, parte 4): para quem foi. */
   target_label?: string | null;
+  /** A mensagem citada (Conversa mais natural): o trecho e de quem era. */
+  quote?: { snippet: string; fromContact: boolean } | null;
+  /** A reação do contato e a da equipe (um emoji). */
+  contact_reaction?: string | null;
+  agent_reaction?: string | null;
 }
 
 /** Nota interna e transferência (Caixa de entrada, parte 4): só a equipe vê. */
@@ -169,6 +174,26 @@ interface Props {
   channel?: string | null;
 }
 
+/** O trecho da mensagem citada, em cima da resposta (Conversa mais natural). */
+function QuoteView({ quote, mine }: { quote: { snippet: string; fromContact: boolean }; mine: boolean }) {
+  return (
+    <div className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-[12px] ${mine ? "border-ground/50 bg-ground/10" : "border-brand/50 bg-ink/5"}`}>
+      <span className="font-semibold">{quote.fromContact ? "Contato" : "Empresa"}</span>
+      <span className="block truncate opacity-80">{quote.snippet}</span>
+    </div>
+  );
+}
+
+/** A reação do contato e a da equipe, embaixo da mensagem. */
+function ReactionsView({ contact, agent }: { contact: string | null; agent: string | null }) {
+  return (
+    <div className="mt-1 flex flex-wrap gap-1.5 text-[12px]">
+      {contact && <span className="rounded-full bg-panel px-1.5 py-0.5 text-ink shadow-sm" title="Reação do contato">{contact} <span className="text-[10px] text-muted">contato</span></span>}
+      {agent && <span className="rounded-full bg-panel px-1.5 py-0.5 text-ink shadow-sm" title="Reação da equipe">{agent} <span className="text-[10px] text-muted">equipe</span></span>}
+    </div>
+  );
+}
+
 /** Conversa (visitante, assistente e atendentes) — painel, portal e área do cliente. */
 export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null }: Props) {
   const changeAt = contextChange ? Date.parse(contextChange.at) : NaN;
@@ -204,6 +229,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
             }
           >
             {m.role === "agent" && <div className="mb-0.5 text-[11px] font-semibold text-brand">{agentLabel(m)}</div>}
+            {m.quote && !m.deleted_at && <QuoteView quote={m.quote} mine={m.role === "user"} />}
             <MessageText m={m} />
             <ShownComponent json={m.components_enc} />
             {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
@@ -226,6 +252,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
             {showSources && Array.isArray(m.sources) && m.sources.length > 0 && (
               <div className="mt-1.5 text-[11px] text-muted">Fontes: {(m.sources as Array<{ title?: string; url?: string }>).map((s) => s.title ?? s.url).join(" · ")}</div>
             )}
+            {(m.contact_reaction || m.agent_reaction) && !m.deleted_at && <ReactionsView contact={m.contact_reaction ?? null} agent={m.agent_reaction ?? null} />}
           </div>}
           </Fragment>
         ))}

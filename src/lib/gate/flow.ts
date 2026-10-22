@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { findByChannelId, quoteSnippet, quotedNote } from "../message-links";
 import { searchBots } from "../bot-template";
 import { activeContext } from "../bot-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -157,6 +158,8 @@ export interface GateQuestion {
   texts?: string[];
   /** As fotos lidas de toda a rajada (roteiro: a foto do passo pode ter vindo antes do texto). */
   photoReadings?: PhotoReading[] | null;
+  /** A mensagem citada pelo contato (Conversa mais natural): a IA lê o trecho junto da pergunta. */
+  quoted?: { channel: "whatsapp" | "instagram"; id: string } | null;
 }
 
 /**
@@ -313,7 +316,10 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
     // botão de um card do carrossel: a IA recebe o nome do card junto ("Pedir esta: Pizza Calabresa")
     if (q.button && !confirmed) question = (await carouselClick(db, convId, q.button)) ?? question;
     // no reprocesso a pergunta já está no banco, então já vem no histórico (o Confirmar foi gravado acima)
-    if (!q.stored && !confirmed) history.push({ id: q.msgId, role: "user", parts: [{ type: "text", text: question }] });
+    // o contato respondeu em cima de uma mensagem: o trecho citado vai junto (o resto da conversa lê pelo reply_to_id)
+    const quoted = q.quoted && !q.stored ? await findByChannelId(db, q.quoted.channel, q.quoted.id).catch(() => null) : null;
+    const asked = quoted && quoted.conversation_id === convId ? `${quotedNote(quoteSnippet(quoted.content))}\n${question}` : question;
+    if (!q.stored && !confirmed) history.push({ id: q.msgId, role: "user", parts: [{ type: "text", text: asked }] });
   }
 
   // identificação pelo roteiro (B2', parte 2c): a escolha da conta, a licença para lembrar o número e

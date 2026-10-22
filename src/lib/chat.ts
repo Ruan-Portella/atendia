@@ -1,4 +1,5 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type Tool, type UIMessage, type UIMessageChunk } from "ai";
+import { quotedNote, quotesOf } from "./message-links";
 import { memoryForConversation, memoryNote, memoryTools } from "./contact-memory";
 import { searchBots } from "./bot-template";
 import { activeContext, withDisplay } from "./bot-context";
@@ -334,7 +335,9 @@ export function guardInternal(text: string, terms: string[]): string {
 export async function conversationHistory(db: SupabaseClient, conversationId: string, limit = 12, maxChars = 2000, since?: string | null): Promise<UIMessage[]> {
   // o que não chegou ao contato (barrado pela regra de estado ou recusado pelo canal) e o que ele desfez fica fora;
   // since: troca de contexto (P2) abre um trecho novo, a IA não lê o da conta anterior
-  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit, ...(since ? { createdAfter: since } : {}) }, ["id", "role", "content", "tool_results", "components_enc", "photo_reading_enc", "created_at"] as const);
+  const rows = await loadMessages(db, { conversationId, delivered: true, newestFirst: true, limit, ...(since ? { createdAfter: since } : {}) }, ["id", "role", "content", "tool_results", "components_enc", "photo_reading_enc", "created_at", "reply_to_id"] as const);
+  // o contato respondeu em cima de uma mensagem (Conversa mais natural): o trecho citado vai junto
+  const quotes = await quotesOf(db, rows.filter((r) => r.role === "user").map((r) => r.reply_to_id));
   // da mais nova para a mais antiga: a primeira vez que uma ação aparece é a última chamada dela
   const seen = new Set<string>();
   const notes = rows.map((r) => actionsNote(r.tool_results as ToolResultRow[] | null, seen, r.created_at as string));
@@ -343,7 +346,8 @@ export async function conversationHistory(db: SupabaseClient, conversationId: st
       // botões, lista ou link mostrados: a IA vê as opções (para entender "2" ou "o segundo");
       // foto do contato: a descrição automática vai junto (leva de leitura de fotos)
       const photo = r.role === "user" ? photosNote(parsePhotoReading(r.photo_reading_enc)) : null;
-      const text = String(r.content).slice(0, maxChars) + (r.role === "user" ? (photo ? `\n${photo}` : "") : componentsNote(parseComponents(r.components_enc)));
+      const quote = r.role === "user" && r.reply_to_id ? quotes.get(r.reply_to_id) : undefined;
+      const text = (quote ? `${quotedNote(quote.snippet)}\n` : "") + String(r.content).slice(0, maxChars) + (r.role === "user" ? (photo ? `\n${photo}` : "") : componentsNote(parseComponents(r.components_enc)));
       // o modelo sabe o que já fez (ex.: lead registrado) e não pede os dados de novo
       const done = notes[i];
       return { id: String(r.id), role: r.role === "user" ? ("user" as const) : ("assistant" as const), parts: [{ type: "text" as const, text: done ? `${text}\n\n${done}` : text }] };

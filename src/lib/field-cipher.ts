@@ -20,6 +20,7 @@ export type CipherField =
   | "messages.content"
   | "messages.components_enc"
   | "messages.photo_reading_enc"
+  | "messages.channel_msg_ref_enc"
   | "contacts.phone_enc"
   | "contacts.wa_user_enc"
   | "contacts.ig_enc"

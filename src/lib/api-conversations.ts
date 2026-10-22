@@ -183,7 +183,7 @@ export async function listConversations(req: Request, api: ApiContext): Promise<
 
 /* ------------------------------------------------------------------ mensagens */
 
-const MSG_COLS = ["id", "conversation_id", "role", "content", "author", "author_type", "author_id", "author_display_name", "channel_msg_id", "delivery_status", "blocked_reason", "failed_at", "error_code", "deleted_at", "edited_at", "photo_reading_enc", "created_at"] as const;
+const MSG_COLS = ["id", "conversation_id", "role", "content", "author", "author_type", "author_id", "author_display_name", "channel_msg_id", "delivery_status", "blocked_reason", "failed_at", "error_code", "deleted_at", "edited_at", "photo_reading_enc", "created_at", "reply_to_id", "contact_reaction", "agent_reaction"] as const;
 type MsgRow = Pick<MessageRow, (typeof MSG_COLS)[number]>;
 
 /** Status de uma mensagem: recebida (do contato), ou o mais avançado que o canal informou. Pura. */
@@ -217,6 +217,9 @@ export function messageObject(m: MsgRow, channel: ApiChannel, files: AttachmentI
     error: status === "failed" ? { code: m.error_code ?? null, message: null } : null,
     deleted: Boolean(m.deleted_at),
     edited: Boolean(m.edited_at),
+    // a mensagem citada e as reações (Conversa mais natural)
+    reply_to: m.reply_to_id ? `msg_${m.reply_to_id}` : null,
+    reactions: m.deleted_at ? { contact: null, agent: null } : { contact: m.contact_reaction ?? null, agent: m.agent_reaction ?? null },
     created_at: m.created_at,
   };
 }

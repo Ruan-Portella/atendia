@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { applyContactReaction, linkInbound, reactionEmoji } from "./message-links";
 import { IDENTITY_MISMATCH_CODE } from "./whatsapp";
 import { PRIMARY_INACTIVITY_TEXT, queueTemplateEvent } from "./platform-events";
 import { expectInbound, igInboundExtra, queueStatusEvent, releaseInbound, waInboundExtra } from "./message-events";
@@ -43,7 +44,7 @@ export type WaPayload =
   // avisos da conta que mexem com campanhas: qualidade do número, situação e categoria do modelo
   | { type: "notice"; wabaId?: string; field: string; value: Record<string, unknown> };
 
-export type IgPayload = { type: "msg" | "echo" | "edit" | "delete"; igUserId: string; ev: IgMessagingEvent } | { type: "comment"; igUserId: string; comment: IgComment };
+export type IgPayload = { type: "msg" | "echo" | "edit" | "delete" | "reaction"; igUserId: string; ev: IgMessagingEvent } | { type: "comment"; igUserId: string; comment: IgComment };
 
 /* ------------------------------------------------------------------ WhatsApp */
 
@@ -164,7 +165,11 @@ const whatsappGroup: GroupHandler = async (db, events) => {
   }
   try {
     for (const e of contact) if (e.payload.type === "echo") await handleEcho(db, channel, e.payload.echo, e.key_hash);
+    // reação do contato (sem resposta da IA): o emoji fica na mensagem reagida
+    for (const q of burst) if (q.msg.type === "reaction" && q.msg.reaction?.message_id) await applyContactReaction(db, "whatsapp", q.msg.reaction.message_id, q.msg.reaction.emoji?.trim() || null);
     await handleInboundBurst(db, channel, burst);
+    // a citação e o id original de cada mensagem gravada (a equipe cita e reage pelo painel)
+    await linkInbound(db, "whatsapp", burst.filter((q) => q.msg.type !== "reaction").map((q) => ({ key: q.key, channelId: q.msg.id, quotedId: q.msg.context?.id ?? null }))).catch((e) => console.error("whatsapp: citação", (e as Error).message));
     // mídia recebida: guardada cifrada depois da resposta (falha aqui não refaz a conversa)
     await captureWhatsAppMedia(db, channel, burst).catch((e) => console.error("whatsapp: mídia", (e as Error).message));
   } catch (err) {
@@ -190,7 +195,11 @@ const instagramGroup: GroupHandler = async (db, events) => {
   const keys = expectInbound(igBurst.map((q) => ({ key: q.key, ...igInboundExtra(q.ev) })));
   try {
     for (const e of all) if (e.payload.type === "echo") await handleInstagramEcho(db, ch, e.payload.ev, e.key_hash);
+    // reação do contato (sem resposta da IA): o emoji fica na mensagem reagida
+    for (const e of all) if (e.payload.type === "reaction" && e.payload.ev.reaction?.mid) await applyContactReaction(db, "instagram", e.payload.ev.reaction.mid, e.payload.ev.reaction.action === "unreact" ? null : reactionEmoji(e.payload.ev.reaction));
     await handleInstagramBurst(db, ch, igBurst);
+    // a citação e o id original de cada DM gravada (a equipe cita e reage pelo painel)
+    await linkInbound(db, "instagram", igBurst.map((q) => ({ key: q.key, channelId: q.ev.message?.mid ?? null, quotedId: q.ev.message?.reply_to?.mid ?? null }))).catch((e) => console.error("instagram: citação", (e as Error).message));
     // mídia recebida: guardada cifrada depois da resposta (o link do CDN da Meta vence)
     await captureInstagramMedia(db, ch.bot_id, igBurst).catch((e) => console.error("instagram: mídia", (e as Error).message));
     // edição e mensagem desfeita depois das mensagens (a original já está gravada)

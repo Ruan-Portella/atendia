@@ -1,4 +1,5 @@
 import { contactDisplayName, contactName as contactNameOf } from "@/lib/contacts";
+import { quotesOf } from "@/lib/message-links";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -65,7 +66,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   if (sensitive) await requireAgencyMfa(back ?? `/painel/bots/${id}/conversas/${cid}`);
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
   const [messages, leads, { agency, role, member }] = await Promise.all([
-    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
+    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref", "reply_to_id", "contact_reaction", "agent_reaction"] as const),
     leadsOfConversation(supabase, cid),
     requireAgency(),
   ]);
@@ -116,9 +117,11 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
 
   // arquivos que o contato mandou (abertos pela rota /api/files)
   const files = await attachmentsOfMessages(createAdminClient(), (messages ?? []).map((m) => m.id));
+  // a mensagem citada (Conversa mais natural): o trecho em cima da resposta
+  const quotes = await quotesOf(supabase, (messages ?? []).map((m) => m.reply_to_id));
   // notas internas e transferências (Caixa de entrada, parte 4; tabela interna: service role), no meio das mensagens
   const notes = await listNotes(createAdminClient(), cid).catch(() => []);
-  const allMessages = withNotes((messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[], notes);
+  const allMessages = withNotes((messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id), quote: m.reply_to_id ? (quotes.get(m.reply_to_id) ?? null) : null })) as ThreadMessage[], notes);
   // transferir, adiar e respostas prontas (Caixa de entrada, parte 4)
   const handoffOpen = !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
   const [options, quickReplies, nameForReplies] = await Promise.all([

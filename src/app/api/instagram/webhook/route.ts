@@ -125,6 +125,12 @@ export async function POST(req: Request) {
           if (g) groups.push(g);
           continue;
         }
+        // a pessoa reagiu a uma DM (message_reactions): entra na fila; a IA não responde
+        if (ev.reaction?.mid && ev.sender?.id) {
+          const g = await acceptInbound(db, { key: `ig:react:${ev.reaction.mid}:${ev.reaction.action ?? "react"}:${ev.timestamp ?? 0}`, source: "instagram", kind: "reaction", botId: ch.bot_id, contact: ev.sender.id, payload: { type: "reaction", igUserId: ch.ig_user_id, ev } satisfies IgPayload });
+          if (g) groups.push(g);
+          continue;
+        }
         const echo = Boolean(ev.message?.is_echo);
         // link ig.me/m/<usuário>?ref=CODIGO aberto numa conversa que já existe: chega sem mensagem (pareamento, P2)
         const ref = !echo && !ev.message && !ev.postback ? igRef(ev) : null;

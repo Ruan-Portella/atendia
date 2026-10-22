@@ -86,6 +86,8 @@ export interface IgMessagingEvent {
   postback?: { mid?: string; title?: string; payload?: string; referral?: { ref?: string } };
   /** A pessoa abriu um link ig.me/m/<usuário>?ref=… numa conversa que já existe (messaging_referral). */
   referral?: { ref?: string; source?: string; type?: string };
+  /** Reação do contato a uma DM (message_reactions; Conversa mais natural). */
+  reaction?: { mid?: string; action?: "react" | "unreact"; reaction?: string; emoji?: string };
   /** A pessoa editou uma DM já enviada (webhook message_edit). */
   message_edit?: { mid?: string; text?: string; num_edit?: number | string };
 }
@@ -651,6 +653,8 @@ async function instagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedD
         texts: burst.flatMap((_, i) => (answerable(i) && texts[i] ? [texts[i]!] : [])),
         // e a foto do passo também (parte 2d)
         photoReadings: burst.flatMap((_, i) => (answerable(i) ? (photos.get(i) ?? []) : [])),
+        // o contato respondeu em cima de uma mensagem: a IA lê o trecho citado
+        quoted: q.ev.message?.reply_to?.mid ? { channel: "instagram", id: q.ev.message.reply_to.mid } : null,
       },
     );
     await afterStore();

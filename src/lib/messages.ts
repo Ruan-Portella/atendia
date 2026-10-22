@@ -42,6 +42,13 @@ export interface MessageRow {
   deleted_at: string | null;
   channel_ref: unknown;
   inbound_key: string | null;
+  /** a mensagem citada (Conversa mais natural, parte 1) */
+  reply_to_id: number | null;
+  /** o id original no canal (cifrado no banco, aberto aqui): para a equipe citar e reagir */
+  channel_msg_ref_enc: string | null;
+  /** a reação do contato e a da equipe (um emoji) */
+  contact_reaction: string | null;
+  agent_reaction: string | null;
   created_at: string;
 }
 export type MessageColumn = keyof MessageRow;
@@ -71,6 +78,10 @@ export interface NewMessage {
   error_code?: string | null;
   channel_ref?: unknown;
   inbound_key?: string | null;
+  /** a mensagem citada (Conversa mais natural, parte 1) */
+  reply_to_id?: number | null;
+  /** o id original no canal (vai cifrado em channel_msg_ref_enc) */
+  channel_msg_ref?: string | null;
 }
 
 /** O que muda numa mensagem já gravada (envio, edição, lápide, referência do post). */
@@ -89,20 +100,29 @@ export interface MessagePatch {
   error_code?: string | null;
   channel_msg_id?: string | null;
   channel_msg_hash?: string | null;
+  /** citar e reagir (Conversa mais natural, parte 1) */
+  reply_to_id?: number | null;
+  channel_msg_ref?: string | null;
+  contact_reaction?: string | null;
+  contact_reaction_at?: string | null;
+  agent_reaction?: string | null;
+  agent_reaction_at?: string | null;
 }
 
 /** O conteúdo (o componente e a leitura das fotos) vai cifrado com a chave do cliente dono da conversa (ou da plataforma, nas demos). */
-const sealed = async <T extends { content?: string; components?: MessageComponent | null; photo_reading?: PhotoReading[] | null }>(
+const sealed = async <T extends { content?: string; components?: MessageComponent | null; photo_reading?: PhotoReading[] | null; channel_msg_ref?: string | null }>(
   row: T,
   conversationId: string,
-): Promise<Omit<T, "components" | "photo_reading"> & { components_enc?: string | null; photo_reading_enc?: string | null }> => {
-  const { components, photo_reading, ...rest } = row;
-  const needs = rest.content !== undefined || components || photo_reading?.length;
+): Promise<Omit<T, "components" | "photo_reading" | "channel_msg_ref"> & { components_enc?: string | null; photo_reading_enc?: string | null; channel_msg_ref_enc?: string | null }> => {
+  const { components, photo_reading, channel_msg_ref, ...rest } = row;
+  const needs = rest.content !== undefined || components || photo_reading?.length || channel_msg_ref;
   const scope = needs ? await scopeOfConversation(conversationId) : null;
-  const out: Omit<T, "components" | "photo_reading"> & { components_enc?: string | null; photo_reading_enc?: string | null } = rest;
+  const out: Omit<T, "components" | "photo_reading" | "channel_msg_ref"> & { components_enc?: string | null; photo_reading_enc?: string | null; channel_msg_ref_enc?: string | null } = rest;
   if (rest.content !== undefined) (out as { content?: string }).content = await sealField("messages.content", rest.content, scope!);
   if (components !== undefined) out.components_enc = components ? await sealField("messages.components_enc", JSON.stringify(components), scope!) : null;
   if (photo_reading !== undefined) out.photo_reading_enc = photo_reading?.length ? await sealField("messages.photo_reading_enc", JSON.stringify(photo_reading), scope!) : null;
+  // o id do WhatsApp leva o telefone do contato: cifrado como o conteúdo
+  if (channel_msg_ref !== undefined) out.channel_msg_ref_enc = channel_msg_ref ? await sealField("messages.channel_msg_ref_enc", channel_msg_ref, scope!) : null;
   return out;
 };
 const opened = async <T extends object>(row: T): Promise<T> => {
@@ -111,6 +131,8 @@ const opened = async <T extends object>(row: T): Promise<T> => {
   if (typeof r.content === "string") out = { ...out, content: await openField("messages.content", r.content) };
   if (typeof r.components_enc === "string") out = { ...out, components_enc: await openField("messages.components_enc", r.components_enc) };
   if (typeof r.photo_reading_enc === "string") out = { ...out, photo_reading_enc: await openField("messages.photo_reading_enc", r.photo_reading_enc) };
+  const ref = (row as { channel_msg_ref_enc?: unknown }).channel_msg_ref_enc;
+  if (typeof ref === "string") out = { ...out, channel_msg_ref_enc: await openField("messages.channel_msg_ref_enc", ref) };
   return out;
 };
 
@@ -165,7 +187,7 @@ export type MessageTarget = { id: number } | { ids: Array<number | string> } | {
  */
 export async function updateMessages(db: SupabaseClient, target: MessageTarget, patch: MessagePatch, only: { notDeleted?: boolean; withoutRef?: boolean } = {}): Promise<number[]> {
   let row: Record<string, unknown> = { ...patch };
-  if (patch.content !== undefined || patch.components !== undefined || patch.photo_reading !== undefined) {
+  if (patch.content !== undefined || patch.components !== undefined || patch.photo_reading !== undefined || patch.channel_msg_ref !== undefined) {
     // conteúdo novo: cifrado com a chave do cliente dono da conversa dessas mensagens
     let sel = db.from("messages").select("conversation_id");
     if ("id" in target) sel = sel.eq("id", target.id);
@@ -219,6 +241,8 @@ export interface MessageQuery {
   inboundKey?: string;
   /** A mensagem pelo id do canal (hash), como o status da Meta traz. */
   channelMsgHash?: string;
+  /** Várias mensagens pelo id (o trecho citado no histórico). */
+  ids?: number[];
   roles?: MessageRole[];
   notRole?: MessageRole;
   authors?: string[];
@@ -243,6 +267,7 @@ export async function loadMessages<K extends MessageColumn>(db: SupabaseClient, 
   if (q.conversationIds) r = r.in("conversation_id", q.conversationIds);
   if (q.inboundKey) r = r.eq("inbound_key", q.inboundKey);
   if (q.channelMsgHash) r = r.eq("channel_msg_hash", q.channelMsgHash);
+  if (q.ids) r = r.in("id", q.ids);
   if (q.roles) r = q.roles.length === 1 ? r.eq("role", q.roles[0]) : r.in("role", q.roles);
   if (q.notRole) r = r.neq("role", q.notRole);
   if (q.authors) r = r.in("author", q.authors);

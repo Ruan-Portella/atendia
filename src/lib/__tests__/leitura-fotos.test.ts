@@ -267,7 +267,7 @@ describe("o que a IA leu, para a equipe e para o sistema do cliente (parte 2)", 
   });
 
   it("a mensagem da API traz o reading da foto, a partir do que ficou gravado", () => {
-    const m = { id: 9, conversation_id: "c1", role: "user" as const, content: "📷 (foto) tem essa?", author: null, author_type: null, author_id: null, author_display_name: null, channel_msg_id: null, delivery_status: null, blocked_reason: null, failed_at: null, error_code: null, deleted_at: null, edited_at: null, photo_reading_enc: JSON.stringify([read]), created_at: new Date(NOW).toISOString() };
+    const m = { id: 9, conversation_id: "c1", role: "user" as const, content: "📷 (foto) tem essa?", author: null, author_type: null, author_id: null, author_display_name: null, channel_msg_id: null, delivery_status: null, blocked_reason: null, failed_at: null, error_code: null, deleted_at: null, edited_at: null, photo_reading_enc: JSON.stringify([read]), created_at: new Date(NOW).toISOString(), reply_to_id: null, contact_reaction: null, agent_reaction: null };
     const out = messageObject(m, "whatsapp", [photo]);
     expect(out.text).toBe("tem essa?");
     expect(out.media?.reading).toEqual({ type: "comum", description: "Uma pizza de calabresa numa caixa.", text: "Pizzaria do Zé" });

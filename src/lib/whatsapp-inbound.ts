@@ -86,6 +86,10 @@ export interface InboundMessage {
   system?: { body?: string; type?: string; wa_id?: string; user_id?: string };
   /** O carrinho do catálogo da Meta (os códigos dos itens, a quantidade e o preço). */
   order?: OrderPayload;
+  /** A mensagem citada (o contato respondeu em cima dela; Conversa mais natural). */
+  context?: { id?: string; from?: string; forwarded?: boolean; frequently_forwarded?: boolean };
+  /** Reação do contato a uma mensagem (sem emoji: tirou a reação). */
+  reaction?: { message_id?: string; emoji?: string };
 }
 
 export interface ChannelRow extends WaChannel {
@@ -680,6 +684,8 @@ async function inboundBurst(db: SupabaseClient, channel: ChannelRow, all: Queued
         texts: burst.flatMap((_, i) => (answerable(i) && texts[i] ? [texts[i]!] : [])),
         // e a foto do passo também (parte 2d)
         photoReadings: burst.flatMap((_, i) => (answerable(i) ? (photos.get(i) ?? []) : [])),
+        // o contato respondeu em cima de uma mensagem: a IA lê o trecho citado
+        quoted: q.msg.context?.id ? { channel: "whatsapp", id: q.msg.context.id } : null,
       },
     );
     // saiu depois da recusa por pagamento: o cartão entrou, o número volta ao normal

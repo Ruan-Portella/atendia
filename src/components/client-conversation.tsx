@@ -18,6 +18,7 @@ import { conversationState } from "@/lib/presence";
 import { loadMessages } from "@/lib/messages";
 import { leadsOfConversation } from "@/lib/leads";
 import { attachmentsOfMessages } from "@/lib/attachments";
+import { quotesOf } from "@/lib/message-links";
 import { regulatedConversation } from "@/lib/gate/payment";
 import { RegulatedNotice } from "@/components/regulated-notice";
 import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
@@ -44,16 +45,18 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   const sensitive = Boolean((Array.isArray(conv.bots) ? conv.bots[0] : conv.bots)?.sensitive_mode);
   if (sensitive) await requireMemberMfa(id, back ?? `/cliente/${id}/conversas/${cid}`);
   const [messages, leads] = await Promise.all([
-    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref"] as const),
+    loadMessages(admin, { conversationId: cid }, ["id", "role", "content", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref", "reply_to_id", "contact_reaction", "agent_reaction"] as const),
     leadsOfConversation(admin, cid),
   ]);
   const agencyName = member.agency.name;
   const takeOver = memberTakeOver.bind(null, id, cid);
   // arquivos que o contato mandou (abertos pela rota /api/files)
   const files = await attachmentsOfMessages(admin, (messages ?? []).map((m) => m.id));
+  // a mensagem citada (Conversa mais natural): o trecho em cima da resposta
+  const quotes = await quotesOf(admin, (messages ?? []).map((m) => m.reply_to_id));
   // notas internas e transferências (Caixa de entrada, parte 4): só para quem atende
   const notes = member.allowHandoff ? await listNotes(admin, cid).catch(() => []) : [];
-  const allMessages = withNotes((messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[], notes);
+  const allMessages = withNotes((messages ?? []).map((m) => ({ ...m, attachments: files.get(m.id), quote: m.reply_to_id ? (quotes.get(m.reply_to_id) ?? null) : null })) as ThreadMessage[], notes);
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   const handoffOpen = member.allowHandoff && !conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at);
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com ele
