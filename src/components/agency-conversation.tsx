@@ -2,10 +2,10 @@ import { contactDisplayName, contactName as contactNameOf } from "@/lib/contacts
 import { agentReactionsFor, quotesOf } from "@/lib/message-links";
 import { needsPhone } from "@/lib/handoff";
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
+import { Maximize2, Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { relativeTime } from "@/lib/utils";
+import { initials, relativeTime } from "@/lib/utils";
 import { ConversationThread, withNotes, type ThreadMessage } from "@/components/conversation-thread";
 import { ConversationTools } from "@/components/conversation-tools";
 import { listNotes } from "@/lib/conversation-notes";
@@ -45,6 +45,8 @@ import { suppressionScope } from "@/lib/suppression";
 import { accountLabel, loadConversationIdentity } from "@/lib/routine-identity";
 import { runBandText, type RunSummary } from "@/lib/routine-run";
 
+const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site", painel: "Teste", demo: "Demo" };
+
 /**
  * A conversa no painel da agência: a página da conversa e o lado direito da Caixa de entrada
  * (embedded: preenche a coluna, com o link para abrir em tela cheia; `back` é para onde o segundo
@@ -54,7 +56,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, origin_label, last_contact_at, snoozed_until, snoozed_at, ticket_protocol, ticket_status, ticket_subject, bots(name, client_id, client_name, sensitive_mode)")
+    .select("id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, needs_human, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, identity_hash, context_display, context_since, origin_label, last_contact_at, snoozed_until, snoozed_at, ticket_protocol, ticket_status, ticket_subject, bots(name, client_id, client_name, sensitive_mode, appearance)")
     .eq("id", cid)
     .eq("bot_id", id)
     .maybeSingle();
@@ -67,11 +69,11 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   if (sensitive) await requireAgencyMfa(back ?? `/painel/bots/${id}/conversas/${cid}`);
   const isWhatsApp = conv.channel === "whatsapp" && Boolean(conv.wa_id);
   const [messages, leads, { agency, role, member }] = await Promise.all([
-    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref", "reply_to_id", "channel_msg_ref_enc", "contact_reaction", "agent_reaction"] as const),
+    loadMessages(supabase, { conversationId: cid }, ["id", "role", "content", "sources", "tool_results", "author", "author_type", "author_id", "author_display_name", "announce_chars", "components_enc", "photo_reading_enc", "created_at", "blocked_reason", "failed_at", "error_code", "edited_at", "deleted_at", "channel_ref", "reply_to_id", "channel_msg_ref_enc", "contact_reaction", "agent_reaction"] as const),
     leadsOfConversation(supabase, cid),
     requireAgency(),
   ]);
-  const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { name: string; client_id: string | null; client_name: string } | null;
+  const bot = (Array.isArray(conv.bots) ? conv.bots[0] : conv.bots) as { name: string; client_id: string | null; client_name: string; appearance: { color?: string | null } | null } | null;
   const takeOver = takeOverConversation.bind(null, cid);
   const visitorMsgs = (messages ?? []).filter((m) => m.role === "user");
   // no WhatsApp a janela de 24 h conta da última mensagem do contato, em qualquer conversa com
@@ -144,20 +146,24 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   const reviewing = new Set((openReviews ?? []).map((r) => r.category as string));
   const coexistence = regulated && isWhatsApp ? Boolean((await createAdminClient().from("whatsapp_channels").select("coexistence").eq("bot_id", id).maybeSingle()).data?.coexistence) : false;
   const templateAction = sendConversationTemplate.bind(null, cid);
+  // quem é (redesenho, etapa 2): o nome no cabeçalho e em cima das mensagens do contato
+  const who = nameForReplies || identifiedName || (conv.channel === "widget" ? "Visitante do site" : "Contato");
 
   // Tela de chat: ocupa a tela toda (a barra do celular tem 60 px; a faixa de avisos do painel,
   // quando há, mede --panel-notices-h), cabeçalho e resposta fixos, e só as mensagens rolam.
   return (
     <div className={embedded ? "flex h-full min-h-0 flex-col" : "-mx-4 -my-5 flex h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 flex-col sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]"}>
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-7">
+      <header className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-line bg-panel px-4 py-3 sm:px-5 md:px-6">
+        <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-raised text-[13px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)]">{initials(who) || "?"}</span>
         <div className="min-w-0 flex-1">
-          {embedded ? (
-            <Link href={`/painel/bots/${id}/conversas/${cid}`} className="text-xs font-semibold text-muted hover:underline">{bot ? `${bot.client_name} · ${bot.name}` : "Conversa"} · abrir em tela cheia</Link>
-          ) : (
-            <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-semibold text-muted">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>
-          )}
-          <h1 className="flex flex-wrap items-center gap-2.5 text-lg font-normal sm:text-xl">Conversa {relativeTime(conv.started_at)} <ConversationStateBadge conv={conv} withTime />{sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">dados sensíveis</span>}</h1>
-          <p className="text-xs text-muted">canal: {conv.channel}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:underline">{bot.client_name}</Link></> : null}</p>
+          {!embedded && <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-medium text-muted hover:text-ink">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>}
+          <h1 className="flex flex-wrap items-center gap-2 text-lg font-normal leading-tight">
+            <span className="min-w-0 truncate">{who}</span>
+            <span className="rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)]">{CHANNEL_LABEL[conv.channel as string] ?? conv.channel}</span>
+            <ConversationStateBadge conv={conv} withTime />
+            {sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-medium text-amber-ink">dados sensíveis</span>}
+          </h1>
+          <p className="mt-0.5 text-[12.5px] text-muted">{bot ? bot.name : "Conversa"}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:text-ink">{bot.client_name}</Link></> : null} · começou {relativeTime(conv.started_at)}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}</p>
           {conv.ticket_protocol && <TicketStatusControl protocol={conv.ticket_protocol as string} subject={(conv.ticket_subject as string | null) ?? null} status={(conv.ticket_status as string | null) ?? "aberto"} action={setTicketStatusAction.bind(null, cid)} />}
           {gateCats.length > 0 && (
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
@@ -182,6 +188,11 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {embedded && (
+            <Link href={`/painel/bots/${id}/conversas/${cid}`} aria-label="Abrir em tela cheia" title="Abrir em tela cheia" className="btn-icon h-9 w-9">
+              <Maximize2 size={15} />
+            </Link>
+          )}
           {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
           {consent && (
             <span
@@ -228,6 +239,9 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
             actions={threadActions}
             contextChange={conv.context_since ? { at: conv.context_since as string, label: conv.context_display ? `contexto: ${conv.context_display as string}` : "sem conta conectada" } : null}
             agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}
+            contactName={who}
+            bot={bot ? { name: bot.name, color: bot.appearance?.color ?? null } : null}
+            showTrace
           />
         </div>
       </MessageScroller>

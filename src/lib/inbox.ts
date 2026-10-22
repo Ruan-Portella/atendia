@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { handoffOrder, handoffStatus, type HandoffState } from "./handoff-status";
 import { nextOpening, type BusinessHours } from "./handoff-hours";
 import { contactLabels } from "./contacts";
+import { lastMessagesOf, type LastMessage } from "./messages";
 import type { Sector } from "./sectors";
 import { isSnoozed } from "./snooze";
 import { apiPauseActive } from "./presence";
@@ -50,6 +51,8 @@ export interface InboxBot {
   client_id: string | null;
   human_handoff?: { hours?: BusinessHours | null } | null;
   sensitive_mode?: boolean | null;
+  /** a cor do chatbot (o rosto na lista) */
+  appearance?: { color?: string | null } | null;
 }
 
 export interface InboxItem {
@@ -82,6 +85,10 @@ export interface InboxItem {
   snoozedUntil: string | null;
   /** O adiamento acabou (a data passou ou o contato escreveu) e ninguém mexeu ainda. */
   snoozeEnded: boolean;
+  /** A cor do chatbot (redesenho: o rosto ao lado do contato). */
+  botColor?: string | null;
+  /** O começo da última mensagem (fora do modo sensível, que pede o segundo fator). */
+  last?: LastMessage | null;
 }
 
 const OPEN_DAYS = 30;
@@ -196,7 +203,7 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
       snoozeEnded: false,
     }];
   });
-  return [...rows.flatMap((r) => {
+  const items: InboxItem[] = [...rows.flatMap((r) => {
     const st = handoffStatus(r, now.getTime());
     const bot = bots.get(r.bot_id);
     if (!st || !bot) return [];
@@ -231,6 +238,11 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
       snoozeEnded: Boolean(r.snoozed_until) && !snoozed,
     }];
   }), ...aiItems];
+  // redesenho, etapa 2: o começo da última mensagem e a cor do chatbot; no modo sensível, o texto
+  // só aparece depois do segundo fator, na conversa
+  const open = items.filter((i) => !bots.get(i.botId)?.sensitive_mode).map((i) => i.id);
+  const last = await lastMessagesOf(db, open).catch(() => new Map<string, LastMessage>());
+  return items.map((i) => ({ ...i, botColor: bots.get(i.botId)?.appearance?.color ?? null, last: last.get(i.id) ?? null }));
 }
 
 /** Quantas conversas em cada fila (o número ao lado do nome). Pura. */

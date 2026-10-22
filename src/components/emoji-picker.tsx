@@ -37,8 +37,8 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
   }, [open]);
 
   return (
-    <div ref={box} className="relative self-end">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Inserir emoji" title="Inserir emoji" className="btn-ghost px-2.5">
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Inserir emoji" title="Inserir emoji" className="btn-icon h-8 w-8">
         <Smile size={18} />
       </button>
       {open && (

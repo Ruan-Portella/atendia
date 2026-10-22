@@ -26,6 +26,12 @@ import { lastContactMessageAt } from "@/lib/whatsapp-inbound";
 import { authorLabel } from "@/lib/authors";
 import { memberAddNote, memberSetTicketStatus, memberForceTakeOver, memberReact, memberRelease, memberRequestPhone, memberResumeAi, memberSend, memberSnooze, memberTakeOver, memberTransfer, memberUnsnooze } from "@/app/cliente/actions";
 
+/** O chatbot da conversa (redesenho): o nome e a cor nas respostas da IA. */
+function botOf(rel: unknown): { name: string; color: string | null } | null {
+  const b = (Array.isArray(rel) ? rel[0] : rel) as { name?: string; appearance?: { color?: string | null } | null } | null;
+  return b?.name ? { name: b.name, color: b.appearance?.color ?? null } : null;
+}
+
 /**
  * A conversa na área do cliente: a página da conversa e o lado direito da Caixa de entrada do portal
  * (embedded: preenche a coluna; `back` é para onde o segundo fator volta).
@@ -34,7 +40,7 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, last_contact_at, snoozed_until, snoozed_at, ticket_protocol, ticket_status, ticket_subject, bots(sensitive_mode)")
+    .select("id, bot_id, started_at, last_message_at, visitor_seen_at, channel, wa_id, ig_id, contact_id, handoff_requested_at, lead_waiting_at, takeover_at, handled_at, assigned_to_id, assigned_to_name, ai_paused_until, regulated_at, last_contact_at, snoozed_until, snoozed_at, ticket_protocol, ticket_status, ticket_subject, bots(sensitive_mode, name, appearance)")
     .eq("id", cid)
     .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
     .maybeSingle();
@@ -111,6 +117,8 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
             agentLabel={(m) => authorLabel(m, { view: "client", meId: member.memberId, meLegacy: email, agencyName })}
             channel={conv.channel as string}
             actions={threadActions}
+            contactName={nameForReplies}
+            bot={botOf(conv.bots)}
           />
         </div>
       </MessageScroller>

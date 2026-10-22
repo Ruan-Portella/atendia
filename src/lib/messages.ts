@@ -384,3 +384,30 @@ export async function sendFailureStatsByChannel(db: SupabaseClient, since: strin
   const [waSent, waFailed, igSent, igFailed] = await Promise.all([count("whatsapp", false), count("whatsapp", true), count("instagram", false), count("instagram", true)]);
   return { whatsapp: { sent: waSent + waFailed, failed: waFailed }, instagram: { sent: igSent + igFailed, failed: igFailed } };
 }
+
+export interface LastMessage {
+  /** quem mandou: o contato, a IA ou a equipe */
+  from: "contato" | "ia" | "equipe";
+  text: string;
+  at: string;
+}
+
+const FROM: Record<string, LastMessage["from"]> = { user: "contato", assistant: "ia", agent: "equipe" };
+
+/**
+ * A última mensagem de cada conversa, para a lista da Caixa de entrada (redesenho, etapa 2): o
+ * começo do texto (até 160 caracteres) e quem mandou, numa chamada só (função
+ * inbox_last_messages, migração 0168; só o servidor chama).
+ */
+export async function lastMessagesOf(db: SupabaseClient, conversationIds: string[]): Promise<Map<string, LastMessage>> {
+  const out = new Map<string, LastMessage>();
+  for (let i = 0; i < conversationIds.length; i += 500) {
+    const { data, error } = await db.rpc("inbox_last_messages", { conv_ids: conversationIds.slice(i, i + 500) });
+    if (error) throw new Error(`última mensagem: ${error.message}`);
+    for (const r of (data ?? []) as Array<{ conversation_id: string; role: string; content: string | null; created_at: string }>) {
+      const from = FROM[r.role];
+      if (from) out.set(r.conversation_id, { from, text: (r.content ?? "").replace(/\s+/g, " ").trim(), at: r.created_at });
+    }
+  }
+  return out;
+}

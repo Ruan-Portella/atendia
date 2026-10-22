@@ -127,15 +127,6 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
           </ActionForm>
         </div>
       )}
-      {quickReplies.length > 0 && (
-        <label className="flex items-center gap-2 self-start text-xs text-muted">
-          <span className="sr-only">Respostas prontas</span>
-          <select value="" onChange={(e) => insert(e.target.value)} className="input w-auto py-1 text-xs">
-            <option value="">Respostas prontas…</option>
-            {quickReplies.map((q) => <option key={q.id} value={q.id}>{q.title}</option>)}
-          </select>
-        </label>
-      )}
       {asking && (
         <div role="alert" className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
           <strong>Este pagamento inclui bebida ou remédio?</strong> Se sim, mande o link do site (ou ofereça telefone, retirada ou o chat do site) em vez de Pix ou link de pagamento por aqui.
@@ -184,16 +175,9 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
           )}
         </div>
       )}
-      <ActionForm action={action} onSubmit={onSubmit} onSuccess={() => setQuote(null)} className="flex items-end gap-2">
+      {/* redesenho, etapa 2: o campo numa caixa só, com as ferramentas embaixo */}
+      <ActionForm action={action} onSubmit={onSubmit} onSuccess={() => setQuote(null)} className="flex flex-col gap-1 rounded-[16px] bg-field p-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)] transition-shadow duration-[120ms] focus-within:shadow-[inset_0_0_0_1px_var(--color-brand),0_0_0_3px_color-mix(in_oklab,var(--color-brand)_20%,transparent)]">
         {quote && <input type="hidden" name="reply_to_id" value={quote.id} />}
-        <EmojiPicker onPick={insertEmoji} />
-        {allowFile && (
-          <label className="btn-ghost cursor-pointer self-end px-2.5" title="Anexar foto ou PDF (até 4 MB)">
-            <Paperclip size={18} />
-            <span className="sr-only">Anexar foto ou PDF</span>
-            <input ref={fileInput} type="file" name="file" accept={AGENT_FILE_ACCEPT} className="sr-only" onChange={(e) => void takeFile(e.currentTarget.files?.[0])} />
-          </label>
-        )}
         <label htmlFor="agent-msg" className="sr-only">Sua resposta</label>
         <textarea
           ref={field}
@@ -202,7 +186,7 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
           required={!picked}
           maxLength={2000}
           rows={2}
-          className="input flex-1 resize-y"
+          className="min-h-[52px] w-full resize-y bg-transparent px-2 py-1.5 text-sm leading-relaxed text-ink placeholder:text-muted focus:outline-none"
           placeholder={picked ? "Legenda (opcional)…" : "Escreva sua resposta para o visitante…"}
           onPaste={(e) => {
             // foto colada no campo vira o anexo
@@ -212,7 +196,26 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
             void takeFile(f);
           }}
         />
-        <SubmitButton pendingLabel="Enviando…" className="btn-primary">Enviar</SubmitButton>
+        <div className="flex flex-wrap items-center gap-1">
+          <EmojiPicker onPick={insertEmoji} />
+          {allowFile && (
+            <label className="btn-icon h-8 w-8 cursor-pointer" title="Anexar foto ou PDF (até 4 MB)">
+              <Paperclip size={17} />
+              <span className="sr-only">Anexar foto ou PDF</span>
+              <input ref={fileInput} type="file" name="file" accept={AGENT_FILE_ACCEPT} className="sr-only" onChange={(e) => void takeFile(e.currentTarget.files?.[0])} />
+            </label>
+          )}
+          {quickReplies.length > 0 && (
+            <label className="flex items-center">
+              <span className="sr-only">Respostas prontas</span>
+              <select value="" onChange={(e) => insert(e.target.value)} className="max-w-[180px] cursor-pointer rounded-[9px] bg-transparent px-2 py-1.5 text-[12.5px] text-muted transition-colors duration-[120ms] hover:bg-raised hover:text-ink focus:outline-none">
+                <option value="">Respostas prontas…</option>
+                {quickReplies.map((q) => <option key={q.id} value={q.id}>{q.title}</option>)}
+              </select>
+            </label>
+          )}
+          <SubmitButton pendingLabel="Enviando…" className="btn-primary ml-auto px-3.5 py-2">Enviar</SubmitButton>
+        </div>
       </ActionForm>
     </div>
   );

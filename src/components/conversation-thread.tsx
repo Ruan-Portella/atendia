@@ -5,8 +5,10 @@ import { failureReason } from "@/lib/send-errors";
 import type { ActionResult } from "@/lib/action-result";
 import { MessageActions } from "@/components/message-actions";
 import { quoteSnippet } from "@/lib/message-links";
-
-
+import { ChevronDown, Sparkles } from "lucide-react";
+import { BotFace } from "@/components/bot-face";
+import { aiTrace, durationLabel } from "@/lib/ai-trace";
+import { initials } from "@/lib/utils";
 
 export interface ThreadMessage {
   id: number;
@@ -22,6 +24,8 @@ export interface ThreadMessage {
   /** botões, lista ou link mostrados junto (JSON) */
   components_enc?: string | null;
   sources?: unknown;
+  /** As ferramentas que a IA chamou nesta resposta (o "O que a IA fez" do painel). */
+  tool_results?: unknown;
   /** Barrada pela regra de estado na hora do envio (ex.: alguém assumiu enquanto a IA respondia). */
   blocked_reason?: string | null;
   /** O canal recusou: o contato não recebeu. */
@@ -188,15 +192,33 @@ interface Props {
   channel?: string | null;
   /** Responder citando e reagir (Conversa mais natural, parte 2); sem isto, só leitura. */
   actions?: ThreadActions | null;
+  /** O nome do contato (as iniciais e o nome em cima das mensagens dele). */
+  contactName?: string | null;
+  /** O chatbot (redesenho): o rosto e o nome nas respostas da IA. */
+  bot?: { name: string; color?: string | null } | null;
+  /** "O que a IA fez" em cima de cada resposta (painel da agência; precisa do tool_results). */
+  showTrace?: boolean;
+}
+
+const TZ = "America/Sao_Paulo";
+const hourOf = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString("pt-BR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }) : "");
+const dayOf = (iso?: string) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: TZ }) : "");
+
+/** "HOJE", "ONTEM" ou a data, no separador de dia. */
+function dayLabel(iso: string, now = new Date()): string {
+  const d = dayOf(iso);
+  if (d === dayOf(now.toISOString())) return "Hoje";
+  if (d === dayOf(new Date(now.getTime() - 86_400_000).toISOString())) return "Ontem";
+  return new Date(iso).toLocaleDateString("pt-BR", { timeZone: TZ, day: "2-digit", month: "short" });
 }
 
 /** O trecho que vai para o campo de resposta ao citar (sem o anúncio do começo). Pura. */
 const snippetOf = (m: ThreadMessage) => quoteSnippet(m.content.slice(Math.max(0, m.announce_chars ?? 0)));
 
 /** O trecho da mensagem citada, em cima da resposta (Conversa mais natural). */
-function QuoteView({ quote, mine }: { quote: { snippet: string; fromContact: boolean }; mine: boolean }) {
+function QuoteView({ quote }: { quote: { snippet: string; fromContact: boolean } }) {
   return (
-    <div className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-[12px] ${mine ? "border-ground/50 bg-ground/10" : "border-brand/50 bg-ink/5"}`}>
+    <div className="mb-1.5 rounded-md border-l-2 border-brand/50 bg-ink/5 px-2 py-1 text-[12px]">
       <span className="font-semibold">{quote.fromContact ? "Contato" : "Empresa"}</span>
       <span className="block truncate opacity-80">{quote.snippet}</span>
     </div>
@@ -213,72 +235,163 @@ function ReactionsView({ contact, agent }: { contact: string | null; agent: stri
   );
 }
 
+/** O check que se desenha (o passo feito) ou o traço (a ferramenta recusou). */
+function StepMark({ ok, delay }: { ok: boolean; delay: number }) {
+  return (
+    <span className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full ${ok ? "bg-brand-soft text-brand" : "bg-raised text-muted"}`}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        {ok ? <path d="M5 12.5l4.5 4.5L19 7.5" strokeDasharray="24" style={{ animation: `bv-draw 360ms var(--ease-out) ${delay + 120}ms both` }} /> : <path d="M7 12h10" />}
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * "O que a IA fez" (redesenho, etapa 2): os passos desta resposta, do que já fica gravado (a base,
+ * as ferramentas e a mensagem do contato antes). A mais recente vem aberta; os passos entram um a um.
+ */
+function TraceView({ m, before, botName, open }: { m: ThreadMessage; before: ThreadMessage | null; botName: string; open: boolean }) {
+  const t = aiTrace({ message: m, before: before ? { content: before.content, created_at: before.created_at, hasPhoto: Boolean(before.photo_reading_enc) || Boolean(before.attachments?.some((a) => a.doc_type === "image")) } : null });
+  const n = t.steps.length;
+  return (
+    <details open={open} className="group/trace w-full max-w-[440px] self-end overflow-hidden rounded-[14px] bg-panel text-left shadow-[inset_0_0_0_1px_var(--color-line),inset_0_1px_0_var(--highlight)]">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[12.5px] [&::-webkit-details-marker]:hidden">
+        <Sparkles size={14} className="shrink-0 text-brand" aria-hidden />
+        <span className="font-medium text-ink">O que {botName} fez</span>
+        <span className="font-mono text-[10.5px] text-muted">
+          {n} {n === 1 ? "passo" : "passos"}{t.seconds !== null ? ` · ${durationLabel(t.seconds)}` : ""}
+        </span>
+        <ChevronDown size={14} className="ml-auto shrink-0 text-muted transition-transform duration-[220ms] group-open/trace:rotate-180" aria-hidden />
+      </summary>
+      <ol className="flex flex-col gap-2 border-t border-line-2 px-3 py-2.5">
+        {t.steps.map((s, k) => (
+          <li key={k} className="flex gap-2.5" style={{ animation: `rise-in var(--dur-base) var(--ease-out) ${k * 160}ms both` }}>
+            <StepMark ok={s.ok} delay={k * 160} />
+            <span className="flex min-w-0 flex-col">
+              <span className={`text-[13px] leading-snug ${s.ok ? "text-ink" : "text-muted"}`}>{s.title}</span>
+              {s.detail && <span className="break-words text-[12px] leading-snug text-muted">{s.detail}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+/** A IA chamou a equipe nesta resposta: o marco no meio da conversa. */
+function handoffEvent(m: ThreadMessage): string | null {
+  const call = Array.isArray(m.tool_results) ? (m.tool_results as Array<{ name?: string; input?: { setor?: string }; output?: { ok?: boolean } }>).find((t) => t.name === "chamar_atendente" && t.output?.ok !== false) : undefined;
+  if (!call) return null;
+  return call.input?.setor ? `A IA chamou a equipe · setor ${call.input.setor}` : "A IA chamou a equipe";
+}
+
+function Avatar({ m, contactName, bot }: { m: ThreadMessage; contactName: string; bot: Props["bot"] }) {
+  if (m.role === "assistant") return <BotFace color={bot?.color} size={30} className="mt-5" />;
+  const label = m.role === "agent" ? (m.author_display_name ?? "Equipe") : contactName;
+  return (
+    <span className={`mt-5 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${m.role === "agent" ? "bg-info-soft text-info" : "bg-raised text-ink shadow-[inset_0_0_0_1px_var(--color-line)]"}`}>
+      {initials(label) || "?"}
+    </span>
+  );
+}
+
 /** Conversa (visitante, assistente e atendentes) — painel, portal e área do cliente. */
-export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null, actions = null }: Props) {
+export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null, actions = null, contactName = null, bot = null, showTrace = false }: Props) {
   const changeAt = contextChange ? Date.parse(contextChange.at) : NaN;
   const firstAfter = Number.isNaN(changeAt) ? -1 : messages.findIndex((m) => m.created_at && Date.parse(m.created_at) >= changeAt);
+  const who = contactName?.trim() || (channel === "widget" ? "Visitante" : "Contato");
+  const lastAi = messages.findLastIndex((m) => m.role === "assistant" && !m.deleted_at);
   return (
     <>
       {leads && leads.length > 0 && (
-        <div className="rounded-xl bg-brand-soft p-4 text-sm">
-          <div className="font-semibold text-brand">Contato capturado</div>
+        <div className="rounded-[14px] bg-brand-soft p-4 text-sm">
+          <div className="font-medium text-brand">Contato capturado</div>
           {leads.map((l, i) => {
             const asked = l.requests ? l.requests.map((r) => r.text).filter(Boolean).join("; ") : l.notes;
             return <div key={i}>{l.name} · {l.phone ?? l.email}{asked ? ` · ${asked}` : ""}</div>;
           })}
         </div>
       )}
-      <div className="flex flex-col gap-2.5">
-        {messages.map((m, i) => (
-          <Fragment key={m.id}>
-          {i === firstAfter && i > 0 && (
-            <div className="my-1 flex items-center gap-2 text-[11px] font-semibold text-muted">
-              <span className="h-px flex-1 bg-line" />
-              {contextChange!.label}
-              <span className="h-px flex-1 bg-line" />
-            </div>
-          )}
-          {isNote(m) ? <NoteView m={m} /> : <div className={actions && m.linkable && !m.deleted_at ? "group flex flex-col gap-0.5" : "contents"}><div
-            className={
-              m.role === "user"
-                ? "max-w-[80%] self-end rounded-[14px_14px_4px_14px] bg-ink px-3.5 py-2.5 text-sm text-ground"
-                : m.role === "agent"
-                  ? "max-w-[86%] self-start rounded-[14px_14px_14px_4px] border border-brand-line bg-brand-soft px-3.5 py-2.5 text-sm"
-                  : "max-w-[86%] self-start rounded-[14px_14px_14px_4px] border border-line bg-panel px-3.5 py-2.5 text-sm"
-            }
-          >
-            {m.role === "agent" && <div className="mb-0.5 text-[11px] font-semibold text-brand">{agentLabel(m)}</div>}
-            {m.quote && !m.deleted_at && <QuoteView quote={m.quote} mine={m.role === "user"} />}
-            <MessageText m={m} />
-            <ShownComponent json={m.components_enc} />
-            {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
-            {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} fromContact={m.role === "user"} />)}
-            {!m.deleted_at && m.role === "user" && <PhotoReadingView json={m.photo_reading_enc} />}
-            {/* resposta privada a um comentário (E1, parte 4): o comentário que começou a conversa */}
-            {!m.deleted_at && m.channel_ref?.kind === "comment" && <div className="mt-1 text-[11px] opacity-80">Resposta ao comentário{m.channel_ref.title ? ` “${m.channel_ref.title}”` : ""}</div>}
-            {!m.deleted_at && m.channel_ref?.permalink && /^https:\/\//i.test(m.channel_ref.permalink) ? (
-              <a href={m.channel_ref.permalink} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[11px] underline opacity-80">
-                Abrir {m.channel_ref.kind === "reel" ? "o reel" : "o post"} no Instagram
-              </a>
-            ) : !m.deleted_at && m.channel_ref?.url && /^https:\/\//i.test(m.channel_ref.url) ? (
-              // post de outra conta: a Meta só manda a imagem (a capa, no carrossel)
-              <a href={m.channel_ref.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[11px] underline opacity-80">
-                Ver a imagem {m.channel_ref.kind === "reel" ? "do reel (capa)" : m.channel_ref.kind === "story" ? "do story" : "do post (capa)"}
-              </a>
-            ) : null}
-            {m.blocked_reason && <div className="mt-1.5 text-[11px] font-semibold text-amber-ink">Não enviada: {m.blocked_reason}. O contato não recebeu esta mensagem.</div>}
-            {m.failed_at && <div className="mt-1.5 text-[11px] font-semibold text-danger">Não entregue{m.error_code ? ` (erro ${m.error_code})` : ""}: {failureReason(m.error_code, channel ?? "whatsapp")}.</div>}
-            {showSources && Array.isArray(m.sources) && m.sources.length > 0 && (
-              <div className="mt-1.5 text-[11px] text-muted">Fontes: {(m.sources as Array<{ title?: string; url?: string }>).map((s) => s.title ?? s.url).join(" · ")}</div>
-            )}
-            {(m.contact_reaction || m.agent_reaction) && !m.deleted_at && <ReactionsView contact={m.contact_reaction ?? null} agent={m.agent_reaction ?? null} />}
-          </div>
-          {actions && m.linkable && !m.deleted_at && (
-            <MessageActions id={m.id} snippet={snippetOf(m)} reactions={m.role === "user" ? actions.reactions : []} current={m.agent_reaction ?? null} onReact={m.role === "user" ? actions.onReact : null} align={m.role === "user" ? "end" : "start"} />
-          )}
-          </div>}
-          </Fragment>
-        ))}
+      <div className="flex flex-col gap-3">
+        {messages.map((m, i) => {
+          const mine = m.role !== "user";
+          const newDay = m.created_at && dayOf(m.created_at) !== dayOf(messages[i - 1]?.created_at);
+          const name = m.role === "assistant" ? (bot?.name ?? "Assistente") : m.role === "agent" ? agentLabel(m) : who;
+          const before = m.role === "assistant" ? ([...messages.slice(0, i)].reverse().find((x) => x.role === "user") ?? null) : null;
+          const event = showTrace && m.role === "assistant" ? handoffEvent(m) : null;
+          return (
+            <Fragment key={m.id}>
+              {newDay && (
+                <div className="my-1 self-center font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted">{dayLabel(m.created_at!)}</div>
+              )}
+              {i === firstAfter && i > 0 && (
+                <div className="my-1 flex items-center gap-2 text-[11px] font-medium text-muted">
+                  <span className="h-px flex-1 bg-line" />
+                  {contextChange!.label}
+                  <span className="h-px flex-1 bg-line" />
+                </div>
+              )}
+              {isNote(m) ? (
+                <NoteView m={m} />
+              ) : (
+                <div className={`flex max-w-[86%] gap-2.5 sm:max-w-[76%] ${mine ? "flex-row-reverse self-end" : "self-start"}`}>
+                  <Avatar m={m} contactName={who} bot={bot} />
+                  <div className={`flex min-w-0 flex-col gap-1 ${mine ? "items-end" : "items-start"} ${actions && m.linkable && !m.deleted_at ? "group" : ""}`}>
+                    <span className="px-1 text-[12px] text-muted">
+                      <span className="font-medium text-ink">{name}</span>
+                      {m.role === "assistant" && " · IA"}
+                      {m.created_at && ` · ${hourOf(m.created_at)}`}
+                    </span>
+                    {showTrace && m.role === "assistant" && !m.deleted_at && <TraceView m={m} before={before} botName={bot?.name ?? "a IA"} open={i === lastAi} />}
+                    <div
+                      className={
+                        m.role === "user"
+                          ? "max-w-full rounded-[4px_16px_16px_16px] bg-field px-3.5 py-2.5 text-sm leading-relaxed text-ink shadow-[inset_0_0_0_1px_var(--color-line)]"
+                          : m.role === "agent"
+                            ? "max-w-full rounded-[16px_4px_16px_16px] bg-info-soft px-3.5 py-2.5 text-sm leading-relaxed text-ink shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-info)_25%,transparent)]"
+                            : "max-w-full rounded-[16px_4px_16px_16px] bg-brand-soft px-3.5 py-2.5 text-sm leading-relaxed text-ink shadow-[inset_0_0_0_1px_var(--color-brand-line)]"
+                      }
+                    >
+                      {m.quote && !m.deleted_at && <QuoteView quote={m.quote} />}
+                      <MessageText m={m} />
+                      <ShownComponent json={m.components_enc} />
+                      {m.edited_at && !m.deleted_at && <div className="mt-1 text-[11px] opacity-70">editada pelo contato</div>}
+                      {!m.deleted_at && m.attachments?.map((a) => <AttachmentView key={a.id} a={a} fromContact={m.role === "user"} />)}
+                      {!m.deleted_at && m.role === "user" && <PhotoReadingView json={m.photo_reading_enc} />}
+                      {/* resposta privada a um comentário (E1, parte 4): o comentário que começou a conversa */}
+                      {!m.deleted_at && m.channel_ref?.kind === "comment" && <div className="mt-1 text-[11px] opacity-80">Resposta ao comentário{m.channel_ref.title ? ` “${m.channel_ref.title}”` : ""}</div>}
+                      {!m.deleted_at && m.channel_ref?.permalink && /^https:\/\//i.test(m.channel_ref.permalink) ? (
+                        <a href={m.channel_ref.permalink} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[11px] underline opacity-80">
+                          Abrir {m.channel_ref.kind === "reel" ? "o reel" : "o post"} no Instagram
+                        </a>
+                      ) : !m.deleted_at && m.channel_ref?.url && /^https:\/\//i.test(m.channel_ref.url) ? (
+                        // post de outra conta: a Meta só manda a imagem (a capa, no carrossel)
+                        <a href={m.channel_ref.url} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[11px] underline opacity-80">
+                          Ver a imagem {m.channel_ref.kind === "reel" ? "do reel (capa)" : m.channel_ref.kind === "story" ? "do story" : "do post (capa)"}
+                        </a>
+                      ) : null}
+                      {m.blocked_reason && <div className="mt-1.5 text-[11px] font-semibold text-amber-ink">Não enviada: {m.blocked_reason}. O contato não recebeu esta mensagem.</div>}
+                      {m.failed_at && <div className="mt-1.5 text-[11px] font-semibold text-danger">Não entregue{m.error_code ? ` (erro ${m.error_code})` : ""}: {failureReason(m.error_code, channel ?? "whatsapp")}.</div>}
+                      {showSources && !showTrace && Array.isArray(m.sources) && m.sources.length > 0 && (
+                        <div className="mt-1.5 text-[11px] text-muted">Fontes: {(m.sources as Array<{ title?: string; url?: string }>).map((s) => s.title ?? s.url).join(" · ")}</div>
+                      )}
+                      {(m.contact_reaction || m.agent_reaction) && !m.deleted_at && <ReactionsView contact={m.contact_reaction ?? null} agent={m.agent_reaction ?? null} />}
+                    </div>
+                    {actions && m.linkable && !m.deleted_at && (
+                      <MessageActions id={m.id} snippet={snippetOf(m)} reactions={m.role === "user" ? actions.reactions : []} current={m.agent_reaction ?? null} onReact={m.role === "user" ? actions.onReact : null} align={m.role === "user" ? "start" : "end"} />
+                    )}
+                  </div>
+                </div>
+              )}
+              {event && (
+                <div className="self-center inline-flex items-center gap-2 rounded-full bg-panel px-3 py-1.5 text-[12.5px] text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber" aria-hidden />
+                  {event}
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
         {messages.length === 0 && <p className="text-sm text-muted">Sem mensagens.</p>}
       </div>
     </>

@@ -46,6 +46,7 @@ import { assignByRotation, handoffAudience, sectorForHandoff, sectorNamesOf } fr
 import { endActiveRoutine, routineSession, type RoutineTurn } from "./routine-engine";
 import { DEFAULT_POST_RULE, isPostHit, postPriceNote, postPriceRuleOf, withPostAges, type PostPriceRule } from "./post-context";
 import type { IdentityPort } from "./routine-identity";
+import { traceInput } from "./ai-trace";
 
 export interface BotRow {
   id: string;
@@ -1215,7 +1216,11 @@ export async function runChat(opts: {
         if (stored) {
           // o resultado do Confirmar fica na conversa como os das consultas ("e o número do pedido?")
           const confirmedResult: ToolResultRow[] = opts.confirmed ? [{ name: `acao_${opts.confirmed.action}`, input: opts.confirmed.params, output: opts.confirmed.output }] : [];
-          const toolResults: ToolResultRow[] = [...confirmedResult, ...steps.flatMap((s) => s.toolResults.map((t) => ({ name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : {}), output: t.output })))];
+          // das outras ferramentas, só o que explica o passo no "O que a IA fez" do painel (redesenho, etapa 2)
+          const toolResults: ToolResultRow[] = [...confirmedResult, ...steps.flatMap((s) => s.toolResults.map((t) => {
+            const trace = t.toolName.startsWith("acao_") ? null : traceInput(t.toolName, t.input);
+            return { name: t.toolName, ...(t.toolName.startsWith("acao_") ? { input: t.input } : trace ? { input: trace } : {}), output: t.output };
+          }))];
           savedId = await saveMessage(db, { conversation_id: convId, role: "assistant", content: stored, sources: used.length ? used : null, tool_results: toolResults.length ? toolResults : null, components: finalComponent() }).catch((e) => {
             console.error("chat: resposta não gravada", (e as Error).message);
             return null;
