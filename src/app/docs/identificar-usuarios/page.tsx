@@ -125,6 +125,9 @@ export default function IdentityDocs() {
         <li>Com <code>expected_phone</code> (WhatsApp), código mandado de outro número é recusado.</li>
         <li>Mais de 5 códigos errados de um contato em 1 hora bloqueiam novas tentativas por um tempo.</li>
         <li>Se o número já estava ligado a outra conta, o BoaVoz pede confirmação antes de trocar.</li>
+        <li>
+          Cada conversa nova começa por “Estou falando com &lt;name do display&gt;?”, com <strong>Sim, sou eu</strong> e <strong>Sou outra pessoa</strong>, antes de a IA e as ações usarem a conta; a mensagem que chegou espera a resposta. O sim vale 24 horas na conversa. “Sou outra pessoa” deixa a conversa sem a conta e o vínculo continua. Quem acabou de mandar o código na conversa não é perguntado. A loja desliga em Roteiros → <strong>Confirmar quem foi conectado pelo código</strong>: aí a conta vale direto em toda conversa.
+        </li>
         <li>A pessoa pode ter várias contas ligadas; uma fica ativa. Se ela pedir para trocar, a IA troca, e a conversa abre um trecho novo (a IA só lê o que veio depois).</li>
         <li>“desconectar” no chat desfaz o vínculo ativo (webhook <code>contact.unlinked</code>). Pela API: <code>DELETE /v1/contacts/{"{contact}"}/links/{"{id}"}</code>.</li>
       </ul>

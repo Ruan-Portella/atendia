@@ -24,7 +24,7 @@ export default function PairingApiDocs() {
 
       <Route id="codigo" method="POST" path="/v1/pairings" />
       <p>
-        O pareamento só termina quando a pessoa abre o link no celular (ele abre o chat do chatbot com “Conectar &lt;código&gt;” escrito) e manda a mensagem; se o contato já estava ligado a outra conta, ele confirma antes. Sai o webhook <code>contact.linked</code>.
+        O pareamento só termina quando a pessoa abre o link no celular (ele abre o chat do chatbot com “Conectar &lt;código&gt;” escrito) e manda a mensagem; se o contato já estava ligado a outra conta, ele confirma antes. Sai o webhook <code>contact.linked</code>. Nas conversas seguintes, o chatbot pergunta “Estou falando com &lt;name&gt;?” antes de usar a conta (veja <Link href="/docs/identificar-usuarios#pareamento">Identificar usuários</Link>).
       </p>
       <Example page={E} id="codigo" />
       <Table

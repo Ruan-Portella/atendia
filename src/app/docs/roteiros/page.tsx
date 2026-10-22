@@ -130,7 +130,7 @@ export default function RoutinesDocs() {
         </li>
         <li>“desconectar” no chat também esquece o número e tira a identificação da conversa.</li>
         <li>
-          A loja pode desligar em Roteiros → <strong>Lembrar o número depois da identificação</strong>: o BoaVoz deixa de perguntar e esquece os números já lembrados do chatbot.
+          A loja pode desligar em Roteiros → <strong>Lembrar o número depois da identificação</strong>: o BoaVoz deixa de perguntar e esquece os números já lembrados do chatbot. A mesma pergunta vale para quem foi conectado pelo código do pareamento (<strong>Confirmar quem foi conectado pelo código</strong>, ao lado), mas lá “Sou outra pessoa” não desfaz o vínculo.
         </li>
         <li>
           Seu sistema recebe <code>contact.linked</code> com <code>{`"source": "routine"`}</code> (um por conta) e <code>contact.unlinked</code> com o motivo (<code>other_person</code>, <code>chat</code>, <code>remember_off</code>…). Veja <Link href="/docs/webhooks">Webhooks</Link>.
