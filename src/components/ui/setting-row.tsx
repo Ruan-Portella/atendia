@@ -95,13 +95,22 @@ export function EditDialog({
     } else if (!open && d.open) d.close();
   }, [open]);
 
+  // salvou: o formulário de dentro (ActionForm) ou, sem o próprio, o formulário em volta
+  const own = Boolean(action);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    const saved = () => closeRef.current();
+    const saved = () => {
+      if (d.open) closeRef.current();
+    };
+    const outer = own ? null : d.parentElement?.closest("form");
     d.addEventListener("bv-saved", saved);
-    return () => d.removeEventListener("bv-saved", saved);
-  }, []);
+    outer?.addEventListener("bv-saved", saved);
+    return () => {
+      d.removeEventListener("bv-saved", saved);
+      outer?.removeEventListener("bv-saved", saved);
+    };
+  }, [own]);
 
   useEffect(() => {
     const d = ref.current;
