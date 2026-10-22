@@ -198,6 +198,10 @@ interface Props {
   bot?: { name: string; color?: string | null } | null;
   /** "O que a IA fez" em cima de cada resposta (painel da agência; precisa do tool_results). */
   showTrace?: boolean;
+  /** a resposta mais recente vem com o quadro aberto (nas conversas anteriores, não) */
+  openTrace?: boolean;
+  /** o dia em cima da primeira mensagem (nas conversas anteriores, a linha da conversa já tem a data) */
+  firstDay?: boolean;
 }
 
 const TZ = "America/Sao_Paulo";
@@ -296,7 +300,7 @@ function Avatar({ m, contactName, bot }: { m: ThreadMessage; contactName: string
 }
 
 /** Conversa (visitante, assistente e atendentes) — painel, portal e área do cliente. */
-export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null, actions = null, contactName = null, bot = null, showTrace = false }: Props) {
+export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null, actions = null, contactName = null, bot = null, showTrace = false, openTrace = true, firstDay = true }: Props) {
   const changeAt = contextChange ? Date.parse(contextChange.at) : NaN;
   const firstAfter = Number.isNaN(changeAt) ? -1 : messages.findIndex((m) => m.created_at && Date.parse(m.created_at) >= changeAt);
   const who = contactName?.trim() || (channel === "widget" ? "Visitante" : "Contato");
@@ -315,7 +319,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
       <div className="flex flex-col gap-3">
         {messages.map((m, i) => {
           const mine = m.role !== "user";
-          const newDay = m.created_at && dayOf(m.created_at) !== dayOf(messages[i - 1]?.created_at);
+          const newDay = m.created_at && dayOf(m.created_at) !== dayOf(messages[i - 1]?.created_at) && (firstDay || i > 0);
           const name = m.role === "assistant" ? (bot?.name ?? "Assistente") : m.role === "agent" ? agentLabel(m) : who;
           const before = m.role === "assistant" ? ([...messages.slice(0, i)].reverse().find((x) => x.role === "user") ?? null) : null;
           const event = showTrace && m.role === "assistant" ? handoffEvent(m) : null;
@@ -342,7 +346,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
                       {m.role === "assistant" && " · IA"}
                       {m.created_at && ` · ${hourOf(m.created_at)}`}
                     </span>
-                    {showTrace && m.role === "assistant" && !m.deleted_at && <TraceView m={m} before={before} botName={bot?.name ?? "a IA"} open={i === lastAi} />}
+                    {showTrace && m.role === "assistant" && !m.deleted_at && <TraceView m={m} before={before} botName={bot?.name ?? "a IA"} open={openTrace && i === lastAi} />}
                     <div
                       className={
                         m.role === "user"

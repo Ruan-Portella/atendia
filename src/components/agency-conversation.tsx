@@ -15,6 +15,7 @@ import { TicketStatusControl } from "@/components/ticket-status-control";
 import { HandoffReply, HandoffStatus, holderView } from "@/components/handoff-controls";
 import { leadWaiting } from "@/lib/handoff-status";
 import { ConversationMenu } from "@/components/conversation-menu";
+import { EarlierConversations } from "@/components/earlier-conversations";
 import { ConversationStateBadge } from "@/components/conversation-state";
 import { ConversationLive } from "@/components/conversation-live";
 import { conversationState, whatsappWindowOpen, humanAgentEnabled, humanAgentUntil, timeLeft } from "@/lib/presence";
@@ -74,7 +75,7 @@ const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram:
  * (embedded: preenche a coluna, com o link para abrir em tela cheia; `back` é para onde o segundo
  * fator volta).
  */
-export async function AgencyConversation({ botId: id, convId: cid, embedded = false, back }: { botId: string; convId: string; embedded?: boolean; back?: string }) {
+export async function AgencyConversation({ botId: id, convId: cid, embedded = false, back, earlier = 0, earlierHref }: { botId: string; convId: string; embedded?: boolean; back?: string; /** quantas conversas anteriores da pessoa mostrar em cima (?ant=) */ earlier?: number; earlierHref?: (n: number) => string }) {
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
@@ -230,6 +231,19 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
 
       <MessageScroller count={allMessages.length} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-4 py-5 sm:px-5 md:px-7">
+          {/* as conversas anteriores da mesma pessoa, em cima (uma conversa só, como no WhatsApp) */}
+          <EarlierConversations
+            db={supabase}
+            admin={createAdminClient()}
+            contactId={(conv.contact_id as string | null) ?? null}
+            current={{ id: cid, startedAt: conv.started_at as string }}
+            show={earlier}
+            moreHref={earlierHref ?? ((n) => `/painel/bots/${id}/conversas/${cid}?ant=${n}`)}
+            agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}
+            contactName={who}
+            bot={bot ? { name: bot.name, color: bot.appearance?.color ?? null } : null}
+            showTrace
+          />
           <ConversationThread
             messages={allMessages}
             leads={leads.map((l) => ({ ...l, requests: l.requests.filter((r) => r.conversation_id === cid) }))}

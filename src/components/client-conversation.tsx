@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { memberAttendant, requireMember, requireMemberMfa } from "@/lib/member";
 import { ConversationThread, withNotes, type ThreadMessage } from "@/components/conversation-thread";
+import { EarlierConversations } from "@/components/earlier-conversations";
 import { ConversationTools } from "@/components/conversation-tools";
 import { listNotes } from "@/lib/conversation-notes";
 import { transferOptions } from "@/lib/transfer";
@@ -36,7 +37,7 @@ function botOf(rel: unknown): { name: string; color: string | null } | null {
  * A conversa na área do cliente: a página da conversa e o lado direito da Caixa de entrada do portal
  * (embedded: preenche a coluna; `back` é para onde o segundo fator volta).
  */
-export async function ClientConversation({ clientId: id, convId: cid, embedded = false, back }: { clientId: string; convId: string; embedded?: boolean; back?: string }) {
+export async function ClientConversation({ clientId: id, convId: cid, embedded = false, back, earlier = 0, earlierHref }: { clientId: string; convId: string; embedded?: boolean; back?: string; /** quantas conversas anteriores da pessoa mostrar em cima (?ant=) */ earlier?: number; earlierHref?: (n: number) => string }) {
   const { email, member, admin, botIds } = await requireMember(id);
   const { data: conv } = await admin
     .from("conversations")
@@ -111,6 +112,20 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
 
       <MessageScroller count={allMessages.length} className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4 sm:-mx-6 sm:px-6">
         <div className="flex flex-col gap-4 py-5">
+          {/* as conversas anteriores da mesma pessoa, em cima (uma conversa só, como no WhatsApp) */}
+          <EarlierConversations
+            db={admin}
+            admin={admin}
+            contactId={(conv.contact_id as string | null) ?? null}
+            botIds={botIds}
+            current={{ id: cid, startedAt: conv.started_at as string }}
+            show={earlier}
+            moreHref={earlierHref ?? ((n) => `/cliente/${id}/conversas/${cid}?ant=${n}`)}
+            agentLabel={(m) => authorLabel(m, { view: "client", meId: member.memberId, meLegacy: email, agencyName })}
+            contactName={nameForReplies}
+            bot={botOf(conv.bots)}
+            withNotes={member.allowHandoff}
+          />
           <ConversationThread
             messages={allMessages}
             leads={leads.map((l) => ({ ...l, requests: l.requests.filter((r) => r.conversation_id === cid) }))}

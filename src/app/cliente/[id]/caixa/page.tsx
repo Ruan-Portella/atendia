@@ -30,7 +30,12 @@ export default async function MemberInboxPage({ params, searchParams }: PageProp
   const items = await loadInbox(admin, { bots, sectors, holidays: new Map([[id, (client?.holidays as string[] | null) ?? []]]), meId: member.memberId, mySectorIds, seeAllSectors });
   const queues = visibleSectors(sectors, { mySectorIds, seeAllSectors }).map((s) => ({ key: `setor:${s.id}` as Queue, label: s.name, group: "Setores" }));
   const queue: Queue = isQueue(sp.fila) && (!sp.fila.startsWith("setor:") || queues.some((q) => q.key === sp.fila)) ? sp.fila : "minhas";
-  const selected = typeof sp.c === "string" ? items.find((i) => i.id === sp.c) ?? null : null;
+  // a conversa aberta: uma da fila, ou outra da mesma pessoa aberta pelo painel do contato
+  const listed = typeof sp.c === "string" ? items.find((i) => i.id === sp.c) ?? null : null;
+  const other = !listed && typeof sp.c === "string" && /^[0-9a-f-]{36}$/i.test(sp.c) && botIds.length
+    ? (await admin.from("conversations").select("id, bot_id, contact_id").eq("id", sp.c).in("bot_id", botIds).maybeSingle()).data
+    : null;
+  const selected: { id: string; botId: string; contactId: string | null } | null = listed ?? (other ? { id: other.id as string, botId: other.bot_id as string, contactId: (other.contact_id as string | null) ?? null } : null);
   const hrefFor = (o: { queue: Queue; conversationId?: string }) => `/cliente/${id}/caixa?fila=${encodeURIComponent(o.queue)}${o.conversationId ? `&c=${o.conversationId}` : ""}`;
   const back = selected ? hrefFor({ queue, conversationId: selected.id }) : undefined;
   // modo sensível: o segundo fator vem antes da conversa e do painel do contato
@@ -41,8 +46,8 @@ export default async function MemberInboxPage({ params, searchParams }: PageProp
   return (
     <div className="-mx-4 -my-6 flex min-h-0 flex-1 flex-col sm:-mx-6 sm:-my-8">
       <InboxView compact items={items} queue={queue} queues={queues} meId={member.memberId} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={false} available={member.available} onAvailability={memberSetAvailability.bind(null, id)}
-        contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(_b, c) => `/cliente/${id}/conversas/${c}`} />}>
-        {selected && <ClientConversation clientId={id} convId={selected.id} embedded back={back} />}
+        contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(_b, c) => hrefFor({ queue, conversationId: c })} />}>
+        {selected && <ClientConversation clientId={id} convId={selected.id} embedded back={back} earlier={Math.min(50, Number(sp.ant) || 0)} earlierHref={(n) => `${hrefFor({ queue, conversationId: selected.id })}&ant=${n}`} />}
       </InboxView>
     </div>
   );

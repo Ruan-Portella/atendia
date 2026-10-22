@@ -40,7 +40,13 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   const items = await loadInbox(admin, { bots, sectors, holidays, meId: member.id, mySectorIds, seeAllSectors });
   const queues = visibleSectors(sectors, { mySectorIds, seeAllSectors }).map((s) => ({ key: `setor:${s.id}` as Queue, label: s.name, group: clientIds.length > 1 ? (clientName.get(s.clientId) ?? "Setores") : "Setores" }));
   const queue: Queue = isQueue(sp.fila) && (!sp.fila.startsWith("setor:") || queues.some((q) => q.key === sp.fila)) ? sp.fila : "minhas";
-  const selected = typeof sp.c === "string" ? items.find((i) => i.id === sp.c) ?? null : null;
+  // a conversa aberta: uma da fila, ou outra da mesma pessoa aberta pelo painel do contato (fechada,
+  // fora das filas; o chatbot precisa estar no escopo)
+  const listed = typeof sp.c === "string" ? items.find((i) => i.id === sp.c) ?? null : null;
+  const other = !listed && typeof sp.c === "string" && /^[0-9a-f-]{36}$/i.test(sp.c) && bots.length
+    ? (await supabase.from("conversations").select("id, bot_id, contact_id").eq("id", sp.c).in("bot_id", bots.map((b) => b.id)).maybeSingle()).data
+    : null;
+  const selected: { id: string; botId: string; contactId: string | null } | null = listed ?? (other ? { id: other.id as string, botId: other.bot_id as string, contactId: (other.contact_id as string | null) ?? null } : null);
   const hrefFor = (o: { queue: Queue; conversationId?: string }) => `/painel/caixa?fila=${encodeURIComponent(o.queue)}${o.conversationId ? `&c=${o.conversationId}` : ""}`;
   const back = selected ? hrefFor({ queue, conversationId: selected.id }) : undefined;
   // modo sensível: o segundo fator vem antes da conversa e do painel do contato
@@ -52,8 +58,8 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   return (
     <div className="-mx-4 -my-5 h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]">
       <InboxView contactOpen={(await cookies()).get(CONTACT_COOKIE)?.value !== "fechado"} items={items} queue={queue} queues={queues} meId={member.id} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={clientIds.length > 1} available={member.available !== false} onAvailability={setMyAvailability}
-        contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(b, c) => `/painel/bots/${b}/conversas/${c}`} contactHref={contact && canConfig && selectedBot?.client_id ? `/painel/clientes/${selectedBot.client_id}/contatos/${contact.contact.id}` : null} />}>
-        {selected && <AgencyConversation botId={selected.botId} convId={selected.id} embedded back={back} />}
+        contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(_b, c) => hrefFor({ queue, conversationId: c })} contactHref={contact && canConfig && selectedBot?.client_id ? `/painel/clientes/${selectedBot.client_id}/contatos/${contact.contact.id}` : null} />}>
+        {selected && <AgencyConversation botId={selected.botId} convId={selected.id} embedded back={back} earlier={Math.min(50, Number(sp.ant) || 0)} earlierHref={(n) => `${hrefFor({ queue, conversationId: selected.id })}&ant=${n}`} />}
       </InboxView>
     </div>
   );
