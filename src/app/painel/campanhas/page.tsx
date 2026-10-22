@@ -24,7 +24,7 @@ export default async function CampaignsPage() {
   const [{ data: bots }, options] = await Promise.all([supabase.from("bots").select("id, name, client_name, client_id").eq("is_demo", false), campaignBotOptions(supabase, createAdminClient())]);
 
   return (
-    <div className="flex max-w-[1080px] flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <CampaignsHeader
         active="campanhas"
         action={

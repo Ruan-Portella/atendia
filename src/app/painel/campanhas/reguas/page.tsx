@@ -46,7 +46,7 @@ export default async function ReguasPage({ searchParams }: PageProps<"/painel/ca
   );
   if (!bot) {
     return (
-      <div className="flex max-w-[1080px] flex-col gap-5">
+      <div className="flex flex-col gap-5">
         {header}
         <p className="card p-5 text-sm text-muted">Nenhum chatbot com o WhatsApp conectado. As réguas saem pelo número do chatbot: conecte o WhatsApp na página dele (Canais → WhatsApp).</p>
       </div>
@@ -60,7 +60,7 @@ export default async function ReguasPage({ searchParams }: PageProps<"/painel/ca
   const { items, templatesError } = await reguasPanel(admin, { botId, company: bot.client_name as string, ch, tz });
 
   return (
-    <div className="flex max-w-[1080px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       {header}
 
       {withWhatsApp.length > 1 ? (
