@@ -17,7 +17,9 @@ export const metadata = { title: "Política de Privacidade" };
  * Memória e avisos no celular (21/10/2026): a memória do assistente na ficha do contato e os aparelhos
  * que recebem os avisos da equipe (com os serviços de notificação dos navegadores). Trava da conta
  * grátis (21/10/2026): os sinais que ligam contas da mesma pessoa (só como código), o cookie do
- * navegador e a marca da desistência em 7 dias. Contestação no cartão (21/10/2026): o que vai para a
+ * navegador e a marca da desistência em 7 dias. Arquivo da equipe e mensagem apagada no WhatsApp
+ * (21/10/2026): as fotos e os PDFs que a equipe manda e o apagar para todos na coexistência.
+ * Contestação no cartão (21/10/2026): o que vai para a
  * Stripe como prova quando um pagamento é contestado.
  */
 export default function PrivacyPage() {
@@ -51,7 +53,7 @@ export default function PrivacyPage() {
           <li><strong>Pagamento:</strong> tamanhos e pacotes assinados, crédito comprado, histórico de cobranças e identificadores do meio de pagamento. Os dados do cartão são tratados diretamente pela Stripe; não os armazenamos. Para a nota fiscal de cada pagamento, pedimos no checkout o CPF ou CNPJ e o endereço de quem paga, guardados cifrados pelo prazo da lei fiscal, mesmo depois que a conta sai.</li>
           <li><strong>Conteúdo dos assistentes:</strong> páginas de sites, documentos e textos enviados para formar a base de conhecimento e, quando a empresa escolhe, os posts do Instagram dela (legenda, data, link e uma descrição curta de cada foto feita por IA; a imagem não é guardada).</li>
           <li><strong>Conversas:</strong> mensagens trocadas com os assistentes e com atendentes humanos, data e hora, canal e um identificador técnico do visitante. No chamado aberto pelo chat do site, quando a empresa aceita anexo, também a foto ou o PDF enviado, que só a equipe da empresa vê (a IA não lê).</li>
-          <li><strong>Arquivos recebidos:</strong> fotos, áudios, vídeos e documentos que o contato envia pelo WhatsApp ou pelo Instagram (até 16 MB), guardados para a empresa ver no histórico da conversa.</li>
+          <li><strong>Arquivos recebidos:</strong> fotos, áudios, vídeos e documentos que o contato envia pelo WhatsApp ou pelo Instagram (até 16 MB), guardados para a empresa ver no histórico da conversa. As fotos e os PDFs que a equipe da empresa manda pela conversa (até 4 MB) ficam guardados do mesmo jeito.</li>
           <li>
             <strong>Leitura de fotos:</strong> quando o assistente tem IA, a foto que o contato envia pelo WhatsApp ou pelo Instagram é lida em baixa resolução, e uma descrição curta do que ela mostra passa a fazer parte da conversa. A descrição não identifica pessoas e não copia links, e-mails nem números longos. Comprovantes de pagamento, documentos pessoais, cartões e fotos de saúde não são descritos. No modo dados sensíveis, nenhuma foto é lida.
           </li>
@@ -94,7 +96,7 @@ export default function PrivacyPage() {
           Quando uma empresa conecta a conta profissional do Instagram (pelo login do Instagram), recebemos e tratamos o identificador e o nome de usuário da conta, o token de acesso concedido pela empresa e as mensagens diretas enviadas e recebidas por ela, incluindo o identificador do contato no Instagram e os arquivos enviados. Mensagens de áudio também são transcritas em texto por um provedor de IA.
         </p>
         <p>
-          Quando o contato desfaz uma mensagem no Instagram, apagamos o conteúdo e os arquivos dela assim que a Meta avisa; fica só o registro, sem conteúdo, de que a mensagem existiu, para não gravá-la de novo se ela chegar outra vez.
+          Quando o contato desfaz uma mensagem no Instagram, ou a apaga para todos no WhatsApp (no número que também está no app do celular), apagamos o conteúdo e os arquivos dela assim que a Meta avisa; fica só o registro, sem conteúdo, de que a mensagem existiu, para não gravá-la de novo se ela chegar outra vez.
         </p>
         <p>
           Quando o contato responde a um story da empresa ou compartilha um post dela, o story ou o post é descrito por IA no momento da mensagem, para o assistente saber de que produto se trata (a descrição fica guardada por 30 dias; a imagem, não). O post ou o story de outra conta que o contato envia, e o story em que ele marca a empresa, são tratados como uma foto enviada por ele (veja &quot;Leitura de fotos&quot;). Quando a empresa usa links do Instagram com origem (por exemplo, o link da bio ou de um QR impresso), guardamos de qual link a pessoa abriu a conversa.
