@@ -7,6 +7,7 @@ import { BotFace } from "@/components/bot-face";
 import { chooseTema } from "@/components/theme";
 import { openOnboardingWidget } from "@/components/onboarding-widget";
 import { showOnboarding } from "@/app/painel/actions";
+import { openCreate } from "@/components/create-dialogs";
 import { buildGroups, type GoToGroup, type GoToItem } from "@/lib/go-to";
 import type { AgencyRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,7 @@ function ItemIcon({ item }: { item: GoToItem }) {
   if (item.kind === "contact")
     return <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-raised text-[11px] font-semibold text-ink">{item.title.split(/\s+/).slice(0, 2).map((w) => w.charAt(0).toUpperCase()).join("")}</span>;
   const page = { "/painel/caixa": Inbox, "/painel/contatos": Contact, "/painel/campanhas": Megaphone, "/painel/relatorios": ChartColumn, "/painel/clientes": Users }[item.id];
-  const Icon = item.kind === "conversation" ? MessageSquare : item.kind === "action" ? (item.run ? ArrowRight : Plus) : page ?? (item.id === "/painel/perfil" ? CircleUser : Settings);
+  const Icon = item.kind === "conversation" ? MessageSquare : item.kind === "action" ? (item.run && !item.run.startsWith("novo-") ? ArrowRight : Plus) : page ?? (item.id === "/painel/perfil" ? CircleUser : Settings);
   const tone = item.kind === "action" ? "bg-brand text-on-brand" : item.kind === "conversation" ? "bg-amber-soft text-amber-ink" : "bg-raised text-ink-2";
   return (
     <span className={cn("flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px]", tone)}>
@@ -119,6 +120,11 @@ export function GoTo({ role, packs, clients }: Props) {
       f.action = "/auth/signout";
       document.body.appendChild(f);
       f.submit();
+      return;
+    }
+    // criar abre o modal, sem sair da tela
+    if (item.run === "novo-cliente" || item.run === "novo-chatbot") {
+      openCreate(item.run === "novo-cliente" ? "cliente" : "chatbot");
       return;
     }
     // mostrar os primeiros passos de novo: abre o widget, tira o cookie do Ocultar e vai para Clientes

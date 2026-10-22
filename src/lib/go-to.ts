@@ -16,7 +16,7 @@ export interface GoToItem {
   sub?: string;
   href?: string;
   /** Ações que não são um endereço (tema, sair): o componente resolve pelo id. */
-  run?: "tema-escuro" | "tema-claro" | "tema-sistema" | "sair" | "primeiros-passos";
+  run?: "tema-escuro" | "tema-claro" | "tema-sistema" | "sair" | "primeiros-passos" | "novo-cliente" | "novo-chatbot";
   /** Cor e rosto do chatbot (cliente e chatbot aparecem com o rosto). */
   color?: string | null;
   face?: unknown;
@@ -50,7 +50,8 @@ export function staticGroups(role: AgencyRole, packs: readonly string[]): { page
   const actions: GoToItem[] = [
     ...(can(role, "config")
       ? [
-          { id: "novo-cliente", kind: "action" as const, title: "Novo cliente", sub: "Cadastrar um cliente e o primeiro chatbot", href: "/painel/clientes/novo", keywords: "criar adicionar" },
+          { id: "novo-cliente", kind: "action" as const, title: "Novo cliente", sub: "Cadastrar um cliente", run: "novo-cliente" as const, keywords: "criar adicionar" },
+          { id: "novo-chatbot", kind: "action" as const, title: "Novo chatbot", sub: "Um chatbot para um cliente", run: "novo-chatbot" as const, keywords: "criar adicionar assistente bot" },
           { id: "nova-campanha", kind: "action" as const, title: "Nova campanha", sub: "Modelo aprovado para uma etiqueta", href: "/painel/campanhas/nova", keywords: "criar disparo" },
           { id: "primeiros-passos", kind: "action" as const, title: "Primeiros passos", sub: "Mostrar de novo a lista do começo", run: "primeiros-passos" as const, keywords: "começar onboarding checklist passo a passo ocultar mostrar" },
         ]

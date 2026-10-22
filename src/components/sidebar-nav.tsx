@@ -8,6 +8,7 @@ import { BotFace } from "@/components/bot-face";
 import { Menu } from "@/components/ui/menu";
 import { NoticeBell } from "@/components/notice-center";
 import { openOnboardingWidget } from "@/components/onboarding-widget";
+import { openCreate } from "@/components/create-dialogs";
 import { showOnboarding } from "@/app/painel/actions";
 import { chooseTema, useTema } from "@/components/theme";
 import { DAY_TO_DAY, activeSettingsHref, allowed, firstSettingsHref } from "@/lib/nav";
@@ -144,9 +145,18 @@ export function SidebarNav({ role, packs = [], clients, clientCount, me, extra, 
               collapsed={collapsed}
               action={
                 can(role, "config") ? (
-                  <Link href="/painel/clientes/novo" onClick={onNavigate} aria-label="Novo cliente" title="Novo cliente" className="btn-icon h-6 w-6">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNavigate?.();
+                      openCreate("cliente");
+                    }}
+                    aria-label="Novo cliente"
+                    title="Novo cliente"
+                    className="btn-icon h-6 w-6"
+                  >
                     <Plus size={14} />
-                  </Link>
+                  </button>
                 ) : null
               }
             >

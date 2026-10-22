@@ -5,12 +5,9 @@ import { ArrowRight, Headset, Plus, UserPlus } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
-import { DialogButton } from "@/components/ui/setting-row";
-import { ClientFields } from "@/components/client-fields";
-import { NewBotFields } from "@/components/new-bot-fields";
-import { createBot, createClientRecord } from "../actions";
+import { CreateButton } from "@/components/create-dialogs";
 import { brl, num } from "@/lib/plans";
-import { getBotStats, getClientOptions, getPendingHandoffs, resolvedPct } from "@/lib/panel";
+import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
 import { ClientsList, type ClientListItem } from "@/components/clients-list";
 import { handoffStatus } from "@/lib/handoff-status";
 import { Kpi } from "@/components/kpi";
@@ -34,14 +31,11 @@ export default async function ClientesPage() {
   const canConfig = can(role, "config");
   const seesBilling = can(role, "billing");
   const supabase = await createClient();
-  const [{ data }, stats, pending, clientOptions] = await Promise.all([
+  const [{ data }, stats, pending] = await Promise.all([
     supabase.from("clients").select("id, name, site, price_cents, bots(id, status, is_demo, name, face, appearance)").eq("agency_id", agency.id).eq("bots.is_demo", false).order("name"),
     getBotStats(supabase, daysAgoIso(30)),
     getPendingHandoffs(supabase),
-    // o modal de chatbot novo escolhe o cliente (redesenho, etapa 5)
-    canConfig ? getClientOptions(supabase, agency.id) : Promise.resolve([]),
   ]);
-  const businessName = agency.profile === "business" ? agency.name : "";
   const waitingBy = (c: ClientRow) => pending.filter((h) => h.bots?.client_id === c.id && handoffStatus(h)?.waiting).length;
   const clients = (data ?? []) as ClientRow[];
   const total = clients.reduce((s, c) => s + (c.price_cents ?? 0), 0) / 100;
@@ -74,15 +68,17 @@ export default async function ClientesPage() {
         </div>
         {canConfig && (
           <div className="flex w-full gap-2.5 sm:w-auto">
-            {/* redesenho, etapa 5: criar num modal, sem sair da lista; ao criar, abre o cliente ou o chatbot novo */}
+            {/* redesenho, etapa 5: criar num modal (o do layout), sem sair da lista; ao criar, abre o cliente ou o chatbot novo */}
             {member.scope === "all" && (
-              <DialogButton label="Novo cliente" icon={<UserPlus size={15} />} className="btn-ghost flex-1 sm:flex-none" title="Novo cliente" description="Depois você cria os chatbots dele na página do cliente." action={createClientRecord} saveLabel="Criar cliente">
-                <ClientFields />
-              </DialogButton>
+              <CreateButton kind="cliente" className="btn-ghost flex-1 sm:flex-none">
+                <UserPlus size={15} />
+                Novo cliente
+              </CreateButton>
             )}
-            <DialogButton label="Novo chatbot" icon={<Plus size={15} />} className="btn-primary flex-1 sm:flex-none" title="Novo chatbot" description="Um cliente pode ter vários chatbots (ex.: um para vendas e outro para suporte). O site e os documentos você adiciona no próximo passo." action={createBot} saveLabel="Criar e configurar">
-              <NewBotFields clients={clientOptions} suggestedName={businessName} idPrefix="mb" />
-            </DialogButton>
+            <CreateButton kind="chatbot" className="btn-primary flex-1 sm:flex-none">
+              <Plus size={15} />
+              Novo chatbot
+            </CreateButton>
           </div>
         )}
       </div>
@@ -118,15 +114,16 @@ export default async function ClientesPage() {
 
       {/* redesenho, etapa 5: busca, filtros e ordem; os rostos dos chatbots em cada cliente */}
       {clients.length > 0 ? (
-        <ClientsList items={items} canConfig={canConfig} newBot={canConfig ? { action: createBot, clients: clientOptions, suggestedName: businessName } : null} />
+        <ClientsList items={items} canConfig={canConfig} />
       ) : (
         <div className="card flex flex-col items-start gap-3 p-6">
           {member.scope === "all" && canConfig ? (
             <>
               <p className="text-sm text-muted">Nenhum cliente ainda. Crie um cliente e adicione quantos chatbots ele precisar, ou converta uma demo.</p>
-              <DialogButton label="Criar o primeiro cliente" icon={<Plus size={15} />} className="btn-primary self-start" title="Novo cliente" description="Depois você cria os chatbots dele na página do cliente." action={createClientRecord} saveLabel="Criar cliente">
-                <ClientFields />
-              </DialogButton>
+              <CreateButton kind="cliente" className="btn-primary self-start">
+                <Plus size={15} />
+                Criar o primeiro cliente
+              </CreateButton>
             </>
           ) : (
             <p className="text-sm text-muted">Nenhum cliente no seu escopo ainda. Peça para um administrador da agência liberar os clientes que você atende.</p>

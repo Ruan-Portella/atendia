@@ -15,6 +15,7 @@ import { agencyBaseUrl } from "@/lib/domain";
 import { Status } from "@/components/status";
 import { Kpi } from "@/components/kpi";
 import { BotFace } from "@/components/bot-face";
+import { CreateButton } from "@/components/create-dialogs";
 import { BotRowActions } from "@/components/bot-row-actions";
 import { LeadList, type LeadRow } from "@/components/lead-list";
 import { listLeads } from "@/lib/leads";
@@ -157,7 +158,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               {client.external_id ? <> · no sistema da plataforma: <code className="font-mono text-[12px]">{client.external_id}</code></> : null}
             </p>
           </div>
-          {canConfig && <Link href={`/painel/bots/novo?cliente=${client.id}`} className="btn-primary w-full sm:w-auto"><Plus size={15} />Novo chatbot</Link>}
+          {canConfig && <CreateButton kind="chatbot" clientId={client.id} className="btn-primary w-full sm:w-auto"><Plus size={15} />Novo chatbot</CreateButton>}
         </div>
 
         {/* as 4 seções e, embaixo, as abas da seção aberta */}
@@ -200,12 +201,12 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-medium">Chatbots</h2>
-              {canConfig && bots.length > 0 && <Link href={`/painel/bots/novo?cliente=${client.id}`} className="btn-ghost px-3 py-1.5 text-[13px]"><Plus size={14} />Novo</Link>}
+              {canConfig && bots.length > 0 && <CreateButton kind="chatbot" clientId={client.id} className="btn-ghost px-3 py-1.5 text-[13px]"><Plus size={14} />Novo</CreateButton>}
             </div>
             {bots.length === 0 ? (
               <div className="card flex flex-col items-start gap-3 p-6">
                 <p className="text-sm text-muted">{canConfig ? "Este cliente ainda não tem chatbots." : "Nenhum chatbot deste cliente no seu escopo."}</p>
-                {canConfig && <Link href={`/painel/bots/novo?cliente=${client.id}`} className="btn-primary"><Plus size={15} />Criar o primeiro chatbot</Link>}
+                {canConfig && <CreateButton kind="chatbot" clientId={client.id} className="btn-primary"><Plus size={15} />Criar o primeiro chatbot</CreateButton>}
               </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

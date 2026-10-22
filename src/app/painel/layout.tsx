@@ -25,7 +25,9 @@ import { cookies } from "next/headers";
 import { MENU_COOKIE } from "@/lib/theme";
 import { OnboardingWidget } from "@/components/onboarding-widget";
 import { getOnboarding, ONBOARDING_COOKIE, ONBOARDING_GOAL } from "@/lib/onboarding";
-import { hideOnboarding } from "@/app/painel/actions";
+import { createBot, createClientRecord, hideOnboarding } from "@/app/painel/actions";
+import { CreateDialogs } from "@/components/create-dialogs";
+import { getClientOptions } from "@/lib/panel";
 
 // o manifest deixa adicionar o painel à tela de início (no iPhone, os avisos no celular só chegam
 // assim; Memória e avisos, parte 2)
@@ -59,6 +61,8 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     const bots = ((c.bots ?? []) as Array<{ id: string; appearance: { color?: string } | null; face: unknown; created_at: string }>).sort((a, b) => a.created_at.localeCompare(b.created_at));
     return { id: c.id as string, name: c.name as string, color: bots[0]?.appearance?.color ?? null, face: bots[0]?.face ?? null, botIds: bots.map((b) => b.id) };
   });
+  // os modais de Novo cliente e Novo chatbot (redesenho, etapa 5): o "+" do menu, o Ctrl K e as telas abrem daqui
+  const clientOptions = can(role, "config") ? await getClientOptions(supabase, agency.id) : [];
   // primeiros passos (redesenho, etapa 5): um widget no canto, em todo o painel, para quem configura
   const onboarding = can(role, "config") && (await cookies()).get(ONBOARDING_COOKIE)?.value !== "hidden" ? await getOnboarding(supabase, agency, { admin: createAdminClient(), packs }).catch(() => null) : null;
   const banners = [
@@ -107,6 +111,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     >
       <AppTheme />
       <HandoffWatcher endpoint="/api/painel/pending" />
+      {can(role, "config") && <CreateDialogs createClient={member.scope === "all" ? createClientRecord : null} createBot={createBot} clients={clientOptions} suggestedName={agency.profile === "business" ? agency.name : ""} />}
       {onboarding && <OnboardingWidget steps={onboarding} goal={ONBOARDING_GOAL[agency.profile ?? "agency"]} changeProfile={role === "owner"} hide={hideOnboarding} />}
       {children}
     </PanelShell>

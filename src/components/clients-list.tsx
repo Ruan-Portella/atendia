@@ -6,10 +6,7 @@ import { useState } from "react";
 import { ChevronRight, ExternalLink, Plus, Search } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { Menu } from "@/components/ui/menu";
-import { EditDialog } from "@/components/ui/setting-row";
-import { NewBotFields } from "@/components/new-bot-fields";
-import type { ActionResult } from "@/lib/action-result";
-import type { ClientOption } from "@/lib/panel";
+import { openCreate } from "@/components/create-dialogs";
 import { cn } from "@/lib/utils";
 
 export interface ClientListItem {
@@ -39,18 +36,8 @@ const brl = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "c
  * chatbot no ar) e a ordem. Cada cliente mostra os rostos dos chatbots, quantos estão no ar, os
  * números dos 30 dias e, para quem configura, quanto você cobra.
  */
-export function ClientsList({
-  items,
-  canConfig,
-  newBot,
-}: {
-  items: ClientListItem[];
-  canConfig: boolean;
-  /** criar chatbot para um cliente da lista, num modal (quem configura) */
-  newBot: { action: (fd: FormData) => Promise<ActionResult | void>; clients: ClientOption[]; suggestedName: string } | null;
-}) {
+export function ClientsList({ items, canConfig }: { items: ClientListItem[]; canConfig: boolean }) {
   const router = useRouter();
-  const [newBotFor, setNewBotFor] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("todos");
   const [sort, setSort] = useState<Sort>("nome");
@@ -151,7 +138,8 @@ export function ClientsList({
                   label={`Mais ações de ${c.name}`}
                   items={[
                     { label: "Abrir o cliente", icon: ChevronRight, onSelect: () => router.push(`/painel/clientes/${c.id}`) },
-                    ...(newBot ? [{ label: "Novo chatbot para este cliente", icon: Plus, onSelect: () => setNewBotFor(c.id) }] : []),
+                    // o modal de chatbot novo do layout, com o cliente escolhido
+                    ...(canConfig ? [{ label: "Novo chatbot para este cliente", icon: Plus, onSelect: () => openCreate("chatbot", c.id) }] : []),
                     ...(c.site ? [{ label: "Abrir o site", icon: ExternalLink, href: /^https?:\/\//.test(c.site) ? c.site : `https://${c.site}`, external: true }] : []),
                   ]}
                 />
@@ -162,18 +150,6 @@ export function ClientsList({
         })}
         {items.length > 0 && shown.length === 0 && <p className="px-5 py-6 text-center text-sm text-muted">{query.trim() ? <>Nenhum cliente com &ldquo;{query.trim()}&rdquo;.</> : "Nenhum cliente neste filtro."}</p>}
       </div>
-      {newBot && (
-        <EditDialog
-          open={newBotFor !== null}
-          onClose={() => setNewBotFor(null)}
-          title={`Novo chatbot${newBotFor ? ` para ${items.find((c) => c.id === newBotFor)?.name ?? "o cliente"}` : ""}`}
-          description="O site e os documentos você adiciona no próximo passo."
-          action={newBot.action}
-          saveLabel="Criar e configurar"
-        >
-          <NewBotFields clients={newBot.clients} defaultClientId={newBotFor ?? undefined} suggestedName={newBot.suggestedName} idPrefix="ml" />
-        </EditDialog>
-      )}
     </div>
   );
 }
