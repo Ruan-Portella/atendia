@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { RefreshCw, Wallet } from "lucide-react";
 import { requirePermission } from "@/lib/agency";
 import { FirstWeekNote } from "@/components/first-week-note";
 import { firstWeekUntil } from "@/lib/withdrawal";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, PIX_MAX_BRL, brlCents, num } from "@/lib/plans";
+import { CREDIT_MIN_BRL, OVERAGE_PRICE_BRL, brlCents, num } from "@/lib/plans";
 import { OVERAGE_PRICE_CENTS, creditBalance } from "@/lib/billing-credit";
 import { monthBoundsBR } from "@/lib/billing";
 import { billingEnabled } from "@/lib/stripe";
@@ -11,8 +12,10 @@ import { dateBR } from "@/lib/retention";
 import { periodLabel } from "@/lib/report";
 import { Kpi } from "@/components/kpi";
 import { CreditBuyForm } from "@/components/credit-forms";
-import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
+import { DialogButton, SettingGroup, SettingRow, SwitchField } from "@/components/ui/setting-row";
+import { HowItWorks, StatusPill } from "@/components/ui/form-section";
+import { FlashToast } from "@/components/ui/flash-toast";
+import { cn } from "@/lib/utils";
 import { saveAutoRecharge } from "../actions";
 
 export const metadata = { title: "Crédito do excedente" };
@@ -20,12 +23,33 @@ export const metadata = { title: "Crédito do excedente" };
 const SOURCE: Record<string, string> = { compra: "Compra", recarga: "Recarga automática", ajuste: "Ajuste da BoaVoz" };
 const reais = (cents: number | null) => (cents === null ? "" : String(Math.round(cents / 100)));
 const isExpired = (iso: string) => Date.parse(iso) <= Date.now();
+const TABS = [
+  ["compras", "Compras e recargas"],
+  ["uso", "Uso do mês"],
+] as const;
+
+/** Um campo em reais (só números), com o R$ na frente. */
+function Money({ name, label, defaultValue, hint }: { name: string; label: string; defaultValue: string; hint?: string }) {
+  return (
+    <div>
+      <label htmlFor={`auto-${name}`} className="label">
+        {label}
+      </label>
+      <div className="relative w-40">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">R$</span>
+        <input id={`auto-${name}`} name={name} inputMode="numeric" defaultValue={defaultValue} className="input pl-9" />
+      </div>
+      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+    </div>
+  );
+}
 
 /**
  * Cobrança → Crédito (revisão de preços, parte 4c): o saldo pré-pago que paga o excedente (R$ 0,35
  * por atendimento além da cota de um chatbot), a compra, a recarga automática, os lotes (12 meses,
  * o que vence antes sai primeiro) e o uso do mês por chatbot. Pelo Pix (Lançamento, parte 6), a
- * Stripe volta para cá com ?pix=ok, e o crédito entra quando ela confirma.
+ * Stripe volta para cá com ?pix=ok, e o crédito entra quando ela confirma. Redesenho, etapa 5: a
+ * compra num modal, a recarga automática numa linha com o modal, e as compras e o uso em abas.
  */
 export default async function CreditoPage({ searchParams }: PageProps<"/painel/cobranca/credito">) {
   const [{ agency, bots }, sp] = await Promise.all([requirePermission("billing"), searchParams]);
@@ -46,129 +70,131 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
   const monthCents = [...byBot.values()].reduce((t, v) => t + v.cents, 0);
   const subscribed = agency.billing_status !== "none";
   const overageBots = bots.filter((b) => b.overageEnabled);
+  const tab = sp.aba === "uso" ? "uso" : "compras";
+  const auto = agency.credit_auto_enabled ? { below: brlCents((agency.credit_auto_below_cents ?? 0) / 100), amount: brlCents((agency.credit_auto_amount_cents ?? 0) / 100), limit: brlCents((agency.credit_auto_month_limit_cents ?? 0) / 100) } : null;
 
   return (
-    <div className="max-w-[960px]">
-      <h1 className="text-2xl font-normal sm:text-[28px]">Cobrança</h1>
-      <FirstWeekNote until={firstWeekUntil(agency)} />
+    <div className="flex max-w-[960px] flex-col gap-6">
+      {sp.pix === "ok" && <FlashToast message="Pix enviado. O crédito entra assim que a Stripe confirma, em geral em segundos; também avisamos por e-mail." />}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <h1 className="text-2xl font-normal sm:text-[28px]">Crédito</h1>
+          <p className="text-sm text-muted">O saldo que paga o excedente: cada atendimento além da cota de um chatbot com o excedente ligado usa {brlCents(OVERAGE_PRICE_BRL)}.</p>
+          <HowItWorks label="Como funciona o crédito">
+            <p>Com o excedente ligado num chatbot, cada atendimento além da cota do mês usa {brlCents(OVERAGE_PRICE_BRL)} do saldo da conta, na hora. Sem saldo, os chatbots que dependem do excedente entram no modo só humano.</p>
+            <p>O crédito vale 12 meses (o que vence antes é usado primeiro) e não é reembolsável. A compra é a partir de {brlCents(CREDIT_MIN_BRL)}, no cartão da assinatura ou pelo Pix.</p>
+          </HowItWorks>
+        </div>
+        <DialogButton label="Comprar crédito" icon={<Wallet size={15} />} className="btn-primary" title="Comprar crédito" description="O crédito vale 12 meses e não é reembolsável." footer="none" size="lg">
+          <CreditBuyForm enabled={billingEnabled && subscribed} />
+        </DialogButton>
+      </div>
+      <div className="[&>p]:mt-0 empty:hidden">
+        <FirstWeekNote until={firstWeekUntil(agency)} />
+      </div>
 
-      <p className="mt-5 text-sm text-muted">
-        O crédito paga o excedente: com o excedente ligado num chatbot, cada atendimento além da cota do mês usa {brlCents(OVERAGE_PRICE_BRL)} do saldo da conta, na hora. Sem saldo, os chatbots que dependem do excedente entram no modo só humano. O crédito vale 12 meses (o que vence antes é usado primeiro) e não é reembolsável.
-      </p>
+      {!subscribed && (
+        <div className="card flex flex-wrap items-center gap-3 px-4 py-3.5">
+          <span className="min-w-0 flex-1 text-sm text-amber-ink">O crédito paga o excedente dos chatbots com tamanho: assine um tamanho antes de comprar.</span>
+          <Link href="/painel/cobranca" className="btn-primary py-1.5 text-xs">
+            Assinar
+          </Link>
+        </div>
+      )}
+      {subscribed && overageBots.length === 0 && (
+        <div className="card flex flex-wrap items-center gap-3 px-4 py-3.5">
+          <span className="min-w-0 flex-1 text-sm text-ink-2">Nenhum chatbot está com o excedente ligado: o crédito só é usado depois que você ligar.</span>
+          <Link href="/painel/cobranca/uso" className="btn-ghost py-1.5 text-xs">
+            Ligar em Uso e custo
+          </Link>
+        </div>
+      )}
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Kpi label="Saldo" value={brlCents(balance / 100)} sub={`cerca de ${num(Math.floor(balance / OVERAGE_PRICE_CENTS))} atendimentos a mais`} />
         <Kpi label={`Usado em ${periodLabel(period)}`} value={brlCents(monthCents / 100)} sub={`${num([...byBot.values()].reduce((t, v) => t + v.count, 0))} atendimentos a mais`} />
         <Kpi label="Vence primeiro" value={open[0] ? brlCents(Number(open[0].remaining_cents) / 100) : "—"} sub={open[0] ? `em ${dateBR(open[0].expires_at as string)}` : "nenhum crédito ativo"} />
       </div>
 
-      {sp.pix === "ok" && (
-        <p className="mt-4 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">
-          Pix enviado. O crédito entra assim que a Stripe confirma o pagamento, em geral em segundos: se o saldo ainda não mudou, recarregue a página daqui a pouco. Também avisamos por e-mail.
-        </p>
-      )}
-      {!subscribed && (
-        <p className="mt-4 rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
-          O crédito paga o excedente dos chatbots com tamanho. <Link href="/painel/cobranca" className="font-semibold underline">Assine um tamanho</Link> antes de comprar.
-        </p>
-      )}
-      {subscribed && overageBots.length === 0 && (
-        <p className="mt-4 rounded-lg bg-ground px-3 py-2 text-sm text-ink-2">
-          Nenhum chatbot está com o excedente ligado: o crédito só é usado depois que você ligar o excedente em <Link href="/painel/cobranca/uso" className="font-semibold underline">Uso e custo</Link>.
-        </p>
-      )}
+      <SettingGroup>
+        <SettingRow
+          icon={<RefreshCw size={18} />}
+          title="Recarga automática"
+          badge={<StatusPill tone={auto ? "ok" : "muted"}>{auto ? "Ligada" : "Desligada"}</StatusPill>}
+          summary={auto ? `Abaixo de ${auto.below}, compra ${auto.amount}, até ${auto.limit} por mês` : "Quando o saldo cai, compra outra recarga no cartão da assinatura"}
+          description="Quando o saldo cai abaixo do valor escolhido, compramos outra recarga no cartão da assinatura, até o limite do mês. Com o pagamento da assinatura atrasado, a recarga não roda."
+          action={saveAutoRecharge}
+        >
+          <SwitchField name="auto" defaultChecked={Boolean(agency.credit_auto_enabled)} label="Recarga automática ligada" />
+          <div className="flex flex-wrap gap-4">
+            <Money name="below" label="Quando o saldo ficar abaixo de" defaultValue={reais(agency.credit_auto_below_cents) || "20"} />
+            <Money name="amount" label="Comprar" defaultValue={reais(agency.credit_auto_amount_cents) || "100"} hint={`Mínimo de ${brlCents(CREDIT_MIN_BRL)}.`} />
+            <Money name="limit" label="Até, por mês" defaultValue={reais(agency.credit_auto_month_limit_cents) || "300"} />
+          </div>
+        </SettingRow>
+      </SettingGroup>
 
-      <section className="card mt-6 p-5">
-        <h2 className="text-lg font-medium">Comprar crédito</h2>
-        <p className="mt-1 text-sm text-muted">A partir de {brlCents(CREDIT_MIN_BRL)}: no cartão da assinatura, cobrado na hora, ou pelo Pix (até {brlCents(PIX_MAX_BRL)}), na página de pagamento da Stripe, com o QR e o copia e cola. O código Pix vale 1 hora, e o crédito entra quando o banco confirma.</p>
-        <div className="mt-3">
-          <CreditBuyForm enabled={billingEnabled && subscribed} />
-        </div>
-      </section>
-
-      <section className="card mt-4 p-5">
-        <h2 className="text-lg font-medium">Recarga automática</h2>
-        <p className="mt-1 text-sm text-muted">Quando o saldo cai abaixo do valor escolhido, compramos outra recarga no cartão da assinatura, até o limite do mês. Com o pagamento da assinatura atrasado, a recarga não roda.</p>
-        <ActionForm action={saveAutoRecharge} className="mt-3 flex flex-wrap items-end gap-3 text-sm">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" name="auto" defaultChecked={Boolean(agency.credit_auto_enabled)} />
-            ligada
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">Abaixo de (R$)</span>
-            <input name="below" inputMode="numeric" defaultValue={reais(agency.credit_auto_below_cents) || "20"} className="input w-[96px] py-1" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">Comprar (R$, mín. {CREDIT_MIN_BRL})</span>
-            <input name="amount" inputMode="numeric" defaultValue={reais(agency.credit_auto_amount_cents) || "100"} className="input w-[96px] py-1" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">Limite por mês (R$)</span>
-            <input name="limit" inputMode="numeric" defaultValue={reais(agency.credit_auto_month_limit_cents) || "300"} className="input w-[110px] py-1" />
-          </label>
-          <SubmitButton className="btn-ghost" pendingLabel="Salvando…">Salvar</SubmitButton>
-        </ActionForm>
-      </section>
-
-      <h2 className="mt-8 text-lg font-medium">Uso do mês por chatbot</h2>
-      <div className="card mt-3 overflow-x-auto">
-        <table className="w-full min-w-[480px] text-sm">
-          <thead>
-            <tr className="border-b border-line-2 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted">
-              <th className="px-4 py-2 font-semibold">Chatbot</th>
-              <th className="px-3 py-2 text-right font-semibold">Atendimentos a mais</th>
-              <th className="px-4 py-2 text-right font-semibold">Crédito usado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...byBot].map(([id, v]) => (
-              <tr key={id || "x"} className="border-b border-line-2 last:border-0">
-                <td className="px-4 py-2">{bots.find((b) => b.botId === id)?.name ?? "Chatbot excluído"}</td>
-                <td className="px-3 py-2 text-right tabular">{num(v.count)}</td>
-                <td className="px-4 py-2 text-right tabular">{brlCents(v.cents / 100)}</td>
-              </tr>
+      <div className="flex flex-col gap-3">
+        <nav aria-label="Crédito" className="-mx-1 flex overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+          <span className="flex shrink-0 gap-1 rounded-[14px] bg-panel p-1 shadow-[inset_0_0_0_1px_var(--color-line)]">
+            {TABS.map(([key, label]) => (
+              <Link
+                key={key}
+                href={`/painel/cobranca/credito?aba=${key}`}
+                scroll={false}
+                aria-current={tab === key ? "page" : undefined}
+                className={cn("flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-3.5 py-1.5 text-sm font-medium transition-colors duration-[120ms]", tab === key ? "bg-raised text-ink shadow-[inset_0_0_0_1px_var(--color-line)]" : "text-muted hover:text-ink")}
+              >
+                {label}
+                <span className="tabular text-xs font-normal text-muted">{key === "compras" ? (lots ?? []).length || "" : byBot.size || ""}</span>
+              </Link>
             ))}
-            {byBot.size === 0 && (
-              <tr>
-                <td colSpan={3} className="px-4 py-4 text-center text-muted">Nenhum atendimento a mais neste mês.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </span>
+        </nav>
 
-      <h2 className="mt-8 text-lg font-medium">Compras e recargas</h2>
-      <div className="card mt-3 overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
-          <thead>
-            <tr className="border-b border-line-2 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted">
-              <th className="px-4 py-2 font-semibold">Data</th>
-              <th className="px-3 py-2 font-semibold">Origem</th>
-              <th className="px-3 py-2 text-right font-semibold">Valor</th>
-              <th className="px-3 py-2 text-right font-semibold">Resta</th>
-              <th className="px-4 py-2 font-semibold">Vale até</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(lots ?? []).map((l) => {
-              const expired = isExpired(l.expires_at as string);
-              return (
-                <tr key={l.id as number} className={`border-b border-line-2 last:border-0 ${expired ? "text-muted" : ""}`}>
-                  <td className="px-4 py-2">{dateBR(l.created_at as string)}</td>
-                  <td className="px-3 py-2">{SOURCE[l.source as string] ?? (l.source as string)}</td>
-                  <td className="px-3 py-2 text-right tabular">{brlCents(Number(l.amount_cents) / 100)}</td>
-                  <td className="px-3 py-2 text-right tabular">{brlCents(Number(l.remaining_cents) / 100)}</td>
-                  <td className="px-4 py-2">{expired ? `venceu em ${dateBR(l.expires_at as string)}` : dateBR(l.expires_at as string)}</td>
-                </tr>
-              );
-            })}
-            {!(lots ?? []).length && (
-              <tr>
-                <td colSpan={5} className="px-4 py-4 text-center text-muted">Nenhuma compra ainda.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        {tab === "compras" ? (
+          (lots ?? []).length === 0 ? (
+            <p className="card px-5 py-8 text-center text-sm text-muted">Nenhuma compra ainda.</p>
+          ) : (
+            <ul className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+              {(lots ?? []).map((l) => {
+                const expired = isExpired(l.expires_at as string);
+                const left = Number(l.remaining_cents);
+                return (
+                  <li key={l.id as number} className={cn("flex flex-wrap items-center gap-3 px-4 py-3", expired && "opacity-60")}>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-sm font-medium text-ink">{SOURCE[l.source as string] ?? (l.source as string)}</span>
+                        {expired ? <StatusPill>venceu</StatusPill> : left === 0 ? <StatusPill>usado</StatusPill> : null}
+                      </span>
+                      <span className="block text-xs text-muted">
+                        {dateBR(l.created_at as string)} · {expired ? `venceu em ${dateBR(l.expires_at as string)}` : `vale até ${dateBR(l.expires_at as string)}`}
+                      </span>
+                    </span>
+                    <span className="text-right">
+                      <span className="block tabular text-sm text-ink">{brlCents(Number(l.amount_cents) / 100)}</span>
+                      {!expired && left > 0 && <span className="block tabular text-xs text-muted">resta {brlCents(left / 100)}</span>}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )
+        ) : byBot.size === 0 ? (
+          <p className="card px-5 py-8 text-center text-sm text-muted">Nenhum atendimento a mais neste mês.</p>
+        ) : (
+          <ul className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+            {[...byBot]
+              .sort((a, b) => b[1].cents - a[1].cents)
+              .map(([id, v]) => (
+                <li key={id || "x"} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{bots.find((b) => b.botId === id)?.name ?? "Chatbot excluído"}</span>
+                  <span className="tabular text-xs text-muted">{num(v.count)} a mais</span>
+                  <span className="w-24 text-right tabular text-sm text-ink">{brlCents(v.cents / 100)}</span>
+                </li>
+              ))}
+          </ul>
+        )}
       </div>
     </div>
   );
