@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
-import { buyCredit, resolveSpike } from "@/app/painel/(configuracoes)/cobranca/actions";
+import { buyCredit } from "@/app/painel/(configuracoes)/cobranca/actions";
 import { CREDIT_MIN_BRL, CREDIT_SHORTCUTS_BRL, PIX_MAX_BRL, brlCents } from "@/lib/plans";
 
 /** Botão de uma forma de pagamento: só ele mostra o "enviando" quando é o escolhido. */
@@ -60,18 +59,3 @@ export function CreditBuyForm({ enabled }: { enabled: boolean }) {
   );
 }
 
-/** Pico no chat do site: "tráfego real" devolve o excedente; "ataque" deixa suspenso até o mês virar. */
-export function SpikeButtons({ botId, reason, until }: { botId: string; reason: "pico" | "ataque"; until: string }) {
-  if (reason === "ataque") return <span className="block text-xs text-danger">Marcado como ataque: excedente suspenso até {until}.</span>;
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
-      <span className="text-xs font-semibold text-danger">Pico no chat do site: excedente suspenso</span>
-      <ActionForm action={resolveSpike.bind(null, botId, "real")}>
-        <SubmitButton className="btn-ghost py-1 text-xs" pendingLabel="Salvando…">É tráfego real</SubmitButton>
-      </ActionForm>
-      <ActionForm action={resolveSpike.bind(null, botId, "ataque")}>
-        <SubmitButton className="btn-ghost py-1 text-xs" pendingLabel="Salvando…">É ataque</SubmitButton>
-      </ActionForm>
-    </div>
-  );
-}
