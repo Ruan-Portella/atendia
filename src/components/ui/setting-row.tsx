@@ -269,7 +269,7 @@ export function SettingRow({
           <span className={cn("text-[15px] font-medium text-ink", mono && "font-mono text-sm")}>{title}</span>
           {badge}
         </span>
-        {summary && <span className={cn("mt-0.5 block text-[12.5px] leading-snug", summaryTone === "ok" ? "text-brand" : summaryTone === "warn" ? "text-amber-ink" : "text-muted")}>{summary}</span>}
+        {summary && <span className={cn("mt-0.5 block text-[12.5px] leading-snug [overflow-wrap:anywhere]", summaryTone === "ok" ? "text-brand" : summaryTone === "warn" ? "text-amber-ink" : "text-muted")}>{summary}</span>}
       </span>
     </>
   );

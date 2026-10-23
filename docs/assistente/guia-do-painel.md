@@ -8,7 +8,7 @@ O BoaVoz é uma plataforma para agências e freelancers criarem chatbots com IA 
 
 ## Onde fica cada coisa no painel
 
-O menu do lado esquerdo tem o dia a dia: Caixa de entrada (com o número de quem está esperando alguém da equipe), Contatos e leads, Campanhas e réguas, Relatórios, Clientes, Modelos (com o pacote Plataforma) e Demos. Logo abaixo vêm os clientes, como uma lista de canais, cada um com o rosto do chatbot; o + cria um cliente novo. No rodapé ficam Configurações, Ajuda e novidades (a central de ajuda e o roadmap) e o seu nome, que abre Meu perfil, a escolha do tema e o Sair. Configurações é uma tela só, com o menu de ajustes ao lado: Conta (Marca e domínio, Equipe e papéis, Segurança e auditoria), Cobrança (Assinatura e pacotes, Uso e custo, Crédito), Integrações (ações, webhooks e API). Cada pessoa só vê o que o papel dela permite. No computador, o botão ao lado do nome da conta (ou o atalho Ctrl B, ⌘B no Mac) recolhe o menu (ficam só os ícones e o rosto de cada cliente; passar o mouse mostra o nome) e abre de novo; a escolha fica naquele navegador. No celular, o menu abre pelo botão do canto de cima.
+O menu do lado esquerdo tem o dia a dia: Caixa de entrada (com o número de quem está esperando alguém da equipe), Contatos e leads, Campanhas e réguas, Relatórios, Clientes, Modelos (com o pacote Plataforma) e Demos. Logo abaixo vêm os clientes, como uma lista de canais, cada um com o rosto do chatbot; o + cria um cliente novo. Quando a tela é baixa, só a lista dos clientes rola (o dia a dia fica parado), e "Todos os clientes" fica sempre embaixo dela. No rodapé ficam Configurações, Ajuda e novidades (a central de ajuda e o roadmap) e o seu nome, que abre Meu perfil, a escolha do tema e o Sair. Configurações é uma tela só, com o menu de ajustes ao lado: Conta (Marca e domínio, Equipe e papéis, Segurança e auditoria), Cobrança (Assinatura e pacotes, Uso e custo, Crédito), Integrações (ações, webhooks e API). Cada pessoa só vê o que o papel dela permite. No computador, o botão ao lado do nome da conta (ou o atalho Ctrl B, ⌘B no Mac) recolhe o menu (ficam só os ícones e o rosto de cada cliente; passar o mouse mostra o nome) e abre de novo; a escolha fica naquele navegador. No celular, o menu abre pelo botão do canto de cima.
 
 ## Avisos (o sino)
 
@@ -16,7 +16,7 @@ Os avisos do painel ficam atrás do sino, ao lado do "Ir para…" no menu (no ce
 
 ## Ir para (Ctrl K)
 
-Para achar qualquer coisa sem procurar no menu, aperte Ctrl K (⌘K no Mac) ou clique em "Ir para…" no alto do menu; no celular, é a lupa do canto de cima. Digite parte do nome de um contato (ou o telefone), de um cliente, de um chatbot ou de um ajuste, como "assinatura" ou "webhook": os resultados vêm separados em Contatos, Conversas, Clientes, Chatbots, Ações e Ajustes. As setas escolhem, Enter abre e Esc fecha. Também dá para criar um cliente ou uma campanha, trocar o tema e sair por ali. Contatos dos chatbots em modo dados sensíveis não aparecem na busca.
+Para achar qualquer coisa sem procurar no menu, aperte Ctrl K (⌘K no Mac) ou clique em "Ir para…" no alto do menu; no celular, é a lupa do canto de cima. Digite parte do nome de um contato (ou o telefone), de um cliente, de um chatbot ou de um ajuste, como "assinatura" ou "webhook": os resultados vêm separados em Contatos, Conversas, Abas, Clientes, Chatbots, Ações e Ajustes. As abas de dentro também aparecem: "auditoria", "faturas" ou "chaves" abrem a aba certa das Configurações, e o nome de um chatbot ou de um cliente com o nome da aba vai direto para ela (por exemplo, "sorriso roteiros" abre os Roteiros do chatbot da Clínica Sorriso, e "sorriso setores" os Setores do cliente). As setas escolhem, Enter abre e Esc fecha. Também dá para criar um cliente ou uma campanha, trocar o tema e sair por ali. Contatos dos chatbots em modo dados sensíveis não aparecem na busca.
 
 ## Tema escuro e claro
 
@@ -124,7 +124,7 @@ Quando o assistente não acha a resposta na base, ele diz que não tem a informa
 
 ## Personalidade e instruções
 
-Na aba Personalidade ficam o nome do assistente, o tom (por exemplo, amigável e direto), o idioma, as instruções da empresa e os assuntos que o negócio também atende. O "teste ao vivo" mostra como o assistente responde antes de ligar os canais. A aparência do chat do site (cores, logo, saudação, perguntas sugeridas) fica em Comportamento → Rosto e aparência, junto do rosto do chatbot.
+Na aba Personalidade ficam o nome do assistente, o tom (por exemplo, amigável e direto), o idioma, as instruções da empresa e os assuntos que o negócio também atende. O "teste ao vivo" mostra como o assistente responde antes de ligar os canais. A aparência do chat do site fica em Comportamento → Rosto e aparência, junto do rosto do chatbot. Embaixo do rosto, duas linhas abrem um modal cada: Perguntas sugeridas (uma por campo, até 6, com a prévia dos botões como o visitante vê) e Balão no site do cliente (o canto, esquerdo ou direito, e a distância da borda, com a prévia numa página de site).
 
 ## Memória do assistente
 

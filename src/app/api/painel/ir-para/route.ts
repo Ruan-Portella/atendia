@@ -19,14 +19,18 @@ export async function POST(req: Request) {
   if (!auth?.claims?.sub) return Response.json({ groups: [] }, { status: 401 });
   const body = (await req.json().catch(() => null)) as { q?: unknown } | null;
   const term = typeof body?.q === "string" ? body.q.trim().slice(0, 80) : "";
-  const clean = term.replace(/[%_*,()\\]/g, " ").trim();
+  const clean = term.replace(/[%_*,()"\\]/g, " ").trim();
   if (clean.length < 2) return Response.json({ groups: [] });
   const like = `%${clean}%`;
+  // clientes e chatbots também por palavra ("sorriso roteiros" acha a Clínica Sorriso; o Ir para
+  // filtra e monta as abas de dentro)
+  const words = clean.split(/\s+/).filter((w) => w.length >= 3).slice(0, 3);
+  const anyWord = (cols: string[]) => (words.length ? words.flatMap((w) => cols.map((c) => `${c}.ilike."%${w}%"`)) : cols.map((c) => `${c}.ilike."${like}"`)).join(",");
 
   const [contacts, clientRes, botRes] = await Promise.all([
     goToContacts(supabase, term).catch(() => []),
-    supabase.from("clients").select("id, name, bots(appearance, face, is_demo, created_at)").ilike("name", like).order("name").limit(5),
-    supabase.from("bots").select("id, name, client_name, appearance, face, status, is_demo").ilike("name", like).order("name").limit(5),
+    supabase.from("clients").select("id, name, bots(appearance, face, is_demo, created_at)").or(anyWord(["name"])).order("name").limit(8),
+    supabase.from("bots").select("id, name, client_name, appearance, face, status, is_demo").or(anyWord(["name", "client_name"])).order("name").limit(8),
   ]);
 
   const ids = contacts.map((c) => c.id);

@@ -38,11 +38,91 @@ export function matches(item: Pick<GoToItem, "title" | "sub" | "keywords">, quer
   return q.split(/\s+/).every((w) => hay.includes(w));
 }
 
+/**
+ * As abas de dentro de cada tela e ajuste (23/10/2026, a pedido do usuário: mais atalhos no Ir
+ * para). Só aparecem quando a tela de cima aparece (a mesma permissão).
+ */
+const SUB_PAGES: Record<string, Array<{ q: string; title: string; keywords: string }>> = {
+  "/painel/contatos": [{ q: "?aba=leads", title: "Leads", keywords: "pedido orçamento agendar" }],
+  "/painel/campanhas": [{ q: "/reguas", title: "Réguas", keywords: "lembrete automático aniversário volta" }],
+  "/painel/seguranca": [
+    { q: "?aba=pedidos", title: "Pedidos do titular", keywords: "lgpd apagar dados" },
+    { q: "?aba=auditoria", title: "Auditoria", keywords: "quem fez histórico registro" },
+    { q: "?aba=acessos", title: "Acessos", keywords: "login ip entrou sessões" },
+    { q: "?aba=suporte", title: "Acesso do suporte", keywords: "boavoz ler conversas" },
+    { q: "?aba=fator", title: "Segundo fator", keywords: "autenticador 2fa código" },
+    { q: "?aba=conta", title: "Excluir a conta", keywords: "apagar encerrar" },
+  ],
+  "/painel/cobranca": [
+    { q: "?aba=pacotes", title: "Pacotes", keywords: "integrações plataforma domínio" },
+    { q: "?aba=faturas", title: "Faturas", keywords: "cartão pagamento nota boleto" },
+  ],
+  "/painel/integracoes": [
+    { q: "?aba=webhooks", title: "Webhooks", keywords: "eventos entregas" },
+    { q: "?aba=chaves", title: "Chaves de API", keywords: "token api key" },
+    { q: "?aba=logs", title: "Registros", keywords: "logs chamadas entregas erros" },
+  ],
+};
+
+/** As abas do chatbot e do cliente, para "sorriso roteiros" ir direto à aba (23/10/2026). */
+export const BOT_TABS: Array<{ tab: string; title: string; keywords: string }> = [
+  { tab: "conversas", title: "Conversas", keywords: "atendimentos histórico" },
+  { tab: "evolucao", title: "Evolução", keywords: "meses números resultado" },
+  { tab: "fontes", title: "Base de conhecimento", keywords: "fontes site pdf perguntas respostas conhecimento" },
+  { tab: "personalidade", title: "Personalidade", keywords: "nome tom voz instruções saudação" },
+  { tab: "aparencia", title: "Rosto e aparência", keywords: "cor olhos balão perguntas sugeridas" },
+  { tab: "atendimento", title: "Atendimento humano", keywords: "equipe horário pesquisa satisfação" },
+  { tab: "leads", title: "Captura de leads", keywords: "contato aviso lead" },
+  { tab: "roteiros", title: "Roteiros", keywords: "passos fluxo identificação" },
+  { tab: "acoes", title: "Ações", keywords: "integração api sistema contexto" },
+  { tab: "instalacao", title: "Chat do site", keywords: "instalar código widget" },
+  { tab: "whatsapp", title: "WhatsApp", keywords: "número conectar modelos" },
+  { tab: "instagram", title: "Instagram", keywords: "conta conectar comentários direct" },
+];
+export const CLIENT_TABS: Array<{ tab: string; title: string; keywords: string }> = [
+  { tab: "contatos", title: "Contatos", keywords: "pessoas" },
+  { tab: "leads", title: "Leads", keywords: "pedido" },
+  { tab: "campanhas", title: "Campanhas", keywords: "lembrete disparo consentimento fuso" },
+  { tab: "conversas", title: "Conversas", keywords: "atendimentos" },
+  { tab: "setores", title: "Setores", keywords: "fila rodízio equipe" },
+  { tab: "respostas", title: "Respostas prontas", keywords: "atalho texto pronto" },
+  { tab: "dados", title: "Dados do cliente", keywords: "nome site cadastro" },
+  { tab: "relatorio", title: "Relatório e portal", keywords: "mensal link portal" },
+  { tab: "acesso", title: "Acesso do cliente", keywords: "área do cliente gestor atendente" },
+  { tab: "conformidade", title: "Conformidade", keywords: "aceite revisão meta" },
+];
+
+/**
+ * As abas de dentro de um chatbot ou de um cliente que a busca pede: só quando alguma palavra da
+ * busca não está no nome (senão "sofia" traria as 12 abas) e todas as que sobram estão na aba.
+ */
+export function innerTabs(parents: GoToItem[], tabs: Array<{ tab: string; title: string; keywords: string }>, query: string, max = 6): GoToItem[] {
+  const words = fold(query.trim()).split(/\s+/).filter(Boolean);
+  const out: GoToItem[] = [];
+  for (const p of parents) {
+    if (!p.href) continue;
+    const own = fold([p.title, p.sub].filter(Boolean).join(" "));
+    const rest = words.filter((w) => !own.includes(w));
+    if (!rest.length || rest.length === words.length) continue;
+    for (const t of tabs) {
+      const hay = fold(`${t.title} ${t.keywords}`);
+      if (rest.every((w) => hay.includes(w))) out.push({ id: `${p.id}-${t.tab}`, kind: p.kind, title: t.title, sub: p.title, href: `${p.href}?tab=${t.tab}`, color: p.color, face: p.face });
+    }
+  }
+  return out.slice(0, max);
+}
+
 /** As telas, os ajustes e as ações que a pessoa pode abrir. */
 export function staticGroups(role: AgencyRole, packs: readonly string[], wholeAccount = true): { pages: GoToItem[]; actions: GoToItem[]; settings: GoToItem[] } {
   const pages: GoToItem[] = DAY_TO_DAY.filter((i) => allowed(i, role, packs, wholeAccount)).map((i) => ({ id: i.href, kind: "page", title: i.label, href: i.href, keywords: i.keywords }));
   const settings: GoToItem[] = [
-    ...settingsFor(role, packs).flatMap((g) => g.items.map((i) => ({ id: i.href, kind: "setting" as const, title: i.label, sub: `Configurações · ${g.group}`, href: i.href, keywords: i.keywords }))),
+    ...settingsFor(role, packs).flatMap((g) =>
+      g.items.flatMap((i) => [
+        { id: i.href, kind: "setting" as const, title: i.label, sub: `Configurações · ${g.group}`, href: i.href, keywords: i.keywords },
+        ...(SUB_PAGES[i.href] ?? []).map((s) => ({ id: i.href + s.q, kind: "setting" as const, title: s.title, sub: i.label, href: i.href + s.q, keywords: s.keywords })),
+      ]),
+    ),
+    ...pages.flatMap((p) => (SUB_PAGES[p.id] ?? []).map((s) => ({ id: p.id + s.q, kind: "setting" as const, title: s.title, sub: p.title, href: p.id + s.q, keywords: s.keywords }))),
     { id: "/painel/perfil", kind: "setting", title: "Meu perfil", sub: "Nome, foto, assinatura e avisos", href: "/painel/perfil", keywords: "senha whatsapp avisos celular disponível" },
     { id: "/painel/roadmap", kind: "setting", title: "Novidades e roadmap", sub: "O que vem por aí", href: "/painel/roadmap", keywords: "novidades sugestão" },
     { id: "/ajuda", kind: "setting", title: "Central de ajuda", sub: "Como fazer cada coisa", href: "/ajuda", keywords: "ajuda dúvida tutorial" },
@@ -82,12 +162,17 @@ export function buildGroups(o: { query: string; role: AgencyRole; packs: readonl
   const remote = (title: string) => o.remote.find((g) => g.title === title)?.items ?? [];
   // clientes: os do menu filtram na hora; os que vieram do servidor completam (sem repetir)
   const localClients = o.clients.filter((c) => matches(c, q));
-  const clients = [...localClients, ...remote("Clientes").filter((c) => !localClients.some((l) => l.id === c.id))].slice(0, 5);
+  const allClients = [...o.clients, ...remote("Clientes").filter((c) => !o.clients.some((l) => l.id === c.id))];
+  const clients = [...localClients, ...remote("Clientes").filter((c) => matches(c, q) && !localClients.some((l) => l.id === c.id))].slice(0, 5);
+  const bots = remote("Chatbots");
+  // "sorriso roteiros": as abas de dentro do chatbot e do cliente
+  const inner = [...innerTabs(bots, BOT_TABS, q), ...innerTabs(allClients, CLIENT_TABS, q)].slice(0, 6);
   return [
     { title: "Contatos", items: remote("Contatos") },
     { title: "Conversas", items: remote("Conversas") },
+    { title: "Abas", items: inner },
     { title: "Clientes", items: clients },
-    { title: "Chatbots", items: remote("Chatbots") },
+    { title: "Chatbots", items: bots.filter((b) => matches(b, q)) },
     { title: "Ações", items: actions.filter((a) => matches(a, q)).slice(0, 4) },
     { title: "Ajustes", items: [...pages, ...settings].filter((s) => matches(s, q)).slice(0, 5) },
   ].filter((g) => g.items.length);

@@ -116,9 +116,11 @@ export function SidebarNav({ role, packs = [], wholeAccount = true, clients, cli
         <NoticeBell className="h-10 w-10 shrink-0" />
       </div>
 
+      {/* 23/10 (pedido do usuário): o Dia a dia fica parado e só a lista dos clientes rola; a rolagem do menu
+          inteiro só entra em tela muito baixa */}
       <nav aria-label="Principal" className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
         <SectionLabel collapsed={collapsed}>Dia a dia</SectionLabel>
-        <div className="flex flex-col gap-0.5">
+        <div className="flex shrink-0 flex-col gap-0.5">
           {DAY_TO_DAY.filter((i) => allowed(i, role, packs, wholeAccount)).map((i) => {
             const Icon = ICONS[i.icon];
             // o editor do chatbot mora dentro do cliente: acende Clientes
@@ -142,7 +144,7 @@ export function SidebarNav({ role, packs = [], wholeAccount = true, clients, cli
         </div>
 
         {clients.length > 0 && (
-          <>
+          <div className="flex min-h-[164px] flex-1 flex-col">
             <SectionLabel
               collapsed={collapsed}
               action={
@@ -164,7 +166,7 @@ export function SidebarNav({ role, packs = [], wholeAccount = true, clients, cli
             >
               Clientes
             </SectionLabel>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto overflow-x-hidden [mask-image:linear-gradient(to_bottom,black_calc(100%-16px),transparent)] [scrollbar-width:thin]">
               {clients.slice(0, SIDEBAR_CLIENTS).map((c) => {
                 const active = openClient?.id === c.id;
                 return (
@@ -174,13 +176,16 @@ export function SidebarNav({ role, packs = [], wholeAccount = true, clients, cli
                   </Link>
                 );
               })}
-              {clientCount > SIDEBAR_CLIENTS && (
-                <Link href="/painel/clientes" onClick={onNavigate} title={collapsed ? `Todos os clientes (${clientCount})` : undefined} className={collapsed ? "mx-auto py-1 font-mono text-[11px] text-muted hover:text-ink" : "px-2.5 py-1.5 text-[13px] font-medium text-muted hover:text-ink"}>
+              <span aria-hidden className="h-3 shrink-0" />
+            </div>
+            {clientCount > SIDEBAR_CLIENTS && (
+              <div className={cn("flex shrink-0", collapsed && "justify-center")}>
+                <Link href="/painel/clientes" onClick={onNavigate} title={collapsed ? `Todos os clientes (${clientCount})` : undefined} className={collapsed ? "py-1 font-mono text-[11px] text-muted hover:text-ink" : "px-2.5 py-1.5 text-[13px] font-medium text-muted hover:text-ink"}>
                   {collapsed ? `+${clientCount - SIDEBAR_CLIENTS}` : `Todos os clientes (${clientCount})`}
                 </Link>
-              )}
-            </div>
-          </>
+              </div>
+            )}
+          </div>
         )}
       </nav>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGroups, fold, matches, staticGroups, type GoToItem } from "@/lib/go-to";
+import { BOT_TABS, buildGroups, fold, innerTabs, matches, staticGroups, type GoToItem } from "@/lib/go-to";
 
 const clients: GoToItem[] = [
   { id: "c1", kind: "client", title: "Bar do Zé", href: "/painel/clientes/c1" },
@@ -42,8 +42,34 @@ describe("Ir para", () => {
 
   it("ajuste pelo nome que a pessoa lembra", () => {
     const groups = buildGroups({ query: "webhook", role: "owner", packs: [], clients, remote: [] });
-    expect(groups.find((g) => g.title === "Ajustes")?.items.map((i) => i.href)).toEqual(["/painel/integracoes"]);
+    expect(groups.find((g) => g.title === "Ajustes")?.items.map((i) => i.href).slice(0, 2)).toEqual(["/painel/integracoes", "/painel/integracoes?aba=webhooks"]);
     const theme = buildGroups({ query: "tema claro", role: "agent", packs: [], clients: [], remote: [] });
     expect(theme.find((g) => g.title === "Ações")?.items.map((i) => i.run)).toEqual(["tema-claro"]);
+  });
+
+  it("as abas de dentro dos ajustes, com a mesma permissão da tela", () => {
+    const owner = buildGroups({ query: "auditoria", role: "owner", packs: [], clients, remote: [] });
+    expect(owner.find((g) => g.title === "Ajustes")?.items.map((i) => i.href)).toContain("/painel/seguranca?aba=auditoria");
+    const agent = buildGroups({ query: "auditoria", role: "agent", packs: [], clients: [], remote: [] });
+    expect(agent.find((g) => g.title === "Ajustes")).toBeUndefined();
+    const leads = buildGroups({ query: "leads", role: "owner", packs: [], clients, remote: [] });
+    expect(leads.find((g) => g.title === "Ajustes")?.items.map((i) => i.href)).toContain("/painel/contatos?aba=leads");
+  });
+
+  it("\"sorriso roteiros\" leva à aba do chatbot; só o nome não traz as abas", () => {
+    const bot: GoToItem = { id: "bot-b1", kind: "bot", title: "Sofia", sub: "Clínica Sorriso · no ar", href: "/painel/bots/b1" };
+    const remote = [{ title: "Chatbots", items: [bot] }];
+    const groups = buildGroups({ query: "sorriso roteiros", role: "owner", packs: [], clients: [], remote });
+    expect(groups.find((g) => g.title === "Abas")?.items.map((i) => [i.title, i.sub, i.href])).toEqual([["Roteiros", "Sofia", "/painel/bots/b1?tab=roteiros"]]);
+    expect(groups.find((g) => g.title === "Chatbots")).toBeUndefined();
+    const plain = buildGroups({ query: "sofia", role: "owner", packs: [], clients: [], remote });
+    expect(plain.find((g) => g.title === "Abas")).toBeUndefined();
+    expect(plain.find((g) => g.title === "Chatbots")?.items).toHaveLength(1);
+    expect(innerTabs([bot], BOT_TABS, "sofia perguntas sugeridas").map((i) => i.href)).toEqual(["/painel/bots/b1?tab=aparencia"]);
+  });
+
+  it("as abas do cliente: \"sorriso setores\"", () => {
+    const groups = buildGroups({ query: "sorriso setores", role: "owner", packs: [], clients: [{ id: "c1", kind: "client", title: "Clínica Sorriso", sub: "Cliente", href: "/painel/clientes/c1" }], remote: [] });
+    expect(groups.find((g) => g.title === "Abas")?.items.map((i) => i.href)).toEqual(["/painel/clientes/c1?tab=setores"]);
   });
 });

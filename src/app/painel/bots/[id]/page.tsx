@@ -47,6 +47,8 @@ import { ConvertDemo } from "@/components/convert-demo";
 import { InstallGuide } from "@/components/install-guide";
 import { ChatPreviewSheet } from "@/components/chat-preview-sheet";
 import { WidgetPositionPicker } from "@/components/widget-position";
+import { SuggestedQuestionsField } from "@/components/suggested-questions-field";
+import { suggestedSummary, widgetPositionSummary } from "@/lib/widget-appearance";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { MarketingOptInForm } from "@/components/marketing-optin-form";
@@ -88,7 +90,7 @@ import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 import { BotOverview } from "@/components/bot-overview";
 import { getBotStats, getPendingHandoffs } from "@/lib/panel";
 import { choiceLabel } from "@/lib/billing";
-import { Ban, BookOpen, Brain, Clock, Image as ImageIcon, LayoutDashboard, Mail, Megaphone, MessageCircle, MessageSquareText, PenLine, Phone, Radio, RefreshCw, SlidersHorizontal, Sparkles, Star, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
+import { Ban, BookOpen, Brain, Clock, Image as ImageIcon, LayoutDashboard, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, PenLine, Phone, Radio, RefreshCw, SlidersHorizontal, Sparkles, Star, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
 import { AutoSwitch, SettingGroup, SettingRow, SubmitSwitch, SwitchField } from "@/components/ui/setting-row";
 import { FaceEditor } from "@/components/face-editor";
 import { BotFace } from "@/components/bot-face";
@@ -368,11 +370,12 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
       )}
 
       {/* a aba Evolução (a tabela) usa a largura toda, sem o teste ao vivo */}
-      <div className={`grid flex-1 ${tab === "evolucao" ? "lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]" : "lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]"}`}>
+      {/* grid-cols-1 (minmax(0, 1fr)) no celular e no tablet: a coluna não cresce com a fileira das seções e nada passa da tela (23/10) */}
+      <div className={`grid flex-1 grid-cols-1 ${tab === "evolucao" ? "lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]" : "lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]"}`}>
         {/* no desktop as abas ficam presas no topo ao rolar; a linha divisória fica no conteúdo */}
         {/* as 5 seções (redesenho, etapa 3): no computador, a coluna com as abas da seção aberta embaixo;
             no celular, a fileira das seções e a das abas */}
-        <nav aria-label="Seções do chatbot" className="flex flex-col gap-2 border-b border-line px-3 py-2 lg:sticky lg:top-0 lg:max-h-dvh lg:self-start lg:overflow-y-auto lg:border-b-0 lg:p-3.5">
+        <nav aria-label="Seções do chatbot" className="flex min-w-0 flex-col gap-2 border-b border-line px-3 py-2 lg:sticky lg:top-0 lg:max-h-dvh lg:self-start lg:overflow-y-auto lg:border-b-0 lg:p-3.5">
           <div className="flex flex-row gap-1 overflow-x-auto [scrollbar-width:none] lg:flex-col lg:overflow-visible">
             {sections.map((s) => {
               const on = s.key === section.key;
@@ -659,14 +662,22 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               <FaceEditor initialColor={color} initialFace={faceOf(bot.face)} botName={bot.name} clientName={bot.client_name} colorLocked={!opens("aparencia")} />
               <fieldset disabled={!opens("aparencia")} className="contents">
               <input type="hidden" name="avatar_text" value={appearance.avatar_text ?? initials(bot.client_name)} />
-              <div><label htmlFor="suggested" className="label">Perguntas sugeridas (uma por linha, até 6)</label><textarea id="suggested" name="suggested" rows={4} defaultValue={(appearance.suggested_questions ?? []).join("\n")} className="input" /></div>
-              <div className="border-t border-line pt-4">
-                <h3 className="text-sm font-semibold">Balão no site do cliente</h3>
-                <p className="mb-3 text-xs text-muted">Vale para o widget já instalado em até um minuto; não precisa trocar o código.</p>
-                <WidgetPositionPicker position={appearance.position === "left" ? "left" : "right"} offset={Number(appearance.offset ?? 20)} color={color} />
-              </div>
+              {/* 23/10: as perguntas e o balão em linhas com o modal; o Salvar de cada modal manda a aba inteira (o updateBot lê a aparência junta) */}
+              <SettingGroup title="No chat do site">
+                <SettingRow
+                  icon={<MessageCircleQuestionMark size={18} />}
+                  title="Perguntas sugeridas"
+                  summary={suggestedSummary(appearance.suggested_questions ?? [])}
+                  description="Aparecem como botões embaixo da saudação, antes da primeira mensagem do visitante. Até 6."
+                >
+                  <SuggestedQuestionsField initial={appearance.suggested_questions ?? []} color={color} welcome={persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`} />
+                </SettingRow>
+                <SettingRow icon={<MessageCircle size={18} />} title="Balão no site do cliente" summary={widgetPositionSummary(appearance.position, appearance.offset)} description="Vale para o chat já instalado em até um minuto: não precisa trocar o código.">
+                  <WidgetPositionPicker position={appearance.position === "left" ? "left" : "right"} offset={Number(appearance.offset ?? 20)} color={color} />
+                </SettingRow>
+              </SettingGroup>
               </fieldset>
-              <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
+              <SubmitButton className="btn-primary self-start">Salvar o rosto</SubmitButton>
             </ActionForm>
           )}
 
