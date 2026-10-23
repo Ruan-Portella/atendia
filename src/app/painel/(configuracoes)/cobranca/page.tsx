@@ -22,6 +22,13 @@ import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Cobrança" };
 
+const TABS = [
+  ["chatbots", "Chatbots"],
+  ["pacotes", "Pacotes"],
+  ["faturas", "Faturas"],
+] as const;
+type Tab = (typeof TABS)[number][0];
+
 const INVOICE_TONE = { "em aberto": "danger", paga: "ok", rascunho: "muted", anulada: "muted", "não cobrável": "muted" } as const;
 
 /**
@@ -31,7 +38,8 @@ const INVOICE_TONE = { "em aberto": "danger", paga: "ok", rascunho: "muted", anu
  * o portal (cartão e cancelar). Parte 4d: a prévia exata da próxima fatura (Stripe), as faturas em
  * aberto para pagar, o cancelamento agendado com "reativar" e as faturas recentes. Redesenho, etapa
  * 5: a situação num cartão no alto, os chatbots em linhas com o trocar num modal, os pacotes em
- * cartões e as faturas com a pílula.
+ * cartões e as faturas com a pílula; e, a pedido do usuário em 22/10 (a lista de chatbots empurrava o
+ * resto para baixo), as três em abas (?aba=chatbots|pacotes|faturas).
  */
 export default async function CobrancaPage({ searchParams }: PageProps<"/painel/cobranca">) {
   const sp = await searchParams;
@@ -50,6 +58,13 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
   // desistência nos 7 dias do primeiro pagamento (Trava da conta grátis, parte 2)
   const withdrawal = await withdrawalState(createAdminClient(), agency);
   const pastDue = agency.billing_status === "past_due";
+  const tab: Tab = TABS.some(([t]) => t === sp.aba) ? (sp.aba as Tab) : "chatbots";
+  const activePacks = packs.filter((p) => !p.endsAt).length;
+  const counts: Record<Tab, React.ReactNode> = {
+    chatbots: billable.length + custom.length,
+    pacotes: activePacks ? `${activePacks} ${activePacks === 1 ? "ativo" : "ativos"}` : null,
+    faturas: open.length ? <span className="text-danger">{open.length} em aberto</span> : view.invoices.length || null,
+  };
   const status = pastDue ? { tone: "danger" as const, label: "Pagamento falhou" } : agency.billing_cancel_at ? { tone: "warn" as const, label: `Termina em ${dateBR(agency.billing_cancel_at)}` } : { tone: "ok" as const, label: "Ativa" };
 
   return (
@@ -166,89 +181,111 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
             <WithdrawalCard state={withdrawal} action={withdrawSubscription} />
           </div>
 
-          <section className="flex flex-col gap-2">
-            <h2 className="kpi-label px-1">Tamanho de cada chatbot</h2>
-            <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
-              {billable.map((b) => (
-                <div key={b.botId} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <Link href={`/painel/bots/${b.botId}`} className="truncate text-[15px] font-medium text-ink hover:underline">
-                        {b.name}
-                      </Link>
-                      <StatusPill tone={b.size ? "ok" : "muted"}>{sizeLabel(b)}</StatusPill>
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-muted">
-                      {[b.clientName, b.size ? `${brlCents(sizeMonthlyCents(b) / 100)}/mês` : null, b.size === "atendimento" ? "sem IA" : b.size ? `cota do mês: ${num(b.quota)}` : "fora do ar"].filter(Boolean).join(" · ")}
-                    </span>
-                    {b.pendingSize && (
-                      <span className="mt-0.5 block text-xs text-amber-ink">
-                        {choiceLabel(nextChoice(b))} a partir de {renewal}
-                      </span>
-                    )}
-                  </span>
-                  <SizeChangeButton botId={b.botId} botName={b.name} current={{ size: b.size, volumePacks: b.volumePacks }} pendingSize={b.pendingSize} pendingVolumePacks={b.pendingVolumePacks} monthQuota={b.quota} renewal={renewal} />
-                </div>
+          <nav aria-label="Assinatura" className="-mx-1 flex overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+            <span className="flex shrink-0 gap-1 rounded-[14px] bg-panel p-1 shadow-[inset_0_0_0_1px_var(--color-line)]">
+              {TABS.map(([key, label]) => (
+                <Link
+                  key={key}
+                  href={`/painel/cobranca?aba=${key}`}
+                  scroll={false}
+                  aria-current={tab === key ? "page" : undefined}
+                  className={cn("flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-3.5 py-1.5 text-sm font-medium transition-colors duration-[120ms]", tab === key ? "bg-raised text-ink shadow-[inset_0_0_0_1px_var(--color-line)]" : "text-muted hover:text-ink")}
+                >
+                  {label}
+                  {counts[key] !== null && counts[key] !== 0 && <span className="tabular text-xs font-normal text-muted">{counts[key]}</span>}
+                </Link>
               ))}
-              {custom.map((b) => (
-                <div key={b.botId} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="truncate text-[15px] font-medium text-ink">{b.name}</span>
-                      <StatusPill>sob medida</StatusPill>
-                    </span>
-                    <span className="mt-0.5 block text-xs text-muted">Cota do mês: {num(b.quota)} · combinado com a BoaVoz</span>
-                  </span>
-                </div>
-              ))}
-              {billable.length + custom.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted">Nenhum chatbot ainda.</p>}
-            </div>
-          </section>
+            </span>
+          </nav>
 
-          <section className="flex flex-col gap-2">
-            <h2 className="kpi-label px-1">Pacotes da conta</h2>
-            <ul className="grid gap-3 sm:grid-cols-3">
-              {Object.values(PACKS).map((p) => {
-                const on = packs.find((x) => x.id === p.id);
-                const need = p.requires ? packs.find((x) => x.id === p.requires && !x.endsAt) : true;
-                return <PackCard key={p.id} pack={p.id} name={p.name} priceBrl={p.priceBrl} description={p.description} state={on ? (on.endsAt ? "ending" : "on") : "off"} chargeCents={packChargeCents(p.id)} blockedBy={need ? null : PACKS[p.requires!].name} renewal={renewal} />;
-              })}
-            </ul>
-          </section>
-
-          <section className="flex flex-col gap-2">
-            <h2 className="kpi-label px-1">Faturas</h2>
-            {view.invoices.length === 0 ? (
-              <p className="card flex items-center justify-center gap-2 px-5 py-8 text-sm text-muted">
-                <Receipt size={16} /> Nenhuma fatura ainda.
-              </p>
-            ) : (
+          {tab === "chatbots" && (
+            <section className="flex flex-col gap-2">
+              <p className="px-1 text-xs text-muted">Subir vale na hora, com a cobrança proporcional; descer ou tirar vale no dia 1º.</p>
               <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
-                {view.invoices.map((i) => (
-                  <div key={i.id} className={cn("flex flex-wrap items-center gap-3 px-4 py-3", i.status === "em aberto" && "bg-danger-soft/30")}>
+                {billable.map((b) => (
+                  <div key={b.botId} className="flex flex-wrap items-center gap-3 px-4 py-3">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-ink">{i.description}</span>
-                      <span className="block text-xs text-muted">{dateBR(i.created)}</span>
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <Link href={`/painel/bots/${b.botId}`} className="truncate text-[15px] font-medium text-ink hover:underline">
+                          {b.name}
+                        </Link>
+                        <StatusPill tone={b.size ? "ok" : "muted"}>{sizeLabel(b)}</StatusPill>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted">
+                        {[b.clientName, b.size ? `${brlCents(sizeMonthlyCents(b) / 100)}/mês` : null, b.size === "atendimento" ? "sem IA" : b.size ? `cota do mês: ${num(b.quota)}` : "fora do ar"].filter(Boolean).join(" · ")}
+                      </span>
+                      {b.pendingSize && (
+                        <span className="mt-0.5 block text-xs text-amber-ink">
+                          {choiceLabel(nextChoice(b))} a partir de {renewal}
+                        </span>
+                      )}
                     </span>
-                    <span className="tabular text-sm text-ink">{brlCents(i.totalCents / 100)}</span>
-                    <StatusPill tone={INVOICE_TONE[i.status]}>{i.status}</StatusPill>
-                    <span className="flex w-[104px] justify-end gap-3 text-xs">
-                      {i.url && (
-                        <a href={i.url} target="_blank" rel="noreferrer" className={cn("font-medium hover:underline", i.status === "em aberto" ? "text-danger" : "text-brand")}>
-                          {i.status === "em aberto" ? "Pagar" : "Ver"}
-                        </a>
-                      )}
-                      {i.pdf && (
-                        <a href={i.pdf} target="_blank" rel="noreferrer" className="font-medium text-brand hover:underline">
-                          PDF
-                        </a>
-                      )}
+                    <SizeChangeButton botId={b.botId} botName={b.name} current={{ size: b.size, volumePacks: b.volumePacks }} pendingSize={b.pendingSize} pendingVolumePacks={b.pendingVolumePacks} monthQuota={b.quota} renewal={renewal} />
+                  </div>
+                ))}
+                {custom.map((b) => (
+                  <div key={b.botId} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="truncate text-[15px] font-medium text-ink">{b.name}</span>
+                        <StatusPill>sob medida</StatusPill>
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted">Cota do mês: {num(b.quota)} · combinado com a BoaVoz</span>
                     </span>
                   </div>
                 ))}
+                {billable.length + custom.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted">Nenhum chatbot ainda.</p>}
               </div>
-            )}
-          </section>
+            </section>
+          )}
+
+          {tab === "pacotes" && (
+            <section className="flex flex-col gap-2">
+              <p className="px-1 text-xs text-muted">Valem para a conta toda. Assinar cobra o proporcional agora; tirar vale no dia 1º.</p>
+              <ul className="grid gap-3 sm:grid-cols-3">
+                {Object.values(PACKS).map((p) => {
+                  const on = packs.find((x) => x.id === p.id);
+                  const need = p.requires ? packs.find((x) => x.id === p.requires && !x.endsAt) : true;
+                  return <PackCard key={p.id} pack={p.id} name={p.name} priceBrl={p.priceBrl} description={p.description} state={on ? (on.endsAt ? "ending" : "on") : "off"} chargeCents={packChargeCents(p.id)} blockedBy={need ? null : PACKS[p.requires!].name} renewal={renewal} />;
+                })}
+              </ul>
+            </section>
+          )}
+
+          {tab === "faturas" && (
+            <section className="flex flex-col gap-2">
+              {view.invoices.length === 0 ? (
+                <p className="card flex items-center justify-center gap-2 px-5 py-8 text-sm text-muted">
+                  <Receipt size={16} /> Nenhuma fatura ainda.
+                </p>
+              ) : (
+                <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+                  {view.invoices.map((i) => (
+                    <div key={i.id} className={cn("flex flex-wrap items-center gap-3 px-4 py-3", i.status === "em aberto" && "bg-danger-soft/30")}>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-ink">{i.description}</span>
+                        <span className="block text-xs text-muted">{dateBR(i.created)}</span>
+                      </span>
+                      <span className="tabular text-sm text-ink">{brlCents(i.totalCents / 100)}</span>
+                      <StatusPill tone={INVOICE_TONE[i.status]}>{i.status}</StatusPill>
+                      <span className="flex w-[104px] justify-end gap-3 text-xs">
+                        {i.url && (
+                          <a href={i.url} target="_blank" rel="noreferrer" className={cn("font-medium hover:underline", i.status === "em aberto" ? "text-danger" : "text-brand")}>
+                            {i.status === "em aberto" ? "Pagar" : "Ver"}
+                          </a>
+                        )}
+                        {i.pdf && (
+                          <a href={i.pdf} target="_blank" rel="noreferrer" className="font-medium text-brand hover:underline">
+                            PDF
+                          </a>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </>
       )}
     </div>
