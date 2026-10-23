@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { reguaContactCount, reguaContacts, whatsappPhonesOf, phoneHash, type ReguaContact, type ReguaSearch } from "./contacts";
+import { reguaContactCount, reguaContacts, reguaCustomDateValues, whatsappPhonesOf, phoneHash, type ReguaContact, type ReguaSearch } from "./contacts";
+import { listDateFields } from "./contact-date-fields";
 import { campaignReport, ensureReguaCampaign, queueReguaSends, reguaCampaigns, reguaRecentPhoneHashes, reportNumbers, stopReguaCampaign, type ReguaRecipient } from "./campaigns";
 import { referencePrices } from "./whatsapp-usage";
 import { loadMessages } from "./messages";
 import { DEFAULT_TIMEZONE, atLocal, wallClock } from "./timezone";
-import { REGUA_CATEGORY, REGUA_DELAY, REGUA_EXAMPLES, REGUA_KINDS, REGUA_LABEL, reguaTemplateBody, reguaTemplateName, reguaTemplateProblem, reguaTemplateState, type ReguaKind, type ReguaTemplateState } from "./regua-kinds";
+import { REGUA_CATEGORY, REGUA_DELAY, REGUA_EXAMPLES, REGUA_KINDS, REGUA_LABEL, customExamples, customTemplateBody, customTemplateName, customTemplateProblem, reguaTemplateBody, reguaTemplateName, reguaTemplateProblem, reguaTemplateState, type CustomRegua, type ReguaCategory, type ReguaKind, type ReguaTemplateState, type ReguaTrigger } from "./regua-kinds";
 import { createTemplate, listTemplates, type TemplateChannel } from "./whatsapp-templates";
 import { TEMPLATE_LANGUAGE, type Template } from "./template-text";
 import { templateGate } from "./campaign-audience";
@@ -28,6 +29,12 @@ export { REGUA_DELAY, REGUA_KINDS, REGUA_LABEL, type ReguaKind } from "./regua-k
  * Envio só das 8h às 20h no fuso do cliente. Uma régua por pessoa a cada 24 h no chatbot, na ordem
  * de importância (o lembrete primeiro). O lembrete de utilidade sem a declaração de consentimento
  * do cliente só vai para quem já escreveu ao chatbot (a regra dos lembretes da B3).
+ *
+ * Régua personalizada (23/10/2026, "+ Nova régua"): várias por chatbot, cada uma com a data que
+ * dispara (o aniversário, a última visita, o horário marcado ou uma data nova do contato), quantos
+ * dias antes ou depois (no horário marcado, horas antes), a hora, a categoria e, se quiser, uma
+ * etiqueta. A data nova vale uma vez ou todo ano. Na ordem de importância, ela vem logo depois do
+ * lembrete pronto.
  */
 
 /** O envio sai das 8h às 20h, no fuso do cliente. */
@@ -61,6 +68,24 @@ export function birthdaysOn(at: number, tz: string): string[] {
   const leap = (w.year % 4 === 0 && w.year % 100 !== 0) || w.year % 400 === 0;
   return md === "02-28" && !leap ? [md, "02-29"] : [md];
 }
+
+/** O dia local (fuso do cliente) a `days` dias de hoje (negativo: para trás). Pura. */
+export function localDay(now: number, tz: string, days: number): { year: number; month: number; day: number } {
+  const w = wallClock(tz, new Date(now));
+  const t = wallClock(tz, new Date(atLocal(tz, w.year, w.month, w.day + days, 12)));
+  return { year: t.year, month: t.month, day: t.day };
+}
+
+/** "MM-DD" do dia; no 28/02 de ano que não é bissexto, o 29/02 junto. Pura. */
+export function monthDaysOf(d: { year: number; month: number; day: number }): string[] {
+  const md = `${pad(d.month)}-${pad(d.day)}`;
+  const leap = (d.year % 4 === 0 && d.year % 100 !== 0) || d.year % 400 === 0;
+  return md === "02-28" && !leap ? [md, "02-29"] : [md];
+}
+
+const ymdOf = (d: { year: number; month: number; day: number }) => `${d.year}-${pad(d.month)}-${pad(d.day)}`;
+/** "10/03/2027" (uma vez) ou "10/03" (todo ano) de "2027-03-10". Pura. */
+export const dateLabelOf = (ymd: string, withYear: boolean) => (withYear ? `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}` : `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`);
 
 export interface Slot {
   sendAt: number;
@@ -124,15 +149,27 @@ export const firstNameOf = (name: string | null | undefined) => ((name ?? "").tr
 
 /* ------------------------------------------------------------------ o planejador */
 
+/** O tipo na tabela: as 5 prontas e a personalizada. */
+export type ReguaRowKind = ReguaKind | "personalizada";
+
 interface ReguaRow {
   id: string;
   agency_id: string;
   client_id: string | null;
   bot_id: string;
-  kind: ReguaKind;
+  kind: ReguaRowKind;
   delay_value: number | null;
   send_hour: number;
   planned_at: string | null;
+  // a régua personalizada (as prontas deixam em branco)
+  name: string | null;
+  trigger: ReguaTrigger | null;
+  date_field_id: string | null;
+  repeat_yearly: boolean;
+  offset_days: number | null;
+  tag: string | null;
+  category: ReguaCategory | null;
+  created_at: string;
 }
 
 /** Quem entra na régua agora: o envio (telefone, ocasião, horário, prazo, variáveis) e se a pessoa já escreveu. */
@@ -150,14 +187,67 @@ interface PlanContext {
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
-const delayOf = (r: Pick<ReguaRow, "kind" | "delay_value">) => r.delay_value ?? REGUA_DELAY[r.kind]?.default ?? 1;
+const delayOf = (r: Pick<ReguaRow, "kind" | "delay_value">) => r.delay_value ?? (r.kind === "personalizada" ? 24 : REGUA_DELAY[r.kind]?.default) ?? 1;
 
 function fromContact(c: ReguaContact, dedupeKey: string, slot: Slot, variables: string[]): Candidate {
   return { contactId: c.id, phone: c.phone, dedupeKey, variables, sendAt: iso(slot.sendAt), expiresAt: iso(slot.expiresAt), messaged: c.messaged };
 }
 
+/**
+ * Os candidatos de uma régua personalizada agora. Por dia (aniversário, última visita, data nova):
+ * quem tem a data em (hoje − o prazo), na hora escolhida, até as 20h. No horário marcado: como o
+ * lembrete pronto (a chave "l:" faz o envio conferir de novo o horário do contato).
+ */
+async function customCandidates(db: SupabaseClient, r: ReguaRow, ctx: PlanContext, dateKey: string | null): Promise<Candidate[]> {
+  const { tz, now } = ctx;
+  const search = (by: ReguaSearch) => reguaContacts(db, r.bot_id, { ...by, tag: r.tag });
+  if (r.trigger === "horario") {
+    const n = delayOf(r);
+    const out: Candidate[] = [];
+    for (const c of await search({ appointment: [iso(now + 30 * MIN), iso(now + n * HOUR + HOUR)] })) {
+      const at = Date.parse(c.appointment_at!);
+      const slot = reminderSlot(at, n, { tz, now });
+      if (!slot) continue;
+      const label = appointmentLabels(at, tz);
+      out.push(fromContact(c, `l:${c.id}:${c.appointment_at}`, slot, [firstNameOf(c.name), label.date, label.time]));
+    }
+    return out;
+  }
+  const slot = birthdaySlot(now, { tz, sendHour: r.send_hour });
+  if (!slot) return [];
+  // a data que vence hoje: hoje menos o prazo (10 dias antes → a data é daqui a 10 dias)
+  const target = localDay(now, tz, -(r.offset_days ?? 0));
+  const year = wallClock(tz, new Date(now)).year;
+  if (r.trigger === "aniversario") {
+    const people = await search({ birthdays: monthDaysOf(target) });
+    return people.map((c) => fromContact(c, `c:${r.id}:${c.id}:${year}`, slot, [firstNameOf(c.name), `${c.birthday!.slice(3, 5)}/${c.birthday!.slice(0, 2)}`]));
+  }
+  if (r.trigger === "ultima_visita") {
+    const from = atLocal(tz, target.year, target.month, target.day, 0);
+    const until = atLocal(tz, target.year, target.month, target.day + 1, 0) - 1;
+    const people = await search({ lastVisit: [iso(from), iso(until)] });
+    return people.map((c) => {
+      const w = wallClock(tz, new Date(Date.parse(c.last_visit_at!)));
+      return fromContact(c, `c:${r.id}:${c.id}:${c.last_visit_at}`, slot, [firstNameOf(c.name), `${pad(w.day)}/${pad(w.month)}/${w.year}`]);
+    });
+  }
+  // a data nova: o dia exato (uma vez) ou o dia e o mês (todo ano)
+  if (!dateKey) return [];
+  if (!r.repeat_yearly) {
+    const ymd = ymdOf(target);
+    const people = await search({ customDate: { key: dateKey, equals: ymd } });
+    return people.map((c) => fromContact(c, `c:${r.id}:${c.id}:${ymd}`, slot, [firstNameOf(c.name), dateLabelOf(ymd, true)]));
+  }
+  const out: Candidate[] = [];
+  for (const md of monthDaysOf(target)) {
+    for (const c of await search({ customDate: { key: dateKey, monthDay: md } })) out.push(fromContact(c, `c:${r.id}:${c.id}:${year}`, slot, [firstNameOf(c.name), dateLabelOf(c.custom_dates[dateKey], false)]));
+  }
+  return out;
+}
+
 /** Os candidatos de uma régua agora (sem as regras de quem já recebeu). */
-async function candidatesOf(db: SupabaseClient, r: ReguaRow, ctx: PlanContext): Promise<Candidate[]> {
+async function candidatesOf(db: SupabaseClient, r: ReguaRow, ctx: PlanContext, dateKey: string | null = null): Promise<Candidate[]> {
+  if (r.kind === "personalizada") return customCandidates(db, r, ctx, dateKey);
   const { tz, now } = ctx;
   const search = (by: ReguaSearch) => reguaContacts(db, r.bot_id, by);
   const n = delayOf(r);
@@ -228,6 +318,14 @@ async function candidatesOf(db: SupabaseClient, r: ReguaRow, ctx: PlanContext): 
   return out;
 }
 
+const PLAN_COLS = "id, agency_id, client_id, bot_id, kind, delay_value, send_hour, planned_at, name, trigger, date_field_id, repeat_yearly, offset_days, tag, category, created_at";
+
+/** A ordem de importância: o lembrete pronto, as personalizadas (na ordem de criação) e as outras prontas. Pura. */
+export function byImportance(a: Pick<ReguaRow, "kind" | "created_at">, b: Pick<ReguaRow, "kind" | "created_at">): number {
+  const rank = (r: Pick<ReguaRow, "kind">) => (r.kind === "lembrete" ? 0 : r.kind === "personalizada" ? 1 : 2 + REGUA_KINDS.indexOf(r.kind));
+  return rank(a) - rank(b) || (a.kind === "personalizada" ? a.created_at.localeCompare(b.created_at) : 0);
+}
+
 /**
  * Uma rodada do planejador (no tique das campanhas): as réguas ligadas que ninguém olhou na
  * última hora, com a campanha enviando, por chatbot e na ordem de importância. Devolve quantas
@@ -235,11 +333,14 @@ async function candidatesOf(db: SupabaseClient, r: ReguaRow, ctx: PlanContext): 
  */
 export async function planReguas(db: SupabaseClient, o: { hasTime: () => boolean; now?: number } = { hasTime: () => true }): Promise<{ reguas: number; queued: number }> {
   const now = o.now ?? Date.now();
-  const { data } = await db.from("reguas").select("id, agency_id, client_id, bot_id, kind, delay_value, send_hour, planned_at").eq("active", true).order("planned_at", { ascending: true, nullsFirst: true }).limit(200);
+  const { data } = await db.from("reguas").select(PLAN_COLS).eq("active", true).order("planned_at", { ascending: true, nullsFirst: true }).limit(200);
   const due = ((data ?? []) as ReguaRow[]).filter((r) => !r.planned_at || Date.parse(r.planned_at) <= now - PLAN_EVERY_MS);
   const result = { reguas: 0, queued: 0 };
   if (!due.length) return result;
   const campaigns = await reguaCampaigns(db, due.map((r) => r.id));
+  // a chave de cada data nova das réguas personalizadas
+  const fields = await listDateFields(db, [...new Set(due.filter((r) => r.date_field_id).map((r) => r.bot_id))]);
+  const keyOf = new Map(fields.map((f) => [f.id, f.key]));
   const byBot = new Map<string, ReguaRow[]>();
   for (const r of due) if (campaigns.get(r.id)?.status === "sending") byBot.set(r.bot_id, [...(byBot.get(r.bot_id) ?? []), r]);
 
@@ -253,11 +354,11 @@ export async function planReguas(db: SupabaseClient, o: { hasTime: () => boolean
     const { data: allOfBot } = await db.from("reguas").select("id").eq("bot_id", botId);
     const botCampaigns = [...(await reguaCampaigns(db, (allOfBot ?? []).map((x) => x.id as string))).values()].map((c) => c.id);
     const recent = await reguaRecentPhoneHashes(db, botCampaigns, iso(now - DAY));
-    for (const r of [...list].sort((a, b) => REGUA_KINDS.indexOf(a.kind) - REGUA_KINDS.indexOf(b.kind))) {
+    for (const r of [...list].sort(byImportance)) {
       const campaign = campaigns.get(r.id)!;
       const ctx: PlanContext = { tz, declared, category: campaign.template_category.toUpperCase(), now };
       const picked: Candidate[] = [];
-      for (const c of await candidatesOf(db, r, ctx)) {
+      for (const c of await candidatesOf(db, r, ctx, r.date_field_id ? (keyOf.get(r.date_field_id) ?? null) : null)) {
         const h = phoneHash(c.phone);
         if (recent.has(h)) continue;
         // lembrete de utilidade sem a declaração do cliente: só quem já escreveu ao chatbot
@@ -275,7 +376,7 @@ export async function planReguas(db: SupabaseClient, o: { hasTime: () => boolean
 
 /* ------------------------------------------------------------------ painel (partes 3 e 4) */
 
-const REGUA_COLS = "id, agency_id, client_id, bot_id, kind, active, template_name, template_language, delay_value, send_hour, planned_at, updated_at";
+const REGUA_COLS = `${PLAN_COLS}, active, template_name, template_language, updated_at`;
 
 export interface Regua extends ReguaRow {
   active: boolean;
@@ -284,14 +385,73 @@ export interface Regua extends ReguaRow {
   updated_at: string;
 }
 
-/** As réguas de um chatbot, pelo tipo (a que ainda não existe fica de fora: a tela mostra o padrão). */
-export async function botReguas(db: SupabaseClient, botId: string): Promise<Map<ReguaKind, Regua>> {
-  const { data } = await db.from("reguas").select(REGUA_COLS).eq("bot_id", botId);
-  return new Map(((data ?? []) as Regua[]).map((r) => [r.kind, r]));
+/** Uma régua pronta (o tipo é um dos 5). */
+export type ReadyRegua = Regua & { kind: ReguaKind };
+
+/** As réguas prontas de um chatbot, pelo tipo (a que ainda não existe fica de fora: a tela mostra o padrão). */
+export async function botReguas(db: SupabaseClient, botId: string): Promise<Map<ReguaKind, ReadyRegua>> {
+  const { data } = await db.from("reguas").select(REGUA_COLS).eq("bot_id", botId).neq("kind", "personalizada");
+  return new Map(((data ?? []) as ReadyRegua[]).map((r) => [r.kind, r]));
+}
+
+/** As réguas personalizadas de um chatbot, na ordem de criação. */
+export async function botCustomReguas(db: SupabaseClient, botId: string): Promise<Regua[]> {
+  const { data } = await db.from("reguas").select(REGUA_COLS).eq("bot_id", botId).eq("kind", "personalizada").order("created_at");
+  return (data ?? []) as Regua[];
+}
+
+/** O que a régua personalizada guarda, no formato da tela (o nome da data nova vem do campo). Pura. */
+export function customOf(r: Regua, dateLabel: string | null): CustomRegua {
+  return {
+    name: r.name ?? "",
+    trigger: r.trigger ?? "data",
+    dateLabel,
+    repeatYearly: r.repeat_yearly,
+    offsetDays: r.trigger === "horario" ? null : (r.offset_days ?? 0),
+    hoursBefore: r.trigger === "horario" ? (r.delay_value ?? 24) : null,
+    sendHour: r.send_hour,
+    tag: r.tag,
+    category: r.category ?? "UTILITY",
+  };
+}
+
+/** As colunas da régua personalizada no banco. Pura. */
+function customRow(c: CustomRegua, dateFieldId: string | null): Record<string, unknown> {
+  return {
+    name: c.name.trim(),
+    trigger: c.trigger,
+    date_field_id: c.trigger === "data" ? dateFieldId : null,
+    repeat_yearly: c.trigger === "data" ? c.repeatYearly : false,
+    offset_days: c.trigger === "horario" ? null : c.offsetDays,
+    delay_value: c.trigger === "horario" ? c.hoursBefore : null,
+    send_hour: c.trigger === "horario" ? 9 : c.sendHour,
+    tag: c.tag?.trim() || null,
+    category: c.category,
+  };
+}
+
+/** Cria a régua personalizada, desligada (a validação é de customReguaProblem, antes). */
+export async function createCustomRegua(db: SupabaseClient, bot: { id: string; agency_id: string; client_id: string | null }, c: CustomRegua, dateFieldId: string | null, by: string | null): Promise<Regua> {
+  const { data, error } = await db.from("reguas").insert({ agency_id: bot.agency_id, client_id: bot.client_id, bot_id: bot.id, kind: "personalizada", active: false, created_by: by, ...customRow(c, dateFieldId) }).select(REGUA_COLS).single();
+  if (error || !data) throw new Error(`régua: ${error?.message ?? "não gravada"}`);
+  return data as Regua;
+}
+
+/** Troca o que a régua personalizada faz. A categoria só muda com um modelo novo (o aprovado é de uma categoria). */
+export async function updateCustomRegua(db: SupabaseClient, regua: Pick<Regua, "id">, c: CustomRegua, dateFieldId: string | null): Promise<void> {
+  const { error } = await db.from("reguas").update({ ...customRow(c, dateFieldId), planned_at: null, updated_at: new Date().toISOString() }).eq("id", regua.id).eq("kind", "personalizada");
+  if (error) throw new Error(`régua: ${error.message}`);
+}
+
+/** Apaga a régua personalizada: a campanha dela e o que estava na fila vão junto (o banco apaga em cascata). */
+export async function deleteCustomRegua(db: SupabaseClient, regua: Pick<Regua, "id">): Promise<void> {
+  await stopReguaCampaign(db, regua.id);
+  const { error } = await db.from("reguas").delete().eq("id", regua.id).eq("kind", "personalizada");
+  if (error) throw new Error(`régua: ${error.message}`);
 }
 
 /** A régua do chatbot e do tipo; na primeira vez, criada desligada, com o prazo padrão. */
-export async function ensureRegua(db: SupabaseClient, bot: { id: string; agency_id: string; client_id: string | null }, kind: ReguaKind, by: string | null): Promise<Regua> {
+export async function ensureRegua(db: SupabaseClient, bot: { id: string; agency_id: string; client_id: string | null }, kind: ReguaKind, by: string | null): Promise<ReadyRegua> {
   const current = (await botReguas(db, bot.id)).get(kind);
   if (current) return current;
   const { data, error } = await db.from("reguas").insert({ agency_id: bot.agency_id, client_id: bot.client_id, bot_id: bot.id, kind, active: false, delay_value: REGUA_DELAY[kind]?.default ?? null, send_hour: 9, created_by: by }).select(REGUA_COLS).single();
@@ -301,7 +461,7 @@ export async function ensureRegua(db: SupabaseClient, bot: { id: string; agency_
     if (again) return again;
     throw new Error(`régua: ${error?.message ?? "não gravada"}`);
   }
-  return data as Regua;
+  return data as ReadyRegua;
 }
 
 /**
@@ -310,21 +470,24 @@ export async function ensureRegua(db: SupabaseClient, bot: { id: string; agency_
  * a idade), cria na Meta com um nome novo e guarda na régua. Um modelo que já estava aprovado
  * continua em uso até o novo ser aprovado e a régua ser ligada de novo. Erro da Meta sobe.
  */
-export async function submitReguaTemplate(db: SupabaseClient, o: { regua: Pick<Regua, "id" | "kind">; ch: TemplateChannel; body: string; exempt?: readonly GateCategory[] }): Promise<{ ok: true; name: string } | { ok: false; message: string }> {
+export async function submitReguaTemplate(db: SupabaseClient, o: { regua: Pick<Regua, "id" | "kind" | "name" | "trigger" | "repeat_yearly" | "category">; ch: TemplateChannel; body: string; exempt?: readonly GateCategory[] }): Promise<{ ok: true; name: string } | { ok: false; message: string }> {
   const body = o.body.trim();
-  const problem = reguaTemplateProblem(o.regua.kind, body);
+  const custom = o.regua.kind === "personalizada" ? { trigger: o.regua.trigger ?? "data", yearly: o.regua.repeat_yearly, category: o.regua.category ?? "UTILITY" } : null;
+  const problem = custom ? customTemplateProblem(custom.trigger, custom.yearly, body) : reguaTemplateProblem(o.regua.kind as ReguaKind, body);
   if (problem) return { ok: false, message: problem };
   const gate = templateGate(body, o.exempt ?? []);
   if (gate.prohibited.length) return { ok: false, message: `O texto cita um item que não pode ser oferecido pelo WhatsApp (${gate.prohibited.join(", ")}).` };
   if (gate.regulated.length) return { ok: false, message: `A régua não confere a idade de quem recebe: tire do texto o que é só para maiores (${gate.regulated.join(", ")}).` };
-  const name = reguaTemplateName(o.regua.kind, (await listTemplates(o.ch)).map((t) => t.name));
-  await createTemplate(o.ch, { name, category: REGUA_CATEGORY[o.regua.kind], body, examples: REGUA_EXAMPLES[o.regua.kind] });
+  const existing = (await listTemplates(o.ch)).map((t) => t.name);
+  const name = custom ? customTemplateName(o.regua.name ?? "", existing) : reguaTemplateName(o.regua.kind as ReguaKind, existing);
+  if (custom) await createTemplate(o.ch, { name, category: custom.category, body, examples: customExamples(custom.trigger, custom.yearly) });
+  else await createTemplate(o.ch, { name, category: REGUA_CATEGORY[o.regua.kind as ReguaKind], body, examples: REGUA_EXAMPLES[o.regua.kind as ReguaKind] });
   await db.from("reguas").update({ template_name: name, template_language: TEMPLATE_LANGUAGE, updated_at: new Date().toISOString() }).eq("id", o.regua.id);
   return { ok: true, name };
 }
 
 /** O prazo e a hora da régua (dentro dos limites do tipo). Devolve o problema, ou null. */
-export async function saveReguaSettings(db: SupabaseClient, regua: Pick<Regua, "id" | "kind">, s: { delay: number | null; sendHour: number | null }): Promise<string | null> {
+export async function saveReguaSettings(db: SupabaseClient, regua: Pick<ReadyRegua, "id" | "kind">, s: { delay: number | null; sendHour: number | null }): Promise<string | null> {
   const limits = REGUA_DELAY[regua.kind];
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), planned_at: null };
   if (limits) {
@@ -365,6 +528,25 @@ export async function estimateRegua(db: SupabaseClient, botId: string, kind: Reg
   return ((data ?? []) as Array<{ last_reply_at: string; last_contact_at: string | null }>).filter((c) => c.last_contact_at && Date.parse(c.last_contact_at) < Date.parse(c.last_reply_at)).length;
 }
 
+/** Até quantas pessoas a régua personalizada alcança nos próximos 30 dias (antes do aceite, do SAIR e da regra de uma por dia). */
+export async function estimateCustomRegua(db: SupabaseClient, r: Pick<Regua, "bot_id" | "trigger" | "offset_days" | "repeat_yearly" | "tag">, dateKey: string | null, tz: string, now = Date.now()): Promise<number> {
+  const count = (by: ReguaSearch) => reguaContactCount(db, r.bot_id, { ...by, tag: r.tag });
+  const off = r.offset_days ?? 0;
+  if (r.trigger === "horario") return count({ appointment: [iso(now), iso(now + 30 * DAY)] });
+  // as datas que vencem nos próximos 30 dias: hoje − o prazo, até daqui a 29 dias − o prazo
+  const days = Array.from({ length: 30 }, (_, i) => localDay(now, tz, i - off));
+  if (r.trigger === "aniversario") return count({ birthdays: [...new Set(days.flatMap(monthDaysOf))] });
+  if (r.trigger === "ultima_visita") {
+    const first = days[0];
+    const last = days[days.length - 1];
+    return count({ lastVisit: [iso(atLocal(tz, first.year, first.month, first.day, 0)), iso(atLocal(tz, last.year, last.month, last.day + 1, 0) - 1)] });
+  }
+  if (!dateKey) return 0;
+  const values = await reguaCustomDateValues(db, r.bot_id, dateKey, r.tag);
+  const wanted = new Set(r.repeat_yearly ? days.flatMap(monthDaysOf) : days.map(ymdOf));
+  return values.filter((v) => wanted.has(r.repeat_yearly ? v.slice(5) : v)).length;
+}
+
 /** Na tela, as réguas na ordem da spec. */
 export const REGUA_DISPLAY: ReguaKind[] = ["aniversario", "sumido", "pos_atendimento", "lembrete", "sem_resposta"];
 
@@ -384,10 +566,19 @@ export interface ReguaPanelItem {
   estimate: { people: number; costBrl: number };
 }
 
+/** Uma régua personalizada na tela: a régua, o que ela faz e o mesmo resto das prontas. */
+export interface CustomReguaPanelItem extends Omit<ReguaPanelItem, "kind" | "regua" | "delay"> {
+  regua: Regua;
+  config: CustomRegua;
+  dateKey: string | null;
+}
+
 /** O que a tela das réguas mostra de cada régua do chatbot. A lista de modelos da Meta é lida uma vez. */
-export async function reguasPanel(db: SupabaseClient, o: { botId: string; company: string; ch: TemplateChannel | null; tz: string; now?: number }): Promise<{ items: ReguaPanelItem[]; templatesError: string | null }> {
+export async function reguasPanel(db: SupabaseClient, o: { botId: string; company: string; ch: TemplateChannel | null; tz: string; now?: number }): Promise<{ items: ReguaPanelItem[]; custom: CustomReguaPanelItem[]; templatesError: string | null }> {
   const reguas = await botReguas(db, o.botId);
-  const campaigns = await reguaCampaigns(db, [...reguas.values()].map((r) => r.id));
+  const customs = await botCustomReguas(db, o.botId);
+  const fields = await listDateFields(db, [o.botId]);
+  const campaigns = await reguaCampaigns(db, [...reguas.values(), ...customs].map((r) => r.id));
   let templates: Template[] = [];
   let templatesError: string | null = null;
   if (o.ch) {
@@ -421,7 +612,30 @@ export async function reguasPanel(db: SupabaseClient, o: { botId: string; compan
       };
     }),
   );
-  return { items, templatesError };
+  const custom = await Promise.all(
+    customs.map(async (regua): Promise<CustomReguaPanelItem> => {
+      const field = fields.find((f) => f.id === regua.date_field_id) ?? null;
+      const config = customOf(regua, field?.label ?? null);
+      const campaign = campaigns.get(regua.id);
+      const template = reguaTemplateState(config.category, templates, regua.template_name);
+      const people = await estimateCustomRegua(db, regua, field?.key ?? null, o.tz, o.now);
+      const price = prices[(template.category ?? config.category).toLowerCase()] ?? prices.marketing;
+      return {
+        regua,
+        config,
+        dateKey: field?.key ?? null,
+        sendHour: regua.send_hour,
+        template,
+        draft: template.body ?? customTemplateBody({ trigger: config.trigger, dateLabel: config.dateLabel, company: o.company }),
+        state: !regua.active ? "desligada" : campaign?.status === "sending" ? "ligada" : "pausada",
+        pauseReason: regua.active && campaign?.status !== "sending" ? (campaign?.pause_reason ?? null) : null,
+        inUse: campaign?.template_name ?? null,
+        numbers: campaign ? reportNumbers(await campaignReport(db, campaign.id)) : null,
+        estimate: { people, costBrl: Math.round(people * price * 100) / 100 },
+      };
+    }),
+  );
+  return { items, custom, templatesError };
 }
 
 /**
@@ -436,9 +650,10 @@ export async function setReguaActive(db: SupabaseClient, o: { regua: Regua; on: 
     return null;
   }
   if (!o.ch) return "Conecte o WhatsApp do chatbot: as réguas saem pelo número dele.";
-  const state = reguaTemplateState(o.regua.kind, await listTemplates(o.ch), o.regua.template_name);
+  const requested = o.regua.kind === "personalizada" ? (o.regua.category ?? "UTILITY") : o.regua.kind;
+  const state = reguaTemplateState(requested, await listTemplates(o.ch), o.regua.template_name);
   if (state.status !== "aprovado") return state.status === "ausente" ? "Crie o modelo da régua antes de ligar." : `O modelo da régua ainda não está aprovado pela Meta (${state.label}).`;
-  await ensureReguaCampaign(db, { reguaId: o.regua.id, agencyId: o.regua.agency_id, clientId: o.regua.client_id, botId: o.regua.bot_id, name: `Régua ${REGUA_LABEL[o.regua.kind]}`, template: { name: o.regua.template_name!, language: o.regua.template_language, category: state.category ?? REGUA_CATEGORY[o.regua.kind] }, createdBy: o.by });
+  await ensureReguaCampaign(db, { reguaId: o.regua.id, agencyId: o.regua.agency_id, clientId: o.regua.client_id, botId: o.regua.bot_id, name: `Régua ${o.regua.kind === "personalizada" ? (o.regua.name ?? "personalizada") : REGUA_LABEL[o.regua.kind]}`, template: { name: o.regua.template_name!, language: o.regua.template_language, category: state.category ?? (o.regua.kind === "personalizada" ? (o.regua.category ?? "UTILITY") : REGUA_CATEGORY[o.regua.kind]) }, createdBy: o.by });
   await db.from("reguas").update({ active: true, planned_at: null, updated_at: new Date().toISOString() }).eq("id", o.regua.id);
   return null;
 }

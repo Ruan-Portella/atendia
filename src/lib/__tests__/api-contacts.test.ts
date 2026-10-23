@@ -30,6 +30,7 @@ const row = (o: Partial<ApiContactRow> = {}): ApiContactRow => ({
   birthday: null,
   last_visit_at: null,
   appointment_at: null,
+  custom_dates: {},
   created_at: "2026-10-01T00:00:00Z",
   updated_at: "2026-10-02T00:00:00Z",
   ...o,

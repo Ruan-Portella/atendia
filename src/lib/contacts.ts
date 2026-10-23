@@ -439,7 +439,7 @@ export async function contactsForErasure(db: SupabaseClient, ids: string[]): Pro
 /** Exportação dos dados do negócio: uma página de fichas destes chatbots, abertas (por id, depois de `after`). */
 export async function exportContactsPage(db: SupabaseClient, botIds: string[], after: string | null, limit = 500): Promise<Array<Record<string, string | null>>> {
   if (!botIds.length) return [];
-  let q = db.from("contacts").select("id, bot_id, channel, phone_enc, wa_user_enc, ig_enc, external_id_enc, name, email, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at, created_at").in("bot_id", botIds);
+  let q = db.from("contacts").select("id, bot_id, channel, phone_enc, wa_user_enc, ig_enc, external_id_enc, name, email, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at, custom_dates, created_at").in("bot_id", botIds);
   if (after) q = q.gt("id", after);
   const { data, error } = await q.order("id").limit(limit);
   if (error) throw new Error(`exportação dos contatos: ${error.message}`);
@@ -456,8 +456,9 @@ export async function exportContactsPage(db: SupabaseClient, botIds: string[], a
       email: (r.email as string | null) ?? null,
       first_inbound_at: (r.first_inbound_at as string | null) ?? null,
       last_inbound_at: (r.last_inbound_at as string | null) ?? null,
-      // as datas das réguas (leva Réguas): o aniversário só com o dia e o mês
+      // as datas das réguas (leva Réguas): o aniversário só com o dia e o mês; as datas novas em JSON
       ...datesOf(r),
+      custom_dates: Object.keys(customDatesOf(r.custom_dates)).length ? JSON.stringify(customDatesOf(r.custom_dates)) : null,
       created_at: r.created_at as string,
     })),
   );
@@ -566,7 +567,17 @@ export interface ContactDates {
   appointment_at: string | null;
 }
 
+/** As datas novas do contato (régua personalizada, 23/10/2026): { chave: "AAAA-MM-DD" }. */
+export type CustomDates = Record<string, string>;
+
+/** As datas novas de uma linha do banco, só as válidas. Pura. */
+export function customDatesOf(raw: unknown): CustomDates {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw as Record<string, unknown>).filter(([k, v]) => /^[a-z][a-z0-9_]{1,39}$/.test(k) && typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v))) as CustomDates;
+}
+
 export interface ContactPanelRow extends ContactListRow, ContactDates {
+  custom_dates: CustomDates;
   bsuid: string | null;
   email: string | null;
   first_inbound_at: string | null;
@@ -629,7 +640,7 @@ export async function clientContactTags(db: SupabaseClient, botIds: string[]): P
 /** Um contato para o painel, só se for de um dos chatbots informados. */
 export async function contactForPanel(db: SupabaseClient, id: string, botIds: string[]): Promise<ContactPanelRow | null> {
   if (!botIds.length) return null;
-  const { data } = await db.from("contacts").select(`${LIST_COLS}, wa_user_enc, email, first_inbound_at, marketing_offer_at, birthday, last_visit_at, appointment_at`).eq("id", id).in("bot_id", botIds).maybeSingle();
+  const { data } = await db.from("contacts").select(`${LIST_COLS}, wa_user_enc, email, first_inbound_at, marketing_offer_at, birthday, last_visit_at, appointment_at, custom_dates`).eq("id", id).in("bot_id", botIds).maybeSingle();
   if (!data) return null;
   const r = data as Record<string, unknown>;
   const photos = await contactPhotoVersions(db, [id]);
@@ -641,6 +652,7 @@ export async function contactForPanel(db: SupabaseClient, id: string, botIds: st
     first_inbound_at: (r.first_inbound_at as string | null) ?? null,
     marketing_offer_at: (r.marketing_offer_at as string | null) ?? null,
     ...datesOf(r),
+    custom_dates: customDatesOf(r.custom_dates),
   };
 }
 
@@ -658,6 +670,36 @@ export async function setContactDates(db: SupabaseClient, ids: string[], botIds:
   return (data ?? []).map((r) => r.id as string);
 }
 
+/**
+ * Troca as datas novas dos contatos (só dos chatbots informados), juntando com as que já existem:
+ * "AAAA-MM-DD" grava, null apaga a chave. Devolve os ids alterados.
+ */
+export async function setContactCustomDates(db: SupabaseClient, ids: string[], botIds: string[], patch: Record<string, string | null>): Promise<string[]> {
+  if (!ids.length || !botIds.length || !Object.keys(patch).length) return [];
+  const { data, error } = await db.from("contacts").select("id, custom_dates").in("id", ids).in("bot_id", botIds);
+  if (error) throw new Error(`contatos: ${error.message}`);
+  const changed: string[] = [];
+  for (const r of (data ?? []) as Array<{ id: string; custom_dates: unknown }>) {
+    const current = customDatesOf(r.custom_dates);
+    const next = mergeCustomDates(current, patch);
+    if (JSON.stringify(next) === JSON.stringify(current)) continue;
+    const { error: e } = await db.from("contacts").update({ custom_dates: next, updated_at: new Date().toISOString() }).eq("id", r.id);
+    if (e) throw new Error(`contatos: ${e.message}`);
+    changed.push(r.id);
+  }
+  return changed;
+}
+
+/** As datas novas depois da troca: "AAAA-MM-DD" grava, null apaga; as outras ficam. Pura. */
+export function mergeCustomDates(current: CustomDates, patch: Record<string, string | null>): CustomDates {
+  const next: CustomDates = { ...current };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) delete next[k];
+    else next[k] = v;
+  }
+  return Object.fromEntries(Object.entries(next).sort(([a], [b]) => a.localeCompare(b)));
+}
+
 /** Troca as etiquetas do contato (só de um dos chatbots informados). */
 export async function setContactTags(db: SupabaseClient, id: string, botIds: string[], tags: string[]): Promise<boolean> {
   if (!botIds.length) return false;
@@ -671,6 +713,8 @@ export interface ImportedDates {
   birthday?: string | null;
   lastVisitAt?: string | null;
   appointmentAt?: string | null;
+  /** as datas novas (régua personalizada): { chave: "AAAA-MM-DD" } */
+  customDates?: CustomDates;
 }
 
 /** O que a planilha muda nas datas de quem já existe: aniversário e horário trocam; a visita só avança. Pura. */
@@ -692,11 +736,11 @@ export async function importWhatsAppContacts(db: SupabaseClient, bot: { id: stri
   const ids = new Map<string, string>();
   const byHash = new Map(rows.map((r) => [phoneHash(r.phone), r]));
   const hashes = [...byHash.keys()];
-  const existing = new Map<string, { id: string; name: string | null; tags: string[]; birthday: string | null; last_visit_at: string | null; appointment_at: string | null }>();
+  const existing = new Map<string, { id: string; name: string | null; tags: string[]; birthday: string | null; last_visit_at: string | null; appointment_at: string | null; custom_dates: CustomDates }>();
   for (let i = 0; i < hashes.length; i += 300) {
-    const { data, error } = await db.from("contacts").select("id, phone_hash, name, tags, birthday, last_visit_at, appointment_at").eq("bot_id", bot.id).eq("channel", "whatsapp").in("phone_hash", hashes.slice(i, i + 300));
+    const { data, error } = await db.from("contacts").select("id, phone_hash, name, tags, birthday, last_visit_at, appointment_at, custom_dates").eq("bot_id", bot.id).eq("channel", "whatsapp").in("phone_hash", hashes.slice(i, i + 300));
     if (error) throw new Error(`contatos: ${error.message}`);
-    for (const c of data ?? []) existing.set(c.phone_hash as string, { id: c.id as string, name: (c.name as string | null) ?? null, tags: (c.tags as string[] | null) ?? [], birthday: (c.birthday as string | null) ?? null, last_visit_at: (c.last_visit_at as string | null) ?? null, appointment_at: (c.appointment_at as string | null) ?? null });
+    for (const c of data ?? []) existing.set(c.phone_hash as string, { id: c.id as string, name: (c.name as string | null) ?? null, tags: (c.tags as string[] | null) ?? [], birthday: (c.birthday as string | null) ?? null, last_visit_at: (c.last_visit_at as string | null) ?? null, appointment_at: (c.appointment_at as string | null) ?? null , custom_dates: customDatesOf(c.custom_dates) });
   }
 
   // novos: o telefone vai cifrado com a chave do cliente (uma busca da chave para o lote todo)
@@ -727,8 +771,11 @@ export async function importWhatsAppContacts(db: SupabaseClient, bot: { id: stri
       const tags = [...c.tags, ...r.tags.filter((t) => !c.tags.some((x) => x.toLowerCase() === t.toLowerCase()))].slice(0, 20);
       const name = !c.name && r.name ? r.name : null;
       const dates = importedDatesPatch(c, r);
-      const patch: Record<string, unknown> = { tags, ...(name ? { name } : {}), ...dates, updated_at: new Date().toISOString() };
-      return tags.length !== c.tags.length || name || Object.keys(dates).length ? { id: c.id, patch } : null;
+      // as datas novas da planilha trocam as que vieram; as outras ficam
+      const custom = r.customDates && Object.keys(r.customDates).length ? mergeCustomDates(c.custom_dates, r.customDates) : null;
+      const customChanged = custom !== null && JSON.stringify(custom) !== JSON.stringify(c.custom_dates);
+      const patch: Record<string, unknown> = { tags, ...(name ? { name } : {}), ...dates, ...(customChanged ? { custom_dates: custom } : {}), updated_at: new Date().toISOString() };
+      return tags.length !== c.tags.length || name || Object.keys(dates).length || customChanged ? { id: c.id, patch } : null;
     })
     .filter((x) => x !== null);
   for (let i = 0; i < changes.length; i += 20) {
@@ -822,6 +869,8 @@ export async function channelContactId(db: SupabaseClient, botId: string, channe
 
 /** Contato na listagem da API, com as identidades do canal abertas. */
 export interface ApiContactRow extends ContactDates {
+  /** as datas novas (régua personalizada): { chave: "AAAA-MM-DD" } */
+  custom_dates: CustomDates;
   id: string;
   bot_id: string;
   channel: ContactChannel | "widget";
@@ -838,7 +887,7 @@ export interface ApiContactRow extends ContactDates {
   updated_at: string;
 }
 
-const API_CONTACT_COLS = "id, bot_id, channel, name, email, tags, phone_enc, wa_user_enc, ig_enc, external_id_enc, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at, created_at, updated_at";
+const API_CONTACT_COLS = "id, bot_id, channel, name, email, tags, phone_enc, wa_user_enc, ig_enc, external_id_enc, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at, custom_dates, created_at, updated_at";
 
 async function apiContactRow(r: Record<string, unknown>): Promise<ApiContactRow> {
   return {
@@ -855,6 +904,7 @@ async function apiContactRow(r: Record<string, unknown>): Promise<ApiContactRow>
     first_inbound_at: (r.first_inbound_at as string | null) ?? null,
     last_inbound_at: (r.last_inbound_at as string | null) ?? null,
     ...datesOf(r),
+    custom_dates: customDatesOf(r.custom_dates),
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
   };
@@ -868,6 +918,7 @@ export async function contactAppointment(db: SupabaseClient, contactId: string):
 
 /** Um contato do WhatsApp para as réguas: o telefone (decifrado), o nome, se já escreveu e as datas. */
 export interface ReguaContact extends ContactDates {
+  custom_dates: CustomDates;
   id: string;
   phone: string;
   name: string | null;
@@ -876,16 +927,33 @@ export interface ReguaContact extends ContactDates {
 }
 
 /** Quem a régua procura: o aniversário do dia, a última visita, a última mensagem de quem não tem visita ou o horário marcado, num intervalo [de, até]. */
-export type ReguaSearch = { birthdays: string[] } | { lastVisit: [string, string] } | { lastInboundNoVisit: [string, string] } | { appointment: [string, string] };
+export type ReguaSearch = ({ birthdays: string[] } | { lastVisit: [string, string] } | { lastInboundNoVisit: [string, string] } | { appointment: [string, string] } | { customDate: { key: string; equals?: string; monthDay?: string } }) & {
+  /** só quem tem esta etiqueta (régua personalizada) */
+  tag?: string | null;
+};
 
 /** Os contatos do WhatsApp do chatbot (com telefone) que a régua procura. */
 function reguaQuery(db: SupabaseClient, botId: string, by: ReguaSearch, columns: string, count?: { count: "exact"; head: true }) {
   let q = db.from("contacts").select(columns, count).eq("bot_id", botId).eq("channel", "whatsapp").not("phone_enc", "is", null);
+  if (by.tag) q = q.contains("tags", [by.tag]);
   if ("birthdays" in by) q = q.in("birthday", by.birthdays);
-  else if ("lastVisit" in by) q = q.gte("last_visit_at", by.lastVisit[0]).lte("last_visit_at", by.lastVisit[1]);
+  else if ("customDate" in by) {
+    // a data nova: o dia exato (uma vez) ou o dia e o mês de qualquer ano (todo ano)
+    const col = `custom_dates->>${by.customDate.key}`;
+    q = by.customDate.equals ? q.eq(col, by.customDate.equals) : q.like(col, `%-${by.customDate.monthDay ?? "00-00"}`);
+  } else if ("lastVisit" in by) q = q.gte("last_visit_at", by.lastVisit[0]).lte("last_visit_at", by.lastVisit[1]);
   else if ("lastInboundNoVisit" in by) q = q.is("last_visit_at", null).gte("last_inbound_at", by.lastInboundNoVisit[0]).lte("last_inbound_at", by.lastInboundNoVisit[1]);
   else q = q.gte("appointment_at", by.appointment[0]).lte("appointment_at", by.appointment[1]);
   return q;
+}
+
+/** Os valores de uma data nova nos contatos do WhatsApp do chatbot (a estimativa da régua personalizada), até 5.000. */
+export async function reguaCustomDateValues(db: SupabaseClient, botId: string, key: string, tag: string | null): Promise<string[]> {
+  let q = db.from("contacts").select("custom_dates").eq("bot_id", botId).eq("channel", "whatsapp").not("phone_enc", "is", null).not(`custom_dates->>${key}`, "is", null);
+  if (tag) q = q.contains("tags", [tag]);
+  const { data, error } = await q.limit(5000);
+  if (error) throw new Error(`contatos da régua: ${error.message}`);
+  return ((data ?? []) as Array<{ custom_dates: unknown }>).map((r) => customDatesOf(r.custom_dates)[key]).filter((v): v is string => Boolean(v));
 }
 
 /** Quantos contatos a régua acharia (a estimativa da tela das réguas). */
@@ -896,7 +964,7 @@ export async function reguaContactCount(db: SupabaseClient, botId: string, by: R
 
 /** Contatos do WhatsApp do chatbot (com telefone) para uma régua (leva Réguas, parte 2). */
 export async function reguaContacts(db: SupabaseClient, botId: string, by: ReguaSearch, limit = 2000): Promise<ReguaContact[]> {
-  const { data, error } = await reguaQuery(db, botId, by, "id, name, phone_enc, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at").limit(limit);
+  const { data, error } = await reguaQuery(db, botId, by, "id, name, phone_enc, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at, custom_dates").limit(limit);
   if (error) throw new Error(`contatos da régua: ${error.message}`);
   const rows = await Promise.all(
     ((data ?? []) as unknown as Array<Record<string, unknown>>).map(async (r) => ({
@@ -906,6 +974,7 @@ export async function reguaContacts(db: SupabaseClient, botId: string, by: Regua
       messaged: Boolean(r.first_inbound_at),
       last_inbound_at: (r.last_inbound_at as string | null) ?? null,
       ...datesOf(r),
+      custom_dates: customDatesOf(r.custom_dates),
     })),
   );
   return rows.filter((r) => r.phone);

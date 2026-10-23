@@ -126,7 +126,7 @@ describe("as datas pela API", () => {
   });
 
   it("o contato da API traz as datas", () => {
-    const c = { id: "c1", bot_id: "b1", channel: "whatsapp", name: "Ana", email: null, tags: [], phone: "5521999990000", bsuid: null, igsid: null, external_id: null, first_inbound_at: null, last_inbound_at: null, birthday: "10-21", last_visit_at: "2026-10-05T15:00:00.000Z", appointment_at: "2026-12-20T17:30:00.000Z", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-20T00:00:00Z" } satisfies ApiContactRow;
+    const c = { id: "c1", bot_id: "b1", channel: "whatsapp", name: "Ana", email: null, tags: [], phone: "5521999990000", bsuid: null, igsid: null, external_id: null, first_inbound_at: null, last_inbound_at: null, birthday: "10-21", last_visit_at: "2026-10-05T15:00:00.000Z", appointment_at: "2026-12-20T17:30:00.000Z", custom_dates: {}, created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-20T00:00:00Z" } satisfies ApiContactRow;
     expect(contactApiObject(c, { consent: null, optedOut: [], age: null })).toMatchObject({ birthday: "10-21", last_visit_at: "2026-10-05T15:00:00.000Z", appointment_at: "2026-12-20T17:30:00.000Z" });
   });
 });

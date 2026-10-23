@@ -14,6 +14,15 @@ const EMBED_FK: Record<string, string> = { routines: "routine_id", agency_member
 
 export type MemRow = Record<string, unknown>;
 
+/** O valor da coluna, também no caminho de JSON do PostgREST ("custom_dates->>chave", como texto). */
+function colOf(r: MemRow, c: string): unknown {
+  const m = /^([a-z_]+)->>([a-z0-9_]+)$/.exec(c);
+  if (!m) return r[c];
+  const obj = r[m[1]];
+  const v = obj && typeof obj === "object" ? (obj as Record<string, unknown>)[m[2]] : undefined;
+  return v === undefined || v === null ? undefined : String(v);
+}
+
 /** Índices únicos que os testes conferem (null não conflita, como no Postgres). */
 const UNIQUE: Record<string, string[][]> = {
   idempotency_keys: [["api_key_id", "key"]],
@@ -82,7 +91,19 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       return this;
     }
     eq(c: string, v: unknown) {
-      this.filters.push((r) => r[c] === v);
+      this.filters.push((r) => colOf(r, c) === v);
+      return this;
+    }
+    /** "%-03-10": o % vale qualquer texto (só o padrão que o motor usa). */
+    like(c: string, pattern: string) {
+      const esc = (p: string) => p.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&");
+      const re = new RegExp("^" + pattern.split("%").map(esc).join(".*") + "$");
+      this.filters.push((r) => typeof colOf(r, c) === "string" && re.test(colOf(r, c) as string));
+      return this;
+    }
+    /** A coluna (lista) tem todos estes valores. */
+    contains(c: string, vs: unknown[]) {
+      this.filters.push((r) => Array.isArray(r[c]) && vs.every((v) => (r[c] as unknown[]).includes(v)));
       return this;
     }
     match(o: MemRow) {
@@ -118,7 +139,7 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       return this;
     }
     not(c: string, op: string, v: unknown) {
-      if (op === "is") this.filters.push((r) => (r[c] ?? null) !== v);
+      if (op === "is") this.filters.push((r) => (colOf(r, c) ?? null) !== v);
       return this;
     }
     /** "a.is.null,b.neq.x,c.not.is.null,d.in.(x,y),e.lt.\"2026-…\"": basta um bater. */
