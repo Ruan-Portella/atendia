@@ -21,8 +21,8 @@ const KINDS = [
  * Nova campanha no painel lateral da lista de Campanhas (redesenho, etapa 5): o tipo em cartões e o
  * assistente do tipo escolhido (o mesmo da tela Nova campanha). Ao criar, abre o relatório.
  */
-export function NewCampaignFlow({ bots }: { bots: BotOption[] }) {
-  const [kind, setKind] = useState<"marketing" | "lembrete">("marketing");
+export function NewCampaignFlow({ bots, initialKind = "marketing" }: { bots: BotOption[]; /** o tipo que vem escolhido (o "Novo lembrete" da aba Campanhas do cliente) */ initialKind?: "marketing" | "lembrete" }) {
+  const [kind, setKind] = useState<"marketing" | "lembrete">(initialKind);
   if (!bots.length)
     return <p className="rounded-[14px] border border-dashed border-line-strong px-4 py-6 text-center text-sm text-muted">Nenhum chatbot com o WhatsApp conectado. As campanhas saem pelo número do chatbot: conecte o WhatsApp na página dele.</p>;
   return (

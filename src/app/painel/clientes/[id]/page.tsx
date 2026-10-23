@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { backFrom } from "@/lib/back-link";
+import { ConversationsBrowser } from "@/components/conversations-browser";
+import { isConversationFilter } from "@/lib/conversation-list";
 import { notFound } from "next/navigation";
 import { ArrowRight, Download, ExternalLink, Headset, Layers, LayoutDashboard, Plus, Settings2, Users } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
@@ -8,9 +10,6 @@ import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
 import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
 import { PendingHandoffs } from "@/components/pending-handoffs";
-import { handoffStatus } from "@/lib/handoff-status";
-import { HandoffBadge } from "@/components/handoff-badge";
-import { ConversationStateBadge } from "@/components/conversation-state";
 import { cn, daysAgoIso, initials, relativeTime } from "@/lib/utils";
 import { agencyBaseUrl } from "@/lib/domain";
 import { Status } from "@/components/status";
@@ -40,6 +39,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { clientHolidays, eligibleSectorMembers, listSectors } from "@/lib/sectors";
 
 export const metadata = { title: "Cliente" };
+// a Nova campanha da aba Campanhas monta o público na prévia (até 10.000 contatos) e consulta a Meta
+export const maxDuration = 60;
 
 const TABS = [
   ["visao", "Resumo"],
@@ -67,7 +68,6 @@ const SECTIONS: Array<{ key: string; label: string; icon: typeof Users; tabs: Ta
   { key: "ajustes", label: "Ajustes", icon: Settings2, tabs: ["dados", "relatorio", "acesso", "conformidade"] },
 ];
 
-const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site", painel: "Teste" };
 
 interface BotRow {
   id: string;
@@ -80,6 +80,7 @@ interface BotRow {
   public_key: string;
   appearance: { color?: string; avatar_text?: string } | null;
   face: unknown;
+  sensitive_mode?: boolean | null;
 }
 
 /** Um cartão de resumo da Visão geral, que leva à aba onde se ajusta. */
@@ -110,7 +111,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
     supabase.from("clients").select("id, name, site, external_id, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months").eq("id", id).maybeSingle(),
-    supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance, face, template_id").eq("client_id", id).eq("is_demo", false).order("created_at"),
+    supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance, face, template_id, sensitive_mode").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
   if (!client) notFound();
@@ -129,19 +130,15 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const base = agencyBaseUrl(agency);
 
   // Só busca o que a aba aberta mostra.
-  const [pending, leads, { data: conversations }, { data: members }, { count: memberCount }] = await Promise.all([
-    tab === "visao" || tab === "conversas" ? getPendingHandoffs(supabase, botIds) : Promise.resolve([]),
+  const [pending, leads, { data: members }, { count: memberCount }] = await Promise.all([
+    tab === "visao" ? getPendingHandoffs(supabase, botIds) : Promise.resolve([]),
     tab === "leads" ? listLeads(supabase, { botIds, limit: 200 }) : Promise.resolve([] as LeadRow[]),
-    tab === "conversas" && botIds.length
-      ? supabase.from("conversations").select("id, bot_id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").in("bot_id", botIds).order("last_message_at", { ascending: false }).limit(50)
-      : Promise.resolve({ data: [] as Array<{ id: string; bot_id: string; started_at: string; last_message_at: string; visitor_seen_at: string | null; message_count: number; needs_human: boolean; channel: string; handoff_requested_at: string | null; takeover_at: string | null; handled_at: string | null; handoff_urgent_at: string | null; last_contact_at: string | null; last_reply_at: string | null }> }),
     tab === "acesso" || (tab === "relatorio" && client.report_email)
       ? supabase.from("client_members").select("id, email, role, display_name, last_login_at, created_at, invited_by_key").eq("client_id", id).order("created_at")
       : Promise.resolve({ data: [] as Array<{ id: string; email: string; role: string; display_name: string | null; last_login_at: string | null; created_at: string; invited_by_key: string | null }> }),
     tab === "visao" && canConfig ? supabase.from("client_members").select("id", { count: "exact", head: true }).eq("client_id", id) : Promise.resolve({ count: null }),
   ]);
   const href = (t: Tab) => `/painel/clientes/${id}?tab=${t}`;
-  const botFace = new Map(bots.map((b) => [b.id, b]));
 
   return (
     <>
@@ -314,27 +311,17 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       {tab === "campanhas" && <ClientCampaigns clientId={client.id} clientName={client.name} bots={bots.map((b) => ({ id: b.id, name: b.name, client_name: b.client_name, client_id: client.id }))} />}
 
       {tab === "conversas" && (
-        <>
-          <PendingHandoffs items={pending} showClient={false} hrefFor={(h) => `/painel/caixa?fila=todas&c=${h.id}`} />
-          <div className="card overflow-hidden">
-            {(conversations ?? []).length === 0 && <p className="p-6 text-sm text-muted">Nenhuma conversa ainda.</p>}
-            {(conversations ?? []).map((c) => {
-              const b = botFace.get(c.bot_id);
-              return (
-                <Link key={c.id} href={`/painel/caixa?fila=todas&c=${c.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line-2 px-4 py-3 text-sm transition-colors duration-[120ms] last:border-0 hover:bg-raised/50">
-                  <BotFace color={b?.appearance?.color} face={b?.face} size={24} />
-                  <span className="min-w-0 flex-1 leading-tight">
-                    <span className="block truncate font-medium text-ink">{botName.get(c.bot_id)}</span>
-                    <span className="block text-[12.5px] text-muted">começou {relativeTime(c.started_at)} · {c.message_count} mensagens</span>
-                  </span>
-                  <span className="rounded-md px-1.5 py-px text-[11px] text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)]">{CHANNEL_LABEL[c.channel] ?? c.channel}</span>
-                  <ConversationStateBadge conv={c} />
-                  {handoffStatus(c) ? <HandoffBadge conv={c} /> : c.needs_human ? <span className="text-xs text-muted">precisou de ajuda</span> : null}
-                </Link>
-              );
-            })}
-          </div>
-        </>
+        // 23/10 (pedido do usuário): no jeito da Caixa de entrada, a lista e a conversa ao lado
+        <ConversationsBrowser
+          db={supabase}
+          bots={bots.map((b) => ({ id: b.id, name: b.name, client_name: b.client_name, client_id: client.id, appearance: b.appearance, face: b.face, sensitive_mode: b.sensitive_mode }))}
+          filter={isConversationFilter(sp.f) ? sp.f : "todas"}
+          limit={Math.min(400, Math.max(40, Number(sp.n) || 40))}
+          selectedId={typeof sp.c === "string" && /^[0-9a-f-]{36}$/i.test(sp.c) ? sp.c : null}
+          earlier={Math.min(50, Number(sp.ant) || 0)}
+          showBot={bots.length > 1}
+          hrefFor={(o) => `/painel/clientes/${id}?tab=conversas${o.filter && o.filter !== "todas" ? `&f=${o.filter}` : ""}${o.limit && o.limit > 40 ? `&n=${o.limit}` : ""}${o.conversationId ? `&c=${o.conversationId}` : ""}${o.earlier ? `&ant=${o.earlier}` : ""}`}
+        />
       )}
 
       {tab === "relatorio" && (

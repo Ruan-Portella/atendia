@@ -48,6 +48,8 @@ import { InstallGuide } from "@/components/install-guide";
 import { ChatPreviewSheet } from "@/components/chat-preview-sheet";
 import { WidgetPositionPicker } from "@/components/widget-position";
 import { SuggestedQuestionsField } from "@/components/suggested-questions-field";
+import { ConversationsBrowser } from "@/components/conversations-browser";
+import { isConversationFilter } from "@/lib/conversation-list";
 import { suggestedSummary, widgetPositionSummary } from "@/lib/widget-appearance";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -75,8 +77,6 @@ import { BotRoutines } from "@/components/routines/bot-routines";
 import { ChannelAcceptGate } from "@/components/channel-accept-gate";
 import { UnansweredItem } from "@/components/unanswered-item";
 import { FailedSends } from "@/components/failed-sends";
-import { ConversationStateBadge } from "@/components/conversation-state";
-import { HandoffBadge } from "@/components/handoff-badge";
 import { handoffStatus } from "@/lib/handoff-status";
 import { DEFAULT_AI_NOTICE, DEFAULT_AWAY_MESSAGE, DEFAULT_BACK_NOTICE, DEFAULT_ENTRY_NOTICE, NO_DATE_NOTICE, hoursSummary, nextOpening, whenLabel, type HumanHandoff } from "@/lib/handoff-hours";
 import { SIGNATURE_FORMATS, SIGNATURE_LABEL } from "@/lib/signature";
@@ -90,8 +90,8 @@ import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 import { BotOverview } from "@/components/bot-overview";
 import { getBotStats, getPendingHandoffs } from "@/lib/panel";
 import { choiceLabel } from "@/lib/billing";
-import { Ban, BookOpen, Brain, Clock, Image as ImageIcon, LayoutDashboard, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, PenLine, Phone, Radio, RefreshCw, SlidersHorizontal, Sparkles, Star, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
-import { AutoSwitch, SettingGroup, SettingRow, SubmitSwitch, SwitchField } from "@/components/ui/setting-row";
+import { Ban, BookOpen, Brain, Clock, Image as ImageIcon, LayoutDashboard, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, Plus, PenLine, Phone, Radio, RefreshCw, SlidersHorizontal, Sparkles, Star, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
+import { AutoSwitch, DialogButton, SettingGroup, SettingRow, SubmitSwitch, SwitchField } from "@/components/ui/setting-row";
 import { FaceEditor } from "@/components/face-editor";
 import { BotFace } from "@/components/bot-face";
 import { faceOf } from "@/lib/bot-face";
@@ -157,7 +157,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
   // inteiros) não vem mais: só o de textos/FAQs, que o modal de edição precisa.
   const none = Promise.resolve({ data: null, count: null });
-  const [{ agency }, { data: bot }, { count: ownReady }, { data: sourceMeta }, { data: sourceTexts }, unanswered, { data: conversations }, leadCount, { data: igRow }, { data: whatsapp }] = await Promise.all([
+  const [{ agency }, { data: bot }, { count: ownReady }, { data: sourceMeta }, { data: sourceTexts }, unanswered, leadCount, { data: igRow }, { data: whatsapp }] = await Promise.all([
     requireAgency(),
     supabase.from("bots").select("*").eq("id", id).maybeSingle(),
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
@@ -165,7 +165,6 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, refresh_error, created_by, updated_at, sync_total, sync_requested_at, last_refreshed_at").eq("bot_id", id).is("context", null).order("created_at") : none,
     tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).is("context", null).in("kind", ["text", "faq"]) : none,
     tab === "fontes" ? listUnanswered(supabase, { botIds: [id], limit: 10 }) : Promise.resolve(null),
-    tab === "conversas" ? supabase.from("conversations").select("id, started_at, last_message_at, visitor_seen_at, message_count, needs_human, channel, handoff_requested_at, takeover_at, handled_at, handoff_urgent_at, last_contact_at, last_reply_at").eq("bot_id", id).order("last_message_at", { ascending: false }).limit(30) : none,
     tab === "leads" ? countLeads(supabase, id) : Promise.resolve(null),
     // a aba Fontes também: os posts do Instagram são uma fonte (E1)
     tab === "instagram" || tab === "visao" || (tab === "fontes" && igAllowed) ? supabase.from("instagram_channels").select("ig_user_id, username, previous_username, username_changed_at, token_expires_at, disconnected_at, disconnect_reason, created_at").eq("bot_id", id).maybeSingle() : none,
@@ -371,7 +370,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
       {/* a aba Evolução (a tabela) usa a largura toda, sem o teste ao vivo */}
       {/* grid-cols-1 (minmax(0, 1fr)) no celular e no tablet: a coluna não cresce com a fileira das seções e nada passa da tela (23/10) */}
-      <div className={`grid flex-1 grid-cols-1 ${tab === "evolucao" ? "lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]" : "lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]"}`}>
+      <div className={`grid flex-1 grid-cols-1 ${tab === "evolucao" || tab === "conversas" ? "lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]" : "lg:grid-cols-[200px_minmax(0,1fr)_360px] xl:grid-cols-[220px_minmax(0,1fr)_400px]"}`}>
         {/* no desktop as abas ficam presas no topo ao rolar; a linha divisória fica no conteúdo */}
         {/* as 5 seções (redesenho, etapa 3): no computador, a coluna com as abas da seção aberta embaixo;
             no celular, a fileira das seções e a das abas */}
@@ -908,32 +907,30 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "conversas" && (
-            <>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h2 className="text-[22px] font-medium">Conversas</h2><p className="text-sm text-muted">Últimas 30. Abra uma conversa para assumir e responder como pessoa da equipe.</p></div>
-                {newChatTemplates && (
-                  <details className="group w-full sm:w-auto">
-                    <summary className="btn-primary cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ Nova conversa</summary>
-                    <div className="card mt-2 flex flex-col gap-3 p-4 sm:w-[420px]">
-                      <p className="text-sm text-muted">Comece a falar com alguém pelo WhatsApp. A primeira mensagem precisa ser um modelo aprovado; quando a pessoa responder, {bot.name} (ou você) continua a conversa.</p>
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2 className="text-[22px] font-medium">Conversas</h2>
+                <p className="text-sm text-muted">Todas as conversas de {bot.name}, da mais recente para a mais antiga. Abra uma para ler, assumir e responder como pessoa da equipe.</p>
+              </div>
+              {/* 23/10 (pedido do usuário): no jeito da Caixa de entrada, a lista e a conversa ao lado */}
+              <ConversationsBrowser
+                db={supabase}
+                bots={[{ id, name: bot.name, client_name: bot.client_name, client_id: bot.client_id ?? null, appearance: bot.appearance, face: bot.face, sensitive_mode: bot.sensitive_mode }]}
+                filter={isConversationFilter(sp.f) ? sp.f : "todas"}
+                limit={Math.min(400, Math.max(40, Number(sp.n) || 40))}
+                selectedId={typeof sp.c === "string" && /^[0-9a-f-]{36}$/i.test(sp.c) ? sp.c : null}
+                earlier={Math.min(50, Number(sp.ant) || 0)}
+                showBot={false}
+                hrefFor={(o) => `/painel/bots/${id}?tab=conversas${o.filter && o.filter !== "todas" ? `&f=${o.filter}` : ""}${o.limit && o.limit > 40 ? `&n=${o.limit}` : ""}${o.conversationId ? `&c=${o.conversationId}` : ""}${o.earlier ? `&ant=${o.earlier}` : ""}`}
+                intro={
+                  newChatTemplates ? (
+                    <DialogButton label="Nova conversa" icon={<Plus size={15} />} className="btn-primary justify-center" title="Nova conversa pelo WhatsApp" description={`A primeira mensagem precisa ser um modelo aprovado; quando a pessoa responder, ${bot.name} (ou você) continua a conversa.`} footer="close">
                       <TemplateSender templates={newChatTemplates} action={startWhatsAppConversation.bind(null, id)} askPhone submitLabel="Enviar e abrir conversa" />
-                    </div>
-                  </details>
-                )}
-              </div>
-              <div className="card overflow-hidden">
-                {(conversations ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma conversa ainda.</p>}
-                {(conversations ?? []).map((c) => (
-                  <Link key={c.id} href={`/painel/bots/${id}/conversas/${c.id}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-3 text-sm last:border-0 hover:bg-ground">
-                    <span className="text-muted">{relativeTime(c.started_at)}</span>
-                    <span className="font-medium">{c.message_count} mensagens</span>
-                    <span className="text-xs text-muted">{c.channel}</span>
-                    <ConversationStateBadge conv={c} />
-                    {handoffStatus(c) ? <HandoffBadge conv={c} className="ml-auto" /> : c.needs_human ? <span className="ml-auto text-xs text-muted">precisou de ajuda</span> : null}
-                  </Link>
-                ))}
-              </div>
-            </>
+                    </DialogButton>
+                  ) : null
+                }
+              />
+            </div>
           )}
 
           {tab === "whatsapp" && (
@@ -1166,7 +1163,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
         </section>
 
-        {tab !== "evolucao" && <aside className="hidden border-l border-line bg-raised p-5 lg:block">
+        {tab !== "evolucao" && tab !== "conversas" && <aside className="hidden border-l border-line bg-raised p-5 lg:block">
           {/* o fundo ocupa a coluna inteira; o chat de teste acompanha a rolagem */}
           <div className="sticky top-5 flex flex-col gap-3">
             <div className="flex items-center justify-between text-xs">
