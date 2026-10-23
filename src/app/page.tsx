@@ -13,7 +13,7 @@ const FAQ: Array<[string, string]> = [
   ["Preciso de chave da OpenAI?", "Não. A IA vem incluída no tamanho do chatbot, com o custo dela por nossa conta."],
   ["E se a cota acabar?", `Só aquele chatbot passa para a sua equipe até o mês virar. Ou ligue o excedente: cada atendimento a mais custa ${brlCents(OVERAGE_PRICE_BRL)}, pago com crédito pré-pago (a partir de ${brl(CREDIT_MIN_BRL)}).`],
   ["Como funciona a cobrança?", "No cartão, todo dia 1º, e o primeiro mês é proporcional. Subir de tamanho vale na hora, pagando só a diferença dos dias que faltam; descer vale no mês seguinte. Sem fidelidade."],
-  ["A Meta cobra à parte?", "No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente, sem nada nosso em cima. No Instagram, a Meta não cobra."],
+  ["A Meta cobra à parte?", "No WhatsApp, a Meta cobra direto na conta do seu cliente, sem nada nosso em cima. As respostas do atendimento têm 1.000 grátis por mês em cada número; depois, cerca de R$ 0,035 cada. Os lembretes custam cerca de R$ 0,035 e as promoções, cerca de R$ 0,32 (tabela da Meta de outubro de 2026). No Instagram, a Meta não cobra."],
   ["E sem IA?", `O tamanho Atendimento (${brl(BOT_SIZES.atendimento.priceBrl)}/mês) liga o WhatsApp, o Instagram e o chat do site só com a sua equipe respondendo.`],
 ];
 
@@ -126,7 +126,7 @@ export default function LandingPage() {
           <h2 className="mt-2 text-3xl font-bold leading-[1.1] md:text-[40px]">Conta grátis. Cada chatbot no ar com um tamanho.</h2>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-2">Na conta grátis, você monta os chatbots, testa com até {TEST_ANSWERS_FREE} respostas da IA e gera demos para mandar aos clientes, sem cartão. Para atender no site, no WhatsApp e no Instagram, cada chatbot ganha um tamanho. A IA vem incluída: não precisa de chave nem de conta na OpenAI.</p>
           <p className="mt-2 text-[15px] leading-relaxed text-ink-2">1 atendimento = 24 horas de conversa da IA com um contato, no site, no WhatsApp ou no Instagram, com até 40 respostas. Respostas da sua equipe não contam. Conectar WhatsApp, Instagram e o chat do site não custa nada a mais: vem com o tamanho do chatbot.</p>
-          <p className="mt-2 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente. As mensagens do Instagram não são cobradas pela Meta.</p>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-2">No WhatsApp, a Meta cobra as mensagens direto na conta do seu cliente: as respostas têm 1.000 grátis por mês em cada número, e os lembretes e as promoções são cobrados à parte. As mensagens do Instagram não são cobradas pela Meta.</p>
         </div>
         <div className="grid gap-5 md:grid-cols-4">
           {Object.values(BOT_SIZES).filter((s) => s.atendimentos > 0).map((s) => {

@@ -216,10 +216,6 @@ Quem conversa com a empresa pelo nome de usuário do WhatsApp pode chegar sem o 
 
 No WhatsApp, a empresa só escreve livremente até 24 horas depois da última mensagem do contato. Fora dessa janela, só sai modelo de mensagem aprovado pela Meta: o BoaVoz cria sozinho o de retomada (para a equipe reabrir uma conversa parada) e a agência pode criar outros na aba WhatsApp. Modelo de marketing só sai para quem aceitou receber novidades. Quem manda SAIR, PARAR ou STOP deixa de receber modelos.
 
-## Custo do WhatsApp
-
-As mensagens de modelo do WhatsApp são cobradas pela Meta, na forma de pagamento da conta do WhatsApp Business do cliente. O BoaVoz não cobra pelo uso do WhatsApp: mostra na aba WhatsApp o consumo e o custo estimado e avisa quando a Meta recusa por falta de pagamento.
-
 ## Áudios e fotos
 
 No WhatsApp e no Instagram, os áudios do contato são transcritos e o assistente responde ao que foi falado. Cada áudio pode ter até cerca de 5 minutos, e cada contato tem até 30 áudios transcritos por dia: acima disso, o áudio fica na conversa como "[áudio longo]" (a equipe ouve no painel) e o assistente pede, uma vez por dia, um resumo por escrito ou um áudio mais curto. No WhatsApp e no Instagram, o assistente lê as fotos (uma descrição curta, que passa pelas regras do canal) e responde sobre elas; cada foto lida conta como uma resposta. Comprovante de pagamento, documento pessoal, cartão e foto de saúde nunca são lidos: o contato recebe um texto fixo e a equipe é avisada. No painel, embaixo de cada foto, aparece o que a IA viu.

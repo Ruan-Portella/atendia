@@ -62,6 +62,14 @@ Em Campanhas e réguas → Réguas (ou pelo botão Réguas na aba Campanhas do c
 - Sem resposta: N dias (padrão 2) depois da última mensagem da loja (IA ou equipe) que o contato não respondeu. Mensagem de campanha ou de régua não conta.
 As datas vêm da ficha do contato ("Datas para as réguas"), da planilha de contatos ou da API. Cada régua usa um modelo da Meta: o BoaVoz sugere o texto (dá para editar), manda para análise, e a régua só liga com o modelo aprovado. Aniversário e "faz tempo" são promoção e só vão para quem aceitou novidades. Lembrete, pós-atendimento e sem resposta são de utilidade: sem a declaração de consentimento do cliente para lembretes, só vão para quem já escreveu ao chatbot. Os envios saem das 8h às 20h no fuso do cliente, no máximo uma régua por pessoa a cada 24 horas (o lembrete primeiro), e respeitam o SAIR e o limite do número. Se a nota do número cair ou a Meta mudar a categoria do modelo, a régua pausa e o dono recebe um e-mail; o envio que passou da hora por causa da pausa não sai mais. A tela mostra a estimativa dos próximos 30 dias (pessoas e custo na Meta) e os números do que já saiu.
 
+## Custo do WhatsApp
+
+A Meta cobra as mensagens do WhatsApp na forma de pagamento da conta do WhatsApp Business do cliente. O BoaVoz não cobra pelo uso do WhatsApp: mostra na aba WhatsApp e em Uso e custo o consumo e o custo estimado, e avisa quando a Meta recusa por falta de pagamento. Pela tabela da Meta em reais (outubro de 2026), no Brasil:
+- Respostas do atendimento (a IA ou a equipe, dentro da janela de 24 horas): são mensagens de serviço. Cada número tem 1.000 grátis por mês; a partir da 1.001ª, cerca de R$ 0,035 cada (desde 01/10/2026).
+- Lembretes e réguas de utilidade: cerca de R$ 0,035 cada, com desconto por volume. Desde 01/10/2026, também quando a conversa está aberta.
+- Promoções (campanhas e réguas de marketing): cerca de R$ 0,32 cada.
+O custo estimado do painel usa esses valores e conta o que a própria Meta marca como cobrado. A Meta muda a tabela de tempos em tempos: o valor certo é o da fatura dela. Desde julho de 2026, a conta da Meta pode ser cobrada em reais; as contas em dólar têm até 30/06/2027 para migrar. No Instagram, a Meta não cobra as mensagens.
+
 ## Régua personalizada
 
 Em Campanhas e réguas → Réguas, embaixo das réguas prontas, fica "Suas réguas", com o botão "Nova régua". Ele abre um modal:

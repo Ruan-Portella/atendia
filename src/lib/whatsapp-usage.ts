@@ -56,13 +56,17 @@ export async function recordUsage(db: SupabaseClient, botId: string, phoneNumber
 }
 
 /**
- * Preço de referência por mensagem cobrada, em R$, por categoria. A Meta muda a tabela e cobra do
- * cliente no cartão dele: isto é só uma estimativa. WHATSAPP_PRICES_BRL="service=0.035,utility=0.035,
- * marketing=0.35" (separados por vírgula, decimal com ponto) troca os valores; categoria sem preço
- * aparece só na contagem.
+ * Preço de referência por mensagem cobrada, em R$, por categoria: a tabela da Meta em reais para o
+ * Brasil, de 01/10/2026 (marketing R$ 0,3217; utilidade, autenticação e serviço R$ 0,035, com
+ * desconto por volume em utilidade e autenticação). Desde 01/10/2026 a Meta cobra as mensagens de
+ * serviço (as respostas na janela de 24 h) acima de 1.000 por número no mês, e a utilidade mandada
+ * com a janela aberta. A Meta muda a tabela e cobra do cliente no cartão dele: isto é só uma
+ * estimativa (o que conta é o que a Meta marca como cobrado). WHATSAPP_PRICES_BRL="service=0.035,
+ * utility=0.035,marketing=0.3217" (separados por vírgula, decimal com ponto) troca os valores;
+ * categoria sem preço aparece só na contagem.
  */
 export function referencePrices(raw = process.env.WHATSAPP_PRICES_BRL): Record<string, number> {
-  const prices: Record<string, number> = { service: 0.035, utility: 0.035, marketing: 0.35 };
+  const prices: Record<string, number> = { service: 0.035, utility: 0.035, marketing: 0.3217 };
   for (const pair of (raw ?? "").split(",")) {
     const [k, v] = pair.split("=").map((x) => x?.trim());
     const n = Number(v);

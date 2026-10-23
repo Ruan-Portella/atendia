@@ -64,6 +64,9 @@ export default function ConceptsDocs() {
         <li>no WhatsApp, só modelo aprovado pela Meta (é o que as campanhas e os lembretes usam);</li>
         <li>no Instagram, a equipe ainda pode responder pelo painel por até 7 dias (tag de atendimento humano da Meta); a IA e a API não.</li>
       </ul>
+      <p>
+        No WhatsApp, a resposta dentro da janela é uma mensagem de serviço: desde 01/10/2026, a Meta dá 1.000 por mês em cada número e cobra as seguintes (cerca de R$ 0,035 cada no Brasil), direto na conta do negócio. No Instagram, a Meta não cobra.
+      </p>
       <p>No chat do site, não há janela.</p>
 
       <H2 id="regras-meta">As regras da Meta</H2>

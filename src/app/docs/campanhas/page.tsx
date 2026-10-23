@@ -94,7 +94,7 @@ export default function CampaignsDocs() {
         <li>Envio sem resposta da Meta fica incerto e nunca é reenviado sozinho.</li>
       </ul>
       <Note title="Custo">
-        A Meta cobra cada mensagem de modelo, à parte da assinatura do BoaVoz. O painel e a API mostram a estimativa antes de agendar.
+        A Meta cobra cada mensagem de modelo, à parte da assinatura do BoaVoz, direto no cartão do negócio: no Brasil, cerca de R$ 0,32 a promoção (marketing) e R$ 0,035 o lembrete (utilidade), pela tabela da Meta de outubro de 2026. Desde 01/10/2026, o lembrete mandado com a conversa aberta (janela de 24 horas) também é cobrado. O painel e a API mostram a estimativa antes de agendar.
       </Note>
 
       <NextSteps
