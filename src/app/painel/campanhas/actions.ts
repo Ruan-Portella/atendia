@@ -19,7 +19,10 @@ import { EXCLUSION_LABEL, REMINDER_EXCLUSION_LABEL, buildMarketingAudience, buil
 import { DEFAULT_TIMEZONE, formatInZone, isClientTimezone, isQuietHour, localHour, localInputToIso, nextEightAm } from "@/lib/timezone";
 import { REMINDER_MAX_ROWS, busiestDay, validateReminderRows, type RawReminderRow, type ReminderError } from "@/lib/reminder-sheet";
 import { text } from "@/lib/validation";
-import { ensureRegua, saveReguaSettings, setReguaActive, submitReguaTemplate } from "@/lib/reguas";
+import { botCustomReguas, createCustomRegua, customOf, deleteCustomRegua, ensureRegua, saveReguaSettings, setReguaActive, submitReguaTemplate, updateCustomRegua } from "@/lib/reguas";
+import { customTemplateProblem } from "@/lib/regua-kinds";
+import { parseReguaForm } from "@/lib/regua-form";
+import { ensureDateField, listDateFields } from "@/lib/contact-date-fields";
 import { REGUA_DELAY, REGUA_HAS_SEND_HOUR, REGUA_KINDS, REGUA_LABEL, type ReguaKind } from "@/lib/regua-kinds";
 
 /*
@@ -571,3 +574,107 @@ export async function reguaToggleAction(botId: string, kind: string, on: boolean
   revalidatePath("/painel/campanhas/reguas");
   return ok(on ? "Régua ligada: ela olha os contatos a cada hora e envia das 8h às 20h." : "Régua desligada.");
 }
+
+/* ------------------------------------------------------------------ régua personalizada (23/10/2026) */
+
+const formGetter = (fd: FormData) => (k: string) => text(fd.get(k));
+
+/** A régua personalizada de um chatbot do escopo, com o WhatsApp conectado. */
+async function customReguaContext(botId: string, reguaId: string) {
+  const c = await campaignContext();
+  if ("error" in c) return { error: c.error ?? DENIED } as const;
+  const b = await campaignBot(botId);
+  if (!b) return { error: "Chatbot não encontrado, ou sem o WhatsApp conectado." } as const;
+  const regua = (await botCustomReguas(b.admin, b.bot.id as string)).find((r) => r.id === reguaId);
+  if (!regua) return { error: "Régua não encontrada." } as const;
+  const field = regua.date_field_id ? ((await listDateFields(b.admin, [b.bot.id as string])).find((f) => f.id === regua.date_field_id) ?? null) : null;
+  return { ...c, ...b, regua, config: customOf(regua, field?.label ?? null) };
+}
+
+async function auditCustom(r: { admin: ReturnType<typeof createAdminClient>; ctx: { agency: { id: string }; userId: string }; bot: { id: unknown } }, action: string, after: Record<string, unknown>) {
+  await audit(r.admin, { agencyId: r.ctx.agency.id, actorType: "user", actorId: r.ctx.userId, action, targetType: "bot", targetId: r.bot.id as string, after, ...(await requestMeta()) });
+}
+
+/**
+ * "+ Nova régua": cria a régua personalizada (desligada), a data nova se for o caso, e manda o
+ * modelo para a Meta. O texto é conferido antes de criar; se a Meta recusar, a régua fica criada e
+ * o texto pode ser enviado de novo pela linha dela.
+ */
+export async function createCustomReguaAction(botId: string, fd: FormData): Promise<ActionResult> {
+  const c = await campaignContext();
+  if ("error" in c) return fail(c.error ?? DENIED);
+  const b = await campaignBot(botId);
+  if (!b) return fail("Chatbot não encontrado, ou sem o WhatsApp conectado.");
+  const fields = await listDateFields(b.admin, [b.bot.id as string]);
+  const parsed = parseReguaForm(formGetter(fd), fields);
+  if ("error" in parsed) return fail(parsed.error);
+  const body = text(fd.get("body"));
+  const problem = customTemplateProblem(parsed.config.trigger, parsed.config.repeatYearly, body);
+  if (problem) return fail(problem);
+  const bot = { id: b.bot.id as string, agency_id: b.bot.agency_id as string, client_id: (b.bot.client_id as string | null) ?? null };
+  const field = parsed.newDateLabel ? await ensureDateField(b.admin, bot.id, parsed.newDateLabel) : null;
+  const regua = await createCustomRegua(b.admin, bot, parsed.config, field?.id ?? parsed.dateFieldId, c.ctx.email);
+  await auditCustom({ ...c, ...b }, "regua.criar", { regua: parsed.config.name, data: parsed.config.trigger === "data" ? (field?.key ?? parsed.config.dateLabel) : parsed.config.trigger, etiqueta: parsed.config.tag, categoria: parsed.config.category });
+  revalidatePath("/painel/campanhas/reguas");
+  try {
+    const res = await submitReguaTemplate(b.admin, { regua, ch: b.ch, body, exempt: b.exempt });
+    if (!res.ok) return ok(`Régua criada, mas o modelo não foi enviado: ${res.message} Corrija o texto na régua e envie de novo.`);
+    await auditCustom({ ...c, ...b }, "regua.modelo", { regua: parsed.config.name, modelo: res.name });
+  } catch (e) {
+    return ok(`Régua criada, mas a Meta recusou o modelo: ${metaMessage(e)}. Corrija o texto na régua e envie de novo.`);
+  }
+  return ok("Régua criada e modelo enviado para a Meta. Quando ele for aprovado (costuma sair em minutos), ligue a régua pela chave.");
+}
+
+/** Troca o nome, quando sai, a hora e a etiqueta da régua personalizada (a data, a repetição e a categoria ficam). */
+export async function updateCustomReguaAction(botId: string, reguaId: string, fd: FormData): Promise<ActionResult> {
+  const r = await customReguaContext(botId, reguaId);
+  if ("error" in r) return fail(r.error ?? DENIED);
+  const parsed = parseReguaForm(formGetter(fd), [], { trigger: r.config.trigger, repeatYearly: r.config.repeatYearly, category: r.config.category, dateLabel: r.config.dateLabel, dateFieldId: r.regua.date_field_id });
+  if ("error" in parsed) return fail(parsed.error);
+  await updateCustomRegua(r.admin, r.regua, parsed.config, r.regua.date_field_id);
+  await auditCustom(r, "regua.editar", { regua: parsed.config.name, antes: { nome: r.config.name, prazo: r.config.offsetDays ?? r.config.hoursBefore, hora: r.config.sendHour, etiqueta: r.config.tag }, depois: { nome: parsed.config.name, prazo: parsed.config.offsetDays ?? parsed.config.hoursBefore, hora: parsed.config.sendHour, etiqueta: parsed.config.tag } });
+  revalidatePath("/painel/campanhas/reguas");
+  return ok("Régua salva.");
+}
+
+/** O texto novo do modelo da régua personalizada vai para a Meta (com um nome novo). */
+export async function customReguaTemplateAction(botId: string, reguaId: string, fd: FormData): Promise<ActionResult> {
+  const r = await customReguaContext(botId, reguaId);
+  if ("error" in r) return fail(r.error ?? DENIED);
+  try {
+    const res = await submitReguaTemplate(r.admin, { regua: r.regua, ch: r.ch, body: text(fd.get("body")), exempt: r.exempt });
+    if (!res.ok) return fail(res.message);
+    await auditCustom(r, "regua.modelo", { regua: r.config.name, modelo: res.name });
+  } catch (e) {
+    return fail(`A Meta recusou o modelo: ${metaMessage(e)}`);
+  }
+  revalidatePath("/painel/campanhas/reguas");
+  return ok("Modelo enviado para a Meta. A análise costuma sair em minutos: recarregue a página para ver.");
+}
+
+/** Liga (com o modelo aprovado; também retoma a pausada e troca para o modelo novo) ou desliga a régua personalizada. */
+export async function customReguaToggleAction(botId: string, reguaId: string, on: boolean): Promise<ActionResult> {
+  const r = await customReguaContext(botId, reguaId);
+  if ("error" in r) return fail(r.error ?? DENIED);
+  try {
+    const problem = await setReguaActive(r.admin, { regua: r.regua, on, ch: r.ch, by: r.ctx.email });
+    if (problem) return fail(problem);
+  } catch (e) {
+    return fail(`Não deu para conferir o modelo na Meta: ${metaMessage(e)}`);
+  }
+  await auditCustom(r, on ? "regua.ligar" : "regua.desligar", { regua: r.config.name });
+  revalidatePath("/painel/campanhas/reguas");
+  return ok(on ? "Régua ligada: ela olha os contatos a cada hora e envia das 8h às 20h." : "Régua desligada.");
+}
+
+/** Apaga a régua personalizada (a campanha dela, a fila e os números vão junto; o modelo fica na Meta). */
+export async function deleteCustomReguaAction(botId: string, reguaId: string): Promise<ActionResult> {
+  const r = await customReguaContext(botId, reguaId);
+  if ("error" in r) return fail(r.error ?? DENIED);
+  await deleteCustomRegua(r.admin, r.regua);
+  await auditCustom(r, "regua.apagar", { regua: r.config.name, modelo: r.regua.template_name });
+  revalidatePath("/painel/campanhas/reguas");
+  return ok("Régua apagada.");
+}
+

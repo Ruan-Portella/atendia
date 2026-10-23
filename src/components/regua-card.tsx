@@ -1,7 +1,7 @@
-import { BellRing, Cake, HeartHandshake, Hourglass, MessageCircleQuestion } from "lucide-react";
-import type { ReguaPanelItem } from "@/lib/reguas";
+import { BellRing, Cake, CalendarClock, HeartHandshake, Hourglass, MessageCircleQuestion, Trash2 } from "lucide-react";
+import type { CustomReguaPanelItem, ReguaPanelItem } from "@/lib/reguas";
 import type { ReguaKind } from "@/lib/regua-kinds";
-import { REGUA_CATEGORY, REGUA_DELAY, REGUA_DESCRIPTION, REGUA_EXAMPLES, REGUA_HAS_SEND_HOUR, REGUA_LABEL, REGUA_VARIABLES } from "@/lib/regua-kinds";
+import { REGUA_CATEGORY, REGUA_DELAY, REGUA_DESCRIPTION, REGUA_EXAMPLES, REGUA_HAS_SEND_HOUR, REGUA_LABEL, REGUA_TRIGGER_LABEL, REGUA_VARIABLES, customTiming } from "@/lib/regua-kinds";
 import { costText } from "@/lib/campaigns";
 import type { ActionResult } from "@/lib/action-result";
 import { ActionForm } from "@/components/ui/action-form";
@@ -9,6 +9,8 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { StatusPill } from "@/components/ui/form-section";
 import { AutoSwitch, SettingRow } from "@/components/ui/setting-row";
 import { TemplateField } from "@/components/template-field";
+import { ConfirmAction } from "@/components/ui/confirm-action";
+import { ReguaCustomFields, templateVars } from "@/components/regua-custom-fields";
 
 const CATEGORY_LABEL: Record<string, string> = { MARKETING: "marketing", UTILITY: "utilidade" };
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 8);
@@ -142,3 +144,103 @@ export function ReguaCard({ item: it, actions }: { item: ReguaPanelItem; actions
     </SettingRow>
   );
 }
+
+/**
+ * Uma régua personalizada na tela Réguas (23/10/2026): a linha com a situação, quando sai e a
+ * estimativa, a chave de ligar e o modal com o que ela faz (a data, a repetição e o tipo ficam;
+ * o nome, quando sai, a hora e a etiqueta mudam), o modelo da Meta, os números e o Apagar.
+ */
+export function CustomReguaCard({ item: it, fields, tags, company, actions }: { item: CustomReguaPanelItem; fields: Array<{ id: string; key: string; label: string }>; tags: string[]; company: string; actions: { settings: Act; template: Act; on: Act; off: Act; remove: () => Promise<ActionResult> } }) {
+  const c = it.config;
+  const newTemplate = Boolean(it.inUse && it.regua.template_name && it.inUse !== it.regua.template_name);
+  const approved = it.template.status === "aprovado";
+  const { vars, labels } = templateVars(c.trigger, c.repeatYearly);
+  const when = customTiming(c);
+  const summary =
+    it.state === "pausada"
+      ? `Parou${it.pauseReason ? `: ${it.pauseReason}` : ""}. Ligue de novo para retomar.`
+      : !approved && it.state !== "ligada"
+        ? `${when} · modelo da Meta: ${it.template.label}`
+        : `${when}${c.tag ? ` · etiqueta ${c.tag}` : ""} · até ${it.estimate.people} ${it.estimate.people === 1 ? "pessoa" : "pessoas"} em 30 dias`;
+  const what = [c.trigger === "data" ? `${c.dateLabel ?? "data nova"}${it.dateKey ? ` (coluna ${it.dateKey})` : ""}` : REGUA_TRIGGER_LABEL[c.trigger], c.trigger === "data" ? (c.repeatYearly ? "todo ano" : "uma vez") : null, c.category === "MARKETING" ? "promoção" : "utilidade"].filter(Boolean).join(" · ");
+
+  return (
+    <SettingRow
+      icon={<CalendarClock size={18} />}
+      title={c.name}
+      badge={<StatusPill tone={it.state === "ligada" ? "ok" : it.state === "pausada" ? "warn" : "muted"}>{it.state === "ligada" ? "Ligada" : it.state === "pausada" ? "Pausada" : "Desligada"}</StatusPill>}
+      summary={summary}
+      summaryTone={it.state === "pausada" ? "warn" : "muted"}
+      trailing={<AutoSwitch checked={it.state === "ligada"} action={actions.on} offAction={actions.off} disabled={it.state !== "ligada" && !approved} label={`Régua ${c.name}`} />}
+      description={`Sua régua: ${what}.`}
+      size="lg"
+      footer="close"
+      footerStart={
+        <ConfirmAction action={actions.remove} title={`Apagar a régua ${c.name}?`} description="O que estava na fila não sai mais e os números dela somem. O modelo continua na Meta. A data nova continua na ficha dos contatos." confirmLabel="Apagar" className="btn-ghost text-danger">
+          <Trash2 size={14} />
+          Apagar
+        </ConfirmAction>
+      }
+    >
+      {it.state === "pausada" && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">A régua parou{it.pauseReason ? `: ${it.pauseReason}` : ""}. Confira e ligue de novo pela chave da linha.</p>}
+      {!approved && it.state !== "ligada" && <p className="rounded-lg bg-raised/60 px-3 py-2 text-sm text-ink-2">A chave libera depois que a Meta aprovar o modelo ({it.template.label}).</p>}
+
+      <section className="flex flex-col gap-2">
+        <h3 className="kpi-label">O que ela faz</h3>
+        <ActionForm action={actions.settings} success="Régua salva." className="flex flex-col gap-3">
+          <ReguaCustomFields fields={fields} tags={tags} company={company} initial={c} idPrefix={`regua-${it.regua.id}`} />
+          <p className="text-xs text-muted">A data que dispara, a repetição e o tipo de mensagem ficam como estão (o modelo aprovado depende deles): para mudar, crie outra régua.</p>
+          <SubmitButton className="btn-ghost self-start">Salvar</SubmitButton>
+        </ActionForm>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h3 className="kpi-label">Modelo da Meta</h3>
+          <span className="text-xs text-muted">
+            {it.regua.template_name ?? "ainda não criado"} · {it.template.label}
+            {newTemplate ? ` (em uso: ${it.inUse})` : ""}
+          </span>
+        </div>
+        {it.template.reclassified && it.template.category && <p className="text-xs text-amber-ink">A Meta classificou este modelo como {CATEGORY_LABEL[it.template.category] ?? it.template.category}: ligada, a régua só vai para quem aceitou novidades.</p>}
+        <ActionForm action={actions.template} success="Modelo enviado para a Meta." className="flex flex-col gap-3">
+          <TemplateField
+            id={`regua-texto-${it.regua.id}`}
+            name="body"
+            label={it.template.status === "ausente" ? "Texto do modelo (ainda não criado)" : "Texto do modelo"}
+            hint={`Tipo pedido à Meta: ${CATEGORY_LABEL[c.category]}${c.category === "MARKETING" ? ", com o botão “Parar promoções”" : ", sem oferta nem promoção (senão a Meta muda para marketing)"}. A análise costuma sair em minutos.`}
+            defaultValue={it.draft}
+            fallback={it.draft}
+            vars={vars}
+            labels={labels}
+            required={Object.keys(vars)}
+            format="meta"
+            multiline
+            maxLength={1024}
+          />
+          <SubmitButton className="btn-ghost self-start" pendingLabel="Enviando…">
+            {it.template.status === "ausente" ? "Criar o modelo na Meta" : "Enviar o texto novo para a Meta"}
+          </SubmitButton>
+        </ActionForm>
+        {it.state === "ligada" && newTemplate && approved && (
+          <ActionForm action={actions.on} success="A régua passou a usar o modelo novo.">
+            <SubmitButton className="btn-primary self-start">Usar o modelo novo</SubmitButton>
+          </ActionForm>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-1.5 text-sm text-ink-2">
+        <h3 className="kpi-label">Números</h3>
+        <p>
+          Próximos 30 dias: até <strong>{it.estimate.people}</strong> {it.estimate.people === 1 ? "pessoa" : "pessoas"} ({costText(it.estimate.costBrl)} na Meta, antes do aceite, do SAIR e da regra de uma régua por dia).
+        </p>
+        {it.numbers && (
+          <p className="text-xs text-muted">
+            Até agora: {it.numbers.sent} enviadas · {it.numbers.delivered} entregues · {it.numbers.read} lidas · {it.numbers.replied} respostas · {it.numbers.optOuts} descadastros · {it.numbers.skipped} ficaram de fora · {it.numbers.pending} na fila
+          </p>
+        )}
+      </section>
+    </SettingRow>
+  );
+}
+

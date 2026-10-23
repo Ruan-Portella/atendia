@@ -5,11 +5,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadTemplateChannel } from "@/lib/whatsapp-templates";
 import { reguasPanel } from "@/lib/reguas";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
-import { ReguaCard } from "@/components/regua-card";
+import { CustomReguaCard, ReguaCard } from "@/components/regua-card";
+import { ReguaCustomFields } from "@/components/regua-custom-fields";
+import { DialogButton } from "@/components/ui/setting-row";
+import { listDateFields } from "@/lib/contact-date-fields";
+import { clientContactTags } from "@/lib/contacts";
+import { Plus } from "lucide-react";
 import { CampaignsHeader } from "@/components/campaigns-header";
 import { ReguaBotPicker } from "@/components/regua-bot-picker";
 import { HowItWorks } from "@/components/ui/form-section";
-import { reguaSettingsAction, reguaTemplateAction, reguaToggleAction } from "../actions";
+import { createCustomReguaAction, customReguaTemplateAction, customReguaToggleAction, deleteCustomReguaAction, reguaSettingsAction, reguaTemplateAction, reguaToggleAction, updateCustomReguaAction } from "../actions";
 
 export const metadata = { title: "Réguas · Campanhas e réguas" };
 
@@ -17,7 +22,9 @@ export const metadata = { title: "Réguas · Campanhas e réguas" };
  * Campanhas e réguas → Réguas (leva Réguas, partes 3 e 4; redesenho, etapa 5: as 5 réguas em linhas
  * com a chave de ligar e o modal de cada uma): as réguas de um chatbot com o WhatsApp conectado. Em
  * cada uma, o prazo e a hora, o modelo da Meta (o texto sugerido, editável, vai para análise), a
- * estimativa dos próximos 30 dias e os números do que já saiu.
+ * estimativa dos próximos 30 dias e os números do que já saiu. Régua personalizada (23/10/2026): o
+ * "+ Nova régua" cria as do chatbot (renovação do plano, pós-venda de 30 dias, vacina do pet), em
+ * "Suas réguas", embaixo das prontas.
  */
 export default async function ReguasPage({ searchParams }: PageProps<"/painel/campanhas/reguas">) {
   await requirePermission("config");
@@ -37,13 +44,15 @@ export default async function ReguasPage({ searchParams }: PageProps<"/painel/ca
     <>
       <CampaignsHeader active="reguas" />
       <p className="max-w-[72ch] text-sm text-ink-2">
-        As réguas não precisam ser criadas: cada chatbot com o WhatsApp já tem as 5 prontas (aniversário, faz tempo que não vem, lembrete antes do horário, pós-atendimento e sem resposta). Ligue a que quiser pela chave; para mudar o prazo, a hora ou o texto, toque
-        na régua.
+        Cada chatbot com o WhatsApp já tem 5 réguas prontas (aniversário, faz tempo que não vem, lembrete antes do horário, pós-atendimento e sem resposta): ligue a que quiser pela chave. Para outros casos, como a renovação do plano, o pós-venda de 30 dias ou a vacina do pet, crie a sua em &ldquo;Nova régua&rdquo;.
       </p>
       <HowItWorks label="Como funcionam as réguas">
         <p>
           Cada régua usa um modelo da Meta e sai pelo número do chatbot, das 8h às 20h no fuso do cliente, uma régua por pessoa a cada 24 horas. Promoção (aniversário e &ldquo;faz tempo&rdquo;) só vai para quem
           aceitou novidades, e quem mandou SAIR fica de fora. Lembrete, pós-atendimento e sem resposta falam do atendimento da pessoa, sem oferta.
+        </p>
+        <p>
+          Nas suas réguas, você escolhe a data (uma das da ficha ou uma data nova, como a renovação do plano), quantos dias antes ou depois, a hora, se é promoção ou utilidade e, se quiser, uma etiqueta. A data nova aparece na ficha do contato, na planilha e na API. Para a mesma pessoa no mesmo dia, o lembrete pronto vem primeiro, depois as suas réguas e depois as outras prontas.
         </p>
       </HowItWorks>
     </>
@@ -61,7 +70,8 @@ export default async function ReguasPage({ searchParams }: PageProps<"/painel/ca
   const [ch, { data: cl }] = await Promise.all([loadTemplateChannel(admin, botId), bot.client_id ? admin.from("clients").select("timezone, utility_consent_at").eq("id", bot.client_id).maybeSingle() : Promise.resolve({ data: null })]);
   const tz = (cl?.timezone as string | null) ?? DEFAULT_TIMEZONE;
   const declared = Boolean(cl?.utility_consent_at);
-  const { items, templatesError } = await reguasPanel(admin, { botId, company: bot.client_name as string, ch, tz });
+  const [{ items, custom, templatesError }, fields, tags] = await Promise.all([reguasPanel(admin, { botId, company: bot.client_name as string, ch, tz }), listDateFields(admin, [botId]), clientContactTags(admin, [botId])]);
+  const fieldOptions = fields.map((f) => ({ id: f.id, key: f.key, label: f.label }));
 
   return (
     <div className="flex flex-col gap-5">
@@ -82,15 +92,55 @@ export default async function ReguasPage({ searchParams }: PageProps<"/painel/ca
         </p>
       )}
 
-      <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
-        {items.map((it) => (
-          <ReguaCard
-            key={it.kind}
-            item={it}
-            actions={{ settings: reguaSettingsAction.bind(null, botId, it.kind), template: reguaTemplateAction.bind(null, botId, it.kind), on: reguaToggleAction.bind(null, botId, it.kind, true), off: reguaToggleAction.bind(null, botId, it.kind, false) }}
-          />
-        ))}
-      </div>
+      <section className="flex flex-col gap-2">
+        <h3 className="kpi-label px-1">Réguas prontas</h3>
+        <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+          {items.map((it) => (
+            <ReguaCard
+              key={it.kind}
+              item={it}
+              actions={{ settings: reguaSettingsAction.bind(null, botId, it.kind), template: reguaTemplateAction.bind(null, botId, it.kind), on: reguaToggleAction.bind(null, botId, it.kind, true), off: reguaToggleAction.bind(null, botId, it.kind, false) }}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <h3 className="kpi-label">Suas réguas</h3>
+          <DialogButton
+            label="Nova régua"
+            icon={<Plus size={14} />}
+            className="btn-primary py-1.5 text-[13px]"
+            title="Nova régua"
+            description="Escolha a data que dispara, quando a mensagem sai e o texto. O modelo vai para a Meta aprovar; quando sair, ligue a régua pela chave."
+            action={createCustomReguaAction.bind(null, botId)}
+            saveLabel="Criar e enviar o modelo"
+            size="lg"
+          >
+            <ReguaCustomFields fields={fieldOptions} tags={tags} company={bot.client_name as string} idPrefix="nova-regua" />
+          </DialogButton>
+        </div>
+        <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+          {custom.length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhuma régua sua ainda. Exemplos: 10 dias antes da renovação do plano, 30 dias depois da última compra, no dia da vacina do pet (todo ano).</p>}
+          {custom.map((it) => (
+            <CustomReguaCard
+              key={it.regua.id}
+              item={it}
+              fields={fieldOptions}
+              tags={tags}
+              company={bot.client_name as string}
+              actions={{
+                settings: updateCustomReguaAction.bind(null, botId, it.regua.id),
+                template: customReguaTemplateAction.bind(null, botId, it.regua.id),
+                on: customReguaToggleAction.bind(null, botId, it.regua.id, true),
+                off: customReguaToggleAction.bind(null, botId, it.regua.id, false),
+                remove: deleteCustomReguaAction.bind(null, botId, it.regua.id),
+              }}
+            />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

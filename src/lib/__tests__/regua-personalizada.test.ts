@@ -5,6 +5,7 @@ import { byImportance, dateLabelOf, estimateCustomRegua, localDay, monthDaysOf, 
 import { customReguaProblem, customTemplateBody, customTemplateName, customTemplateProblem, customTiming, dateFieldKey, type CustomRegua } from "../regua-kinds";
 import { customDatesOf, mergeCustomDates, setContactCustomDates } from "../contacts";
 import { ensureDateField } from "../contact-date-fields";
+import { parseReguaForm, whenOf } from "../regua-form";
 import { setCipherIdentityForTests, setScopeResolver } from "../field-cipher";
 
 /*
@@ -203,3 +204,32 @@ describe("régua personalizada: o planejador", () => {
     expect(await setContactCustomDates(db, ["ct01"], ["outro-bot"], { renovacao_do_plano: null })).toEqual([]);
   });
 });
+
+describe("régua personalizada: o formulário", () => {
+  const form = (o: Record<string, string>) => (k: string) => o[k] ?? "";
+  const fields = [{ id: "f1", label: "Renovação do plano" }];
+
+  it("a régua nova com uma data nova, dias antes e a etiqueta", () => {
+    const r = parseReguaForm(form({ name: " Renovação  anual ", trigger: "data", date_field: "nova", date_label: "Vacina do pet", repeat: "todo_ano", when: "antes", days: "7", send_hour: "10", tag: " VIP ", category: "MARKETING" }), fields);
+    expect(r).toEqual({ config: { name: "Renovação anual", trigger: "data", dateLabel: "Vacina do pet", repeatYearly: true, offsetDays: -7, hoursBefore: null, sendHour: 10, tag: "vip", category: "MARKETING" }, dateFieldId: null, newDateLabel: "Vacina do pet" });
+  });
+
+  it("a data que já existe, no dia; o horário marcado em horas", () => {
+    expect(parseReguaForm(form({ name: "Renovação", trigger: "data", date_field: "f1", when: "no_dia", send_hour: "9", category: "UTILITY" }), fields)).toMatchObject({ config: { offsetDays: 0, dateLabel: "Renovação do plano", repeatYearly: false }, dateFieldId: "f1" });
+    expect(parseReguaForm(form({ name: "Véspera", trigger: "horario", hours: "24", category: "UTILITY" }), fields)).toMatchObject({ config: { hoursBefore: 24, offsetDays: null } });
+  });
+
+  it("os erros: data que não existe, sem os dias, categoria", () => {
+    expect(parseReguaForm(form({ name: "X1", trigger: "data", date_field: "f9", when: "antes", days: "3", send_hour: "9", category: "UTILITY" }), fields)).toEqual({ error: "Escolha a data, ou crie uma data nova." });
+    expect(parseReguaForm(form({ name: "Pós", trigger: "ultima_visita", when: "depois", days: "", send_hour: "9", category: "UTILITY" }), fields)).toMatchObject({ error: expect.stringContaining("última visita") });
+    expect(parseReguaForm(form({ name: "Pós", trigger: "ultima_visita", when: "depois", days: "30", send_hour: "9", category: "" }), fields)).toMatchObject({ error: expect.stringContaining("promoção ou utilidade") });
+  });
+
+  it("na edição, a data, a repetição e o tipo ficam como estão", () => {
+    const fixed = { trigger: "data" as const, repeatYearly: true, category: "MARKETING" as const, dateLabel: "Vacina do pet", dateFieldId: "f2" };
+    expect(parseReguaForm(form({ name: "Vacina", trigger: "horario", category: "UTILITY", when: "depois", days: "2", send_hour: "11" }), [], fixed)).toEqual({ config: { name: "Vacina", trigger: "data", dateLabel: "Vacina do pet", repeatYearly: true, offsetDays: 2, hoursBefore: null, sendHour: 11, tag: null, category: "MARKETING" }, dateFieldId: "f2", newDateLabel: null });
+    expect(whenOf(-10)).toEqual({ when: "antes", days: 10 });
+    expect(whenOf(0)).toEqual({ when: "no_dia", days: 1 });
+  });
+});
+
