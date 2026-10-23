@@ -54,13 +54,29 @@ Os lembretes de utilidade (consulta amanhã, pedido pronto, vencimento) usam um 
 
 ## Réguas
 
-Em Campanhas e réguas → Réguas (ou pelo botão Réguas na aba Campanhas do cliente), cada chatbot com o WhatsApp conectado tem cinco réguas, mensagens automáticas que saem sozinhas. Elas não se criam (não há botão de nova régua): já vêm prontas, e basta ligar a que quiser. Cada régua é uma linha com a situação, quando sai e a estimativa, e a chave de ligar e desligar (que libera depois que a Meta aprova o modelo); tocar na linha abre o prazo, a hora, o texto do modelo (com etiquetas como "Primeiro nome" e "Data" no lugar de {{1}}, e a prévia de como chega) e os números. Com mais de um chatbot, a escolha fica no alto:
+Em Campanhas e réguas → Réguas (ou pelo botão Réguas na aba Campanhas do cliente), cada chatbot com o WhatsApp conectado tem cinco réguas prontas, mensagens automáticas que saem sozinhas: basta ligar a que quiser. Para outros casos, dá para criar as suas em "Nova régua" (veja Régua personalizada). Cada régua é uma linha com a situação, quando sai e a estimativa, e a chave de ligar e desligar (que libera depois que a Meta aprova o modelo); tocar na linha abre o prazo, a hora, o texto do modelo (com etiquetas como "Primeiro nome" e "Data" no lugar de {{1}}, e a prévia de como chega) e os números. Com mais de um chatbot, a escolha fica no alto:
 - Aniversário: no dia do aniversário do contato, na hora escolhida.
 - Faz tempo que você não vem: quando passam N dias (padrão 30) da última visita registrada ou, sem ela, da última mensagem do contato.
 - Pós-atendimento: N horas (padrão 48) depois da visita registrada ou da conversa encerrada pela equipe.
 - Lembrete antes do horário: N horas (padrão 24) antes do horário marcado, nunca depois dele. Horário marcado em cima da hora recebe o lembrete na hora.
 - Sem resposta: N dias (padrão 2) depois da última mensagem da loja (IA ou equipe) que o contato não respondeu. Mensagem de campanha ou de régua não conta.
 As datas vêm da ficha do contato ("Datas para as réguas"), da planilha de contatos ou da API. Cada régua usa um modelo da Meta: o BoaVoz sugere o texto (dá para editar), manda para análise, e a régua só liga com o modelo aprovado. Aniversário e "faz tempo" são promoção e só vão para quem aceitou novidades. Lembrete, pós-atendimento e sem resposta são de utilidade: sem a declaração de consentimento do cliente para lembretes, só vão para quem já escreveu ao chatbot. Os envios saem das 8h às 20h no fuso do cliente, no máximo uma régua por pessoa a cada 24 horas (o lembrete primeiro), e respeitam o SAIR e o limite do número. Se a nota do número cair ou a Meta mudar a categoria do modelo, a régua pausa e o dono recebe um e-mail; o envio que passou da hora por causa da pausa não sai mais. A tela mostra a estimativa dos próximos 30 dias (pessoas e custo na Meta) e os números do que já saiu.
+
+## Régua personalizada
+
+Em Campanhas e réguas → Réguas, embaixo das réguas prontas, fica "Suas réguas", com o botão "Nova régua". Ele abre um modal:
+- Nome da régua: ex.: Renovação do plano, Pós-venda de 30 dias, Vacina do pet.
+- A data que dispara: uma data do contato (uma que já existe no chatbot ou "+ Uma data nova…", com o nome que você der, como "Renovação do plano"), o aniversário, a última visita ou compra, ou o horário marcado.
+- Repetição (na data do contato): uma vez (vale a data com o ano, como o vencimento em 10/03/2027) ou todo ano (vale o dia e o mês, como um aniversário de casamento).
+- Quando sai: quantos dias antes, no dia ou quantos dias depois da data, e a hora do envio (das 8h às 19h). Na última visita, só no dia ou depois; no horário marcado, quantas horas antes (de 1 a 72), como o lembrete pronto.
+- Só para quem tem a etiqueta: opcional. Vazio, vale para todos que têm a data.
+- Tipo de mensagem: utilidade (aviso sobre a conta ou o atendimento da pessoa, sem oferta) ou promoção (com oferta ou novidade: só vai para quem aceitou novidades, com o botão "Parar promoções").
+- Texto da mensagem: o BoaVoz sugere um texto; as etiquetas "Primeiro nome" e "Data" (e "Hora", no horário marcado) se arrastam para o lugar certo, sem digitar {{1}}. O texto precisa ter todas as etiquetas.
+"Criar e enviar o modelo" cria a régua desligada e manda o modelo para a Meta aprovar (costuma sair em minutos); com o modelo aprovado, a chave da linha liga a régua. Se a Meta recusar o texto, a régua fica criada e o texto pode ser enviado de novo pela linha dela.
+
+Cada régua sua é uma linha com a situação, quando sai, a etiqueta e a estimativa dos próximos 30 dias. Tocar na linha abre o que ela faz (o nome, quando sai, a hora e a etiqueta mudam; a data que dispara, a repetição e o tipo de mensagem ficam, porque o modelo aprovado depende deles: para mudar, crie outra régua), o modelo da Meta, os números e o Apagar (o que estava na fila não sai mais e os números somem; a data nova continua na ficha dos contatos).
+
+A data nova aparece na ficha do contato, em "Datas para as réguas", na planilha de contatos (uma coluna com a chave da data, como renovacao_do_plano, no formato dd/mm/aaaa; o painel de importar lista as colunas) e na API (o campo dates do PATCH /v1/contacts/{contact}, com a chave e a data AAAA-MM-DD). As regras são as das réguas prontas: das 8h às 20h no fuso do cliente, uma régua por pessoa a cada 24 horas, o SAIR, o aceite de novidades nas promoções e a declaração de consentimento nos lembretes de utilidade. Para a mesma pessoa no mesmo dia, o lembrete pronto vem primeiro, depois as suas réguas (na ordem em que foram criadas) e depois as outras prontas.
 
 ## Integrações: ações, webhooks e API
 
