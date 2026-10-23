@@ -106,7 +106,7 @@ Só o dono exclui a conta, em Segurança, Excluir a conta (com o segundo fator e
 
 ## Roadmap e sugestões
 
-No menu Roadmap do painel fica o que estamos fazendo e o que vem por aí, em quatro colunas (Ideias, Vamos fazer, Fazendo e Pronto), sem datas: a ordem muda com o que os clientes pedem. Qualquer pessoa da equipe curte o que mais quer (uma curtida por pessoa; tocar de novo desfaz) e manda ideias. A gente lê todas: as que entram aparecem em Ideias já com a curtida de quem mandou, e uma ideia parecida com outra é juntada a ela. Em "Suas ideias", você vê o que aconteceu com cada uma. O roadmap também fica aberto, sem login, em boavoz.com/roadmap.
+No menu Roadmap do painel fica o que estamos fazendo e o que vem por aí, em quatro colunas (Ideias, Vamos fazer, Fazendo e Pronto), sem datas: a ordem muda com o que os clientes pedem. No celular e no tablet, as colunas viram abas (uma de cada vez); "Mandar ideia" e "Suas ideias" ficam no alto e abrem num modal. Qualquer pessoa da equipe curte o que mais quer (uma curtida por pessoa; tocar de novo desfaz) e manda ideias. A gente lê todas: as que entram aparecem em Ideias já com a curtida de quem mandou, e uma ideia parecida com outra é juntada a ela. Em "Suas ideias", você vê o que aconteceu com cada uma. O roadmap também fica aberto, sem login, em boavoz.com/roadmap.
 
 ## As abas Conversas do cliente e do chatbot
 
@@ -136,3 +136,9 @@ Em Canais, cada aba começa pela situação e o resto vem em linhas que abrem um
 ## A aba Herança do modelo
 
 Na página de um modelo (pacote Plataforma), a aba Herança mostra, em linhas: o que cada chatbot derivado pode mudar (uma chave por campo, que salva na hora; travar pergunta antes, porque os derivados voltam ao valor do modelo), os chatbots derivados (cada um abre a página dele) e as versões publicadas (a "em uso" e o "Usar esta versão" nas outras, com confirmação). "Novo chatbot deste modelo", no alto, abre um modal com o cliente e o contexto fixo em pares de nome e valor (por exemplo, loja_id e 42), sem JSON.
+
+## A ficha do contato e o Meu perfil
+
+A ficha do contato (aberta pela lista de Contatos, pela Caixa ou pelo Ir para) começa pela foto (ou as iniciais), o nome, o canal e pílulas com a primeira e a última mensagem e o aceite de novidades. Embaixo, em linhas que abrem um modal: Etiquetas (digite e toque em Adicionar; o X tira), Datas para as réguas, Memória do assistente (com o Apagar), o Aceite de novidades (o histórico e o Revogar) e o "Registrar um aceite coletado fora do chat". As conversas da pessoa vêm em linhas no fim, e o "←" de cada uma volta para a ficha.
+
+Meu perfil começa pela sua foto, o nome e o e-mail. Em "Como os contatos te veem" ficam o Nome e foto, a Minha assinatura (o formato em cartões) e o Disponível para atender (uma chave que salva na hora). Em Conta: o E-mail de acesso (com a troca), o Papel, o Escopo e o Tema. Em Avisos: os avisos no WhatsApp e no celular. O Segundo fator fica no fim.

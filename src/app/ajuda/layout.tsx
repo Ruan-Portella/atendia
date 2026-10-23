@@ -31,7 +31,7 @@ export default function HelpLayout({ children }: { children: ReactNode }) {
           <Link href="/painel">Entrar no painel</Link>
         </nav>
       </header>
-      <main className="mx-auto w-full max-w-[880px] flex-1 px-5 py-8 sm:px-6 lg:py-12">{children}</main>
+      <main className="mx-auto w-full max-w-[1040px] flex-1 px-4 py-8 sm:px-6 lg:py-12">{children}</main>
       <LegalFooter />
     </div>
   );

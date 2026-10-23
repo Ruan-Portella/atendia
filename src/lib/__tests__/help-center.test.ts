@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupHelp, helpArticles, helpBlocks, helpSummary, parseHelpGuide } from "../help-center";
+import { groupHelp, helpArticles, helpBlocks, helpSummary, parseHelpGuide, sectionsOnly } from "../help-center";
 import { clientGuide } from "../client-guide";
 
 describe("central de ajuda", () => {
@@ -47,5 +47,13 @@ describe("guias do cliente no portal", () => {
     expect(text).not.toMatch(/boavoz/i);
     expect(text).toContain("Norte Marketing");
     expect(text).toContain("Clínica Sorriso");
+  });
+
+  it("o título e a apresentação de cada arquivo ficam fora das seções", () => {
+    expect(sectionsOnly("# Guia\n\nApresentação.\n\n## Primeira\n\nTexto.")).toBe("## Primeira\n\nTexto.");
+    expect(sectionsOnly("## Já começa\n\nTexto.")).toBe("## Já começa\n\nTexto.");
+    expect(sectionsOnly("# Só o título")).toBe("");
+    const joined = [sectionsOnly("## Última do 2\n\nFim."), sectionsOnly("# Guia\n\nApresentação.\n\n## Primeira do 1\n\nTexto.")].join("\n\n");
+    expect(parseHelpGuide(joined).find((a) => a.title === "Última do 2")?.plain).toBe("Fim.");
   });
 });

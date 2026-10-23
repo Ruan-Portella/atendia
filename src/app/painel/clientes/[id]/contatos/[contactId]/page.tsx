@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { backFrom } from "@/lib/back-link";
+import { backFrom, withFrom } from "@/lib/back-link";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
@@ -11,8 +11,11 @@ import { activeSuppressions, suppressionScope } from "@/lib/suppression";
 import { relativeTime } from "@/lib/utils";
 import { birthdayLabel } from "@/lib/contact-import";
 import { CLIENT_TIMEZONES, DEFAULT_TIMEZONE, isoToLocalInput } from "@/lib/timezone";
-import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
+import { Brain, CalendarDays, ChevronRight, FileCheck2, Megaphone, MessagesSquare, Tags } from "lucide-react";
+import { ContactAvatar } from "@/components/contact-avatar";
+import { TagsField } from "@/components/tags-field";
+import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
+import { StatusPill } from "@/components/ui/form-section";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { clearContactMemoryAction, recordContactConsent, revokeContactConsent, saveContactDates, saveContactTags } from "../../../../actions";
 
@@ -65,140 +68,177 @@ export default async function ContactPage({ params, searchParams }: PageProps<"/
   const tz = (client.timezone as string | null) ?? DEFAULT_TIMEZONE;
   const tzLabel = CLIENT_TIMEZONES.find((t) => t.id === tz)?.label ?? "Brasília";
 
+  const dates = [
+    contact.birthday ? `aniversário ${birthdayLabel(contact.birthday)}` : null,
+    contact.last_visit_at ? `última visita ${new Date(contact.last_visit_at).toLocaleDateString("pt-BR", { timeZone: tz })}` : null,
+    contact.appointment_at ? `horário ${new Date(contact.appointment_at).toLocaleString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : null,
+  ].filter(Boolean);
+  const here = `/painel/clientes/${id}/contatos/${contactId}`;
+
+  // redesenho (23/10/2026, a pedido do usuário: "muito scroll e fora do padrão"): o cabeçalho com a
+  // foto e as pílulas, e cada bloco numa linha que abre um modal
   return (
-    <div className="flex max-w-[860px] flex-col gap-5">
-      <div className="flex flex-col gap-2">
-        <Link href={back?.href ?? `/painel/clientes/${id}?tab=contatos`} className="text-sm font-semibold text-muted">← {back?.label ?? `Contatos de ${client.name}`}</Link>
-        <h1 className="text-2xl font-normal sm:text-[28px]">{title}</h1>
-        <p className="text-sm text-muted">
-          {[CHANNEL_LABEL[contact.channel] ?? contact.channel, contact.name && contact.phone ? `+${contact.phone}` : null, contact.email, botName ? `chatbot ${botName}` : null].filter(Boolean).join(" · ")}
-        </p>
-        <p className="text-xs text-muted">
-          {contact.first_inbound_at ? `Primeira mensagem ${when(contact.first_inbound_at)}` : "Ainda não escreveu"}
-          {contact.last_inbound_at ? ` · última ${relativeTime(contact.last_inbound_at)}` : ""}
-        </p>
+    <div className="flex max-w-[760px] flex-col gap-5">
+      <div className="flex flex-col gap-3">
+        <Link href={back?.href ?? `/painel/clientes/${id}?tab=contatos`} className="text-sm font-medium text-muted hover:text-ink">
+          ← {back?.label ?? `Contatos de ${client.name}`}
+        </Link>
+        <div className="flex items-center gap-4">
+          <ContactAvatar name={title} photo={contact.photo} channel={contact.channel} size={56} />
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-2xl font-normal sm:text-[28px]">{title}</h1>
+            <p className="truncate text-sm text-muted">{[CHANNEL_LABEL[contact.channel] ?? contact.channel, contact.name && contact.phone ? `+${contact.phone}` : null, contact.email, botName ? `chatbot ${botName}` : null].filter(Boolean).join(" · ")}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StatusPill>{contact.first_inbound_at ? `primeira mensagem ${when(contact.first_inbound_at)}` : "ainda não escreveu"}</StatusPill>
+          {contact.last_inbound_at && <StatusPill>última {relativeTime(contact.last_inbound_at)}</StatusPill>}
+          {contact.channel === "whatsapp" && <StatusPill tone={state === "granted" ? "ok" : "muted"}>novidades: {CONSENT_LABEL[state].toLowerCase()}</StatusPill>}
+          {suppressed && <StatusPill tone="warn">pediu para sair</StatusPill>}
+        </div>
       </div>
 
-      <ActionForm action={saveContactTags.bind(null, id, contactId)} className="card flex flex-col gap-2 p-5">
-        <h2 className="font-semibold">Etiquetas</h2>
-        <p className="text-xs text-muted">Separadas por vírgula (ex.: cliente vip, pizza, zona sul). Servem para filtrar a lista e, depois, escolher o público das campanhas.</p>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <label htmlFor="contato-tags" className="sr-only">Etiquetas</label>
-          <input id="contato-tags" name="tags" defaultValue={contact.tags.join(", ")} maxLength={700} className="input" placeholder="sem etiquetas" />
-          <SubmitButton className="btn-primary shrink-0">Salvar</SubmitButton>
-        </div>
-      </ActionForm>
-
-      {contact.channel === "whatsapp" && (
-        <ActionForm action={saveContactDates.bind(null, id, contactId)} className="card flex flex-col gap-3 p-5">
-          <h2 className="font-semibold">Datas para as réguas</h2>
-          <p className="text-xs text-muted">As mensagens automáticas do WhatsApp usam estas datas: o aniversário (só o dia e o mês), a última visita ou compra e o próximo horário marcado. Também vêm da planilha de contatos e da API. Campo vazio apaga a data.</p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <label htmlFor="contato-aniversario" className="label">Aniversário (dia/mês)</label>
-              <input id="contato-aniversario" name="birthday" defaultValue={birthdayLabel(contact.birthday)} maxLength={10} placeholder="21/10" className="input" />
+      <SettingGroup title="Contato">
+        <SettingRow icon={<Tags size={18} />} title="Etiquetas" summary={contact.tags.length ? contact.tags.join(", ") : "Sem etiquetas"} description="Servem para filtrar a lista e escolher o público das campanhas." action={saveContactTags.bind(null, id, contactId)}>
+          <TagsField name="tags" initial={contact.tags} />
+        </SettingRow>
+        {contact.channel === "whatsapp" && (
+          <SettingRow
+            icon={<CalendarDays size={18} />}
+            title="Datas para as réguas"
+            summary={dates.length ? dates.join(" · ") : "Nenhuma data"}
+            description="As mensagens automáticas do WhatsApp usam estas datas. Também vêm da planilha de contatos e da API. Campo vazio apaga a data."
+            action={saveContactDates.bind(null, id, contactId)}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="contato-aniversario" className="label">
+                  Aniversário (dia/mês)
+                </label>
+                <input id="contato-aniversario" name="birthday" defaultValue={birthdayLabel(contact.birthday)} maxLength={10} placeholder="21/10" className="input" />
+              </div>
+              <div>
+                <label htmlFor="contato-visita" className="label">
+                  Última visita ou compra
+                </label>
+                <input id="contato-visita" name="last_visit" type="date" max={today} defaultValue={contact.last_visit_at ? new Date(contact.last_visit_at).toLocaleDateString("en-CA", { timeZone: tz }) : ""} className="input" />
+              </div>
             </div>
             <div>
-              <label htmlFor="contato-visita" className="label">Última visita ou compra</label>
-              <input id="contato-visita" name="last_visit" type="date" max={today} defaultValue={contact.last_visit_at ? new Date(contact.last_visit_at).toLocaleDateString("en-CA", { timeZone: tz }) : ""} className="input" />
-            </div>
-            <div>
-              <label htmlFor="contato-horario" className="label">Próximo horário ({tzLabel})</label>
+              <label htmlFor="contato-horario" className="label">
+                Próximo horário ({tzLabel})
+              </label>
               <input id="contato-horario" name="appointment" type="datetime-local" defaultValue={contact.appointment_at ? isoToLocalInput(contact.appointment_at, tz) : ""} className="input" />
             </div>
-          </div>
-          <SubmitButton className="btn-primary self-start">Salvar datas</SubmitButton>
-        </ActionForm>
-      )}
-
-      {contact.channel === "whatsapp" && (
-        <section className="card flex flex-col gap-3 p-5">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="font-semibold">Novidades e promoções (WhatsApp)</h2>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${state === "granted" ? "bg-brand-soft text-brand" : "bg-ground text-muted"}`}>{CONSENT_LABEL[state]}</span>
-          </div>
-          {suppressed && (
-            <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
-              Este contato pediu para não receber promoções (SAIR ou pelo próprio WhatsApp). Um aceite registrado pelo painel fica guardado, mas só vale depois que a própria pessoa aceitar de novo pelo chat.
-            </p>
-          )}
-          {contact.marketing_offer_at && <p className="text-xs text-muted">O assistente ofereceu novidades em {when(contact.marketing_offer_at)}.</p>}
-          {history.length > 0 ? (
-            <ul className="flex flex-col divide-y divide-line-2 text-sm">
-              {history.map((h) => (
-                <li key={h.id} className="flex flex-col gap-0.5 py-2">
-                  <span>
-                    <strong>{h.granted ? "Aceitou" : "Recusou"}</strong> {SOURCE_LABEL[h.source]} · {when(h.collected_at)}
-                    {h.collected_by ? <span className="text-muted"> · registrado por {h.collected_by}</span> : null}
-                  </span>
-                  <span className="text-xs text-ink-2">{h.text}</span>
-                  {h.revoked_at && <span className="text-xs text-muted">Revogado {when(h.revoked_at)}{h.revoke_source ? ` (${h.revoke_source.startsWith("chat") ? "pelo contato no chat" : h.revoke_source.startsWith("meta") ? "pelo WhatsApp" : "pelo painel"})` : ""}</span>}
+          </SettingRow>
+        )}
+        {memory.length > 0 && (
+          <SettingRow
+            icon={<Brain size={18} />}
+            title="Memória do assistente"
+            summary={`${memory.length} ${memory.length === 1 ? "coisa que ele lembra" : "coisas que ele lembra"}: ${memory[0]}`}
+            description="O que o assistente lembra desta pessoa de conversas anteriores, só neste chatbot. Vale 180 dias desde a última atualização; a pessoa também pode pedir para ele esquecer."
+            footer="close"
+            footerStart={
+              <ConfirmAction action={clearContactMemoryAction.bind(null, id, contactId)} title="Apagar a memória do assistente?" description="O assistente deixa de lembrar desta pessoa. Nas próximas conversas, ele pode aprender de novo (com a memória ligada no chatbot)." confirmLabel="Apagar" className="text-sm font-medium text-danger hover:underline">
+                Apagar a memória
+              </ConfirmAction>
+            }
+          >
+            <ul className="flex flex-col gap-1.5 rounded-[12px] bg-brand-soft p-3 text-sm text-ink">
+              {memory.map((f) => (
+                <li key={f} className="flex gap-2">
+                  <Brain size={13} className="mt-1 shrink-0 text-brand" aria-hidden />
+                  <span>{f}</span>
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="text-sm text-muted">Nenhuma resposta ainda.</p>
-          )}
-          {state === "granted" && (
-            <ConfirmAction action={revokeContactConsent.bind(null, id, contactId)} title="Revogar o aceite de novidades?" description="O contato deixa de receber promoções deste cliente. O registro do aceite e da revogação fica guardado como prova." confirmLabel="Revogar" className="btn-ghost self-start">
-              Revogar aceite
-            </ConfirmAction>
-          )}
+          </SettingRow>
+        )}
+      </SettingGroup>
+
+      {contact.channel === "whatsapp" && (
+        <SettingGroup title="Novidades e promoções (WhatsApp)">
+          <SettingRow
+            icon={<Megaphone size={18} />}
+            title="Aceite de novidades"
+            badge={<StatusPill tone={state === "granted" ? "ok" : "muted"}>{CONSENT_LABEL[state]}</StatusPill>}
+            summary={history[0] ? `${history[0].granted ? "Aceitou" : "Recusou"} ${SOURCE_LABEL[history[0].source]}, ${when(history[0].collected_at)}` : contact.marketing_offer_at ? `O assistente ofereceu em ${when(contact.marketing_offer_at)}; sem resposta` : "Nenhuma resposta ainda"}
+            dialogTitle="O histórico das novidades"
+            footer="close"
+            footerStart={
+              state === "granted" ? (
+                <ConfirmAction action={revokeContactConsent.bind(null, id, contactId)} title="Revogar o aceite de novidades?" description="O contato deixa de receber promoções deste cliente. O registro do aceite e da revogação fica guardado como prova." confirmLabel="Revogar" className="text-sm font-medium text-danger hover:underline">
+                  Revogar o aceite
+                </ConfirmAction>
+              ) : undefined
+            }
+          >
+            {suppressed && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Este contato pediu para não receber promoções (SAIR ou pelo próprio WhatsApp). Um aceite registrado pelo painel fica guardado, mas só vale depois que a própria pessoa aceitar de novo pelo chat.</p>}
+            {contact.marketing_offer_at && <p className="text-xs text-muted">O assistente ofereceu novidades em {when(contact.marketing_offer_at)}.</p>}
+            {history.length > 0 ? (
+              <ul className="flex flex-col divide-y divide-line-2 text-sm">
+                {history.map((h) => (
+                  <li key={h.id} className="flex flex-col gap-0.5 py-2">
+                    <span>
+                      <strong>{h.granted ? "Aceitou" : "Recusou"}</strong> {SOURCE_LABEL[h.source]} · {when(h.collected_at)}
+                      {h.collected_by ? <span className="text-muted"> · registrado por {h.collected_by}</span> : null}
+                    </span>
+                    <span className="text-xs text-ink-2">{h.text}</span>
+                    {h.revoked_at && <span className="text-xs text-muted">Revogado {when(h.revoked_at)}{h.revoke_source ? ` (${h.revoke_source.startsWith("chat") ? "pelo contato no chat" : h.revoke_source.startsWith("meta") ? "pelo WhatsApp" : "pelo painel"})` : ""}</span>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted">Nenhuma resposta ainda.</p>
+            )}
+          </SettingRow>
           {number && state !== "granted" && (
-            <details className="rounded-xl border border-line p-3">
-              <summary className="cursor-pointer text-sm font-semibold">Registrar um aceite coletado fora do chat</summary>
-              <ActionForm action={recordContactConsent.bind(null, id, contactId)} className="mt-3 flex flex-col gap-3">
-                <p className="text-xs text-muted">Use quando a pessoa aceitou receber promoções por WhatsApp em outro lugar (cadastro, formulário do site, contrato). A empresa responde pela prova desse aceite.</p>
-                <div>
-                  <label htmlFor="consent-origem" className="label">Onde a pessoa aceitou</label>
-                  <input id="consent-origem" name="origem" required minLength={5} maxLength={200} className="input" placeholder="Ex.: cadastro no balcão da loja" />
-                </div>
-                <div>
-                  <label htmlFor="consent-data" className="label">Data do aceite</label>
-                  <input id="consent-data" name="data" type="date" required max={today} className="input max-w-[200px]" />
-                </div>
-                <div>
-                  <label htmlFor="consent-texto" className="label">Texto que a pessoa aceitou</label>
-                  <textarea id="consent-texto" name="texto" required minLength={10} maxLength={600} rows={3} className="input" placeholder="Ex.: Aceito receber novidades e promoções da Pizzaria do Zé pelo WhatsApp." />
-                </div>
-                <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="confirm" required className="mt-1" />
-                  <span>A empresa coletou este aceite e consegue prová-lo se a pessoa ou a Meta pedirem.</span>
+            <SettingRow icon={<FileCheck2 size={18} />} title="Registrar um aceite coletado fora do chat" summary="Cadastro, formulário do site ou contrato" description="Use quando a pessoa aceitou receber promoções por WhatsApp em outro lugar. A empresa responde pela prova desse aceite." action={recordContactConsent.bind(null, id, contactId)} saveLabel="Registrar aceite">
+              <div>
+                <label htmlFor="consent-origem" className="label">
+                  Onde a pessoa aceitou
                 </label>
-                <SubmitButton className="btn-primary self-start">Registrar aceite</SubmitButton>
-              </ActionForm>
-            </details>
+                <input id="consent-origem" name="origem" required minLength={5} maxLength={200} className="input" placeholder="Ex.: cadastro no balcão da loja" />
+              </div>
+              <div>
+                <label htmlFor="consent-data" className="label">
+                  Data do aceite
+                </label>
+                <input id="consent-data" name="data" type="date" required max={today} className="input max-w-[200px]" />
+              </div>
+              <div>
+                <label htmlFor="consent-texto" className="label">
+                  Texto que a pessoa aceitou
+                </label>
+                <textarea id="consent-texto" name="texto" required minLength={10} maxLength={600} rows={3} className="input" placeholder="Ex.: Aceito receber novidades e promoções da Pizzaria do Zé pelo WhatsApp." />
+              </div>
+              <label className="flex items-start gap-2.5 rounded-[12px] bg-raised p-3 text-sm">
+                <input type="checkbox" name="confirm" required className="mt-0.5 accent-brand" />
+                <span>A empresa coletou este aceite e consegue prová-lo se a pessoa ou a Meta pedirem.</span>
+              </label>
+            </SettingRow>
           )}
-        </section>
+        </SettingGroup>
       )}
 
-      {memory.length > 0 && (
-        <section className="card flex flex-col gap-2 p-5">
-          <h2 className="font-semibold">Memória do assistente</h2>
-          <p className="text-xs text-muted">O que o assistente lembra desta pessoa de conversas anteriores, só neste chatbot. Vale 180 dias desde a última atualização; a pessoa também pode pedir para ele esquecer.</p>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-            {memory.map((f) => <li key={f}>{f}</li>)}
-          </ul>
-          <ConfirmAction action={clearContactMemoryAction.bind(null, id, contactId)} title="Apagar a memória do assistente?" description="O assistente deixa de lembrar desta pessoa. Nas próximas conversas, ele pode aprender de novo (com a memória ligada no chatbot)." confirmLabel="Apagar a memória" className="btn-ghost self-start">
-            Apagar a memória
-          </ConfirmAction>
-        </section>
-      )}
-
-      <section className="card overflow-hidden">
-        <h2 className="px-5 pt-4 font-semibold">Conversas</h2>
-        {(conversations ?? []).length === 0 && <p className="px-5 py-4 text-sm text-muted">Nenhuma conversa guardada (as antigas podem ter sido apagadas pelo prazo de guarda).</p>}
-        <div className="mt-2">
-          {(conversations ?? []).map((c) => (
-            <Link key={c.id as string} href={`/painel/bots/${c.bot_id as string}/conversas/${c.id as string}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-2 px-5 py-3 text-sm hover:bg-ground">
-              <span className="text-muted">{relativeTime(c.started_at as string)}</span>
-              <span>{c.message_count as number} mensagens</span>
-              <span className="text-xs text-muted">{CHANNEL_LABEL[c.channel as string] ?? (c.channel as string)}</span>
-              <span className="ml-auto text-xs text-muted">última {relativeTime(c.last_message_at as string)}</span>
-            </Link>
-          ))}
-        </div>
-      </section>
+      <SettingGroup title={`Conversas · ${(conversations ?? []).length}`}>
+        {(conversations ?? []).length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhuma conversa guardada (as antigas podem ter sido apagadas pelo prazo de guarda).</p>}
+        {(conversations ?? []).map((c) => (
+          <Link key={c.id as string} href={withFrom(`/painel/bots/${c.bot_id as string}/conversas/${c.id as string}`, here)} className="group/set flex items-center gap-3 px-4 py-3.5 transition-colors duration-[120ms] hover:bg-raised/40">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-raised text-ink-2">
+              <MessagesSquare size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] font-medium text-ink">Começou {relativeTime(c.started_at as string)}</span>
+              <span className="mt-0.5 block text-[12.5px] text-muted">
+                {c.message_count as number} mensagens · {CHANNEL_LABEL[c.channel as string] ?? (c.channel as string)} · última {relativeTime(c.last_message_at as string)}
+              </span>
+            </span>
+            <ChevronRight size={16} className="shrink-0 text-muted transition-transform duration-[120ms] group-hover/set:translate-x-0.5" />
+          </Link>
+        ))}
+      </SettingGroup>
     </div>
   );
 }

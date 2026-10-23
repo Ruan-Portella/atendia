@@ -28,7 +28,7 @@ export const HELP_GROUPS: Array<{ title: string; sections: string[] }> = [
   { title: "Chatbots e IA", sections: ["A página do chatbot", "Rosto do chatbot", "Modelos de chatbot", "A aba Herança do modelo", "Base de conhecimento (fontes)", "Aviso do momento", "Perguntas sem resposta", "Personalidade e instruções", "Memória do assistente", "O que o assistente não faz", "Leads (captura de contatos)", "Áudios e fotos", "Roteiros", "Identificação pelo roteiro e lembrar o número"] },
   { title: "Canais", sections: ["As abas de Canais do chatbot", "Chat do site (widget)", "Conectar o WhatsApp de um cliente", "WhatsApp com o app do celular (coexistência)", "Contato do WhatsApp sem o número (nome de usuário)", "Problemas comuns na conexão", "Modelos de mensagem e janela de 24 horas", "Custo do WhatsApp", "Instagram Direct", "Posts do Instagram como fonte", "Regras da Meta e o portão do BoaVoz", "Botão de emergência"] },
   { title: "Atendimento e equipe", sections: ["Atendimento humano e conversas", "Caixa de entrada", "A lista e a conversa na Caixa de entrada", "Conversas anteriores da mesma pessoa", "As abas Conversas do cliente e do chatbot", "As abas de Atendimento e Ajustes do cliente", "O que a IA fez em cada resposta", "Setores e feriados", "Transferir, notas internas, respostas prontas e adiar", "Citar, reagir e emojis na conversa", "Mandar foto ou PDF na conversa", "Chamados no chat do site", "Assinatura das mensagens da equipe", "Pesquisa de satisfação", "Equipe e papéis", "Meu perfil", "Avisos no WhatsApp para a equipe", "Avisos no celular e no computador", "Área do cliente (portal)", "A lista de clientes", "A página do cliente", "Relatórios", "Relatório mensal", "Evolução mês a mês", "Marca e domínio", "Cliente que veio de outra conta"] },
-  { title: "Contatos e campanhas", sections: ["Contatos e leads", "Contatos", "Campanhas no WhatsApp", "Lembretes", "Réguas"] },
+  { title: "Contatos e campanhas", sections: ["Contatos e leads", "Contatos", "A ficha do contato e o Meu perfil", "Campanhas no WhatsApp", "Lembretes", "Réguas"] },
   { title: "Preços e cobrança", sections: ["Tamanhos e preços dos chatbots", "O que conta como um atendimento", "Excedente e crédito", "Pacotes da conta", "Assinatura, fatura e cancelamento", "Desistência em 7 dias e a primeira semana", "Pagamento atrasado", "Excluir a conta"] },
   { title: "Integrações e segurança", sections: ["Integrações: ações, webhooks e API", "Segurança e privacidade (LGPD)", "Página de status"] },
 ];
@@ -44,6 +44,17 @@ export function helpBlocks(md: string): HelpBlock[] {
     else out.push({ kind: "p", text: lines.join(" ") });
   }
   return out;
+}
+
+/**
+ * O guia sem o que vem antes da primeira seção (o título "# " e a apresentação do arquivo). Sem
+ * isso, ao juntar os arquivos, a apresentação de um ia parar no fim da última seção do outro
+ * (23/10/2026). Pura.
+ */
+export function sectionsOnly(md: string): string {
+  if (md.startsWith("## ")) return md;
+  const i = md.search(/^## /m);
+  return i === -1 ? "" : md.slice(i);
 }
 
 /** As seções "## " do guia, cada uma uma página. Pura. */
@@ -72,7 +83,7 @@ export function helpArticles(): HelpArticle[] {
     readdirSync(dir)
       .filter((f) => f.endsWith(".md"))
       .sort()
-      .map((f) => readFileSync(join(dir, f), "utf8"))
+      .map((f) => sectionsOnly(readFileSync(join(dir, f), "utf8")))
       .join("\n\n"),
   );
   return cache;

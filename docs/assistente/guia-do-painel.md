@@ -20,7 +20,7 @@ Para achar qualquer coisa sem procurar no menu, aperte Ctrl K (⌘K no Mac) ou c
 
 ## Tema escuro e claro
 
-O painel abre no tema escuro. Para trocar, clique no seu nome no rodapé do menu e escolha Tema escuro, Tema claro ou Tema do aparelho (segue o celular ou o computador); também dá em Meu perfil, no quadro Aparência, e pelo Ctrl K. A escolha vale para aquele navegador. A área do cliente tem a mesma escolha em Meu perfil.
+O painel abre no tema escuro. Para trocar, clique no seu nome no rodapé do menu e escolha Tema escuro, Tema claro ou Tema do aparelho (segue o celular ou o computador); também dá em Meu perfil, na linha Tema, e pelo Ctrl K. A escolha vale para aquele navegador. A área do cliente tem a mesma escolha em Meu perfil.
 
 ## Como começar (primeiros passos)
 
