@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { initials } from "@/lib/utils";
 import { redirect } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { expiredRedirect, getMemberSession } from "@/lib/member";
@@ -22,8 +23,9 @@ export default async function MemberHome() {
       ) : (
         <div className="card overflow-hidden">
           {list.map((m) => (
-            <Link key={m.clientId} href={`/cliente/${m.clientId}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-3.5 text-sm last:border-0 hover:bg-ground">
-              <span className="flex-1"><span className="block font-semibold">{m.clientName}</span><span className="text-xs text-muted">com {m.agency.name}</span></span>
+            <Link key={m.clientId} href={`/cliente/${m.clientId}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-3.5 text-sm transition-colors duration-[120ms] last:border-0 hover:bg-raised/50">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-raised text-[12px] font-semibold text-ink">{initials(m.clientName)}</span>
+              <span className="min-w-0 flex-1"><span className="block truncate font-medium text-ink">{m.clientName}</span><span className="text-xs text-muted">com {m.agency.name}</span></span>
               <ChevronRight size={16} className="text-muted" />
             </Link>
           ))}

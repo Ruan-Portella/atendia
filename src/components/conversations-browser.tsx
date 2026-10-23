@@ -30,6 +30,7 @@ export async function ConversationsBrowser({
   showBot,
   earlier = 0,
   intro,
+  renderConversation,
 }: {
   db: SupabaseClient;
   bots: InboxBot[];
@@ -43,6 +44,8 @@ export async function ConversationsBrowser({
   earlier?: number;
   /** o que vai em cima da lista (o "+ Nova conversa" do WhatsApp, por exemplo) */
   intro?: React.ReactNode;
+  /** a conversa aberta (padrão: a do painel; a área do cliente passa a dela) */
+  renderConversation?: (o: { botId: string; convId: string; back: string; mobileBack: string; earlier: number; earlierHref: (n: number) => string }) => React.ReactNode;
 }) {
   const { items, more } = await loadConversationList(db, { bots, filter, limit });
   const selected = selectedId ? (items.find((i) => i.id === selectedId) ?? null) : null;
@@ -127,15 +130,14 @@ export async function ConversationsBrowser({
 
       <div className={cn("min-w-0 flex-1 flex-col bg-ground", selectedId && openBot ? "flex" : "hidden md:flex")}>
         {selectedId && openBot ? (
-          <AgencyConversation
-            botId={openBot as string}
-            convId={selectedId}
-            embedded
-            back={hrefFor({ filter, limit, conversationId: selectedId })}
-            mobileBack={hrefFor({ filter, limit, conversationId: null })}
-            earlier={earlier}
-            earlierHref={(n) => hrefFor({ filter, limit, conversationId: selectedId, earlier: n })}
-          />
+          (renderConversation ?? ((o) => <AgencyConversation botId={o.botId} convId={o.convId} embedded back={o.back} mobileBack={o.mobileBack} earlier={o.earlier} earlierHref={o.earlierHref} />))({
+            botId: openBot as string,
+            convId: selectedId,
+            back: hrefFor({ filter, limit, conversationId: selectedId }),
+            mobileBack: hrefFor({ filter, limit, conversationId: null }),
+            earlier,
+            earlierHref: (n) => hrefFor({ filter, limit, conversationId: selectedId, earlier: n }),
+          })
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted">
             <span className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-raised">

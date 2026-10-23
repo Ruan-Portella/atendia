@@ -24,11 +24,12 @@ export function MemberNav({ clientId, manager, handoff, knowledge, hours, waitin
     tab(`${base}/ajuda`, "Ajuda"),
   ];
   return (
-    <nav className="mx-auto flex max-w-[980px] gap-1 overflow-x-auto px-4 [scrollbar-width:none] sm:px-6 print:hidden">
+    // redesenho (23/10/2026): as abas em pílulas, como no painel
+    <nav className="mx-auto flex max-w-[980px] gap-1 overflow-x-auto px-4 py-2 [scrollbar-width:none] sm:px-6 print:hidden">
       {tabs.map((t) => (
-        <Link key={t.href} href={t.href} className={cn("-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm", t.active ? "border-brand font-semibold text-brand" : "border-transparent font-medium text-ink-2 hover:text-ink")}>
+        <Link key={t.href} href={t.href} aria-current={t.active ? "page" : undefined} className={cn("inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-colors duration-[120ms]", t.active ? "bg-ink font-medium text-ground" : "text-ink-2 hover:bg-raised hover:text-ink")}>
           {t.label}
-          {t.badge ? <span className="ml-1.5 rounded-full bg-amber-soft px-1.5 py-0.5 text-[11px] font-semibold text-amber-ink">{t.badge}</span> : null}
+          {t.badge ? <span className={cn("rounded-full px-1.5 font-mono text-[11px] font-medium", t.active ? "bg-amber text-ground" : "bg-amber-soft text-amber-ink")}>{t.badge}</span> : null}
         </Link>
       ))}
     </nav>

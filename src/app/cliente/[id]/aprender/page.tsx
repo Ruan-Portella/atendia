@@ -6,6 +6,8 @@ import { TextSources, type TextSourceItem } from "@/components/text-sources";
 import { memberAnswer, memberClearMomentNotice, memberDeleteText, memberDismiss, memberSaveMomentNotice, memberSaveText } from "../../actions";
 import { MomentNoticeCard } from "@/components/moment-notice-card";
 import { activeMomentNotice, defaultUntilInput } from "@/lib/moment-notice";
+import { FileText, Megaphone } from "lucide-react";
+import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
 
 export const metadata = { title: { absolute: "Ensinar o assistente" }, robots: { index: false, follow: false } };
 
@@ -52,18 +54,22 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
                 <UnansweredItem key={q.id} question={q.question} answer={memberAnswer.bind(null, id, bot.id, q.id)} dismiss={memberDismiss.bind(null, id, bot.id, q.id)} suggestion={q.suggestion} suggestedBy={q.suggestedBy} />
               ))}
             </div>
-            <MomentNoticeCard
-              notice={activeMomentNotice(bot)}
-              lastUntil={bot.moment_notice_until}
-              author={who(bot.moment_notice_by).trim() || null}
-              defaultUntil={defaultUntilInput()}
-              save={memberSaveMomentNotice.bind(null, id, bot.id)}
-              clear={memberClearMomentNotice.bind(null, id, bot.id)}
-            />
-            <div className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">Textos e perguntas frequentes</h3>
-              <TextSources items={items} create={memberSaveText.bind(null, id, bot.id, null)} />
-            </div>
+            {/* redesenho (23/10/2026): o aviso do momento e os textos em linhas que abrem um modal */}
+            <SettingGroup title="Informações do assistente">
+              <SettingRow icon={<Megaphone size={18} />} title="Aviso do momento" summary={activeMomentNotice(bot) ? `No ar: ${activeMomentNotice(bot)!.text}` : "Nenhum aviso agora"} summaryTone={activeMomentNotice(bot) ? "ok" : "muted"} description="Um recado com prazo que o assistente passa a dar (feriado, falta de produto, horário especial)." footer="close">
+                <MomentNoticeCard
+                  notice={activeMomentNotice(bot)}
+                  lastUntil={bot.moment_notice_until}
+                  author={who(bot.moment_notice_by).trim() || null}
+                  defaultUntil={defaultUntilInput()}
+                  save={memberSaveMomentNotice.bind(null, id, bot.id)}
+                  clear={memberClearMomentNotice.bind(null, id, bot.id)}
+                />
+              </SettingRow>
+              <SettingRow icon={<FileText size={18} />} title="Textos e perguntas frequentes" summary={items.length ? `${items.length} ${items.length === 1 ? "texto" : "textos"}: ${items.slice(0, 2).map((i) => i.title).join(" · ")}` : "Nenhum texto ainda"} size="lg" footer="close">
+                <TextSources items={items} create={memberSaveText.bind(null, id, bot.id, null)} />
+              </SettingRow>
+            </SettingGroup>
           </section>
         );
       })}

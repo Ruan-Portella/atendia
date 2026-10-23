@@ -9,6 +9,8 @@ import { PrintButton } from "@/components/print-button";
 import { listLeads, type Lead } from "@/lib/leads";
 import { botEvolution } from "@/lib/evolution";
 import { EvolutionTable } from "@/components/evolution-table";
+import { Kpi } from "@/components/kpi";
+import { ReportTabs } from "@/components/report-tabs";
 import { ReportChannels } from "@/components/report-channels";
 
 export const brandColor = (c: string) => (/^#[0-9a-f]{6}$/i.test(c) ? c : "#1f4e3d");
@@ -98,12 +100,9 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
       </p>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {/* redesenho (23/10/2026): os cartões de número do painel */}
         {kpis.map((k) => (
-          <div key={k.label} className="card flex flex-col gap-1 px-4 py-3.5">
-            <span className="kpi-label">{k.label}</span>
-            <span className="display text-2xl font-bold tabular sm:text-[28px]">{k.value}</span>
-            <span className="text-xs text-muted">{k.sub}</span>
-          </div>
+          <Kpi key={k.label} label={k.label} value={k.value} sub={k.sub} />
         ))}
       </div>
 
@@ -162,9 +161,9 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
       )}
 
       {people && (
-        <>
-          <section className="flex flex-col gap-3">
-            <h2 className="text-base font-medium">Contatos capturados <span className="font-normal text-muted">({leads.length})</span></h2>
+        <ReportTabs
+          tabs={[
+            { key: "contatos", label: "Contatos capturados", count: leads.length, content: (
             <div className="card overflow-hidden">
               {leads.length === 0 && <p className="p-5 text-sm text-muted">Nenhum contato neste mês.</p>}
               {leads.map((l) => (
@@ -180,10 +179,8 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
                 </div>
               ))}
             </div>
-          </section>
-
-          <section className="flex flex-col gap-3 print:hidden">
-            <h2 className="text-base font-medium">Últimas conversas</h2>
+            ) },
+            { key: "conversas", label: "Últimas conversas", count: (conversations ?? []).length, content: (
             <div className="card overflow-hidden">
               {(conversations ?? []).length === 0 && <p className="p-5 text-sm text-muted">Nenhuma conversa neste mês.</p>}
               {(conversations ?? []).map((cv) => (
@@ -195,8 +192,9 @@ export async function ReportView({ db, report, basePath, today, monthPath = base
                 </Link>
               ))}
             </div>
-          </section>
-        </>
+            ) },
+          ]}
+        />
       )}
 
       <footer className="pt-2 text-center text-xs text-muted">Relatório preparado por {report.agency.name}.</footer>

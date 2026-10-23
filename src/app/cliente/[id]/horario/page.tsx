@@ -1,8 +1,8 @@
 import { requireMember } from "@/lib/member";
-import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
+import { Clock } from "lucide-react";
+import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { HoursFields } from "@/components/hours-fields";
-import type { HumanHandoff } from "@/lib/handoff-hours";
+import { hoursSummary, type HumanHandoff } from "@/lib/handoff-hours";
 import { memberSetHours } from "../../actions";
 
 export const metadata = { title: { absolute: "Horário de atendimento" }, robots: { index: false, follow: false } };
@@ -24,14 +24,15 @@ export default async function MemberHoursPage({ params }: PageProps<"/cliente/[i
           Quando a equipe de {member.clientName} atende, no horário de Brasília. Fora dele, quem pedir para falar com uma pessoa fica registrado e o assistente diz quando a equipe volta. Dia em branco = fechado; tudo em branco = sem horário (o assistente só diz que a equipe responde assim que possível).
         </p>
       </div>
-      {bots.length === 0 && <p className="card p-5 text-sm text-muted">Nenhum assistente ainda.</p>}
-      {bots.map((b) => (
-        <ActionForm key={b.id} action={memberSetHours.bind(null, id, b.id)} className="card flex flex-col gap-3 p-5">
-          <h2 className="text-base font-medium">{b.name}</h2>
-          <HoursFields hours={b.human_handoff?.hours} />
-          <SubmitButton pendingLabel="Salvando…" className="btn-primary self-start">Salvar horário</SubmitButton>
-        </ActionForm>
-      ))}
+      {/* redesenho (23/10/2026): uma linha por assistente, com o resumo do horário e o modal */}
+      <SettingGroup title="Assistentes">
+        {bots.length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhum assistente ainda.</p>}
+        {bots.map((b) => (
+          <SettingRow key={b.id} icon={<Clock size={18} />} title={b.name} summary={hoursSummary(b.human_handoff?.hours) ?? "Sem horário: a equipe responde assim que possível"} action={memberSetHours.bind(null, id, b.id)} saveLabel="Salvar horário" size="lg">
+            <HoursFields hours={b.human_handoff?.hours} />
+          </SettingRow>
+        ))}
+      </SettingGroup>
     </>
   );
 }

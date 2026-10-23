@@ -1,3 +1,6 @@
+import { Camera, MessageCircle } from "lucide-react";
+import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
+import { StatusPill } from "@/components/ui/form-section";
 import { requireMember } from "@/lib/member";
 import { relativeTime } from "@/lib/utils";
 import { ConfirmAction } from "@/components/ui/confirm-action";
@@ -35,36 +38,20 @@ export default async function MemberChannelsPage({ params }: PageProps<"/cliente
           WhatsApp e Instagram ligados aos assistentes de {member.clientName}. Desconectar faz o assistente parar de responder por ali na hora; o número e a conta continuam seus na Meta, e as conversas antigas ficam guardadas. Para conectar de novo, fale com {member.agency.name}.
         </p>
       </div>
+      {/* redesenho (23/10/2026): um grupo por assistente, uma linha por canal */}
       {withChannel.length === 0 ? (
         <p className="card p-5 text-sm text-muted">Nenhum WhatsApp ou Instagram conectado.</p>
       ) : (
-        <div className="card divide-y divide-line-2">
-          {withChannel.map((b) => {
-            const w = waBy.get(b.id as string);
-            const i = igBy.get(b.id as string);
-            return (
-              <div key={b.id as string} className="flex flex-col gap-3 p-5">
-                <div className="font-semibold">{b.name as string}</div>
-                {w && (
-                  <ChannelLine
-                    label="WhatsApp"
-                    value={`${w.display_phone ?? "número"}${w.verified_name ? ` · ${w.verified_name}` : ""}${w.coexistence ? " · também no app do celular" : ""}`}
-                    disconnectedAt={w.disconnected_at}
-                    action={memberDisconnectChannel.bind(null, id, b.id as string, "whatsapp")}
-                  />
-                )}
-                {i && (
-                  <ChannelLine
-                    label="Instagram"
-                    value={i.username ? `@${i.username}` : "conta conectada"}
-                    disconnectedAt={i.disconnected_at}
-                    action={memberDisconnectChannel.bind(null, id, b.id as string, "instagram")}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
+        withChannel.map((b) => {
+          const w = waBy.get(b.id as string);
+          const i = igBy.get(b.id as string);
+          return (
+            <SettingGroup key={b.id as string} title={b.name as string}>
+              {w && <ChannelLine label="WhatsApp" value={`${w.display_phone ?? "número"}${w.verified_name ? ` · ${w.verified_name}` : ""}${w.coexistence ? " · também no app do celular" : ""}`} disconnectedAt={w.disconnected_at} action={memberDisconnectChannel.bind(null, id, b.id as string, "whatsapp")} />}
+              {i && <ChannelLine label="Instagram" value={i.username ? `@${i.username}` : "conta conectada"} disconnectedAt={i.disconnected_at} action={memberDisconnectChannel.bind(null, id, b.id as string, "instagram")} />}
+            </SettingGroup>
+          );
+        })
       )}
     </>
   );
@@ -72,23 +59,22 @@ export default async function MemberChannelsPage({ params }: PageProps<"/cliente
 
 function ChannelLine({ label, value, disconnectedAt, action }: { label: string; value: string; disconnectedAt: string | null; action: () => Promise<import("@/lib/action-result").ActionResult> }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-      <span className="w-20 text-muted">{label}</span>
-      <span className="font-medium">{value}</span>
-      {disconnectedAt ? (
-        <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-semibold text-amber-ink">desconectado {relativeTime(disconnectedAt)}</span>
-      ) : (
-        <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-semibold text-brand">conectado</span>
-      )}
-      <ConfirmAction
-        action={action}
-        title={`${disconnectedAt ? "Remover" : "Desconectar"} o ${label}?`}
-        description={`O assistente para de responder pelo ${label} na hora. Nada é apagado na Meta: o número e a conta continuam seus. A agência é avisada por e-mail.`}
-        confirmLabel={disconnectedAt ? "Remover" : "Desconectar"}
-        className="ml-auto text-xs font-semibold text-danger hover:underline"
-      >
-        {disconnectedAt ? "Remover" : "Desconectar"}
-      </ConfirmAction>
-    </div>
+    <SettingRow
+      icon={label === "WhatsApp" ? <MessageCircle size={18} /> : <Camera size={18} />}
+      title={label}
+      badge={disconnectedAt ? <StatusPill tone="warn">desconectado {relativeTime(disconnectedAt)}</StatusPill> : <StatusPill tone="ok">conectado</StatusPill>}
+      summary={value}
+      trailing={
+        <ConfirmAction
+          action={action}
+          title={`${disconnectedAt ? "Remover" : "Desconectar"} o ${label}?`}
+          description={`O assistente para de responder pelo ${label} na hora. Nada é apagado na Meta: o número e a conta continuam seus. A agência é avisada por e-mail.`}
+          confirmLabel={disconnectedAt ? "Remover" : "Desconectar"}
+          className="btn-danger py-1.5 text-xs"
+        >
+          {disconnectedAt ? "Remover" : "Desconectar"}
+        </ConfirmAction>
+      }
+    />
   );
 }
