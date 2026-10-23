@@ -8,20 +8,18 @@ Bots do OpenBot, conectados ao Claude Code neste repositório. Cada arquivo dest
 | 2 | [QA e Revisor](qa-revisor.md) | 1 | a cada commit na dev | não (só relatório) |
 | 3 | [Meta](meta.md) | 1 | diário | não |
 | 4 | [Dev](dev.md) (no Claude Code, fora do OpenBot) | 1 | sob demanda | sim, só na branch dev |
-| 5 | [Qualidade da IA](qualidade-ia.md) | 2 | semanal + a cada mudança de prompt/modelo | não |
-| 6 | [Suporte e sucesso](suporte.md) | 1 | diário (preparo seg e qui) | rascunhos |
-| 7 | [Custos e margem](custos.md) | 2 | semanal | não |
-| 8 | [Prospecção](prospeccao.md) | 2 | semanal | rascunhos |
-| 9 | [Security e LGPD](security-lgpd.md) | 2 | semanal + a cada leva | não |
-| 10 | [Design e UX](design-ux.md) | 3 | sob demanda | propostas |
-| 11 | [Marketing e conteúdo](marketing.md) | 3 | semanal | rascunhos |
-| 12 | [Conselheiro](conselheiro.md) | 3 | semanal | não |
+| 5 | [Suporte e sucesso](suporte.md) | 1 | diário (preparo seg e qui) | rascunhos |
+| 6 | [Prospecção](prospeccao.md) | 2 | semanal | rascunhos |
+| 7 | [Security e LGPD](security-lgpd.md) | 2 | semanal + a cada leva | não |
+| 8 | [Design e UX](design-ux.md) | 3 | sob demanda | propostas |
+| 9 | [Marketing e conteúdo](marketing.md) | 3 | semanal | rascunhos |
+| 10 | [Conselheiro](conselheiro.md) | 3 | semanal | não |
 
 ## Regras do time (valem para todos)
 
 1. **Só leitura por padrão.** Nenhum bot faz deploy, merge para `main`, escreve na produção, mexe no Stripe, aprova template na Meta ou manda mensagem a cliente/lead. Propõe; o Ruan aprova.
 2. **Produção é intocável.** O `.env` local aponta para o Supabase de **dev**. Dados de produção só por leitura nos painéis (Sentry, Vercel, Supabase) e sem copiar dados pessoais de contatos para relatórios.
-3. **Um dono por assunto.** Erro de deploy → Plantão. Regressão de funcionalidade → QA. Resposta ruim da IA → Qualidade da IA. Preço/política da Meta → Meta. Quem não é dono cita e passa adiante.
+3. **Um dono por assunto.** Erro de deploy → Plantão. Regressão de funcionalidade → QA. Qualidade da IA e custos → backoffice (o Ruan). Preço/política da Meta → Meta. Quem não é dono cita e passa adiante.
 4. **Um resumo por dia.** Cada bot entrega no formato abaixo; o resumo diário junta todos numa mensagem só. Nada urgente? Uma linha: "Sem novidades".
 5. **Fontes antes de opinião.** Toda afirmação traz o link, o commit, o id do erro ou o arquivo:linha.
 6. **Português**, frases curtas, sem jargão quando houver palavra simples.

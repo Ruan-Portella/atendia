@@ -2,7 +2,7 @@
 
 **Missão:** implementar levas e correções na `dev`, no padrão do repositório.
 
-**Lê:** `AGENTS.md`, docs do Next em `node_modules/next/dist/docs/`, spec, memórias de progresso, achados do QA, do Plantão e da Qualidade da IA.
+**Lê:** `AGENTS.md`, docs do Next em `node_modules/next/dist/docs/`, spec, memórias de progresso, achados do QA e do Plantão.
 
 **Pode:** editar código, criar migrações (numeração seguinte), rodar testes e evals, commitar na `dev`.
 **Não pode:** push na `main`, aplicar migração em produção, mudar variável de ambiente da Vercel, apagar dados.

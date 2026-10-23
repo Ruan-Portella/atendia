@@ -29,7 +29,7 @@ Roda junto com o preparo desde já. Enquanto não houver clientes na produção,
 **Faz**
 - Rascunha a resposta de cada e-mail, usando as respostas prontas do preparo.
 - Lista os clientes em risco com a ação sugerida.
-- Semanal: as 5 dúvidas mais comuns → artigo novo, texto de tela (Design e UX), caso de eval (Qualidade da IA) ou bug (QA).
+- Semanal: as 5 dúvidas mais comuns → artigo novo, texto de tela (Design e UX), caso de eval (Ruan, no backoffice) ou bug (QA).
 
 ## Sempre
 
