@@ -1,6 +1,6 @@
 # Time de bots do BoaVoz
 
-Bots do OpenBot, conectados ao Claude Code neste repositório. Cada arquivo desta pasta é o "cargo" de um bot: missão, o que lê, o que pode fazer, o que entrega e quando.
+Bots do OpenBot, conectados ao Claude Code neste repositório. Cada arquivo desta pasta é o "cargo" de um bot: missão, o que lê, o que pode fazer, o que entrega e quando. Para criar os bots no OpenBot (modelo, instruções, rotina), veja [configuracao.md](configuracao.md).
 
 | # | Bot | Fase | Frequência | Pode escrever? |
 |---|-----|------|------------|----------------|
