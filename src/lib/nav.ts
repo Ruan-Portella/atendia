@@ -18,7 +18,7 @@ export interface NavLink {
   wholeAccount?: boolean;
 }
 
-export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "contacts" | "megaphone" | "chart" | "users" | "layers" }> = [
+export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "contacts" | "megaphone" | "chart" | "users" | "layers" | "globe" }> = [
   { href: "/painel/caixa", label: "Caixa de entrada", perm: "attend", icon: "inbox", keywords: "conversas atendimento fila" },
   { href: "/painel/contatos", label: "Contatos e leads", perm: "config", icon: "contacts", keywords: "pessoas leads clientes finais etiquetas" },
   { href: "/painel/campanhas", label: "Campanhas e réguas", perm: "config", icon: "megaphone", keywords: "disparo lembrete régua" },
@@ -27,6 +27,8 @@ export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "contacts" | "megapho
   // a pedido do usuário em 22/10: o modelo é um chatbot que se constrói, não um ajuste da conta; com o
   // Plataforma e para quem vê a conta inteira (a tela também confere)
   { href: "/painel/modelos", label: "Modelos", perm: "config", pack: "plataforma", wholeAccount: true, icon: "layers", keywords: "modelos de chatbot template herança lojas derivados" },
+  // a demo também é um chatbot e uma ferramenta de venda (saiu das Configurações em 22/10)
+  { href: "/painel/demos", label: "Demos", perm: "config", icon: "globe", keywords: "demos para prospects demonstração prospect vender" },
 ];
 
 export const SETTINGS: Array<{ group: string; items: NavLink[] }> = [
@@ -49,10 +51,6 @@ export const SETTINGS: Array<{ group: string; items: NavLink[] }> = [
   {
     group: "Integrações",
     items: [{ href: "/painel/integracoes", label: "Ações, webhooks e API", perm: "integrations", keywords: "chave api webhook registros entregas" }],
-  },
-  {
-    group: "Biblioteca",
-    items: [{ href: "/painel/demos", label: "Demos para prospects", perm: "config", keywords: "demonstração" }],
   },
 ];
 

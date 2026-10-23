@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ChartColumn, Check, ChevronsUpDown, CircleUser, Contact, Inbox, Layers, LifeBuoy, ListChecks, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
+import { ChartColumn, Check, ChevronsUpDown, CircleUser, Contact, Globe, Inbox, Layers, LifeBuoy, ListChecks, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { Menu } from "@/components/ui/menu";
 import { NoticeBell } from "@/components/notice-center";
@@ -45,7 +45,7 @@ interface Props {
   onNavigate?: () => void;
 }
 
-const ICONS = { inbox: Inbox, contacts: Contact, megaphone: Megaphone, chart: ChartColumn, users: Users, layers: Layers } as const;
+const ICONS = { inbox: Inbox, contacts: Contact, megaphone: Megaphone, chart: ChartColumn, users: Users, layers: Layers, globe: Globe } as const;
 /** Quantos clientes cabem no menu; o resto fica em "Todos os clientes" e no Ir para. */
 export const SIDEBAR_CLIENTS = 8;
 
