@@ -7,7 +7,7 @@ Bots do OpenBot, conectados ao Claude Code neste repositório. Cada arquivo dest
 | 1 | [Plantão](plantao.md) | 1 | diário + alerta | não |
 | 2 | [QA e Revisor](qa-revisor.md) | 1 | a cada commit na dev | não (só relatório) |
 | 3 | [Meta](meta.md) | 1 | diário | não |
-| 4 | [Dev](dev.md) | 1 | sob demanda | sim, só na branch dev |
+| 4 | [Dev](dev.md) (no Claude Code, fora do OpenBot) | 1 | sob demanda | sim, só na branch dev |
 | 5 | [Qualidade da IA](qualidade-ia.md) | 2 | semanal + a cada mudança de prompt/modelo | não |
 | 6 | [Suporte e sucesso](suporte.md) | 2 | diário | rascunhos |
 | 7 | [Custos e margem](custos.md) | 2 | semanal | não |
