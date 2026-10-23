@@ -1538,6 +1538,13 @@ export async function resendClientInvite(clientId: string, memberId: string): Pr
 }
 
 /** Papel de uma pessoa do portal: gestor (tudo o que a agência liberou) ou atendente (só conversas). */
+/** O papel pelo "…" da linha (redesenho, 23/10/2026): o mesmo do formulário, com o papel já escolhido. */
+export async function setClientMemberRoleTo(clientId: string, memberId: string, role: string): Promise<ActionResult> {
+  const fd = new FormData();
+  fd.set("role", role);
+  return setClientMemberRole(clientId, memberId, fd);
+}
+
 export async function setClientMemberRole(clientId: string, memberId: string, formData: FormData): Promise<ActionResult> {
   if (!(await allowed("config"))) return fail(DENIED);
   const role = formData.get("role");

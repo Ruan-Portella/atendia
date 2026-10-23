@@ -3,14 +3,14 @@ import { backFrom } from "@/lib/back-link";
 import { ConversationsBrowser } from "@/components/conversations-browser";
 import { isConversationFilter } from "@/lib/conversation-list";
 import { notFound } from "next/navigation";
-import { ArrowRight, Download, ExternalLink, Headset, Layers, LayoutDashboard, Plus, Settings2, Users } from "lucide-react";
+import { ArrowRight, Building2, Download, Headset, Layers, LayoutDashboard, Plus, Settings2, Trash2, Users } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { brl, num } from "@/lib/plans";
 import { getBotStats, getPendingHandoffs, resolvedPct } from "@/lib/panel";
 import { PendingHandoffs } from "@/components/pending-handoffs";
-import { cn, daysAgoIso, initials, relativeTime } from "@/lib/utils";
+import { cn, daysAgoIso, initials } from "@/lib/utils";
 import { agencyBaseUrl } from "@/lib/domain";
 import { Status } from "@/components/status";
 import { Kpi } from "@/components/kpi";
@@ -20,15 +20,14 @@ import { BotRowActions } from "@/components/bot-row-actions";
 import { LeadList, type LeadRow } from "@/components/lead-list";
 import { listLeads } from "@/lib/leads";
 import { ClientFields } from "@/components/client-fields";
-import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { CopyButton } from "@/components/copy-button";
 import { ClientCompliance } from "@/components/client-compliance";
+import { ClientAccessTab, ClientReportTab } from "@/components/client-settings-tabs";
+import { DialogButton, SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { ClientPrivacy } from "@/components/client-privacy";
 import { ExportLinks } from "@/components/export-links";
-import { currentPeriodBR, periodLabel, portalUrl, shiftPeriod } from "@/lib/report";
-import { addClientMember, deleteBot, deleteClientRecord, disablePortal, enablePortal, eraseContactData, removeClientMember, resendClientInvite, saveReportEmail, sendReportNow, setClientMemberRole, setClientPermissions, updateClientRecord } from "../../actions";
+import { periodLabel } from "@/lib/report";
+import { deleteBot, deleteClientRecord, eraseContactData, updateClientRecord } from "../../actions";
 import { ContactsList } from "@/components/contacts-list";
 import { ClientCampaigns } from "@/components/client-campaigns";
 import { ClientIntegrationsSummary } from "@/components/integrations/client-integrations-summary";
@@ -272,26 +271,29 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       )}
 
       {tab === "leads" && (
+        // redesenho (23/10/2026): exportar e o pedido LGPD como botões no alto; o pedido abre um modal
         <>
-          {(leads ?? []).length > 0 && can(role, "export") && (
-            <div className="flex justify-end">
-              <a href={`/api/leads/export?cliente=${client.id}`} className="btn-ghost"><Download size={15} />Exportar CSV</a>
+          {((leads ?? []).length > 0 && can(role, "export")) || can(role, "security") ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              {can(role, "security") && (
+                <DialogButton label="Apagar os dados de uma pessoa" icon={<Trash2 size={15} />} className="btn-ghost" title="Apagar os dados de uma pessoa (pedido LGPD)" description="Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os chatbots deste cliente. Não tem desfazer." action={eraseContactData.bind(null, client.id)} saveLabel="Apagar dados" danger>
+                  <div>
+                    <label htmlFor="erase-contact" className="label">
+                      E-mail ou WhatsApp que a pessoa deixou no chat
+                    </label>
+                    <input id="erase-contact" name="contact" required maxLength={120} className="input" placeholder="ana@exemplo.com ou (21) 99999-0000" />
+                  </div>
+                </DialogButton>
+              )}
+              {(leads ?? []).length > 0 && can(role, "export") && (
+                <a href={`/api/leads/export?cliente=${client.id}`} className="btn-ghost">
+                  <Download size={15} />
+                  Exportar CSV
+                </a>
+              )}
             </div>
-          )}
+          ) : null}
           <LeadList leads={leads} originLabel="Chatbot" originOf={(bid) => botName.get(bid) ?? ""} empty="Nenhum lead deste cliente ainda. Eles aparecem aqui assim que um visitante deixar contato no chat." />
-          {can(role, "security") && (
-            <details className="card group p-4">
-              <summary className="cursor-pointer list-none text-sm font-medium text-ink-2 [&::-webkit-details-marker]:hidden">Apagar os dados de uma pessoa (pedido LGPD)</summary>
-              <ActionForm action={eraseContactData.bind(null, client.id)} className="mt-3 flex flex-wrap items-end gap-2">
-                <div className="min-w-[240px] flex-1">
-                  <label htmlFor="erase-contact" className="label">E-mail ou WhatsApp que ela deixou no chat</label>
-                  <input id="erase-contact" name="contact" required maxLength={120} className="input" placeholder="ana@exemplo.com ou (21) 99999-0000" />
-                </div>
-                <SubmitButton pendingLabel="Apagando…" className="btn-danger">Apagar dados</SubmitButton>
-                <p className="w-full text-xs text-muted">Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os chatbots deste cliente. Não tem desfazer.</p>
-              </ActionForm>
-            </details>
-          )}
         </>
       )}
 
@@ -324,154 +326,9 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
         />
       )}
 
-      {tab === "relatorio" && (
-        <div className="flex max-w-[720px] flex-col gap-5">
-          <section className="card flex flex-col gap-3 p-5">
-            <div>
-              <h2 className="text-base font-medium">Link do cliente</h2>
-              <p className="text-sm text-muted">Uma página com a sua marca onde {client.name} vê os números do mês. Sem login: quem tiver o link consegue abrir, por isso ela não mostra contatos nem conversas. Esses ficam na área do cliente, com login pelo e-mail (Acesso do cliente).</p>
-            </div>
-            {client.portal_token ? (
-              <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <code className="min-w-0 flex-1 truncate rounded-[10px] border border-line bg-field px-3 py-2 font-mono text-xs">{portalUrl(client.portal_token, base)}</code>
-                  <CopyButton text={portalUrl(client.portal_token, base)} label="Copiar link" className="btn-ghost" />
-                  <a href={portalUrl(client.portal_token, base)} target="_blank" rel="noopener" className="btn-ghost"><ExternalLink size={15} />Abrir</a>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <ConfirmAction action={enablePortal.bind(null, client.id)} title="Trocar o link?" description="O link atual para de funcionar e um novo é gerado. Use se o link foi parar em quem não devia." confirmLabel="Trocar link" className="btn-ghost text-xs">Trocar link</ConfirmAction>
-                  <ConfirmAction action={disablePortal.bind(null, client.id)} title="Desligar o link?" description="Ninguém mais consegue abrir a página do cliente. O relatório por e-mail passa a levar para a entrada da área do cliente." confirmLabel="Desligar" className="btn-ghost text-xs text-danger">Desligar link</ConfirmAction>
-                </div>
-              </>
-            ) : (
-              <ActionForm action={enablePortal.bind(null, client.id)}>
-                <SubmitButton pendingLabel="Gerando…" className="btn-primary">Criar link do cliente</SubmitButton>
-              </ActionForm>
-            )}
-          </section>
+      {tab === "relatorio" && <ClientReportTab client={client} base={base} memberEmails={(members ?? []).map((m) => m.email)} />}
 
-          <section className="card flex flex-col gap-3 p-5">
-            <div>
-              <h2 className="text-base font-medium">Relatório mensal por e-mail</h2>
-              <p className="text-sm text-muted">Todo dia 1º, {client.name} recebe um resumo do mês anterior (pessoas atendidas, contatos, % resolvido sozinho) com a sua marca e o link acima (ou a entrada da área do cliente, se o link estiver desligado). O e-mail leva só números, nunca contatos. É o que mostra para o cliente por que ele paga você.</p>
-            </div>
-            <ActionForm key={client.report_email ?? ""} action={saveReportEmail.bind(null, client.id)} className="flex flex-wrap items-end gap-2">
-              <div className="min-w-[220px] flex-1">
-                <label htmlFor="report_email" className="label">E-mail do cliente</label>
-                <input id="report_email" name="report_email" type="email" maxLength={200} defaultValue={client.report_email ?? ""} className="input" placeholder="dono@clinicasorriso.com.br" />
-              </div>
-              <SubmitButton className="btn-primary">Salvar</SubmitButton>
-            </ActionForm>
-            {client.report_email && !(members ?? []).some((m) => m.email === client.report_email) && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] bg-raised/60 px-3 py-2.5 text-sm">
-                <span className="text-ink-2">Para ver os contatos e as conversas, <strong className="text-ink">{client.report_email}</strong> precisa de acesso à área do cliente.</span>
-                <ActionForm action={addClientMember.bind(null, client.id)}>
-                  <input type="hidden" name="email" value={client.report_email} />
-                  <SubmitButton pendingLabel="Enviando convite…" className="btn-ghost text-xs">Dar acesso e convidar</SubmitButton>
-                </ActionForm>
-              </div>
-            )}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-2 pt-3 text-sm">
-              <span className="text-muted">{client.report_last_period ? <>Último enviado: <span className="capitalize">{periodLabel(client.report_last_period)}</span>.</> : "Nenhum relatório enviado ainda."}</span>
-              <ConfirmAction
-                action={sendReportNow.bind(null, client.id, undefined)}
-                title={`Enviar o relatório de ${periodLabel(shiftPeriod(currentPeriodBR(), -1))}?`}
-                description={<>Vai para <strong className="text-ink">{client.report_email ?? "o e-mail do cliente"}</strong> agora.</>}
-                confirmLabel="Enviar agora"
-                danger={false}
-                disabled={!client.report_email}
-                className="btn-ghost"
-              >
-                Enviar o do mês passado agora
-              </ConfirmAction>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {tab === "acesso" && (
-        <div className="flex max-w-[720px] flex-col gap-5">
-          <section className="card flex flex-col gap-3 p-5">
-            <div>
-              <h2 className="text-base font-medium">Pessoas com acesso</h2>
-              <p className="text-sm text-muted">Elas entram na área do cliente (<code className="font-mono text-[12px]">{base.replace(/^https?:\/\//, "")}/cliente</code>) com um link no e-mail, sem senha. O <strong className="text-ink-2">gestor</strong> vê o relatório, as conversas, os canais, a privacidade e a equipe (convida atendentes); o <strong className="text-ink-2">atendente</strong> vê só as conversas.</p>
-            </div>
-            <ActionForm action={addClientMember.bind(null, client.id)} className="flex flex-wrap items-end gap-2">
-              <div className="min-w-[220px] flex-1">
-                <label htmlFor="member-email" className="label">E-mail</label>
-                <input id="member-email" name="email" type="email" required maxLength={200} className="input" placeholder="recepcao@clinicasorriso.com.br" />
-              </div>
-              <div>
-                <label htmlFor="member-role" className="label">Papel</label>
-                <select id="member-role" name="role" defaultValue="manager" className="input">
-                  <option value="manager">Gestor</option>
-                  <option value="agent">Atendente</option>
-                </select>
-              </div>
-              <SubmitButton pendingLabel="Enviando convite…" className="btn-primary">Adicionar e convidar</SubmitButton>
-            </ActionForm>
-            <div className="overflow-hidden rounded-[12px] border border-line">
-              {(members ?? []).length === 0 && <p className="p-4 text-sm text-muted">Ninguém ainda.</p>}
-              {(members ?? []).map((m) => (
-                <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line-2 px-4 py-3 text-sm last:border-0">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-raised text-[11px] font-semibold text-ink">{initials(m.display_name ?? m.email)}</span>
-                  <span className="min-w-0 flex-1 leading-tight">
-                    <span className="block truncate font-medium text-ink">{m.display_name ?? m.email}</span>
-                    <span className="block truncate text-[12.5px] text-muted">
-                      {m.display_name ? `${m.email} · ` : ""}
-                      {m.last_login_at ? `entrou ${relativeTime(m.last_login_at)}` : "ainda não entrou"}
-                      {m.invited_by_key ? " · convidada pela API" : ""}
-                    </span>
-                  </span>
-                  <ActionForm action={setClientMemberRole.bind(null, client.id, m.id)} className="flex items-center gap-1.5">
-                    <select name="role" defaultValue={m.role} aria-label={`Papel de ${m.email}`} className="input w-auto py-1 text-xs">
-                      <option value="manager">Gestor</option>
-                      <option value="agent">Atendente</option>
-                    </select>
-                    <SubmitButton pendingLabel="…" className="text-xs font-medium text-brand hover:text-brand-2">Salvar</SubmitButton>
-                  </ActionForm>
-                  <ConfirmAction action={resendClientInvite.bind(null, client.id, m.id)} title="Reenviar o link?" description={<>Um link novo de acesso vai para <strong className="text-ink">{m.email}</strong>.</>} confirmLabel="Reenviar" danger={false} className="text-xs font-medium text-brand hover:text-brand-2">Reenviar link</ConfirmAction>
-                  <ConfirmAction action={removeClientMember.bind(null, client.id, m.id)} title="Tirar o acesso?" description={<><strong className="text-ink">{m.email}</strong> não consegue mais entrar na área do cliente.</>} confirmLabel="Tirar acesso" className="text-xs font-medium text-danger hover:underline">Remover</ConfirmAction>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="card flex flex-col gap-3 p-5">
-            <div>
-              <h2 className="text-base font-medium">O que {client.name} pode fazer</h2>
-              <p className="text-sm text-muted">Vale para as pessoas acima, nos dois papéis.</p>
-            </div>
-            <ActionForm key={`${client.allow_handoff}${client.allow_knowledge}${client.allow_hours}${client.handoff_notify}`} action={setClientPermissions.bind(null, client.id)} className="flex flex-col gap-3">
-              <label className="flex items-start gap-2.5 text-sm">
-                <input type="checkbox" name="allow_handoff" defaultChecked={client.allow_handoff} className="mt-1" />
-                <span><strong className="font-medium">Atender conversas</strong><span className="block text-muted">Assumir quando o visitante pede alguém, responder e devolver ao assistente. Eles também recebem o aviso por e-mail.</span></span>
-              </label>
-              <fieldset className="ml-6 flex flex-col gap-1.5 rounded-[12px] border border-line-2 bg-raised/40 px-3 py-2.5 text-sm">
-                <legend className="px-1 text-xs font-medium text-muted">Quem recebe o e-mail quando um visitante pede atendimento</legend>
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="handoff_notify" value="all" defaultChecked={client.handoff_notify !== "client"} />
-                  Você (agência) e as pessoas do cliente
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="handoff_notify" value="client" defaultChecked={client.handoff_notify === "client"} />
-                  Só as pessoas do cliente (você delegou o atendimento)
-                </label>
-                <span className="text-xs text-muted">Se o cliente não puder atender ou não tiver ninguém cadastrado, o e-mail continua indo para você, para nenhum pedido ficar sem aviso.</span>
-              </fieldset>
-              <label className="flex items-start gap-2.5 text-sm">
-                <input type="checkbox" name="allow_knowledge" defaultChecked={client.allow_knowledge} className="mt-1" />
-                <span><strong className="font-medium">Ensinar o assistente</strong><span className="block text-muted">Só o gestor: responder as perguntas sem resposta e criar/editar textos e FAQs. Site e PDFs continuam só com você.</span></span>
-              </label>
-              <label className="flex items-start gap-2.5 text-sm">
-                <input type="checkbox" name="allow_hours" defaultChecked={client.allow_hours} className="mt-1" />
-                <span><strong className="font-medium">Editar o horário de atendimento</strong><span className="block text-muted">Só o gestor: os dias e horas em que a equipe atende, em cada assistente. Fora do horário, o assistente diz quando a equipe volta.</span></span>
-              </label>
-              <SubmitButton className="btn-primary self-start">Salvar permissões</SubmitButton>
-            </ActionForm>
-          </section>
-        </div>
-      )}
+      {tab === "acesso" && <ClientAccessTab client={client} base={base} members={members ?? []} />}
 
       {tab === "conformidade" && <ClientCompliance clientId={client.id} clientName={client.name} />}
 
@@ -479,30 +336,34 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       {tab === "respostas" && <ClientQuickReplies clientId={client.id} replies={await listQuickReplies(createAdminClient(), client.id)} />}
 
       {tab === "dados" && (
-        <div className="flex max-w-[640px] flex-col gap-5">
-          <ActionForm key={client.name + client.price_cents} action={updateClientRecord.bind(null, client.id)} className="card flex flex-col gap-4 p-5">
-            <div>
-              <h2 className="text-base font-medium">Dados do cliente</h2>
-              <p className="text-sm text-muted">Mudar o nome aqui atualiza o nome que aparece no chat de todos os chatbots deste cliente.</p>
-            </div>
-            <ClientFields name={client.name} site={client.site} priceCents={client.price_cents} />
-            <SubmitButton className="btn-primary self-start">Salvar</SubmitButton>
-          </ActionForm>
+        // redesenho (23/10/2026): o cadastro numa linha com o modal, e o resto em grupos de linhas
+        <div className="flex max-w-[760px] flex-col gap-5">
+          <SettingGroup title="Cadastro">
+            <SettingRow
+              icon={<Building2 size={18} />}
+              title="Dados do cliente"
+              summary={[client.name, client.site?.replace(/^https?:\/\//, ""), client.price_cents ? `${brl(client.price_cents / 100)} por mês` : null].filter(Boolean).join(" · ")}
+              description="Mudar o nome aqui atualiza o nome que aparece no chat de todos os chatbots deste cliente."
+              action={updateClientRecord.bind(null, client.id)}
+            >
+              <ClientFields name={client.name} site={client.site} priceCents={client.price_cents} />
+            </SettingRow>
+          </SettingGroup>
           {can(role, "integrations") && <ClientIntegrationsSummary agencyId={agency.id} clientId={client.id} bots={bots.map((b) => ({ id: b.id, name: b.name }))} />}
           {can(role, "security") && <ClientPrivacy clientId={client.id} clientName={client.name} clientMonths={(client.retention_months as number | null) ?? null} agencyMonths={agency.retention_months} />}
           {can(role, "export") && <ExportLinks clientId={client.id} description={`Os dados de ${client.name}: conversas, contatos e leads, em CSV (abre no Excel) ou JSON. Na saída do cliente, entregue a ele. A exportação fica registrada.`} />}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-danger-line px-4 py-3">
-            <span className="text-sm text-muted">{bots.length ? "Para excluir o cliente, exclua os chatbots dele antes." : "Excluir este cliente da sua lista."}</span>
-            <ConfirmAction
-              action={deleteClientRecord.bind(null, client.id)}
-              title="Excluir este cliente?"
-              description={<><strong className="text-ink">{client.name}</strong> sai da sua lista de clientes. Não tem desfazer.</>}
-              confirmLabel="Excluir cliente"
-              disabled={bots.length > 0}
-            >
-              Excluir cliente
-            </ConfirmAction>
-          </div>
+          <SettingGroup title="Excluir">
+            <SettingRow
+              icon={<Trash2 size={18} />}
+              title="Excluir este cliente"
+              summary={bots.length ? "Para excluir o cliente, exclua os chatbots dele antes" : "Ele sai da sua lista de clientes, sem desfazer"}
+              trailing={
+                <ConfirmAction action={deleteClientRecord.bind(null, client.id)} title="Excluir este cliente?" description={<><strong className="text-ink">{client.name}</strong> sai da sua lista de clientes. Não tem desfazer.</>} confirmLabel="Excluir cliente" disabled={bots.length > 0} className="btn-danger py-1.5 text-xs">
+                  Excluir
+                </ConfirmAction>
+              }
+            />
+          </SettingGroup>
         </div>
       )}
     </>

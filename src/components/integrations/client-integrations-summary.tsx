@@ -1,10 +1,15 @@
 import Link from "next/link";
+import { ArrowUpRight, KeyRound, Webhook, Workflow } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
+
+const OPEN = "inline-flex shrink-0 items-center gap-1 rounded-[9px] px-2 py-1 text-[12.5px] font-medium text-brand hover:bg-brand-soft";
 
 /**
  * Cliente → Dados: resumo, só de leitura, das Integrações que valem para este cliente (chaves de
  * API e webhooks da conta com escopo nele, e as ações de cada chatbot). Quem mexe é a área
- * Integrações da conta e a aba Ações de cada chatbot.
+ * Integrações da conta e a aba Ações de cada chatbot. Redesenho (23/10/2026): uma linha para cada,
+ * com o "Abrir" no canto.
  */
 export async function ClientIntegrationsSummary({ agencyId, clientId, bots }: { agencyId: string; clientId: string; bots: Array<{ id: string; name: string }> }) {
   const db = createAdminClient();
@@ -19,35 +24,21 @@ export async function ClientIntegrationsSummary({ agencyId, clientId, bots }: { 
   const myHooks = (hooks ?? []).filter((h) => covers(h as never));
   const actionCount = new Map<string, number>();
   for (const a of actions ?? []) actionCount.set(a.bot_id as string, (actionCount.get(a.bot_id as string) ?? 0) + 1);
+  const open = (href: string) => (
+    <Link href={href} className={OPEN}>
+      Abrir
+      <ArrowUpRight size={13} />
+    </Link>
+  );
 
   return (
-    <section className="card flex flex-col gap-3 p-6 text-sm">
-      <div>
-        <h3 className="font-semibold">Integrações deste cliente</h3>
-        <p className="text-muted">Chaves de API e webhooks ficam na área Integrações da conta (podem cobrir vários clientes); as ações ficam em cada chatbot.</p>
-      </div>
-      <ul className="flex flex-col gap-1 text-ink-2">
-        <li>
-          {myKeys.length ? `${myKeys.length} chave${myKeys.length === 1 ? "" : "s"} de API: ${myKeys.map((k) => `${k.name as string} (${k.prefix as string}…)`).join(", ")}` : "Nenhuma chave de API cobre este cliente."}{" "}
-          <Link href="/painel/integracoes?aba=chaves" className="font-semibold text-brand hover:underline">
-            Abrir
-          </Link>
-        </li>
-        <li>
-          {myHooks.length ? `${myHooks.length} webhook${myHooks.length === 1 ? "" : "s"}: ${myHooks.map((h) => `${h.name as string}${h.active ? "" : " (desativado)"}`).join(", ")}` : "Nenhum webhook cobre este cliente."}{" "}
-          <Link href="/painel/integracoes?aba=webhooks" className="font-semibold text-brand hover:underline">
-            Abrir
-          </Link>
-        </li>
-        {bots.map((b) => (
-          <li key={b.id}>
-            {b.name}: {actionCount.get(b.id) ? `${actionCount.get(b.id)} ação${actionCount.get(b.id) === 1 ? "" : "ões"}` : "nenhuma ação"}{" "}
-            <Link href={`/painel/bots/${b.id}?tab=acoes`} className="font-semibold text-brand hover:underline">
-              Abrir
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <SettingGroup title="Integrações deste cliente">
+      <SettingRow icon={<KeyRound size={18} />} title="Chaves de API" summary={myKeys.length ? myKeys.map((k) => `${k.name as string} (${k.prefix as string}…)`).join(", ") : "Nenhuma chave cobre este cliente"} trailing={open("/painel/integracoes?aba=chaves")} />
+      <SettingRow icon={<Webhook size={18} />} title="Webhooks" summary={myHooks.length ? myHooks.map((h) => `${h.name as string}${h.active ? "" : " (desativado)"}`).join(", ") : "Nenhum webhook cobre este cliente"} trailing={open("/painel/integracoes?aba=webhooks")} />
+      {bots.map((b) => {
+        const n = actionCount.get(b.id) ?? 0;
+        return <SettingRow key={b.id} icon={<Workflow size={18} />} title={`Ações · ${b.name}`} summary={n ? `${n} ${n === 1 ? "ação" : "ações"}` : "Nenhuma ação"} trailing={open(`/painel/bots/${b.id}?tab=acoes`)} />;
+      })}
+    </SettingGroup>
   );
 }

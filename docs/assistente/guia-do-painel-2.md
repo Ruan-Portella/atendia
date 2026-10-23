@@ -111,3 +111,15 @@ No menu Roadmap do painel fica o que estamos fazendo e o que vem por aí, em qua
 ## As abas Conversas do cliente e do chatbot
 
 As abas Conversas do cliente (em Atendimento) e do chatbot (em Visão geral) ficam no jeito da Caixa de entrada: a lista à esquerda, com a pessoa (a foto ou as iniciais, com o canal no canto), o começo da última mensagem, a situação (Esperando a equipe, Com alguém, Com a IA ou Encerrada) e, no cliente, o chatbot; a conversa abre ao lado, para ler, assumir e responder. No alto da lista ficam os filtros Todas, Com a equipe, WhatsApp, Instagram e Site, e embaixo o "Carregar mais". No celular, a lista ocupa a tela e a conversa abre no lugar dela, com a seta para voltar. Na aba do chatbot, "Nova conversa" (WhatsApp) abre um modal com os modelos aprovados e o número de quem vai receber.
+
+## As abas de Atendimento e Ajustes do cliente
+
+Na página do cliente, as abas de Atendimento e de Ajustes vêm em linhas: cada linha mostra o resumo do que está configurado e abre um modal com os campos e o próprio Salvar.
+
+- Setores: o "Novo setor" fica no alto; cada setor é uma linha (a distribuição, as pessoas e o horário) com o modal para editar e o Apagar. As pessoas se escolhem num seletor com busca, a distribuição (Manual ou Rodízio) em cartões e o horário próprio por uma chave. "Quem configura vê todos os setores" é uma chave que salva na hora, e os Feriados ficam numa lista: digite 25/12 (todo ano) ou 20/11/2026 (só nesse dia) e toque em Adicionar.
+- Respostas prontas: o "Nova resposta pronta" fica no alto e cada resposta é uma linha. No texto, as etiquetas "Primeiro nome do contato" e "Nome de quem atende" se arrastam para o lugar certo, sem digitar nada entre chaves.
+- Dados do cliente: o nome, o site e o valor que você cobra numa linha só; depois, as integrações que valem para o cliente (com o Abrir), o prazo de guarda e o modo dados sensíveis de cada chatbot, o exportar (CSV ou JSON) e o excluir.
+- Relatório e portal: o link do cliente (copiar, abrir, trocar ou desligar no modal), o e-mail do relatório mensal e o envio do relatório do mês passado.
+- Acesso do cliente: o "Convidar pessoa" (e-mail e papel em cartões), cada pessoa numa linha com o "…" (tornar gestor ou atendente, reenviar o link, tirar o acesso) e o que o cliente pode fazer em chaves que salvam na hora (atender conversas, ensinar o assistente, editar o horário), mais quem recebe o e-mail de pedido de atendimento.
+- Conformidade: a situação do negócio (as respostas das atividades abrem num modal), a análise do BoaVoz de cada chatbot e os aceites registrados.
+- Leads: o Exportar CSV e o "Apagar os dados de uma pessoa" (pedido LGPD, num modal) ficam no alto da lista.
