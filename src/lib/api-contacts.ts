@@ -1,6 +1,7 @@
 import { after } from "next/server";
+import { listDateFields } from "./contact-date-fields";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { apiContacts, apiContactsByIds, apiContactsPage, normalizeTags, parseContactAddress, setContactDates, setContactTags, whatsappContact, type ApiContact, type ApiContactRow, type ContactDates } from "./contacts";
+import { apiContacts, apiContactsByIds, apiContactsPage, normalizeTags, parseContactAddress, setContactCustomDates, setContactDates, setContactTags, whatsappContact, type ApiContact, type ApiContactRow, type ContactDates } from "./contacts";
 import { APPOINTMENT_MAX_DAYS, monthDay } from "./contact-import";
 import { apiLeadsPage, type Lead } from "./leads";
 import { consentStatesMany, recordConsent, revokeConsents, whatsappScopeOfBot, type ConsentState } from "./marketing-consent";
@@ -78,6 +79,8 @@ export function contactApiObject(c: ApiContactRow, x: ContactExtras) {
     birthday: c.birthday,
     last_visit_at: c.last_visit_at,
     appointment_at: c.appointment_at,
+    // as datas novas das réguas personalizadas, pela chave: { "renovacao_do_plano": "2027-03-10" }
+    dates: c.custom_dates,
     first_inbound_at: c.first_inbound_at,
     last_inbound_at: c.last_inbound_at,
     created_at: c.created_at,
@@ -196,7 +199,30 @@ export function parseContactDatesBody(body: Record<string, unknown>, now = Date.
       out.appointment_at = new Date(at).toISOString();
     }
   }
-  if (!Object.keys(out).length) throw invalidRequest("Envie pelo menos um campo: birthday, last_visit_at ou appointment_at.", { field: "birthday" });
+  if (!Object.keys(out).length && !("dates" in body)) throw invalidRequest("Envie pelo menos um campo: birthday, last_visit_at, appointment_at ou dates.", { field: "birthday" });
+  return out;
+}
+
+/**
+ * As datas novas no corpo (régua personalizada): `dates`, um objeto com a chave de cada data
+ * (a coluna da planilha, ex.: renovacao_do_plano) e a data AAAA-MM-DD, ou null para apagar. A chave
+ * precisa existir no chatbot (a régua com a data nova cria). Pura.
+ */
+export function parseContactCustomDatesBody(body: Record<string, unknown>, keys: string[]): Record<string, string | null> {
+  if (!("dates" in body)) return {};
+  const raw = body.dates;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalidRequest("dates deve ser um objeto: { \"renovacao_do_plano\": \"2027-03-10\" }.", { field: "dates" });
+  const out: Record<string, string | null> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!keys.includes(k)) throw invalidRequest(`dates.${k}: esta data não existe no chatbot. As datas novas nascem com a régua personalizada, no painel (Campanhas e réguas → Réguas).`, { field: `dates.${k}` });
+    if (v === null) out[k] = null;
+    else {
+      const d = typeof v === "string" ? v.trim() : "";
+      const at = DATE_ONLY.test(d) ? new Date(`${d}T12:00:00Z`) : null;
+      if (!at || Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== d) throw invalidRequest(`dates.${k} deve ser uma data AAAA-MM-DD (ex.: 2027-03-10), ou null para apagar.`, { field: `dates.${k}` });
+      out[k] = d;
+    }
+  }
   return out;
 }
 
@@ -204,6 +230,7 @@ export async function patchContactApi(req: Request, api: ApiContext, rawContact:
   const { body } = await readJsonBody(req);
   const botId = api.requireBot(body.bot_id);
   const dates = parseContactDatesBody(body);
+  const custom = parseContactCustomDatesBody(body, (await listDateFields(api.db, [botId])).map((f) => f.key));
   const addr = contactParam(rawContact);
   let ids = (await apiContacts(api.db, [botId], addr)).map((c) => c.id);
   // o horário e o aniversário chegam antes da primeira mensagem: pelo telefone, cria o contato do WhatsApp
@@ -213,9 +240,9 @@ export async function patchContactApi(req: Request, api: ApiContext, rawContact:
     if (created) ids = [created.id];
   }
   if (!ids.length) throw notFound();
-  const changed = await setContactDates(api.db, ids, [botId], dates);
+  const changed = [...new Set([...(await setContactDates(api.db, ids, [botId], dates)), ...(await setContactCustomDates(api.db, ids, [botId], custom))])];
   // na auditoria, só os campos que mudaram (as datas são dados do contato)
-  await audit(api.db, { agencyId: api.key.agency_id, actorType: "api_key", actorId: api.key.id, action: "contato.datas", targetType: "contact", targetId: ids[0], after: { campos: Object.keys(dates), contatos: changed.length }, ip: clientIp(req), userAgent: req.headers.get("user-agent") });
+  await audit(api.db, { agencyId: api.key.agency_id, actorType: "api_key", actorId: api.key.id, action: "contato.datas", targetType: "contact", targetId: ids[0], after: { campos: [...Object.keys(dates), ...Object.keys(custom).map((k) => `dates.${k}`)], contatos: changed.length }, ip: clientIp(req), userAgent: req.headers.get("user-agent") });
   const rows = await apiContactsByIds(api.db, changed, [botId]);
   const extras = await extrasOf(api.db, rows);
   return Response.json({ data: rows.map((c) => contactApiObject(c, extras.get(c.id) ?? NO_EXTRAS)) });

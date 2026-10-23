@@ -6,6 +6,10 @@ import { customReguaProblem, customTemplateBody, customTemplateName, customTempl
 import { customDatesOf, mergeCustomDates, setContactCustomDates } from "../contacts";
 import { ensureDateField } from "../contact-date-fields";
 import { parseReguaForm, whenOf } from "../regua-form";
+import { customDateFromSheet, rowsFromCsv, validateImportRows } from "../contact-import";
+import { contactApiObject, parseContactCustomDatesBody, parseContactDatesBody } from "../api-contacts";
+import { importWhatsAppContacts, phoneHash, type ApiContactRow } from "../contacts";
+import { ApiError } from "../api-v1";
 import { setCipherIdentityForTests, setScopeResolver } from "../field-cipher";
 
 /*
@@ -230,6 +234,60 @@ describe("régua personalizada: o formulário", () => {
     expect(parseReguaForm(form({ name: "Vacina", trigger: "horario", category: "UTILITY", when: "depois", days: "2", send_hour: "11" }), [], fixed)).toEqual({ config: { name: "Vacina", trigger: "data", dateLabel: "Vacina do pet", repeatYearly: true, offsetDays: 2, hoursBefore: null, sendHour: 11, tag: null, category: "MARKETING" }, dateFieldId: "f2", newDateLabel: null });
     expect(whenOf(-10)).toEqual({ when: "antes", days: 10 });
     expect(whenOf(0)).toEqual({ when: "no_dia", days: 1 });
+  });
+});
+
+describe("as datas novas fora da régua: a planilha, a API e a importação", () => {
+  const apiErr = (fn: () => unknown) => {
+    try {
+      fn();
+    } catch (e) {
+      return e as ApiError;
+    }
+    throw new Error("não lançou");
+  };
+
+  it("a planilha lê a coluna da data nova pela chave", () => {
+    expect(customDateFromSheet("10/03/2027")).toBe("2027-03-10");
+    expect(customDateFromSheet("2027-03-10")).toBe("2027-03-10");
+    expect(customDateFromSheet("31/02/2027")).toBeNull();
+    const { rows, unknown } = rowsFromCsv("telefone;Renovação do plano;cor\n21999990000;10/03/2027;azul\n21999990001;31/02/2027;verde\n21999990002;;roxo", ["renovacao_do_plano"]);
+    expect(unknown).toEqual(["cor"]);
+    expect(rows.map((r) => r.custom ?? null)).toEqual([{ renovacao_do_plano: "10/03/2027" }, { renovacao_do_plano: "31/02/2027" }, null]);
+    const { valid, errors } = validateImportRows(rows, new Date("2026-10-20T15:00:00Z"));
+    expect(valid.map((r) => r.customDates)).toEqual([{ renovacao_do_plano: "2027-03-10" }, {}]);
+    expect(errors).toEqual([{ line: 3, reason: "renovacao_do_plano inválida (use dd/mm/aaaa)" }]);
+  });
+
+  it("a API: dates pela chave que existe no chatbot, AAAA-MM-DD ou null", () => {
+    expect(parseContactCustomDatesBody({ dates: { renovacao_do_plano: "2027-03-10", vacina: null } }, ["renovacao_do_plano", "vacina"])).toEqual({ renovacao_do_plano: "2027-03-10", vacina: null });
+    expect(parseContactCustomDatesBody({}, ["vacina"])).toEqual({});
+    expect(apiErr(() => parseContactCustomDatesBody({ dates: { outra: "2027-03-10" } }, ["vacina"])).message).toContain("não existe no chatbot");
+    expect(apiErr(() => parseContactCustomDatesBody({ dates: { vacina: "2027-02-30" } }, ["vacina"])).message).toContain("AAAA-MM-DD");
+    expect(apiErr(() => parseContactCustomDatesBody({ dates: ["x"] }, ["vacina"])).message).toContain("objeto");
+    // só dates no corpo também vale (as outras datas ficam)
+    expect(parseContactDatesBody({ dates: {} })).toEqual({});
+  });
+
+  it("o contato da API traz as datas novas", () => {
+    const c = { id: "c1", bot_id: "b1", channel: "whatsapp", name: "Ana", email: null, tags: [], phone: "5521999990000", bsuid: null, igsid: null, external_id: null, first_inbound_at: null, last_inbound_at: null, birthday: null, last_visit_at: null, appointment_at: null, custom_dates: { renovacao_do_plano: "2027-03-10" }, created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" } satisfies ApiContactRow;
+    expect(contactApiObject(c, { consent: null, optedOut: [], age: null })).toMatchObject({ dates: { renovacao_do_plano: "2027-03-10" } });
+  });
+
+  it("a importação grava as datas novas de quem é novo e junta com as de quem já existe", async () => {
+    vi.stubEnv("CONTACT_HASH_KEY", "chave-de-teste-com-mais-de-16");
+    setCipherIdentityForTests(true);
+    setScopeResolver({ bot: async () => ({ clientId: null }), conversation: async () => ({ clientId: null }) });
+    const tables: Record<string, MemRow[]> = { contacts: [] };
+    const db = memoryDb(tables);
+    const owner = { id: "bot1", agency_id: "ag1" };
+    await importWhatsAppContacts(db, owner, [{ phone: "5521999990001", name: "Ana", tags: [], customDates: { renovacao_do_plano: "2027-03-10" } }]);
+    expect(tables.contacts[0]).toMatchObject({ phone_hash: phoneHash("5521999990001"), custom_dates: { renovacao_do_plano: "2027-03-10" } });
+    const r = await importWhatsAppContacts(db, owner, [{ phone: "5521999990001", name: null, tags: [], customDates: { vacina: "2026-11-02" } }]);
+    expect(r.updated).toBe(1);
+    expect(tables.contacts[0].custom_dates).toEqual({ renovacao_do_plano: "2027-03-10", vacina: "2026-11-02" });
+    // a mesma data de novo: nada muda
+    expect((await importWhatsAppContacts(db, owner, [{ phone: "5521999990001", name: null, tags: [], customDates: { vacina: "2026-11-02" } }])).updated).toBe(0);
   });
 });
 

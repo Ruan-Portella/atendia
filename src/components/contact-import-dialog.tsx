@@ -4,6 +4,7 @@ import { IMPORT_MAX_ROWS } from "@/lib/contact-import";
 import { ContactImport } from "@/components/contact-import";
 import { DialogButton } from "@/components/ui/setting-row";
 import { importClientContacts } from "@/app/painel/actions";
+import { listDateFields } from "@/lib/contact-date-fields";
 
 const COLUMNS: Array<[string, string]> = [
   ["telefone", "Obrigatório. DDD e número (ex.: 21 99999-0000); outro país, com o código do país."],
@@ -32,6 +33,9 @@ export async function ContactImportDialog({ clientId, bots, timezone }: { client
   const { data: channels } = botIds.length ? await createAdminClient().from("whatsapp_channels").select("bot_id").in("bot_id", botIds).is("disconnected_at", null) : { data: [] };
   const connected = new Set((channels ?? []).map((c) => c.bot_id as string));
   const withWhatsApp = bots.filter((b) => connected.has(b.id));
+  // as datas novas das réguas personalizadas: uma coluna para cada (o nome da coluna é a chave)
+  const dateFields = await listDateFields(createAdminClient(), withWhatsApp.map((b) => b.id));
+  const dateColumns: Array<[string, string]> = [...new Map(dateFields.map((f) => [f.key, f])).values()].map((f) => [f.key, `Opcional, para as suas réguas: ${f.label} (ex.: 10/03/2027).${withWhatsApp.length > 1 ? ` Vale no chatbot ${withWhatsApp.find((b) => b.id === f.botId)?.name ?? ""}.` : ""}`]);
   return (
     <DialogButton
       label="Importar planilha"
@@ -52,7 +56,7 @@ export async function ContactImportDialog({ clientId, bots, timezone }: { client
         <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-ink">As colunas da planilha</summary>
         <p className="px-4 pb-2 text-xs text-muted">A primeira linha tem os nomes das colunas; a ordem não importa. Separador ponto e vírgula (Excel) ou vírgula.</p>
         <ul className="flex flex-col divide-y divide-line-2 border-t border-line">
-          {COLUMNS.map(([name, desc]) => (
+          {[...COLUMNS, ...dateColumns].map(([name, desc]) => (
             <li key={name} className="flex flex-col gap-0.5 px-4 py-2.5 sm:flex-row sm:gap-4">
               <span className="shrink-0 font-mono text-xs text-ink sm:w-[120px] sm:pt-0.5">{name}</span>
               <span className="text-sm text-ink-2">{desc}</span>
@@ -61,7 +65,7 @@ export async function ContactImportDialog({ clientId, bots, timezone }: { client
         </ul>
       </details>
       {withWhatsApp.length ? (
-        <ContactImport clientId={clientId} bots={withWhatsApp} timezone={timezone} action={importClientContacts} />
+        <ContactImport clientId={clientId} bots={withWhatsApp} timezone={timezone} action={importClientContacts} dateKeys={[...new Set(dateFields.map((f) => f.key))]} />
       ) : (
         <p className="rounded-[12px] bg-raised p-4 text-sm text-muted">Nenhum chatbot deste cliente tem o WhatsApp conectado. Conecte o número primeiro: os contatos e os aceites valem para ele.</p>
       )}

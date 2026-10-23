@@ -67,7 +67,8 @@ import { dateBR, isRetentionMonths, planAgencyRetention, retentionLabel, retenti
 import { audit, requestMeta } from "@/lib/audit";
 import { BillingOpError, setOverage } from "@/lib/billing-ops";
 import { channelMsgHash } from "@/lib/hash";
-import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactDates, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { listDateFields } from "@/lib/contact-date-fields";
+import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactCustomDates, setContactDates, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { carryWhatsAppPreferences, consentHistory, consentStateOf, recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
 import { IMPORT_MAX_ROWS, contactDatesFromForm, validateImportRows, type ImportError, type RawImportRow } from "@/lib/contact-import";
@@ -1980,9 +1981,18 @@ export async function saveContactDates(clientId: string, contactId: string, form
   if (!found) return fail("Contato não encontrado.");
   const dates = contactDatesFromForm({ birthday: text(formData.get("birthday")), lastVisit: text(formData.get("last_visit")), appointment: text(formData.get("appointment")) }, await clientTimezone(clientId));
   if ("error" in dates) return fail(dates.error);
-  await setContactDates(createAdminClient(), [contactId], found.botIds, dates);
+  // as datas novas do chatbot do contato (régua personalizada): campo vazio apaga
+  const admin = createAdminClient();
+  const custom: Record<string, string | null> = {};
+  for (const f of await listDateFields(admin, [found.bot.id])) {
+    const raw = text(formData.get(`custom_${f.key}`));
+    if (raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return fail(`${f.label}: data inválida.`);
+    custom[f.key] = raw || null;
+  }
+  await setContactDates(admin, [contactId], found.botIds, dates);
+  await setContactCustomDates(admin, [contactId], found.botIds, custom);
   // na auditoria, só quais datas ficaram preenchidas (são dados do contato)
-  await auditPanel("contato.datas", { type: "contact", id: contactId }, { after: { preenchidas: Object.entries(dates).filter(([, v]) => v).map(([k]) => k) } });
+  await auditPanel("contato.datas", { type: "contact", id: contactId }, { after: { preenchidas: [...Object.entries(dates).filter(([, v]) => v).map(([k]) => k), ...Object.entries(custom).filter(([, v]) => v).map(([k]) => k)] } });
   revalidatePath(`/painel/clientes/${clientId}/contatos/${contactId}`);
   return ok("Datas salvas.");
 }
@@ -2065,7 +2075,10 @@ export async function importClientContacts(clientId: string, input: { botId: str
 
   const { email } = await requireAgency();
   const owner = { id: bot.id as string, agency_id: bot.agency_id as string };
-  const contacts = await importWhatsAppContacts(db, owner, valid.map((r) => ({ phone: r.phone, name: r.name, tags: r.tags, birthday: r.birthday, lastVisitAt: r.lastVisitAt, appointmentAt: r.appointmentAt })));
+  // as datas novas: só as colunas das datas deste chatbot
+  const keys = new Set((await listDateFields(db, [owner.id])).map((f) => f.key));
+  const onlyKnown = (d: Record<string, string>) => Object.fromEntries(Object.entries(d).filter(([k]) => keys.has(k)));
+  const contacts = await importWhatsAppContacts(db, owner, valid.map((r) => ({ phone: r.phone, name: r.name, tags: r.tags, birthday: r.birthday, lastVisitAt: r.lastVisitAt, appointmentAt: r.appointmentAt, customDates: onlyKnown(r.customDates) })));
   const wabaId = (wa.waba_id as string | null) ?? null;
   const scope = suppressionScope({ wabaId, botId: owner.id });
   const consents = await recordImportedConsents(

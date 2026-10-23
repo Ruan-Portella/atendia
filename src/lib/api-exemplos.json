@@ -480,6 +480,9 @@
             "birthday": "10-21",
             "last_visit_at": "2026-10-05T15:00:00.000Z",
             "appointment_at": null,
+            "dates": {
+              "renovacao_do_plano": "2027-03-10"
+            },
             "first_inbound_at": "2026-10-02T13:10:44.000Z",
             "last_inbound_at": "2026-10-19T14:58:02.117Z",
             "created_at": "2026-10-02T13:10:44.000Z",
@@ -558,6 +561,9 @@
             "birthday": "10-21",
             "last_visit_at": "2026-10-05T15:00:00.000Z",
             "appointment_at": "2026-12-20T17:30:00.000Z",
+            "dates": {
+              "renovacao_do_plano": "2027-03-10"
+            },
             "first_inbound_at": "2026-10-02T13:10:44.000Z",
             "last_inbound_at": "2026-10-19T14:58:02.117Z",
             "created_at": "2026-10-02T13:10:44.000Z",

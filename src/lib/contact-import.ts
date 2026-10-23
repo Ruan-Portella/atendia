@@ -112,18 +112,27 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
-export type RawImportRow = { line: number } & Record<ImportField, string>;
+export type RawImportRow = { line: number } & Record<ImportField, string> & {
+  /** as datas novas (régua personalizada), pela chave da coluna: { renovacao_do_plano: "10/03/2027" } */
+  custom?: Record<string, string>;
+};
 
 /** Linhas da planilha pelo cabeçalho. A linha conta como na planilha (o cabeçalho é a 1). Pura. */
-export function rowsFromCsv(text: string): { rows: RawImportRow[]; hasPhone: boolean; unknown: string[] } {
+export function rowsFromCsv(text: string, customKeys: string[] = []): { rows: RawImportRow[]; hasPhone: boolean; unknown: string[] } {
   const [head = [], ...body] = parseCsv(text);
   const fields = head.map((h) => HEADERS[headerKey(h)] ?? null);
-  const unknown = head.filter((h, i) => h.trim() && !fields[i]).map((h) => h.trim());
+  // as colunas das datas novas (régua personalizada): o nome da coluna é a chave da data
+  const custom = head.map((h, i) => (!fields[i] && customKeys.includes(headerKey(h)) ? headerKey(h) : null));
+  const unknown = head.filter((h, i) => h.trim() && !fields[i] && !custom[i]).map((h) => h.trim());
   const empty: Record<ImportField, string> = { phone: "", name: "", tags: "", consentOrigin: "", consentDate: "", consentText: "", age: "", ageOrigin: "", birth: "", birthday: "", lastVisit: "", appointment: "" };
   const rows = body.map((cells, i) => {
     const r: RawImportRow = { line: i + 2, ...empty };
     fields.forEach((f, j) => {
       if (f && !r[f]) r[f] = (cells[j] ?? "").trim();
+    });
+    custom.forEach((k, j) => {
+      const v = (cells[j] ?? "").trim();
+      if (k && v) r.custom = { ...r.custom, [k]: v };
     });
     return r;
   });
@@ -149,6 +158,15 @@ export function parseSheetDate(raw: string): Date | null {
   // 31/02 vira março: confere que o dia é o mesmo
   if (Number.isNaN(date.getTime()) || date.getUTCDate() !== d || date.getUTCMonth() + 1 !== m) return null;
   return date;
+}
+
+/** A data nova da planilha (dd/mm/aaaa, dd/mm/aa ou aaaa-mm-dd) como "AAAA-MM-DD". Pura. */
+export function customDateFromSheet(raw: string): string | null {
+  const d = parseSheetDate(raw);
+  if (!d) return null;
+  const y = d.getUTCFullYear();
+  if (y < 1900 || y > 2100) return null;
+  return `${y}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
 /** "14:30", "9:05", "14h30", "14h", "1430" → [14, 30]. Pura. */
@@ -218,6 +236,8 @@ export interface ImportRow {
   lastVisitAt: string | null;
   /** O próximo horário marcado (ISO). */
   appointmentAt: string | null;
+  /** As datas novas (régua personalizada): { chave: "AAAA-MM-DD" }. */
+  customDates: Record<string, string>;
 }
 
 export interface ImportError {
@@ -331,8 +351,20 @@ export function validateImportRows(rows: RawImportRow[], today = new Date(), tz:
       continue;
     }
 
+    // as datas novas: cada uma no formato da planilha (a chave já veio do cabeçalho)
+    const customDates: Record<string, string> = {};
+    const badCustom = Object.entries(r.custom ?? {}).find(([k, v]) => {
+      const ymd = customDateFromSheet(v);
+      if (ymd) customDates[k] = ymd;
+      return !ymd;
+    });
+    if (badCustom) {
+      fail(`${badCustom[0]} inválida (use dd/mm/aaaa)`);
+      continue;
+    }
+
     seen.add(phone);
-    valid.push({ line: r.line, phone, name: r.name ? r.name.replace(/\s+/g, " ").slice(0, 80) : null, tags: normalizeTags(r.tags), consent, age, birthday, lastVisitAt: visit ? visit.toISOString() : null, appointmentAt });
+    valid.push({ line: r.line, phone, name: r.name ? r.name.replace(/\s+/g, " ").slice(0, 80) : null, tags: normalizeTags(r.tags), consent, age, birthday, lastVisitAt: visit ? visit.toISOString() : null, appointmentAt, customDates });
   }
   return { valid, errors };
 }

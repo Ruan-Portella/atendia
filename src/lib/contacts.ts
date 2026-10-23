@@ -751,7 +751,7 @@ export async function importWhatsAppContacts(db: SupabaseClient, bot: { id: stri
     const chunk = await Promise.all(
       fresh.slice(i, i + 200).map(async (h) => {
         const r = byHash.get(h)!;
-        return { agency_id: bot.agency_id, bot_id: bot.id, channel: "whatsapp", hash_key_version: HASH_KEY_VERSION, phone_hash: h, phone_enc: await sealNullable("contacts.phone_enc", r.phone, scope), name: r.name, tags: r.tags, birthday: r.birthday ?? null, last_visit_at: r.lastVisitAt ?? null, appointment_at: r.appointmentAt ?? null };
+        return { agency_id: bot.agency_id, bot_id: bot.id, channel: "whatsapp", hash_key_version: HASH_KEY_VERSION, phone_hash: h, phone_enc: await sealNullable("contacts.phone_enc", r.phone, scope), name: r.name, tags: r.tags, birthday: r.birthday ?? null, last_visit_at: r.lastVisitAt ?? null, appointment_at: r.appointmentAt ?? null, custom_dates: r.customDates ?? {} };
       }),
     );
     const { data, error } = await db.from("contacts").insert(chunk).select("id, phone_hash");

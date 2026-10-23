@@ -13,6 +13,8 @@ import { birthdayLabel } from "@/lib/contact-import";
 import { CLIENT_TIMEZONES, DEFAULT_TIMEZONE, isoToLocalInput } from "@/lib/timezone";
 import { Brain, CalendarDays, ChevronRight, FileCheck2, Megaphone, MessagesSquare, StickyNote, Tags } from "lucide-react";
 import { listContactNotes } from "@/lib/conversation-notes";
+import { listDateFields } from "@/lib/contact-date-fields";
+import { dateLabelOf } from "@/lib/reguas";
 import { NOTE_MAX } from "@/lib/note-text";
 import { ContactAvatar } from "@/components/contact-avatar";
 import { TagsField } from "@/components/tags-field";
@@ -74,10 +76,13 @@ export default async function ContactPage({ params, searchParams }: PageProps<"/
   const tz = (client.timezone as string | null) ?? DEFAULT_TIMEZONE;
   const tzLabel = CLIENT_TIMEZONES.find((t) => t.id === tz)?.label ?? "Brasília";
 
+  // as datas novas das réguas personalizadas do chatbot do contato
+  const dateFields = contact.channel === "whatsapp" ? await listDateFields(db, [contact.bot_id]).catch(() => []) : [];
   const dates = [
     contact.birthday ? `aniversário ${birthdayLabel(contact.birthday)}` : null,
     contact.last_visit_at ? `última visita ${new Date(contact.last_visit_at).toLocaleDateString("pt-BR", { timeZone: tz })}` : null,
     contact.appointment_at ? `horário ${new Date(contact.appointment_at).toLocaleString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : null,
+    ...dateFields.map((f) => (contact.custom_dates[f.key] ? `${f.label.toLowerCase()} ${dateLabelOf(contact.custom_dates[f.key], true)}` : null)),
   ].filter(Boolean);
   const here = `/painel/clientes/${id}/contatos/${contactId}`;
 
@@ -136,6 +141,18 @@ export default async function ContactPage({ params, searchParams }: PageProps<"/
               </label>
               <input id="contato-horario" name="appointment" type="datetime-local" defaultValue={contact.appointment_at ? isoToLocalInput(contact.appointment_at, tz) : ""} className="input" />
             </div>
+            {dateFields.length > 0 && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {dateFields.map((f) => (
+                  <div key={f.id}>
+                    <label htmlFor={`contato-data-${f.key}`} className="label">
+                      {f.label}
+                    </label>
+                    <input id={`contato-data-${f.key}`} name={`custom_${f.key}`} type="date" defaultValue={contact.custom_dates[f.key] ?? ""} className="input" />
+                  </div>
+                ))}
+              </div>
+            )}
           </SettingRow>
         )}
         {memory.length > 0 && (

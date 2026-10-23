@@ -66,7 +66,8 @@ export default function ContactsApiDocs() {
           [<code key="2">birthday</code>, <>Mês e dia, <code>MM-DD</code> (ex.: <code>10-21</code>). A data inteira (<code>AAAA-MM-DD</code>) também vale, mas o ano não é guardado.</>, <>400 <code>birthday</code></>],
           [<code key="3">last_visit_at</code>, <>A última visita ou compra: data (<code>AAAA-MM-DD</code>) ou data e hora ISO 8601 com fuso. Não pode ser no futuro.</>, <>400 <code>last_visit_at</code></>],
           [<code key="4">appointment_at</code>, <>O próximo horário marcado: data e hora ISO 8601 com fuso (ex.: <code>2026-12-20T14:30:00-03:00</code>), até um ano à frente.</>, <>400 <code>appointment_at</code></>],
-          ["Nenhum dos três", "Mande pelo menos um.", <>400 <code>birthday</code></>],
+          [<code key="5">dates</code>, <>As datas novas das suas réguas (régua personalizada), pela chave de cada uma: <code>{"{ \"renovacao_do_plano\": \"2027-03-10\" }"}</code>. A data é <code>AAAA-MM-DD</code>; <code>null</code> apaga. A chave nasce com a régua que tem a data nova, no painel; as outras chaves do contato ficam.</>, <>400 <code>dates.&lt;chave&gt;</code></>],
+          ["Nenhum dos quatro", "Mande pelo menos um.", <>400 <code>birthday</code></>],
           ["Contato que não existe", <>Com <code>ctc_</code>, <code>wa:</code>, <code>ig:</code> ou <code>ext:</code>: o contato precisa existir.</>, <code key="n">404 not_found</code>],
         ]}
       />

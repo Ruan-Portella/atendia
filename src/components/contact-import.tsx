@@ -13,7 +13,7 @@ const MAX_SEND_BYTES = 900_000;
  * Importar planilha (leva B3, parte 2b): o navegador lê o CSV e mostra a prévia (válidas, com
  * aceite, com idade e os erros por linha); o servidor confere de novo e grava.
  */
-export function ContactImport({ clientId, bots, timezone, action }: { clientId: string; bots: Array<{ id: string; name: string }>; timezone: string; action: (clientId: string, input: { botId: string; rows: RawImportRow[]; consentText: string; consentTerms: boolean; ageTerms: boolean }) => Promise<ImportContactsResult> }) {
+export function ContactImport({ clientId, bots, timezone, action, dateKeys = [] }: { clientId: string; bots: Array<{ id: string; name: string }>; timezone: string; /** as colunas das datas novas (régua personalizada) */ dateKeys?: string[]; action: (clientId: string, input: { botId: string; rows: RawImportRow[]; consentText: string; consentTerms: boolean; ageTerms: boolean }) => Promise<ImportContactsResult> }) {
   const [botId, setBotId] = useState(bots[0]?.id ?? "");
   const [fileName, setFileName] = useState<string | null>(null);
   const [rows, setRows] = useState<RawImportRow[]>([]);
@@ -38,7 +38,7 @@ export function ContactImport({ clientId, bots, timezone, action }: { clientId: 
     setFileName(file?.name ?? null);
     if (!file) return;
     if (file.size > MAX_BYTES) return setProblem("Arquivo grande demais (até 2 MB). Divida a planilha em partes.");
-    const parsed = rowsFromCsv(await file.text());
+    const parsed = rowsFromCsv(await file.text(), dateKeys);
     if (!parsed.hasPhone) return setProblem("Não achei a coluna do telefone. A primeira linha precisa ter os nomes das colunas, com uma chamada telefone.");
     if (parsed.rows.length > IMPORT_MAX_ROWS) return setProblem(`A planilha tem ${parsed.rows.length} linhas; o máximo é ${IMPORT_MAX_ROWS} por vez. Divida em partes.`);
     if (!parsed.rows.length) return setProblem("A planilha não tem nenhuma linha depois do cabeçalho.");
