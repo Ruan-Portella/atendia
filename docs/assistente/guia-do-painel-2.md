@@ -62,6 +62,16 @@ Em Campanhas e réguas → Réguas (ou pelo botão Réguas na aba Campanhas do c
 - Sem resposta: N dias (padrão 2) depois da última mensagem da loja (IA ou equipe) que o contato não respondeu. Mensagem de campanha ou de régua não conta.
 As datas vêm da ficha do contato ("Datas para as réguas"), da planilha de contatos ou da API. Cada régua usa um modelo da Meta: o BoaVoz sugere o texto (dá para editar), manda para análise, e a régua só liga com o modelo aprovado. Aniversário e "faz tempo" são promoção e só vão para quem aceitou novidades. Lembrete, pós-atendimento e sem resposta são de utilidade: sem a declaração de consentimento do cliente para lembretes, só vão para quem já escreveu ao chatbot. Os envios saem das 8h às 20h no fuso do cliente, no máximo uma régua por pessoa a cada 24 horas (o lembrete primeiro), e respeitam o SAIR e o limite do número. Se a nota do número cair ou a Meta mudar a categoria do modelo, a régua pausa e o dono recebe um e-mail; o envio que passou da hora por causa da pausa não sai mais. A tela mostra a estimativa dos próximos 30 dias (pessoas e custo na Meta) e os números do que já saiu.
 
+## Perfil "Para o meu negócio"
+
+Quem usa o BoaVoz para atender os clientes do próprio negócio (e não os de uma agência) escolhe o perfil "Para o meu negócio" no primeiro acesso ou em Configurações → Marca e domínio → "Como você usa o BoaVoz" (só o dono muda). Com ele, o painel fica sem a parte de agência:
+- No menu, "Clientes" vira "Chatbots": abre a página do seu negócio, com os seus chatbots no alto e as abas Pessoas (contatos, leads e campanhas), Atendimento (conversas, setores e respostas prontas) e Ajustes (os dados do negócio, o relatório do mês por e-mail e a conformidade). Antes do primeiro chatbot, "Chatbots" mostra o botão de criar.
+- Não aparecem: a lista de clientes, o "Novo cliente", as demos para prospects, o portal (o link do cliente), a área do cliente e a aba Acesso do cliente, nem o "quanto você cobra". A equipe que atende entra pelo próprio painel (Configurações → Equipe e papéis, com o papel Atendente).
+- Novo chatbot: não pede o cliente. O primeiro chatbot cria o cadastro do negócio, com o nome e o site.
+- Os modelos de chatbot (para quem tem várias lojas ou franquias) seguem só com o pacote Plataforma.
+- Os textos falam do seu site, do seu WhatsApp e do seu Instagram, e "Mandar o link de conexão" serve para quando quem tem o acesso ao WhatsApp ou ao Instagram não é você.
+O perfil do negócio vale com nenhum ou um cliente. Uma conta que já tem vários clientes segue como agência: o modal mostra o motivo, e nada é movido nem apagado.
+
 ## Custo do WhatsApp
 
 A Meta cobra as mensagens do WhatsApp na forma de pagamento da conta do WhatsApp Business do cliente. O BoaVoz não cobra pelo uso do WhatsApp: mostra na aba WhatsApp e em Uso e custo o consumo e o custo estimado, e avisa quando a Meta recusa por falta de pagamento. Pela tabela da Meta em reais (outubro de 2026), no Brasil:
