@@ -12,18 +12,18 @@ const dateBR = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { time
 export function WithdrawalCard({ state, action }: { state: WithdrawalState; action: () => Promise<ActionResult> }) {
   if (state.kind === "none") return null;
   if (state.kind === "done") {
-    return <p className="mt-4 rounded-lg border border-line-2 px-3 py-2 text-sm">Você desistiu da assinatura em {dateBR(state.at)}, e o que foi pago desde a assinatura foi estornado. Para usar de novo, é só assinar.</p>;
+    return <p className="card px-4 py-3 text-sm text-ink-2">Você desistiu da assinatura em {dateBR(state.at)}, e o que foi pago desde a assinatura foi estornado. Para usar de novo, é só assinar.</p>;
   }
   return (
-    <section className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line-2 px-4 py-3 text-sm">
+    <section className="card flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 text-sm">
       <div className="min-w-0 max-w-[640px]">
-        <p className="font-semibold">Desistir em 7 dias</p>
+        <p className="text-[15px] font-medium text-ink">Desistir em 7 dias</p>
         {state.kind === "open" ? (
-          <p className="text-muted">
+          <p className="mt-0.5 text-[12.5px] leading-snug text-muted">
             Você assinou em {dateBR(state.since)}. Até {dateBR(state.until)}, dá para desistir: estornamos tudo o que foi pago desde então (assinatura, subidas e crédito), a assinatura acaba na hora e os chatbots ficam sem tamanho (o WhatsApp e o Instagram desconectam; a configuração fica guardada). A conta volta para a conta grátis, sem as respostas de teste.
           </p>
         ) : (
-          <p className="text-muted">
+          <p className="mt-0.5 text-[12.5px] leading-snug text-muted">
             Até {dateBR(state.until)}, a desistência desta assinatura é feita pelo suporte, porque já houve uma desistência recente com estes dados. Escreva para <span className="font-semibold text-ink">{company.email}</span> com o nome da conta.
           </p>
         )}
@@ -34,7 +34,7 @@ export function WithdrawalCard({ state, action }: { state: WithdrawalState; acti
           title="Desistir da assinatura?"
           description="Estornamos tudo o que foi pago desde a assinatura e ela acaba agora: os chatbots ficam sem tamanho, o WhatsApp e o Instagram desconectam e a conta volta para a conta grátis, sem as respostas de teste. Não dá para desfazer (para voltar, assine de novo)."
           confirmLabel="Desistir e estornar"
-          className="btn-ghost shrink-0 text-danger"
+          className="btn-ghost shrink-0 py-1.5 text-xs text-danger"
         >
           Desistir da assinatura
         </ConfirmAction>
