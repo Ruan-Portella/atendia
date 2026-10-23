@@ -104,7 +104,7 @@ export function MemberFields({ clients, allowAdmin, defaults, withEmail }: { cli
                     <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} aria-label="Buscar clientes" placeholder="Buscar cliente ou chatbot" className="input py-1.5 pl-8 text-sm" />
                   </label>
                 )}
-                <div className="flex max-h-64 flex-col overflow-y-auto">
+                <div className="relative flex max-h-64 flex-col overflow-y-auto">
                   {clients.length === 0 && <p className="px-2 py-3 text-sm text-muted">Nenhum cliente ainda.</p>}
                   {clients.map((c) => (
                     <div key={c.id} className={cn("flex flex-col", !hit(c) && "hidden")}>

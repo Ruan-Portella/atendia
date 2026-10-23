@@ -53,7 +53,7 @@ export async function ConversationsBrowser({
   const openBot = selected?.botId ?? (selectedId ? (await db.from("conversations").select("bot_id").eq("id", selectedId).in("bot_id", bots.map((b) => b.id)).maybeSingle()).data?.bot_id : null);
 
   return (
-    <div className="card flex h-[calc(100dvh-230px)] min-h-[540px] overflow-hidden max-md:h-[calc(100dvh-170px)]">
+    <div className="card relative flex h-[calc(100dvh-230px)] min-h-[540px] overflow-hidden max-md:h-[calc(100dvh-170px)]">
       <section className={cn("flex w-full min-w-0 flex-col md:w-[340px] md:shrink-0 md:border-r md:border-line", selectedId && openBot && "hidden md:flex")}>
         <div className="flex flex-col gap-2.5 border-b border-line-2 px-3 py-3">
           {intro}
@@ -71,7 +71,7 @@ export async function ConversationsBrowser({
             ))}
           </nav>
         </div>
-        <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+        <ul className="relative flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {items.length === 0 && (
             <li className="flex flex-col items-center gap-2 px-6 py-12 text-center text-sm text-muted">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-raised">

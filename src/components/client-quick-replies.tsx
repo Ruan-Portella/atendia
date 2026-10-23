@@ -30,7 +30,7 @@ function Fields({ reply, idPrefix }: { reply?: QuickReply; idPrefix: string }) {
  */
 export function ClientQuickReplies({ clientId, replies }: { clientId: string; replies: QuickReply[] }) {
   return (
-    <div className="flex max-w-[860px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-[600px] text-sm text-muted">Textos que a equipe põe na resposta com um clique, na conversa e na Caixa de entrada (dá para editar antes de enviar). Valem para todos os chatbots deste cliente.</p>
         {replies.length < QUICK_REPLY_MAX && (

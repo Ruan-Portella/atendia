@@ -19,7 +19,7 @@ const SHEET_DESCRIPTION = "Antes de enviar, você vê quantos recebem, quem fica
 export async function ClientCampaigns({ clientId, clientName, bots }: { clientId: string; clientName: string; bots: BoardBot[] }) {
   const options = await campaignBotOptions(await createClient(), createAdminClient(), clientId);
   return (
-    <div className="flex max-w-[1080px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-[560px] text-sm text-muted">Promoções para quem aceitou receber novidades e lembretes de utilidade, pelo WhatsApp de {clientName}.</p>
         <div className="flex flex-wrap gap-2">
@@ -36,7 +36,7 @@ export async function ClientCampaigns({ clientId, clientName, bots }: { clientId
         </div>
       </div>
       <CampaignBoard bots={bots} showClient={false} limits />
-      <div className="max-w-[760px]">
+      <div>
         <ClientReminderSettings clientId={clientId} clientName={clientName} />
       </div>
     </div>

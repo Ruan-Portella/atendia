@@ -78,7 +78,7 @@ export default async function ContactPage({ params, searchParams }: PageProps<"/
   // redesenho (23/10/2026, a pedido do usuário: "muito scroll e fora do padrão"): o cabeçalho com a
   // foto e as pílulas, e cada bloco numa linha que abre um modal
   return (
-    <div className="flex max-w-[760px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
         <Link href={back?.href ?? `/painel/clientes/${id}?tab=contatos`} className="text-sm font-medium text-muted hover:text-ink">
           ← {back?.label ?? `Contatos de ${client.name}`}

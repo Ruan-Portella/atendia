@@ -98,7 +98,7 @@ export function NoticeCenter({ children }: { children: React.ReactNode }) {
             <X size={17} />
           </button>
         </header>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
           {count === 0 && <p className="px-5 py-10 text-center text-sm text-muted">Nenhum aviso agora. Quando algo precisar de você (cota, pagamento, canal, segurança), aparece aqui.</p>}
           <div ref={list} className="flex flex-col gap-3 p-4 empty:hidden">{children}</div>
         </div>

@@ -28,7 +28,7 @@ const pairs = (v: unknown) =>
 export function FixedContextCard({ value, manage, save }: { value: unknown; manage: boolean; save: (fd: FormData) => Promise<ActionResult> }) {
   const label = pairs(value);
   return (
-    <section className="mt-5 flex max-w-[860px] flex-col gap-2">
+    <section className="mt-5 flex flex-col gap-2">
       <SettingGroup title="Identificação nas ações">
         {manage ? (
           <SettingRow

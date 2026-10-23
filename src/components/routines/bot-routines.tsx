@@ -61,7 +61,7 @@ export async function BotRoutines({ botId, integrations }: { botId: string; inte
   const sectors = bot?.client_id ? (await listSectors(db, [bot.client_id as string]).catch(() => [])).map((s) => s.name) : [];
 
   return (
-    <div className="flex max-w-[860px] flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h2 className="text-[22px] font-medium">Roteiros</h2>

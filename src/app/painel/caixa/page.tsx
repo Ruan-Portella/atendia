@@ -62,7 +62,7 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   const botName = (botId: string) => bots.find((b) => b.id === botId)?.name;
 
   return (
-    <div className="-mx-4 -my-5 h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]">
+    <div className="relative -mx-4 -my-5 h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 overflow-hidden sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]">
       <InboxView backInHeader contactOpen={(await cookies()).get(CONTACT_COOKIE)?.value !== "fechado"} queuesOpen={(await cookies()).get(QUEUES_COOKIE)?.value !== "fechado"} items={items} queue={queue} queues={queues} meId={member.id} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={clientIds.length > 1} available={member.available !== false} onAvailability={setMyAvailability}
         contact={selected && <InboxContact data={contact} notes={notes} onNote={addConversationNote.bind(null, selected.id)} botName={botName} conversationHref={(_b, c) => hrefFor({ queue, conversationId: c })} contactHref={contact && canConfig && selectedBot?.client_id ? withFrom(`/painel/clientes/${selectedBot.client_id}/contatos/${contact.contact.id}`, back) : null} />}>
         {selected && <AgencyConversation botId={selected.botId} convId={selected.id} embedded back={back} mobileBack={hrefFor({ queue })} contactToggle earlier={Math.min(50, Number(sp.ant) || 0)} earlierHref={(n) => `${hrefFor({ queue, conversationId: selected.id })}&ant=${n}`} />}

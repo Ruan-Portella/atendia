@@ -117,7 +117,7 @@ export function ContactPicker({ botId, mode, chosen, onAdd, declared = true }: {
             ))}
           </div>
           {problem && <p className="text-sm text-danger">{problem}</p>}
-          <div className="flex max-h-[46vh] flex-col overflow-y-auto rounded-[14px] border border-line">
+          <div className="relative flex max-h-[46vh] flex-col overflow-y-auto rounded-[14px] border border-line">
             {rows.map((r) => {
               const already = chosen.has(r.id);
               const on = picked.has(r.id);

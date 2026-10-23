@@ -3,7 +3,7 @@ import { ContactAvatar } from "@/components/contact-avatar";
 import { agentReactionsFor, quotesOf } from "@/lib/message-links";
 import { needsPhone } from "@/lib/handoff";
 import Link from "next/link";
-import { backFrom } from "@/lib/back-link";
+import { backFrom, withFrom } from "@/lib/back-link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { relativeTime } from "@/lib/utils";
@@ -181,7 +181,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   // Tela de chat: ocupa a tela toda (a barra do celular tem 60 px; a faixa de avisos do painel,
   // quando há, mede --panel-notices-h), cabeçalho e resposta fixos, e só as mensagens rolam.
   return (
-    <div className={embedded ? "flex h-full min-h-0 flex-col" : "-mx-4 -my-5 flex h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 flex-col sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]"}>
+    <div className={embedded ? "flex h-full min-h-0 flex-col" : "relative -mx-4 -my-5 flex h-[calc(100dvh-60px-var(--panel-notices-h,0px))] min-h-0 flex-col overflow-hidden sm:-mx-6 sm:-my-7 lg:-mx-9 lg:h-[calc(100dvh-var(--panel-notices-h,0px))]"}>
       <header className="flex flex-col gap-2 border-b border-line bg-panel px-3 py-2.5 sm:px-5 sm:py-3 md:px-6">
         <div className="flex items-start gap-2 sm:gap-3">
           {mobileBack && (
@@ -204,7 +204,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
             {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
             {contactToggle && <ContactToggle />}
             <ConversationMenu
-              fullHref={embedded ? `/painel/bots/${id}/conversas/${cid}` : null}
+              fullHref={embedded ? withFrom(`/painel/bots/${id}/conversas/${cid}`, back) : null}
               resetAge={age ? { action: resetConversationAge.bind(null, cid), description: `${age.source === "empresa" ? `A empresa informou pela API que o contato ${age.status === "sim" ? "tem 18 anos ou mais" : "não tem 18 anos"}${age.origin ? ` (${age.origin})` : ""}` : `O contato ${age.status === "sim" ? "confirmou ter 18 anos ou mais" : "disse que não tem 18 anos"}`} (${relativeTime(age.decidedAt)}). Zerando, na próxima vez que pedir bebida ou remédio o assistente pergunta de novo.` } : null}
               remove={can(role, "config") ? deleteConversation.bind(null, cid) : null}
             />

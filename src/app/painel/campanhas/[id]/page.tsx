@@ -41,7 +41,7 @@ export default async function CampaignReportPage({ params, searchParams }: PageP
   const optOuts = Object.entries(report.optOut).sort((a, b) => b[1] - a[1]);
 
   return (
-    <div className="flex max-w-[960px] flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link href={!fromList && bot?.client_id ? `/painel/clientes/${bot.client_id as string}?tab=campanhas` : "/painel/campanhas"} className="text-sm font-semibold text-muted">
           ← {!fromList && bot?.client_id ? `Campanhas de ${bot.client_name as string}` : "Campanhas e réguas"}

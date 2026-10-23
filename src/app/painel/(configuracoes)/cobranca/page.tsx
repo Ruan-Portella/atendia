@@ -68,7 +68,7 @@ export default async function CobrancaPage({ searchParams }: PageProps<"/painel/
   const status = pastDue ? { tone: "danger" as const, label: "Pagamento falhou" } : agency.billing_cancel_at ? { tone: "warn" as const, label: `Termina em ${dateBR(agency.billing_cancel_at)}` } : { tone: "ok" as const, label: "Ativa" };
 
   return (
-    <div className="flex max-w-[960px] flex-col gap-6">
+    <div className="flex flex-col gap-6">
       {sp.ok && <FlashToast message={subscribed ? "Assinatura ativada. Obrigado!" : "Pagamento recebido. Estamos confirmando com a Stripe: recarregue a página em alguns segundos."} />}
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-normal sm:text-[28px]">Assinatura e pacotes</h1>

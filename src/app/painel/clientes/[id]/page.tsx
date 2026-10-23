@@ -293,7 +293,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
               )}
             </div>
           ) : null}
-          <LeadList leads={leads} originLabel="Chatbot" originOf={(bid) => botName.get(bid) ?? ""} empty="Nenhum lead deste cliente ainda. Eles aparecem aqui assim que um visitante deixar contato no chat." />
+          <LeadList leads={leads} from={`/painel/clientes/${id}?tab=leads`} originLabel="Chatbot" originOf={(bid) => botName.get(bid) ?? ""} empty="Nenhum lead deste cliente ainda. Eles aparecem aqui assim que um visitante deixar contato no chat." />
         </>
       )}
 
@@ -337,7 +337,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
 
       {tab === "dados" && (
         // redesenho (23/10/2026): o cadastro numa linha com o modal, e o resto em grupos de linhas
-        <div className="flex max-w-[760px] flex-col gap-5">
+        <div className="flex flex-col gap-5">
           <SettingGroup title="Cadastro">
             <SettingRow
               icon={<Building2 size={18} />}

@@ -62,7 +62,7 @@ export function ClientSectors({ clientId, sectors, eligible, holidays, seeAll }:
   const nameOf = new Map(eligible.map((m) => [`${m.type}:${m.id}`, m.name]));
   const holidayList = holidaysText(holidays).split("\n").filter(Boolean);
   return (
-    <div className="flex max-w-[860px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-[600px] text-sm text-muted">Separe o atendimento humano por área (Vendas, Suporte, Financeiro…). Os setores valem para todos os chatbots deste cliente: cada pessoa vê na Caixa de entrada só as conversas dos setores dela (e as que não têm setor).</p>
         {sectors.length < SECTOR_MAX && (

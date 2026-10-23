@@ -41,7 +41,7 @@ export default async function SecurityPage({ searchParams }: PageProps<"/painel/
   const { count: waiting } = await (await createClient()).from("data_subject_requests").select("id", { count: "exact", head: true }).eq("status", "aguardando");
 
   return (
-    <div className="flex max-w-[960px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-normal sm:text-[28px]">Segurança e auditoria</h1>

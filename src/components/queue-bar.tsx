@@ -81,7 +81,7 @@ export function QueueBar({ queues, current, initialOpen = true }: { queues: Queu
         </button>
       </div>
       {open ? (
-        <div className="flex max-h-[38vh] flex-col gap-2 overflow-y-auto">
+        <div className="relative flex max-h-[38vh] flex-col gap-2 overflow-y-auto">
           {groups.map((g, k) => (
             <div key={`${g.name ?? "base"}-${k}`} className="flex flex-col gap-1">
               {g.name && <span className="px-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">{g.name}</span>}

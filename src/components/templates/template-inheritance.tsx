@@ -53,7 +53,7 @@ export function TemplateInheritance({
   // as chaves salvam juntas (o setTemplateUnlockedAction lê todos os campos): cada uma leva as outras liberadas
   const others = (skip: TemplateField): Record<string, string> => Object.fromEntries(unlocked.filter((f) => f !== skip).map((f) => [`f_${f}`, "on"]));
   return (
-    <div className="flex max-w-[760px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-[22px] font-medium">Herança</h2>

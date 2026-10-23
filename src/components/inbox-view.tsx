@@ -117,7 +117,7 @@ export function InboxView({
             queues={all.map((q) => ({ key: q.key, label: q.label, group: q.group, href: hrefFor({ queue: q.key }), count: count(q.key), waiting: items.filter((i) => i.waiting && inQueue(i, q.key, meId)).length }))}
           />
         </div>
-        <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3">
+        <ul className="relative flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3">
           {list.length === 0 && (
             <li className="flex flex-col items-center gap-2 px-6 py-12 text-center text-sm text-muted">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-raised"><UserRound size={18} /></span>

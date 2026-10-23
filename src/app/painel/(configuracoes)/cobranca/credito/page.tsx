@@ -58,7 +58,7 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
   const auto = agency.credit_auto_enabled ? { below: brlCents((agency.credit_auto_below_cents ?? 0) / 100), amount: brlCents((agency.credit_auto_amount_cents ?? 0) / 100), limit: brlCents((agency.credit_auto_month_limit_cents ?? 0) / 100) } : null;
 
   return (
-    <div className="flex max-w-[960px] flex-col gap-6">
+    <div className="flex flex-col gap-6">
       {sp.pix === "ok" && <FlashToast message="Pix enviado. O crédito entra assim que a Stripe confirma, em geral em segundos; também avisamos por e-mail." />}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-1.5">

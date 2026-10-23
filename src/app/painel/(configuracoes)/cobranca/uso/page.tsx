@@ -104,7 +104,7 @@ export default async function UsoPage() {
     });
 
   return (
-    <div className="flex max-w-[960px] flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-normal sm:text-[28px]">Uso e custo</h1>
         <p className="text-sm text-muted">

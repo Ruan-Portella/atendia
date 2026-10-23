@@ -65,7 +65,7 @@ export default async function TeamPage() {
   });
 
   return (
-    <div className="flex max-w-[960px] flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-1">

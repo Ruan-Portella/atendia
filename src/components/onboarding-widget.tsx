@@ -126,7 +126,7 @@ export function OnboardingWidget({ steps, goal, changeProfile, hide }: { steps: 
         </div>
       </div>
 
-      <ol className="min-h-0 overflow-y-auto py-1.5">
+      <ol className="relative min-h-0 overflow-y-auto py-1.5">
         {steps.map((s, i) => {
           const current = next?.key === s.key;
           const mark = (

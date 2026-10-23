@@ -35,7 +35,7 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
   const st = compliance ? STATUS[compliance.status] : null;
   const flagged = compliance ? ACTIVITIES.filter((a) => compliance.answers[a.id] && compliance.answers[a.id] !== "nao").length : 0;
   return (
-    <div className="flex max-w-[760px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <SettingGroup title="Negócio e conformidade">
         {compliance && st ? (
           <SettingRow

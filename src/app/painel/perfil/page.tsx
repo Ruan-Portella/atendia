@@ -51,7 +51,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/painel/p
   const available = member.available !== false;
   // redesenho (23/10/2026): o cabeçalho com a foto, o papel e o escopo; cada ajuste numa linha que abre um modal
   return (
-    <div className="flex max-w-[760px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex items-center gap-4">
         {avatar ? (
           // eslint-disable-next-line @next/next/no-img-element

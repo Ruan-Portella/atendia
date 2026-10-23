@@ -63,7 +63,7 @@ export function ClientReportTab({ client, base, memberEmails }: { client: Client
   const url = client.portal_token ? portalUrl(client.portal_token, base) : null;
   const lastMonth = periodLabel(shiftPeriod(currentPeriodBR(), -1));
   return (
-    <div className="flex max-w-[760px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <SettingGroup title="Link do cliente">
         {url ? (
           <SettingRow
@@ -184,7 +184,7 @@ export function ClientAccessTab({ client, base, members }: { client: ClientInfo;
   };
   const perms = setClientPermissions.bind(null, client.id);
   return (
-    <div className="flex max-w-[760px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-[520px] text-sm text-muted">
           As pessoas de {client.name} entram na área do cliente (<code className="font-mono text-[12px]">{base.replace(/^https?:\/\//, "")}/cliente</code>) com um link no e-mail, sem senha.

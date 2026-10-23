@@ -61,7 +61,7 @@ export function TemplateSender({ templates, action, askPhone = false, submitLabe
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar pelo nome ou pelo texto" className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder:text-muted focus:outline-none" />
           </label>
         )}
-        <div role="radiogroup" aria-label="Modelo" className="flex max-h-[220px] flex-col gap-1.5 overflow-y-auto">
+        <div role="radiogroup" aria-label="Modelo" className="relative flex max-h-[220px] flex-col gap-1.5 overflow-y-auto">
           {shown.length === 0 && <p className="px-1 py-3 text-sm text-muted">Nenhum modelo com &ldquo;{query.trim()}&rdquo;.</p>}
           {shown.map((x) => {
             const on = x.name === name;

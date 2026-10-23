@@ -27,7 +27,7 @@ export default async function NewCampaignPage({ searchParams }: PageProps<"/pain
   const options = await campaignBotOptions(supabase, createAdminClient(), client ? (client.id as string) : null);
 
   return (
-    <div className="flex max-w-[860px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
         <Link href={client ? `/painel/clientes/${client.id as string}?tab=campanhas` : "/painel/campanhas"} className="text-sm font-semibold text-muted">
           ← {client ? `Campanhas de ${client.name as string}` : "Campanhas"}

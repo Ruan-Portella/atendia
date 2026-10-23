@@ -74,7 +74,7 @@ export default async function IntegrationsPage({ searchParams }: PageProps<"/pai
   const counts: Record<Tab, number | null> = { webhooks: hookCount ?? null, chaves: keyCount ?? null, logs: null };
 
   return (
-    <div className="flex max-w-[960px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-normal sm:text-[28px]">Ações, webhooks e API</h1>
         <p className="text-sm text-muted">

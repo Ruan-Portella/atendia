@@ -37,7 +37,7 @@ export default async function MarcaPage() {
   const now = agency.retention_months ? `${agency.retention_months} meses` : "sem prazo";
 
   return (
-    <div className="flex max-w-[720px] flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-normal sm:text-[28px]">Marca e domínio</h1>
         <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo, no portal e nos e-mails.</p>

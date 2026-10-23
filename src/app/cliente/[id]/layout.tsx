@@ -26,7 +26,7 @@ export default async function MemberLayout({ children, params }: LayoutProps<"/c
         <MemberNav clientId={id} manager={memberCan(member, "manager")} handoff={member.allowHandoff} knowledge={member.allowKnowledge} hours={member.allowHours} waiting={pending.filter((p) => handoffStatus(p)?.waiting).length} />
       </div>
       {member.allowHandoff && <HandoffWatcher endpoint={`/api/cliente/pending?clientId=${id}`} />}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
         <main className="mx-auto flex w-full max-w-[980px] flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
       </div>
     </div>

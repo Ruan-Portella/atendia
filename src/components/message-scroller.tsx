@@ -7,6 +7,8 @@ import { useEffect, useLayoutEffect, useRef } from "react";
  * atualiza sozinha), desce junto, a menos que a pessoa tenha subido para ler o histórico. Quando o
  * histórico cresce em cima ("Ver a conversa anterior", que muda o `anchor`), a tela fica onde a
  * pessoa estava, com um pedaço do que entrou à vista, em vez de pular para o começo (23/10/2026).
+ * É `relative` para conter os elementos absolutos de dentro (o texto só para leitor de tela do
+ * aviso automático): sem isso, eles ficam presos à página e criam uma rolagem fantasma.
  */
 export function MessageScroller({ count, anchor, className, children }: { count: number; anchor?: number; className?: string; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -40,7 +42,7 @@ export function MessageScroller({ count, anchor, className, children }: { count:
   }, []);
 
   return (
-    <div ref={ref} className={className}>
+    <div ref={ref} className={className ? `relative ${className}` : "relative"}>
       {children}
     </div>
   );

@@ -128,7 +128,7 @@ function MessageText({ m }: { m: ThreadMessage }) {
   if (m.deleted_at || n <= 0 || n >= m.content.length) return <div className={m.deleted_at ? "whitespace-pre-wrap italic opacity-70" : "whitespace-pre-wrap"}>{m.content}</div>;
   return (
     <>
-      <div title="Aviso automático, enviado junto com esta mensagem" className="mb-1.5 flex gap-1.5 border-b border-current/15 pb-1.5 text-[12px] leading-snug opacity-75">
+      <div title="Aviso automático, enviado junto com esta mensagem" className="relative mb-1.5 flex gap-1.5 border-b border-current/15 pb-1.5 text-[12px] leading-snug opacity-75">
         <BellRing size={12} className="mt-[3px] shrink-0" aria-hidden />
         <span className="whitespace-pre-wrap">
           <span className="sr-only">Aviso automático: </span>
