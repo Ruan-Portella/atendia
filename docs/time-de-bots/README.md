@@ -13,7 +13,6 @@ Bots do OpenBot, conectados ao Claude Code neste repositório. Cada arquivo dest
 | 7 | [Security e LGPD](security-lgpd.md) | 2 | semanal + a cada leva | não |
 | 8 | [Design e UX](design-ux.md) | 3 | sob demanda | propostas |
 | 9 | [Marketing e conteúdo](marketing.md) | 3 | semanal | rascunhos |
-| 10 | [Conselheiro](conselheiro.md) | 3 | semanal | não |
 
 ## Regras do time (valem para todos)
 
