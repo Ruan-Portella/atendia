@@ -139,10 +139,15 @@ export async function contactActiveLinkId(db: SupabaseClient, contactId: string)
   return (data?.active_link_id as string | null) ?? null;
 }
 
-/** Marca o vínculo ativo (e o display que veio com ele, para o painel). */
+/**
+ * Marca o vínculo ativo (e o display que veio com ele, para o painel). Sem vínculo nenhum, o nome
+ * da identificação sai da ficha (23/10/2026: ficava preso depois do "Não sou eu"), e o painel volta
+ * ao nome do perfil; no chat do site, o display vem do token da empresa e fica.
+ */
 export async function setActiveLink(db: SupabaseClient, contactId: string, linkId: string | null, display: Record<string, unknown> | object | null): Promise<void> {
   const { error } = await db.from("contacts").update({ active_link_id: linkId, ...(display ? { display } : {}), updated_at: new Date().toISOString() }).eq("id", contactId);
   if (error) console.error("contato: vínculo ativo não gravado", error.message);
+  if (!linkId) await db.from("contacts").update({ display: null }).eq("id", contactId).neq("channel", "widget");
 }
 
 /** Identificadores do contato no canal (abertos): telefone, BSUID e IGSID, para os webhooks. */

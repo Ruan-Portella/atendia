@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { canonicalPhone } from "../phone";
 import { canonicalPhone as suppressionCanonical } from "../suppression";
-import { changeWhatsAppIdentity, metaPhoneHash, previousBsuid, typedPhoneHash, whatsappContact, whatsappIdentityOf } from "../contacts";
+import { changeWhatsAppIdentity, metaPhoneHash, previousBsuid, setActiveLink, typedPhoneHash, whatsappContact, whatsappIdentityOf } from "../contacts";
 import { checkHashSentinel } from "../hash";
 
 describe("telefone canônico", () => {
@@ -149,5 +149,23 @@ describe("ficha do contato do WhatsApp", () => {
   it("sem telefone nem BSUID: nenhum contato", async () => {
     const { db } = fakeContacts();
     expect(await whatsappContact(db, bot, {})).toBeNull();
+  });
+});
+
+describe("vínculo ativo do contato", () => {
+  it("troca de vínculo leva o nome dele; sem vínculo nenhum, o nome da identificação sai", async () => {
+    const { db, rows } = fakeContacts();
+    rows.push({ id: "c1", channel: "whatsapp", active_link_id: "l1", display: { name: "Cliente Teste" } });
+    await setActiveLink(db, "c1", "l2", { name: "Outra Conta" });
+    expect(rows[0]).toMatchObject({ active_link_id: "l2", display: { name: "Outra Conta" } });
+    await setActiveLink(db, "c1", null, null);
+    expect(rows[0]).toMatchObject({ active_link_id: null, display: null });
+  });
+
+  it("no chat do site, o display vem do token e fica", async () => {
+    const { db, rows } = fakeContacts();
+    rows.push({ id: "c1", channel: "widget", active_link_id: "l1", display: { name: "Ruan" } });
+    await setActiveLink(db, "c1", null, null);
+    expect(rows[0]).toMatchObject({ active_link_id: null, display: { name: "Ruan" } });
   });
 });

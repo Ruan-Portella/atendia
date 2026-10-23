@@ -34,6 +34,7 @@ function memDb(tables: Record<string, Row[]>) {
       delete: () => ((removing = true), b),
       not: (k: string, op: string, v: unknown) => (filters.push((r) => (op === "is" ? (r[k] ?? null) !== v : r[k] !== v)), b),
       eq: (k: string, v: unknown) => (filters.push((r) => r[k] === v), b),
+      neq: (k: string, v: unknown) => (filters.push((r) => r[k] !== v), b),
       is: (k: string, v: unknown) => (filters.push((r) => (r[k] ?? null) === v), b),
       gt: (k: string, v: string) => (filters.push((r) => String(r[k] ?? "") > v), b),
       lt: (k: string, v: string) => (filters.push((r) => String(r[k] ?? "") < v), b),
@@ -72,7 +73,7 @@ const BOT = { id: "b0000000-0000-4000-8000-000000000001", agency_id: "a0000000-0
 const CONTACT = "c0000000-0000-4000-8000-000000000001";
 
 function setup(phone: string | null = "5521999999999") {
-  const tables: Record<string, Row[]> = { contacts: [{ id: CONTACT, bot_id: BOT.id, active_link_id: null, phone_enc: phone, display: null }], conversations: [{ id: "conv-1", contact_id: CONTACT, last_message_at: new Date().toISOString() }], pairing_codes: [], contact_links: [], rate_limits: [] };
+  const tables: Record<string, Row[]> = { contacts: [{ id: CONTACT, bot_id: BOT.id, channel: "whatsapp", active_link_id: null, phone_enc: phone, display: null }], conversations: [{ id: "conv-1", contact_id: CONTACT, last_message_at: new Date().toISOString() }], pairing_codes: [], contact_links: [], rate_limits: [] };
   const db = memDb(tables);
   const replies: Array<{ text: string; buttons?: Array<{ id: string; title: string }> }> = [];
   const stored: number[] = [];
@@ -223,6 +224,8 @@ describe("pareamento no WhatsApp", () => {
     expect(s.replies[2].text).toBe(PAIRING_TEXTS.unlinked("whatsapp", "Família Portella", []));
     expect(s.tables.contact_links[0]).toMatchObject({ unlink_reason: "chat" });
     expect(s.tables.contacts[0].active_link_id).toBeNull();
+    // o nome da conta sai da ficha (o painel volta ao nome do perfil)
+    expect(s.tables.contacts[0].display).toBeNull();
     // a conversa sai do contexto (trecho novo, sem a conta)
     expect(s.tables.conversations[0]).toMatchObject({ context_source: null, identity_hash: null });
   });
