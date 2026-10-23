@@ -123,3 +123,12 @@ Na página do cliente, as abas de Atendimento e de Ajustes vêm em linhas: cada 
 - Acesso do cliente: o "Convidar pessoa" (e-mail e papel em cartões), cada pessoa numa linha com o "…" (tornar gestor ou atendente, reenviar o link, tirar o acesso) e o que o cliente pode fazer em chaves que salvam na hora (atender conversas, ensinar o assistente, editar o horário), mais quem recebe o e-mail de pedido de atendimento.
 - Conformidade: a situação do negócio (as respostas das atividades abrem num modal), a análise do BoaVoz de cada chatbot e os aceites registrados.
 - Leads: o Exportar CSV e o "Apagar os dados de uma pessoa" (pedido LGPD, num modal) ficam no alto da lista.
+
+## As abas de Canais do chatbot
+
+Em Canais, cada aba começa pela situação e o resto vem em linhas que abrem um modal.
+
+- Chat do site: o cartão diz se o chat já foi achado em algum site. Embaixo, "Código do chat" (com o Copiar), "Passo a passo por plataforma" (WordPress, Wix, Shopify, Webflow, Framer, Google Tag Manager, Next.js, React e outros, num modal), "Link direto (sem site)" (com o Copiar), "Abrir o chat por um botão seu" e "Instalei e o balão não apareceu".
+- WhatsApp conectado: o número, o nome e o diagnóstico ficam no cartão do alto. Em Mensagens, "Oferecer novidades" é uma chave que salva na hora (a linha abre a prévia da pergunta), e "Modelos de mensagem" e "Uso do mês" abrem num modal. Em Conta ficam os Termos do canal e o Desconectar.
+- WhatsApp sem número: "Mandar um link para o cliente" (o mais simples), "Já atende pelo WhatsApp Business no celular" e "Número novo, só para o atendimento", cada um num modal com a lista do que conferir antes.
+- Instagram: a conta no cartão do alto e, em "Direct e comentários", as perguntas prontas, os links com origem, as palavras-chave e os comentários dos posts, cada um num modal; os Termos do canal e o Desconectar ficam no fim.

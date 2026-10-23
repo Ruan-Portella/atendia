@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Check, CheckCircle2, Clock, Copy, ExternalLink } from "lucide-react";
+import { Check, CheckCircle2, Clock, Code2, Copy, ExternalLink, LifeBuoy, Link2, ListOrdered, MousePointerClick } from "lucide-react";
+import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { cn, relativeTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 
@@ -43,76 +44,109 @@ export function InstallGuide({ widgetSrc, publicKey, directLink, brand, isLive, 
       {/* status */}
       <InstallStatus installed={installed} isLive={isLive} />
 
-      <div className="grid gap-5 lg:grid-cols-[210px_minmax(0,1fr)]">
-        {/* plataformas */}
-        <nav aria-label="Plataforma" className="flex flex-col gap-3">
-          {groups.map((g) => (
-            <div key={g}>
-              <div className="kpi-label mb-1.5 px-2">{g}</div>
-              <div className="flex flex-row flex-wrap gap-1 lg:flex-col">
-                {platforms.filter((p) => p.group === g).map((p) => (
-                  <button key={p.id} type="button" onClick={() => choose(p.id)} aria-pressed={p.id === current.id} className={cn("rounded-lg px-3 py-2 text-left text-sm transition-colors duration-[120ms]", p.id === current.id ? "bg-brand-soft font-semibold text-brand" : "font-medium text-ink-2 hover:bg-ground")}>
-                    {p.name}
-                  </button>
+      {/* redesenho (23/10/2026): o código e o link em linhas com o Copiar; o passo a passo, o botão próprio e os problemas comuns em modais */}
+      <SettingGroup title="Instalar">
+        <SettingRow icon={<Code2 size={18} />} title="Código do chat" summary={<span className="font-mono">{tag}</span>} description="Cole antes do </body> do site. É o mesmo código em todo lugar; o que muda é onde colar." trailing={<CopyChip text={tag} />} />
+        <SettingRow
+          icon={<ListOrdered size={18} />}
+          title="Passo a passo por plataforma"
+          summary="WordPress, Wix, Shopify, Webflow, Framer, Google Tag Manager, Next.js, React…"
+          dialogTitle="Onde colar o código"
+          description="Escolha onde o site do cliente foi feito e siga os passos."
+          size="lg"
+          footer="close"
+        >
+          <div className="flex flex-col gap-3">
+            {groups.map((g) => (
+              <div key={g} className="flex flex-col gap-1.5">
+                <span className="kpi-label">{g}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {platforms
+                    .filter((p) => p.group === g)
+                    .map((p) => (
+                      <button key={p.id} type="button" onClick={() => choose(p.id)} aria-pressed={p.id === current.id} className={cn("rounded-full px-3 py-1.5 text-[13px] transition-colors duration-[120ms]", p.id === current.id ? "bg-ink font-medium text-ground" : "bg-raised/70 text-ink-2 hover:bg-raised hover:text-ink")}>
+                        {p.name}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex min-w-0 flex-col gap-4 border-t border-line-2 pt-4">
+            <div>
+              <h3 className="text-base font-medium">{current.name}</h3>
+              <p className="text-sm text-muted">{current.intro}</p>
+            </div>
+            <ol className="flex flex-col gap-2.5">
+              {current.steps.map((st, i) => (
+                <li key={i} className="flex gap-3 text-sm leading-relaxed text-ink-2">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-on-brand">{i + 1}</span>
+                  <span className="min-w-0">{st}</span>
+                </li>
+              ))}
+            </ol>
+            {current.snippets.map((sn) => (
+              <CodeBlock key={sn.label} label={sn.label} code={sn.code} />
+            ))}
+            {current.notes && current.notes.length > 0 && (
+              <div className="flex flex-col gap-1.5 rounded-xl bg-raised px-4 py-3 text-[13px] leading-relaxed text-ink-2">
+                {current.notes.map((n, i) => (
+                  <p key={i}>{n}</p>
                 ))}
               </div>
-            </div>
-          ))}
-        </nav>
-
-        {/* passo a passo */}
-        <div className="flex min-w-0 flex-col gap-4">
-          <div>
-            <h3 className="display text-lg font-medium">{current.name}</h3>
-            <p className="text-sm text-muted">{current.intro}</p>
+            )}
           </div>
-          <ol className="flex flex-col gap-2.5">
-            {current.steps.map((s, i) => (
-              <li key={i} className="flex gap-3 text-sm leading-relaxed text-ink-2">
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-ground">{i + 1}</span>
-                <span className="min-w-0">{s}</span>
-              </li>
-            ))}
-          </ol>
-          {current.snippets.map((sn) => (
-            <CodeBlock key={sn.label} label={sn.label} code={sn.code} />
-          ))}
-          {current.notes && current.notes.length > 0 && (
-            <div className="flex flex-col gap-1.5 rounded-xl bg-ground px-4 py-3 text-[13px] leading-relaxed text-ink-2">
-              {current.notes.map((n, i) => (
-                <p key={i}>{n}</p>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+        </SettingRow>
+        <SettingRow icon={<Link2 size={18} />} title="Link direto (sem site)" summary={<span className="font-mono">{directLink.replace(/^https?:\/\//, "")}</span>} description="Para quem não tem site: mande o link no Instagram, no WhatsApp ou num QR code." trailing={<CopyChip text={directLink} />} />
+      </SettingGroup>
 
-      {/* opções e API */}
-      <details className="card group px-5 py-4">
-        <summary className="cursor-pointer text-sm font-semibold">Personalizar por site e abrir o chat por um botão seu</summary>
-        <div className="mt-3 flex flex-col gap-3 text-sm leading-relaxed text-ink-2">
-          <p>
-            Cor, canto da tela e distância da borda se configuram em <strong className="text-ink">Comportamento → Rosto e aparência</strong> e valem na hora em todos os sites onde o widget está instalado. Se um site específico precisar de algo diferente, os atributos <code className="rounded bg-ground px-1">data-color=&quot;#hex&quot;</code>, <code className="rounded bg-ground px-1">data-position=&quot;left&quot;</code> e <code className="rounded bg-ground px-1">data-offset=&quot;80&quot;</code> no <code className="rounded bg-ground px-1">&lt;script&gt;</code> têm prioridade sobre o painel. Depois que carrega, o script expõe <code className="rounded bg-ground px-1">window.ChatWidget</code> com <code className="rounded bg-ground px-1">open()</code>, <code className="rounded bg-ground px-1">close()</code> e <code className="rounded bg-ground px-1">toggle()</code>, então qualquer link ou botão do site pode abrir a conversa:
+      <SettingGroup title="Mais">
+        <SettingRow icon={<MousePointerClick size={18} />} title="Abrir o chat por um botão seu" summary="Um botão ou link do site que abre o chat, além do balão" size="lg" footer="close">
+          <div className="flex flex-col gap-3 text-sm leading-relaxed text-ink-2">
+            <p>
+            Cor, canto da tela e distância da borda se configuram em <strong className="text-ink">Comportamento → Rosto e aparência</strong> e valem na hora em todos os sites onde o widget está instalado. Se um site específico precisar de algo diferente, os atributos <code className="rounded bg-raised px-1">data-color=&quot;#hex&quot;</code>, <code className="rounded bg-raised px-1">data-position=&quot;left&quot;</code> e <code className="rounded bg-raised px-1">data-offset=&quot;80&quot;</code> no <code className="rounded bg-raised px-1">&lt;script&gt;</code> têm prioridade sobre o painel. Depois que carrega, o script expõe <code className="rounded bg-raised px-1">window.ChatWidget</code> com <code className="rounded bg-raised px-1">open()</code>, <code className="rounded bg-raised px-1">close()</code> e <code className="rounded bg-raised px-1">toggle()</code>, então qualquer link ou botão do site pode abrir a conversa:
           </p>
           <CodeBlock label="HTML" code={`<a href="#" onclick="window.ChatWidget && ChatWidget.open(); return false;">Fale com a gente</a>`} />
           <CodeBlock label="React / Next.js" code={`<button type="button" onClick={() => window.ChatWidget?.open()}>\n  Fale com a gente\n</button>`} />
-          <p className="text-xs text-muted">Em TypeScript, declare uma vez: <code className="rounded bg-ground px-1">declare global {"{"} interface Window {"{"} ChatWidget?: {"{"} open(): void; close(): void; toggle(): void {"}"} {"}"} {"}"}</code></p>
-        </div>
-      </details>
-
-      {/* problemas comuns */}
-      <details className="card px-5 py-4">
-        <summary className="cursor-pointer text-sm font-semibold">Instalei e o balão não apareceu</summary>
-        <div className="mt-3 flex flex-col gap-2 text-sm leading-relaxed text-ink-2">
-          <p><strong className="text-ink">O chatbot está publicado?</strong> Em rascunho ou fora do ar o balão não aparece no site (a instalação ainda é detectada e aparece no cartão acima). Clique em “Publicar” no topo.</p>
+          <p className="text-xs text-muted">Em TypeScript, declare uma vez: <code className="rounded bg-raised px-1">declare global {"{"} interface Window {"{"} ChatWidget?: {"{"} open(): void; close(): void; toggle(): void {"}"} {"}"} {"}"}</code></p>
+          </div>
+        </SettingRow>
+        <SettingRow icon={<LifeBuoy size={18} />} title="Instalei e o balão não apareceu" summary="Publicado, cache, bloqueador de anúncios, CSP e o console do navegador" size="lg" footer="close">
+          <div className="flex flex-col gap-2 text-sm leading-relaxed text-ink-2">
+            <p><strong className="text-ink">O chatbot está publicado?</strong> Em rascunho ou fora do ar o balão não aparece no site (a instalação ainda é detectada e aparece no cartão do alto). Clique em “Publicar” no topo.</p>
           <p><strong className="text-ink">O site foi publicado depois de colar o código?</strong> Webflow, Framer, Wix e Shopify só aplicam o código quando você publica o site de novo. Teste em aba anônima para fugir do cache.</p>
           <p><strong className="text-ink">Bloqueador de anúncios.</strong> Alguns bloqueiam iframes de terceiros. Teste com o bloqueador desligado ou em outro navegador.</p>
-          <p><strong className="text-ink">Content-Security-Policy.</strong> Se o site tem CSP, adicione o domínio <code className="rounded bg-ground px-1">{new URL(widgetSrc).origin}</code> em <code className="rounded bg-ground px-1">script-src</code>, <code className="rounded bg-ground px-1">frame-src</code> e <code className="rounded bg-ground px-1">connect-src</code>.</p>
-          <p><strong className="text-ink">Console do navegador.</strong> Aperte F12 → Console. Um aviso <code className="rounded bg-ground px-1">[chat-widget]</code> explica o que faltou (normalmente a <code className="rounded bg-ground px-1">data-key</code>).</p>
-          <p className="text-xs text-muted">Quando o widget carregar no site do cliente, o cartão no topo desta aba muda para “Instalado em …”. A {brand} não aparece em nenhum lugar para o visitante, nem no código: o script só usa nomes genéricos.</p>
-        </div>
-      </details>
+          <p><strong className="text-ink">Content-Security-Policy.</strong> Se o site tem CSP, adicione o domínio <code className="rounded bg-raised px-1">{new URL(widgetSrc).origin}</code> em <code className="rounded bg-raised px-1">script-src</code>, <code className="rounded bg-raised px-1">frame-src</code> e <code className="rounded bg-raised px-1">connect-src</code>.</p>
+          <p><strong className="text-ink">Console do navegador.</strong> Aperte F12 → Console. Um aviso <code className="rounded bg-raised px-1">[chat-widget]</code> explica o que faltou (normalmente a <code className="rounded bg-raised px-1">data-key</code>).</p>
+          <p className="text-xs text-muted">Quando o widget carregar no site do cliente, o cartão do alto desta aba muda para “Instalado em …”. A {brand} não aparece em nenhum lugar para o visitante, nem no código: o script só usa nomes genéricos.</p>
+          </div>
+        </SettingRow>
+      </SettingGroup>
     </div>
+  );
+}
+
+/** O Copiar no canto da linha. */
+function CopyChip({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  const toast = useToast();
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setDone(true);
+          setTimeout(() => setDone(false), 1800);
+        } catch {
+          toast.error("Não consegui copiar. Selecione o texto e use Ctrl+C.");
+        }
+      }}
+      className="btn-ghost shrink-0 py-1.5 text-xs"
+    >
+      {done ? <Check size={13} /> : <Copy size={13} />}
+      {done ? "Copiado" : "Copiar"}
+    </button>
   );
 }
 

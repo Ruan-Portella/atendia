@@ -49,11 +49,12 @@ import { ChatPreviewSheet } from "@/components/chat-preview-sheet";
 import { WidgetPositionPicker } from "@/components/widget-position";
 import { SuggestedQuestionsField } from "@/components/suggested-questions-field";
 import { ConversationsBrowser } from "@/components/conversations-browser";
+import { StatusPill } from "@/components/ui/form-section";
+import { OPTIN_BUTTONS, optInOfferText } from "@/lib/marketing-consent";
 import { isConversationFilter } from "@/lib/conversation-list";
 import { suggestedSummary, widgetPositionSummary } from "@/lib/widget-appearance";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { MarketingOptInForm } from "@/components/marketing-optin-form";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
 import { saveMomentNotice, clearMomentNotice, setSatisfactionSurvey, saveBotDisplay } from "../../actions";
@@ -90,7 +91,7 @@ import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 import { BotOverview } from "@/components/bot-overview";
 import { getBotStats, getPendingHandoffs } from "@/lib/panel";
 import { choiceLabel } from "@/lib/billing";
-import { Ban, BookOpen, Brain, Clock, Image as ImageIcon, LayoutDashboard, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, Plus, PenLine, Phone, Radio, RefreshCw, SlidersHorizontal, Sparkles, Star, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
+import { Ban, BookOpen, Brain, ChartColumn, Clock, FileText, Hash, Image as ImageIcon, LayoutDashboard, Link2, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, MessagesSquare, PenLine, Phone, Plus, Radio, RefreshCw, Send, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Star, Tags, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
 import { AutoSwitch, DialogButton, SettingGroup, SettingRow, SubmitSwitch, SwitchField } from "@/components/ui/setting-row";
 import { FaceEditor } from "@/components/face-editor";
 import { BotFace } from "@/components/bot-face";
@@ -934,7 +935,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           )}
 
           {tab === "whatsapp" && (
-            <div className="flex max-w-[640px] flex-col gap-4">
+            // redesenho (23/10/2026): o número num cartão de situação; o resto em linhas que abrem um modal
+            <div className="flex max-w-[760px] flex-col gap-5">
               <div>
                 <h2 className="text-[22px] font-medium">WhatsApp</h2>
                 <p className="text-sm text-muted">{bot.name} responde no WhatsApp do cliente com a mesma base de conhecimento. Pedidos de atendente aparecem em Conversas, e a sua resposta sai pelo WhatsApp.</p>
@@ -942,118 +944,161 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               {bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
               ) : whatsapp?.disconnected_at ? (
-                <div className="flex flex-col gap-4 rounded-xl border border-amber-line bg-amber-soft p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-panel px-2.5 py-0.5 text-xs font-semibold text-amber-ink">desconectado</span>
-                    <span className="display text-lg font-bold">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
-                  </div>
-                  <p className="text-sm text-amber-ink">
-                    Desconectado {relativeTime(whatsapp.disconnected_at)}{whatsapp.disconnect_reason ? `: ${whatsapp.disconnect_reason}` : ""}. {bot.name} parou de responder por este número. As conversas antigas continuam no painel.
-                  </p>
-                  <p className="text-sm text-amber-ink"><strong>Próximo passo:</strong> {disconnectNextStep(whatsapp.disconnect_reason, Boolean(whatsapp.coexistence))}</p>
-                  {signup && (
-                    <div className="flex flex-col gap-3">
-                      <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
-                      <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
-                        <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence={Boolean(whatsapp.coexistence)} label="Conectar de novo agora" primary={false} />
-                      </ChannelAcceptGate>
+                <>
+                  <div className="flex flex-col gap-2 rounded-[16px] border border-amber-line bg-amber-soft p-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill tone="warn">desconectado</StatusPill>
+                      <span className="text-lg font-medium text-ink">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
                     </div>
-                  )}
-                  <ConfirmAction
-                    action={disconnectWhatsApp.bind(null, id)}
-                    title="Remover este número?"
-                    description="O número sai do chatbot e você pode conectar outro. As conversas antigas continuam no painel."
-                    confirmLabel="Remover"
-                    className="self-start text-xs font-medium text-danger hover:underline"
-                  >
-                    Remover número
-                  </ConfirmAction>
-                </div>
+                    <p className="text-sm text-amber-ink">
+                      Desconectado {relativeTime(whatsapp.disconnected_at)}{whatsapp.disconnect_reason ? `: ${whatsapp.disconnect_reason}` : ""}. {bot.name} parou de responder por este número. As conversas antigas continuam no painel.
+                    </p>
+                    <p className="text-sm text-amber-ink"><strong>Próximo passo:</strong> {disconnectNextStep(whatsapp.disconnect_reason, Boolean(whatsapp.coexistence))}</p>
+                  </div>
+                  <SettingGroup title="Conectar de novo">
+                    {signup && (
+                      <>
+                        <SettingRow icon={<Send size={18} />} title="Mandar um link para o cliente" summary="Quem conecta é o dono do WhatsApp, com o Facebook dele" footer="close">
+                          <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
+                        </SettingRow>
+                        <SettingRow icon={<Smartphone size={18} />} title="Conectar de novo agora" summary="Com o cliente do lado, pela janela da Meta" footer="close">
+                          <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
+                            <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence={Boolean(whatsapp.coexistence)} label="Conectar de novo agora" primary={false} />
+                          </ChannelAcceptGate>
+                        </SettingRow>
+                      </>
+                    )}
+                    <SettingRow
+                      icon={<Ban size={18} />}
+                      title="Remover este número"
+                      summary="O número sai do chatbot e você pode conectar outro"
+                      trailing={
+                        <ConfirmAction action={disconnectWhatsApp.bind(null, id)} title="Remover este número?" description="O número sai do chatbot e você pode conectar outro. As conversas antigas continuam no painel." confirmLabel="Remover" className="btn-danger py-1.5 text-xs">
+                          Remover
+                        </ConfirmAction>
+                      }
+                    />
+                  </SettingGroup>
+                </>
               ) : whatsapp ? (
                 <>
                   <div className="card flex flex-col gap-3 p-5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">conectado</span>
-                      {whatsapp.coexistence && <span className="rounded-full bg-ground px-2.5 py-0.5 text-xs font-semibold text-muted">também no app do celular</span>}
-                      <span className="display text-lg font-bold">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
-                      {whatsapp.verified_name && <span className="text-sm text-muted">· {whatsapp.verified_name}</span>}
+                      <StatusPill tone="ok">conectado</StatusPill>
+                      {whatsapp.coexistence && <StatusPill>também no app do celular</StatusPill>}
+                    </div>
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-xl font-medium text-ink">{whatsapp.display_phone ?? whatsapp.phone_number_id}</span>
+                      {whatsapp.verified_name && <span className="text-sm text-muted">{whatsapp.verified_name}</span>}
                     </div>
                     <p className="text-sm text-ink-2">Ligado {relativeTime(whatsapp.created_at)}. {bot.status === "live" ? "Mande uma mensagem para este número para testar." : "O chatbot não está publicado: ele só responde no WhatsApp depois de clicar em “Publicar” no topo."}</p>
                     <WhatsAppDiagnostics botId={id} />
-                    <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp" connected />
-                    <ConfirmAction
-                      action={disconnectWhatsApp.bind(null, id)}
-                      title="Desconectar o WhatsApp?"
-                      description={<>O assistente para de responder pelo número <strong className="text-ink">{whatsapp.display_phone ?? whatsapp.phone_number_id}</strong>. As conversas antigas continuam no painel.</>}
-                      confirmLabel="Desconectar"
-                      className="self-start text-xs font-medium text-danger hover:underline"
-                    >
-                      Desconectar
-                    </ConfirmAction>
                   </div>
-                  <MarketingOptInForm botId={id} on={Boolean(bot.marketing_optin_offer)} company={bot.client_name} canEdit={canConfig} action={setMarketingOptIn.bind(null, id)} />
-                  <WhatsAppUsage botId={id} />
-                  <WhatsAppTemplates botId={id} />
+                  <SettingGroup title="Mensagens">
+                    <SettingRow
+                      icon={<Megaphone size={18} />}
+                      title="Oferecer novidades"
+                      summary={bot.marketing_optin_offer ? "Ligado: o assistente pergunta uma vez a cada contato, no fim da conversa" : "Desligado: só quem aceitou antes pode receber campanhas"}
+                      description="O assistente pergunta uma vez a cada contato, quando a conversa termina, se ele quer receber novidades e promoções. Só quem aceita poderá receber campanhas; a resposta, o texto e a data ficam guardados como prova, e quem responde SAIR deixa de receber na hora. Quem disse que não tem 18 anos não recebe a pergunta."
+                      trailing={canConfig ? <AutoSwitch checked={Boolean(bot.marketing_optin_offer)} action={setMarketingOptIn.bind(null, id)} name="offer" label="Oferecer novidades" /> : undefined}
+                      dialogTitle="A pergunta das novidades"
+                      footer="close"
+                    >
+                      <div className="flex flex-col gap-2 rounded-[12px] bg-raised p-3 text-sm" aria-label="Prévia da mensagem">
+                        <span className="text-xs font-semibold text-muted">Prévia no WhatsApp</span>
+                        <p className="max-w-[440px] rounded-lg bg-panel px-3 py-2">{optInOfferText(bot.client_name)}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {OPTIN_BUTTONS.map((b) => (
+                            <span key={b.id} className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-brand">
+                              {b.title}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {!canConfig && <p className="text-xs text-muted">Só quem configura o chatbot muda esta opção.</p>}
+                    </SettingRow>
+                    <SettingRow icon={<FileText size={18} />} title="Modelos de mensagem" summary="Os modelos aprovados pela Meta: retomar conversas, campanhas e lembretes" size="lg" footer="close">
+                      <WhatsAppTemplates botId={id} />
+                    </SettingRow>
+                    <SettingRow icon={<ChartColumn size={18} />} title="Uso do mês" summary="Mensagens enviadas e as que a Meta cobrou, por categoria, com a estimativa em reais" size="lg" footer="close">
+                      <WhatsAppUsage botId={id} />
+                    </SettingRow>
+                  </SettingGroup>
+                  <SettingGroup title="Conta">
+                    <SettingRow icon={<ShieldCheck size={18} />} title="Termos do canal" summary="O aceite do negócio e as atividades respondidas" footer="close">
+                      <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp" connected />
+                    </SettingRow>
+                    <SettingRow
+                      icon={<Ban size={18} />}
+                      title="Desconectar o WhatsApp"
+                      summary="O assistente para de responder por este número"
+                      trailing={
+                        <ConfirmAction
+                          action={disconnectWhatsApp.bind(null, id)}
+                          title="Desconectar o WhatsApp?"
+                          description={<>O assistente para de responder pelo número <strong className="text-ink">{whatsapp.display_phone ?? whatsapp.phone_number_id}</strong>. As conversas antigas continuam no painel.</>}
+                          confirmLabel="Desconectar"
+                          className="btn-danger py-1.5 text-xs"
+                        >
+                          Desconectar
+                        </ConfirmAction>
+                      }
+                    />
+                  </SettingGroup>
                 </>
               ) : (
-                <div className="card flex flex-col gap-4 p-5">
+                <SettingGroup title="Conectar o WhatsApp">
                   {signup ? (
                     <>
-                      <div className="flex flex-col gap-2 rounded-xl border border-brand-line bg-brand-soft p-4">
-                        <div className="text-sm font-semibold">Mande um link para o cliente conectar</div>
-                        <p className="text-sm text-ink-2">Quem conecta é o dono do WhatsApp, com o Facebook dele. O link abre uma página com a sua marca, explica o passo a passo e o cadastro do cartão na Meta. Não precisa de conta nem de senha.</p>
+                      <SettingRow icon={<Send size={18} />} title="Mandar um link para o cliente" summary="O jeito mais simples: quem conecta é o dono do WhatsApp, com o Facebook dele" description="O link abre uma página com a sua marca, explica o passo a passo e o cadastro do cartão na Meta. Não precisa de conta nem de senha." footer="close">
                         <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
-                      </div>
-                      <p className="pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted">Ou conecte agora, com o cliente do lado</p>
-                      <ConnectChecklist />
-                      <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
-                      <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
-                        <div className="text-sm font-semibold">Já atende pelo WhatsApp Business no celular</div>
-                        <p className="text-sm text-ink-2">O número continua funcionando no app do celular. {bot.name} responde as mensagens; quando alguém da equipe responde pelo celular, a resposta aparece em Conversas e {bot.name} fica quieto naquela conversa por 1 hora.</p>
-                        <CoexistenceConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar o WhatsApp Business do celular" variant={esVariantOf(sp.es)} />
-                        <p className="text-xs text-muted">No celular, abra o WhatsApp Business atualizado e aceite quando a Meta pedir para compartilhar contatos e histórico.</p>
-                      </div>
-                      <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
-                        <div className="text-sm font-semibold">Número novo, só para o atendimento</div>
-                        <p className="text-sm text-ink-2">Um número que não está em nenhum WhatsApp. Ele passa a funcionar só pela API, sem app no celular.</p>
-                        <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar número novo" primary={false} />
-                      </div>
-                      </ChannelAcceptGate>
+                      </SettingRow>
+                      <SettingRow icon={<Smartphone size={18} />} title="Já atende pelo WhatsApp Business no celular" summary="O número continua no app do celular, e o assistente responde junto" description={`Quando alguém da equipe responde pelo celular, a resposta aparece em Conversas e ${bot.name} fica quieto naquela conversa por 1 hora.`} footer="close">
+                        <ConnectChecklist />
+                        <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
+                          <CoexistenceConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar o WhatsApp Business do celular" variant={esVariantOf(sp.es)} />
+                          <p className="text-xs text-muted">No celular, abra o WhatsApp Business atualizado e aceite quando a Meta pedir para compartilhar contatos e histórico.</p>
+                        </ChannelAcceptGate>
+                      </SettingRow>
+                      <SettingRow icon={<Phone size={18} />} title="Número novo, só para o atendimento" summary="Um número que não está em nenhum WhatsApp: funciona só pela API, sem app no celular" footer="close">
+                        <ConnectChecklist />
+                        <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
+                          <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} label="Conectar número novo" primary={false} />
+                        </ChannelAcceptGate>
+                      </SettingRow>
                     </>
                   ) : (
-                    <p className="text-sm text-muted">O botão de conexão aparece quando META_APP_ID e WHATSAPP_CONFIG_ID estiverem configurados.</p>
+                    <p className="px-4 py-4 text-sm text-muted">O botão de conexão aparece quando META_APP_ID e WHATSAPP_CONFIG_ID estiverem configurados.</p>
                   )}
-                  <details className="border-t border-line-2 pt-3 text-sm">
-                    <summary className="cursor-pointer text-xs font-semibold text-muted">Ligar pelo ID (número de teste do app)</summary>
+                  <SettingRow icon={<Hash size={18} />} title="Ligar pelo ID" summary="Número de teste do app da Meta" footer="close">
                     {/* sem o cadastro da Meta configurado (ex.: dev com o número de teste), o aceite fica aqui */}
-                    <div className="mt-3">
-                      {signup ? (
-                          <ActionForm action={connectWhatsApp.bind(null, id)} className="flex flex-col gap-4">
-                            <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
-                            <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
-                            <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Usa o token do servidor (WHATSAPP_TOKEN).</p>
-                            <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
-                          </ActionForm>
-                      ) : (
-                        <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
-                            <ActionForm action={connectWhatsApp.bind(null, id)} className="flex flex-col gap-4">
-                              <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
-                              <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
-                              <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Usa o token do servidor (WHATSAPP_TOKEN).</p>
-                              <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
-                            </ActionForm>
-                        </ChannelAcceptGate>
-                      )}
-                    </div>
-                  </details>
-                </div>
+                    {signup ? (
+                      <ActionForm action={connectWhatsApp.bind(null, id)} className="flex flex-col gap-4">
+                        <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
+                        <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
+                        <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Usa o token do servidor (WHATSAPP_TOKEN).</p>
+                        <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
+                      </ActionForm>
+                    ) : (
+                      <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
+                        <ActionForm action={connectWhatsApp.bind(null, id)} className="flex flex-col gap-4">
+                          <div><label htmlFor="phone_number_id" className="label">Phone number ID</label><input id="phone_number_id" name="phone_number_id" required inputMode="numeric" className="input" placeholder="1234567890123456" /></div>
+                          <div><label htmlFor="waba_id" className="label">WhatsApp Business Account ID (opcional)</label><input id="waba_id" name="waba_id" inputMode="numeric" className="input" /></div>
+                          <p className="text-xs text-muted">Os dois aparecem no app da Meta, em WhatsApp › Configuração da API. Usa o token do servidor (WHATSAPP_TOKEN).</p>
+                          <SubmitButton pendingLabel="Conferindo com a Meta…" className="btn-ghost self-start">Ligar pelo ID</SubmitButton>
+                        </ActionForm>
+                      </ChannelAcceptGate>
+                    )}
+                  </SettingRow>
+                </SettingGroup>
               )}
               {!bot.is_demo && <FailedSends botId={id} channel="whatsapp" />}
             </div>
           )}
 
           {tab === "instagram" && (
-            <div className="flex max-w-[640px] flex-col gap-4">
+            // redesenho (23/10/2026): a conta num cartão de situação; o direct e os comentários em linhas com modal
+            <div className="flex max-w-[760px] flex-col gap-5">
               <div>
                 <h2 className="text-[22px] font-medium">Instagram</h2>
                 <p className="text-sm text-muted">{bot.name} responde as mensagens diretas do Instagram do cliente com a mesma base de conhecimento. As mensagens do Instagram não são cobradas pela Meta.</p>
@@ -1063,59 +1108,81 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
               {bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o Instagram.</p>
               ) : instagram && !instagram.disconnected_at ? (
-                <div className="card flex flex-col gap-3 p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">conectado</span>
-                    <span className="display text-lg font-bold">@{instagram.username ?? instagram.ig_user_id}</span>
+                <>
+                  <div className="card flex flex-col gap-3 p-5">
+                    <StatusPill tone="ok">conectado</StatusPill>
+                    <span className="text-xl font-medium text-ink">@{instagram.username ?? instagram.ig_user_id}</span>
+                    {igRenamed && (
+                      <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
+                        A conta mudou o nome no Instagram, de @{igRenamed.from} para @{igRenamed.to} (o BoaVoz percebeu a troca {relativeTime(igRenamed.at)}). O nome e os links com origem abaixo já estão atualizados; os links com o nome antigo (na bio, no QR impresso, nos anúncios) não abrem mais o direct: troque pelos novos.
+                      </p>
+                    )}
+                    <p className="text-sm text-ink-2">Ligado {relativeTime(instagram.created_at)}. {bot.status === "live" ? "Mande uma DM para a conta para testar." : "O chatbot não está publicado: ele só responde no Instagram depois de clicar em “Publicar” no topo."}</p>
+                    <p className="text-xs text-muted">Se o assistente não responder, confira no Instagram da conta: Configurações → Mensagens e respostas a stories → Ferramentas conectadas → “Permitir acesso às mensagens”. O acesso é renovado sozinho a cada 60 dias.</p>
                   </div>
-                  {igRenamed && (
-                    <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">
-                      A conta mudou o nome no Instagram, de @{igRenamed.from} para @{igRenamed.to} (o BoaVoz percebeu a troca {relativeTime(igRenamed.at)}). O nome e os links com origem abaixo já estão atualizados; os links com o nome antigo (na bio, no QR impresso, nos anúncios) não abrem mais o direct: troque pelos novos.
-                    </p>
-                  )}
-                  <p className="text-sm text-ink-2">Ligado {relativeTime(instagram.created_at)}. {bot.status === "live" ? "Mande uma DM para a conta para testar." : "O chatbot não está publicado: ele só responde no Instagram depois de clicar em “Publicar” no topo."}</p>
-                  <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="instagram" connected />
-                  <p className="text-xs text-muted">Se o assistente não responder, confira no Instagram da conta: Configurações → Mensagens e respostas a stories → Ferramentas conectadas → “Permitir acesso às mensagens”. O acesso é renovado sozinho a cada 60 dias.</p>
-                  <ConfirmAction
-                    action={disconnectInstagram.bind(null, id)}
-                    title="Desconectar o Instagram?"
-                    description={<>O assistente para de responder as mensagens de <strong className="text-ink">@{instagram.username ?? instagram.ig_user_id}</strong>. As conversas antigas continuam no painel.</>}
-                    confirmLabel="Desconectar"
-                    className="self-start text-xs font-medium text-danger hover:underline"
-                  >
-                    Desconectar
-                  </ConfirmAction>
-                </div>
+                </>
               ) : (
-                <div className="card flex flex-col gap-4 p-5">
+                <>
                   {instagram?.disconnected_at && (
                     <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">@{instagram.username ?? instagram.ig_user_id} foi desconectado {relativeTime(instagram.disconnected_at)}{instagram.disconnect_reason ? `: ${instagram.disconnect_reason}` : ""}. Conecte de novo abaixo.</p>
                   )}
-                  <div className="flex flex-col gap-1.5 text-sm text-ink-2">
-                    <div className="font-semibold text-ink">Antes de conectar, a conta precisa:</div>
+                  <div className="flex flex-col gap-1.5 rounded-[14px] bg-raised/70 px-4 py-3 text-sm text-ink-2">
+                    <div className="font-medium text-ink">Antes de conectar, a conta precisa:</div>
                     <ul className="ml-5 list-disc space-y-0.5">
                       <li>ser uma <strong>conta profissional</strong> (Empresa ou Criador);</li>
                       <li>ter ligado <strong>“Permitir acesso às mensagens”</strong> em Configurações → Mensagens e respostas a stories → Ferramentas conectadas.</li>
                     </ul>
                   </div>
-                  <div className="flex flex-col gap-2 rounded-xl border border-brand-line bg-brand-soft p-4">
-                    <div className="text-sm font-semibold">Mande um link para o cliente conectar</div>
-                    <p className="text-sm text-ink-2">Quem conecta é o dono da conta, com o login do Instagram dele. O link abre uma página com a sua marca e o passo a passo. Não precisa de conta nem de senha no painel.</p>
-                    <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id, "instagram")} clientName={bot.client_name} channelName="Instagram" />
-                  </div>
-                  <p className="pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted">Ou conecte agora, com o login da conta</p>
-                  <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="instagram">
-                    <a href={`/api/instagram/connect?bot=${id}`} className="btn-ghost self-start">Conectar Instagram</a>
-                  </ChannelAcceptGate>
-                </div>
+                  <SettingGroup title="Conectar o Instagram">
+                    <SettingRow icon={<Send size={18} />} title="Mandar um link para o cliente" summary="Quem conecta é o dono da conta, com o login do Instagram dele" description="O link abre uma página com a sua marca e o passo a passo. Não precisa de conta nem de senha no painel." footer="close">
+                      <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id, "instagram")} clientName={bot.client_name} channelName="Instagram" />
+                    </SettingRow>
+                    <SettingRow icon={<Smartphone size={18} />} title="Conectar agora" summary="Com o login da conta, nesta tela" footer="close">
+                      <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="instagram">
+                        <a href={`/api/instagram/connect?bot=${id}`} className="btn-primary self-start">Conectar Instagram</a>
+                      </ChannelAcceptGate>
+                    </SettingRow>
+                  </SettingGroup>
+                </>
               )}
               {!bot.is_demo && (
-                <>
-                  <IceBreakersCard questions={iceBreakersOf(bot)} syncedAt={bot.ig_ice_breakers_synced_at ?? null} error={bot.ig_ice_breakers_error ?? null} connected={Boolean(instagram && !instagram.disconnected_at)} save={saveIceBreakers.bind(null, id)} />
-                  <RefLinksCard username={instagram?.username ?? null} links={refLinks} hasIceBreakers={iceBreakersOf(bot).length > 0} add={addRefLink.bind(null, id)} remove={removeRefLink.bind(null, id)} />
-                  <KeywordsCard keywords={keywords} commentsOn={commentsOn} posts={postChoices} save={saveKeyword.bind(null, id)} remove={removeKeyword.bind(null, id)} />
-                  <InstagramCommentsCard enabled={commentsOn} comments={comments} posts={postsById} ai={{ mode: bot.ig_comments_ai ?? "off", mediaIds: bot.ig_comments_ai_media_ids ?? null, posts: postChoices, withAi: botHasAi(bot), save: saveCommentsAi.bind(null, id) }} />
-                </>
+                <SettingGroup title="Direct e comentários">
+                  <SettingRow icon={<MessageCircleQuestionMark size={18} />} title="Perguntas prontas do direct" summary={iceBreakersOf(bot).length ? `${iceBreakersOf(bot).length} ${iceBreakersOf(bot).length === 1 ? "pergunta" : "perguntas"}: ${iceBreakersOf(bot).slice(0, 2).join(" · ")}` : "Nenhuma pergunta pronta"} size="lg" footer="close">
+                    <IceBreakersCard questions={iceBreakersOf(bot)} syncedAt={bot.ig_ice_breakers_synced_at ?? null} error={bot.ig_ice_breakers_error ?? null} connected={Boolean(instagram && !instagram.disconnected_at)} save={saveIceBreakers.bind(null, id)} />
+                  </SettingRow>
+                  <SettingRow icon={<Link2 size={18} />} title="Links com origem" summary={refLinks.length ? `${refLinks.length} ${refLinks.length === 1 ? "link" : "links"} para a bio, o QR e os anúncios` : "Nenhum link com origem"} size="lg" footer="close">
+                    <RefLinksCard username={instagram?.username ?? null} links={refLinks} hasIceBreakers={iceBreakersOf(bot).length > 0} add={addRefLink.bind(null, id)} remove={removeRefLink.bind(null, id)} />
+                  </SettingRow>
+                  <SettingRow icon={<Tags size={18} />} title="Palavras-chave" summary={keywords.length ? `${keywords.length} ${keywords.length === 1 ? "palavra" : "palavras"}` : "Nenhuma palavra-chave"} size="lg" footer="close">
+                    <KeywordsCard keywords={keywords} commentsOn={commentsOn} posts={postChoices} save={saveKeyword.bind(null, id)} remove={removeKeyword.bind(null, id)} />
+                  </SettingRow>
+                  <SettingRow icon={<MessagesSquare size={18} />} title="Comentários dos posts" summary={commentsOn ? `${comments.length} ${comments.length === 1 ? "comentário recente" : "comentários recentes"}` : "Ainda não liberado pela Meta"} size="lg" footer="close">
+                    <InstagramCommentsCard enabled={commentsOn} comments={comments} posts={postsById} ai={{ mode: bot.ig_comments_ai ?? "off", mediaIds: bot.ig_comments_ai_media_ids ?? null, posts: postChoices, withAi: botHasAi(bot), save: saveCommentsAi.bind(null, id) }} />
+                  </SettingRow>
+                  {instagram && !instagram.disconnected_at && (
+                    <>
+                      <SettingRow icon={<ShieldCheck size={18} />} title="Termos do canal" summary="O aceite do negócio e as atividades respondidas" footer="close">
+                        <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="instagram" connected />
+                      </SettingRow>
+                      <SettingRow
+                        icon={<Ban size={18} />}
+                        title="Desconectar o Instagram"
+                        summary="O assistente para de responder as mensagens desta conta"
+                        trailing={
+                          <ConfirmAction
+                            action={disconnectInstagram.bind(null, id)}
+                            title="Desconectar o Instagram?"
+                            description={<>O assistente para de responder as mensagens de <strong className="text-ink">@{instagram.username ?? instagram.ig_user_id}</strong>. As conversas antigas continuam no painel.</>}
+                            confirmLabel="Desconectar"
+                            className="btn-danger py-1.5 text-xs"
+                          >
+                            Desconectar
+                          </ConfirmAction>
+                        }
+                      />
+                    </>
+                  )}
+                </SettingGroup>
               )}
               {!bot.is_demo && <FailedSends botId={id} channel="instagram" />}
             </div>
@@ -1147,8 +1214,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
           {tab === "instalacao" && (
             <div className="flex max-w-[860px] flex-col gap-5">
               <div>
-                <h2 className="text-[22px] font-medium">Instalação</h2>
-                <p className="text-sm text-muted">Escolha onde o site do cliente foi feito e siga o passo a passo. O código é o mesmo em todo lugar; o que muda é onde colar.</p>
+                <h2 className="text-[22px] font-medium">Chat do site</h2>
+                <p className="text-sm text-muted">O balão de conversa no site do cliente: copie o código e cole no site, ou siga o passo a passo da plataforma onde ele foi feito.</p>
               </div>
               {bot.status !== "live" && !bot.is_demo && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O chatbot ainda não está publicado. Você pode instalar agora: o balão fica invisível no site do cliente até você clicar em “Publicar” no topo.</p>}
               <InstallGuide
