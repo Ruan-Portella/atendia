@@ -11,8 +11,8 @@ import { billingEnabled } from "@/lib/stripe";
 import { dateBR } from "@/lib/retention";
 import { periodLabel } from "@/lib/report";
 import { Kpi } from "@/components/kpi";
-import { CreditBuyForm } from "@/components/credit-forms";
-import { DialogButton, SettingGroup, SettingRow, SwitchField } from "@/components/ui/setting-row";
+import { AutoRechargeFields, CreditBuyForm } from "@/components/credit-forms";
+import { DialogButton, SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { HowItWorks, StatusPill } from "@/components/ui/form-section";
 import { FlashToast } from "@/components/ui/flash-toast";
 import { cn } from "@/lib/utils";
@@ -27,22 +27,6 @@ const TABS = [
   ["compras", "Compras e recargas"],
   ["uso", "Uso do mês"],
 ] as const;
-
-/** Um campo em reais (só números), com o R$ na frente. */
-function Money({ name, label, defaultValue, hint }: { name: string; label: string; defaultValue: string; hint?: string }) {
-  return (
-    <div>
-      <label htmlFor={`auto-${name}`} className="label">
-        {label}
-      </label>
-      <div className="relative w-40">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">R$</span>
-        <input id={`auto-${name}`} name={name} inputMode="numeric" defaultValue={defaultValue} className="input pl-9" />
-      </div>
-      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
-    </div>
-  );
-}
 
 /**
  * Cobrança → Crédito (revisão de preços, parte 4c): o saldo pré-pago que paga o excedente (R$ 0,35
@@ -125,12 +109,7 @@ export default async function CreditoPage({ searchParams }: PageProps<"/painel/c
           description="Quando o saldo cai abaixo do valor escolhido, compramos outra recarga no cartão da assinatura, até o limite do mês. Com o pagamento da assinatura atrasado, a recarga não roda."
           action={saveAutoRecharge}
         >
-          <SwitchField name="auto" defaultChecked={Boolean(agency.credit_auto_enabled)} label="Recarga automática ligada" />
-          <div className="flex flex-wrap gap-4">
-            <Money name="below" label="Quando o saldo ficar abaixo de" defaultValue={reais(agency.credit_auto_below_cents) || "20"} />
-            <Money name="amount" label="Comprar" defaultValue={reais(agency.credit_auto_amount_cents) || "100"} hint={`Mínimo de ${brlCents(CREDIT_MIN_BRL)}.`} />
-            <Money name="limit" label="Até, por mês" defaultValue={reais(agency.credit_auto_month_limit_cents) || "300"} />
-          </div>
+          <AutoRechargeFields enabled={Boolean(agency.credit_auto_enabled)} below={reais(agency.credit_auto_below_cents) || "20"} amount={reais(agency.credit_auto_amount_cents) || "100"} limit={reais(agency.credit_auto_month_limit_cents) || "300"} />
         </SettingRow>
       </SettingGroup>
 

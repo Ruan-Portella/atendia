@@ -87,3 +87,60 @@ export function CreditBuyForm({ enabled }: { enabled: boolean }) {
     </div>
   );
 }
+
+/** Reais digitados ("1.000", "50,00") em número inteiro; vazio ou inválido, 0. */
+const toReais = (v: string) => {
+  const n = Number(v.replace(/R\$|\s|\./g, "").replace(/,00$/, ""));
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+};
+
+/**
+ * Os campos da recarga automática como uma regra que se lê (redesenho, etapa 5, a pedido do usuário
+ * em 22/10: os três campos soltos ficavam estranhos): cada valor numa linha, com o rótulo à esquerda,
+ * e o resumo em frase embaixo, que muda enquanto digita. Desligada, a regra fica apagada, mas os
+ * valores continuam no formulário (para não se perderem ao salvar).
+ */
+export function AutoRechargeFields({ enabled, below, amount, limit }: { enabled: boolean; below: string; amount: string; limit: string }) {
+  const [on, setOn] = useState(enabled);
+  const [v, setV] = useState({ below, amount, limit });
+  const n = { below: toReais(v.below), amount: toReais(v.amount), limit: toReais(v.limit) };
+  const times = n.amount ? Math.floor(n.limit / n.amount) : 0;
+  const row = (key: keyof typeof v, label: string, hint?: string) => (
+    <label className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3">
+      <span className="min-w-0">
+        <span className="block text-sm text-ink">{label}</span>
+        {hint && <span className="block text-xs text-muted">{hint}</span>}
+      </span>
+      <span className="relative">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">R$</span>
+        <input name={key} inputMode="numeric" value={v[key]} onChange={(e) => setV({ ...v, [key]: e.target.value })} aria-label={label} className="input w-32 py-2 pl-9 text-right tabular" />
+      </span>
+    </label>
+  );
+  return (
+    <div className="flex flex-col gap-4">
+      <label className="flex items-center justify-between gap-4">
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-ink">Recarga automática</span>
+          <span className="block text-xs text-muted">{on ? "Ligada: o saldo nunca fica a zero sem você ver." : "Desligada: quando o saldo acabar, os chatbots no excedente param."}</span>
+        </span>
+        <input type="checkbox" role="switch" name="auto" checked={on} onChange={(e) => setOn(e.target.checked)} className="switch" aria-label="Recarga automática ligada" />
+      </label>
+      <div className={cn("flex flex-col divide-y divide-line-2 rounded-[14px] border border-line transition-opacity duration-[120ms]", !on && "opacity-50")}>
+        {row("below", "Quando o saldo ficar abaixo de")}
+        {row("amount", "Recarregar com", `no cartão da assinatura · mínimo de ${brlCents(CREDIT_MIN_BRL)}`)}
+        {row("limit", "No máximo, por mês", "a soma das recargas do mês")}
+      </div>
+      {on &&
+        (n.amount && n.amount < CREDIT_MIN_BRL ? (
+          <p className="rounded-[12px] bg-amber-soft px-3 py-2 text-sm text-amber-ink">A recarga precisa ser de pelo menos {brlCents(CREDIT_MIN_BRL)}.</p>
+        ) : n.amount && n.limit < n.amount ? (
+          <p className="rounded-[12px] bg-amber-soft px-3 py-2 text-sm text-amber-ink">O máximo do mês é menor que uma recarga: nenhuma recarga vai rodar.</p>
+        ) : n.below && n.amount && n.limit ? (
+          <p className="rounded-[12px] bg-raised px-3 py-2 text-sm text-ink-2">
+            Quando o saldo cair abaixo de <strong className="tabular text-ink">{brlCents(n.below)}</strong>, compramos <strong className="tabular text-ink">{brlCents(n.amount)}</strong> no cartão da assinatura, até <strong className="tabular text-ink">{brlCents(n.limit)}</strong> por mês ({times === 1 ? "1 recarga" : `até ${times} recargas`}).
+          </p>
+        ) : null)}
+    </div>
+  );
+}
