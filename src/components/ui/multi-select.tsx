@@ -17,18 +17,37 @@ export interface MultiOption {
  * agrupada, com a busca, o "Todos" e o "Limpar". Cada escolhido vai no formulário como um campo
  * `name` (como as caixinhas iam). Teclado: setas, Enter, Esc e Backspace tira o último.
  */
-export function MultiSelect({ name, options, defaultValue = [], placeholder = "Escolha…", label, empty = "Nada encontrado." }: { name: string; options: MultiOption[]; defaultValue?: string[]; placeholder?: string; label: string; empty?: string }) {
+export function MultiSelect({
+  name,
+  options,
+  defaultValue = [],
+  placeholder = "Escolha…",
+  label,
+  empty = "Nada encontrado.",
+  maxChips = 5,
+}: {
+  name: string;
+  options: MultiOption[];
+  defaultValue?: string[];
+  placeholder?: string;
+  label: string;
+  empty?: string;
+  /** quantas etiquetas aparecem no campo; o resto vira "+N" (a pedido do usuário em 22/10: com muitos, o campo ficava gigante) */
+  maxChips?: number;
+}) {
   const [picked, setPicked] = useState<string[]>(() => defaultValue.filter((v) => options.some((o) => o.value === v)));
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hi, setHi] = useState(0);
+  // o "+N" abre a lista só com os escolhidos
+  const [onlyPicked, setOnlyPicked] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
 
   const norm = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
   const q = norm(query.trim());
-  const shown = options.filter((o) => !q || norm(`${o.label} ${o.group ?? ""}`).includes(q));
+  const shown = options.filter((o) => (!onlyPicked || picked.includes(o.value)) && (!q || norm(`${o.label} ${o.group ?? ""}`).includes(q)));
   const byValue = new Map(options.map((o) => [o.value, o]));
   const toggle = (v: string) => setPicked((cur) => (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]));
 
@@ -36,7 +55,10 @@ export function MultiSelect({ name, options, defaultValue = [], placeholder = "E
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      if (!root.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setOnlyPicked(false);
+      }
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -61,6 +83,7 @@ export function MultiSelect({ name, options, defaultValue = [], placeholder = "E
         e.preventDefault();
         e.stopPropagation();
         setOpen(false);
+        setOnlyPicked(false);
       }
     } else if (e.key === "Backspace" && !query && picked.length) {
       setPicked((cur) => cur.slice(0, -1));
@@ -79,12 +102,12 @@ export function MultiSelect({ name, options, defaultValue = [], placeholder = "E
         }}
         className={cn("input flex min-h-[44px] cursor-text flex-wrap items-center gap-1.5 py-1.5 pr-9", open && "border-brand ring-[3px] ring-brand/25")}
       >
-        {picked.map((v) => {
+        {picked.slice(0, maxChips).map((v) => {
           const o = byValue.get(v);
           return (
-            <span key={v} className="inline-flex items-center gap-1 rounded-full bg-brand-soft py-0.5 pl-2.5 pr-1 text-[13px] text-brand">
-              {o?.label ?? v}
-              {o?.group && <span className="text-brand/70">· {o.group}</span>}
+            // a etiqueta só com o nome (o grupo, ao passar o mouse e na lista), para o campo não crescer
+            <span key={v} title={o?.group ? `${o.label} · ${o.group}` : undefined} className="inline-flex max-w-[12rem] items-center gap-1 rounded-full bg-brand-soft py-0.5 pl-2.5 pr-1 text-[13px] text-brand">
+              <span className="truncate">{o?.label ?? v}</span>
               <button
                 type="button"
                 aria-label={`Tirar ${o?.label ?? v}`}
@@ -99,6 +122,24 @@ export function MultiSelect({ name, options, defaultValue = [], placeholder = "E
             </span>
           );
         })}
+        {picked.length > maxChips && (
+          <button
+            type="button"
+            title={picked
+              .slice(maxChips)
+              .map((v) => byValue.get(v)?.label ?? v)
+              .join(", ")}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOnlyPicked(true);
+              setOpen(true);
+              input.current?.focus();
+            }}
+            className="inline-flex items-center rounded-full border border-brand/30 px-2.5 py-0.5 text-[13px] font-medium text-brand hover:bg-brand-soft"
+          >
+            +{picked.length - maxChips}
+          </button>
+        )}
         <input
           ref={input}
           role="combobox"
@@ -114,7 +155,7 @@ export function MultiSelect({ name, options, defaultValue = [], placeholder = "E
           onFocus={() => setOpen(true)}
           onKeyDown={onKey}
           placeholder={picked.length ? "" : placeholder}
-          className="min-w-[8rem] flex-1 bg-transparent py-0.5 text-sm text-ink outline-none placeholder:text-muted"
+          className={cn("bg-transparent py-0.5 text-sm text-ink outline-none placeholder:text-muted", !picked.length ? "min-w-[8rem] flex-1" : open ? "min-w-[3rem] flex-1" : "w-4 min-w-0")}
         />
         <ChevronDown size={16} className={cn("pointer-events-none absolute right-3 top-3.5 text-muted transition-transform duration-[120ms]", open && "rotate-180")} />
       </div>
@@ -124,6 +165,11 @@ export function MultiSelect({ name, options, defaultValue = [], placeholder = "E
           <div className="flex items-center justify-between gap-2 border-b border-line-2 px-3 py-1.5 text-xs">
             <span className="text-muted">{picked.length ? `${picked.length} escolhido${picked.length === 1 ? "" : "s"}` : "Nenhum escolhido"}</span>
             <span className="flex gap-3">
+              {(picked.length > 0 || onlyPicked) && (
+                <button type="button" onClick={() => setOnlyPicked(!onlyPicked)} className="font-medium text-ink-2 hover:text-ink">
+                  {onlyPicked ? "Ver todos" : "Ver os escolhidos"}
+                </button>
+              )}
               <button type="button" onClick={() => setPicked([...new Set([...picked, ...shown.map((o) => o.value)])])} className="font-medium text-brand hover:underline">
                 {q ? "Escolher os achados" : "Escolher todos"}
               </button>
