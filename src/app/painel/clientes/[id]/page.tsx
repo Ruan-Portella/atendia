@@ -31,6 +31,7 @@ import { deleteBot, deleteClientRecord, eraseContactData, updateClientRecord } f
 import { ContactsList } from "@/components/contacts-list";
 import { ContactImportDialog } from "@/components/contact-import-dialog";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { businessMode } from "@/lib/business-mode";
 import { ClientCampaigns } from "@/components/client-campaigns";
 import { ClientIntegrationsSummary } from "@/components/integrations/client-integrations-summary";
 import { ClientSectors } from "@/components/client-sectors";
@@ -101,13 +102,15 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const [{ id }, sp, { role }] = await Promise.all([params, searchParams, requireAgency()]);
   // equipe (leva B1'): o atendente vê os chatbots (para chegar às conversas) e as conversas
   const canConfig = can(role, "config");
-  const tabs = TABS.filter(([t]) => canConfig || t === "visao" || t === "conversas");
+  const supabase = await createClient();
+  // o perfil do negócio (23/10/2026): a página do próprio negócio, sem o acesso nem o portal do cliente
+  const business = Boolean(await businessMode(supabase, (await requireAgency()).agency));
+  const tabs = TABS.filter(([t]) => (canConfig || t === "visao" || t === "conversas") && !(business && t === "acesso")).map(([t, l]): [Tab, string] => [t, business && t === "dados" ? "Dados do negócio" : business && t === "relatorio" ? "Relatório" : l]);
   const asked = sp.tab === "chatbots" ? "visao" : sp.tab;
   const tab = (tabs.some(([t]) => t === asked) ? asked : "visao") as Tab;
   const label = new Map<string, string>(tabs.map(([t, l]) => [t, l]));
   const sections = SECTIONS.map((s) => ({ ...s, tabs: s.tabs.filter((t) => label.has(t)) })).filter((s) => s.tabs.length);
   const section = sections.find((s) => s.tabs.includes(tab)) ?? sections[0];
-  const supabase = await createClient();
   // a RLS limita os dados à agência logada
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
@@ -146,7 +149,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   return (
     <>
       <div className="flex flex-col gap-4">
-        <Link href={backFrom(sp.de)?.href ?? "/painel/clientes"} className="text-[13px] font-medium text-muted hover:text-ink">← {backFrom(sp.de)?.label ?? "Clientes"}</Link>
+        {/* no negócio, esta é a página de Chatbots: sem a volta para a lista de clientes */}
+        {(!business || backFrom(sp.de)) && <Link href={backFrom(sp.de)?.href ?? "/painel/clientes"} className="text-[13px] font-medium text-muted hover:text-ink">← {backFrom(sp.de)?.label ?? "Clientes"}</Link>}
         <div className="flex flex-wrap items-center gap-4">
           {/* os rostos dos chatbots do cliente, um sobre o outro (sem chatbot, as iniciais) */}
           {bots.length ? (
@@ -200,13 +204,13 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             <Kpi label="Conversas" value={num(total.conversations)} sub={`30 dias · ${bots.length} chatbot${bots.length === 1 ? "" : "s"}`} />
             <Kpi label="Leads" value={num(total.leads)} sub="nome e contato entregues" />
             <Kpi label="Sem humano" value={`${pct}%`} sub={`${100 - pct}% pediram atendente`} />
-            {canConfig && <Kpi label="Você cobra" value={client.price_cents ? brl(client.price_cents / 100) : "—"} sub={client.price_cents ? "por mês" : "defina em Ajustes"} />}
+            {canConfig && !business && <Kpi label="Você cobra" value={client.price_cents ? brl(client.price_cents / 100) : "—"} sub={client.price_cents ? "por mês" : "defina em Ajustes"} />}
           </div>
 
           <PendingHandoffs items={pending} showClient={false} hrefFor={(h) => `/painel/caixa?fila=todas&c=${h.id}`} />
 
-          {/* 23/10 (pedido do usuário): os atalhos vêm antes dos chatbots */}
-          {canConfig && (
+          {/* 23/10 (pedido do usuário): os atalhos vêm antes dos chatbots; no negócio, sem o portal nem a área do cliente */}
+          {canConfig && !business && (
             <section className="grid gap-3 md:grid-cols-3">
               <SummaryCard title="Relatório do mês" href={href("relatorio")}>
                 {client.report_email ? <>Vai para <span className="text-ink-2">{client.report_email}</span> todo dia 1º. </> : "Sem e-mail para o relatório: o cliente não recebe o resumo do mês. "}
@@ -228,7 +232,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             </div>
             {bots.length === 0 ? (
               <div className="card flex flex-col items-start gap-3 p-6">
-                <p className="text-sm text-muted">{canConfig ? "Este cliente ainda não tem chatbots." : "Nenhum chatbot deste cliente no seu escopo."}</p>
+                <p className="text-sm text-muted">{business ? "O seu negócio ainda não tem chatbots." : canConfig ? "Este cliente ainda não tem chatbots." : "Nenhum chatbot deste cliente no seu escopo."}</p>
                 {canConfig && <CreateButton kind="chatbot" clientId={client.id} className="btn-primary"><Plus size={15} />Criar o primeiro chatbot</CreateButton>}
               </div>
             ) : (
@@ -332,7 +336,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
         />
       )}
 
-      {tab === "relatorio" && <ClientReportTab client={client} base={base} memberEmails={(members ?? []).map((m) => m.email)} />}
+      {tab === "relatorio" && <ClientReportTab client={client} base={base} memberEmails={(members ?? []).map((m) => m.email)} business={business} />}
 
       {tab === "acesso" && <ClientAccessTab client={client} base={base} members={members ?? []} />}
 
@@ -347,18 +351,19 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           <SettingGroup title="Cadastro">
             <SettingRow
               icon={<Building2 size={18} />}
-              title="Dados do cliente"
-              summary={[client.name, client.site?.replace(/^https?:\/\//, ""), client.price_cents ? `${brl(client.price_cents / 100)} por mês` : null].filter(Boolean).join(" · ")}
-              description="Mudar o nome aqui atualiza o nome que aparece no chat de todos os chatbots deste cliente."
+              title={business ? "Dados do negócio" : "Dados do cliente"}
+              summary={[client.name, client.site?.replace(/^https?:\/\//, ""), client.price_cents && !business ? `${brl(client.price_cents / 100)} por mês` : null].filter(Boolean).join(" · ")}
+              description={business ? "Mudar o nome aqui atualiza o nome que aparece no chat de todos os seus chatbots." : "Mudar o nome aqui atualiza o nome que aparece no chat de todos os chatbots deste cliente."}
               action={updateClientRecord.bind(null, client.id)}
             >
-              <ClientFields name={client.name} site={client.site} priceCents={client.price_cents} />
+              <ClientFields name={client.name} site={client.site} priceCents={client.price_cents} business={business} />
             </SettingRow>
           </SettingGroup>
           {can(role, "integrations") && <ClientIntegrationsSummary agencyId={agency.id} clientId={client.id} bots={bots.map((b) => ({ id: b.id, name: b.name }))} />}
           {can(role, "security") && <ClientPrivacy clientId={client.id} clientName={client.name} clientMonths={(client.retention_months as number | null) ?? null} agencyMonths={agency.retention_months} />}
           {can(role, "export") && <ExportLinks clientId={client.id} description={`Os dados de ${client.name}: conversas, contatos e leads, em CSV (abre no Excel) ou JSON. Na saída do cliente, entregue a ele. A exportação fica registrada.`} />}
-          <SettingGroup title="Excluir">
+          {/* no negócio, o cadastro é o próprio negócio: para sair, exclui-se a conta (Segurança) */}
+          {!business && <SettingGroup title="Excluir">
             <SettingRow
               icon={<Trash2 size={18} />}
               title="Excluir este cliente"
@@ -369,7 +374,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
                 </ConfirmAction>
               }
             />
-          </SettingGroup>
+          </SettingGroup>}
         </div>
       )}
     </>

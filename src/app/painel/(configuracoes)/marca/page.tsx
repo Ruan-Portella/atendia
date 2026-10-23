@@ -15,6 +15,8 @@ import { HowItWorks, StatusPill } from "@/components/ui/form-section";
 import { ColorField, LogoField, RetentionField } from "@/components/brand-fields";
 import { CopyButton } from "@/components/copy-button";
 import { ProfileButton } from "@/components/profile-dialog";
+import { createClient } from "@/lib/supabase/server";
+import { businessMode } from "@/lib/business-mode";
 
 export const metadata = { title: "Marca e domínio" };
 
@@ -35,16 +37,20 @@ export default async function MarcaPage() {
   const nameLabel = profile?.nameLabel ?? "Nome da agência";
   const pending = agency.retention_pending_months && agency.retention_effective_at ? { months: agency.retention_pending_months, at: dateBR(agency.retention_effective_at) } : null;
   const now = agency.retention_months ? `${agency.retention_months} meses` : "sem prazo";
+  // o perfil do negócio (23/10/2026): os textos falam do seu negócio, sem portal nem demos
+  const supabase = await createClient();
+  const [{ count: clientCount }, business] = await Promise.all([supabase.from("clients").select("id", { count: "exact", head: true }).eq("agency_id", agency.id), businessMode(supabase, agency)]);
+  const shows = business ? "no rodapé do chat e nos e-mails" : "no rodapé do chat, na demo, no portal e nos e-mails";
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-normal sm:text-[28px]">Marca e domínio</h1>
-        <p className="text-sm text-muted">O que seus clientes e prospects veem: no rodapé do chat, na página de demo, no portal e nos e-mails.</p>
+        <p className="text-sm text-muted">{business ? "O que os seus clientes veem: no rodapé do chat e nos e-mails." : "O que seus clientes e prospects veem: no rodapé do chat, na página de demo, no portal e nos e-mails."}</p>
       </div>
 
       <SettingGroup title="Sua marca">
-        <SettingRow icon={<Building2 size={18} />} title={nameLabel} summary={agency.name} description="Aparece para os clientes e prospects no portal, nas demos e nos e-mails." action={updateAgency}>
+        <SettingRow icon={<Building2 size={18} />} title={nameLabel} summary={agency.name} description={business ? "Aparece para os seus clientes no chat e nos e-mails." : "Aparece para os clientes e prospects no portal, nas demos e nos e-mails."} action={updateAgency}>
           <div>
             <label htmlFor="name" className="label">
               {nameLabel}
@@ -62,8 +68,8 @@ export default async function MarcaPage() {
             )
           }
           title="Logo"
-          summary={agency.logo_url ? "No rodapé do chat, na demo, no portal e nos e-mails" : "Sem logo: no lugar dele vai o nome"}
-          description="Aparece no rodapé do chat, na página de demo, no portal do cliente e nos e-mails."
+          summary={agency.logo_url ? shows.charAt(0).toUpperCase() + shows.slice(1) : "Sem logo: no lugar dele vai o nome"}
+          description={`Aparece ${shows}.`}
           action={updateAgency}
         >
           <LogoField current={agency.logo_url} agencyId={agency.id} />
@@ -77,27 +83,30 @@ export default async function MarcaPage() {
         >
           <ColorField name="brand_color" defaultValue={agency.brand_color} />
         </SettingRow>
-        <SettingRow
-          icon={<MessageCircle size={18} />}
-          title="Seu WhatsApp"
-          summary={agency.support_whatsapp ? `${displayPhone(agency.support_whatsapp)} · o botão de falar com você na demo e no portal` : "Sem número: a demo e o portal ficam sem o botão de falar com você"}
-          summaryTone={agency.support_whatsapp ? undefined : "warn"}
-          description="Quem vê a demo ou o portal fala com você por este número. Vazio, o botão não aparece."
-          action={updateAgency}
-        >
-          <div>
-            <label htmlFor="support_whatsapp" className="label">
-              WhatsApp com o DDD
-            </label>
-            <input id="support_whatsapp" name="support_whatsapp" inputMode="tel" defaultValue={agency.support_whatsapp ? displayPhone(agency.support_whatsapp) : ""} maxLength={30} className="input" placeholder="41 99999-9999" />
-          </div>
-        </SettingRow>
+        {/* o botão de falar com você na demo e no portal: no negócio, sem demo nem portal, não aparece */}
+        {!business && (
+          <SettingRow
+            icon={<MessageCircle size={18} />}
+            title="Seu WhatsApp"
+            summary={agency.support_whatsapp ? `${displayPhone(agency.support_whatsapp)} · o botão de falar com você na demo e no portal` : "Sem número: a demo e o portal ficam sem o botão de falar com você"}
+            summaryTone={agency.support_whatsapp ? undefined : "warn"}
+            description="Quem vê a demo ou o portal fala com você por este número. Vazio, o botão não aparece."
+            action={updateAgency}
+          >
+            <div>
+              <label htmlFor="support_whatsapp" className="label">
+                WhatsApp com o DDD
+              </label>
+              <input id="support_whatsapp" name="support_whatsapp" inputMode="tel" defaultValue={agency.support_whatsapp ? displayPhone(agency.support_whatsapp) : ""} maxLength={30} className="input" placeholder="41 99999-9999" />
+            </div>
+          </SettingRow>
+        )}
         {role === "owner" && (
           <SettingRow
             icon={<Compass size={18} />}
             title={`Como você usa o ${company.brand}`}
-            summary={profile ? `${profile.label} · muda os primeiros passos` : "Ainda sem resposta · muda os primeiros passos"}
-            trailing={<ProfileButton current={agency.profile ?? "agency"} className="btn-ghost shrink-0 py-1.5 text-xs" />}
+            summary={profile ? `${profile.label} · ${business ? "o menu mostra Chatbots no lugar de Clientes" : "muda os primeiros passos"}` : "Ainda sem resposta · muda os primeiros passos"}
+            trailing={<ProfileButton current={agency.profile ?? "agency"} className="btn-ghost shrink-0 py-1.5 text-xs" clientCount={clientCount ?? 0} />}
           />
         )}
       </SettingGroup>
@@ -109,7 +118,7 @@ export default async function MarcaPage() {
               icon={<Globe size={18} />}
               title="Domínio próprio"
               badge={<StatusPill>pacote</StatusPill>}
-              summary={`R$ 29 por mês: as demos, o portal e o chat do site no seu endereço, em vez de ${host}`}
+              summary={business ? `R$ 29 por mês: o chat do site no seu endereço, em vez de ${host}` : `R$ 29 por mês: as demos, o portal e o chat do site no seu endereço, em vez de ${host}`}
               trailing={
                 <Link href="/painel/cobranca" className="btn-ghost shrink-0 py-1.5 text-xs">
                   Assinar
@@ -123,7 +132,7 @@ export default async function MarcaPage() {
                 title="Domínio"
                 badge={domain ? <StatusPill tone={live ? "ok" : "warn"}>{live ? "No ar" : "Falta o DNS"}</StatusPill> : undefined}
                 summary={domain ? `https://${domain}` : `Nenhum: os links usam ${host}`}
-                description={`As demos, o portal do cliente e o código do chat do site passam a usar o seu endereço em vez de ${host}. Este painel continua em ${host}.`}
+                description={business ? `O código do chat do site passa a usar o seu endereço em vez de ${host}. Este painel continua em ${host}.` : `As demos, o portal do cliente e o código do chat do site passam a usar o seu endereço em vez de ${host}. Este painel continua em ${host}.`}
                 action={saveCustomDomain}
                 saveLabel="Salvar domínio"
               >
@@ -163,12 +172,14 @@ export default async function MarcaPage() {
             </>
           )}
         </SettingGroup>
-        <HowItWorks label="Para quem é o domínio próprio">
-          <p>
-            O domínio próprio é para os seus clientes: por ele, eles e os prospects acessam as demos, o portal com o relatório, a área do cliente e o chat do site. Este painel, onde você configura tudo, continua em {host}. Abrir o painel pelo seu
-            domínio mostra só uma página com a sua marca.
-          </p>
-        </HowItWorks>
+        {!business && (
+          <HowItWorks label="Para quem é o domínio próprio">
+            <p>
+              O domínio próprio é para os seus clientes: por ele, eles e os prospects acessam as demos, o portal com o relatório, a área do cliente e o chat do site. Este painel, onde você configura tudo, continua em {host}. Abrir o painel pelo seu
+              domínio mostra só uma página com a sua marca.
+            </p>
+          </HowItWorks>
+        )}
       </div>
 
       <SettingGroup title="Privacidade e LGPD">

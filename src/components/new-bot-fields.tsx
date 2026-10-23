@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  * modelos (pacote Plataforma, a pedido do usuário em 22/10), dá para começar de um modelo: o campo
  * `start` diz qual, e o nome vem do modelo (createDerivedAction).
  */
-export function NewBotFields({ clients, defaultClientId, suggestedName = "", idPrefix, templates = [] }: { clients: ClientOption[]; defaultClientId?: string; suggestedName?: string; idPrefix: string; templates?: Array<{ id: string; name: string }> }) {
+export function NewBotFields({ clients, defaultClientId, suggestedName = "", idPrefix, templates = [], business = false }: { clients: ClientOption[]; defaultClientId?: string; suggestedName?: string; business?: boolean; idPrefix: string; templates?: Array<{ id: string; name: string }> }) {
   const [start, setStart] = useState<"branco" | "modelo">("branco");
   const [template, setTemplate] = useState(templates[0]?.id ?? "");
   const fromTemplate = start === "modelo" && templates.length > 0;
@@ -55,7 +55,7 @@ export function NewBotFields({ clients, defaultClientId, suggestedName = "", idP
         </div>
       )}
       {/* o próprio negócio: o cliente do chatbot é ele mesmo (o nome vem do primeiro acesso) */}
-      <ClientPicker clients={clients} defaultClientId={defaultClientId} suggestedName={suggestedName} idPrefix={idPrefix} />
+      <ClientPicker clients={clients} defaultClientId={defaultClientId} suggestedName={suggestedName} idPrefix={idPrefix} business={business} />
       {!fromTemplate && (
         <>
           <div>

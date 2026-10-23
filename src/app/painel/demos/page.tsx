@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { businessMode } from "@/lib/business-mode";
 import Link from "next/link";
 import { ChevronDown, Flame, Globe, Plus } from "lucide-react";
 import { requirePermission } from "@/lib/agency";
@@ -36,6 +38,8 @@ export const metadata = { title: "Demos" };
  */
 export default async function DemosPage() {
   const { agency } = await requirePermission("config");
+  // as demos são ferramenta de venda da agência: no perfil do negócio, não aparecem (23/10/2026)
+  if (await businessMode(await createClient(), agency)) redirect("/painel");
   const monthLimit = agency.billing_status === "none" ? DEMOS_PER_MONTH_FREE : DEMOS_PER_MONTH;
   const usedThisMonth = agency.demo_month === monthBoundsBR().firstDay ? agency.demo_month_count : 0;
   const supabase = await createClient();

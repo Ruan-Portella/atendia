@@ -1,3 +1,4 @@
+import { isBusinessMode } from "@/lib/first-access";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { dateBR } from "@/lib/retention";
@@ -62,6 +63,8 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     const bots = ((c.bots ?? []) as Array<{ id: string; appearance: { color?: string } | null; face: unknown; created_at: string }>).sort((a, b) => a.created_at.localeCompare(b.created_at));
     return { id: c.id as string, name: c.name as string, color: bots[0]?.appearance?.color ?? null, face: bots[0]?.face ?? null, botIds: bots.map((b) => b.id) };
   });
+  // o perfil do negócio (23/10/2026): Chatbots no lugar de Clientes, sem demos; vale com até um cliente
+  const business = isBusinessMode(agency.profile, clientCount ?? sidebarClients.length) ? { clientId: sidebarClients[0]?.id ?? null } : null;
   // os modais de Novo cliente e Novo chatbot (redesenho, etapa 5): o "+" do menu, o Ctrl K e as telas abrem daqui
   const clientOptions = can(role, "config") ? await getClientOptions(supabase, agency.id) : [];
   // os modelos, para o Novo chatbot começar de um (Plataforma, para quem vê a conta inteira)
@@ -88,8 +91,9 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       usageLabel={`${num(usage)} / ${num(quota)}`}
       clients={sidebarClients}
       clientCount={clientCount ?? sidebarClients.length}
+      business={business}
       me={{ name: memberName(member), email: member.email, avatarUrl: member.avatar_url ?? null }}
-      goTo={<GoTo role={role} packs={packs} wholeAccount={member.scope === "all"} clients={sidebarClients.map(({ id, name, color, face }) => ({ id, name, color, face }))} />}
+      goTo={<GoTo role={role} packs={packs} wholeAccount={member.scope === "all"} business={business} clients={sidebarClients.map(({ id, name, color, face }) => ({ id, name, color, face }))} />}
       menuCollapsed={(await cookies()).get(MENU_COOKIE)?.value === "fechado"}
       notices={
         <>
@@ -116,8 +120,8 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     >
       <AppTheme />
       <HandoffWatcher endpoint="/api/painel/pending" />
-      {can(role, "config") && <CreateDialogs createClient={member.scope === "all" ? createClientRecord : null} createBot={createBot} createDerived={templatesOn ? createDerivedAction : undefined} templates={(templateRows ?? []).map((t) => ({ id: t.id as string, name: t.name as string }))} clients={clientOptions} suggestedName={agency.profile === "business" ? agency.name : ""} />}
-      {onboarding && <OnboardingWidget steps={onboarding} goal={ONBOARDING_GOAL[agency.profile ?? "agency"]} changeProfile={role === "owner" ? (agency.profile ?? "agency") : null} hide={hideOnboarding} />}
+      {can(role, "config") && <CreateDialogs createClient={member.scope === "all" ? createClientRecord : null} createBot={createBot} createDerived={templatesOn ? createDerivedAction : undefined} templates={(templateRows ?? []).map((t) => ({ id: t.id as string, name: t.name as string }))} clients={clientOptions} suggestedName={agency.profile === "business" ? agency.name : ""} business={Boolean(business)} />}
+      {onboarding && <OnboardingWidget steps={onboarding} goal={ONBOARDING_GOAL[agency.profile ?? "agency"]} changeProfile={role === "owner" ? (agency.profile ?? "agency") : null} clientCount={clientCount ?? sidebarClients.length} hide={hideOnboarding} />}
       {children}
     </PanelShell>
   );

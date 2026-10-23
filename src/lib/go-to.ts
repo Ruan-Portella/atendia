@@ -1,4 +1,4 @@
-import { DAY_TO_DAY, allowed, settingsFor } from "@/lib/nav";
+import { allowed, dayToDay, settingsFor } from "@/lib/nav";
 import { can, type AgencyRole } from "@/lib/roles";
 
 /*
@@ -113,8 +113,8 @@ export function innerTabs(parents: GoToItem[], tabs: Array<{ tab: string; title:
 }
 
 /** As telas, os ajustes e as ações que a pessoa pode abrir. */
-export function staticGroups(role: AgencyRole, packs: readonly string[], wholeAccount = true): { pages: GoToItem[]; actions: GoToItem[]; settings: GoToItem[] } {
-  const pages: GoToItem[] = DAY_TO_DAY.filter((i) => allowed(i, role, packs, wholeAccount)).map((i) => ({ id: i.href, kind: "page", title: i.label, href: i.href, keywords: i.keywords }));
+export function staticGroups(role: AgencyRole, packs: readonly string[], wholeAccount = true, business: { clientId: string | null } | null = null): { pages: GoToItem[]; actions: GoToItem[]; settings: GoToItem[] } {
+  const pages: GoToItem[] = dayToDay(business).filter((i) => allowed(i, role, packs, wholeAccount)).map((i) => ({ id: i.href, kind: "page", title: i.label, href: i.href, keywords: i.keywords }));
   const settings: GoToItem[] = [
     ...settingsFor(role, packs).flatMap((g) =>
       g.items.flatMap((i) => [
@@ -130,8 +130,9 @@ export function staticGroups(role: AgencyRole, packs: readonly string[], wholeAc
   const actions: GoToItem[] = [
     ...(can(role, "config")
       ? [
-          { id: "novo-cliente", kind: "action" as const, title: "Novo cliente", sub: "Cadastrar um cliente", run: "novo-cliente" as const, keywords: "criar adicionar" },
-          { id: "novo-chatbot", kind: "action" as const, title: "Novo chatbot", sub: "Um chatbot para um cliente", run: "novo-chatbot" as const, keywords: "criar adicionar assistente bot" },
+          // no perfil do negócio não há cliente para cadastrar: o chatbot é do próprio negócio
+          ...(business ? [] : [{ id: "novo-cliente", kind: "action" as const, title: "Novo cliente", sub: "Cadastrar um cliente", run: "novo-cliente" as const, keywords: "criar adicionar" }]),
+          { id: "novo-chatbot", kind: "action" as const, title: "Novo chatbot", sub: business ? "Um assistente do seu negócio" : "Um chatbot para um cliente", run: "novo-chatbot" as const, keywords: "criar adicionar assistente bot" },
           { id: "nova-campanha", kind: "action" as const, title: "Nova campanha", sub: "Modelo aprovado para uma etiqueta", href: "/painel/campanhas/nova", keywords: "criar disparo" },
           { id: "primeiros-passos", kind: "action" as const, title: "Primeiros passos", sub: "Mostrar de novo a lista do começo", run: "primeiros-passos" as const, keywords: "começar onboarding checklist passo a passo ocultar mostrar" },
         ]
@@ -149,8 +150,8 @@ export function staticGroups(role: AgencyRole, packs: readonly string[], wholeAc
  * Junta o que filtra na hora com o que veio do servidor, na ordem da tela: sem busca, as telas,
  * os primeiros clientes e as ações; com busca, contatos e conversas primeiro.
  */
-export function buildGroups(o: { query: string; role: AgencyRole; packs: readonly string[]; wholeAccount?: boolean; clients: GoToItem[]; remote: GoToGroup[] }): GoToGroup[] {
-  const { pages, actions, settings } = staticGroups(o.role, o.packs, o.wholeAccount);
+export function buildGroups(o: { query: string; role: AgencyRole; packs: readonly string[]; wholeAccount?: boolean; clients: GoToItem[]; remote: GoToGroup[]; business?: { clientId: string | null } | null }): GoToGroup[] {
+  const { pages, actions, settings } = staticGroups(o.role, o.packs, o.wholeAccount, o.business ?? null);
   const q = o.query.trim();
   if (!q) {
     return [

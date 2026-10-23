@@ -7,7 +7,7 @@ import { agencySlug, requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { audit, requestMeta } from "@/lib/audit";
-import { PROFILE_ORDER, parseFirstAccess, type AccountProfile } from "@/lib/first-access";
+import { PROFILE_ORDER, businessProfileProblem, parseFirstAccess, type AccountProfile } from "@/lib/first-access";
 import { ONBOARDING_COOKIE } from "@/lib/onboarding";
 import { requestTeamWhatsApp } from "@/lib/team-whatsapp";
 
@@ -50,10 +50,17 @@ export async function saveAccountProfile(formData: FormData): Promise<ActionResu
   const profile = String(formData.get("profile") ?? "") as AccountProfile;
   if (!PROFILE_ORDER.includes(profile)) return fail("Escolha como você usa a conta.");
   if (profile === ctx.agency.profile) return ok("Nada mudou.");
-  const { error } = await createAdminClient().from("agencies").update({ profile }).eq("id", ctx.agency.id);
+  const admin = createAdminClient();
+  // o perfil do negócio (23/10/2026) vale com nenhum ou um cliente: com mais, a conta segue como agência
+  if (profile === "business") {
+    const { count } = await admin.from("clients").select("id", { count: "exact", head: true }).eq("agency_id", ctx.agency.id);
+    const problem = businessProfileProblem(count ?? 0);
+    if (problem) return fail(problem);
+  }
+  const { error } = await admin.from("agencies").update({ profile }).eq("id", ctx.agency.id);
   if (error) return fail("Não foi possível salvar. Tente de novo.");
   // os primeiros passos do perfil novo aparecem, mesmo para quem tinha ocultado os do outro
   (await cookies()).delete(ONBOARDING_COOKIE);
   revalidatePath("/painel", "layout");
-  return ok("Perfil salvo: os primeiros passos mudaram.");
+  return ok(profile === "business" ? "Perfil salvo: o menu mostra Chatbots no lugar de Clientes, e os primeiros passos mudaram." : "Perfil salvo: os primeiros passos mudaram.");
 }

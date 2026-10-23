@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ChartColumn, Check, ChevronsUpDown, CircleUser, Contact, Globe, Inbox, Layers, LifeBuoy, ListChecks, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
+import { Bot, ChartColumn, Check, ChevronsUpDown, CircleUser, Contact, Globe, Inbox, Layers, LifeBuoy, ListChecks, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { Menu } from "@/components/ui/menu";
 import { NoticeBell } from "@/components/notice-center";
@@ -11,7 +11,7 @@ import { openOnboardingWidget } from "@/components/onboarding-widget";
 import { openCreate } from "@/components/create-dialogs";
 import { showOnboarding } from "@/app/painel/actions";
 import { chooseTema, useTema } from "@/components/theme";
-import { DAY_TO_DAY, activeSettingsHref, allowed, firstSettingsHref } from "@/lib/nav";
+import { dayToDay, activeSettingsHref, allowed, firstSettingsHref } from "@/lib/nav";
 import { can, type AgencyRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
@@ -43,9 +43,11 @@ interface Props {
   /** Menu recolhido (só no computador): só os ícones, com o nome no title. */
   collapsed?: boolean;
   onNavigate?: () => void;
+  /** o perfil do negócio (23/10/2026): Chatbots no lugar da lista de clientes, sem demos */
+  business?: { clientId: string | null } | null;
 }
 
-const ICONS = { inbox: Inbox, contacts: Contact, megaphone: Megaphone, chart: ChartColumn, users: Users, layers: Layers, globe: Globe } as const;
+const ICONS = { inbox: Inbox, contacts: Contact, megaphone: Megaphone, chart: ChartColumn, users: Users, layers: Layers, globe: Globe, bot: Bot } as const;
 /** Quantos clientes cabem no menu; o resto fica em "Todos os clientes" e no Ir para. */
 export const SIDEBAR_CLIENTS = 8;
 
@@ -86,7 +88,7 @@ const SectionLabel = ({ children, action, collapsed }: { children: React.ReactNo
  * computador: o dia a dia, os clientes como canais (com o rosto do chatbot) e, no rodapé,
  * Configurações, Ajuda e novidades e você (perfil, tema e sair). Recolhido, fica só com os ícones.
  */
-export function SidebarNav({ role, packs = [], wholeAccount = true, clients, clientCount, me, extra, collapsed = false, onNavigate }: Props) {
+export function SidebarNav({ role, packs = [], wholeAccount = true, clients, clientCount, me, extra, collapsed = false, onNavigate, business = null }: Props) {
   const path = usePathname();
   const router = useRouter();
   const waiting = useWaiting();
@@ -121,10 +123,10 @@ export function SidebarNav({ role, packs = [], wholeAccount = true, clients, cli
       <nav aria-label="Principal" className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
         <SectionLabel collapsed={collapsed}>Dia a dia</SectionLabel>
         <div className="flex shrink-0 flex-col gap-0.5">
-          {DAY_TO_DAY.filter((i) => allowed(i, role, packs, wholeAccount)).map((i) => {
+          {dayToDay(business).filter((i) => allowed(i, role, packs, wholeAccount)).map((i) => {
             const Icon = ICONS[i.icon];
-            // o editor do chatbot mora dentro do cliente: acende Clientes
-            const active = (path.startsWith(i.href) || (i.href === "/painel/clientes" && path.startsWith("/painel/bots"))) && !openClient;
+            // o editor do chatbot mora dentro do cliente: acende Clientes (no negócio, Chatbots acende na página dele e nos chatbots)
+            const active = business && i.icon === "bot" ? path.startsWith("/painel/clientes") || path.startsWith("/painel/bots") : (path.startsWith(i.href) || (i.href === "/painel/clientes" && path.startsWith("/painel/bots"))) && !openClient;
             return (
               <Link key={i.href} href={i.href} onClick={onNavigate} aria-current={active ? "page" : undefined} title={collapsed ? i.label : undefined} className={itemClass(active, collapsed)}>
                 <Icon size={17} className={cn("shrink-0", active ? "text-brand" : "text-muted group-hover:text-ink-2")} />
@@ -143,7 +145,7 @@ export function SidebarNav({ role, packs = [], wholeAccount = true, clients, cli
           })}
         </div>
 
-        {clients.length > 0 && (
+        {clients.length > 0 && !business && (
           <div className="flex min-h-[164px] flex-1 flex-col">
             <SectionLabel
               collapsed={collapsed}

@@ -10,11 +10,27 @@ export type AccountProfile = "agency" | "business" | "developer";
 
 export const ACCOUNT_PROFILES: Record<AccountProfile, { label: string; hint: string; nameLabel: string; namePlaceholder: string }> = {
   agency: { label: "Para os clientes da minha agência", hint: "Chatbots para vários clientes, com a sua marca no chat, nas demos e no portal.", nameLabel: "Nome da agência", namePlaceholder: "Norte Marketing" },
-  business: { label: "Para o meu negócio", hint: "Um assistente que atende os seus clientes no site, no WhatsApp e no Instagram.", nameLabel: "Nome do seu negócio", namePlaceholder: "Clínica Sorriso" },
+  business: { label: "Para o meu negócio", hint: "Um assistente que atende os seus clientes no site, no WhatsApp e no Instagram, sem a parte de agência (clientes, portal e demos).", nameLabel: "Nome do seu negócio", namePlaceholder: "Clínica Sorriso" },
   developer: { label: "Para integrar pela API", hint: "Sou dev: quero mandar mensagens e receber os eventos no meu sistema.", nameLabel: "Nome da empresa ou do projeto", namePlaceholder: "Loja Exemplo" },
 };
 
 export const PROFILE_ORDER: AccountProfile[] = ["agency", "business", "developer"];
+
+/**
+ * O perfil "Para o meu negócio" (23/10/2026): o painel sem a parte de agência (o menu mostra
+ * Chatbots no lugar de Clientes, sem portal, acesso de cliente nem demos). Vale com nenhum ou um
+ * cliente (o próprio negócio, criado com o primeiro chatbot); com mais, a conta segue como agência.
+ */
+export const BUSINESS_MAX_CLIENTS = 1;
+
+/** O painel no jeito do próprio negócio: o perfil e no máximo um cliente. Pura. */
+export const isBusinessMode = (profile: AccountProfile | null | undefined, clientCount: number): boolean => profile === "business" && clientCount <= BUSINESS_MAX_CLIENTS;
+
+/** O que impede escolher o perfil do negócio (mais de um cliente), ou null. Pura. */
+export function businessProfileProblem(clientCount: number): string | null {
+  if (clientCount <= BUSINESS_MAX_CLIENTS) return null;
+  return `A conta tem ${clientCount} clientes. O perfil "Para o meu negócio" vale com um cliente só (o próprio negócio): com mais, a conta segue como agência. Nada é movido nem apagado.`;
+}
 
 export const isAccountProfile = (v: unknown): v is AccountProfile => typeof v === "string" && Object.hasOwn(ACCOUNT_PROFILES, v);
 

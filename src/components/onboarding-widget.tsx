@@ -61,7 +61,7 @@ function Ring({ done, total }: { done: number; total: number }) {
  * entrada e nas conversas, onde ficaria em cima do campo de resposta), comemora quando um passo é
  * feito e, com tudo pronto, mostra o "Tudo pronto" uma vez antes de sumir.
  */
-export function OnboardingWidget({ steps, goal, changeProfile, hide }: { steps: OnboardingStep[]; goal: string; /** o perfil da conta, para o dono mudar (null: quem não é o dono) */ changeProfile: AccountProfile | null; hide: () => Promise<ActionResult> }) {
+export function OnboardingWidget({ steps, goal, changeProfile, hide, clientCount = 0 }: { steps: OnboardingStep[]; goal: string; clientCount?: number; /** o perfil da conta, para o dono mudar (null: quem não é o dono) */ changeProfile: AccountProfile | null; hide: () => Promise<ActionResult> }) {
   const path = usePathname() ?? "";
   const done = steps.filter((s) => s.done).length;
   const total = steps.length;
@@ -170,7 +170,7 @@ export function OnboardingWidget({ steps, goal, changeProfile, hide }: { steps: 
 
       <div className="flex items-center gap-3 border-t border-line-2 px-4 py-2.5 text-xs">
         {changeProfile && !allDone && (
-          <ProfileButton current={changeProfile} label="Mudar o perfil" className="font-semibold text-brand hover:underline" />
+          <ProfileButton current={changeProfile} label="Mudar o perfil" className="font-semibold text-brand hover:underline" clientCount={clientCount} />
         )}
         <span className="ml-auto">
           {allDone ? (

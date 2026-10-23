@@ -18,7 +18,9 @@ export interface NavLink {
   wholeAccount?: boolean;
 }
 
-export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "contacts" | "megaphone" | "chart" | "users" | "layers" | "globe" }> = [
+export type DayToDayLink = NavLink & { icon: "inbox" | "contacts" | "megaphone" | "chart" | "users" | "layers" | "globe" | "bot" };
+
+export const DAY_TO_DAY: DayToDayLink[] = [
   { href: "/painel/caixa", label: "Caixa de entrada", perm: "attend", icon: "inbox", keywords: "conversas atendimento fila" },
   { href: "/painel/contatos", label: "Contatos e leads", perm: "config", icon: "contacts", keywords: "pessoas leads clientes finais etiquetas" },
   { href: "/painel/campanhas", label: "Campanhas e réguas", perm: "config", icon: "megaphone", keywords: "disparo lembrete régua" },
@@ -30,6 +32,18 @@ export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "contacts" | "megapho
   // a demo também é um chatbot e uma ferramenta de venda (saiu das Configurações em 22/10)
   { href: "/painel/demos", label: "Demos", perm: "config", icon: "globe", keywords: "demos para prospects demonstração prospect vender" },
 ];
+
+/**
+ * O dia a dia do menu e do Ir para, pelo perfil (23/10/2026): no "Para o meu negócio", Clientes
+ * vira Chatbots, que abre a página do próprio negócio (o cliente único; sem ele ainda, a tela de
+ * criar), e as demos (ferramenta de venda da agência) saem. Pura.
+ */
+export function dayToDay(business: { clientId: string | null } | null): DayToDayLink[] {
+  if (!business) return DAY_TO_DAY;
+  return DAY_TO_DAY.filter((i) => i.href !== "/painel/demos").map((i) =>
+    i.href === "/painel/clientes" ? { ...i, href: business.clientId ? `/painel/clientes/${business.clientId}` : "/painel/clientes", label: "Chatbots", icon: "bot", keywords: "chatbots assistente meu negócio setores respostas prontas" } : i,
+  );
+}
 
 export const SETTINGS: Array<{ group: string; items: NavLink[] }> = [
   {

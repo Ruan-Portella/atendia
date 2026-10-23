@@ -41,6 +41,7 @@ export function CreateDialogs({
   templates = [],
   clients,
   suggestedName,
+  business = false,
 }: {
   createClient: ((fd: FormData) => Promise<ActionResult | void>) | null;
   createBot: (fd: FormData) => Promise<ActionResult | void>;
@@ -48,12 +49,15 @@ export function CreateDialogs({
   templates?: Array<{ id: string; name: string }>;
   clients: ClientOption[];
   suggestedName: string;
+  /** o perfil do negócio (23/10/2026): sem Novo cliente e sem escolher cliente no chatbot */
+  business?: boolean;
 }) {
   const toast = useToast();
   const [open, setOpen] = useState<Request | null>(null);
   useEffect(() => {
     const listen = (e: Event) => {
       const req = (e as CustomEvent<Request>).detail;
+      if (req.kind === "cliente" && business) return toast.error("No perfil do seu negócio não há clientes para cadastrar: crie um chatbot.");
       if (req.kind === "cliente" && !createClient) return toast.error("Criar cliente é para quem vê todos os clientes da agência. Peça para um administrador.");
       setOpen(req);
     };
@@ -70,7 +74,7 @@ export function CreateDialogs({
       window.setTimeout(() => openCreate(kind, clientId), 0);
     }
     return () => window.removeEventListener(EVENT, listen);
-  }, [createClient, toast]);
+  }, [business, createClient, toast]);
   const forClient = open?.kind === "chatbot" && open.clientId ? clients.find((c) => c.id === open.clientId) : null;
 
   return (
@@ -83,8 +87,8 @@ export function CreateDialogs({
       <EditDialog
         open={open?.kind === "chatbot"}
         onClose={() => setOpen(null)}
-        title={forClient ? `Novo chatbot para ${forClient.name}` : "Novo chatbot"}
-        description="Um cliente pode ter vários chatbots (ex.: um para vendas e outro para suporte). O site e os documentos você adiciona no próximo passo."
+        title={forClient && !business ? `Novo chatbot para ${forClient.name}` : "Novo chatbot"}
+        description={business ? "O seu negócio pode ter vários chatbots (ex.: um para vendas e outro para suporte). O site e os documentos você adiciona no próximo passo." : "Um cliente pode ter vários chatbots (ex.: um para vendas e outro para suporte). O site e os documentos você adiciona no próximo passo."}
         action={(fd) => {
           // "A partir de um modelo": o derivado (o nome vem do modelo); senão, o chatbot em branco
           const template = String(fd.get("template_id") ?? "");
@@ -92,7 +96,7 @@ export function CreateDialogs({
         }}
         saveLabel="Criar e configurar"
       >
-        <NewBotFields clients={clients} defaultClientId={open?.kind === "chatbot" ? open.clientId : undefined} suggestedName={suggestedName} idPrefix="cg" templates={createDerived ? templates : []} />
+        <NewBotFields clients={clients} defaultClientId={open?.kind === "chatbot" ? open.clientId : undefined} suggestedName={suggestedName} idPrefix="cg" templates={createDerived ? templates : []} business={business} />
       </EditDialog>
     </>
   );

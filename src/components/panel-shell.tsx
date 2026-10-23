@@ -33,6 +33,8 @@ interface Props {
   children: React.ReactNode;
   /** Os avisos (plano, pausa, suspensão, segurança…): ficam nos Avisos, atrás do sino. */
   notices?: React.ReactNode;
+  /** o perfil do negócio (23/10/2026): Chatbots no lugar dos clientes */
+  business?: { clientId: string | null } | null;
 }
 
 /**
@@ -40,7 +42,7 @@ interface Props {
  *  - celular e tablet (< lg): barra no topo com o menu, a conta e a busca; o menu desliza;
  *  - desktop (lg+): barra lateral fixa com a navegação inteira.
  */
-export function PanelShell({ agency, role, packs = [], wholeAccount = true, accountLabel, usage, limit, usageLabel, clients = [], clientCount = 0, me = { name: "Você", email: "", avatarUrl: null }, goTo, menuCollapsed = false, children, notices }: Props) {
+export function PanelShell({ agency, role, packs = [], wholeAccount = true, accountLabel, usage, limit, usageLabel, clients = [], clientCount = 0, me = { name: "Você", email: "", avatarUrl: null }, goTo, menuCollapsed = false, children, notices , business = null }: Props) {
   const [open, setOpen] = useState(false);
   // recolher o menu do computador (redesenho): só os ícones; a escolha fica no navegador
   const [collapsed, setCollapsed] = useState(menuCollapsed);
@@ -86,7 +88,7 @@ export function PanelShell({ agency, role, packs = [], wholeAccount = true, acco
     </div>
   ) : null;
 
-  const nav = (small: boolean) => <SidebarNav role={role} packs={packs} wholeAccount={wholeAccount} clients={clients} clientCount={clientCount} me={me} extra={usageBlock} collapsed={small} onNavigate={() => setOpen(false)} />;
+  const nav = (small: boolean) => <SidebarNav role={role} packs={packs} wholeAccount={wholeAccount} clients={clients} clientCount={clientCount} me={me} extra={usageBlock} collapsed={small} onNavigate={() => setOpen(false)} business={business} />;
 
   return (
     <div className="flex min-h-full flex-col lg:flex-row">

@@ -11,13 +11,39 @@ interface Props {
   /** Nome sugerido para o cliente novo (ex.: o nome da demo). */
   suggestedName?: string;
   idPrefix?: string;
+  /** o perfil do negócio (23/10/2026): sem escolher cliente; o chatbot é do próprio negócio */
+  business?: boolean;
 }
 
 /**
  * Seletor de cliente para formulários de chatbot: escolhe um cliente existente ou
  * cria um novo na hora (campos `new_client_*`). Envia `client_id` ("new" para novo).
  */
-export function ClientPicker({ clients, defaultClientId, suggestedName = "", idPrefix = "cp" }: Props) {
+export function ClientPicker({ clients, defaultClientId, suggestedName = "", idPrefix = "cp", business = false }: Props) {
+  // no negócio, o cliente é o próprio negócio: com ele, vai direto; sem ele, nasce com o primeiro chatbot
+  if (business && clients.length) return <input type="hidden" name="client_id" value={clients[0].id} />;
+  if (business) return <BusinessFields suggestedName={suggestedName} idPrefix={idPrefix} />;
+  return <AgencyClientPicker clients={clients} defaultClientId={defaultClientId} suggestedName={suggestedName} idPrefix={idPrefix} />;
+}
+
+/** O negócio que ainda não tem o cadastro (o primeiro chatbot): o nome e o site dele. */
+function BusinessFields({ suggestedName, idPrefix }: { suggestedName: string; idPrefix: string }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <input type="hidden" name="client_id" value="new" />
+      <div>
+        <label htmlFor={`${idPrefix}-new-name`} className="label">Nome do seu negócio</label>
+        <input id={`${idPrefix}-new-name`} name="new_client_name" required minLength={2} maxLength={80} defaultValue={suggestedName} className="input" placeholder="Clínica Sorriso" />
+      </div>
+      <div>
+        <label htmlFor={`${idPrefix}-new-site`} className="label">Site (opcional)</label>
+        <input id={`${idPrefix}-new-site`} name="new_client_site" maxLength={200} className="input" placeholder="clinicasorriso.com.br" />
+      </div>
+    </div>
+  );
+}
+
+function AgencyClientPicker({ clients, defaultClientId, suggestedName = "", idPrefix = "cp" }: Props) {
   const initial = defaultClientId && clients.some((c) => c.id === defaultClientId) ? defaultClientId : defaultClientId === undefined && clients.length ? clients[0].id : "new";
   const [value, setValue] = useState(initial);
   const isNew = value === "new";

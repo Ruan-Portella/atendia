@@ -59,12 +59,12 @@ function RoleCards({ name = "role", defaultValue = "manager" }: { name?: string;
  * Cliente → Relatório e portal. Redesenho (23/10/2026): o link do cliente e o relatório mensal em
  * linhas; o e-mail num modal; trocar e desligar o link no modal do link, com confirmação.
  */
-export function ClientReportTab({ client, base, memberEmails }: { client: ClientInfo; base: string; memberEmails: string[] }) {
+export function ClientReportTab({ client, base, memberEmails, business = false }: { client: ClientInfo; base: string; memberEmails: string[]; /** o perfil do negócio: sem o link do cliente (o portal é da agência) */ business?: boolean }) {
   const url = client.portal_token ? portalUrl(client.portal_token, base) : null;
   const lastMonth = periodLabel(shiftPeriod(currentPeriodBR(), -1));
   return (
     <div className="flex flex-col gap-5">
-      <SettingGroup title="Link do cliente">
+      {!business && <SettingGroup title="Link do cliente">
         {url ? (
           <SettingRow
             icon={<Link2 size={18} />}
@@ -111,7 +111,7 @@ export function ClientReportTab({ client, base, memberEmails }: { client: Client
             }
           />
         )}
-      </SettingGroup>
+      </SettingGroup>}
 
       <SettingGroup title="Relatório mensal por e-mail">
         <SettingRow

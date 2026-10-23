@@ -12,6 +12,8 @@ import { ClientsList, type ClientListItem } from "@/components/clients-list";
 import { handoffStatus } from "@/lib/handoff-status";
 import { Kpi } from "@/components/kpi";
 import { cn, daysAgoIso } from "@/lib/utils";
+import { redirect } from "next/navigation";
+import { businessMode } from "@/lib/business-mode";
 
 export const metadata = { title: "Clientes" };
 
@@ -31,6 +33,23 @@ export default async function ClientesPage() {
   const canConfig = can(role, "config");
   const seesBilling = can(role, "billing");
   const supabase = await createClient();
+  // o perfil do negócio (23/10/2026): Chatbots é a página do próprio negócio; sem ela ainda, o primeiro chatbot
+  const business = await businessMode(supabase, agency);
+  if (business?.clientId) redirect(`/painel/clientes/${business.clientId}`);
+  if (business) {
+    return (
+      <div className="card flex flex-col items-start gap-3 p-6">
+        <h1 className="text-2xl font-normal sm:text-[28px]">Chatbots</h1>
+        <p className="text-sm text-muted">O seu negócio ainda não tem chatbots. Crie o primeiro: ele responde no seu site, no WhatsApp e no Instagram.</p>
+        {canConfig && (
+          <CreateButton kind="chatbot" className="btn-primary self-start">
+            <Plus size={15} />
+            Criar o primeiro chatbot
+          </CreateButton>
+        )}
+      </div>
+    );
+  }
   const [{ data }, stats, pending] = await Promise.all([
     supabase.from("clients").select("id, name, site, price_cents, bots(id, status, is_demo, name, face, appearance)").eq("agency_id", agency.id).eq("bots.is_demo", false).order("name"),
     getBotStats(supabase, daysAgoIso(30)),
