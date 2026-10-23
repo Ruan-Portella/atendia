@@ -1,24 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CUSTOM_OFFSET, REGUA_TRIGGER_LABEL, customExamples, customTemplateBody, customVariables, dateFieldKey, type CustomRegua, type ReguaTrigger } from "@/lib/regua-kinds";
+import { CUSTOM_OFFSET, REGUA_TRIGGER_LABEL, customTemplateBody, customTemplateVars, dateFieldKey, type CustomRegua, type ReguaTrigger } from "@/lib/regua-kinds";
 import { whenOf } from "@/lib/regua-form";
 import { TemplateField } from "@/components/template-field";
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 8);
-/** O nome de cada variável do modelo na etiqueta do editor. */
-const VAR_NAME = (v: string) => (v.startsWith("o primeiro nome") ? "Primeiro nome" : v.startsWith("a data") ? "Data" : "Hora");
 const CARD = "flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-line p-3 text-sm has-[:checked]:border-brand has-[:checked]:bg-brand-soft/60";
-
-/** As variáveis e as etiquetas do editor do modelo, pela data que dispara. Pura. */
-export function templateVars(trigger: ReguaTrigger, yearly: boolean) {
-  const need = customVariables(trigger);
-  const examples = customExamples(trigger, yearly);
-  return {
-    vars: Object.fromEntries(need.map((_, i) => [String(i + 1), examples[i] ?? ""])),
-    labels: Object.fromEntries(need.map((v, i) => [String(i + 1), VAR_NAME(v)])),
-  };
-}
 
 /**
  * Os campos da régua personalizada (23/10/2026): no "+ Nova régua", tudo (o nome, a data que
@@ -38,7 +26,7 @@ export function ReguaCustomFields({ fields, tags, company, initial, idPrefix }: 
   const chosen = fields.find((f) => f.id === dateChoice);
   const label = trigger !== "data" ? null : initial ? initial.dateLabel : dateChoice === "nova" ? dateLabel : (chosen?.label ?? "");
   const yearly = trigger === "data" && repeat === "todo_ano";
-  const { vars, labels } = templateVars(trigger, yearly);
+  const { vars, labels } = customTemplateVars(trigger, yearly);
   const suggested = customTemplateBody({ trigger, dateLabel: label, company });
   const lim = CUSTOM_OFFSET[trigger];
 

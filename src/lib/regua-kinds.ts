@@ -155,6 +155,20 @@ export interface CustomRegua {
 /** As variáveis que o planejador manda na régua personalizada, na ordem ({{1}}, {{2}}…). Pura. */
 export const customVariables = (trigger: ReguaTrigger): string[] => (trigger === "horario" ? ["o primeiro nome", "a data (20/12)", "a hora (14:30)"] : ["o primeiro nome", "a data (10/03)"]);
 
+/**
+ * As variáveis e as etiquetas do editor do modelo da régua personalizada, pela data que dispara.
+ * Fica aqui (e não no componente do navegador) porque a linha da régua, no servidor, também usa. Pura.
+ */
+export function customTemplateVars(trigger: ReguaTrigger, yearly: boolean): { vars: Record<string, string>; labels: Record<string, string> } {
+  const need = customVariables(trigger);
+  const examples = customExamples(trigger, yearly);
+  const name = (v: string) => (v.startsWith("o primeiro nome") ? "Primeiro nome" : v.startsWith("a data") ? "Data" : "Hora");
+  return {
+    vars: Object.fromEntries(need.map((_, i) => [String(i + 1), examples[i] ?? ""])),
+    labels: Object.fromEntries(need.map((v, i) => [String(i + 1), name(v)])),
+  };
+}
+
 /** Os exemplos das variáveis para a Meta aprovar (a data nova de uma vez vai com o ano). Pura. */
 export const customExamples = (trigger: ReguaTrigger, yearly: boolean): string[] => (trigger === "horario" ? ["Ana", "20/12", "14:30"] : trigger === "data" && !yearly ? ["Ana", "10/03/2027"] : trigger === "ultima_visita" ? ["Ana", "10/03/2026"] : ["Ana", "10/03"]);
 

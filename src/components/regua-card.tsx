@@ -1,7 +1,7 @@
 import { BellRing, Cake, CalendarClock, HeartHandshake, Hourglass, MessageCircleQuestion, Trash2 } from "lucide-react";
 import type { CustomReguaPanelItem, ReguaPanelItem } from "@/lib/reguas";
 import type { ReguaKind } from "@/lib/regua-kinds";
-import { REGUA_CATEGORY, REGUA_DELAY, REGUA_DESCRIPTION, REGUA_EXAMPLES, REGUA_HAS_SEND_HOUR, REGUA_LABEL, REGUA_TRIGGER_LABEL, REGUA_VARIABLES, customTiming } from "@/lib/regua-kinds";
+import { REGUA_CATEGORY, REGUA_DELAY, REGUA_DESCRIPTION, REGUA_EXAMPLES, REGUA_HAS_SEND_HOUR, REGUA_LABEL, REGUA_TRIGGER_LABEL, REGUA_VARIABLES, customTemplateVars, customTiming } from "@/lib/regua-kinds";
 import { costText } from "@/lib/campaigns";
 import type { ActionResult } from "@/lib/action-result";
 import { ActionForm } from "@/components/ui/action-form";
@@ -10,7 +10,7 @@ import { StatusPill } from "@/components/ui/form-section";
 import { AutoSwitch, SettingRow } from "@/components/ui/setting-row";
 import { TemplateField } from "@/components/template-field";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { ReguaCustomFields, templateVars } from "@/components/regua-custom-fields";
+import { ReguaCustomFields } from "@/components/regua-custom-fields";
 
 const CATEGORY_LABEL: Record<string, string> = { MARKETING: "marketing", UTILITY: "utilidade" };
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 8);
@@ -154,7 +154,7 @@ export function CustomReguaCard({ item: it, fields, tags, company, actions }: { 
   const c = it.config;
   const newTemplate = Boolean(it.inUse && it.regua.template_name && it.inUse !== it.regua.template_name);
   const approved = it.template.status === "aprovado";
-  const { vars, labels } = templateVars(c.trigger, c.repeatYearly);
+  const { vars, labels } = customTemplateVars(c.trigger, c.repeatYearly);
   const when = customTiming(c);
   const summary =
     it.state === "pausada"
