@@ -9,7 +9,7 @@ Bots do OpenBot, conectados ao Claude Code neste repositório. Cada arquivo dest
 | 3 | [Meta](meta.md) | 1 | diário | não |
 | 4 | [Dev](dev.md) (no Claude Code, fora do OpenBot) | 1 | sob demanda | sim, só na branch dev |
 | 5 | [Qualidade da IA](qualidade-ia.md) | 2 | semanal + a cada mudança de prompt/modelo | não |
-| 6 | [Suporte e sucesso](suporte.md) | 2 | diário | rascunhos |
+| 6 | [Suporte e sucesso](suporte.md) | 1 | diário (preparo seg e qui) | rascunhos |
 | 7 | [Custos e margem](custos.md) | 2 | semanal | não |
 | 8 | [Prospecção](prospeccao.md) | 2 | semanal | rascunhos |
 | 9 | [Security e LGPD](security-lgpd.md) | 2 | semanal + a cada leva | não |
