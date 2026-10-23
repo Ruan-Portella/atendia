@@ -132,3 +132,7 @@ Em Canais, cada aba começa pela situação e o resto vem em linhas que abrem um
 - WhatsApp conectado: o número, o nome e o diagnóstico ficam no cartão do alto. Em Mensagens, "Oferecer novidades" é uma chave que salva na hora (a linha abre a prévia da pergunta), e "Modelos de mensagem" e "Uso do mês" abrem num modal. Em Conta ficam os Termos do canal e o Desconectar.
 - WhatsApp sem número: "Mandar um link para o cliente" (o mais simples), "Já atende pelo WhatsApp Business no celular" e "Número novo, só para o atendimento", cada um num modal com a lista do que conferir antes.
 - Instagram: a conta no cartão do alto e, em "Direct e comentários", as perguntas prontas, os links com origem, as palavras-chave e os comentários dos posts, cada um num modal; os Termos do canal e o Desconectar ficam no fim.
+
+## A aba Herança do modelo
+
+Na página de um modelo (pacote Plataforma), a aba Herança mostra, em linhas: o que cada chatbot derivado pode mudar (uma chave por campo, que salva na hora; travar pergunta antes, porque os derivados voltam ao valor do modelo), os chatbots derivados (cada um abre a página dele) e as versões publicadas (a "em uso" e o "Usar esta versão" nas outras, com confirmação). "Novo chatbot deste modelo", no alto, abre um modal com o cliente e o contexto fixo em pares de nome e valor (por exemplo, loja_id e 42), sem JSON.
