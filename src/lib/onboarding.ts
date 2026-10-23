@@ -77,7 +77,7 @@ export function onboardingSteps(input: { bots: OnboardingBot[]; hasLogo: boolean
       { key: "teste", title: "Converse com ele", hint: "Use o teste ao vivo ao lado do editor e pergunte o que um cliente seu perguntaria.", href: editor(), cta: "Testar agora", done: tested },
       { key: "publicar", title: "Coloque no ar", hint: "Enquanto está em rascunho, ele não responde no seu site nem no WhatsApp.", href: editor(), cta: "Publicar", done: live },
       { key: "instalar", title: "Leve para o site ou o WhatsApp", hint: "Cole uma linha de código no seu site (tem passo a passo para WordPress, Wix, Shopify e outros) ou conecte o WhatsApp e o Instagram na página do chatbot.", href: editor("instalacao"), cta: "Ver como", done: Boolean(bot && outside(bot)) },
-      { key: "marca", title: "Coloque o seu logo", hint: "Ele aparece no chat do site e na página de demonstração.", href: "/painel/marca", cta: "Enviar logo", done: input.hasLogo },
+      { key: "marca", title: "Coloque o seu logo", hint: "Ele aparece no chat do site e nos e-mails.", href: "/painel/marca", cta: "Enviar logo", done: input.hasLogo },
     ];
   }
 

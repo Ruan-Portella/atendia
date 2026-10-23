@@ -1,3 +1,4 @@
+import { businessMode } from "@/lib/business-mode";
 import Link from "next/link";
 import { actionCapNotice } from "@/lib/action-limits";
 import { FREE_LINKED_SHORT, freeLinked } from "@/lib/person-signals";
@@ -154,6 +155,9 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const integrations = packs.includes("integracoes");
   if (tab === "acoes" && manageActions) await requireAgencyMfa(`/painel/bots/${id}?tab=acoes`);
   const supabase = await createClient();
+  // o perfil do negócio (23/10/2026): os textos falam do seu site e do seu WhatsApp, não do cliente
+  const business = await businessMode(supabase, owner);
+  const own = (agencyText: string, businessText: string) => (business ? businessText : agencyText);
 
   // Tudo em paralelo e só o que a aba aberta usa. O texto bruto das fontes (sites e PDFs
   // inteiros) não vem mais: só o de textos/FAQs, que o modal de edição precisa.
@@ -273,7 +277,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         ) : bot.client_id ? (
           <Link href={`/painel/clientes/${bot.client_id}`} className="max-w-[40vw] truncate text-sm font-semibold text-muted">← {bot.client_name}</Link>
         ) : (
-          <Link href={bot.is_demo ? "/painel/demos" : "/painel/clientes"} className="text-sm font-semibold text-muted">← {bot.is_demo ? "Demos" : "Clientes"}</Link>
+          <Link href={bot.is_demo ? "/painel/demos" : business?.clientId ? `/painel/clientes/${business.clientId}` : "/painel/clientes"} className="text-sm font-semibold text-muted">← {bot.is_demo ? "Demos" : business ? "Chatbots" : "Clientes"}</Link>
         )}
         <span className="hidden text-line sm:inline">/</span>
         <BotFace color={color} face={bot.face} size={28} alive />
@@ -656,7 +660,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
 
           {tab === "aparencia" && (
             <ActionForm key={bot.updated_at} action={updateBot.bind(null, id)} className="flex flex-col gap-4">
-              <div><h2 className="text-[22px] font-medium">Rosto e aparência</h2><p className="text-sm text-muted">O visitante vê a marca do cliente no chat e a sua agência no rodapé. A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"} nunca aparece.</p></div>
+              <div><h2 className="text-[22px] font-medium">Rosto e aparência</h2><p className="text-sm text-muted">{own("O visitante vê a marca do cliente no chat e a sua agência no rodapé.", "O visitante vê a marca do seu negócio no chat e no rodapé.")} A {process.env.NEXT_PUBLIC_BRAND_NAME ?? "Boavoz"} nunca aparece.</p></div>
               {!opens("aparencia") && <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">A aparência vem do modelo {templateRow?.name}: muda só lá. O rosto (olhos e acessório) é deste chatbot.</p>}
               {/* o rosto do chatbot (redesenho, etapa 3): a cor, os olhos e o acessório, com as prévias */}
               <FaceEditor initialColor={color} initialFace={faceOf(bot.face)} botName={bot.name} clientName={bot.client_name} colorLocked={!opens("aparencia")} />
@@ -672,7 +676,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 >
                   <SuggestedQuestionsField initial={appearance.suggested_questions ?? []} color={color} welcome={persona.welcome ?? `Olá! Sou ${bot.name}. Como posso ajudar?`} />
                 </SettingRow>
-                <SettingRow icon={<MessageCircle size={18} />} title="Balão no site do cliente" summary={widgetPositionSummary(appearance.position, appearance.offset)} description="Vale para o chat já instalado em até um minuto: não precisa trocar o código.">
+                <SettingRow icon={<MessageCircle size={18} />} title={own("Balão no site do cliente", "Balão no seu site")} summary={widgetPositionSummary(appearance.position, appearance.offset)} description="Vale para o chat já instalado em até um minuto: não precisa trocar o código.">
                   <WidgetPositionPicker position={appearance.position === "left" ? "left" : "right"} offset={Number(appearance.offset ?? 20)} color={color} />
                 </SettingRow>
               </SettingGroup>
@@ -940,7 +944,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             <div className="flex flex-col gap-5">
               <div>
                 <h2 className="text-[22px] font-medium">WhatsApp</h2>
-                <p className="text-sm text-muted">{bot.name} responde no WhatsApp do cliente com a mesma base de conhecimento. Pedidos de atendente aparecem em Conversas, e a sua resposta sai pelo WhatsApp.</p>
+                <p className="text-sm text-muted">{bot.name} responde {own("no WhatsApp do cliente", "no seu WhatsApp")} com a mesma base de conhecimento. Pedidos de atendente aparecem em Conversas, e a sua resposta sai pelo WhatsApp.</p>
               </div>
               {bot.is_demo ? (
                 <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Converta a demo em chatbot para ligar o WhatsApp.</p>
@@ -959,10 +963,10 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   <SettingGroup title="Conectar de novo">
                     {signup && (
                       <>
-                        <SettingRow icon={<Send size={18} />} title="Mandar um link para o cliente" summary="Quem conecta é o dono do WhatsApp, com o Facebook dele" footer="close">
+                        <SettingRow icon={<Send size={18} />} title={own("Mandar um link para o cliente", "Mandar o link de conexão")} summary={own("Quem conecta é o dono do WhatsApp, com o Facebook dele", "Para quem tem o acesso ao WhatsApp, se não for você")} footer="close">
                           <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
                         </SettingRow>
-                        <SettingRow icon={<Smartphone size={18} />} title="Conectar de novo agora" summary="Com o cliente do lado, pela janela da Meta" footer="close">
+                        <SettingRow icon={<Smartphone size={18} />} title="Conectar de novo agora" summary={own("Com o cliente do lado, pela janela da Meta", "Aqui mesmo, pela janela da Meta")} footer="close">
                           <ChannelAcceptGate botId={id} clientId={bot.client_id} clientName={bot.client_name} agencyName={agency.name} channel="whatsapp">
                             <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={completeWhatsAppSignup.bind(null, id)} coexistence={Boolean(whatsapp.coexistence)} label="Conectar de novo agora" primary={false} />
                           </ChannelAcceptGate>
@@ -1051,7 +1055,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <SettingGroup title="Conectar o WhatsApp">
                   {signup ? (
                     <>
-                      <SettingRow icon={<Send size={18} />} title="Mandar um link para o cliente" summary="O jeito mais simples: quem conecta é o dono do WhatsApp, com o Facebook dele" description="O link abre uma página com a sua marca, explica o passo a passo e o cadastro do cartão na Meta. Não precisa de conta nem de senha." footer="close">
+                      <SettingRow icon={<Send size={18} />} title={own("Mandar um link para o cliente", "Mandar o link de conexão")} summary={own("O jeito mais simples: quem conecta é o dono do WhatsApp, com o Facebook dele", "Para quem tem o acesso ao WhatsApp, se não for você")} description="O link abre uma página com a sua marca, explica o passo a passo e o cadastro do cartão na Meta. Não precisa de conta nem de senha." footer="close">
                         <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id)} clientName={bot.client_name} />
                       </SettingRow>
                       <SettingRow icon={<Smartphone size={18} />} title="Já atende pelo WhatsApp Business no celular" summary="O número continua no app do celular, e o assistente responde junto" description={`Quando alguém da equipe responde pelo celular, a resposta aparece em Conversas e ${bot.name} fica quieto naquela conversa por 1 hora.`} footer="close">
@@ -1102,7 +1106,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             <div className="flex flex-col gap-5">
               <div>
                 <h2 className="text-[22px] font-medium">Instagram</h2>
-                <p className="text-sm text-muted">{bot.name} responde as mensagens diretas do Instagram do cliente com a mesma base de conhecimento. As mensagens do Instagram não são cobradas pela Meta.</p>
+                <p className="text-sm text-muted">{bot.name} responde as mensagens diretas {own("do Instagram do cliente", "do seu Instagram")} com a mesma base de conhecimento. As mensagens do Instagram não são cobradas pela Meta.</p>
               </div>
               {sp.ig === "ok" && <p className="rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">Instagram conectado. Mande uma DM para a conta para testar.</p>}
               {typeof sp.ig_erro === "string" && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{sp.ig_erro}</p>}
@@ -1135,7 +1139,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     </ul>
                   </div>
                   <SettingGroup title="Conectar o Instagram">
-                    <SettingRow icon={<Send size={18} />} title="Mandar um link para o cliente" summary="Quem conecta é o dono da conta, com o login do Instagram dele" description="O link abre uma página com a sua marca e o passo a passo. Não precisa de conta nem de senha no painel." footer="close">
+                    <SettingRow icon={<Send size={18} />} title={own("Mandar um link para o cliente", "Mandar o link de conexão")} summary={own("Quem conecta é o dono da conta, com o login do Instagram dele", "Para quem tem o login da conta, se não for você")} description="O link abre uma página com a sua marca e o passo a passo. Não precisa de conta nem de senha no painel." footer="close">
                       <ConnectLinkButton action={createWhatsAppConnectLink.bind(null, id, "instagram")} clientName={bot.client_name} channelName="Instagram" />
                     </SettingRow>
                     <SettingRow icon={<Smartphone size={18} />} title="Conectar agora" summary="Com o login da conta, nesta tela" footer="close">
@@ -1214,7 +1218,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
             <div className="flex flex-col gap-5">
               <div>
                 <h2 className="text-[22px] font-medium">Chat do site</h2>
-                <p className="text-sm text-muted">O balão de conversa no site do cliente: copie o código e cole no site, ou siga o passo a passo da plataforma onde ele foi feito.</p>
+                <p className="text-sm text-muted">O balão de conversa {own("no site do cliente", "no seu site")}: copie o código e cole no site, ou siga o passo a passo da plataforma onde ele foi feito.</p>
               </div>
               {bot.status !== "live" && !bot.is_demo && <p className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">O chatbot ainda não está publicado. Você pode instalar agora: o balão fica invisível no site do cliente até você clicar em “Publicar” no topo.</p>}
               <InstallGuide
