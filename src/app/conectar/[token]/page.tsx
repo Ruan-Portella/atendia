@@ -1,4 +1,4 @@
-import { CheckCircle2, CreditCard, MessageCircle } from "lucide-react";
+import { CheckCircle2, CreditCard, MessageCircle, Phone, Smartphone } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NEUTRAL_ICONS } from "@/lib/white-label";
 import { LINK_DAYS, hashToken, resolveConnectLink } from "@/lib/whatsapp-connect-link";
@@ -144,23 +144,40 @@ export default async function ConnectWhatsAppPage({ params, searchParams }: Page
       {acceptStep ?? (
       <>
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Como você quer conectar?</h2>
+        {/* redesenho (23/10/2026): os passos numerados e as duas formas de conectar com ícone */}
+        <h2 className="flex items-center gap-2.5 text-lg font-medium">
+          <StepNumber n={1} color={color} />
+          Como você quer conectar?
+        </h2>
         <ConnectChecklist />
         <div className="card flex flex-col gap-2.5 p-5">
-          <div className="font-semibold">Já atendo pelo WhatsApp Business no celular</div>
+          <div className="flex items-center gap-2.5 font-medium text-ink">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-raised text-ink-2">
+              <Smartphone size={16} />
+            </span>
+            Já atendo pelo WhatsApp Business no celular
+          </div>
           <p className="text-sm text-ink-2">O número continua funcionando no app do celular, como hoje. O assistente responde as mensagens; quando você ou sua equipe responde pelo celular, ele fica quieto naquela conversa por 1 hora.</p>
           <CoexistenceConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={action} label="Conectar meu WhatsApp Business" />
           <p className="text-xs text-muted">Use o WhatsApp Business atualizado e, quando a janela pedir, aceite compartilhar os contatos e o histórico.</p>
         </div>
         <div className="card flex flex-col gap-2.5 p-5">
-          <div className="font-semibold">Quero usar um número novo, só para o atendimento</div>
+          <div className="flex items-center gap-2.5 font-medium text-ink">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-raised text-ink-2">
+              <Phone size={16} />
+            </span>
+            Quero usar um número novo, só para o atendimento
+          </div>
           <p className="text-sm text-ink-2">Um número que ainda não está em nenhum WhatsApp. Ele passa a funcionar só pelo assistente, sem app no celular. Tenha o chip por perto para receber o código por SMS ou ligação.</p>
           <WhatsAppConnect appId={signup.appId} configId={signup.configId} graphVersion={signup.graphVersion} action={action} label="Conectar número novo" primary={false} />
         </div>
       </section>
 
       <section className="flex flex-col gap-2 text-sm text-ink-2">
-        <h2 className="text-base font-medium text-ink">O que acontece na janela do Facebook</h2>
+        <h2 className="flex items-center gap-2.5 text-base font-medium text-ink">
+          <StepNumber n={2} color={color} />
+          O que acontece na janela do Facebook
+        </h2>
         <ol className="ml-5 list-decimal space-y-1">
           <li>Você entra com o seu Facebook (o da pessoa responsável pela empresa).</li>
           <li>Escolhe ou cria a conta da empresa e a conta do WhatsApp Business.</li>
@@ -216,5 +233,14 @@ function Shell({ agency, children }: { agency?: Parameters<typeof AgencyHeader>[
       {agency && <AgencyHeader agency={agency} />}
       <main className="mx-auto flex max-w-[680px] flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">{children}</main>
     </div>
+  );
+}
+
+/** O número do passo, na cor da agência. */
+function StepNumber({ n, color }: { n: number; color: string }) {
+  return (
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white" style={{ background: color }}>
+      {n}
+    </span>
   );
 }
