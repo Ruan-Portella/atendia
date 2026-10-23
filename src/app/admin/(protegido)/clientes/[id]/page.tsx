@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Kpi } from "@/components/kpi";
-import { AgencyActions, ChannelSuspension } from "@/components/admin/pause-controls";
-import { AgencyFeatures } from "@/components/admin/release-controls";
+import { AgencyControls } from "@/components/admin/agency-controls";
+import { ReportTabs } from "@/components/report-tabs";
 import { SupportConversations } from "@/components/admin/support-conversations";
 import { ContinuousChecks } from "@/components/admin/continuous-checks";
 import { BotSizeForm } from "@/components/admin/bot-size-form";
@@ -106,8 +106,8 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
           <a href={`https://dashboard.stripe.com/${testMode ? "test/" : ""}customers/${agency.stripeCustomerId}`} target="_blank" rel="noreferrer" className="btn-ghost">Abrir no Stripe ↗</a>
         )}
         <div className="flex flex-wrap gap-2">
-          <Link href={`/admin/clientes/${id}/integracoes`} className="btn-ghost">Integrações (piloto)</Link>
-          <Link href={`/admin/clientes/${id}/campanhas`} className="btn-ghost">Campanhas (teste)</Link>
+          <Link href={`/admin/clientes/${id}/integracoes`} className="btn-ghost">Integrações</Link>
+          <Link href={`/admin/clientes/${id}/campanhas`} className="btn-ghost">Campanhas</Link>
         </div>
       </div>
 
@@ -118,119 +118,153 @@ export default async function AdminClient({ params }: { params: Promise<{ id: st
         <Kpi label="Chatbots" value={`${agency.liveBots}/${agency.bots}`} sub={`publicados · WhatsApp ${agency.whatsapp} · Instagram ${agency.instagram}`} />
       </section>
 
-      <BillingCard
-        agencyId={id}
-        status={(billing?.billing_status as string | undefined) ?? "none"}
-        cancelAt={(billing?.billing_cancel_at as string | null | undefined) ?? null}
-        subscriptionId={(billing?.stripe_subscription_id as string | null | undefined) ?? null}
-        testMode={testMode}
-        monthlyCents={monthlyCents}
-        packs={target.packs}
-        creditCents={credit}
-        autoRecharge={Boolean(billing?.credit_auto_enabled)}
-      />
-      <FreeAccountCard
-        agencyId={id}
-        view={{
-          billingStatus: (billing?.billing_status as string | undefined) ?? "none",
-          testAnswersUsed: Number(billing?.test_answers_used ?? 0),
-          freeUsedAt: (billing?.free_used_at as string | null | undefined) ?? null,
-          blockedAt: (billing?.free_blocked_at as string | null | undefined) ?? null,
-          blockReason: (billing?.free_block_reason as string | null | undefined) ?? null,
-          releasedAt: (billing?.free_released_at as string | null | undefined) ?? null,
-        }}
-        links={freeLinks}
-        names={agencyName}
-      />
-      <DisputesAdminCard agencyId={id} rows={disputes} />
-      <WithdrawalAdminCard
-        agencyId={id}
-        state={withdrawal}
-        marked={Boolean(marked)}
-        subscribed={billingStatus !== "none"}
-        rows={(withdrawalRows ?? []).map((w) => ({ createdAt: w.created_at as string, via: w.via as string, actor: w.actor as string, refundedCents: Number(w.refunded_cents), status: w.status as string, error: (w.error as string | null) ?? null }))}
-      />
-      <AgencyActions agency={agency} />
-      <AgencyFeatures agencyId={id} features={agency.features} />
-      <ChannelSuspension agencyId={id} bots={(bots ?? []).filter((b) => !b.is_demo).map((b) => ({ id: b.id as string, label: `${b.name} · ${b.client_name}` }))} measures={measures} />
-      <ContinuousChecks {...continuous} testAllowed={false} agencyView />
-      <ClientTransferForm
-        agencyId={id}
-        clients={(clientRows ?? []).map((c) => ({ id: c.id as string, name: c.name as string }))}
-        transfers={(transferRows ?? []).map((t) => ({ id: Number(t.id), client_name: t.client_name as string, from: agencyName.get(t.from_agency_id as string) ?? "conta excluída", to: agencyName.get(t.to_agency_id as string) ?? "conta excluída", requested_by: t.requested_by as string, done_by: t.done_by as string, created_at: t.created_at as string }))}
-      />
+      {/* rodada 2 das telas (23/10/2026, a pedido do usuário: "muito scroll"): as seções em abas, e as ações em linhas com modal */}
+      <ReportTabs
+        label="Seções da agência"
+        tabs={[
+          {
+            key: "chatbots",
+            label: "Chatbots",
+            count: (bots ?? []).length,
+            content: (
+              <section className="card overflow-x-auto">
+                <h2 className="px-5 pt-4 text-lg font-medium">Chatbots</h2>
+                <table className="mt-2 w-full min-w-[880px] text-sm">
+                  <thead className="border-b border-line text-left text-xs text-muted">
+                    <tr><th className="px-5 py-2 font-semibold">Chatbot · cliente da agência</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">Tamanho e cota</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-3 py-2 text-right font-semibold">Trechos da base</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
+                  </thead>
+                  <tbody>
+                    {(bots ?? []).map((b) => {
+                      const w = waBy.get(b.id as string);
+                      const i = igBy.get(b.id as string);
+                      return (
+                        <tr key={b.id as string} className="border-b border-line-2 last:border-0">
+                          <td className="px-5 py-2.5"><span className="font-semibold">{b.name as string}</span><div className="text-xs text-muted">{b.client_name as string}{b.is_demo ? " · demo" : ""}</div></td>
+                          <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}</td>
+                          <td className="px-3 py-2.5">{(() => {
+                            const q = quotaBy.get(b.id as string);
+                            return q ? <BotSizeForm agencyId={id} botId={q.botId} size={q.size} volumePacks={q.volumePacks} override={q.override} used={q.used} quota={q.quota} overageEnabled={q.overageEnabled} overageCapBrl={q.overageCapBrl} overageUsed={q.overageUsed} /> : <span className="text-xs text-muted">demo</span>;
+                          })()}</td>
+                          <td className="px-3 py-2.5 text-xs">{w ? (w.disconnected_at ? <span className="text-danger">desconectado</span> : ((w.display_phone as string | null) ?? "conectado")) : <span className="text-muted">—</span>}</td>
+                          <td className="px-3 py-2.5 text-xs">{i ? (i.disconnected_at ? <span className="text-danger">desconectado</span> : `@${(i.username as string | null) ?? "conectado"}`) : <span className="text-muted">—</span>}</td>
+                          <td className="px-3 py-2.5 text-right tabular">{num(chunkCounts.get(b.id as string) ?? 0)}</td>
+                          <td className="px-5 py-2.5 text-right tabular">{num(conv30.get(b.id as string) ?? 0)}</td>
+                        </tr>
+                      );
+                    })}
+                    {!bots?.length && <tr><td colSpan={7} className="px-5 py-5 text-center text-muted">Nenhum chatbot.</td></tr>}
+                  </tbody>
+                </table>
+              </section>
+            ),
+          },
+          {
+            key: "cobranca",
+            label: "Cobrança",
+            content: (
+              <div className="flex flex-col gap-6">
+                <BillingCard
+                  agencyId={id}
+                  status={(billing?.billing_status as string | undefined) ?? "none"}
+                  cancelAt={(billing?.billing_cancel_at as string | null | undefined) ?? null}
+                  subscriptionId={(billing?.stripe_subscription_id as string | null | undefined) ?? null}
+                  testMode={testMode}
+                  monthlyCents={monthlyCents}
+                  packs={target.packs}
+                  creditCents={credit}
+                  autoRecharge={Boolean(billing?.credit_auto_enabled)}
+                />
+                <FreeAccountCard
+                  agencyId={id}
+                  view={{
+                    billingStatus: (billing?.billing_status as string | undefined) ?? "none",
+                    testAnswersUsed: Number(billing?.test_answers_used ?? 0),
+                    freeUsedAt: (billing?.free_used_at as string | null | undefined) ?? null,
+                    blockedAt: (billing?.free_blocked_at as string | null | undefined) ?? null,
+                    blockReason: (billing?.free_block_reason as string | null | undefined) ?? null,
+                    releasedAt: (billing?.free_released_at as string | null | undefined) ?? null,
+                  }}
+                  links={freeLinks}
+                  names={agencyName}
+                />
+                <DisputesAdminCard agencyId={id} rows={disputes} />
+                <WithdrawalAdminCard
+                  agencyId={id}
+                  state={withdrawal}
+                  marked={Boolean(marked)}
+                  subscribed={billingStatus !== "none"}
+                  rows={(withdrawalRows ?? []).map((w) => ({ createdAt: w.created_at as string, via: w.via as string, actor: w.actor as string, refundedCents: Number(w.refunded_cents), status: w.status as string, error: (w.error as string | null) ?? null }))}
+                />
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <section className="card flex flex-col gap-3 p-5">
+                    <h2 className="text-lg font-medium">Uso e custo por mês</h2>
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Mês</th><th className="py-1.5 text-right font-semibold">Atendimentos</th><th className="py-1.5 text-right font-semibold">Custo de IA</th></tr></thead>
+                      <tbody>
+                        {((usage ?? []) as Array<{ period: string; total: number }>).map((u) => {
+                          const m = months.get(u.period as string);
+                          return (
+                            <tr key={u.period as string} className="border-t border-line-2">
+                              <td className="py-2">{u.period as string}</td>
+                              <td className="py-2 text-right tabular">{num(Number(u.total) || 0)}</td>
+                              <td className="py-2 text-right tabular" title={m?.kinds.map((k) => `${kindLabel(k.kind)}: ${usd(k.cost, 4)}`).join("\n")}>{m ? usd(m.cost) : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                        {!usage?.length && <tr><td colSpan={3} className="py-3 text-center text-muted">Sem uso registrado.</td></tr>}
+                      </tbody>
+                    </table>
+                    <p className="text-xs text-muted">O custo do mês corrente entra nos totais mensais pelo job diário; o valor de hoje está nos cartões acima.</p>
+                  </section>
 
-      <section className="card overflow-x-auto">
-        <h2 className="px-5 pt-4 text-lg font-medium">Chatbots</h2>
-        <table className="mt-2 w-full min-w-[880px] text-sm">
-          <thead className="border-b border-line text-left text-xs text-muted">
-            <tr><th className="px-5 py-2 font-semibold">Chatbot · cliente da agência</th><th className="px-3 py-2 font-semibold">Situação</th><th className="px-3 py-2 font-semibold">Tamanho e cota</th><th className="px-3 py-2 font-semibold">WhatsApp</th><th className="px-3 py-2 font-semibold">Instagram</th><th className="px-3 py-2 text-right font-semibold">Trechos da base</th><th className="px-5 py-2 text-right font-semibold">Conversas (30 dias)</th></tr>
-          </thead>
-          <tbody>
-            {(bots ?? []).map((b) => {
-              const w = waBy.get(b.id as string);
-              const i = igBy.get(b.id as string);
-              return (
-                <tr key={b.id as string} className="border-b border-line-2 last:border-0">
-                  <td className="px-5 py-2.5"><span className="font-semibold">{b.name as string}</span><div className="text-xs text-muted">{b.client_name as string}{b.is_demo ? " · demo" : ""}</div></td>
-                  <td className="px-3 py-2.5">{BOT_STATUS[b.status as string] ?? (b.status as string)}{b.paused_at && <span className="text-danger"> · IA pausada pelo dono</span>}</td>
-                  <td className="px-3 py-2.5">{(() => {
-                    const q = quotaBy.get(b.id as string);
-                    return q ? <BotSizeForm agencyId={id} botId={q.botId} size={q.size} volumePacks={q.volumePacks} override={q.override} used={q.used} quota={q.quota} overageEnabled={q.overageEnabled} overageCapBrl={q.overageCapBrl} overageUsed={q.overageUsed} /> : <span className="text-xs text-muted">demo</span>;
-                  })()}</td>
-                  <td className="px-3 py-2.5 text-xs">{w ? (w.disconnected_at ? <span className="text-danger">desconectado</span> : ((w.display_phone as string | null) ?? "conectado")) : <span className="text-muted">—</span>}</td>
-                  <td className="px-3 py-2.5 text-xs">{i ? (i.disconnected_at ? <span className="text-danger">desconectado</span> : `@${(i.username as string | null) ?? "conectado"}`) : <span className="text-muted">—</span>}</td>
-                  <td className="px-3 py-2.5 text-right tabular">{num(chunkCounts.get(b.id as string) ?? 0)}</td>
-                  <td className="px-5 py-2.5 text-right tabular">{num(conv30.get(b.id as string) ?? 0)}</td>
-                </tr>
-              );
-            })}
-            {!bots?.length && <tr><td colSpan={7} className="px-5 py-5 text-center text-muted">Nenhum chatbot.</td></tr>}
-          </tbody>
-        </table>
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-lg font-medium">Uso e custo por mês</h2>
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Mês</th><th className="py-1.5 text-right font-semibold">Atendimentos</th><th className="py-1.5 text-right font-semibold">Custo de IA</th></tr></thead>
-            <tbody>
-              {((usage ?? []) as Array<{ period: string; total: number }>).map((u) => {
-                const m = months.get(u.period as string);
-                return (
-                  <tr key={u.period as string} className="border-t border-line-2">
-                    <td className="py-2">{u.period as string}</td>
-                    <td className="py-2 text-right tabular">{num(Number(u.total) || 0)}</td>
-                    <td className="py-2 text-right tabular" title={m?.kinds.map((k) => `${kindLabel(k.kind)}: ${usd(k.cost, 4)}`).join("\n")}>{m ? usd(m.cost) : "—"}</td>
-                  </tr>
-                );
-              })}
-              {!usage?.length && <tr><td colSpan={3} className="py-3 text-center text-muted">Sem uso registrado.</td></tr>}
-            </tbody>
-          </table>
-          <p className="text-xs text-muted">O custo do mês corrente entra nos totais mensais pelo job diário; o valor de hoje está nos cartões acima.</p>
-        </section>
-
-        <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-lg font-medium">Faturas (Stripe)</h2>
-          {invoices.length ? (
-            <ul className="flex flex-col divide-y divide-line-2 text-sm">
-              {invoices.map((inv) => (
-                <li key={inv.id} className="flex items-center justify-between gap-3 py-2">
-                  <span>{new Date((inv.created ?? 0) * 1000).toLocaleDateString("pt-BR")} · {inv.status === "paid" ? "paga" : inv.status === "open" ? "em aberto" : inv.status}</span>
-                  <span className="tabular">{brl((inv.amount_paid || inv.amount_due || 0) / 100)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted">{agency.stripeCustomerId ? "Nenhuma fatura." : "Ainda não é cliente no Stripe."}</p>
-          )}
-          {agency.lastActivity && <p className="mt-auto text-xs text-muted">Última conversa {relativeTime(agency.lastActivity)}.</p>}
-        </section>
-      </div>
-
-      <SupportConversations agencyId={id} bots={(bots ?? []).map((b) => ({ id: b.id as string, name: b.name as string, client_name: b.client_name as string }))} />
+                  <section className="card flex flex-col gap-3 p-5">
+                    <h2 className="text-lg font-medium">Faturas (Stripe)</h2>
+                    {invoices.length ? (
+                      <ul className="flex flex-col divide-y divide-line-2 text-sm">
+                        {invoices.map((inv) => (
+                          <li key={inv.id} className="flex items-center justify-between gap-3 py-2">
+                            <span>{new Date((inv.created ?? 0) * 1000).toLocaleDateString("pt-BR")} · {inv.status === "paid" ? "paga" : inv.status === "open" ? "em aberto" : inv.status}</span>
+                            <span className="tabular">{brl((inv.amount_paid || inv.amount_due || 0) / 100)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted">{agency.stripeCustomerId ? "Nenhuma fatura." : "Ainda não é cliente no Stripe."}</p>
+                    )}
+                    {agency.lastActivity && <p className="mt-auto text-xs text-muted">Última conversa {relativeTime(agency.lastActivity)}.</p>}
+                  </section>
+                </div>
+              </div>
+            ),
+          },
+          {
+            key: "acoes",
+            label: "Ações",
+            content: (
+              <div className="flex flex-col gap-6">
+                <AgencyControls agency={agency} bots={(bots ?? []).filter((b) => !b.is_demo).map((b) => ({ id: b.id as string, label: `${b.name} · ${b.client_name}` }))} measures={measures} />
+                <ClientTransferForm
+                  agencyId={id}
+                  clients={(clientRows ?? []).map((c) => ({ id: c.id as string, name: c.name as string }))}
+                  transfers={(transferRows ?? []).map((t) => ({ id: Number(t.id), client_name: t.client_name as string, from: agencyName.get(t.from_agency_id as string) ?? "conta excluída", to: agencyName.get(t.to_agency_id as string) ?? "conta excluída", requested_by: t.requested_by as string, done_by: t.done_by as string, created_at: t.created_at as string }))}
+                />
+              </div>
+            ),
+          },
+          {
+            key: "conformidade",
+            label: "Conformidade",
+            content: <ContinuousChecks {...continuous} testAllowed={false} agencyView />,
+          },
+          {
+            key: "suporte",
+            label: "Suporte",
+            content: (
+              <SupportConversations agencyId={id} bots={(bots ?? []).map((b) => ({ id: b.id as string, name: b.name as string, client_name: b.client_name as string }))} />
+            ),
+          },
+        ]}
+      />
     </>
   );
 }

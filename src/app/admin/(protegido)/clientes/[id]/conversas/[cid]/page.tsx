@@ -39,7 +39,7 @@ export default async function SupportConversation({ params }: { params: Promise<
   const messages = raw.map((m) => ({ ...m, attachments: files.get(m.id) })) as ThreadMessage[];
 
   return (
-    <div className="flex max-w-[760px] flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div>
         <Link href={`/admin/clientes/${id}`} className="text-xs font-semibold text-muted">← Agência</Link>
         <h1 className="text-xl font-normal">{bot.name} · {bot.client_name}</h1>

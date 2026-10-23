@@ -297,7 +297,7 @@ export function SettingRow({
   );
 }
 
-/** Um botão que abre o modal de editar (ex.: Novo roteiro, Testar). */
+/** Um botão que abre o modal de editar (ex.: Novo roteiro, Testar). O `label` pode ser um cartão inteiro (o kanban do roadmap). */
 export function DialogButton({
   label,
   icon,
@@ -305,7 +305,7 @@ export function DialogButton({
   children,
   ...dialog
 }: {
-  label: string;
+  label: React.ReactNode;
   icon?: React.ReactNode;
   className?: string;
   children: React.ReactNode;

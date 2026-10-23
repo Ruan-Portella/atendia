@@ -3,6 +3,7 @@ import { Kpi } from "@/components/kpi";
 import { DayBars } from "@/components/admin/day-bars";
 import { requireAdmin } from "@/lib/platform-admin";
 import { FixedCosts } from "@/components/admin/fixed-costs";
+import { ReportTabs } from "@/components/report-tabs";
 import { RANGE_LABEL, fixedMonthlyBrl, getAgencies, getAiCosts, getFixedCosts, getOpenAiCosts, getWhatsAppUsage, isRangeKey, kindLabel, rangeFor, usd, usdBrl, type RangeKey } from "@/lib/backoffice";
 import { CATEGORY_LABEL } from "@/lib/whatsapp-usage";
 import { brl, num } from "@/lib/plans";
@@ -69,71 +70,99 @@ export default async function AdminCosts({ searchParams }: { searchParams: Promi
         <Kpi label="Conta da OpenAI" value={real ? usd(real.total) : "—"} sub={real ? `medido ${usd(s.total.cost)} · diferença ${usd(real.total - s.total.cost)}` : openai && "error" in openai ? "erro ao consultar" : "falta OPENAI_ADMIN_KEY"} />
       </section>
 
-      <section className="card flex flex-col gap-4 p-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-medium">Custo de IA por dia (medido)</h2>
-          <span className="text-xs text-muted">{range.label}{s.audioMinutes ? ` · ${num(Math.round(s.audioMinutes))} min de áudio` : ""}</span>
-        </div>
-        <DayBars caption="Custo de IA por dia" days={daily.map((d) => ({ day: d.day, value: d.cost, detail: `${num(d.calls)} chamadas` }))} format={(v) => usd(v, v < 1 ? 4 : 2)} />
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Breakdown title="Por tipo" rows={s.byKind} label={kindLabel} total={s.total.cost} />
-        <Breakdown title="Por modelo" rows={s.byModel} total={s.total.cost} />
-        <Breakdown title="Por canal" rows={s.byChannel} label={(k) => CHANNEL_LABEL[k] ?? k} total={s.total.cost} />
-        <Breakdown title="Agências que mais gastam" rows={s.byAgency} label={(k) => agencyName.get(k) ?? "agência vitrine (demos)"} total={s.total.cost} />
-      </div>
-
-      <FixedCosts costs={fixed} totalBrl={fixedMonthlyBrl(fixed, fx)} />
-
-      <section className="card flex flex-col gap-4 p-5">
-        <div>
-          <h2 className="text-lg font-medium">WhatsApp (Meta) · {waPeriod}</h2>
-          <p className="text-sm text-muted">A Meta cobra no cartão de cada cliente, não da BoaVoz: não entra na margem. Serve para o suporte (quem está gastando com modelos, por exemplo). Estimativa pela tabela de referência (WHATSAPP_PRICES_BRL).</p>
-        </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Mensagens enviadas</div><div className="text-xl font-bold tabular">{num(whatsapp.sent)}</div></div>
-          <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Cobradas pela Meta</div><div className="text-xl font-bold tabular">{num(whatsapp.billed)}</div></div>
-          <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Estimativa (clientes)</div><div className="text-xl font-bold tabular">{brl(whatsapp.estimateBrl)}</div>{whatsapp.unpriced.length > 0 && <div className="text-xs text-muted">sem preço: {whatsapp.unpriced.join(", ")}</div>}</div>
-        </div>
-        {whatsapp.sent > 0 && (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Categoria</th><th className="py-1.5 text-right font-semibold">Enviadas</th><th className="py-1.5 text-right font-semibold">Cobradas</th></tr></thead>
-              <tbody>{whatsapp.categories.map((c) => <tr key={c.category} className="border-t border-line-2"><td className="py-1.5">{CATEGORY_LABEL[c.category] ?? c.category}</td><td className="py-1.5 text-right tabular">{num(c.sent)}</td><td className="py-1.5 text-right tabular">{num(c.billed)}</td></tr>)}</tbody>
-            </table>
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Agência</th><th className="py-1.5 text-right font-semibold">Enviadas</th><th className="py-1.5 text-right font-semibold">Estimativa</th></tr></thead>
-              <tbody>{whatsapp.agencies.slice(0, 10).map((a) => <tr key={a.agency} className="border-t border-line-2"><td className="py-1.5">{agencyName.get(a.agency) ?? "agência vitrine (demos)"}</td><td className="py-1.5 text-right tabular">{num(a.sent)}</td><td className="py-1.5 text-right tabular">{brl(a.estimateBrl)}</td></tr>)}</tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="card flex flex-col gap-4 p-5">
-        <h2 className="text-lg font-medium">Conta da OpenAI (valor real)</h2>
-        {!openai && (
-          <div className="flex flex-col gap-2 text-sm text-muted">
-            <p>Para ver o valor real cobrado pela OpenAI, crie uma chave de admin e coloque na Vercel:</p>
-            <ol className="ml-5 list-decimal">
-              <li>No painel da OpenAI: Settings → Organization → Admin keys → Create new admin key (só leitura de uso basta).</li>
-              <li>Na Vercel, no projeto da dev: Settings → Environment Variables → <code className="rounded bg-ground px-1 text-ink">OPENAI_ADMIN_KEY</code>.</li>
-              <li>Faça um novo deploy.</li>
-            </ol>
-          </div>
-        )}
-        {openai && "error" in openai && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">Não deu para consultar a OpenAI: {openai.error}</p>}
-        {real && (
-          <>
-            <p className="text-sm text-muted">Inclui tudo da organização: produção, dev, avaliações e testes. As avaliações da IA entram no medido como &ldquo;Avaliações da IA&rdquo; (desde 02/10/2026; as de antes não foram registradas). A diferença que sobra é o que roda fora do sistema (testes locais, outros projetos na mesma conta) e os arredondamentos da OpenAI.</p>
-            <DayBars caption="Custo real por dia" days={real.daily.map((d) => ({ day: d.day, value: d.cost }))} format={(v) => usd(v, v < 1 ? 4 : 2)} />
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Breakdown title="Por projeto da OpenAI" rows={real.byProject} total={real.total} />
-              <Breakdown title="Por item (modelo, entrada/saída)" rows={real.byItem} total={real.total} />
-            </div>
-          </>
-        )}
-      </section>
+      {/* rodada 2 das telas (23/10/2026, a pedido do usuário: "muito scroll"): uma parte por aba */}
+      <ReportTabs
+        label="Partes dos custos"
+        tabs={[
+          {
+            key: "ia",
+            label: "IA medida",
+            content: (
+              <div className="flex flex-col gap-6">
+                <section className="card flex flex-col gap-4 p-5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 className="text-lg font-medium">Custo de IA por dia (medido)</h2>
+                    <span className="text-xs text-muted">{range.label}{s.audioMinutes ? ` · ${num(Math.round(s.audioMinutes))} min de áudio` : ""}</span>
+                  </div>
+                  <DayBars caption="Custo de IA por dia" days={daily.map((d) => ({ day: d.day, value: d.cost, detail: `${num(d.calls)} chamadas` }))} format={(v) => usd(v, v < 1 ? 4 : 2)} />
+                </section>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <Breakdown title="Por tipo" rows={s.byKind} label={kindLabel} total={s.total.cost} />
+                  <Breakdown title="Por modelo" rows={s.byModel} total={s.total.cost} />
+                  <Breakdown title="Por canal" rows={s.byChannel} label={(k) => CHANNEL_LABEL[k] ?? k} total={s.total.cost} />
+                  <Breakdown title="Agências que mais gastam" rows={s.byAgency} label={(k) => agencyName.get(k) ?? "agência vitrine (demos)"} total={s.total.cost} />
+                </div>
+              </div>
+            ),
+          },
+          {
+            key: "fixos",
+            label: "Custos fixos",
+            content: (
+              <FixedCosts costs={fixed} totalBrl={fixedMonthlyBrl(fixed, fx)} />
+            ),
+          },
+          {
+            key: "whatsapp",
+            label: "WhatsApp (Meta)",
+            content: (
+              <section className="card flex flex-col gap-4 p-5">
+                <div>
+                  <h2 className="text-lg font-medium">WhatsApp (Meta) · {waPeriod}</h2>
+                  <p className="text-sm text-muted">A Meta cobra no cartão de cada cliente, não da BoaVoz: não entra na margem. Serve para o suporte (quem está gastando com modelos, por exemplo). Estimativa pela tabela de referência (WHATSAPP_PRICES_BRL).</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                  <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Mensagens enviadas</div><div className="text-xl font-bold tabular">{num(whatsapp.sent)}</div></div>
+                  <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Cobradas pela Meta</div><div className="text-xl font-bold tabular">{num(whatsapp.billed)}</div></div>
+                  <div className="rounded-lg bg-ground px-4 py-3"><div className="kpi-label">Estimativa (clientes)</div><div className="text-xl font-bold tabular">{brl(whatsapp.estimateBrl)}</div>{whatsapp.unpriced.length > 0 && <div className="text-xs text-muted">sem preço: {whatsapp.unpriced.join(", ")}</div>}</div>
+                </div>
+                {whatsapp.sent > 0 && (
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Categoria</th><th className="py-1.5 text-right font-semibold">Enviadas</th><th className="py-1.5 text-right font-semibold">Cobradas</th></tr></thead>
+                      <tbody>{whatsapp.categories.map((c) => <tr key={c.category} className="border-t border-line-2"><td className="py-1.5">{CATEGORY_LABEL[c.category] ?? c.category}</td><td className="py-1.5 text-right tabular">{num(c.sent)}</td><td className="py-1.5 text-right tabular">{num(c.billed)}</td></tr>)}</tbody>
+                    </table>
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Agência</th><th className="py-1.5 text-right font-semibold">Enviadas</th><th className="py-1.5 text-right font-semibold">Estimativa</th></tr></thead>
+                      <tbody>{whatsapp.agencies.slice(0, 10).map((a) => <tr key={a.agency} className="border-t border-line-2"><td className="py-1.5">{agencyName.get(a.agency) ?? "agência vitrine (demos)"}</td><td className="py-1.5 text-right tabular">{num(a.sent)}</td><td className="py-1.5 text-right tabular">{brl(a.estimateBrl)}</td></tr>)}</tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            ),
+          },
+          {
+            key: "openai",
+            label: "Conta da OpenAI",
+            content: (
+              <section className="card flex flex-col gap-4 p-5">
+                <h2 className="text-lg font-medium">Conta da OpenAI (valor real)</h2>
+                {!openai && (
+                  <div className="flex flex-col gap-2 text-sm text-muted">
+                    <p>Para ver o valor real cobrado pela OpenAI, crie uma chave de admin e coloque na Vercel:</p>
+                    <ol className="ml-5 list-decimal">
+                      <li>No painel da OpenAI: Settings → Organization → Admin keys → Create new admin key (só leitura de uso basta).</li>
+                      <li>Na Vercel, no projeto da dev: Settings → Environment Variables → <code className="rounded bg-ground px-1 text-ink">OPENAI_ADMIN_KEY</code>.</li>
+                      <li>Faça um novo deploy.</li>
+                    </ol>
+                  </div>
+                )}
+                {openai && "error" in openai && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">Não deu para consultar a OpenAI: {openai.error}</p>}
+                {real && (
+                  <>
+                    <p className="text-sm text-muted">Inclui tudo da organização: produção, dev, avaliações e testes. As avaliações da IA entram no medido como &ldquo;Avaliações da IA&rdquo; (desde 02/10/2026; as de antes não foram registradas). A diferença que sobra é o que roda fora do sistema (testes locais, outros projetos na mesma conta) e os arredondamentos da OpenAI.</p>
+                    <DayBars caption="Custo real por dia" days={real.daily.map((d) => ({ day: d.day, value: d.cost }))} format={(v) => usd(v, v < 1 ? 4 : 2)} />
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <Breakdown title="Por projeto da OpenAI" rows={real.byProject} total={real.total} />
+                      <Breakdown title="Por item (modelo, entrada/saída)" rows={real.byItem} total={real.total} />
+                    </div>
+                  </>
+                )}
+              </section>
+            ),
+          },
+        ]}
+      />
     </>
   );
 }

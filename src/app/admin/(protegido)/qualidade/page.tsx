@@ -5,6 +5,7 @@ import { botRefs, getBaseGateStats, getQuality, type BotRef } from "@/lib/backof
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { classifyBaseNow } from "./actions";
+import { ReportTabs } from "@/components/report-tabs";
 import { RANGE_LABEL, isRangeKey, rangeFor, type RangeKey } from "@/lib/backoffice";
 import { num } from "@/lib/plans";
 import { cn, relativeTime } from "@/lib/utils";
@@ -90,67 +91,91 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
         </section>
       )}
 
-      <section className="card flex flex-col gap-3 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-medium">Classificação da base (portão)</h2>
-            <p className="text-sm text-muted">Cada trecho das fontes passa uma vez pela IA, que marca as frases que oferecem bebida, remédio (conferido com a lista da Anvisa) ou item proibido. Sem classificação, o portão usa só o dicionário. Roda sozinha depois de cada fonte nova e na rotina diária (que não roda na dev).</p>
-          </div>
-          <ActionForm action={classifyBaseNow} className="shrink-0">
-            <SubmitButton className="btn-ghost" pendingLabel="Classificando… (até 4 min)" disabled={!base.pending}>Classificar agora</SubmitButton>
-          </ActionForm>
-        </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          <span><strong className="tabular">{num(base.total - base.pending)}</strong> de {num(base.total)} trechos classificados</span>
-          <span><strong className="tabular">{num(base.restricted)}</strong> com item restrito</span>
-          {base.pending > 0 && <span className="text-amber-ink"><strong className="tabular">{num(base.pending)}</strong> pendentes</span>}
-          <span className="text-xs text-muted">versão {base.version}</span>
-        </div>
-        {base.bots.length > 0 && (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Bot</th><th className="py-1.5 text-right font-semibold">Com item restrito</th><th className="py-1.5 text-right font-semibold">Pendentes</th><th className="py-1.5 text-right font-semibold">Trechos</th></tr></thead>
-            <tbody>
-              {base.bots.slice(0, 10).map((b) => (
-                <tr key={b.bot} className="border-t border-line-2"><td className="py-1.5">{botLabel(baseBots, b.bot)}</td><td className="py-1.5 text-right tabular">{num(b.restricted)}</td><td className="py-1.5 text-right tabular">{num(b.pending)}</td><td className="py-1.5 text-right tabular">{num(b.total)}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Counts title="Bots com mais perguntas sem resposta" rows={g.sem_resposta_bot} label={(k) => botLabel(q.bots, k)} empty="Nenhuma pendente." />
-        <Counts title="Bots que mais recusam (escopo)" rows={g.recusa_bot} label={(k) => botLabel(q.bots, k)} empty="Nenhuma recusa no período." />
-        <Counts title="Portão por etapa e decisão" rows={g.portao} label={(k) => GATE_LABEL[k] ?? k} empty="Nada barrado no período." />
-        <Counts title="Portão por categoria" rows={g.portao_categoria} empty="Nada barrado no período." />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-medium">Últimas perguntas sem resposta</h2>
-          <ul className="flex flex-col divide-y divide-line-2 text-sm">
-            {q.unanswered.map((u) => (
-              <li key={u.id as string} className="flex flex-col gap-0.5 py-2">
-                <span>{u.hidden ? <span className="text-muted">(texto oculto: a agência não liberou o suporte)</span> : u.question}</span>
-                <span className="text-xs text-muted">{botLabel(q.bots, u.bot_id as string)} · {relativeTime(u.created_at as string)}</span>
-              </li>
-            ))}
-            {!q.unanswered.length && <li className="py-2 text-muted">Nenhuma pendente.</li>}
-          </ul>
-        </section>
-        <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-medium">Últimas recusas de escopo</h2>
-          <ul className="flex flex-col divide-y divide-line-2 text-sm">
-            {q.refusals.map((r) => (
-              <li key={r.id as number} className="flex flex-col gap-0.5 py-2">
-                <span>{r.hidden ? <span className="text-muted">(texto oculto: a agência não liberou o suporte)</span> : (r.request ?? <span className="text-muted">(sem resumo)</span>)}</span>
-                <span className="text-xs text-muted">{r.level as string} · {botLabel(q.bots, r.bot_id as string)} · {relativeTime(r.created_at as string)}</span>
-              </li>
-            ))}
-            {!q.refusals.length && <li className="py-2 text-muted">Nenhuma no período.</li>}
-          </ul>
-        </section>
-      </div>
+      {/* rodada 2 das telas (23/10/2026, a pedido do usuário: "muito scroll"): uma parte por aba; os urgentes ficam em cima */}
+      <ReportTabs
+        label="Partes da qualidade"
+        tabs={[
+          {
+            key: "rankings",
+            label: "Onde acontece",
+            content: (
+              <div className="grid gap-6 lg:grid-cols-2">
+                <Counts title="Bots com mais perguntas sem resposta" rows={g.sem_resposta_bot} label={(k) => botLabel(q.bots, k)} empty="Nenhuma pendente." />
+                <Counts title="Bots que mais recusam (escopo)" rows={g.recusa_bot} label={(k) => botLabel(q.bots, k)} empty="Nenhuma recusa no período." />
+                <Counts title="Portão por etapa e decisão" rows={g.portao} label={(k) => GATE_LABEL[k] ?? k} empty="Nada barrado no período." />
+                <Counts title="Portão por categoria" rows={g.portao_categoria} empty="Nada barrado no período." />
+              </div>
+            ),
+          },
+          {
+            key: "ultimas",
+            label: "Últimas perguntas e recusas",
+            count: q.unanswered.length,
+            content: (
+              <div className="grid gap-6 lg:grid-cols-2">
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Últimas perguntas sem resposta</h2>
+                  <ul className="flex flex-col divide-y divide-line-2 text-sm">
+                    {q.unanswered.map((u) => (
+                      <li key={u.id as string} className="flex flex-col gap-0.5 py-2">
+                        <span>{u.hidden ? <span className="text-muted">(texto oculto: a agência não liberou o suporte)</span> : u.question}</span>
+                        <span className="text-xs text-muted">{botLabel(q.bots, u.bot_id as string)} · {relativeTime(u.created_at as string)}</span>
+                      </li>
+                    ))}
+                    {!q.unanswered.length && <li className="py-2 text-muted">Nenhuma pendente.</li>}
+                  </ul>
+                </section>
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Últimas recusas de escopo</h2>
+                  <ul className="flex flex-col divide-y divide-line-2 text-sm">
+                    {q.refusals.map((r) => (
+                      <li key={r.id as number} className="flex flex-col gap-0.5 py-2">
+                        <span>{r.hidden ? <span className="text-muted">(texto oculto: a agência não liberou o suporte)</span> : (r.request ?? <span className="text-muted">(sem resumo)</span>)}</span>
+                        <span className="text-xs text-muted">{r.level as string} · {botLabel(q.bots, r.bot_id as string)} · {relativeTime(r.created_at as string)}</span>
+                      </li>
+                    ))}
+                    {!q.refusals.length && <li className="py-2 text-muted">Nenhuma no período.</li>}
+                  </ul>
+                </section>
+              </div>
+            ),
+          },
+          {
+            key: "base",
+            label: "Classificação da base",
+            count: base.pending,
+            content: (
+              <section className="card flex flex-col gap-3 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-medium">Classificação da base (portão)</h2>
+                    <p className="text-sm text-muted">Cada trecho das fontes passa uma vez pela IA, que marca as frases que oferecem bebida, remédio (conferido com a lista da Anvisa) ou item proibido. Sem classificação, o portão usa só o dicionário. Roda sozinha depois de cada fonte nova e na rotina diária (que não roda na dev).</p>
+                  </div>
+                  <ActionForm action={classifyBaseNow} className="shrink-0">
+                    <SubmitButton className="btn-ghost" pendingLabel="Classificando… (até 4 min)" disabled={!base.pending}>Classificar agora</SubmitButton>
+                  </ActionForm>
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  <span><strong className="tabular">{num(base.total - base.pending)}</strong> de {num(base.total)} trechos classificados</span>
+                  <span><strong className="tabular">{num(base.restricted)}</strong> com item restrito</span>
+                  {base.pending > 0 && <span className="text-amber-ink"><strong className="tabular">{num(base.pending)}</strong> pendentes</span>}
+                  <span className="text-xs text-muted">versão {base.version}</span>
+                </div>
+                {base.bots.length > 0 && (
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Bot</th><th className="py-1.5 text-right font-semibold">Com item restrito</th><th className="py-1.5 text-right font-semibold">Pendentes</th><th className="py-1.5 text-right font-semibold">Trechos</th></tr></thead>
+                    <tbody>
+                      {base.bots.slice(0, 10).map((b) => (
+                        <tr key={b.bot} className="border-t border-line-2"><td className="py-1.5">{botLabel(baseBots, b.bot)}</td><td className="py-1.5 text-right tabular">{num(b.restricted)}</td><td className="py-1.5 text-right tabular">{num(b.pending)}</td><td className="py-1.5 text-right tabular">{num(b.total)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </section>
+            ),
+          },
+        ]}
+      />
     </>
   );
 }

@@ -12,6 +12,7 @@ import { AcceptanceList, BusinessReviews } from "@/components/admin/business-rev
 import { MeasureList } from "@/components/admin/pause-controls";
 import { num } from "@/lib/plans";
 import { relativeTime } from "@/lib/utils";
+import { ReportTabs } from "@/components/report-tabs";
 
 export const metadata = { title: "Conformidade" };
 // "Rodar as agendadas" faz várias chamadas de IA
@@ -46,86 +47,114 @@ export default async function AdminCompliance({ searchParams }: { searchParams: 
         <Kpi label="Acessos ao backoffice" value={num(c.access.length)} sub={email ? `de "${email}" (últimos 100)` : "últimos 100"} />
       </section>
 
-      <IncidentRegister incidents={incidents} />
-
-      <BusinessReviews open={reviews.open} recent={reviews.recent} />
-
-      <GateReviews open={gate.open} recent={gate.recent} exceptions={gate.exceptions} />
-
-      <BotAnalyses pending={analyses.pending} recent={analyses.recent} due={analyses.due} />
-
-      <ContinuousChecks {...continuous} testAllowed={!cronsScheduledHere()} />
-
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Medidas: suspensões da BoaVoz e avisos da Meta</h2>
-        <p className="text-xs text-muted">Ordem da Meta bloqueia o número (nada entra nem sai) e é levantada sozinha quando a Meta reativa a conta. Infrações e restrições ficam só registradas por enquanto. Suspensões da BoaVoz são criadas na página de cada agência.</p>
-        <MeasureList measures={measures} showAgency empty="Nenhuma medida registrada." />
-      </section>
-
-      <AcceptanceList rows={acceptances} />
-
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Pedidos de exclusão de dados (Meta)</h2>
-        {c.deletions.length ? (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Código</th><th className="py-1.5 font-semibold">Origem</th><th className="py-1.5 font-semibold">Recebido</th><th className="py-1.5 font-semibold">Situação</th></tr></thead>
-            <tbody>
-              {c.deletions.map((d) => (
-                <tr key={d.code as string} className="border-t border-line-2">
-                  <td className="py-2 font-mono text-xs">{d.code as string}</td>
-                  <td className="py-2">{SOURCE_LABEL[d.source as string] ?? (d.source as string)}</td>
-                  <td className="py-2 text-muted">{relativeTime(d.created_at as string)}</td>
-                  <td className="py-2">{d.status === "completed" ? `concluído ${d.completed_at ? relativeTime(d.completed_at as string) : ""}` : <strong className="text-danger">pendente</strong>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="text-sm text-muted">Nenhum pedido.</p>
-        )}
-      </section>
-
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Descadastros de mensagens</h2>
-        {c.suppressions.length ? (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Canal</th><th className="py-1.5 font-semibold">De quê</th><th className="py-1.5 font-semibold">Motivo</th><th className="py-1.5 text-right font-semibold">Ativos</th><th className="py-1.5 text-right font-semibold">Novos (30 d)</th><th className="py-1.5 text-right font-semibold">Desfeitos (30 d)</th></tr></thead>
-            <tbody>
-              {c.suppressions.map((s) => (
-                <tr key={`${s.channel}${s.kind}${s.reason}`} className="border-t border-line-2">
-                  <td className="py-2">{s.channel === "whatsapp" ? "WhatsApp" : s.channel === "instagram" ? "Instagram" : s.channel}</td>
-                  <td className="py-2">{KIND_LABEL[s.kind] ?? s.kind}</td>
-                  <td className="py-2">{REASON_LABEL[s.reason] ?? s.reason}</td>
-                  <td className="py-2 text-right tabular">{num(s.active)}</td>
-                  <td className="py-2 text-right tabular">{num(s.created_since)}</td>
-                  <td className="py-2 text-right tabular">{num(s.revoked_since)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="text-sm text-muted">Nenhum descadastro.</p>
-        )}
-      </section>
-
-      <section className="card flex flex-col gap-3 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-medium">Registro de acessos ao backoffice</h2>
-          <form className="flex gap-2">
-            <input name="email" defaultValue={email} placeholder="filtrar por e-mail" className="input w-56 py-1.5" />
-            <button type="submit" className="btn-ghost py-1.5">Filtrar</button>
-          </form>
-        </div>
-        <ul className="flex flex-col divide-y divide-line-2 text-sm">
-          {c.access.map((a) => (
-            <li key={a.id as number} className="flex flex-wrap justify-between gap-2 py-1.5">
-              <span className="min-w-0 break-words font-mono text-xs">{a.path as string}</span>
-              <span className="text-xs text-muted">{a.email as string} · {new Date(a.created_at as string).toLocaleString("pt-BR")}</span>
-            </li>
-          ))}
-          {!c.access.length && <li className="py-2 text-muted">Nenhum acesso.</li>}
-        </ul>
-      </section>
+      {/* rodada 2 das telas (23/10/2026, a pedido do usuário: "muito scroll"): uma seção por aba; o filtro por e-mail abre em Acessos */}
+      <ReportTabs
+        label="Seções da conformidade"
+        initial={email ? "acessos" : undefined}
+        tabs={[
+          {
+            key: "revisoes",
+            label: "Revisões",
+            count: reviews.open.length + gate.open.length + analyses.pending.length,
+            content: (
+              <div className="flex flex-col gap-6">
+                <BusinessReviews open={reviews.open} recent={reviews.recent} />
+                <GateReviews open={gate.open} recent={gate.recent} exceptions={gate.exceptions} />
+                <BotAnalyses pending={analyses.pending} recent={analyses.recent} due={analyses.due} />
+              </div>
+            ),
+          },
+          { key: "incidentes", label: "Incidentes", count: incidents.filter((i) => i.status !== "encerrado").length, content: <IncidentRegister incidents={incidents} /> },
+          { key: "continua", label: "Conferência contínua", content: <ContinuousChecks {...continuous} testAllowed={!cronsScheduledHere()} /> },
+          {
+            key: "medidas",
+            label: "Medidas",
+            content: (
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Medidas: suspensões da BoaVoz e avisos da Meta</h2>
+                  <p className="text-xs text-muted">Ordem da Meta bloqueia o número (nada entra nem sai) e é levantada sozinha quando a Meta reativa a conta. Infrações e restrições ficam só registradas por enquanto. Suspensões da BoaVoz são criadas na página de cada agência.</p>
+                  <MeasureList measures={measures} showAgency empty="Nenhuma medida registrada." />
+                </section>
+            ),
+          },
+          { key: "aceites", label: "Aceites", content: <AcceptanceList rows={acceptances} /> },
+          {
+            key: "exclusoes",
+            label: "Exclusões e descadastros",
+            count: pending,
+            content: (
+              <div className="flex flex-col gap-6">
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Pedidos de exclusão de dados (Meta)</h2>
+                  {c.deletions.length ? (
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Código</th><th className="py-1.5 font-semibold">Origem</th><th className="py-1.5 font-semibold">Recebido</th><th className="py-1.5 font-semibold">Situação</th></tr></thead>
+                      <tbody>
+                        {c.deletions.map((d) => (
+                          <tr key={d.code as string} className="border-t border-line-2">
+                            <td className="py-2 font-mono text-xs">{d.code as string}</td>
+                            <td className="py-2">{SOURCE_LABEL[d.source as string] ?? (d.source as string)}</td>
+                            <td className="py-2 text-muted">{relativeTime(d.created_at as string)}</td>
+                            <td className="py-2">{d.status === "completed" ? `concluído ${d.completed_at ? relativeTime(d.completed_at as string) : ""}` : <strong className="text-danger">pendente</strong>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-sm text-muted">Nenhum pedido.</p>
+                  )}
+                </section>
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Descadastros de mensagens</h2>
+                  {c.suppressions.length ? (
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Canal</th><th className="py-1.5 font-semibold">De quê</th><th className="py-1.5 font-semibold">Motivo</th><th className="py-1.5 text-right font-semibold">Ativos</th><th className="py-1.5 text-right font-semibold">Novos (30 d)</th><th className="py-1.5 text-right font-semibold">Desfeitos (30 d)</th></tr></thead>
+                      <tbody>
+                        {c.suppressions.map((s) => (
+                          <tr key={`${s.channel}${s.kind}${s.reason}`} className="border-t border-line-2">
+                            <td className="py-2">{s.channel === "whatsapp" ? "WhatsApp" : s.channel === "instagram" ? "Instagram" : s.channel}</td>
+                            <td className="py-2">{KIND_LABEL[s.kind] ?? s.kind}</td>
+                            <td className="py-2">{REASON_LABEL[s.reason] ?? s.reason}</td>
+                            <td className="py-2 text-right tabular">{num(s.active)}</td>
+                            <td className="py-2 text-right tabular">{num(s.created_since)}</td>
+                            <td className="py-2 text-right tabular">{num(s.revoked_since)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-sm text-muted">Nenhum descadastro.</p>
+                  )}
+                </section>
+              </div>
+            ),
+          },
+          {
+            key: "acessos",
+            label: "Acessos",
+            content: (
+                <section className="card flex flex-col gap-3 p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-base font-medium">Registro de acessos ao backoffice</h2>
+                    <form className="flex gap-2">
+                      <input name="email" defaultValue={email} placeholder="filtrar por e-mail" className="input w-56 py-1.5" />
+                      <button type="submit" className="btn-ghost py-1.5">Filtrar</button>
+                    </form>
+                  </div>
+                  <ul className="flex flex-col divide-y divide-line-2 text-sm">
+                    {c.access.map((a) => (
+                      <li key={a.id as number} className="flex flex-wrap justify-between gap-2 py-1.5">
+                        <span className="min-w-0 break-words font-mono text-xs">{a.path as string}</span>
+                        <span className="text-xs text-muted">{a.email as string} · {new Date(a.created_at as string).toLocaleString("pt-BR")}</span>
+                      </li>
+                    ))}
+                    {!c.access.length && <li className="py-2 text-muted">Nenhum acesso.</li>}
+                  </ul>
+                </section>
+            ),
+          },
+        ]}
+      />
     </>
   );
 }

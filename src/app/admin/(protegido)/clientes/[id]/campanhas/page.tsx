@@ -6,13 +6,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { relativeTime } from "@/lib/utils";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { DialogButton, SettingGroup, SettingRow, SwitchField } from "@/components/ui/setting-row";
+import { Bot, Plus, Timer } from "lucide-react";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { CAMPAIGN_STATUS_LABEL, QUALITY_LABEL, SEND_STATUS_LABEL, costText, listCampaigns, missingSecrets, templateProblem, tickCallHint, tickDiagnostics, tierLimit, type SendStatus } from "@/lib/campaigns";
 import { listTemplates, loadTemplateChannel, templateBody, templateVariables, type Template } from "@/lib/whatsapp-templates";
 import { phoneStanding } from "@/lib/whatsapp";
 import { changeCampaignStatus, createTestCampaign, runCampaignsNow } from "../../../acoes";
 
-export const metadata = { title: "Campanhas (teste)" };
+export const metadata = { title: "Campanhas" };
 // o Rodar agora envia por até 40 s
 export const maxDuration = 60;
 
@@ -22,6 +24,8 @@ const STATUS_TONE: Record<string, string> = { sending: "text-brand", scheduled: 
 /**
  * Campanhas pelo backoffice (leva B3, parte 3a): cria uma campanha de teste com um modelo aprovado
  * e alguns números, roda o tique na hora e acompanha os envios. A tela das agências chega na parte 4.
+ * Rodada 2 das telas (23/10/2026, a pedido do usuário): sem o "(teste)" no nome, o tique numa linha
+ * com o diagnóstico no modal e cada chatbot numa linha com o "Nova campanha" em modal.
  */
 export default async function AdminCampaigns({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -56,66 +60,77 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
     <>
       <div>
         <Link href={`/admin/clientes/${id}`} className="text-xs font-semibold text-muted">← {agency.name}</Link>
-        <h1 className="text-[26px] font-normal">Campanhas (teste)</h1>
+        <h1 className="text-[26px] font-normal">Campanhas</h1>
         <p className="text-sm text-muted">
           Motor de campanhas e lembretes do WhatsApp (B3). Cada envio confere na hora: quem respondeu SAIR, o aceite de novidades (modelo de marketing) e o 18+ (campanha de bebida ou remédio). O limite é o nível do número na Meta, em contatos únicos por 24 h, somando os chatbots da mesma conta do WhatsApp. Envio sem resposta da Meta vira incerto e não é reenviado.
         </p>
       </div>
 
-      <section className="card flex flex-col gap-3 p-5">
-        <h2 className="text-lg font-medium">Tique</h2>
-        <p className="text-sm text-ink-2">
-          O Supabase chama o tique a cada minuto quando há campanha enviando ou agendada (pg_cron, migração 0082, com o endereço e o segredo no cofre).{" "}
-          {lock?.last_run_at ? <>Último tique {relativeTime(lock.last_run_at as string)}{lock.last_ok_at && lock.last_ok_at !== lock.last_run_at ? `, último sem erro ${relativeTime(lock.last_ok_at as string)}` : ""}.</> : "Nenhum tique registrado ainda."}
-        </p>
-        {diag ? (
-          <ul className="flex flex-col gap-1 rounded-lg bg-ground p-3 text-xs">
-            <li>Agendador do Supabase: {job ? (job.active ? `ativo (${job.schedule})` : "agendamento desligado") : diag.cron_error ? `não deu para ler (${diag.cron_error})` : "sem agendamento (pg_cron)"}</li>
-            <li>
-              Cofre:{" "}
-              {diag.secrets_error
-                ? `não deu para ler (${diag.secrets_error})`
-                : missing.length
-                  ? <span className="text-danger">falta {missing.join(" e ")}</span>
-                  : `endereço e segredo gravados${(diag.secrets ?? []).includes("boavoz_vercel_bypass") ? ", com a liberação da Vercel" : ", sem a liberação da Vercel (precisa na dev)"}`}
-            </li>
-            {lastRun && lastRun.status !== "succeeded" && <li className="text-danger">Última execução do agendador ({when(lastRun.start_time)}): {lastRun.status} {lastRun.message ?? ""}</li>}
-            <li>
-              Última chamada ao BoaVoz:{" "}
-              {lastCall ? (
-                <span className={lastCall.status_code && lastCall.status_code < 300 ? "" : "text-danger"}>
-                  {when(lastCall.created)}, {lastCall.status_code ? `HTTP ${lastCall.status_code}` : "sem resposta"}: {tickCallHint(lastCall)}
-                </span>
-              ) : diag.calls_error ? `não deu para ler (${diag.calls_error})` : "nenhuma nas últimas horas"}
-            </li>
-          </ul>
-        ) : (
-          <p className="text-xs text-muted">Diagnóstico do Supabase indisponível (migração 0083 ainda não aplicada?).</p>
-        )}
-        <ResultForm action={runCampaignsNow.bind(null, id)}>
-          <SubmitButton className="btn-ghost self-start py-1.5" pendingLabel="Enviando…">Rodar agora</SubmitButton>
-        </ResultForm>
-      </section>
+      <SettingGroup title="Envio">
+        <SettingRow
+          icon={<Timer size={18} />}
+          title="Tique das campanhas"
+          summary={lock?.last_run_at ? `Último tique ${relativeTime(lock.last_run_at as string)}${lock.last_ok_at && lock.last_ok_at !== lock.last_run_at ? `, último sem erro ${relativeTime(lock.last_ok_at as string)}` : ""}` : "Nenhum tique registrado ainda"}
+          summaryTone={missing.length || (lastRun && lastRun.status !== "succeeded") ? "warn" : "muted"}
+          dialogTitle="O tique das campanhas"
+          description="O Supabase chama o tique a cada minuto quando há campanha enviando ou agendada (pg_cron, migração 0082, com o endereço e o segredo no cofre)."
+          footer="close"
+          trailing={
+            <ResultForm action={runCampaignsNow.bind(null, id)}>
+              <SubmitButton className="btn-ghost py-1.5 text-[13px]" pendingLabel="Enviando…">Rodar agora</SubmitButton>
+            </ResultForm>
+          }
+        >
+          {diag ? (
+            <ul className="flex flex-col gap-1 rounded-lg bg-ground p-3 text-xs">
+              <li>Agendador do Supabase: {job ? (job.active ? `ativo (${job.schedule})` : "agendamento desligado") : diag.cron_error ? `não deu para ler (${diag.cron_error})` : "sem agendamento (pg_cron)"}</li>
+              <li>
+                Cofre:{" "}
+                {diag.secrets_error
+                  ? `não deu para ler (${diag.secrets_error})`
+                  : missing.length
+                    ? <span className="text-danger">falta {missing.join(" e ")}</span>
+                    : `endereço e segredo gravados${(diag.secrets ?? []).includes("boavoz_vercel_bypass") ? ", com a liberação da Vercel" : ", sem a liberação da Vercel (precisa na dev)"}`}
+              </li>
+              {lastRun && lastRun.status !== "succeeded" && <li className="text-danger">Última execução do agendador ({when(lastRun.start_time)}): {lastRun.status} {lastRun.message ?? ""}</li>}
+              <li>
+                Última chamada ao BoaVoz:{" "}
+                {lastCall ? (
+                  <span className={lastCall.status_code && lastCall.status_code < 300 ? "" : "text-danger"}>
+                    {when(lastCall.created)}, {lastCall.status_code ? `HTTP ${lastCall.status_code}` : "sem resposta"}: {tickCallHint(lastCall)}
+                  </span>
+                ) : diag.calls_error ? `não deu para ler (${diag.calls_error})` : "nenhuma nas últimas horas"}
+              </li>
+            </ul>
+          ) : (
+            <p className="text-xs text-muted">Diagnóstico do Supabase indisponível (migração 0083 ainda não aplicada?).</p>
+          )}
+        </SettingRow>
+      </SettingGroup>
 
-      {channels.map(({ bot, ch, templates, tier, quality, error }) => (
-        <section key={bot.id as string} className="card flex flex-col gap-3 p-5">
-          <div>
-            <h2 className="text-lg font-medium">{bot.name as string}</h2>
-            <p className="text-xs text-muted">
-              {bot.client_name as string}
-              {ch ? ` · nível na Meta: ${tier ?? "desconhecido"} (${Number.isFinite(tierLimit(tier)) ? `${tierLimit(tier).toLocaleString("pt-BR")} contatos por 24 h` : "sem limite"}) · qualidade: ${QUALITY_LABEL[quality ?? ""] ?? "sem nota"}` : " · sem WhatsApp conectado"}
-            </p>
-          </div>
-          {error && <p className="text-sm text-danger">A Meta não listou os modelos: {error}</p>}
-          {ch && !error && (
-            templates.length ? (
-              <details className="rounded-lg border border-dashed border-line p-3">
-                <summary className="cursor-pointer text-sm font-semibold">+ Campanha de teste</summary>
-                <ResultForm action={createTestCampaign.bind(null, id)} className="mt-3">
+      <SettingGroup title="Chatbots com WhatsApp">
+        {channels.length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhum chatbot nesta agência.</p>}
+        {channels.map(({ bot, ch, templates, tier, quality, error }) => (
+          <SettingRow
+            key={bot.id as string}
+            icon={<Bot size={18} />}
+            title={bot.name as string}
+            summary={`${bot.client_name as string}${ch ? ` · nível na Meta: ${tier ?? "desconhecido"} (${Number.isFinite(tierLimit(tier)) ? `${tierLimit(tier).toLocaleString("pt-BR")} contatos por 24 h` : "sem limite"}) · qualidade: ${QUALITY_LABEL[quality ?? ""] ?? "sem nota"}` : " · sem WhatsApp conectado"}${error ? ` · a Meta não listou os modelos: ${error}` : ch && !templates.length ? " · nenhum modelo aprovado que o BoaVoz consiga enviar" : ""}`}
+            summaryTone={error ? "warn" : "muted"}
+            trailing={
+              ch && !error && templates.length ? (
+                <DialogButton label="Nova campanha" icon={<Plus size={14} />} className="btn-ghost py-1.5 text-[13px]" title={`Nova campanha · ${bot.name as string}`} description="Com um modelo aprovado e alguns números. Cada envio confere na hora o SAIR, o aceite de novidades e o 18+." action={createTestCampaign.bind(null, id)} saveLabel="Criar campanha" size="lg">
                   <input type="hidden" name="bot" value={bot.id as string} />
-                  <div><label className="label" htmlFor={`name-${bot.id}`}>Nome</label><input id={`name-${bot.id}`} name="name" maxLength={120} className="input" placeholder="Teste de envio" /></div>
                   <div>
-                    <label className="label" htmlFor={`tpl-${bot.id}`}>Modelo aprovado</label>
+                    <label className="label" htmlFor={`name-${bot.id}`}>
+                      Nome
+                    </label>
+                    <input id={`name-${bot.id}`} name="name" maxLength={120} className="input" placeholder="Teste de envio" />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor={`tpl-${bot.id}`}>
+                      Modelo aprovado
+                    </label>
                     <select id={`tpl-${bot.id}`} name="template" required className="input">
                       {templates.map((t) => {
                         const vars = templateVariables(templateBody(t)).length;
@@ -123,21 +138,31 @@ export default async function AdminCampaigns({ params }: { params: Promise<{ id:
                       })}
                     </select>
                   </div>
-                  <div><label className="label" htmlFor={`vars-${bot.id}`}>Variáveis ({"{{1}}"}, {"{{2}}"}…), uma por linha, iguais para todos</label><textarea id={`vars-${bot.id}`} name="variables" rows={2} className="input" /></div>
-                  <div><label className="label" htmlFor={`phones-${bot.id}`}>WhatsApps, um por linha (até 50)</label><textarea id={`phones-${bot.id}`} name="phones" rows={3} required className="input font-mono text-xs" placeholder="21 99999-0000" /></div>
-                  <div className="flex flex-wrap items-end gap-4">
-                    <div><label className="label" htmlFor={`when-${bot.id}`}>Enviar em (horário de Brasília; vazio = agora)</label><input id={`when-${bot.id}`} name="scheduled_at" type="datetime-local" className="input w-auto" /></div>
-                    <label className="flex items-center gap-2 pb-2 text-sm"><input type="checkbox" name="regulated" /> oferece bebida ou remédio (só para quem confirmou 18+)</label>
+                  <div>
+                    <label className="label" htmlFor={`vars-${bot.id}`}>
+                      Variáveis ({"{{1}}"}, {"{{2}}"}…), uma por linha, iguais para todos
+                    </label>
+                    <textarea id={`vars-${bot.id}`} name="variables" rows={2} className="input" />
                   </div>
-                  <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar campanha</SubmitButton>
-                </ResultForm>
-              </details>
-            ) : (
-              <p className="text-sm text-muted">Nenhum modelo aprovado que o BoaVoz consiga enviar nesta conta.</p>
-            )
-          )}
-        </section>
-      ))}
+                  <div>
+                    <label className="label" htmlFor={`phones-${bot.id}`}>
+                      WhatsApps, um por linha (até 50)
+                    </label>
+                    <textarea id={`phones-${bot.id}`} name="phones" rows={3} required className="input font-mono text-xs" placeholder="21 99999-0000" />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor={`when-${bot.id}`}>
+                      Enviar em (horário de Brasília; vazio = agora)
+                    </label>
+                    <input id={`when-${bot.id}`} name="scheduled_at" type="datetime-local" className="input w-auto" />
+                  </div>
+                  <SwitchField name="regulated" label="Oferece bebida ou remédio" hint="Só sai para quem confirmou ter 18 anos ou mais." />
+                </DialogButton>
+              ) : undefined
+            }
+          />
+        ))}
+      </SettingGroup>
 
       <section className="card overflow-x-auto">
         <h2 className="px-5 pt-4 text-lg font-medium">Campanhas</h2>

@@ -7,6 +7,10 @@ import { relativeTime } from "@/lib/utils";
 import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
+import { DialogButton, SettingRow, SwitchField } from "@/components/ui/setting-row";
+import { StatusPill } from "@/components/ui/form-section";
+import { ReportTabs } from "@/components/report-tabs";
+import { Fingerprint, KeyRound, Plus, Trash2, Webhook, Workflow } from "lucide-react";
 import { createPilotApiKey, createPilotIdentitySecret, createPilotWebhook, deleteAction, deletePilotWebhook, generateActionSecret, revokePilotApiKey, revokePilotIdentitySecret, saveAction, setPilotWebhookActive, testAction, testPilotWebhook } from "../../../acoes";
 import { WEBHOOK_EVENTS } from "@/lib/webhooks";
 import { needsConfirmation, type ActionRow } from "@/lib/actions";
@@ -14,7 +18,7 @@ import { API_KEY_COLS, API_PERMISSIONS, PERMISSION_LABEL, type ApiKeyRow } from 
 import { ActionFields, ActionTestForm } from "@/components/integrations/action-fields";
 import { headerNames } from "@/lib/integrations-input";
 
-export const metadata = { title: "Integrações (piloto)" };
+export const metadata = { title: "Integrações" };
 // o Testar chama o endpoint (até 8 s) e salvar classifica a ação com IA
 export const maxDuration = 30;
 
@@ -61,276 +65,363 @@ export default async function AdminIntegrations({ params }: { params: Promise<{ 
   const scopeText = (k: ApiKeyRow) =>
     k.scope_type === "all" ? "todos os chatbots (inclusive os futuros)" : k.scope_type === "client" ? `cliente ${clientName.get(k.scope_client_id ?? "") ?? "?"} (inclusive bots futuros)` : k.scope_bot_ids.map((b) => botName.get(b) ?? "?").join(", ");
 
+  const scopeFields = (o: { botField: "bot" | "bot_id"; botScope: "bots" | "bot"; allLabel: string; multiBots?: boolean }) => (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="label">Escopo</legend>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="radio" name="scope_type" value={o.botScope} defaultChecked className="accent-brand" /> {o.multiBots ? "Estes chatbots:" : "Só este chatbot:"}
+      </label>
+      {o.multiBots ? (
+        <div className="ml-6 flex flex-col gap-1">
+          {(bots ?? []).map((b) => (
+            <label key={b.id as string} className="flex items-center gap-2 text-xs">
+              <input type="checkbox" name={o.botField} value={b.id as string} className="accent-brand" /> {b.name as string} <span className="text-muted">({b.client_name as string})</span>
+            </label>
+          ))}
+        </div>
+      ) : (
+        <select name={o.botField} className="input ml-6 w-auto text-xs" defaultValue="">
+          <option value="">escolha…</option>
+          {(bots ?? []).map((b) => (
+            <option key={b.id as string} value={b.id as string}>
+              {b.name as string} ({b.client_name as string})
+            </option>
+          ))}
+        </select>
+      )}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="radio" name="scope_type" value="client" className="accent-brand" /> Todos os chatbots do cliente:
+      </label>
+      <select name="client_id" className="input ml-6 w-auto text-xs" defaultValue="">
+        <option value="">escolha…</option>
+        {(clients ?? []).map((c) => (
+          <option key={c.id as string} value={c.id as string}>
+            {c.name as string}
+          </option>
+        ))}
+      </select>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="radio" name="scope_type" value="all" className="accent-brand" /> {o.allLabel}
+      </label>
+    </fieldset>
+  );
+  const groupHead = (title: string, button: React.ReactNode) => (
+    <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+      <h3 className="kpi-label">{title}</h3>
+      {button}
+    </div>
+  );
+  const NEW = "btn-ghost py-1.5 text-[13px]";
+
+  // rodada 2 das telas (23/10/2026, a pedido do usuário: "parece o sistema antigo"): em abas, com
+  // cada item numa linha; criar abre um modal (o segredo aparece ali, uma vez, para copiar)
   return (
     <>
       <div>
         <Link href={`/admin/clientes/${id}`} className="text-xs font-semibold text-muted">← {agency.name}</Link>
-        <h1 className="text-[26px] font-normal">Integrações (piloto)</h1>
-        <p className="text-sm text-muted">
-          Ações que a IA chama durante a conversa, configuradas à mão pela equipe BoaVoz (pilotos). Cada chamada é assinada no padrão Standard Webhooks com o segredo de ações do chatbot; prazo de 8 s nas consultas e de 20 s nas &quot;executa&quot;, resposta até 32 KB. &quot;Executa&quot; (e o que o BoaVoz classifica como pedido, reserva ou cobrança) só é chamada depois do Confirmar do contato.
+        <h1 className="text-[26px] font-normal">Integrações</h1>
+        <p className="max-w-[760px] text-sm text-muted">
+          As integrações dos pilotos, configuradas à mão pela equipe BoaVoz. A agência cuida das dela em Configurações → Integrações e na aba Ações de cada chatbot.
         </p>
       </div>
 
-      {(bots ?? []).map((b) => {
-        const mine = actions.filter((a) => a.bot_id === b.id);
-        return (
-          <section key={b.id as string} className="card flex flex-col gap-4 p-5">
-            <div>
-              <h2 className="text-lg font-medium">{b.name as string}</h2>
-              <p className="text-xs text-muted">{b.client_name as string} · bot_{b.id as string}</p>
-            </div>
-
-            <ResultForm action={generateActionSecret.bind(null, id, b.id as string)} copy className="rounded-lg border border-line-2 p-3">
-              <div className="text-sm font-semibold">Segredo de ações</div>
-              <p className="text-xs text-muted">
-                {b.action_secret_enc ? "Configurado." : "Ainda não gerado: as ações deste chatbot não funcionam sem ele."}
-                {previousSecretNote(b.action_secret_prev_until as string | null)} Mostrado uma vez; quem perder, gera outro.
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <SubmitButton className="btn-ghost py-1.5" pendingLabel="Gerando…">{b.action_secret_enc ? "Trocar o segredo" : "Gerar segredo"}</SubmitButton>
-                {Boolean(b.action_secret_enc) && (
-                  <label className="flex items-center gap-1.5 text-xs">
-                    <input type="checkbox" name="invalidate" /> invalidar o anterior agora (vazou)
-                  </label>
+      <ReportTabs
+        label="Integrações"
+        tabs={[
+          {
+            key: "acoes",
+            label: "Ações",
+            count: actions.length,
+            content: (
+              <div className="flex flex-col gap-5">
+                <p className="max-w-[760px] text-xs text-muted">
+                  Ações que a IA chama durante a conversa. Cada chamada é assinada no padrão Standard Webhooks com o segredo de ações do chatbot; prazo de 8 s nas consultas e de 20 s nas &quot;executa&quot;, resposta até 32 KB. &quot;Executa&quot; (e o que o BoaVoz classifica como pedido, reserva ou cobrança) só é chamada depois do Confirmar do contato.
+                </p>
+                {(bots ?? []).length === 0 && <p className="card p-5 text-sm text-muted">Nenhum chatbot nesta agência.</p>}
+                {(bots ?? []).map((b) => {
+                  const mine = actions.filter((a) => a.bot_id === b.id);
+                  return (
+                    <section key={b.id as string} className="flex flex-col gap-2">
+                      {groupHead(
+                        `${b.name as string} · ${b.client_name as string}`,
+                        <DialogButton label="Nova ação" icon={<Plus size={14} />} className={NEW} title={`Nova ação · ${b.name as string}`} size="lg" footer="close">
+                          <ActionFields action={saveAction.bind(null, id, b.id as string, null)} label="Criar ação" />
+                        </DialogButton>,
+                      )}
+                      <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+                        <SettingRow
+                          icon={<KeyRound size={18} />}
+                          title="Segredo de ações"
+                          badge={b.action_secret_enc ? <StatusPill tone="ok">configurado</StatusPill> : <StatusPill tone="warn">falta gerar</StatusPill>}
+                          summary={`${b.action_secret_enc ? "As chamadas saem assinadas." : "As ações deste chatbot não funcionam sem ele."}${previousSecretNote(b.action_secret_prev_until as string | null)}`}
+                          dialogTitle="Segredo de ações"
+                          description={`bot_${b.id as string}. Mostrado uma vez; quem perder, gera outro.`}
+                          footer="close"
+                        >
+                          <ResultForm action={generateActionSecret.bind(null, id, b.id as string)} copy>
+                            {Boolean(b.action_secret_enc) && <SwitchField name="invalidate" label="Invalidar o anterior agora" hint="Só quando o segredo vazou: as chamadas assinadas com ele param na hora." />}
+                            <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Gerando…">{b.action_secret_enc ? "Trocar o segredo" : "Gerar segredo"}</SubmitButton>
+                          </ResultForm>
+                        </SettingRow>
+                        {mine.map((a) => (
+                          <SettingRow
+                            key={a.id}
+                            icon={<Workflow size={18} />}
+                            title={a.name}
+                            badge={<StatusPill tone={a.active ? "ok" : "muted"}>{a.active ? "ativa" : "desativada"}</StatusPill>}
+                            summary={`${a.url}${needsConfirmation(a) ? ` · ${a.type === "execute" ? "executa" : "parece criar pedido"} (com Confirmar)` : ""}`}
+                            dialogTitle={`Ação ${a.name}`}
+                            size="lg"
+                            footer="close"
+                            footerStart={
+                              <ConfirmAction action={deleteAction.bind(null, id, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="btn-ghost text-danger">
+                                <Trash2 size={14} />
+                                Apagar
+                              </ConfirmAction>
+                            }
+                          >
+                            <ActionFields action={saveAction.bind(null, id, b.id as string, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
+                            <ActionTestForm action={testAction.bind(null, id, a.id)} a={a} />
+                          </SettingRow>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            ),
+          },
+          {
+            key: "chaves",
+            label: "Chaves de API",
+            count: keys.filter((k) => !k.revoked_at).length,
+            content: (
+              <section className="flex flex-col gap-2">
+                {groupHead(
+                  "Chaves de API",
+                  <DialogButton label="Nova chave" icon={<Plus size={14} />} className={NEW} title="Nova chave de API" description="A chave aparece uma vez; o dono da agência recebe um aviso a cada chave criada." size="lg" footer="close">
+                    <ResultForm action={createPilotApiKey.bind(null, id)} copy>
+                      <div>
+                        <label className="label" htmlFor="key-name">
+                          Nome
+                        </label>
+                        <input id="key-name" name="name" required maxLength={80} className="input" placeholder="DuckDelivery produção" />
+                      </div>
+                      {scopeFields({ botField: "bot", botScope: "bots", allLabel: "Todos os chatbots da agência (inclusive os futuros)", multiBots: true })}
+                      <fieldset className="flex flex-col gap-1">
+                        <legend className="label">Permissões</legend>
+                        {API_PERMISSIONS.map((perm) => (
+                          <label key={perm} className="flex items-center gap-2 text-xs">
+                            <input type="checkbox" name="permission" value={perm} defaultChecked={perm === "contacts"} className="accent-brand" /> <span className="font-mono">{perm}</span> <span className="text-muted">· {PERMISSION_LABEL[perm]}</span>
+                          </label>
+                        ))}
+                      </fieldset>
+                      <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar chave</SubmitButton>
+                    </ResultForm>
+                  </DialogButton>,
+                )}
+                <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+                  {keys.length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhuma chave. Para a API pública (/api/v1), com escopo de chatbots e permissões.</p>}
+                  {keys.map((k) => (
+                    <SettingRow
+                      key={k.id}
+                      icon={<KeyRound size={18} />}
+                      title={`${k.name} · ${k.prefix}…`}
+                      badge={k.revoked_at ? <StatusPill tone="danger">revogada {relativeTime(k.revoked_at)}</StatusPill> : undefined}
+                      summary={`${scopeText(k)} · ${k.permissions.join(", ")} · criada ${relativeTime(k.created_at)}${k.created_by ? ` por ${k.created_by}` : ""} · ${k.last_used_at ? `último uso ${relativeTime(k.last_used_at)}` : "nunca usada"}`}
+                      trailing={
+                        !k.revoked_at ? (
+                          <ConfirmAction action={revokePilotApiKey.bind(null, id, k.id)} title={`Revogar a chave ${k.name}?`} description="A próxima requisição com ela recebe 401. Não dá para desfazer: para voltar, crie outra chave." confirmLabel="Revogar" className="btn-ghost text-danger">
+                            Revogar
+                          </ConfirmAction>
+                        ) : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              </section>
+            ),
+          },
+          {
+            key: "identidade",
+            label: "Identidade",
+            count: secrets.filter((k) => !k.revoked_at).length,
+            content: (
+              <section className="flex flex-col gap-2">
+                {groupHead(
+                  "Segredos de identidade (chat do site)",
+                  <DialogButton
+                    label="Novo segredo"
+                    icon={<Plus size={14} />}
+                    className={NEW}
+                    title="Novo segredo de identidade"
+                    description={
+                      <>
+                        O servidor do SaaS assina um token (JWT HS256, com o kid no cabeçalho) e o widget manda em toda mensagem: a pessoa vira nível usuário, a conversa fica presa a ela e ao contexto (workspace), e as ações recebem external_id e contexto. No site: <span className="font-mono">window.ChatWidgetConfig = {"{ getToken }"}</span>.
+                      </>
+                    }
+                    size="lg"
+                    footer="close"
+                  >
+                    <ResultForm action={createPilotIdentitySecret.bind(null, id)} copy>
+                      <div>
+                        <label className="label" htmlFor="ids-name">
+                          Nome
+                        </label>
+                        <input id="ids-name" name="name" required maxLength={80} className="input" placeholder="Fintra produção" />
+                      </div>
+                      {scopeFields({ botField: "bot_id", botScope: "bot", allLabel: "Todos os chatbots da agência (Plataforma)" })}
+                      <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar segredo</SubmitButton>
+                    </ResultForm>
+                  </DialogButton>,
+                )}
+                <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+                  {secrets.length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhum segredo de identidade.</p>}
+                  {secrets.map((k) => (
+                    <SettingRow
+                      key={k.id as string}
+                      icon={<Fingerprint size={18} />}
+                      title={`${k.name as string} · ${k.kid as string}`}
+                      badge={k.revoked_at ? <StatusPill tone="danger">revogado {relativeTime(k.revoked_at as string)}</StatusPill> : undefined}
+                      summary={`${k.scope_type === "all" ? "todos os chatbots da agência" : k.scope_type === "client" ? `cliente ${clientName.get(k.scope_client_id as string) ?? "?"}` : `chatbot ${botName.get(k.scope_bot_id as string) ?? "?"}`} · criado ${relativeTime(k.created_at as string)}${k.created_by ? ` por ${k.created_by as string}` : ""} · ${k.last_used_at ? `último uso ${relativeTime(k.last_used_at as string)}` : "nunca usado"}`}
+                      trailing={
+                        !k.revoked_at ? (
+                          <ConfirmAction action={revokePilotIdentitySecret.bind(null, id, k.id as string)} title={`Revogar o segredo ${k.name as string}?`} description="Tokens assinados com ele deixam de valer na hora: as pessoas identificadas voltam a anônimas até o SaaS usar um segredo novo." confirmLabel="Revogar" className="btn-ghost text-danger">
+                            Revogar
+                          </ConfirmAction>
+                        ) : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              </section>
+            ),
+          },
+          {
+            key: "webhooks",
+            label: "Webhooks",
+            count: hooks.length,
+            content: (
+              <div className="flex flex-col gap-5">
+                <section className="flex flex-col gap-2">
+                  {groupHead(
+                    "Webhooks do piloto",
+                    <DialogButton label="Novo webhook" icon={<Plus size={14} />} className={NEW} title="Novo webhook" description="Envelope assinado no padrão Standard Webhooks; 2xx em até 10 s é entrega; novas tentativas em 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h e 24 h; 410 ou 3 dias só de falhas desativam." size="lg" footer="close">
+                      <ResultForm action={createPilotWebhook.bind(null, id)} copy>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className="label" htmlFor="wh-name">
+                              Nome
+                            </label>
+                            <input id="wh-name" name="name" required maxLength={80} className="input" placeholder="Fintra produção" />
+                          </div>
+                          <div>
+                            <label className="label" htmlFor="wh-url">
+                              URL (HTTPS)
+                            </label>
+                            <input id="wh-url" name="url" required className="input" placeholder="https://api.fintra.com.br/boavoz/webhook" />
+                          </div>
+                        </div>
+                        <fieldset className="flex flex-col gap-1">
+                          <legend className="label">Eventos</legend>
+                          {WEBHOOK_EVENTS.map((e) => (
+                            <label key={e} className="flex items-center gap-2 text-xs">
+                              <input type="checkbox" name="event" value={e} defaultChecked className="accent-brand" /> <span className="font-mono">{e}</span>
+                            </label>
+                          ))}
+                        </fieldset>
+                        {scopeFields({ botField: "bot_id", botScope: "bots", allLabel: "Todos os chatbots da agência" })}
+                        <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar webhook</SubmitButton>
+                      </ResultForm>
+                    </DialogButton>,
+                  )}
+                  <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+                    {hooks.length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhum webhook.</p>}
+                    {hooks.map((h) => (
+                      <SettingRow
+                        key={h.id as string}
+                        icon={<Webhook size={18} />}
+                        title={h.name as string}
+                        badge={<StatusPill tone={h.active ? "ok" : "danger"}>{h.active ? "ativo" : `desativado${h.disabled_reason ? ` (${h.disabled_reason as string})` : ""}`}</StatusPill>}
+                        summary={`${h.url as string} · ${(h.events as string[]).join(", ")} · ${h.scope_type === "all" ? "todos os chatbots" : h.scope_type === "client" ? `cliente ${clientName.get(h.scope_client_id as string) ?? "?"}` : (h.scope_bot_ids as string[]).map((b) => botName.get(b) ?? "?").join(", ")}${h.failing_since ? ` · falhando desde ${relativeTime(h.failing_since as string)}` : ""}`}
+                        summaryTone={h.failing_since ? "warn" : "muted"}
+                        dialogTitle={`Webhook ${h.name as string}`}
+                        footer="close"
+                        footerStart={
+                          <ConfirmAction action={deletePilotWebhook.bind(null, id, h.id as string)} title={`Apagar o webhook ${h.name as string}?`} description="As entregas dele são apagadas junto." confirmLabel="Apagar" className="btn-ghost text-danger">
+                            <Trash2 size={14} />
+                            Apagar
+                          </ConfirmAction>
+                        }
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <ResultForm action={testPilotWebhook.bind(null, id, h.id as string)}>
+                            <SubmitButton className="btn-ghost self-start py-1.5" pendingLabel="Enviando…">Enviar teste</SubmitButton>
+                          </ResultForm>
+                          <ConfirmAction action={setPilotWebhookActive.bind(null, id, h.id as string, !h.active)} title={h.active ? "Desativar o webhook?" : "Reativar o webhook?"} description={h.active ? "Novos eventos não são entregues nem acumulam." : "Os próximos eventos voltam a ser entregues (os de enquanto estava desativado não)."} confirmLabel={h.active ? "Desativar" : "Reativar"} danger={Boolean(h.active)} className="btn-ghost">
+                            {h.active ? "Desativar" : "Reativar"}
+                          </ConfirmAction>
+                        </div>
+                      </SettingRow>
+                    ))}
+                  </div>
+                </section>
+                {deliveries && deliveries.length > 0 && (
+                  <section className="card flex flex-col gap-2 overflow-x-auto p-5">
+                    <h3 className="kpi-label">Últimas entregas</h3>
+                    <table className="w-full min-w-[560px] text-xs">
+                      <thead className="text-left text-muted"><tr><th className="py-1 font-semibold">Quando</th><th className="py-1 font-semibold">Webhook</th><th className="py-1 font-semibold">Evento</th><th className="py-1 font-semibold">Situação</th></tr></thead>
+                      <tbody>
+                        {deliveries.map((d) => (
+                          <tr key={d.id as string} className="border-t border-line-2">
+                            <td className="py-1.5">{relativeTime(d.created_at as string)}</td>
+                            <td className="py-1.5">{hookName.get(d.webhook_id as string)}</td>
+                            <td className="py-1.5 font-mono">{d.event_type as string}</td>
+                            <td className={`py-1.5 font-semibold ${d.status === "delivered" ? "text-brand" : d.status === "failed" ? "text-danger" : "text-amber-ink"}`}>
+                              {d.status === "delivered" ? "entregue" : d.status === "failed" ? "falhou" : "nova tentativa agendada"}
+                              {d.last_status ? ` · HTTP ${d.last_status as number}` : ""}
+                              {(d.attempts as number) > 1 ? ` · ${d.attempts as number} tentativas` : ""}
+                              {d.status !== "delivered" && d.last_error ? ` · ${d.last_error as string}` : ""}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </section>
                 )}
               </div>
-            </ResultForm>
-
-            {mine.map((a) => (
-              <details key={a.id} className="rounded-lg border border-line-2 p-3">
-                <summary className="cursor-pointer text-sm">
-                  <strong className="font-mono">{a.name}</strong>{" "}
-                  <span className={a.active ? "text-brand" : "text-muted"}>{a.active ? "ativa" : "desativada"}</span>
-                  {needsConfirmation(a) && <span className="text-amber-ink"> · {a.type === "execute" ? "executa" : "parece criar pedido"} (com Confirmar)</span>}
-                  <span className="block truncate text-xs text-muted">{a.url}</span>
-                </summary>
-                <div className="mt-3 flex flex-col gap-4">
-                  <ActionFields action={saveAction.bind(null, id, b.id as string, a.id)} a={a} label="Salvar" savedHeaders={headerNames(a.headers_enc)} />
-                  <ActionTestForm action={testAction.bind(null, id, a.id)} a={a} />
-                  <ConfirmAction action={deleteAction.bind(null, id, a.id)} title={`Apagar a ação ${a.name}?`} description="A IA deixa de ter esta ação. O registro das chamadas é apagado junto." confirmLabel="Apagar" className="self-start text-xs font-semibold text-danger hover:underline">
-                    Apagar ação
-                  </ConfirmAction>
-                </div>
-              </details>
-            ))}
-
-            <details className="rounded-lg border border-dashed border-line p-3">
-              <summary className="cursor-pointer text-sm font-semibold">+ Nova ação</summary>
-              <div className="mt-3">
-                <ActionFields action={saveAction.bind(null, id, b.id as string, null)} label="Criar ação" />
-              </div>
-            </details>
-          </section>
-        );
-      })}
-
-      <section className="card flex flex-col gap-4 p-5">
-        <div>
-          <h2 className="text-lg font-medium">Chaves de API</h2>
-          <p className="text-xs text-muted">
-            Para a API pública (/api/v1), com escopo de chatbots e permissões. Na P1 só existe <span className="font-mono">PUT /api/v1/contacts/{"{contact}"}/age</span> (permissão contacts). A chave aparece uma vez; o dono da agência recebe um aviso a cada chave criada.
-          </p>
-        </div>
-        {keys.map((k) => (
-          <div key={k.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-line-2 p-3 text-sm">
-            <div>
-              <strong>{k.name}</strong> <span className="font-mono text-xs text-muted">{k.prefix}…</span>
-              {k.revoked_at && <span className="text-danger"> · revogada {relativeTime(k.revoked_at)}</span>}
-              <span className="block text-xs text-muted">Escopo: {scopeText(k)}</span>
-              <span className="block text-xs text-muted">Permissões: {k.permissions.join(", ")}</span>
-              <span className="block text-xs text-muted">
-                Criada {relativeTime(k.created_at)}{k.created_by ? ` por ${k.created_by}` : ""} · {k.last_used_at ? `último uso ${relativeTime(k.last_used_at)}` : "nunca usada"}
-              </span>
-            </div>
-            {!k.revoked_at && (
-              <ConfirmAction action={revokePilotApiKey.bind(null, id, k.id)} title={`Revogar a chave ${k.name}?`} description="A próxima requisição com ela recebe 401. Não dá para desfazer: para voltar, crie outra chave." confirmLabel="Revogar" className="text-xs font-semibold text-danger hover:underline">
-                Revogar
-              </ConfirmAction>
-            )}
-          </div>
-        ))}
-        <details className="rounded-lg border border-dashed border-line p-3">
-          <summary className="cursor-pointer text-sm font-semibold">+ Nova chave de API</summary>
-          <ResultForm action={createPilotApiKey.bind(null, id)} copy className="mt-3">
-            <div><label className="label" htmlFor="key-name">Nome</label><input id="key-name" name="name" required maxLength={80} className="input" placeholder="DuckDelivery produção" /></div>
-            <fieldset className="flex flex-col gap-1.5">
-              <legend className="label">Escopo</legend>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="bots" defaultChecked /> Estes chatbots:</label>
-              <div className="ml-6 flex flex-col gap-1">
-                {(bots ?? []).map((b) => (
-                  <label key={b.id as string} className="flex items-center gap-2 text-xs"><input type="checkbox" name="bot" value={b.id as string} /> {b.name as string} <span className="text-muted">({b.client_name as string})</span></label>
-                ))}
-              </div>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="client" /> Todos os chatbots do cliente:</label>
-              <select name="client_id" className="input ml-6 w-auto text-xs" defaultValue="">
-                <option value="">escolha…</option>
-                {(clients ?? []).map((c) => <option key={c.id as string} value={c.id as string}>{c.name as string}</option>)}
-              </select>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="all" /> Todos os chatbots da agência (inclusive os futuros)</label>
-            </fieldset>
-            <fieldset className="flex flex-col gap-1">
-              <legend className="label">Permissões</legend>
-              {API_PERMISSIONS.map((perm) => (
-                <label key={perm} className="flex items-center gap-2 text-xs"><input type="checkbox" name="permission" value={perm} defaultChecked={perm === "contacts"} /> <span className="font-mono">{perm}</span> <span className="text-muted">· {PERMISSION_LABEL[perm]}</span></label>
-              ))}
-            </fieldset>
-            <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar chave</SubmitButton>
-          </ResultForm>
-        </details>
-      </section>
-
-      <section className="card flex flex-col gap-4 p-5">
-        <div>
-          <h2 className="text-lg font-medium">Identidade (chat do site)</h2>
-          <p className="text-xs text-muted">
-            O servidor do SaaS assina um token (JWT HS256, com o kid no cabeçalho) e o widget manda em toda mensagem: a pessoa vira nível usuário, a conversa fica presa a ela e ao contexto (workspace), e as ações recebem external_id e contexto. No site: <span className="font-mono">window.ChatWidgetConfig = {"{ getToken }"}</span>.
-          </p>
-        </div>
-        {secrets.map((k) => (
-          <div key={k.id as string} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-line-2 p-3 text-sm">
-            <div>
-              <strong>{k.name as string}</strong> <span className="font-mono text-xs text-muted">{k.kid as string}</span>
-              {Boolean(k.revoked_at) && <span className="text-danger"> · revogado {relativeTime(k.revoked_at as string)}</span>}
-              <span className="block text-xs text-muted">
-                Escopo: {k.scope_type === "all" ? "todos os chatbots da agência" : k.scope_type === "client" ? `cliente ${clientName.get(k.scope_client_id as string) ?? "?"}` : `chatbot ${botName.get(k.scope_bot_id as string) ?? "?"}`}
-              </span>
-              <span className="block text-xs text-muted">
-                Criado {relativeTime(k.created_at as string)}{k.created_by ? ` por ${k.created_by as string}` : ""} · {k.last_used_at ? `último uso ${relativeTime(k.last_used_at as string)}` : "nunca usado"}
-              </span>
-            </div>
-            {!k.revoked_at && (
-              <ConfirmAction action={revokePilotIdentitySecret.bind(null, id, k.id as string)} title={`Revogar o segredo ${k.name as string}?`} description="Tokens assinados com ele deixam de valer na hora: as pessoas identificadas voltam a anônimas até o SaaS usar um segredo novo." confirmLabel="Revogar" className="text-xs font-semibold text-danger hover:underline">
-                Revogar
-              </ConfirmAction>
-            )}
-          </div>
-        ))}
-        <details className="rounded-lg border border-dashed border-line p-3">
-          <summary className="cursor-pointer text-sm font-semibold">+ Novo segredo de identidade</summary>
-          <ResultForm action={createPilotIdentitySecret.bind(null, id)} copy className="mt-3">
-            <div><label className="label" htmlFor="ids-name">Nome</label><input id="ids-name" name="name" required maxLength={80} className="input" placeholder="Fintra produção" /></div>
-            <fieldset className="flex flex-col gap-1.5">
-              <legend className="label">Escopo</legend>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="bot" defaultChecked /> Só este chatbot:</label>
-              <select name="bot_id" className="input ml-6 w-auto text-xs" defaultValue="">
-                <option value="">escolha…</option>
-                {(bots ?? []).map((b) => <option key={b.id as string} value={b.id as string}>{b.name as string} ({b.client_name as string})</option>)}
-              </select>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="client" /> Todos os chatbots do cliente:</label>
-              <select name="client_id" className="input ml-6 w-auto text-xs" defaultValue="">
-                <option value="">escolha…</option>
-                {(clients ?? []).map((c) => <option key={c.id as string} value={c.id as string}>{c.name as string}</option>)}
-              </select>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="all" /> Todos os chatbots da agência (Plataforma)</label>
-            </fieldset>
-            <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar segredo</SubmitButton>
-          </ResultForm>
-        </details>
-      </section>
-
-      <section className="card flex flex-col gap-4 p-5">
-        <div>
-          <h2 className="text-lg font-medium">Webhook do piloto</h2>
-          <p className="text-xs text-muted">
-            Na P2 saem só contact.linked e contact.unlinked (o resto dos eventos chega na C pública). Envelope assinado no padrão Standard Webhooks; 2xx em até 10 s é entrega; novas tentativas em 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h e 24 h; 410 ou 3 dias só de falhas desativam.
-          </p>
-        </div>
-        {hooks.map((h) => (
-          <div key={h.id as string} className="flex flex-col gap-2 rounded-lg border border-line-2 p-3 text-sm">
-            <div>
-              <strong>{h.name as string}</strong> <span className={h.active ? "text-brand" : "text-danger"}>{h.active ? "ativo" : `desativado${h.disabled_reason ? ` (${h.disabled_reason as string})` : ""}`}</span>
-              <span className="block truncate text-xs text-muted">{h.url as string}</span>
-              <span className="block text-xs text-muted">
-                Eventos: {(h.events as string[]).join(", ")} · escopo: {h.scope_type === "all" ? "todos os chatbots" : h.scope_type === "client" ? `cliente ${clientName.get(h.scope_client_id as string) ?? "?"}` : (h.scope_bot_ids as string[]).map((b) => botName.get(b) ?? "?").join(", ")}
-                {h.failing_since ? ` · falhando desde ${relativeTime(h.failing_since as string)}` : ""}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <ResultForm action={testPilotWebhook.bind(null, id, h.id as string)}>
-                <SubmitButton className="btn-ghost self-start py-1 text-xs" pendingLabel="Enviando…">Enviar teste</SubmitButton>
-              </ResultForm>
-              <ConfirmAction action={setPilotWebhookActive.bind(null, id, h.id as string, !h.active)} title={h.active ? "Desativar o webhook?" : "Reativar o webhook?"} description={h.active ? "Novos eventos não são entregues nem acumulam." : "Os próximos eventos voltam a ser entregues (os de enquanto estava desativado não)."} confirmLabel={h.active ? "Desativar" : "Reativar"} danger={Boolean(h.active)} className="text-xs font-semibold hover:underline">
-                {h.active ? "Desativar" : "Reativar"}
-              </ConfirmAction>
-              <ConfirmAction action={deletePilotWebhook.bind(null, id, h.id as string)} title={`Apagar o webhook ${h.name as string}?`} description="As entregas dele são apagadas junto." confirmLabel="Apagar" className="text-xs font-semibold text-danger hover:underline">
-                Apagar
-              </ConfirmAction>
-            </div>
-          </div>
-        ))}
-        <details className="rounded-lg border border-dashed border-line p-3">
-          <summary className="cursor-pointer text-sm font-semibold">+ Novo webhook</summary>
-          <ResultForm action={createPilotWebhook.bind(null, id)} copy className="mt-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div><label className="label" htmlFor="wh-name">Nome</label><input id="wh-name" name="name" required maxLength={80} className="input" placeholder="Fintra produção" /></div>
-              <div><label className="label" htmlFor="wh-url">URL (HTTPS)</label><input id="wh-url" name="url" required className="input" placeholder="https://api.fintra.com.br/boavoz/webhook" /></div>
-            </div>
-            <fieldset className="flex flex-col gap-1">
-              <legend className="label">Eventos</legend>
-              {WEBHOOK_EVENTS.map((e) => (
-                <label key={e} className="flex items-center gap-2 text-xs"><input type="checkbox" name="event" value={e} defaultChecked /> <span className="font-mono">{e}</span></label>
-              ))}
-            </fieldset>
-            <fieldset className="flex flex-col gap-1.5">
-              <legend className="label">Escopo</legend>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="bots" defaultChecked /> Só este chatbot:</label>
-              <select name="bot_id" className="input ml-6 w-auto text-xs" defaultValue="">
-                <option value="">escolha…</option>
-                {(bots ?? []).map((b) => <option key={b.id as string} value={b.id as string}>{b.name as string} ({b.client_name as string})</option>)}
-              </select>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="client" /> Todos os chatbots do cliente:</label>
-              <select name="client_id" className="input ml-6 w-auto text-xs" defaultValue="">
-                <option value="">escolha…</option>
-                {(clients ?? []).map((c) => <option key={c.id as string} value={c.id as string}>{c.name as string}</option>)}
-              </select>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="scope_type" value="all" /> Todos os chatbots da agência</label>
-            </fieldset>
-            <SubmitButton className="btn-primary self-start py-1.5" pendingLabel="Criando…">Criar webhook</SubmitButton>
-          </ResultForm>
-        </details>
-        {deliveries && deliveries.length > 0 && (
-          <table className="w-full text-xs">
-            <thead className="text-left text-muted"><tr><th className="py-1 font-semibold">Quando</th><th className="py-1 font-semibold">Webhook</th><th className="py-1 font-semibold">Evento</th><th className="py-1 font-semibold">Situação</th></tr></thead>
-            <tbody>
-              {deliveries.map((d) => (
-                <tr key={d.id as string} className="border-t border-line-2">
-                  <td className="py-1.5">{relativeTime(d.created_at as string)}</td>
-                  <td className="py-1.5">{hookName.get(d.webhook_id as string)}</td>
-                  <td className="py-1.5 font-mono">{d.event_type as string}</td>
-                  <td className={`py-1.5 font-semibold ${d.status === "delivered" ? "text-brand" : d.status === "failed" ? "text-danger" : "text-amber-ink"}`}>
-                    {d.status === "delivered" ? "entregue" : d.status === "failed" ? "falhou" : "nova tentativa agendada"}
-                    {d.last_status ? ` · HTTP ${d.last_status as number}` : ""}
-                    {(d.attempts as number) > 1 ? ` · ${d.attempts as number} tentativas` : ""}
-                    {d.status !== "delivered" && d.last_error ? ` · ${d.last_error as string}` : ""}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Últimas chamadas</h2>
-        {calls?.length ? (
-          <table className="w-full text-xs">
-            <thead className="text-left text-muted"><tr><th className="py-1 font-semibold">Quando</th><th className="py-1 font-semibold">Ação</th><th className="py-1 font-semibold">Modo</th><th className="py-1 font-semibold">Resultado</th><th className="py-1 text-right font-semibold">Tempo</th></tr></thead>
-            <tbody>
-              {calls.map((c) => (
-                <tr key={c.id as number} className="border-t border-line-2">
-                  <td className="py-1.5">{relativeTime(c.created_at as string)}</td>
-                  <td className="py-1.5 font-mono">{actionName.get(c.action_id as string)}</td>
-                  <td className="py-1.5">{c.mode as string}{(c.attempt as number) > 1 ? ` · tentativa ${c.attempt}` : ""}</td>
-                  <td className={`py-1.5 font-semibold ${STATUS_TONE[c.status as string] ?? ""}`}>{c.status as string}{c.http_status ? ` · ${c.http_status}` : ""}</td>
-                  <td className="py-1.5 text-right">{c.duration_ms as number} ms</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="text-sm text-muted">Nenhuma chamada ainda.</p>
-        )}
-      </section>
+            ),
+          },
+          {
+            key: "chamadas",
+            label: "Chamadas",
+            count: calls?.length ?? 0,
+            content: (
+              <section className="card flex flex-col gap-2 overflow-x-auto p-5">
+                <h3 className="kpi-label">Últimas chamadas das ações</h3>
+                {calls?.length ? (
+                  <table className="w-full min-w-[560px] text-xs">
+                    <thead className="text-left text-muted"><tr><th className="py-1 font-semibold">Quando</th><th className="py-1 font-semibold">Ação</th><th className="py-1 font-semibold">Modo</th><th className="py-1 font-semibold">Resultado</th><th className="py-1 text-right font-semibold">Tempo</th></tr></thead>
+                    <tbody>
+                      {calls.map((c) => (
+                        <tr key={c.id as number} className="border-t border-line-2">
+                          <td className="py-1.5">{relativeTime(c.created_at as string)}</td>
+                          <td className="py-1.5 font-mono">{actionName.get(c.action_id as string)}</td>
+                          <td className="py-1.5">{c.mode as string}{(c.attempt as number) > 1 ? ` · tentativa ${c.attempt}` : ""}</td>
+                          <td className={`py-1.5 font-semibold ${STATUS_TONE[c.status as string] ?? ""}`}>{c.status as string}{c.http_status ? ` · ${c.http_status}` : ""}</td>
+                          <td className="py-1.5 text-right">{c.duration_ms as number} ms</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-sm text-muted">Nenhuma chamada ainda.</p>
+                )}
+              </section>
+            ),
+          },
+        ]}
+      />
     </>
   );
 }

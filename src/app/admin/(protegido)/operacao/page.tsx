@@ -10,6 +10,7 @@ import { ResultForm } from "@/components/admin/result-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { clearAssistantBot, createAssistantTemplates, refreshAssistantBase, runReencryptNow, runReportDailyNow, runRetentionNow, setAssistantBot } from "../acoes";
 import { ConfirmAction } from "@/components/ui/confirm-action";
+import { ReportTabs } from "@/components/report-tabs";
 import { reportedThrough } from "@/lib/report-daily";
 import { assistantOverview, NOTICE_TEMPLATE } from "@/lib/team-whatsapp";
 import { NOTICE_KINDS, NOTICE_KIND_ORDER, noticeKindStatuses } from "@/lib/team-notices";
@@ -57,114 +58,6 @@ export default async function AdminOperations() {
         <p className="rounded-xl border border-line bg-panel px-4 py-3 text-sm">✓ Tudo em dia.</p>
       )}
 
-      {assistant && (
-        <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-base font-medium">Assistente da BoaVoz (avisos no WhatsApp)</h2>
-          <p className="text-xs text-muted">
-            Um chatbot normal, com número próprio de WhatsApp, que manda os avisos da conta para a equipe das agências (cada pessoa confirma o número pelo botão do modelo) e responde sobre o app com a base dele. Sem ele, o painel não mostra o cartão dos avisos. A área do cliente nunca recebe. A base vem do guia do painel (docs/assistente no repositório): atualize a cada leva.
-          </p>
-          {assistant.botId ? (
-            <div className="flex flex-col gap-1 text-sm">
-              <p>
-                Chatbot: <span className="font-semibold">{assistant.label ?? "não encontrado"}</span>
-              </p>
-              <p className="text-xs font-semibold">O painel das agências convida para os avisos quando tudo abaixo está ok:</p>
-              <ul className="flex flex-col gap-0.5 text-xs">
-                <li>{assistant.connected ? "✓" : "✗"} WhatsApp conectado{assistant.phone ? ` (${assistant.phone})` : " (aba WhatsApp do chatbot: um número só dele)"}</li>
-                <li>{assistant.live ? "✓" : "✗"} Chatbot no ar{assistant.live ? "" : ' (clique em "Publicar" no chatbot: em rascunho, o "Confirmar" que chega no WhatsApp é ignorado)'}</li>
-                <li>
-                  {assistant.template === "aprovado" ? "✓" : "✗"} Modelo <code>{NOTICE_TEMPLATE}</code>: {assistant.template ? TEMPLATE_LABEL[assistant.template] : "precisa do WhatsApp conectado"}
-                </li>
-                <li>{assistant.guideChunks ? "✓" : "✗"} Base com o guia do painel{assistant.guideChunks ? ` (${num(assistant.guideChunks)} trechos)` : " (botão abaixo)"}</li>
-              </ul>
-              <p className="text-xs text-muted">
-                Números confirmados: {num(assistant.confirmed)} · esperando o Confirmar: {num(assistant.pending)}. Depois de publicar ou de a Meta aprovar, a faixa aparece no painel em até 2 minutos.
-              </p>
-              {kindStatus && (
-                <p className="text-xs text-muted">
-                  Modelos de aviso aprovados: {kindsReady} de {NOTICE_KIND_ORDER.length}
-                  {kindsReady < NOTICE_KIND_ORDER.length ? ` (${NOTICE_KIND_ORDER.filter((k) => kindStatus[k] !== "aprovado").map((k) => `${NOTICE_KINDS[k].label}: ${TEMPLATE_LABEL[kindStatus[k]]}`).join("; ")})` : ""}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-muted">Nenhum chatbot escolhido.</p>
-          )}
-          <ResultForm action={setAssistantBot} className="max-w-xl">
-            <label htmlFor="assistant_bot" className="label">
-              Id do chatbot do assistente
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <input id="assistant_bot" name="bot_id" className="input min-w-0 flex-1 font-mono text-xs" placeholder="00000000-0000-0000-0000-000000000000" defaultValue={assistant.botId ?? ""} />
-              <SubmitButton className="btn-ghost py-1.5 text-xs">Salvar</SubmitButton>
-            </div>
-          </ResultForm>
-          <div className="flex flex-wrap items-start gap-4">
-            {assistant.connected && (assistant.template !== "aprovado" || kindsReady < NOTICE_KIND_ORDER.length) && (
-              <ResultForm action={createAssistantTemplates}>
-                <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Criando…">
-                  Criar os modelos que faltam
-                </SubmitButton>
-              </ResultForm>
-            )}
-            {assistant.botId && (
-              <ResultForm action={refreshAssistantBase}>
-                <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Atualizando…">
-                  Atualizar a base com o guia do painel
-                </SubmitButton>
-              </ResultForm>
-            )}
-            {assistant.botId && (
-              <ConfirmAction action={clearAssistantBot} title="Tirar o assistente?" description="O cartão dos avisos some do painel das agências. Os números já confirmados continuam guardados para quando voltar." confirmLabel="Tirar" className="text-xs font-semibold text-danger hover:underline">
-                Tirar o assistente
-              </ConfirmAction>
-            )}
-          </div>
-        </section>
-      )}
-
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Cifra por campo</h2>
-        <p className="text-xs text-muted">
-          O que vem do contato vai cifrado com a chave do cliente; tokens e segredos, com a chave mestra (versões: {versions.join(", ") || "nenhuma"}; a atual é a maior). O que foi gravado antes da cifra é cifrado em lotes pela rotina diária.
-        </p>
-        <p className="text-sm">
-          {plainTotal === null ? "Não foi possível contar agora." : plainTotal === 0 ? "✓ Todo o histórico está cifrado." : `Ainda sem cifra: ${num(plainTotal)} (${Object.entries(plain!).filter(([, n]) => n).map(([k, n]) => `${k} ${num(n)}`).join(" · ")})`}
-        </p>
-        {plainTotal !== 0 && (
-          <ResultForm action={runReencryptNow}>
-            <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Cifrando…">Recifrar agora</SubmitButton>
-          </ResultForm>
-        )}
-      </section>
-
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Totais diários dos relatórios</h2>
-        <p className="text-xs text-muted">
-          Relatórios, portal e painel somam os totais por dia (sem dado do contato) com a contagem ao vivo dos dias seguintes. A rotina diária recalcula os 2 últimos dias antes da limpeza, e a limpeza não apaga nada depois do último dia somado.
-        </p>
-        <p className="text-sm">{through ? `Somados até ${new Date(`${through}T12:00:00Z`).toLocaleDateString("pt-BR")}.` : "Ainda não somados: a limpeza por prazo fica parada até a primeira soma."}</p>
-        <ResultForm action={runReportDailyNow}>
-          <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Somando…">Recalcular agora</SubmitButton>
-        </ResultForm>
-      </section>
-
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Limpeza por prazo (retenção)</h2>
-        <p className="text-xs text-muted">
-          Prazo de cada chatbot: o do modo dados sensíveis (7 a 90 dias), senão o do cliente, senão o da agência (6, 12 ou 24 meses); demonstração, 30 dias. A rotina diária promove os prazos vencidos, agenda 12 meses (com e-mail) para quem estava em “Não apagar” e apaga o que passou do prazo, sem passar do último dia somado.
-        </p>
-        <ConfirmAction
-          action={runRetentionNow}
-          title="Rodar a limpeza por prazo agora?"
-          description="Apaga de verdade o que passou do prazo de cada chatbot (conversas, leads, perguntas, contatos) e manda o e-mail do prazo padrão às agências em “Não apagar”. Não tem desfazer."
-          confirmLabel="Rodar a limpeza"
-          className="btn-ghost self-start py-1.5 text-xs"
-        >
-          Rodar limpeza agora
-        </ConfirmAction>
-      </section>
-
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Banco" value={h.dbWrite ? "ok" : "com erro"} sub={h.dbWriteMs !== null ? `escrita em ${h.dbWriteMs} ms` : (h.error ?? "sem resposta")} />
         <Kpi label="Disco do banco" value={h.diskRatio !== null ? `${Math.round(h.diskRatio * 100)}%` : "—"} sub={h.diskBytes !== null ? `${mb(h.diskBytes)} do limite do plano` : "sem leitura"} />
@@ -172,73 +65,211 @@ export default async function AdminOperations() {
         <Kpi label="Eventos com erro" value={num(ops.queue.failed24h)} sub={`nas últimas 24 h · ${num(ops.queue.failed7d)} em 7 dias · ${num(ops.queue.done24h)} processados em 24 h`} />
       </section>
 
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Tarefas agendadas</h2>
-        {!ops.cronsScheduled && <p className="text-xs text-muted">Neste ambiente as tarefas não rodam sozinhas: a Vercel só agenda em produção. Aqui elas só rodam se alguém chamar a rota à mão, então não contam como atrasadas.</p>}
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Tarefa</th><th className="py-1.5 font-semibold">Última execução</th><th className="py-1.5 font-semibold">Último sucesso</th></tr></thead>
-          <tbody>
-            {ops.crons.map((c) => (
-              <tr key={c.name} className="border-t border-line-2">
-                <td className="py-2">{c.label}</td>
-                <td className="py-2 text-muted">{c.lastRunAt ? relativeTime(c.lastRunAt) : "nunca"}</td>
-                <td className={cn("py-2", c.late ? "font-semibold text-danger" : "text-muted")}>{c.lastOkAt ? relativeTime(c.lastOkAt) : "nunca"}{c.late ? " · atrasada" : !ops.cronsScheduled ? " · não roda neste ambiente" : ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="card flex flex-col gap-2 p-5">
-        <h2 className="text-base font-medium">Eventos da Meta com erro (7 dias)</h2>
-        {ops.queue.failed.length ? (
-          <ul className="flex flex-col divide-y divide-line-2 text-sm">
-            {ops.queue.failed.map((f) => (
-              <li key={f.key_hash as string} className="flex flex-col gap-0.5 py-2">
-                <span className="break-words">{(f.last_error as string | null) ?? "sem mensagem de erro"}</span>
-                <span className="text-xs text-muted">{f.source as string} · {f.kind as string} · {f.attempts as number} tentativas · {botLabel(ops.bots, f.bot_id as string | null)} · {relativeTime(f.created_at as string)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted">Nenhum.</p>
-        )}
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-medium">WhatsApp</h2>
-          {ch.waPayment.map((w) => <p key={`p${w.bot_id}`} className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">Sem pagamento na Meta: {(w.display_phone as string | null) ?? "número"} · {botLabel(ops.bots, w.bot_id as string)} · desde {relativeTime(w.payment_issue_at as string)}</p>)}
-          {ch.waDisconnected.length ? (
-            <ul className="flex flex-col divide-y divide-line-2 text-sm">
-              {ch.waDisconnected.map((w) => (
-                <li key={w.bot_id as string} className="flex flex-col gap-0.5 py-2">
-                  <span>{(w.display_phone as string | null) ?? "número"} · {botLabel(ops.bots, w.bot_id as string)}</span>
-                  <span className="text-xs text-muted">desconectado {relativeTime(w.disconnected_at as string)}{w.disconnect_reason ? ` · ${w.disconnect_reason as string}` : ""}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            !ch.waPayment.length && <p className="text-sm text-muted">Nenhum número desconectado ou sem pagamento.</p>
-          )}
-        </section>
-        <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-base font-medium">Instagram</h2>
-          {ch.igExpiring.map((i) => <p key={`e${i.bot_id}`} className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Token vence {relativeTime(i.token_expires_at as string)}: @{(i.username as string | null) ?? "conta"} · {botLabel(ops.bots, i.bot_id as string)}</p>)}
-          {ch.igDisconnected.length ? (
-            <ul className="flex flex-col divide-y divide-line-2 text-sm">
-              {ch.igDisconnected.map((i) => (
-                <li key={i.bot_id as string} className="flex flex-col gap-0.5 py-2">
-                  <span>@{(i.username as string | null) ?? "conta"} · {botLabel(ops.bots, i.bot_id as string)}</span>
-                  <span className="text-xs text-muted">desconectado {relativeTime(i.disconnected_at as string)}{i.disconnect_reason ? ` · ${i.disconnect_reason as string}` : ""}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            !ch.igExpiring.length && <p className="text-sm text-muted">Nenhuma conta desconectada ou com token vencendo em até {IG_TOKEN_WARN_DAYS} dias.</p>
-          )}
-        </section>
-      </div>
+      {/* rodada 2 das telas (23/10/2026, a pedido do usuário: "muito scroll"): os números em cima e uma parte por aba */}
+      <ReportTabs
+        label="Partes da operação"
+        tabs={[
+          {
+            key: "tarefas",
+            label: "Tarefas e fila",
+            content: (
+              <div className="flex flex-col gap-6">
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Tarefas agendadas</h2>
+                  {!ops.cronsScheduled && <p className="text-xs text-muted">Neste ambiente as tarefas não rodam sozinhas: a Vercel só agenda em produção. Aqui elas só rodam se alguém chamar a rota à mão, então não contam como atrasadas.</p>}
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs text-muted"><tr><th className="py-1.5 font-semibold">Tarefa</th><th className="py-1.5 font-semibold">Última execução</th><th className="py-1.5 font-semibold">Último sucesso</th></tr></thead>
+                    <tbody>
+                      {ops.crons.map((c) => (
+                        <tr key={c.name} className="border-t border-line-2">
+                          <td className="py-2">{c.label}</td>
+                          <td className="py-2 text-muted">{c.lastRunAt ? relativeTime(c.lastRunAt) : "nunca"}</td>
+                          <td className={cn("py-2", c.late ? "font-semibold text-danger" : "text-muted")}>{c.lastOkAt ? relativeTime(c.lastOkAt) : "nunca"}{c.late ? " · atrasada" : !ops.cronsScheduled ? " · não roda neste ambiente" : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Eventos da Meta com erro (7 dias)</h2>
+                  {ops.queue.failed.length ? (
+                    <ul className="flex flex-col divide-y divide-line-2 text-sm">
+                      {ops.queue.failed.map((f) => (
+                        <li key={f.key_hash as string} className="flex flex-col gap-0.5 py-2">
+                          <span className="break-words">{(f.last_error as string | null) ?? "sem mensagem de erro"}</span>
+                          <span className="text-xs text-muted">{f.source as string} · {f.kind as string} · {f.attempts as number} tentativas · {botLabel(ops.bots, f.bot_id as string | null)} · {relativeTime(f.created_at as string)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted">Nenhum.</p>
+                  )}
+                </section>
+              </div>
+            ),
+          },
+          {
+            key: "canais",
+            label: "Canais",
+            content: (
+              <div className="grid gap-6 lg:grid-cols-2">
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">WhatsApp</h2>
+                  {ch.waPayment.map((w) => <p key={`p${w.bot_id}`} className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">Sem pagamento na Meta: {(w.display_phone as string | null) ?? "número"} · {botLabel(ops.bots, w.bot_id as string)} · desde {relativeTime(w.payment_issue_at as string)}</p>)}
+                  {ch.waDisconnected.length ? (
+                    <ul className="flex flex-col divide-y divide-line-2 text-sm">
+                      {ch.waDisconnected.map((w) => (
+                        <li key={w.bot_id as string} className="flex flex-col gap-0.5 py-2">
+                          <span>{(w.display_phone as string | null) ?? "número"} · {botLabel(ops.bots, w.bot_id as string)}</span>
+                          <span className="text-xs text-muted">desconectado {relativeTime(w.disconnected_at as string)}{w.disconnect_reason ? ` · ${w.disconnect_reason as string}` : ""}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    !ch.waPayment.length && <p className="text-sm text-muted">Nenhum número desconectado ou sem pagamento.</p>
+                  )}
+                </section>
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Instagram</h2>
+                  {ch.igExpiring.map((i) => <p key={`e${i.bot_id}`} className="rounded-lg bg-amber-soft px-3 py-2 text-sm text-amber-ink">Token vence {relativeTime(i.token_expires_at as string)}: @{(i.username as string | null) ?? "conta"} · {botLabel(ops.bots, i.bot_id as string)}</p>)}
+                  {ch.igDisconnected.length ? (
+                    <ul className="flex flex-col divide-y divide-line-2 text-sm">
+                      {ch.igDisconnected.map((i) => (
+                        <li key={i.bot_id as string} className="flex flex-col gap-0.5 py-2">
+                          <span>@{(i.username as string | null) ?? "conta"} · {botLabel(ops.bots, i.bot_id as string)}</span>
+                          <span className="text-xs text-muted">desconectado {relativeTime(i.disconnected_at as string)}{i.disconnect_reason ? ` · ${i.disconnect_reason as string}` : ""}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    !ch.igExpiring.length && <p className="text-sm text-muted">Nenhuma conta desconectada ou com token vencendo em até {IG_TOKEN_WARN_DAYS} dias.</p>
+                  )}
+                </section>
+              </div>
+            ),
+          },
+          {
+            key: "assistente",
+            label: "Assistente da BoaVoz",
+            content: (
+              <>
+              {assistant && (
+                <section className="card flex flex-col gap-3 p-5">
+                  <h2 className="text-base font-medium">Assistente da BoaVoz (avisos no WhatsApp)</h2>
+                  <p className="text-xs text-muted">
+                    Um chatbot normal, com número próprio de WhatsApp, que manda os avisos da conta para a equipe das agências (cada pessoa confirma o número pelo botão do modelo) e responde sobre o app com a base dele. Sem ele, o painel não mostra o cartão dos avisos. A área do cliente nunca recebe. A base vem do guia do painel (docs/assistente no repositório): atualize a cada leva.
+                  </p>
+                  {assistant.botId ? (
+                    <div className="flex flex-col gap-1 text-sm">
+                      <p>
+                        Chatbot: <span className="font-semibold">{assistant.label ?? "não encontrado"}</span>
+                      </p>
+                      <p className="text-xs font-semibold">O painel das agências convida para os avisos quando tudo abaixo está ok:</p>
+                      <ul className="flex flex-col gap-0.5 text-xs">
+                        <li>{assistant.connected ? "✓" : "✗"} WhatsApp conectado{assistant.phone ? ` (${assistant.phone})` : " (aba WhatsApp do chatbot: um número só dele)"}</li>
+                        <li>{assistant.live ? "✓" : "✗"} Chatbot no ar{assistant.live ? "" : ' (clique em "Publicar" no chatbot: em rascunho, o "Confirmar" que chega no WhatsApp é ignorado)'}</li>
+                        <li>
+                          {assistant.template === "aprovado" ? "✓" : "✗"} Modelo <code>{NOTICE_TEMPLATE}</code>: {assistant.template ? TEMPLATE_LABEL[assistant.template] : "precisa do WhatsApp conectado"}
+                        </li>
+                        <li>{assistant.guideChunks ? "✓" : "✗"} Base com o guia do painel{assistant.guideChunks ? ` (${num(assistant.guideChunks)} trechos)` : " (botão abaixo)"}</li>
+                      </ul>
+                      <p className="text-xs text-muted">
+                        Números confirmados: {num(assistant.confirmed)} · esperando o Confirmar: {num(assistant.pending)}. Depois de publicar ou de a Meta aprovar, a faixa aparece no painel em até 2 minutos.
+                      </p>
+                      {kindStatus && (
+                        <p className="text-xs text-muted">
+                          Modelos de aviso aprovados: {kindsReady} de {NOTICE_KIND_ORDER.length}
+                          {kindsReady < NOTICE_KIND_ORDER.length ? ` (${NOTICE_KIND_ORDER.filter((k) => kindStatus[k] !== "aprovado").map((k) => `${NOTICE_KINDS[k].label}: ${TEMPLATE_LABEL[kindStatus[k]]}`).join("; ")})` : ""}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted">Nenhum chatbot escolhido.</p>
+                  )}
+                  <ResultForm action={setAssistantBot} className="max-w-xl">
+                    <label htmlFor="assistant_bot" className="label">
+                      Id do chatbot do assistente
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <input id="assistant_bot" name="bot_id" className="input min-w-0 flex-1 font-mono text-xs" placeholder="00000000-0000-0000-0000-000000000000" defaultValue={assistant.botId ?? ""} />
+                      <SubmitButton className="btn-ghost py-1.5 text-xs">Salvar</SubmitButton>
+                    </div>
+                  </ResultForm>
+                  <div className="flex flex-wrap items-start gap-4">
+                    {assistant.connected && (assistant.template !== "aprovado" || kindsReady < NOTICE_KIND_ORDER.length) && (
+                      <ResultForm action={createAssistantTemplates}>
+                        <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Criando…">
+                          Criar os modelos que faltam
+                        </SubmitButton>
+                      </ResultForm>
+                    )}
+                    {assistant.botId && (
+                      <ResultForm action={refreshAssistantBase}>
+                        <SubmitButton className="btn-ghost py-1.5 text-xs" pendingLabel="Atualizando…">
+                          Atualizar a base com o guia do painel
+                        </SubmitButton>
+                      </ResultForm>
+                    )}
+                    {assistant.botId && (
+                      <ConfirmAction action={clearAssistantBot} title="Tirar o assistente?" description="O cartão dos avisos some do painel das agências. Os números já confirmados continuam guardados para quando voltar." confirmLabel="Tirar" className="text-xs font-semibold text-danger hover:underline">
+                        Tirar o assistente
+                      </ConfirmAction>
+                    )}
+                  </div>
+                </section>
+              )}
+              </>
+            ),
+          },
+          {
+            key: "manutencao",
+            label: "Manutenção",
+            content: (
+              <div className="flex flex-col gap-6">
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Cifra por campo</h2>
+                  <p className="text-xs text-muted">
+                    O que vem do contato vai cifrado com a chave do cliente; tokens e segredos, com a chave mestra (versões: {versions.join(", ") || "nenhuma"}; a atual é a maior). O que foi gravado antes da cifra é cifrado em lotes pela rotina diária.
+                  </p>
+                  <p className="text-sm">
+                    {plainTotal === null ? "Não foi possível contar agora." : plainTotal === 0 ? "✓ Todo o histórico está cifrado." : `Ainda sem cifra: ${num(plainTotal)} (${Object.entries(plain!).filter(([, n]) => n).map(([k, n]) => `${k} ${num(n)}`).join(" · ")})`}
+                  </p>
+                  {plainTotal !== 0 && (
+                    <ResultForm action={runReencryptNow}>
+                      <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Cifrando…">Recifrar agora</SubmitButton>
+                    </ResultForm>
+                  )}
+                </section>
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Totais diários dos relatórios</h2>
+                  <p className="text-xs text-muted">
+                    Relatórios, portal e painel somam os totais por dia (sem dado do contato) com a contagem ao vivo dos dias seguintes. A rotina diária recalcula os 2 últimos dias antes da limpeza, e a limpeza não apaga nada depois do último dia somado.
+                  </p>
+                  <p className="text-sm">{through ? `Somados até ${new Date(`${through}T12:00:00Z`).toLocaleDateString("pt-BR")}.` : "Ainda não somados: a limpeza por prazo fica parada até a primeira soma."}</p>
+                  <ResultForm action={runReportDailyNow}>
+                    <SubmitButton className="btn-ghost self-start py-1.5 text-xs" pendingLabel="Somando…">Recalcular agora</SubmitButton>
+                  </ResultForm>
+                </section>
+                <section className="card flex flex-col gap-2 p-5">
+                  <h2 className="text-base font-medium">Limpeza por prazo (retenção)</h2>
+                  <p className="text-xs text-muted">
+                    Prazo de cada chatbot: o do modo dados sensíveis (7 a 90 dias), senão o do cliente, senão o da agência (6, 12 ou 24 meses); demonstração, 30 dias. A rotina diária promove os prazos vencidos, agenda 12 meses (com e-mail) para quem estava em “Não apagar” e apaga o que passou do prazo, sem passar do último dia somado.
+                  </p>
+                  <ConfirmAction
+                    action={runRetentionNow}
+                    title="Rodar a limpeza por prazo agora?"
+                    description="Apaga de verdade o que passou do prazo de cada chatbot (conversas, leads, perguntas, contatos) e manda o e-mail do prazo padrão às agências em “Não apagar”. Não tem desfazer."
+                    confirmLabel="Rodar a limpeza"
+                    className="btn-ghost self-start py-1.5 text-xs"
+                  >
+                    Rodar limpeza agora
+                  </ConfirmAction>
+                </section>
+              </div>
+            ),
+          },
+        ]}
+      />
     </>
   );
 }

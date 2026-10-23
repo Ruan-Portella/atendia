@@ -2,8 +2,8 @@ import Link from "next/link";
 import { Kpi } from "@/components/kpi";
 import { DayBars } from "@/components/admin/day-bars";
 import { requireAdmin } from "@/lib/platform-admin";
-import { GlobalKillSwitch, WhatsAppKillSwitch } from "@/components/admin/pause-controls";
-import { ChannelOpeningControls } from "@/components/admin/release-controls";
+import { PlatformSwitches } from "@/components/admin/platform-switches";
+import { ReportTabs } from "@/components/report-tabs";
 import { agencyStatus, fixedMonthlyBrl, getActivity, getAgencies, getAiCosts, getBotCounts, getFixedCosts, getPlatformFlags, getRevenue, rangeFor, usd, usdBrl } from "@/lib/backoffice";
 import { getOperations, operationAlerts } from "@/lib/backoffice-ops";
 import { brl, num } from "@/lib/plans";
@@ -39,10 +39,6 @@ export default async function AdminHome() {
         <p className="text-sm text-muted">Sem os bots de demonstração da landing. Custo e margem do mês corrente; dólar a {brl(usdBrl())} (USD_BRL).</p>
       </div>
 
-      <GlobalKillSwitch flags={flags} />
-      <WhatsAppKillSwitch flags={flags} />
-      <ChannelOpeningControls flags={flags} />
-
       {alerts.length > 0 ? (
         <section className="flex flex-col gap-1.5 rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-amber-ink">
           <strong>Precisa de atenção</strong>
@@ -73,36 +69,56 @@ export default async function AdminHome() {
         <Kpi label="Margem do mês" value={mrr === null ? "—" : brl(mrr - aiBrl - fixedBrl)} sub={`receita − IA − custos fixos (${brl(fixedBrl)})`} />
       </section>
 
-      <section className="card flex flex-col gap-4 p-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-medium">Mensagens por dia</h2>
-          <span className="text-xs text-muted">contato + bot + equipe, últimos 30 dias</span>
-        </div>
-        <DayBars caption="Mensagens por dia" days={activity.daily.map((d) => ({ day: d.day, value: messages(d), detail: `${d.contact} do contato · ${d.bot} do bot · ${d.team} da equipe` }))} format={(v) => num(Math.round(v))} />
-      </section>
+      {/* rodada 2 das telas (23/10/2026): os gráficos em abas, um de cada vez, e as chaves em linhas com modal */}
+      <ReportTabs
+        label="Gráficos"
+        tabs={[
+          {
+            key: "mensagens",
+            label: "Mensagens por dia",
+            content: (
+              <section className="card flex flex-col gap-4 p-5">
+                <span className="text-xs text-muted">contato + bot + equipe, últimos 30 dias</span>
+                <DayBars caption="Mensagens por dia" days={activity.daily.map((d) => ({ day: d.day, value: messages(d), detail: `${d.contact} do contato · ${d.bot} do bot · ${d.team} da equipe` }))} format={(v) => num(Math.round(v))} />
+              </section>
+            ),
+          },
+          {
+            key: "conversas",
+            label: "Conversas por dia",
+            content: (
+              <section className="card flex flex-col gap-4 p-5">
+                <span className="text-xs text-muted">últimos 30 dias</span>
+                <DayBars caption="Conversas por dia" days={activity.daily.map((d) => ({ day: d.day, value: d.conversations }))} format={(v) => num(Math.round(v))} />
+              </section>
+            ),
+          },
+          {
+            key: "canais",
+            label: "Por canal",
+            content: (
+              <section className="card flex flex-col gap-3 p-5">
+                <span className="text-xs text-muted">conversas dos últimos 30 dias</span>
+                {activity.channels.length ? (
+                  <ul className="flex flex-col gap-2.5">
+                    {activity.channels.map((c) => (
+                      <li key={c.channel} className="flex flex-col gap-1">
+                        <div className="flex justify-between text-sm"><span>{CHANNEL_LABEL[c.channel] ?? c.channel}</span><span className="tabular text-muted">{num(c.conversations)} · {Math.round((c.conversations / totalChannels) * 100)}%</span></div>
+                        <div className="h-2 rounded-full bg-ground"><div className="h-2 rounded-full bg-brand" style={{ width: `${(c.conversations / totalChannels) * 100}%` }} /></div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted">Nenhuma conversa nos últimos 30 dias.</p>
+                )}
+                <p className="text-xs text-muted">Detalhe por agência em <Link href="/admin/clientes" className="font-semibold text-ink underline">Agências</Link>; custo por modelo e canal em <Link href="/admin/custos" className="font-semibold text-ink underline">Custos</Link>.</p>
+              </section>
+            ),
+          },
+        ]}
+      />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="card flex flex-col gap-4 p-5">
-          <h2 className="text-lg font-medium">Conversas por dia</h2>
-          <DayBars caption="Conversas por dia" days={activity.daily.map((d) => ({ day: d.day, value: d.conversations }))} format={(v) => num(Math.round(v))} />
-        </section>
-        <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-lg font-medium">Conversas por canal (30 dias)</h2>
-          {activity.channels.length ? (
-            <ul className="flex flex-col gap-2.5">
-              {activity.channels.map((c) => (
-                <li key={c.channel} className="flex flex-col gap-1">
-                  <div className="flex justify-between text-sm"><span>{CHANNEL_LABEL[c.channel] ?? c.channel}</span><span className="tabular text-muted">{num(c.conversations)} · {Math.round((c.conversations / totalChannels) * 100)}%</span></div>
-                  <div className="h-2 rounded-full bg-ground"><div className="h-2 rounded-full bg-brand" style={{ width: `${(c.conversations / totalChannels) * 100}%` }} /></div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted">Nenhuma conversa nos últimos 30 dias.</p>
-          )}
-          <p className="mt-auto text-xs text-muted">Detalhe por agência em <Link href="/admin/clientes" className="font-semibold text-ink underline">Agências</Link>; custo por modelo e canal em <Link href="/admin/custos" className="font-semibold text-ink underline">Custos</Link>.</p>
-        </section>
-      </div>
+      <PlatformSwitches flags={flags} />
     </>
   );
 }
