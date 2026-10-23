@@ -15,6 +15,8 @@ interface Props {
   role: AgencyRole;
   /** Pacotes da conta: o menu mostra o que depende deles (os modelos, do Plataforma). */
   packs?: string[];
+  /** vê todos os clientes da conta */
+  wholeAccount?: boolean;
   /** "Conta grátis", "Assinatura" ou "Pagamento atrasado". */
   accountLabel: string;
   usage: number;
@@ -38,7 +40,7 @@ interface Props {
  *  - celular e tablet (< lg): barra no topo com o menu, a conta e a busca; o menu desliza;
  *  - desktop (lg+): barra lateral fixa com a navegação inteira.
  */
-export function PanelShell({ agency, role, packs = [], accountLabel, usage, limit, usageLabel, clients = [], clientCount = 0, me = { name: "Você", email: "", avatarUrl: null }, goTo, menuCollapsed = false, children, notices }: Props) {
+export function PanelShell({ agency, role, packs = [], wholeAccount = true, accountLabel, usage, limit, usageLabel, clients = [], clientCount = 0, me = { name: "Você", email: "", avatarUrl: null }, goTo, menuCollapsed = false, children, notices }: Props) {
   const [open, setOpen] = useState(false);
   // recolher o menu do computador (redesenho): só os ícones; a escolha fica no navegador
   const [collapsed, setCollapsed] = useState(menuCollapsed);
@@ -84,7 +86,7 @@ export function PanelShell({ agency, role, packs = [], accountLabel, usage, limi
     </div>
   ) : null;
 
-  const nav = (small: boolean) => <SidebarNav role={role} packs={packs} clients={clients} clientCount={clientCount} me={me} extra={usageBlock} collapsed={small} onNavigate={() => setOpen(false)} />;
+  const nav = (small: boolean) => <SidebarNav role={role} packs={packs} wholeAccount={wholeAccount} clients={clients} clientCount={clientCount} me={me} extra={usageBlock} collapsed={small} onNavigate={() => setOpen(false)} />;
 
   return (
     <div className="flex min-h-full flex-col lg:flex-row">

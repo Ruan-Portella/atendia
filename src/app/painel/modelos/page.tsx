@@ -44,7 +44,7 @@ export default async function TemplatesPage() {
   );
 
   return (
-    <div className="flex max-w-[860px] flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <h1 className="text-2xl font-normal sm:text-[28px]">Modelos de chatbot</h1>

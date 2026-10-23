@@ -26,6 +26,7 @@ import { MENU_COOKIE } from "@/lib/theme";
 import { OnboardingWidget } from "@/components/onboarding-widget";
 import { getOnboarding, ONBOARDING_COOKIE, ONBOARDING_GOAL } from "@/lib/onboarding";
 import { createBot, createClientRecord, hideOnboarding } from "@/app/painel/actions";
+import { createDerivedAction } from "@/app/painel/modelos/actions";
 import { CreateDialogs } from "@/components/create-dialogs";
 import { getClientOptions } from "@/lib/panel";
 
@@ -63,6 +64,9 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
   });
   // os modais de Novo cliente e Novo chatbot (redesenho, etapa 5): o "+" do menu, o Ctrl K e as telas abrem daqui
   const clientOptions = can(role, "config") ? await getClientOptions(supabase, agency.id) : [];
+  // os modelos, para o Novo chatbot começar de um (Plataforma, para quem vê a conta inteira)
+  const templatesOn = can(role, "config") && member.scope === "all" && packs.includes("plataforma");
+  const { data: templateRows } = templatesOn ? await supabase.from("bots").select("id, name").eq("is_template", true).is("version_of", null).order("created_at") : { data: [] };
   // primeiros passos (redesenho, etapa 5): um widget no canto, em todo o painel, para quem configura
   const onboarding = can(role, "config") && (await cookies()).get(ONBOARDING_COOKIE)?.value !== "hidden" ? await getOnboarding(supabase, agency, { admin: createAdminClient(), packs }).catch(() => null) : null;
   const banners = [
@@ -77,6 +81,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       agency={{ name: agency.name, logo_url: agency.logo_url, brand_color: agency.brand_color, initials: initials(agency.name) }}
       role={role}
       packs={packs}
+      wholeAccount={member.scope === "all"}
       accountLabel={accountLabel}
       usage={usage}
       limit={quota}
@@ -84,7 +89,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
       clients={sidebarClients}
       clientCount={clientCount ?? sidebarClients.length}
       me={{ name: memberName(member), email: member.email, avatarUrl: member.avatar_url ?? null }}
-      goTo={<GoTo role={role} packs={packs} clients={sidebarClients.map(({ id, name, color, face }) => ({ id, name, color, face }))} />}
+      goTo={<GoTo role={role} packs={packs} wholeAccount={member.scope === "all"} clients={sidebarClients.map(({ id, name, color, face }) => ({ id, name, color, face }))} />}
       menuCollapsed={(await cookies()).get(MENU_COOKIE)?.value === "fechado"}
       notices={
         <>
@@ -111,7 +116,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
     >
       <AppTheme />
       <HandoffWatcher endpoint="/api/painel/pending" />
-      {can(role, "config") && <CreateDialogs createClient={member.scope === "all" ? createClientRecord : null} createBot={createBot} clients={clientOptions} suggestedName={agency.profile === "business" ? agency.name : ""} />}
+      {can(role, "config") && <CreateDialogs createClient={member.scope === "all" ? createClientRecord : null} createBot={createBot} createDerived={templatesOn ? createDerivedAction : undefined} templates={(templateRows ?? []).map((t) => ({ id: t.id as string, name: t.name as string }))} clients={clientOptions} suggestedName={agency.profile === "business" ? agency.name : ""} />}
       {onboarding && <OnboardingWidget steps={onboarding} goal={ONBOARDING_GOAL[agency.profile ?? "agency"]} changeProfile={role === "owner" ? (agency.profile ?? "agency") : null} hide={hideOnboarding} />}
       {children}
     </PanelShell>

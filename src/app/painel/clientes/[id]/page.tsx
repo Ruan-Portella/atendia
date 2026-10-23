@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, Download, ExternalLink, Headset, LayoutDashboard, Plus, Settings2, Users } from "lucide-react";
+import { ArrowRight, Download, ExternalLink, Headset, Layers, LayoutDashboard, Plus, Settings2, Users } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
@@ -71,6 +71,8 @@ const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram:
 interface BotRow {
   id: string;
   name: string;
+  /** o modelo de onde ele herda (pacote Plataforma) */
+  template_id: string | null;
   client_name: string;
   client_site: string | null;
   status: string;
@@ -107,11 +109,15 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
     supabase.from("clients").select("id, name, site, external_id, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months").eq("id", id).maybeSingle(),
-    supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance, face").eq("client_id", id).eq("is_demo", false).order("created_at"),
+    supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance, face, template_id").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
   if (!client) notFound();
   const bots = (botData ?? []) as BotRow[];
+  // o nome do modelo de cada chatbot derivado, para a etiqueta "do modelo"
+  const templateIds = [...new Set(bots.flatMap((b) => (b.template_id ? [b.template_id] : [])))];
+  const { data: templateRows } = templateIds.length ? await supabase.from("bots").select("id, name").in("id", templateIds) : { data: [] };
+  const templateName = new Map((templateRows ?? []).map((r) => [r.id as string, r.name as string]));
   const botIds = bots.map((b) => b.id);
   const botName = new Map(bots.map((b) => [b.id, b.name]));
   const total = bots.reduce((t, b) => {
@@ -220,6 +226,12 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
                           {/* o cartão inteiro abre o chatbot; o menu fica por cima */}
                           <Link href={`/painel/bots/${b.id}`} className="block truncate font-medium text-ink after:absolute after:inset-0 after:rounded-[16px]">{b.name}</Link>
                           <span className="mt-0.5 block truncate text-[12.5px] text-muted">{b.client_site?.replace(/^https?:\/\//, "") ?? "sem site"}</span>
+                          {b.template_id && (
+                            <span title="Herda do modelo o que ele não libera para mudar; recebe o que for publicado nele" className="mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-raised px-2 py-px text-[11.5px] text-ink-2">
+                              <Layers size={11} className="shrink-0" />
+                              <span className="truncate">do modelo {templateName.get(b.template_id) ?? ""}</span>
+                            </span>
+                          )}
                         </div>
                         <div className="relative z-10">
                           <BotRowActions

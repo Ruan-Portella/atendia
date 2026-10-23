@@ -1,4 +1,4 @@
-import { DAY_TO_DAY, settingsFor } from "@/lib/nav";
+import { DAY_TO_DAY, allowed, settingsFor } from "@/lib/nav";
 import { can, type AgencyRole } from "@/lib/roles";
 
 /*
@@ -39,8 +39,8 @@ export function matches(item: Pick<GoToItem, "title" | "sub" | "keywords">, quer
 }
 
 /** As telas, os ajustes e as ações que a pessoa pode abrir. */
-export function staticGroups(role: AgencyRole, packs: readonly string[]): { pages: GoToItem[]; actions: GoToItem[]; settings: GoToItem[] } {
-  const pages: GoToItem[] = DAY_TO_DAY.filter((i) => can(role, i.perm)).map((i) => ({ id: i.href, kind: "page", title: i.label, href: i.href, keywords: i.keywords }));
+export function staticGroups(role: AgencyRole, packs: readonly string[], wholeAccount = true): { pages: GoToItem[]; actions: GoToItem[]; settings: GoToItem[] } {
+  const pages: GoToItem[] = DAY_TO_DAY.filter((i) => allowed(i, role, packs, wholeAccount)).map((i) => ({ id: i.href, kind: "page", title: i.label, href: i.href, keywords: i.keywords }));
   const settings: GoToItem[] = [
     ...settingsFor(role, packs).flatMap((g) => g.items.map((i) => ({ id: i.href, kind: "setting" as const, title: i.label, sub: `Configurações · ${g.group}`, href: i.href, keywords: i.keywords }))),
     { id: "/painel/perfil", kind: "setting", title: "Meu perfil", sub: "Nome, foto, assinatura e avisos", href: "/painel/perfil", keywords: "senha whatsapp avisos celular disponível" },
@@ -69,8 +69,8 @@ export function staticGroups(role: AgencyRole, packs: readonly string[]): { page
  * Junta o que filtra na hora com o que veio do servidor, na ordem da tela: sem busca, as telas,
  * os primeiros clientes e as ações; com busca, contatos e conversas primeiro.
  */
-export function buildGroups(o: { query: string; role: AgencyRole; packs: readonly string[]; clients: GoToItem[]; remote: GoToGroup[] }): GoToGroup[] {
-  const { pages, actions, settings } = staticGroups(o.role, o.packs);
+export function buildGroups(o: { query: string; role: AgencyRole; packs: readonly string[]; wholeAccount?: boolean; clients: GoToItem[]; remote: GoToGroup[] }): GoToGroup[] {
+  const { pages, actions, settings } = staticGroups(o.role, o.packs, o.wholeAccount);
   const q = o.query.trim();
   if (!q) {
     return [

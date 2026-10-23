@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ChartColumn, Check, ChevronsUpDown, CircleUser, Contact, Inbox, LifeBuoy, ListChecks, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
+import { ChartColumn, Check, ChevronsUpDown, CircleUser, Contact, Inbox, Layers, LifeBuoy, ListChecks, LogOut, Megaphone, Milestone, MonitorSmartphone, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { Menu } from "@/components/ui/menu";
 import { NoticeBell } from "@/components/notice-center";
@@ -33,6 +33,8 @@ export interface SidebarPerson {
 interface Props {
   role: AgencyRole;
   packs?: string[];
+  /** vê todos os clientes da conta (o Modelos é só para quem vê) */
+  wholeAccount?: boolean;
   clients: SidebarClient[];
   clientCount: number;
   me: SidebarPerson;
@@ -43,7 +45,7 @@ interface Props {
   onNavigate?: () => void;
 }
 
-const ICONS = { inbox: Inbox, contacts: Contact, megaphone: Megaphone, chart: ChartColumn, users: Users } as const;
+const ICONS = { inbox: Inbox, contacts: Contact, megaphone: Megaphone, chart: ChartColumn, users: Users, layers: Layers } as const;
 /** Quantos clientes cabem no menu; o resto fica em "Todos os clientes" e no Ir para. */
 export const SIDEBAR_CLIENTS = 8;
 
@@ -84,7 +86,7 @@ const SectionLabel = ({ children, action, collapsed }: { children: React.ReactNo
  * computador: o dia a dia, os clientes como canais (com o rosto do chatbot) e, no rodapé,
  * Configurações, Ajuda e novidades e você (perfil, tema e sair). Recolhido, fica só com os ícones.
  */
-export function SidebarNav({ role, packs = [], clients, clientCount, me, extra, collapsed = false, onNavigate }: Props) {
+export function SidebarNav({ role, packs = [], wholeAccount = true, clients, clientCount, me, extra, collapsed = false, onNavigate }: Props) {
   const path = usePathname();
   const router = useRouter();
   const waiting = useWaiting();
@@ -117,7 +119,7 @@ export function SidebarNav({ role, packs = [], clients, clientCount, me, extra, 
       <nav aria-label="Principal" className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
         <SectionLabel collapsed={collapsed}>Dia a dia</SectionLabel>
         <div className="flex flex-col gap-0.5">
-          {DAY_TO_DAY.filter((i) => allowed(i, role, packs)).map((i) => {
+          {DAY_TO_DAY.filter((i) => allowed(i, role, packs, wholeAccount)).map((i) => {
             const Icon = ICONS[i.icon];
             // o editor do chatbot mora dentro do cliente: acende Clientes
             const active = (path.startsWith(i.href) || (i.href === "/painel/clientes" && path.startsWith("/painel/bots"))) && !openClient;

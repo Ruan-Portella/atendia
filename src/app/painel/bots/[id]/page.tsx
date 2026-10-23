@@ -6,7 +6,7 @@ import { BotActions } from "@/components/integrations/bot-actions";
 import { FixedContextCard, StoreDataRow } from "@/components/integrations/fixed-context-card";
 import { TemplateInheritance, type DerivedItem } from "@/components/templates/template-inheritance";
 import { InheritedList } from "@/components/templates/inherited-list";
-import { createDerivedAction, publishTemplateAction, setTemplateUnlockedAction, restoreVersionAction } from "@/app/painel/(configuracoes)/modelos/actions";
+import { createDerivedAction, publishTemplateAction, setTemplateUnlockedAction, restoreVersionAction } from "@/app/painel/modelos/actions";
 import { OVERRIDE_FIELDS, TEMPLATE_FIELD_LABEL, hasUnpublished, readySourceCount, templateVersions, unlockedFields, type OverrideField, type TemplateField as InheritField } from "@/lib/bot-template";
 import type { Persona } from "@/lib/ai";
 import { saveFixedContext } from "@/app/painel/(configuracoes)/integracoes/actions";

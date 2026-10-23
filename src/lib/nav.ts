@@ -14,14 +14,19 @@ export interface NavLink {
   pack?: string;
   /** Outras palavras que levam a este lugar no Ir para. */
   keywords?: string;
+  /** Só para quem vê todos os clientes da conta. */
+  wholeAccount?: boolean;
 }
 
-export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "contacts" | "megaphone" | "chart" | "users" }> = [
+export const DAY_TO_DAY: Array<NavLink & { icon: "inbox" | "contacts" | "megaphone" | "chart" | "users" | "layers" }> = [
   { href: "/painel/caixa", label: "Caixa de entrada", perm: "attend", icon: "inbox", keywords: "conversas atendimento fila" },
   { href: "/painel/contatos", label: "Contatos e leads", perm: "config", icon: "contacts", keywords: "pessoas leads clientes finais etiquetas" },
   { href: "/painel/campanhas", label: "Campanhas e réguas", perm: "config", icon: "megaphone", keywords: "disparo lembrete régua" },
   { href: "/painel/relatorios", label: "Relatórios", perm: "config", icon: "chart", keywords: "números mês relatório mensal" },
   { href: "/painel/clientes", label: "Clientes", perm: "attend", icon: "users", keywords: "chatbots" },
+  // a pedido do usuário em 22/10: o modelo é um chatbot que se constrói, não um ajuste da conta; com o
+  // Plataforma e para quem vê a conta inteira (a tela também confere)
+  { href: "/painel/modelos", label: "Modelos", perm: "config", pack: "plataforma", wholeAccount: true, icon: "layers", keywords: "modelos de chatbot template herança lojas derivados" },
 ];
 
 export const SETTINGS: Array<{ group: string; items: NavLink[] }> = [
@@ -47,14 +52,12 @@ export const SETTINGS: Array<{ group: string; items: NavLink[] }> = [
   },
   {
     group: "Biblioteca",
-    items: [
-      { href: "/painel/modelos", label: "Modelos de chatbot", perm: "config", pack: "plataforma", keywords: "template herança" },
-      { href: "/painel/demos", label: "Demos para prospects", perm: "config", keywords: "demonstração" },
-    ],
+    items: [{ href: "/painel/demos", label: "Demos para prospects", perm: "config", keywords: "demonstração" }],
   },
 ];
 
-export const allowed = (l: Pick<NavLink, "perm" | "pack">, role: AgencyRole, packs: readonly string[]) => can(role, l.perm) && (!l.pack || packs.includes(l.pack));
+/** A pessoa vê o lugar: o papel, o pacote e, quando pede, o escopo da conta inteira. */
+export const allowed = (l: Pick<NavLink, "perm" | "pack" | "wholeAccount">, role: AgencyRole, packs: readonly string[], wholeAccount = true) => can(role, l.perm) && (!l.pack || packs.includes(l.pack)) && (!l.wholeAccount || wholeAccount);
 
 /** Os grupos de ajustes que a pessoa vê (grupo vazio sai). */
 export function settingsFor(role: AgencyRole, packs: readonly string[]) {

@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 interface Props {
   role: AgencyRole;
   packs: string[];
+  /** vê todos os clientes da conta */
+  wholeAccount?: boolean;
   /** Os clientes do menu: filtram na hora, sem esperar o servidor. */
   clients: Array<{ id: string; name: string; color: string | null; face?: unknown }>;
 }
@@ -37,7 +39,7 @@ function ItemIcon({ item }: { item: GoToItem }) {
  * Ir para (Ctrl K): acha contato, conversa, cliente, chatbot, ação e ajuste numa busca só. Abre
  * pelo atalho (Ctrl K ou ⌘K) ou pelo botão do menu; ↑↓ escolhem, Enter abre, Esc fecha.
  */
-export function GoTo({ role, packs, clients }: Props) {
+export function GoTo({ role, packs, wholeAccount = true, clients }: Props) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -97,7 +99,7 @@ export function GoTo({ role, packs, clients }: Props) {
   }, [term, open]);
 
   const clientItems = useMemo<GoToItem[]>(() => clients.map((c) => ({ id: c.id, kind: "client", title: c.name, sub: "Cliente", href: `/painel/clientes/${c.id}`, color: c.color, face: c.face })), [clients]);
-  const groups = useMemo(() => buildGroups({ query, role, packs, clients: clientItems, remote: term.length >= 2 && remote.q === term ? remote.groups : [] }), [query, role, packs, clientItems, remote, term]);
+  const groups = useMemo(() => buildGroups({ query, role, packs, wholeAccount, clients: clientItems, remote: term.length >= 2 && remote.q === term ? remote.groups : [] }), [query, role, packs, wholeAccount, clientItems, remote, term]);
   const flat = groups.flatMap((g) => g.items);
   const current = Math.min(picked, Math.max(0, flat.length - 1));
 

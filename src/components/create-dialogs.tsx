@@ -31,16 +31,21 @@ export function CreateButton({ kind, clientId, className, children }: { kind: "c
 /**
  * Os modais de Novo cliente e Novo chatbot, uma vez no layout do painel. As actions redirecionam
  * para o que foi criado. Sem `createClient` (quem vê só alguns clientes), o pedido de cliente novo
- * vira o aviso de que é com um administrador.
+ * vira o aviso de que é com um administrador. Com modelos (pacote Plataforma), o Novo chatbot também
+ * começa de um modelo (`createDerived`).
  */
 export function CreateDialogs({
   createClient,
   createBot,
+  createDerived,
+  templates = [],
   clients,
   suggestedName,
 }: {
   createClient: ((fd: FormData) => Promise<ActionResult | void>) | null;
   createBot: (fd: FormData) => Promise<ActionResult | void>;
+  createDerived?: (templateId: string, fd: FormData) => Promise<ActionResult | void>;
+  templates?: Array<{ id: string; name: string }>;
   clients: ClientOption[];
   suggestedName: string;
 }) {
@@ -69,10 +74,14 @@ export function CreateDialogs({
         onClose={() => setOpen(null)}
         title={forClient ? `Novo chatbot para ${forClient.name}` : "Novo chatbot"}
         description="Um cliente pode ter vários chatbots (ex.: um para vendas e outro para suporte). O site e os documentos você adiciona no próximo passo."
-        action={createBot}
+        action={(fd) => {
+          // "A partir de um modelo": o derivado (o nome vem do modelo); senão, o chatbot em branco
+          const template = String(fd.get("template_id") ?? "");
+          return fd.get("start") === "modelo" && template && createDerived ? createDerived(template, fd) : createBot(fd);
+        }}
         saveLabel="Criar e configurar"
       >
-        <NewBotFields clients={clients} defaultClientId={open?.kind === "chatbot" ? open.clientId : undefined} suggestedName={suggestedName} idPrefix="cg" />
+        <NewBotFields clients={clients} defaultClientId={open?.kind === "chatbot" ? open.clientId : undefined} suggestedName={suggestedName} idPrefix="cg" templates={createDerived ? templates : []} />
       </EditDialog>
     </>
   );
