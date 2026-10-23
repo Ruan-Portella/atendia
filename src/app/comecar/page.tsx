@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Logo } from "@/components/logo";
+import { AuthShell } from "@/components/auth-shell";
 import { FirstAccessForm } from "@/components/first-access-form";
 import { requireAgency } from "@/lib/agency";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -24,8 +24,8 @@ export default async function FirstAccessPage({ searchParams }: PageProps<"/come
   const unlessGuessed = (name: string | null | undefined, guess: string) => (name && name !== guess ? name : "");
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-16">
-      <Logo />
+    // redesenho (23/10/2026): o painel da marca ao lado, como nas telas de entrar e criar conta
+    <AuthShell headline="Boas-vindas! Umas respostas rápidas e o painel começa pelo que importa para você.">
       <FirstAccessForm
         brand={company.brand}
         profile={agency.profile}
@@ -34,6 +34,6 @@ export default async function FirstAccessPage({ searchParams }: PageProps<"/come
         askPhone={Boolean(notice?.available && notice.status === null)}
         consent={NOTICE_CONSENT_FIRST_ACCESS}
       />
-    </main>
+    </AuthShell>
   );
 }

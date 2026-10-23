@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Logo } from "@/components/logo";
+import { AuthShell } from "@/components/auth-shell";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { INVITE_DAYS, activeMembership, hadMembership, openInvitesFor } from "@/lib/team";
@@ -26,8 +26,7 @@ export default async function NoAgencyPage() {
   const names = [...new Set(invites.map((i) => i.agency_name))].join(", ");
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-16">
-      <Logo />
+    <AuthShell headline="Uma conta, uma equipe: entre na agência que convidou você ou crie a sua.">
       <div className="card flex w-full max-w-[460px] flex-col gap-4 p-7">
         {(
           <>
@@ -51,6 +50,6 @@ export default async function NoAgencyPage() {
           <button type="submit" className="text-xs text-muted hover:underline">Sair</button>
         </form>
       </div>
-    </main>
+    </AuthShell>
   );
 }

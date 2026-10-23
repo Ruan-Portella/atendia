@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { Code2, Store, Users } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ACCOUNT_PROFILES, PROFILE_ORDER, type AccountProfile } from "@/lib/first-access";
 import { saveFirstAccess } from "@/app/comecar/actions";
+
+const ICON: Record<AccountProfile, typeof Users> = { agency: Users, business: Store, developer: Code2 };
 
 /**
  * O formulário do primeiro acesso: o perfil (muda o rótulo do nome da conta), o nome da conta, o
@@ -32,15 +36,22 @@ export function FirstAccessForm({ brand, profile: answered, accountName, display
       <ActionForm action={saveFirstAccess} className="mt-6 flex flex-col gap-5">
         <fieldset className="flex flex-col gap-2">
           <legend className="label">Como você vai usar o {brand}?</legend>
-          {PROFILE_ORDER.map((k) => (
-            <label key={k} className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line px-3 py-2.5 text-sm has-[:checked]:border-brand has-[:checked]:bg-brand-soft">
-              <input type="radio" name="profile" value={k} required checked={profile === k} onChange={() => setProfile(k)} className="mt-0.5" />
-              <span>
-                <span className="font-semibold">{ACCOUNT_PROFILES[k].label}</span>
-                <span className="block text-xs text-muted">{ACCOUNT_PROFILES[k].hint}</span>
-              </span>
-            </label>
-          ))}
+          {/* redesenho (23/10/2026): os perfis em cartões com ícone */}
+          {PROFILE_ORDER.map((k) => {
+            const Icon = ICON[k];
+            return (
+              <label key={k} className={cn("flex cursor-pointer items-start gap-3 rounded-[14px] border p-3 text-sm transition-colors duration-[120ms]", profile === k ? "border-brand bg-brand-soft/60" : "border-line hover:border-line-strong")}>
+                <input type="radio" name="profile" value={k} required checked={profile === k} onChange={() => setProfile(k)} className="sr-only" />
+                <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]", profile === k ? "bg-brand text-on-brand" : "bg-raised text-ink-2")}>
+                  <Icon size={17} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-medium text-ink">{ACCOUNT_PROFILES[k].label}</span>
+                  <span className="mt-0.5 block text-xs leading-snug text-muted">{ACCOUNT_PROFILES[k].hint}</span>
+                </span>
+              </label>
+            );
+          })}
         </fieldset>
         <div>
           <label htmlFor="account_name" className="label">{chosen?.nameLabel ?? "Nome da agência ou do negócio"}</label>

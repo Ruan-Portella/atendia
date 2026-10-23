@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Logo } from "@/components/logo";
+import { AuthShell } from "@/components/auth-shell";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { INVITE_DAYS, ROLE_LABELS, activeMembership, inviteByToken, inviteOpen } from "@/lib/team";
@@ -11,10 +11,9 @@ export const metadata = { title: "Convite para a equipe", robots: { index: false
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-16">
-      <Logo />
+    <AuthShell headline="Você foi convidado para atender com uma equipe no BoaVoz.">
       <div className="card flex w-full max-w-[440px] flex-col gap-4 p-7">{children}</div>
-    </main>
+    </AuthShell>
   );
 }
 

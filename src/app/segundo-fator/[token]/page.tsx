@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Logo } from "@/components/logo";
+import { AuthShell } from "@/components/auth-shell";
 import { MfaRecoveryToken } from "@/components/mfa-recovery-token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadRecovery } from "@/lib/mfa-recovery";
@@ -12,9 +12,8 @@ export default async function PanelRecoveryTokenPage({ params }: PageProps<"/seg
   const view = await loadRecovery(createAdminClient(), token);
   if (!view || view.area !== "painel") notFound();
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-16">
-      <Logo />
+    <AuthShell headline="Mais segurança: o código do app autenticador protege a sua conta.">
       <MfaRecoveryToken token={token} view={view} />
-    </main>
+    </AuthShell>
   );
 }
