@@ -91,10 +91,11 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
   const snoozedUntil = isSnoozed(conv) ? (conv.snoozed_until as string) : null;
   const coexistence = regulated && conv.channel === "whatsapp" ? Boolean((await admin.from("whatsapp_channels").select("coexistence").eq("bot_id", conv.bot_id).maybeSingle()).data?.coexistence) : false;
 
-  // Tela de chat: preenche o espaço abaixo das abas (a casca do portal rola só o conteúdo);
-  // cabeçalho e resposta fixos, e só as mensagens rolam.
+  // Tela de chat: preenche o espaço ao lado do menu (a casca do portal é `relative` e rola o
+  // conteúdo; em tela cheia, a conversa ocupa exatamente essa área). Cabeçalho e resposta fixos, e
+  // só as mensagens rolam.
   return (
-    <div className={embedded ? "flex h-full min-h-0 flex-col px-4 sm:px-6" : "-my-6 flex min-h-0 flex-1 flex-col sm:-my-8"}>
+    <div className={embedded ? "flex h-full min-h-0 flex-col px-4 sm:px-6" : "absolute inset-0 flex min-h-0 flex-col px-4 sm:px-6 lg:px-9"}>
       <header className="flex items-start gap-2 border-b border-line py-2.5 sm:py-3">
         {mobileBack && (
           <Link href={mobileBack} aria-label="Voltar para a fila" title="Voltar para a fila" className="btn-icon -ml-1 h-9 w-9 shrink-0 lg:hidden">

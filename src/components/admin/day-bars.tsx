@@ -32,11 +32,15 @@ export function DayBars({ days, caption, format = (v) => String(v) }: { days: Da
         <span>média: {format(avg)} por dia</span>
         <span>{days.at(-1) ? dayLabel(days.at(-1)!.day) : ""}</span>
       </div>
-      <table className="sr-only">
-        <caption>{caption}</caption>
-        <thead><tr><th>Dia</th><th>Valor</th></tr></thead>
-        <tbody>{days.map((d) => <tr key={d.day}><td>{dayLabel(d.day)}</td><td>{format(d.value)}{d.detail ? ` (${d.detail})` : ""}</td></tr>)}</tbody>
-      </table>
+      {/* a tabela para leitor de tela vai dentro de um bloco sr-only: numa <table> o sr-only não
+          corta a altura (tabela cresce com o conteúdo) e ela esticava a página, invisível */}
+      <div className="sr-only">
+        <table>
+          <caption>{caption}</caption>
+          <thead><tr><th>Dia</th><th>Valor</th></tr></thead>
+          <tbody>{days.map((d) => <tr key={d.day}><td>{dayLabel(d.day)}</td><td>{format(d.value)}{d.detail ? ` (${d.detail})` : ""}</td></tr>)}</tbody>
+        </table>
+      </div>
     </figure>
   );
 }

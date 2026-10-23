@@ -13,7 +13,8 @@ import { Kpi } from "@/components/kpi";
 import { ReportTabs } from "@/components/report-tabs";
 import { ReportChannels } from "@/components/report-channels";
 
-export const brandColor = (c: string) => (/^#[0-9a-f]{6}$/i.test(c) ? c : "#1f4e3d");
+import { brandColor } from "@/lib/brand-color";
+export { brandColor };
 
 /** Barra do topo com a marca da agência (portal e área do cliente). */
 export function AgencyHeader({ agency, children }: { agency: ClientReport["agency"]; children?: React.ReactNode }) {

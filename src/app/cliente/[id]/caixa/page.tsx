@@ -50,7 +50,8 @@ export default async function MemberInboxPage({ params, searchParams }: PageProp
   const botName = (botId: string) => bots.find((b) => b.id === botId)?.name;
 
   return (
-    <div className="relative -mx-4 -my-6 flex min-h-0 flex-1 flex-col overflow-hidden sm:-mx-6 sm:-my-8 lg:-mx-9">
+    // ocupa exatamente a área de conteúdo da casca (que é `relative` e rola): a página não rola, só as mensagens
+    <div className="absolute inset-0 flex min-h-0 flex-col overflow-hidden">
       <InboxView compact backInHeader queuesOpen={(await cookies()).get(QUEUES_COOKIE)?.value !== "fechado"} items={items} queue={queue} queues={queues} meId={member.memberId} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={false} available={member.available} onAvailability={memberSetAvailability.bind(null, id)}
         contact={selected && <InboxContact data={contact} notes={notes} onNote={memberAddNote.bind(null, id, selected.id)} botName={botName} conversationHref={(_b, c) => hrefFor({ queue, conversationId: c })} />}>
         {selected && <ClientConversation clientId={id} convId={selected.id} embedded back={back} mobileBack={hrefFor({ queue })} contactToggle earlier={Math.min(50, Number(sp.ant) || 0)} earlierHref={(n) => `${hrefFor({ queue, conversationId: selected.id })}&ant=${n}`} />}

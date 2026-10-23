@@ -40,11 +40,15 @@ function WeekBars({ series, until, caption }: { series: number[]; until: Date; c
       </div>
       <span className="text-sm font-semibold tabular">{num(last)}</span>
       <span className={`text-xs ${trend === "subindo" ? "font-semibold text-ink" : "text-muted"}`}>{TREND_TEXT[trend]}</span>
-      <table className="sr-only">
-        <caption>{caption}</caption>
-        <thead><tr><th>Semana</th><th>Valor</th></tr></thead>
-        <tbody>{ordered.map(({ v, i }) => <tr key={i}><td>{weekLabel(until, i)}</td><td>{num(v)}</td></tr>)}</tbody>
-      </table>
+      {/* a tabela para leitor de tela vai dentro de um bloco sr-only: numa <table> o sr-only não
+          corta a altura (tabela cresce com o conteúdo) e ela esticava a página, invisível */}
+      <div className="sr-only">
+        <table>
+          <caption>{caption}</caption>
+          <thead><tr><th>Semana</th><th>Valor</th></tr></thead>
+          <tbody>{ordered.map(({ v, i }) => <tr key={i}><td>{weekLabel(until, i)}</td><td>{num(v)}</td></tr>)}</tbody>
+        </table>
+      </div>
     </div>
   );
 }

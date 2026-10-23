@@ -31,22 +31,30 @@ export default async function AdminHome() {
   const mrr = stripeOk ? stripeOk.mrrCents / 100 : null;
   const aiBrl = ai.summary.total.cost * usdBrl();
   const totalChannels = activity.channels.reduce((t, c) => t + c.conversations, 0);
+  // a IA ou o WhatsApp de todos desligados: a aba das chaves abre primeiro, com o número
+  const paused = (flags.aiPausedAt ? 1 : 0) + (flags.whatsappDisabledAt ? 1 : 0);
 
   return (
     <>
-      <div>
-        <h1 className="text-[26px] font-normal">Visão geral</h1>
-        <p className="text-sm text-muted">Sem os bots de demonstração da landing. Custo e margem do mês corrente; dólar a {brl(usdBrl())} (USD_BRL).</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[26px] font-normal">Visão geral</h1>
+          <p className="text-sm text-muted">Sem as demos da landing. Gráficos dos últimos 30 dias; custo e margem do mês, com o dólar a {brl(usdBrl())}.</p>
+        </div>
+        {/* sem alertas, só um selo no alto (a tela cabe sem rolar); com alerta, a caixa amarela embaixo */}
+        {alerts.length === 0 && (
+          <Link href="/admin/operacao" title="Banco, fila da Meta, canais e tarefas agendadas em dia" className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-soft px-3 py-1 text-[12.5px] font-medium text-brand hover:underline">
+            ✓ Operação sem alertas
+          </Link>
+        )}
       </div>
 
-      {alerts.length > 0 ? (
+      {alerts.length > 0 && (
         <section className="flex flex-col gap-1.5 rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-amber-ink">
           <strong>Precisa de atenção</strong>
           <ul className="ml-4 list-disc">{alerts.map((a) => <li key={a}>{a}</li>)}</ul>
           <Link href="/admin/operacao" className="self-start text-xs font-semibold underline">Ver operação</Link>
         </section>
-      ) : (
-        <p className="text-sm text-muted">✓ Operação sem alertas: banco, fila da Meta, canais e tarefas agendadas em dia.</p>
       )}
 
       {recoveries.open > 0 && (
@@ -69,16 +77,17 @@ export default async function AdminHome() {
         <Kpi label="Margem do mês" value={mrr === null ? "—" : brl(mrr - aiBrl - fixedBrl)} sub={`receita − IA − custos fixos (${brl(fixedBrl)})`} />
       </section>
 
-      {/* rodada 2 das telas (23/10/2026): os gráficos em abas, um de cada vez, e as chaves em linhas com modal */}
+      {/* rodada 2 das telas (23/10/2026, a pedido do usuário: "está com um scroll ainda"): os gráficos e as
+          chaves da plataforma em abas, para a tela caber sem rolar; com algo pausado, abre nas chaves */}
       <ReportTabs
-        label="Gráficos"
+        label="Gráficos e chaves"
+        initial={paused ? "chaves" : undefined}
         tabs={[
           {
             key: "mensagens",
-            label: "Mensagens por dia",
+            label: "Mensagens por dia (contato, bot e equipe)",
             content: (
               <section className="card flex flex-col gap-4 p-5">
-                <span className="text-xs text-muted">contato + bot + equipe, últimos 30 dias</span>
                 <DayBars caption="Mensagens por dia" days={activity.daily.map((d) => ({ day: d.day, value: messages(d), detail: `${d.contact} do contato · ${d.bot} do bot · ${d.team} da equipe` }))} format={(v) => num(Math.round(v))} />
               </section>
             ),
@@ -88,7 +97,6 @@ export default async function AdminHome() {
             label: "Conversas por dia",
             content: (
               <section className="card flex flex-col gap-4 p-5">
-                <span className="text-xs text-muted">últimos 30 dias</span>
                 <DayBars caption="Conversas por dia" days={activity.daily.map((d) => ({ day: d.day, value: d.conversations }))} format={(v) => num(Math.round(v))} />
               </section>
             ),
@@ -98,7 +106,6 @@ export default async function AdminHome() {
             label: "Por canal",
             content: (
               <section className="card flex flex-col gap-3 p-5">
-                <span className="text-xs text-muted">conversas dos últimos 30 dias</span>
                 {activity.channels.length ? (
                   <ul className="flex flex-col gap-2.5">
                     {activity.channels.map((c) => (
@@ -115,10 +122,9 @@ export default async function AdminHome() {
               </section>
             ),
           },
+          { key: "chaves", label: "Chaves da plataforma", count: paused || undefined, content: <PlatformSwitches flags={flags} /> },
         ]}
       />
-
-      <PlatformSwitches flags={flags} />
     </>
   );
 }

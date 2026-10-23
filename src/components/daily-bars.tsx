@@ -37,11 +37,15 @@ export function DailyBars({ days, color }: { days: Day[]; color: string }) {
         {peak && peak.conversations > 0 && <span>pico: {dayLabel(peak.day)} ({peak.conversations})</span>}
         <span>{days.at(-1) ? dayLabel(days.at(-1)!.day) : ""}</span>
       </div>
-      <table className="sr-only">
-        <caption>Conversas e leads por dia</caption>
-        <thead><tr><th>Dia</th><th>Conversas</th><th>Leads</th></tr></thead>
-        <tbody>{days.map((d) => <tr key={d.day}><td>{dayLabel(d.day)}</td><td>{d.conversations}</td><td>{d.leads}</td></tr>)}</tbody>
-      </table>
+      {/* a tabela para leitor de tela vai dentro de um bloco sr-only: numa <table> o sr-only não
+          corta a altura (tabela cresce com o conteúdo) e ela esticava a página, invisível */}
+      <div className="sr-only">
+        <table>
+          <caption>Conversas e leads por dia</caption>
+          <thead><tr><th>Dia</th><th>Conversas</th><th>Leads</th></tr></thead>
+          <tbody>{days.map((d) => <tr key={d.day}><td>{dayLabel(d.day)}</td><td>{d.conversations}</td><td>{d.leads}</td></tr>)}</tbody>
+        </table>
+      </div>
     </figure>
   );
 }
