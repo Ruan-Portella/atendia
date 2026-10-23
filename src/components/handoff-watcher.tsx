@@ -26,6 +26,8 @@ export function HandoffWatcher({ endpoint }: { endpoint: string }) {
   useEffect(() => {
     let stopped = false;
     async function check() {
+      // aba em segundo plano não consulta (cada chamada gasta CPU na Vercel); volta ao ficar visível
+      if (document.hidden) return;
       try {
         const res = await fetch(endpoint, { cache: "no-store" });
         if (!res.ok) return;
@@ -50,10 +52,15 @@ export function HandoffWatcher({ endpoint }: { endpoint: string }) {
       }
     }
     void check();
-    const t = window.setInterval(check, 15_000);
+    const t = window.setInterval(check, 45_000);
+    const onVisible = () => {
+      if (!document.hidden) void check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       stopped = true;
       window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [endpoint]);
 

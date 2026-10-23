@@ -25,7 +25,7 @@ export function ConversationLive({ live, handoffOpen, visitorMessages, lastVisit
     if (!live || handoffOpen) return;
     const t = window.setInterval(() => {
       if (!document.hidden) router.refresh();
-    }, 5000);
+    }, 12_000);
     return () => window.clearInterval(t);
   }, [live, handoffOpen, router]);
 
