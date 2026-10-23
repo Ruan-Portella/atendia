@@ -396,10 +396,12 @@ export interface BusinessProfile {
   websites?: string[];
   address?: string;
   about?: string;
+  /** a foto do perfil do número (link da Meta, que vence; só para mostrar na hora) */
+  profile_picture_url?: string;
 }
 
 export async function businessProfile(ch: WaChannel): Promise<BusinessProfile> {
-  const r = await graph<{ data?: BusinessProfile[] }>(`${ch.phone_number_id}/whatsapp_business_profile?fields=about,address,email,websites`, channelToken(ch));
+  const r = await graph<{ data?: BusinessProfile[] }>(`${ch.phone_number_id}/whatsapp_business_profile?fields=about,address,email,websites,profile_picture_url`, channelToken(ch));
   return r.data?.[0] ?? {};
 }
 

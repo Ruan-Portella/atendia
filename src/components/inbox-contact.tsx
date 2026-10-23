@@ -3,7 +3,8 @@ import { ArrowUpRight, Brain } from "lucide-react";
 import { CONSENT_LABEL, SOURCE_LABEL } from "@/lib/marketing-consent";
 import { contactTitle, type InboxContactData } from "@/lib/inbox-contact";
 import { birthdayLabel } from "@/lib/contact-import";
-import { initials, relativeTime } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
+import { ContactAvatar } from "@/components/contact-avatar";
 
 const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site" };
 const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
@@ -34,7 +35,7 @@ export function InboxContact({ data, botName, conversationHref, contactHref }: {
   return (
     <div className="flex flex-col gap-5 p-5">
       <div className="flex flex-col items-center gap-2 text-center">
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-raised text-base font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)]">{initials(title) || "?"}</span>
+        <ContactAvatar name={title} photo={c.photo} channel={c.channel} size={56} />
         <div>
           <p className="font-medium text-ink">{title}</p>
           <p className="text-[12.5px] text-muted">{[CHANNEL[c.channel] ?? c.channel, botName?.(c.bot_id)].filter(Boolean).join(" · ")}</p>

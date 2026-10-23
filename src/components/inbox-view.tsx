@@ -2,9 +2,10 @@ import Link from "next/link";
 import { ArrowLeft, Clock, Moon, Ticket, UserRound } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import { BASE_QUEUES, inQueue, waitLabel, type InboxItem, type Queue } from "@/lib/inbox";
-import { cn, initials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { BotFace } from "@/components/bot-face";
+import { ContactAvatar } from "@/components/contact-avatar";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { ScrollRow } from "@/components/ui/scroll-row";
@@ -151,7 +152,8 @@ export function InboxView({
                   )}
                 >
                   <span className="relative mt-0.5 shrink-0">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-raised text-[12px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)]">{initials(name) || "?"}</span>
+                    {/* a foto (Instagram) ou as iniciais, com o canal no canto de baixo à esquerda (o rosto do chatbot fica à direita) */}
+                    <ContactAvatar name={name} photo={i.photo} channel={i.channel} size={36} badge="bl" />
                     <BotFace color={i.botColor} face={i.botFace} size={16} className="absolute -bottom-1 -right-1 outline-2 outline-panel" />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -208,7 +210,7 @@ export function InboxView({
             <div className="flex min-h-0 flex-1">
               <div className="min-h-0 min-w-0 flex-1">{children}</div>
               {/* o contato: coluna nas telas largas; nas outras, desliza da direita pelo botão do topo da conversa */}
-              {contact && <ContactPane initialOpen={contactOpen} name={selected?.contact ?? null} wide={!compact}>{contact}</ContactPane>}
+              {contact && <ContactPane initialOpen={contactOpen} name={selected?.contact ?? null} photo={selected?.photo ?? null} wide={!compact}>{contact}</ContactPane>}
             </div>
           </>
         ) : (

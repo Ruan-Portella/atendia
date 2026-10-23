@@ -20,6 +20,7 @@ export const metadata = { title: "Política de Privacidade" };
  * navegador e a marca da desistência em 7 dias. Arquivo da equipe e mensagem apagada no WhatsApp
  * (21/10/2026): as fotos e os PDFs que a equipe manda e o apagar para todos na coexistência. O
  * número compartilhado pelo botão do WhatsApp por quem conversa pelo nome de usuário (21/10/2026).
+ * A foto do perfil de quem manda Direct no Instagram, cifrada na ficha (22/10/2026).
  * Contestação no cartão (21/10/2026): o que vai para a
  * Stripe como prova quando um pagamento é contestado.
  */
@@ -94,7 +95,7 @@ export default function PrivacyPage() {
 
       <Section title="4.1 Instagram">
         <p>
-          Quando uma empresa conecta a conta profissional do Instagram (pelo login do Instagram), recebemos e tratamos o identificador e o nome de usuário da conta, o token de acesso concedido pela empresa e as mensagens diretas enviadas e recebidas por ela, incluindo o identificador do contato no Instagram e os arquivos enviados. Mensagens de áudio também são transcritas em texto por um provedor de IA.
+          Quando uma empresa conecta a conta profissional do Instagram (pelo login do Instagram), recebemos e tratamos o identificador e o nome de usuário da conta, o token de acesso concedido pela empresa e as mensagens diretas enviadas e recebidas por ela, incluindo o identificador do contato no Instagram e os arquivos enviados. Do perfil de quem manda mensagem direta, buscamos o nome, o nome de usuário e a foto do perfil, para mostrar no painel da empresa; a foto fica cifrada na ficha do contato, é atualizada no máximo uma vez por semana e sai junto com o contato (no prazo de guarda ou no pedido de exclusão). No modo dados sensíveis, a foto não é buscada. Mensagens de áudio também são transcritas em texto por um provedor de IA.
         </p>
         <p>
           Quando o contato desfaz uma mensagem no Instagram, ou a apaga para todos no WhatsApp (no número que também está no app do celular), apagamos o conteúdo e os arquivos dela assim que a Meta avisa; fica só o registro, sem conteúdo, de que a mensagem existiu, para não gravá-la de novo se ela chegar outra vez.

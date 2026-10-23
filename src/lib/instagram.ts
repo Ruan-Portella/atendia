@@ -306,6 +306,32 @@ export async function instagramUsername(ch: IgChannel, igsid: string): Promise<s
   }
 }
 
+/**
+ * O perfil de quem escreveu pelo Direct (a mesma API de perfil do usuário do @): o nome, o @ e a
+ * foto (22/10/2026). A foto vem baixada (o link da Meta vence em alguns dias), até 150 KB e só
+ * imagem. Falha (permissão, perfil restrito, sem foto) devolve o que deu, ou null.
+ */
+export async function instagramProfile(ch: IgChannel, igsid: string): Promise<{ name: string | null; username: string | null; photo: { mime: string; base64: string } | null } | null> {
+  if (!/^\d+$/.test(igsid)) return null;
+  try {
+    const r = await api<{ name?: string; username?: string; profile_pic?: string }>(`${igsid}?fields=name,username,profile_pic`, tokenOf(ch), { timeoutMs: 4000 });
+    const username = r.username && /^[a-z0-9._]{1,30}$/i.test(r.username) ? `@${r.username.toLowerCase()}` : null;
+    const name = r.name?.trim().slice(0, 80) || null;
+    let photo: { mime: string; base64: string } | null = null;
+    if (r.profile_pic && /^https:\/\//.test(r.profile_pic)) {
+      const res = await fetchWithTimeout(r.profile_pic, { cache: "no-store" }, 4000, "instagram").catch(() => null);
+      const mime = res?.headers.get("content-type")?.split(";")[0].trim() ?? "";
+      if (res?.ok && /^image\/(jpeg|png|webp)$/.test(mime)) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 0 && buf.length <= 150_000) photo = { mime, base64: buf.toString("base64") };
+      }
+    }
+    return { name, username, photo };
+  } catch {
+    return null;
+  }
+}
+
 /** "Visto" e "digitando…" enquanto o assistente pensa. Falha não importa. */
 export async function instagramTyping(ch: IgChannel, recipientId: string) {
   const token = tokenOf(ch);

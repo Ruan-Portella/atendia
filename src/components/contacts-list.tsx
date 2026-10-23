@@ -4,7 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { clientContactTags, listClientContacts, type ContactListRow } from "@/lib/contacts";
 import { CONSENT_LABEL, consentByContact } from "@/lib/marketing-consent";
 import { BotFace } from "@/components/bot-face";
-import { initials, relativeTime } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
+import { ContactAvatar } from "@/components/contact-avatar";
 
 const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site" };
 
@@ -104,7 +105,7 @@ export async function ContactsList({
           const href = contactHref(c);
           const inner = (
             <>
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-raised text-[12px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)]">{initials(title) || "?"}</span>
+              <ContactAvatar name={title} photo={c.photo} channel={c.channel} size={36} />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="truncate font-medium text-ink">{title}</span>
                 <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-muted">

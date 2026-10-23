@@ -6,7 +6,7 @@ import { SYSTEM_AUTHOR, handleRiskWithoutAi, enterHumanOnly, openConversation, r
 import { clearNotice, decideMode, markNoticeSent, noticeDue, resolveMode, withoutAi, type Mode } from "./conversation-mode";
 import { botHasAi } from "./plans";
 import { deliver, type SendKind, type SendRecord } from "./send";
-import { instagramContact, pendingContactOrigin, setContactOrigin, touchInbound } from "./contacts";
+import { instagramContact, pendingContactOrigin, photoStale, saveContactProfile, setContactOrigin, touchInbound } from "./contacts";
 import { DELETED_LABEL, deletedBeforeArrival } from "./instagram-edits";
 import { NO_CONTEXT, instagramContext, type IgContext } from "./instagram-context";
 import { originOf, refKind } from "./instagram-direct";
@@ -28,7 +28,7 @@ import { firstExceeded, noticeOnce } from "./rate-limit";
 import { LONG_AUDIO_ASK, LONG_AUDIO_LABEL, audioLimit, longAudioAskDue } from "./audio-limits";
 import { withContactId } from "./ai-contact";
 import { reportUnknownMeta } from "./meta-monitor";
-import { instagramTyping, isInstagramAccessError, sendInstagramAttachment, sendInstagramTemplate, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
+import { instagramProfile, instagramTyping, isInstagramAccessError, sendInstagramAttachment, sendInstagramTemplate, sendInstagramText, splitDm, toInstagramText, type IgChannel } from "./instagram";
 import { AUDIO_PREFIX, isStale, previousAnswer, storeOnce } from "./whatsapp-inbound";
 import { answerWithGate, gateButtons } from "./gate/flow";
 import { choicesOf, instagramCarouselText, instagramLinkText, instagramPlan, instagramTemplate, type MessageComponent } from "./components";
@@ -249,6 +249,13 @@ async function instagramBurst(db: SupabaseClient, ch: IgChannelRow, all: QueuedD
   const photosOn = photoReadingOn({ enabled: canReadPhotos(), hasAi: botHasAi(bot), sensitive: Boolean(bot.sensitive_mode), aiResponds: mode.aiResponds, aiOff });
   // a pergunta pendente rearmada na volta da IA não é mensagem nova do contato
   if (contact && mode.storeInbound && !burst.every((q) => isRearmed(q.ev.message?.mid))) await touchInbound(db, contact);
+  // a foto e o nome do perfil (22/10/2026): na primeira mensagem e depois uma vez por semana; sem
+  // permissão ou sem foto, marca a busca do mesmo jeito (volta em uma semana). Falha não atrapalha
+  // no modo dados sensíveis, sem foto (como a leitura de fotos e a memória)
+  if (contact && !bot.sensitive_mode && photoStale(contact)) {
+    const profile = await instagramProfile(ch, igsid);
+    await saveContactProfile(db, bot.id, contact.id, profile ?? { name: null, username: null, photo: null }).catch((e) => console.warn("instagram: foto do contato não salva", e instanceof Error ? e.message : e));
+  }
 
   // links ig.me com origem (E1, parte 3a): o ref que não é pareamento diz de onde a pessoa veio. Numa
   // conversa recente, fica nela; sem conversa, espera no contato até a próxima mensagem abrir uma

@@ -1,10 +1,11 @@
-import { contactDisplayName, contactName as contactNameOf } from "@/lib/contacts";
+import { contactDisplayName, contactName as contactNameOf, contactPhotoUrl, contactPhotoVersions } from "@/lib/contacts";
+import { ContactAvatar } from "@/components/contact-avatar";
 import { agentReactionsFor, quotesOf } from "@/lib/message-links";
 import { needsPhone } from "@/lib/handoff";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { initials, relativeTime } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
 import { ConversationThread, withNotes, type ThreadMessage } from "@/components/conversation-thread";
 import { ConversationTools } from "@/components/conversation-tools";
 import { listNotes } from "@/lib/conversation-notes";
@@ -173,6 +174,9 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
   const templateAction = sendConversationTemplate.bind(null, cid);
   // quem é (redesenho, etapa 2): o nome no cabeçalho e em cima das mensagens do contato
   const who = nameForReplies || identifiedName || (conv.channel === "widget" ? "Visitante do site" : "Contato");
+  // a foto do contato (22/10/2026; só Instagram)
+  const contactId = (conv.contact_id as string | null) ?? null;
+  const photo = contactId ? contactPhotoUrl(contactId, (await contactPhotoVersions(supabase, [contactId]).catch(() => new Map<string, string>())).get(contactId)) : null;
 
   // Tela de chat: ocupa a tela toda (a barra do celular tem 60 px; a faixa de avisos do painel,
   // quando há, mede --panel-notices-h), cabeçalho e resposta fixos, e só as mensagens rolam.
@@ -185,7 +189,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
               <ArrowLeft size={18} />
             </Link>
           )}
-          <span className="mt-0.5 hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-raised text-[13px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)] sm:flex">{initials(who) || "?"}</span>
+          <ContactAvatar name={who} photo={photo} channel={conv.channel as string} size={40} className="mt-0.5 hidden sm:inline-flex" />
           <div className="min-w-0 flex-1">
             {!embedded && <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-medium text-muted hover:text-ink">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>}
             <h1 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-normal leading-tight sm:text-lg">
@@ -261,6 +265,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
             contextChange={conv.context_since ? { at: conv.context_since as string, label: conv.context_display ? `contexto: ${conv.context_display as string}` : "sem conta conectada" } : null}
             agentLabel={(m) => authorLabel(m, { view: "agency", meId: member.id })}
             contactName={who}
+            contactPhoto={photo}
             bot={bot ? { name: bot.name, color: bot.appearance?.color ?? null, face: bot.face } : null}
             showTrace
           />

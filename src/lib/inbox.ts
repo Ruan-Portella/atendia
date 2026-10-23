@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { handoffOrder, handoffStatus, type HandoffState } from "./handoff-status";
 import { nextOpening, type BusinessHours } from "./handoff-hours";
-import { contactLabels } from "./contacts";
+import { contactLabels, contactPhotoUrl, contactPhotoVersions } from "./contacts";
 import { lastMessagesOf, type LastMessage } from "./messages";
 import type { Sector } from "./sectors";
 import { isSnoozed } from "./snooze";
@@ -91,6 +91,8 @@ export interface InboxItem {
   botFace?: unknown;
   /** O começo da última mensagem (fora do modo sensível, que pede o segundo fator). */
   last?: LastMessage | null;
+  /** A foto do contato (só Instagram), o endereço no painel. */
+  photo?: string | null;
 }
 
 const OPEN_DAYS = 30;
@@ -244,7 +246,9 @@ export async function loadInbox(db: SupabaseClient, o: { bots: InboxBot[]; secto
   // só aparece depois do segundo fator, na conversa
   const open = items.filter((i) => !bots.get(i.botId)?.sensitive_mode).map((i) => i.id);
   const last = await lastMessagesOf(db, open).catch(() => new Map<string, LastMessage>());
-  return items.map((i) => ({ ...i, botColor: bots.get(i.botId)?.appearance?.color ?? null, botFace: bots.get(i.botId)?.face ?? null, last: last.get(i.id) ?? null }));
+  // a foto do contato (22/10/2026): só quem tem
+  const photos = await contactPhotoVersions(db, items.map((i) => i.contactId ?? "")).catch(() => new Map<string, string>());
+  return items.map((i) => ({ ...i, botColor: bots.get(i.botId)?.appearance?.color ?? null, botFace: bots.get(i.botId)?.face ?? null, last: last.get(i.id) ?? null, photo: i.contactId ? contactPhotoUrl(i.contactId, photos.get(i.contactId)) : null }));
 }
 
 /** Quantas conversas em cada fila (o número ao lado do nome). Pura. */

@@ -60,6 +60,7 @@ export type CipherField =
   | "fiscal_invoices.taker_address_enc"
   | "conversation_notes.body_enc"
   | "contacts.memory_enc"
+  | "contacts.avatar_enc"
   | "push_subscriptions.keys_enc";
 
 /** Escopo da cifra: o cliente dono do dado, ou null (plataforma: chatbot sem cliente, demos). */

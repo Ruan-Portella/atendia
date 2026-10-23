@@ -58,9 +58,11 @@ export interface ContactRow {
   unavailable_notice_reason?: string | null;
   /** A oferta de novidades já foi feita (leva B3: uma vez por contato). */
   marketing_offer_at?: string | null;
+  /** quando a foto foi buscada (Instagram) */
+  avatar_at?: string | null;
 }
 
-const COLS = "id, phone_hash, wa_user_hash, ig_hash, first_inbound_at, last_inbound_at, unavailable_notice_reason, marketing_offer_at";
+const COLS = "id, phone_hash, wa_user_hash, ig_hash, first_inbound_at, last_inbound_at, unavailable_notice_reason, marketing_offer_at, avatar_at";
 
 export interface WhatsAppIdentity {
   /** wa_id / from: telefone com DDI (some quando a pessoa usa nome de usuário). */
@@ -548,6 +550,8 @@ export interface ContactListRow {
   instagram: string | null;
   last_inbound_at: string | null;
   created_at: string;
+  /** o endereço da foto (só Instagram), ou null */
+  photo?: string | null;
 }
 
 /** As datas das réguas (leva Réguas, parte 1): o aniversário ("MM-DD"), a última visita e o próximo horário. */
@@ -603,7 +607,9 @@ export async function listClientContacts(db: SupabaseClient, o: { botIds: string
   const { data, error } = await q.order("last_inbound_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).range(from, from + limit);
   if (error) throw new Error(`contatos: ${error.message}`);
   const rows = (data ?? []) as Array<Record<string, unknown>>;
-  return { rows: await Promise.all(rows.slice(0, limit).map(listRow)), more: rows.length > limit };
+  const page = await Promise.all(rows.slice(0, limit).map(listRow));
+  const photos = await contactPhotoVersions(db, page.map((r) => r.id));
+  return { rows: page.map((r) => ({ ...r, photo: contactPhotoUrl(r.id, photos.get(r.id)) })), more: rows.length > limit };
 }
 
 /** Etiquetas já usadas nos contatos do cliente (para o filtro), em ordem alfabética. */
@@ -621,8 +627,10 @@ export async function contactForPanel(db: SupabaseClient, id: string, botIds: st
   const { data } = await db.from("contacts").select(`${LIST_COLS}, wa_user_enc, email, first_inbound_at, marketing_offer_at, birthday, last_visit_at, appointment_at`).eq("id", id).in("bot_id", botIds).maybeSingle();
   if (!data) return null;
   const r = data as Record<string, unknown>;
+  const photos = await contactPhotoVersions(db, [id]);
   return {
     ...(await listRow(r)),
+    photo: contactPhotoUrl(id, photos.get(id)),
     bsuid: await openNullable("contacts.wa_user_enc", r.wa_user_enc),
     email: (r.email as string | null) ?? null,
     first_inbound_at: (r.first_inbound_at as string | null) ?? null,
@@ -1071,3 +1079,45 @@ export async function pickableContacts(db: SupabaseClient, botId: string, o: { q
   );
   return { rows: out.filter((r) => r.phone), more: rows.length > limit };
 }
+
+/*
+ * Foto do contato (22/10/2026): só o Instagram dá (a API de perfil do usuário). Vai cifrada na
+ * própria ficha ("mime;base64"), então sai junto com o contato no prazo de guarda e no pedido do
+ * titular. É buscada de novo quando a pessoa escreve e passou uma semana.
+ */
+const PHOTO_MAX_AGE_MS = 7 * 86_400_000;
+
+/** A foto precisa ser buscada (nunca buscada ou com mais de uma semana). Pura. */
+export const photoStale = (c: { avatar_at?: string | null }, now = Date.now()) => !c.avatar_at || now - Date.parse(c.avatar_at) > PHOTO_MAX_AGE_MS;
+
+/**
+ * Grava o que veio do perfil: a foto (ou nada, e a busca só volta em uma semana) e o nome, quando a
+ * ficha ainda não tem (o nome do perfil ou o @). Service role.
+ */
+export async function saveContactProfile(db: SupabaseClient, botId: string, contactId: string, p: { name: string | null; username: string | null; photo: { mime: string; base64: string } | null }): Promise<void> {
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = { avatar_at: now, updated_at: now };
+  if (p.photo) patch.avatar_enc = await enc("contacts.avatar_enc", botId, `${p.photo.mime};${p.photo.base64}`);
+  await db.from("contacts").update(patch).eq("id", contactId);
+  const name = p.name ?? p.username;
+  if (name) await db.from("contacts").update({ name }).eq("id", contactId).is("name", null);
+}
+
+/** A foto para mostrar (pela sessão de quem vê: a RLS limita ao escopo). null sem foto. */
+export async function contactPhoto(db: SupabaseClient, id: string): Promise<{ mime: string; bytes: Buffer } | null> {
+  const { data } = await db.from("contacts").select("avatar_enc").eq("id", id).maybeSingle();
+  const raw = await openNullable("contacts.avatar_enc", data?.avatar_enc).catch(() => null);
+  const m = raw ? /^(image\/(?:jpeg|png|webp));([A-Za-z0-9+/=]+)$/.exec(raw) : null;
+  return m ? { mime: m[1], bytes: Buffer.from(m[2], "base64") } : null;
+}
+
+/** Quais destes contatos têm foto, com a versão (o avatar_at, para o endereço mudar quando a foto muda). */
+export async function contactPhotoVersions(db: SupabaseClient, ids: string[]): Promise<Map<string, string>> {
+  const clean = [...new Set(ids.filter(Boolean))].slice(0, 500);
+  if (!clean.length) return new Map();
+  const { data } = await db.from("contacts").select("id, avatar_at").in("id", clean).not("avatar_enc", "is", null);
+  return new Map((data ?? []).map((r) => [r.id as string, r.avatar_at as string]));
+}
+
+/** O endereço da foto no painel (com a versão, para o navegador guardar até a foto mudar). */
+export const contactPhotoUrl = (id: string, version: string | null | undefined) => (version ? `/api/painel/contatos/${id}/foto?v=${Date.parse(version) || 0}` : null);

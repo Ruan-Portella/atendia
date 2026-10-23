@@ -76,6 +76,16 @@ export async function WhatsAppDiagnostics({ botId }: { botId: string }) {
   const fillProfile = profile !== null && !profileHasSupport(profile) && !ch.coexistence;
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-line-2 px-3 py-3">
+      {/* a foto do perfil do número, como o contato vê (22/10/2026); o link da Meta vence, então só na hora */}
+      {profile?.profile_picture_url && /^https:\/\//.test(profile.profile_picture_url) && (
+        <div className="flex items-center gap-3 pb-1">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={profile.profile_picture_url} alt="" referrerPolicy="no-referrer" className="h-11 w-11 shrink-0 rounded-full object-cover shadow-[inset_0_0_0_1px_var(--color-line)]" />
+          <span className="min-w-0 text-xs text-muted">
+            A foto do perfil do número, como o contato vê{profile.about ? <> · &ldquo;{profile.about}&rdquo;</> : null}. Muda no app do WhatsApp Business{ch.coexistence ? "" : " ou no Gerenciador do WhatsApp"}.
+          </span>
+        </div>
+      )}
       <div className="text-sm font-semibold">Diagnóstico do número</div>
       <ul className="flex flex-col gap-1.5 text-sm">
         {lines.map((l, i) => (

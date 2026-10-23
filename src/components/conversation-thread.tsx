@@ -3,6 +3,7 @@ import { asButtons, cardName, parseComponents } from "@/lib/components";
 import { parsePhotoReading, photoReadingLines } from "@/lib/photo-note";
 import { failureReason } from "@/lib/send-errors";
 import type { ActionResult } from "@/lib/action-result";
+import { ContactAvatar } from "@/components/contact-avatar";
 import { MessageActions } from "@/components/message-actions";
 import { quoteSnippet } from "@/lib/message-links";
 import { ChevronDown, Sparkles } from "lucide-react";
@@ -194,6 +195,8 @@ interface Props {
   actions?: ThreadActions | null;
   /** O nome do contato (as iniciais e o nome em cima das mensagens dele). */
   contactName?: string | null;
+  /** A foto do contato (só Instagram), no lugar das iniciais. */
+  contactPhoto?: string | null;
   /** O chatbot (redesenho): o rosto e o nome nas respostas da IA. */
   bot?: { name: string; color?: string | null; face?: unknown } | null;
   /** "O que a IA fez" em cima de cada resposta (painel da agência; precisa do tool_results). */
@@ -289,8 +292,9 @@ function handoffEvent(m: ThreadMessage): string | null {
   return call.input?.setor ? `A IA chamou a equipe · setor ${call.input.setor}` : "A IA chamou a equipe";
 }
 
-function Avatar({ m, contactName, bot }: { m: ThreadMessage; contactName: string; bot: Props["bot"] }) {
+function Avatar({ m, contactName, contactPhoto, bot }: { m: ThreadMessage; contactName: string; contactPhoto: string | null; bot: Props["bot"] }) {
   if (m.role === "assistant") return <BotFace color={bot?.color} face={bot?.face} size={30} className="mt-5" />;
+  if (m.role !== "agent") return <ContactAvatar name={contactName} photo={contactPhoto} size={30} badge={false} className="mt-5" />;
   const label = m.role === "agent" ? (m.author_display_name ?? "Equipe") : contactName;
   return (
     <span className={`mt-5 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${m.role === "agent" ? "bg-info-soft text-info" : "bg-raised text-ink shadow-[inset_0_0_0_1px_var(--color-line)]"}`}>
@@ -300,7 +304,7 @@ function Avatar({ m, contactName, bot }: { m: ThreadMessage; contactName: string
 }
 
 /** Conversa (visitante, assistente e atendentes) — painel, portal e área do cliente. */
-export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null, actions = null, contactName = null, bot = null, showTrace = false, openTrace = true, firstDay = true }: Props) {
+export function ConversationThread({ messages, leads, agentLabel, showSources = false, contextChange = null, channel = null, actions = null, contactName = null, contactPhoto = null, bot = null, showTrace = false, openTrace = true, firstDay = true }: Props) {
   const changeAt = contextChange ? Date.parse(contextChange.at) : NaN;
   const firstAfter = Number.isNaN(changeAt) ? -1 : messages.findIndex((m) => m.created_at && Date.parse(m.created_at) >= changeAt);
   const who = contactName?.trim() || (channel === "widget" ? "Visitante" : "Contato");
@@ -339,7 +343,7 @@ export function ConversationThread({ messages, leads, agentLabel, showSources = 
                 <NoteView m={m} />
               ) : (
                 <div className={`flex max-w-[86%] gap-2.5 sm:max-w-[76%] ${mine ? "flex-row-reverse self-end" : "self-start"}`}>
-                  <Avatar m={m} contactName={who} bot={bot} />
+                  <Avatar m={m} contactName={who} contactPhoto={contactPhoto} bot={bot} />
                   <div className={`flex min-w-0 flex-col gap-1 ${mine ? "items-end" : "items-start"} ${actions && m.linkable && !m.deleted_at ? "group" : ""}`}>
                     <span className="px-1 text-[12px] text-muted">
                       <span className="font-medium text-ink">{name}</span>

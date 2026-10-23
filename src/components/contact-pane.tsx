@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { PanelRightClose, PanelRightOpen, UserRound, X } from "lucide-react";
 import { CONTACT_COOKIE } from "@/lib/theme";
-import { initials } from "@/lib/utils";
+import { ContactAvatar } from "@/components/contact-avatar";
 
 const EVENT = "bv-contato";
 
@@ -22,7 +22,7 @@ export function ContactToggle() {
  * fica no navegador). Nas telas menores e na área do cliente, abre deslizando da direita pelo
  * botão "Contato" do topo da conversa.
  */
-export function ContactPane({ initialOpen = true, name, wide = true, children }: { initialOpen?: boolean; name: string | null; wide?: boolean; children: React.ReactNode }) {
+export function ContactPane({ initialOpen = true, name, photo = null, wide = true, children }: { initialOpen?: boolean; name: string | null; /** a foto do contato (só Instagram) */ photo?: string | null; wide?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(initialOpen);
   const [sheet, setSheet] = useState(false);
   useEffect(() => {
@@ -59,8 +59,8 @@ export function ContactPane({ initialOpen = true, name, wide = true, children }:
             <button type="button" onClick={() => setOpen(true)} aria-label="Mostrar o contato" title="Mostrar o contato" aria-expanded={false} className="btn-icon h-8 w-8">
               <PanelRightOpen size={16} />
             </button>
-            <button type="button" onClick={() => setOpen(true)} aria-label="Mostrar o contato" title={name ?? "Mostrar o contato"} className="flex h-8 w-8 items-center justify-center rounded-full bg-raised text-[11px] font-semibold text-ink shadow-[inset_0_0_0_1px_var(--color-line)] transition-transform duration-[120ms] hover:scale-105">
-              {initials(name ?? "") || "?"}
+            <button type="button" onClick={() => setOpen(true)} aria-label="Mostrar o contato" title={name ?? "Mostrar o contato"} className="rounded-full transition-transform duration-[120ms] hover:scale-105">
+              <ContactAvatar name={name ?? ""} photo={photo} size={32} badge={false} />
             </button>
           </aside>
         ))}
