@@ -205,10 +205,26 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
 
           <PendingHandoffs items={pending} showClient={false} hrefFor={(h) => `/painel/caixa?fila=todas&c=${h.id}`} />
 
+          {/* 23/10 (pedido do usuário): os atalhos vêm antes dos chatbots */}
+          {canConfig && (
+            <section className="grid gap-3 md:grid-cols-3">
+              <SummaryCard title="Relatório do mês" href={href("relatorio")}>
+                {client.report_email ? <>Vai para <span className="text-ink-2">{client.report_email}</span> todo dia 1º. </> : "Sem e-mail para o relatório: o cliente não recebe o resumo do mês. "}
+                {client.report_last_period ? <>Último: <span className="capitalize">{periodLabel(client.report_last_period)}</span>.</> : null}
+              </SummaryCard>
+              <SummaryCard title="Área do cliente" href={href("acesso")}>
+                {memberCount ? `${memberCount} ${memberCount === 1 ? "pessoa entra" : "pessoas entram"} na área do cliente` : "Ninguém do cliente entra ainda"}
+                {client.allow_handoff ? " · atendem as conversas" : ""}.
+              </SummaryCard>
+              <SummaryCard title="Link do cliente" href={href("relatorio")}>
+                {client.portal_token ? "Ligado: a página com os números do mês, com a sua marca." : "Desligado. Crie o link para o cliente ver os números sem login."}
+              </SummaryCard>
+            </section>
+          )}
+
           <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-medium">Chatbots</h2>
-              {canConfig && bots.length > 0 && <CreateButton kind="chatbot" clientId={client.id} className="btn-ghost px-3 py-1.5 text-[13px]"><Plus size={14} />Novo</CreateButton>}
             </div>
             {bots.length === 0 ? (
               <div className="card flex flex-col items-start gap-3 p-6">
@@ -255,21 +271,6 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             )}
           </section>
 
-          {canConfig && (
-            <section className="grid gap-3 md:grid-cols-3">
-              <SummaryCard title="Relatório do mês" href={href("relatorio")}>
-                {client.report_email ? <>Vai para <span className="text-ink-2">{client.report_email}</span> todo dia 1º. </> : "Sem e-mail para o relatório: o cliente não recebe o resumo do mês. "}
-                {client.report_last_period ? <>Último: <span className="capitalize">{periodLabel(client.report_last_period)}</span>.</> : null}
-              </SummaryCard>
-              <SummaryCard title="Área do cliente" href={href("acesso")}>
-                {memberCount ? `${memberCount} ${memberCount === 1 ? "pessoa entra" : "pessoas entram"} na área do cliente` : "Ninguém do cliente entra ainda"}
-                {client.allow_handoff ? " · atendem as conversas" : ""}.
-              </SummaryCard>
-              <SummaryCard title="Link do cliente" href={href("relatorio")}>
-                {client.portal_token ? "Ligado: a página com os números do mês, com a sua marca." : "Desligado. Crie o link para o cliente ver os números sem login."}
-              </SummaryCard>
-            </section>
-          )}
         </>
       )}
 

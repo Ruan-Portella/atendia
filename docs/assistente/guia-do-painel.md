@@ -92,7 +92,7 @@ Em Clientes, no menu, ficam os números dos últimos 30 dias de todos os cliente
 
 ## A página do cliente
 
-A página de cada cliente tem 4 seções, numa barra no alto: Visão geral (os números dos últimos 30 dias, quem espera a equipe, os chatbots em cartões com o rosto e o resumo do relatório, da área do cliente e do link do cliente), Pessoas (Contatos, Leads e Campanhas), Atendimento (Conversas, Setores e Respostas prontas) e Ajustes (Dados do cliente, Relatório e portal, Acesso do cliente e Conformidade). A seção aberta mostra as abas dela logo abaixo. Clicar numa conversa da lista abre ela na Caixa de entrada.
+A página de cada cliente tem 4 seções, numa barra no alto: Visão geral (os números dos últimos 30 dias, quem espera a equipe, os atalhos do relatório, da área do cliente e do link do cliente, e os chatbots em cartões com o rosto; o chatbot novo se cria pelo botão do alto), Pessoas (Contatos, Leads e Campanhas), Atendimento (Conversas, Setores e Respostas prontas) e Ajustes (Dados do cliente, Relatório e portal, Acesso do cliente e Conformidade). A seção aberta mostra as abas dela logo abaixo. Clicar numa conversa da lista abre ela na Caixa de entrada.
 
 ## Contatos e leads
 
