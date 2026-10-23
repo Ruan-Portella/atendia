@@ -7,6 +7,8 @@ import { can } from "@/lib/team";
 import { IMPORT_MAX_ROWS } from "@/lib/contact-import";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { ContactImport } from "@/components/contact-import";
+import { DialogButton } from "@/components/ui/setting-row";
+import { Download, Table2 } from "lucide-react";
 import { importClientContacts } from "../../../../actions";
 
 export const metadata = { title: "Importar contatos" };
@@ -48,36 +50,38 @@ export default async function ImportContactsPage({ params }: PageProps<"/painel/
   const connected = new Set((channels ?? []).map((c) => c.bot_id as string));
   const withWhatsApp = (bots ?? []).filter((b) => connected.has(b.id as string)).map((b) => ({ id: b.id as string, name: b.name as string }));
 
+  // redesenho (23/10/2026): a importação primeiro; o modelo e as colunas no alto (as colunas num modal)
   return (
     <div className="flex max-w-[860px] flex-col gap-5">
-      <div className="flex flex-col gap-2">
-        <Link href={`/painel/clientes/${id}?tab=contatos`} className="text-sm font-semibold text-muted">← Contatos de {client.name}</Link>
-        <h1 className="text-2xl font-normal sm:text-[28px]">Importar contatos</h1>
-        <p className="text-sm text-muted">
-          Traga os contatos que o cliente já tem, com o aceite de novidades e a idade, quando ele tiver. Até {IMPORT_MAX_ROWS.toLocaleString("pt-BR")} por planilha. Telefone que já existe no
-          chatbot é completado (nome vazio, etiquetas novas e as datas das réguas), nunca duplicado.
-        </p>
+      <div className="flex flex-col gap-3">
+        <Link href={`/painel/clientes/${id}?tab=contatos`} className="text-sm font-medium text-muted hover:text-ink">
+          ← Contatos de {client.name}
+        </Link>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-normal sm:text-[28px]">Importar contatos</h1>
+            <p className="max-w-[560px] text-sm text-muted">
+              Traga os contatos que o cliente já tem, com o aceite de novidades e a idade, quando ele tiver. Até {IMPORT_MAX_ROWS.toLocaleString("pt-BR")} por planilha. Telefone que já existe no chatbot é completado (nome vazio, etiquetas novas e as datas das réguas), nunca duplicado.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <DialogButton label="Ver as colunas" icon={<Table2 size={15} />} className="btn-ghost" title="Colunas da planilha" description="A primeira linha tem os nomes das colunas; a ordem não importa. Separador ponto e vírgula (Excel) ou vírgula." footer="close" size="lg">
+              <ul className="flex flex-col divide-y divide-line-2 overflow-hidden rounded-[14px] border border-line">
+                {COLUMNS.map(([name, desc]) => (
+                  <li key={name} className="flex flex-col gap-0.5 px-4 py-2.5 sm:flex-row sm:gap-4">
+                    <span className="shrink-0 font-mono text-xs text-ink sm:w-[120px] sm:pt-0.5">{name}</span>
+                    <span className="text-sm text-ink-2">{desc}</span>
+                  </li>
+                ))}
+              </ul>
+            </DialogButton>
+            <a href="/modelos/contatos.csv" download className="btn-ghost">
+              <Download size={15} />
+              Baixar o modelo
+            </a>
+          </div>
+        </div>
       </div>
-
-      <section className="card flex flex-col gap-2 p-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-semibold">Colunas da planilha</h2>
-          <a href="/modelos/contatos.csv" download className="text-sm font-semibold text-brand hover:underline">Baixar o modelo</a>
-        </div>
-        <p className="text-xs text-muted">A primeira linha tem os nomes das colunas; a ordem não importa. Separador ponto e vírgula (Excel) ou vírgula.</p>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
-            <tbody>
-              {COLUMNS.map(([name, desc]) => (
-                <tr key={name} className="border-t border-line-2">
-                  <td className="py-1.5 pr-3 font-mono text-xs">{name}</td>
-                  <td className="py-1.5 text-ink-2">{desc}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
 
       {withWhatsApp.length ? (
         <ContactImport clientId={id} bots={withWhatsApp} timezone={(client.timezone as string | null) ?? DEFAULT_TIMEZONE} action={importClientContacts} />

@@ -1,4 +1,5 @@
 import { minutesLabel, type EvolutionMonth } from "@/lib/evolution";
+import { Kpi } from "@/components/kpi";
 
 /** "Out/26" */
 const monthShort = (period: string) => {
@@ -23,7 +24,7 @@ export function EvolutionTable({ months, color }: { months: EvolutionMonth[]; co
     <div className="card overflow-x-auto">
       <table className="w-full min-w-[580px] border-collapse text-left text-sm">
         <thead>
-          <tr className="border-b border-line text-xs text-muted">
+          <tr className="border-b border-line font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted">
             <th className="sticky left-0 bg-panel px-3 py-2 font-semibold">Mês</th>
             <th className="px-2.5 py-2 text-right font-semibold">Conversas</th>
             <th className="px-2.5 py-2 font-semibold">Resolvidas pelo assistente</th>
@@ -60,6 +61,34 @@ export function EvolutionTable({ months, color }: { months: EvolutionMonth[]; co
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** A diferença para o mês anterior, em texto curto ("+12 que setembro"); sem o mês anterior, nada. Pura. */
+export function deltaLabel(cur: number | null, prev: number | null, unit = "", prevName = "o mês anterior"): string | null {
+  if (cur === null || prev === null) return null;
+  const d = cur - prev;
+  if (d === 0) return `igual a ${prevName}`;
+  return `${d > 0 ? "+" : "−"}${num(Math.abs(d))}${unit} que ${prevName}`;
+}
+
+/**
+ * Os números do mês em cartões, em cima da tabela (redesenho, 23/10/2026): o mês mais novo com
+ * conversa e a diferença para o anterior.
+ */
+export function EvolutionSummary({ months }: { months: EvolutionMonth[] }) {
+  const withData = months.filter((m) => m.conversations > 0);
+  const cur = withData[withData.length - 1];
+  if (!cur) return null;
+  const prev = withData[withData.length - 2] ?? null;
+  const prevName = prev ? monthShort(prev.period) : "o mês anterior";
+  return (
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <Kpi label={`Conversas · ${monthShort(cur.period)}`} value={num(cur.conversations)} sub={deltaLabel(cur.conversations, prev?.conversations ?? null, "", prevName) ?? "primeiro mês"} />
+      <Kpi label="Resolvidas pelo assistente" value={cur.resolvedPct === null ? "—" : `${cur.resolvedPct}%`} sub={deltaLabel(cur.resolvedPct, prev?.resolvedPct ?? null, " p.p.", prevName) ?? `${num(cur.resolvedByAi)} conversas`} />
+      <Kpi label="Para a equipe" value={num(cur.toTeam)} sub={cur.teamMinutes === null ? "sem atendimento" : `até assumir: ${minutesLabel(cur.teamMinutes)}`} />
+      <Kpi label="Satisfação" value={cur.goodPct === null ? "—" : `${cur.goodPct}%`} sub={cur.answered ? `Ótimo em ${num(cur.answered)} respostas` : "sem respostas"} />
     </div>
   );
 }

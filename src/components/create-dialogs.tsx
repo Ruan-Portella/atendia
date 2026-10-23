@@ -58,6 +58,17 @@ export function CreateDialogs({
       setOpen(req);
     };
     window.addEventListener(EVENT, listen);
+    // ?criar=cliente ou ?criar=chatbot (&cliente=…): as antigas páginas de criar e os links dos
+    // primeiros passos abrem o mesmo modal (23/10/2026); o parâmetro sai do endereço
+    const url = new URL(window.location.href);
+    const kind = url.searchParams.get("criar");
+    if (kind === "cliente" || kind === "chatbot") {
+      const clientId = url.searchParams.get("cliente") ?? undefined;
+      url.searchParams.delete("criar");
+      url.searchParams.delete("cliente");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      window.setTimeout(() => openCreate(kind, clientId), 0);
+    }
     return () => window.removeEventListener(EVENT, listen);
   }, [createClient, toast]);
   const forClient = open?.kind === "chatbot" && open.clientId ? clients.find((c) => c.id === open.clientId) : null;

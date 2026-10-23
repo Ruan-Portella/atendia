@@ -59,7 +59,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { ClientPicker } from "@/components/client-picker";
 import { saveMomentNotice, clearMomentNotice, setSatisfactionSurvey, saveBotDisplay } from "../../actions";
 import { SatisfactionAbout, satisfactionLine } from "@/components/satisfaction-card";
-import { EvolutionTable } from "@/components/evolution-table";
+import { EvolutionSummary, EvolutionTable } from "@/components/evolution-table";
 import { botEvolution } from "@/lib/evolution";
 import { satisfactionSummary } from "@/lib/satisfaction";
 import { detachFromTemplate, markTransferReviewed, resetDerivedField } from "../../actions";
@@ -903,7 +903,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                 <h2 className="text-[22px] font-medium">Evolução</h2>
                 <p className="max-w-[720px] text-sm text-muted">Os últimos 6 meses deste chatbot: quanto o assistente resolveu sem a equipe, quanto foi para a equipe, quanto tempo a equipe levou para assumir quem pediu atendimento (a mediana) e a satisfação de quem respondeu à pesquisa.{bot.client_id && !bot.is_demo ? " O cliente vê a mesma tabela no relatório, com os chatbots dele somados." : ""}</p>
               </div>
-              <EvolutionTable months={await botEvolution(createAdminClient(), [id])} />
+              {/* redesenho (23/10/2026): os números do mês em cartões em cima da tabela */}
+              <EvolutionView months={await botEvolution(createAdminClient(), [id])} />
             </section>
           )}
 
@@ -1256,5 +1257,15 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
         </ChatPreviewSheet>
       </div>
     </div>
+  );
+}
+
+/** A aba Evolução: os cartões do mês e a tabela dos 6 meses. */
+function EvolutionView({ months }: { months: Awaited<ReturnType<typeof botEvolution>> }) {
+  return (
+    <>
+      <EvolutionSummary months={months} />
+      <EvolutionTable months={months} />
+    </>
   );
 }
