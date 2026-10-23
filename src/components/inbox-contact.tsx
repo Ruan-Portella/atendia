@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { ArrowUpRight, Brain } from "lucide-react";
+import { ArrowRightLeft, ArrowUpRight, Brain, Plus, StickyNote } from "lucide-react";
+import type { ActionResult } from "@/lib/action-result";
+import type { ConversationNote } from "@/lib/conversation-notes";
+import { NOTE_MAX } from "@/lib/note-text";
+import { DialogButton } from "@/components/ui/setting-row";
 import { CONSENT_LABEL, SOURCE_LABEL } from "@/lib/marketing-consent";
 import { contactTitle, type InboxContactData } from "@/lib/inbox-contact";
 import { birthdayLabel } from "@/lib/contact-import";
@@ -18,13 +22,51 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+/** As notas internas da conversa no painel do contato, a mais nova em cima, com o "+" para gravar outra. */
+function NotesSection({ notes, onNote }: { notes: ConversationNote[]; onNote?: (fd: FormData) => Promise<ActionResult> }) {
+  const list = [...notes].reverse().slice(0, 8);
+  return (
+    <section className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <h3 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted">Notas internas</h3>
+        {onNote && (
+          <DialogButton label="Nova nota" icon={<Plus size={13} />} className="ml-auto inline-flex items-center gap-1 rounded-[8px] px-1.5 py-0.5 text-[12px] font-medium text-brand hover:bg-brand-soft" title="Nota interna" description="Só a equipe vê: não vai para o contato nem para a IA. Fica no meio da conversa e aqui." action={onNote} saveLabel="Gravar nota">
+            <div>
+              <label htmlFor="pane-note" className="label">
+                Nota
+              </label>
+              <textarea id="pane-note" name="nota" required rows={4} maxLength={NOTE_MAX} className="input" placeholder="Ex.: pediu para ligar depois das 18h" />
+            </div>
+          </DialogButton>
+        )}
+      </div>
+      {list.length === 0 ? (
+        <span className="text-sm text-muted">Nenhuma nota nesta conversa.</span>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {list.map((n) => (
+            <li key={n.id} className="rounded-[12px] bg-amber-soft/60 px-3 py-2 text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--color-amber-line)]">
+              <span className="flex items-center gap-1.5 text-[11.5px] text-muted">
+                {n.kind === "transferencia" ? <ArrowRightLeft size={12} aria-hidden /> : <StickyNote size={12} aria-hidden />}
+                <span className="min-w-0 truncate">{n.authorName}{n.kind === "transferencia" && n.targetLabel ? ` → ${n.targetLabel}` : ""} · {relativeTime(n.createdAt)}</span>
+              </span>
+              {n.body && <span className="mt-0.5 block whitespace-pre-wrap break-words">{n.body}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /**
  * O painel do contato na Caixa de entrada (parte 3; redesenho, etapa 2): quem é, como falar, as
  * etiquetas, o que o assistente lembra, as datas das réguas, as novidades, os vínculos e as outras
  * conversas. Só leitura; `contactHref` (quem pode editar) leva à página do contato.
  */
-export function InboxContact({ data, botName, conversationHref, contactHref }: { data: InboxContactData | null; botName?: (botId: string) => string | undefined; conversationHref: (botId: string, convId: string) => string; contactHref?: string | null }) {
-  if (!data) return <p className="p-5 text-sm text-muted">Sem cadastro de contato nesta conversa (visitante do site sem identificação). O que a pessoa deixou aparece na conversa.</p>;
+export function InboxContact({ data, botName, conversationHref, contactHref, notes = [], onNote }: { data: InboxContactData | null; botName?: (botId: string) => string | undefined; conversationHref: (botId: string, convId: string) => string; contactHref?: string | null; /** as notas internas e as transferências desta conversa (23/10/2026: também aqui, além do meio da conversa) */ notes?: ConversationNote[]; onNote?: (fd: FormData) => Promise<ActionResult> }) {
+  const notesBlock = <NotesSection notes={notes} onNote={onNote} />;
+  if (!data) return <div className="flex flex-col gap-5 p-5"><p className="text-sm text-muted">Sem cadastro de contato nesta conversa (visitante do site sem identificação). O que a pessoa deixou aparece na conversa.</p>{notesBlock}</div>;
   const { contact: c, consent, links, history } = data;
   const title = contactTitle(c);
   const dates = [
@@ -47,6 +89,8 @@ export function InboxContact({ data, botName, conversationHref, contactHref }: {
           </Link>
         )}
       </div>
+
+      {notesBlock}
 
       {(c.phone || c.email || c.instagram) && (
         <Section label="Como falar">

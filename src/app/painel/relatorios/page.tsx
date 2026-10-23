@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { withFrom } from "@/lib/back-link";
 import { ArrowRight, Check, Mail } from "lucide-react";
 import { requirePermission } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
@@ -68,7 +69,7 @@ export default async function RelatoriosPage() {
         </div>
         {rows.length === 0 && <p className="p-6 text-sm text-muted">Nenhum cliente ainda.</p>}
         {rows.map(({ c, own, s, pct, used, quota }, k) => (
-          <Link key={c.id} href={`/painel/clientes/${c.id}?tab=relatorio`} className="group grid grid-cols-2 items-center gap-x-3 gap-y-2 border-b border-line-2 px-4 py-3 text-sm transition-colors duration-[120ms] last:border-0 hover:bg-raised/50 lg:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_minmax(0,1.6fr)_24px]" style={{ animation: `rise-in var(--dur-base) var(--ease-out) ${Math.min(k, 12) * 25}ms both` }}>
+          <Link key={c.id} href={withFrom(`/painel/clientes/${c.id}?tab=relatorio`, "/painel/relatorios")} className="group grid grid-cols-2 items-center gap-x-3 gap-y-2 border-b border-line-2 px-4 py-3 text-sm transition-colors duration-[120ms] last:border-0 hover:bg-raised/50 lg:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_minmax(0,1.6fr)_24px]" style={{ animation: `rise-in var(--dur-base) var(--ease-out) ${Math.min(k, 12) * 25}ms both` }}>
             <span className="col-span-2 flex min-w-0 items-center gap-2.5 lg:col-span-1">
               <span className="flex shrink-0 items-center">
                 {own.length ? own.slice(0, 3).map((b, i) => <BotFace key={b.id} color={b.appearance?.color} face={b.face} size={24} className={cn("outline-2 outline-panel", i > 0 && "-ml-2")} />) : <span className="h-6 w-6 rounded-[8px] bg-raised" />}

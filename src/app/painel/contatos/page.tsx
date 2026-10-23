@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { withFrom } from "@/lib/back-link";
 import { Download } from "lucide-react";
 import { requirePermission } from "@/lib/agency";
 import { can } from "@/lib/team";
@@ -54,7 +55,7 @@ export default async function ContatosPage({ searchParams }: PageProps<"/painel/
         <ContactsList
           botIds={botIds}
           bots={botMap}
-          contactHref={(c) => (clientOf.get(c.bot_id) ? `/painel/clientes/${clientOf.get(c.bot_id)}/contatos/${c.id}` : null)}
+          contactHref={(c) => (clientOf.get(c.bot_id) ? withFrom(`/painel/clientes/${clientOf.get(c.bot_id)}/contatos/${c.id}`, `/painel/contatos${cliente ? `?cliente=${cliente}` : ""}`) : null)}
           searchParams={sp}
           basePath="/painel/contatos"
           clients={{ options: clients, value: cliente }}
@@ -76,7 +77,7 @@ export default async function ContatosPage({ searchParams }: PageProps<"/painel/
               </a>
             )}
           </form>
-          <LeadList leads={leads} originLabel="Cliente · chatbot" originOf={(bid) => { const b = botMap.get(bid); return b ? `${b.client} · ${b.name}` : ""; }} empty="Nenhum lead ainda. Eles aparecem aqui assim que alguém deixar o contato no chat." />
+          <LeadList leads={leads} from={`/painel/contatos?aba=leads${cliente ? `&cliente=${cliente}` : ""}`} originLabel="Cliente · chatbot" originOf={(bid) => { const b = botMap.get(bid); return b ? `${b.client} · ${b.name}` : ""; }} empty="Nenhum lead ainda. Eles aparecem aqui assim que alguém deixar o contato no chat." />
         </>
       )}
     </div>

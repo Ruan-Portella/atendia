@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { backFrom } from "@/lib/back-link";
 import { notFound } from "next/navigation";
 import { ArrowRight, Download, ExternalLink, Headset, Layers, LayoutDashboard, Plus, Settings2, Users } from "lucide-react";
 import { requireAgency } from "@/lib/agency";
@@ -145,7 +146,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   return (
     <>
       <div className="flex flex-col gap-4">
-        <Link href="/painel/clientes" className="text-[13px] font-medium text-muted hover:text-ink">← Clientes</Link>
+        <Link href={backFrom(sp.de)?.href ?? "/painel/clientes"} className="text-[13px] font-medium text-muted hover:text-ink">← {backFrom(sp.de)?.label ?? "Clientes"}</Link>
         <div className="flex flex-wrap items-center gap-4">
           {/* os rostos dos chatbots do cliente, um sobre o outro (sem chatbot, as iniciais) */}
           {bots.length ? (

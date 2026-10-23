@@ -6,7 +6,10 @@ import { InboxView } from "@/components/inbox-view";
 import { ClientConversation } from "@/components/client-conversation";
 import { InboxContact } from "@/components/inbox-contact";
 import { loadInboxContact } from "@/lib/inbox-contact";
-import { memberSetAvailability } from "@/app/cliente/actions";
+import { memberAddNote, memberSetAvailability } from "@/app/cliente/actions";
+import { listNotes } from "@/lib/conversation-notes";
+import { cookies } from "next/headers";
+import { QUEUES_COOKIE } from "@/lib/theme";
 
 export const metadata = { title: { absolute: "Caixa de entrada" }, robots: { index: false, follow: false } };
 
@@ -40,13 +43,16 @@ export default async function MemberInboxPage({ params, searchParams }: PageProp
   const back = selected ? hrefFor({ queue, conversationId: selected.id }) : undefined;
   // modo sensível: o segundo fator vem antes da conversa e do painel do contato
   if (selected && bots.find((b) => b.id === selected.botId)?.sensitive_mode) await requireMemberMfa(id, back!);
-  const contact = selected?.contactId ? await loadInboxContact(admin, { contactId: selected.contactId, botIds: bots.map((b) => b.id), conversationId: selected.id }) : null;
+  const [contact, notes] = await Promise.all([
+    selected?.contactId ? loadInboxContact(admin, { contactId: selected.contactId, botIds: bots.map((b) => b.id), conversationId: selected.id }) : null,
+    selected ? listNotes(admin, selected.id).catch(() => []) : [],
+  ]);
   const botName = (botId: string) => bots.find((b) => b.id === botId)?.name;
 
   return (
     <div className="-mx-4 -my-6 flex min-h-0 flex-1 flex-col sm:-mx-6 sm:-my-8">
-      <InboxView compact backInHeader items={items} queue={queue} queues={queues} meId={member.memberId} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={false} available={member.available} onAvailability={memberSetAvailability.bind(null, id)}
-        contact={selected && <InboxContact data={contact} botName={botName} conversationHref={(_b, c) => hrefFor({ queue, conversationId: c })} />}>
+      <InboxView compact backInHeader queuesOpen={(await cookies()).get(QUEUES_COOKIE)?.value !== "fechado"} items={items} queue={queue} queues={queues} meId={member.memberId} selectedId={selected?.id ?? null} hrefFor={hrefFor} showClient={false} available={member.available} onAvailability={memberSetAvailability.bind(null, id)}
+        contact={selected && <InboxContact data={contact} notes={notes} onNote={memberAddNote.bind(null, id, selected.id)} botName={botName} conversationHref={(_b, c) => hrefFor({ queue, conversationId: c })} />}>
         {selected && <ClientConversation clientId={id} convId={selected.id} embedded back={back} mobileBack={hrefFor({ queue })} contactToggle earlier={Math.min(50, Number(sp.ant) || 0)} earlierHref={(n) => `${hrefFor({ queue, conversationId: selected.id })}&ant=${n}`} />}
       </InboxView>
     </div>

@@ -12,6 +12,8 @@ export const MENU_COOKIE = "bv_menu";
 
 /** O painel do contato na Caixa de entrada escondido ("fechado"), também por navegador. */
 export const CONTACT_COOKIE = "bv_contato";
+/** As filas da Caixa de entrada à vista ou ocultas (23/10/2026). */
+export const QUEUES_COOKIE = "bv_filas";
 
 export const TEMAS: Array<{ value: Tema; label: string }> = [
   { value: "escuro", label: "Escuro" },

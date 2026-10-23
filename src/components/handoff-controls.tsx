@@ -3,8 +3,6 @@ import type { ActionResult } from "@/lib/action-result";
 import { relativeTime } from "@/lib/utils";
 import { leadWaiting } from "@/lib/handoff-status";
 import { WHATSAPP_WINDOW_HOURS, apiPauseActive, canTakeOver, conversationState, lastSeen } from "@/lib/presence";
-import { ActionForm } from "@/components/ui/action-form";
-import { SubmitButton } from "@/components/ui/submit-button";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { AgentReplyForm } from "@/components/agent-reply-form";
 import { ConfirmAction } from "@/components/ui/confirm-action";
@@ -81,8 +79,14 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-ground px-3 py-2 text-sm">
           <PauseCircle size={16} className="shrink-0 text-muted" />
           <span className="min-w-0 flex-1"><strong>IA pausada pela integração</strong> até {pauseEnd(conv.ai_paused_until!)}. O sistema integrado responde esta conversa; a equipe não é avisada.</span>
-          {onResumeAi && <ActionForm action={onResumeAi}><SubmitButton pendingLabel="Devolvendo…" className="btn-ghost py-1.5">Devolver para a IA</SubmitButton></ActionForm>}
-          <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir</SubmitButton></ActionForm>
+          {onResumeAi && (
+            <ConfirmAction action={onResumeAi} title="Devolver para a IA?" description="A pausa da integração acaba agora e o assistente volta a responder esta conversa." confirmLabel="Devolver para a IA" danger={false} className="btn-ghost py-1.5">
+              Devolver para a IA
+            </ConfirmAction>
+          )}
+          <ConfirmAction action={onTakeOver} title="Assumir a conversa?" description="Você passa a responder esta conversa e o assistente pausa nela. A sua primeira mensagem sai com o anúncio de entrada com o seu nome." confirmLabel="Assumir" danger={false} className="btn-dark py-1.5">
+            Assumir
+          </ConfirmAction>
         </div>
       ) : waiting ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-line bg-amber-soft px-3 py-2 text-sm">
@@ -91,7 +95,11 @@ export function HandoffStatus({ conv, onTakeOver, onResumeAi, meId }: { conv: Ha
             <strong>{who} {conv.ticket_protocol ? `abriu o chamado ${conv.ticket_protocol}` : leadWaiting(conv) ? "deixou um pedido para a equipe" : "pediu para falar com alguém"}</strong> {relativeTime(conv.handoff_requested_at!)}.{" "}
             {rotationView(conv, meId) === "mine" ? "Esta conversa foi passada para você: assuma para responder." : rotationView(conv, meId) === "other" ? `Esta conversa foi passada para ${conv.assigned_to_name ?? "outra pessoa"}.` : "Assuma para responder por aqui."}
           </span>
-          {rotationView(conv, meId) !== "other" && <ActionForm action={onTakeOver}><SubmitButton pendingLabel="Assumindo…" className="btn-dark py-1.5">Assumir conversa</SubmitButton></ActionForm>}
+          {rotationView(conv, meId) !== "other" && (
+            <ConfirmAction action={onTakeOver} title="Assumir a conversa?" description="Você passa a responder esta conversa e o assistente pausa nela. A sua primeira mensagem sai com o anúncio de entrada com o seu nome." confirmLabel="Assumir" danger={false} className="btn-dark py-1.5">
+              Assumir conversa
+            </ConfirmAction>
+          )}
         </div>
       ) : (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-brand">
@@ -154,15 +162,20 @@ export function HandoffReply({ conv, meId, onTakeOver, onForceTakeOver, onSend, 
       {active ? (
         <div className={docked ? "flex flex-col gap-2" : "sticky bottom-0 flex flex-col gap-2 border-t border-line bg-ground py-3"}>
           <AgentReplyForm action={onSend} paymentCheck={paymentCheck} quickReplies={quickReplies} contactName={contactName} attendantName={attendantName} allowFile={!conv.ticket_protocol} onRequestPhone={onRequestPhone} />
-          <ActionForm action={onRelease} className="self-end">
-            <SubmitButton pendingLabel="Encerrando…" className="text-xs font-semibold text-muted hover:underline">Encerrar atendimento e devolver ao assistente</SubmitButton>
-          </ActionForm>
+          <span className="self-end">
+            <ConfirmAction action={onRelease} title="Encerrar e devolver ao assistente?" description="O atendimento humano acaba e o assistente volta a responder esta conversa. Dá para assumir de novo depois." confirmLabel="Encerrar e devolver" danger={false} className="text-xs font-semibold text-muted hover:underline">
+              Encerrar atendimento e devolver ao assistente
+            </ConfirmAction>
+          </span>
         </div>
       ) : (
         !waiting && !apiPaused(conv) && canTakeOver(conv) && (
-          <ActionForm action={onTakeOver} className="self-start">
-            <SubmitButton pendingLabel="Assumindo…" className="btn-ghost"><Headset size={15} />Assumir esta conversa</SubmitButton>
-          </ActionForm>
+          <span className="self-start">
+            <ConfirmAction action={onTakeOver} title="Assumir a conversa?" description="Você passa a responder esta conversa e o assistente pausa nela. A sua primeira mensagem sai com o anúncio de entrada com o seu nome." confirmLabel="Assumir" danger={false} className="btn-ghost">
+              <Headset size={15} />
+              Assumir esta conversa
+            </ConfirmAction>
+          </span>
         )
       )}
       {conv.handled_at && conv.handoff_requested_at && <p className="text-xs text-muted">Atendimento humano encerrado {relativeTime(conv.handled_at)}.{canTakeOver(conv) ? " Você pode assumir de novo quando quiser." : ""}</p>}

@@ -8,7 +8,7 @@ import { BotFace } from "@/components/bot-face";
 import { ContactAvatar } from "@/components/contact-avatar";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { ScrollRow } from "@/components/ui/scroll-row";
+import { QueueBar } from "@/components/queue-bar";
 import { ContactPane } from "@/components/contact-pane";
 
 const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", widget: "Site", painel: "Teste", demo: "Demo" };
@@ -60,6 +60,7 @@ export function InboxView({
   compact = false,
   contact,
   contactOpen = true,
+  queuesOpen = true,
   backInHeader = false,
   children,
 }: {
@@ -80,6 +81,8 @@ export function InboxView({
   contact?: React.ReactNode;
   /** a coluna do contato começa aberta (o cookie da pessoa; ela esconde e mostra pelo botão) */
   contactOpen?: boolean;
+  /** as filas começam à vista (o cookie bv_filas) */
+  queuesOpen?: boolean;
   /** a volta para a fila (no celular) fica no topo da conversa, e não numa linha em cima dela */
   backInHeader?: boolean;
   /** a conversa aberta (lado direito) */
@@ -107,27 +110,12 @@ export function InboxView({
               </SubmitButton>
             </ActionForm>
           </div>
-          {/* as filas: pílulas que rolam de lado (dedo, mouse, rodinha ou setas), com o número de cada uma */}
-          <ScrollRow label="Filas" className="-mx-4" innerClassName="px-4">
-            {all.map((q, k) => {
-              const n = count(q.key);
-              const on = q.key === queue;
-              return (
-                <span key={q.key} className="flex shrink-0 items-center gap-1.5">
-                  {q.group && q.group !== all[k - 1]?.group && <span className="ml-1 h-4 w-px bg-line" aria-hidden />}
-                  <Link
-                    href={hrefFor({ queue: q.key })}
-                    aria-current={on ? "page" : undefined}
-                    title={q.group ? `${q.group} · ${q.label}` : undefined}
-                    className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] transition-colors duration-[120ms]", on ? "bg-ink font-medium text-ground" : "bg-raised/70 text-ink-2 hover:bg-raised hover:text-ink")}
-                  >
-                    {q.label}
-                    {n > 0 && <span className={cn("font-mono text-[10.5px]", on ? "text-ground/70" : "text-muted")}>{n}</span>}
-                  </Link>
-                </span>
-              );
-            })}
-          </ScrollRow>
+          {/* as filas: todas à vista, com quem espera em destaque, e o Ocultar (23/10) */}
+          <QueueBar
+            current={queue}
+            initialOpen={queuesOpen}
+            queues={all.map((q) => ({ key: q.key, label: q.label, group: q.group, href: hrefFor({ queue: q.key }), count: count(q.key), waiting: items.filter((i) => i.waiting && inQueue(i, q.key, meId)).length }))}
+          />
         </div>
         <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3">
           {list.length === 0 && (
@@ -151,11 +139,8 @@ export function InboxView({
                     i.urgent && "shadow-[inset_3px_0_0_var(--color-danger)]",
                   )}
                 >
-                  <span className="relative mt-0.5 shrink-0">
-                    {/* a foto (Instagram) ou as iniciais, com o canal no canto de baixo à esquerda (o rosto do chatbot fica à direita) */}
-                    <ContactAvatar name={name} photo={i.photo} channel={i.channel} size={36} badge="bl" />
-                    <BotFace color={i.botColor} face={i.botFace} size={16} className="absolute -bottom-1 -right-1 outline-2 outline-panel" />
-                  </span>
+                  {/* a foto (Instagram) ou as iniciais, com o canal no canto; o rosto do chatbot fica na linha de baixo, com o nome dele (23/10) */}
+                  <ContactAvatar name={name} photo={i.photo} channel={i.channel} size={36} className="mt-0.5" />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="flex items-baseline gap-2">
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{name}</span>
@@ -168,7 +153,10 @@ export function InboxView({
                     )}
                     <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <StatusPill status={status} />
-                      <span className="min-w-0 truncate text-[11.5px] text-muted">{showClient ? `${i.clientName} · ` : ""}{CHANNEL[i.channel] ?? i.channel}</span>
+                      <span className="inline-flex min-w-0 items-center gap-1 text-[11.5px] text-muted">
+                        <BotFace color={i.botColor} face={i.botFace} size={14} className="shrink-0" />
+                        <span className="truncate">{i.botName}{showClient ? ` · ${i.clientName}` : ""} · {CHANNEL[i.channel] ?? i.channel}</span>
+                      </span>
                     </span>
                     {(i.sectorName || i.ticketProtocol || i.outsideHours || i.snoozedUntil || i.snoozeEnded) && (
                       <span className="mt-1 flex flex-wrap gap-1 text-[11px]">

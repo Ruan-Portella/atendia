@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { backFrom } from "@/lib/back-link";
 import { notFound } from "next/navigation";
 import { requireAgency } from "@/lib/agency";
 import { createClient } from "@/lib/supabase/server";
@@ -26,8 +27,10 @@ const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: 
  * coletado fora do chat; ele não desfaz um SAIR. As datas das réguas (leva Réguas, parte 1), só no
  * WhatsApp: o aniversário, a última visita e o próximo horário, no fuso do cliente.
  */
-export default async function ContactPage({ params }: PageProps<"/painel/clientes/[id]/contatos/[contactId]">) {
-  const [{ id, contactId }, { role }] = await Promise.all([params, requireAgency()]);
+export default async function ContactPage({ params, searchParams }: PageProps<"/painel/clientes/[id]/contatos/[contactId]">) {
+  const [{ id, contactId }, sp, { role }] = await Promise.all([params, searchParams, requireAgency()]);
+  // de onde a pessoa veio (Caixa, Contatos e leads…): o "←" volta para lá
+  const back = backFrom(sp.de);
   if (!can(role, "config")) notFound();
   const supabase = await createClient();
   // a RLS limita os chatbots ao cliente e ao escopo de quem está logado
@@ -65,7 +68,7 @@ export default async function ContactPage({ params }: PageProps<"/painel/cliente
   return (
     <div className="flex max-w-[860px] flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <Link href={`/painel/clientes/${id}?tab=contatos`} className="text-sm font-semibold text-muted">← Contatos de {client.name}</Link>
+        <Link href={back?.href ?? `/painel/clientes/${id}?tab=contatos`} className="text-sm font-semibold text-muted">← {back?.label ?? `Contatos de ${client.name}`}</Link>
         <h1 className="text-2xl font-normal sm:text-[28px]">{title}</h1>
         <p className="text-sm text-muted">
           {[CHANNEL_LABEL[contact.channel] ?? contact.channel, contact.name && contact.phone ? `+${contact.phone}` : null, contact.email, botName ? `chatbot ${botName}` : null].filter(Boolean).join(" · ")}

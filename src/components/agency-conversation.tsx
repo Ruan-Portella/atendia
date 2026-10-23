@@ -3,6 +3,7 @@ import { ContactAvatar } from "@/components/contact-avatar";
 import { agentReactionsFor, quotesOf } from "@/lib/message-links";
 import { needsPhone } from "@/lib/handoff";
 import Link from "next/link";
+import { backFrom } from "@/lib/back-link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { relativeTime } from "@/lib/utils";
@@ -14,7 +15,6 @@ import { listQuickReplies } from "@/lib/quick-replies";
 import { isSnoozed } from "@/lib/snooze";
 import { TicketStatusControl } from "@/components/ticket-status-control";
 import { HandoffReply, HandoffStatus, holderView } from "@/components/handoff-controls";
-import { leadWaiting } from "@/lib/handoff-status";
 import { ConversationMenu } from "@/components/conversation-menu";
 import { EarlierConversations } from "@/components/earlier-conversations";
 import { ContactToggle } from "@/components/contact-pane";
@@ -78,7 +78,7 @@ const CHANNEL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", instagram:
  * (embedded: preenche a coluna, com o link para abrir em tela cheia; `back` é para onde o segundo
  * fator volta).
  */
-export async function AgencyConversation({ botId: id, convId: cid, embedded = false, back, earlier = 0, earlierHref, mobileBack, contactToggle = false }: { botId: string; convId: string; embedded?: boolean; back?: string; /** a volta para a fila no celular (seta no topo) */ mobileBack?: string; /** o botão "Contato" (o painel do contato da Caixa) */ contactToggle?: boolean; /** quantas conversas anteriores da pessoa mostrar em cima (?ant=) */ earlier?: number; earlierHref?: (n: number) => string }) {
+export async function AgencyConversation({ botId: id, convId: cid, embedded = false, back, earlier = 0, earlierHref, mobileBack, contactToggle = false, from = null }: { botId: string; convId: string; embedded?: boolean; /** a tela de onde a pessoa veio (?de=): o "←" volta para lá */ from?: string | null; back?: string; /** a volta para a fila no celular (seta no topo) */ mobileBack?: string; /** o botão "Contato" (o painel do contato da Caixa) */ contactToggle?: boolean; /** quantas conversas anteriores da pessoa mostrar em cima (?ant=) */ earlier?: number; earlierHref?: (n: number) => string }) {
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
@@ -191,14 +191,14 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
           )}
           <ContactAvatar name={who} photo={photo} channel={conv.channel as string} size={40} className="mt-0.5 hidden sm:inline-flex" />
           <div className="min-w-0 flex-1">
-            {!embedded && <Link href={`/painel/bots/${id}?tab=conversas`} className="text-xs font-medium text-muted hover:text-ink">← Conversas{bot ? ` de ${bot.name}` : ""}</Link>}
+            {!embedded && <Link href={backFrom(from)?.href ?? `/painel/bots/${id}?tab=conversas`} className="text-xs font-medium text-muted hover:text-ink">← {backFrom(from)?.label ?? `Conversas${bot ? ` de ${bot.name}` : ""}`}</Link>}
             <h1 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[17px] font-normal leading-tight sm:text-lg">
               <span className="min-w-0 max-w-full truncate">{who}</span>
               <span className="rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)]">{CHANNEL_LABEL[conv.channel as string] ?? conv.channel}</span>
               <ConversationStateBadge conv={conv} withTime />
               {sensitive && <span className="rounded-full bg-amber-soft px-2 py-0.5 text-xs font-medium text-amber-ink">dados sensíveis</span>}
             </h1>
-            <p className="mt-0.5 hidden text-[12.5px] text-muted line-clamp-2 sm:block">{bot ? bot.name : "Conversa"}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:text-ink">{bot.client_name}</Link></> : null} · começou {relativeTime(conv.started_at)}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}{leadWaiting(conv) && !conv.handled_at ? " · deixou pedido para a equipe" : conv.needs_human ? " · pediu atendente" : ""}</p>
+            <p className="mt-0.5 hidden text-[12.5px] text-muted line-clamp-2 sm:block">{bot ? bot.name : "Conversa"}{bot?.client_id ? <> · <Link href={`/painel/clientes/${bot.client_id}`} className="hover:text-ink">{bot.client_name}</Link></> : null} · começou {relativeTime(conv.started_at)}{conv.origin_label ? ` · veio pelo link “${conv.origin_label}”` : ""}{conv.identity_hash ? ` · identificado pela empresa${identifiedName ? `: ${identifiedName}` : ""}` : ""}{routineIdentity}{conv.context_display ? ` · contexto: ${conv.context_display}` : ""}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {templates && <TemplateModalButton templates={templates} action={templateAction} defaults={[contactName]} highlight={!windowOpen} />}
@@ -241,7 +241,7 @@ export async function AgencyConversation({ botId: id, convId: cid, embedded = fa
 
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={!conv.handled_at && Boolean(conv.takeover_at || conv.handoff_requested_at)} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />
 
-      <MessageScroller count={allMessages.length} className="min-h-0 flex-1 overflow-y-auto">
+      <MessageScroller count={allMessages.length} anchor={earlier} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-4 py-5 sm:px-5 md:px-7">
           {/* as conversas anteriores da mesma pessoa, em cima (uma conversa só, como no WhatsApp) */}
           <EarlierConversations

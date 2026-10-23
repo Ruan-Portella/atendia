@@ -9,6 +9,7 @@ import { AGENT_FILE_ACCEPT } from "@/lib/agent-file-rules";
 import { fileSizeLabel, prepareAgentFile } from "@/lib/image-shrink";
 import { mentionsPayment } from "@/lib/gate/payment";
 import { renderQuickReply, type QuickReply } from "@/lib/quick-replies";
+import { QuickReplyPicker } from "@/components/quick-reply-picker";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 
@@ -205,15 +206,7 @@ export function AgentReplyForm({ action, paymentCheck = false, quickReplies = []
               <input ref={fileInput} type="file" name="file" accept={AGENT_FILE_ACCEPT} className="sr-only" onChange={(e) => void takeFile(e.currentTarget.files?.[0])} />
             </label>
           )}
-          {quickReplies.length > 0 && (
-            <label className="flex items-center">
-              <span className="sr-only">Respostas prontas</span>
-              <select value="" onChange={(e) => insert(e.target.value)} className="max-w-[180px] cursor-pointer rounded-[9px] bg-transparent px-2 py-1.5 text-[12.5px] text-muted transition-colors duration-[120ms] hover:bg-raised hover:text-ink focus:outline-none">
-                <option value="">Respostas prontas…</option>
-                {quickReplies.map((q) => <option key={q.id} value={q.id}>{q.title}</option>)}
-              </select>
-            </label>
-          )}
+          {quickReplies.length > 0 && <QuickReplyPicker replies={quickReplies} onPick={insert} />}
           <SubmitButton pendingLabel="Enviando…" className="btn-primary ml-auto px-3.5 py-2">Enviar</SubmitButton>
         </div>
       </ActionForm>

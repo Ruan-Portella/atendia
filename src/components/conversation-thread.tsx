@@ -6,7 +6,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { ContactAvatar } from "@/components/contact-avatar";
 import { MessageActions } from "@/components/message-actions";
 import { quoteSnippet } from "@/lib/message-links";
-import { ChevronDown, Sparkles } from "lucide-react";
+import { BellRing, ChevronDown, Sparkles } from "lucide-react";
 import { BotFace } from "@/components/bot-face";
 import { aiTrace, durationLabel } from "@/lib/ai-trace";
 import { initials } from "@/lib/utils";
@@ -120,16 +120,20 @@ function PhotoReadingView({ json }: { json?: string | null }) {
 
 /**
  * O texto, com o anúncio do começo (entrada do atendente, aviso de IA ou "Voltei!") marcado:
- * o contato recebeu tudo junto, numa mensagem só.
+ * o contato recebeu tudo junto, numa mensagem só. Redesenho (23/10/2026, a pedido do usuário): no
+ * lugar da caixa tracejada com "ANÚNCIO", uma linha discreta com o sino, separada do texto.
  */
 function MessageText({ m }: { m: ThreadMessage }) {
   const n = m.announce_chars ?? 0;
   if (m.deleted_at || n <= 0 || n >= m.content.length) return <div className={m.deleted_at ? "whitespace-pre-wrap italic opacity-70" : "whitespace-pre-wrap"}>{m.content}</div>;
   return (
     <>
-      <div className="mb-1.5 rounded-md border border-dashed border-line px-2 py-1 text-[12px] text-muted">
-        <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.06em]">anúncio</span>
-        <span className="whitespace-pre-wrap">{m.content.slice(0, n).trim()}</span>
+      <div title="Aviso automático, enviado junto com esta mensagem" className="mb-1.5 flex gap-1.5 border-b border-current/15 pb-1.5 text-[12px] leading-snug opacity-75">
+        <BellRing size={12} className="mt-[3px] shrink-0" aria-hidden />
+        <span className="whitespace-pre-wrap">
+          <span className="sr-only">Aviso automático: </span>
+          {m.content.slice(0, n).trim()}
+        </span>
       </div>
       <div className="whitespace-pre-wrap">{m.content.slice(n)}</div>
     </>
