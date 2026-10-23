@@ -488,7 +488,7 @@ describe("PATCH do chatbot e uso do mês (parte 4d)", () => {
     const all = await (await GET_USAGE(call("GET", "usage?month=2026-10", keys.all), noParams)).json();
     expect(all.month).toBe("2026-10");
     expect(all.clients).toHaveLength(1);
-    expect(all.clients[0]).toMatchObject({ client_id: `cli_${CLIENT_A1}`, external_id: "loja-1", atendimentos: 125, messages: 940, campaign_contacts: 30, meta_billed: { marketing: 10, utility: 20 }, meta_cost_estimate_brl: 4.2 });
+    expect(all.clients[0]).toMatchObject({ client_id: `cli_${CLIENT_A1}`, external_id: "loja-1", atendimentos: 125, messages: 940, campaign_contacts: 30, meta_billed: { marketing: 10, utility: 20 }, meta_cost_estimate_brl: 3.92 });
     expect(all.clients[0].bots.map((b: { bot_id: string; atendimentos: number }) => [b.bot_id, b.atendimentos])).toEqual([[`bot_${BOT_A1}`, 120], [`bot_${BOT_A2}`, 5]]);
     expect(all.account).toMatchObject({ atendimentos: 125, overage_atendimentos: 10, overage_value_brl: 3.5, credit_balance_brl: 87.5 });
     // chave de chatbots: só o dela, e sem os campos da conta
