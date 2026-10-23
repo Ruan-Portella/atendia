@@ -123,7 +123,7 @@ export async function ClientConversation({ clientId: id, convId: cid, embedded =
 
       <ConversationLive live={conversationState(conv) !== "closed"} handoffOpen={handoffOpen} visitorMessages={visitorMsgs.length} lastVisitorText={visitorMsgs.at(-1)?.content ?? ""} />
 
-      <MessageScroller count={allMessages.length} anchor={earlier} className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4 sm:-mx-6 sm:px-6">
+      <MessageScroller count={allMessages.length} anchor={earlier} className={embedded ? "-mx-4 min-h-0 flex-1 overflow-y-auto px-4 sm:-mx-6 sm:px-6" : "-mx-4 min-h-0 flex-1 overflow-y-auto px-4 sm:-mx-6 sm:px-6 lg:-mx-9 lg:px-9"}>
         <div className="flex flex-col gap-4 py-5">
           {/* as conversas anteriores da mesma pessoa, em cima (uma conversa só, como no WhatsApp) */}
           <EarlierConversations

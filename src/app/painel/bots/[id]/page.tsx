@@ -65,7 +65,7 @@ import { satisfactionSummary } from "@/lib/satisfaction";
 import { detachFromTemplate, markTransferReviewed, resetDerivedField } from "../../actions";
 import { answerUnanswered, completeWhatsAppSignup, createWhatsAppConnectLink, disconnectInstagram, startWhatsAppConversation, connectWhatsApp, convertDemo, deleteBot, disconnectWhatsApp, pauseBot, resolveUnanswered, resumeBot, setAutoRefresh, setBotStatus, setMarketingOptIn, setPostPriceRule, updateBot } from "../../actions";
 import { PostPriceFields } from "@/components/post-price-card";
-import { IceBreakersCard, KeywordsCard, RefLinksCard, type KeywordItem, type PostChoice, type RefLinkItem } from "@/components/instagram-direct-cards";
+import { IceBreakersCard, KeywordsGroup, RefLinksCard, type KeywordItem, type PostChoice, type RefLinkItem } from "@/components/instagram-direct-cards";
 import { addRefLink, removeKeyword, removeRefLink, saveCommentsAi, saveIceBreakers, saveKeyword } from "@/app/painel/instagram/actions";
 import { commentsEnabled } from "@/lib/instagram";
 import { InstagramCommentsCard } from "@/components/instagram-comments-card";
@@ -91,7 +91,7 @@ import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 import { BotOverview } from "@/components/bot-overview";
 import { getBotStats, getPendingHandoffs } from "@/lib/panel";
 import { choiceLabel } from "@/lib/billing";
-import { Ban, BookOpen, Brain, ChartColumn, Clock, FileText, Hash, Image as ImageIcon, LayoutDashboard, Link2, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, MessagesSquare, PenLine, Phone, Plus, Radio, RefreshCw, Send, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Star, Tags, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
+import { Ban, BookOpen, Brain, ChartColumn, Clock, FileText, Hash, Image as ImageIcon, LayoutDashboard, Link2, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, MessagesSquare, PenLine, Phone, Plus, Radio, RefreshCw, Send, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Star, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
 import { AutoSwitch, DialogButton, SettingGroup, SettingRow, SubmitSwitch, SwitchField } from "@/components/ui/setting-row";
 import { FaceEditor } from "@/components/face-editor";
 import { BotFace } from "@/components/bot-face";
@@ -1154,9 +1154,6 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   <SettingRow icon={<Link2 size={18} />} title="Links com origem" summary={refLinks.length ? `${refLinks.length} ${refLinks.length === 1 ? "link" : "links"} para a bio, o QR e os anúncios` : "Nenhum link com origem"} size="lg" footer="close">
                     <RefLinksCard username={instagram?.username ?? null} links={refLinks} hasIceBreakers={iceBreakersOf(bot).length > 0} add={addRefLink.bind(null, id)} remove={removeRefLink.bind(null, id)} />
                   </SettingRow>
-                  <SettingRow icon={<Tags size={18} />} title="Palavras-chave" summary={keywords.length ? `${keywords.length} ${keywords.length === 1 ? "palavra" : "palavras"}` : "Nenhuma palavra-chave"} size="lg" footer="close">
-                    <KeywordsCard keywords={keywords} commentsOn={commentsOn} posts={postChoices} save={saveKeyword.bind(null, id)} remove={removeKeyword.bind(null, id)} />
-                  </SettingRow>
                   <SettingRow icon={<MessagesSquare size={18} />} title="Comentários dos posts" summary={commentsOn ? `${comments.length} ${comments.length === 1 ? "comentário recente" : "comentários recentes"}` : "Ainda não liberado pela Meta"} size="lg" footer="close">
                     <InstagramCommentsCard enabled={commentsOn} comments={comments} posts={postsById} ai={{ mode: bot.ig_comments_ai ?? "off", mediaIds: bot.ig_comments_ai_media_ids ?? null, posts: postChoices, withAi: botHasAi(bot), save: saveCommentsAi.bind(null, id) }} />
                   </SettingRow>
@@ -1185,6 +1182,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   )}
                 </SettingGroup>
               )}
+              {!bot.is_demo && <KeywordsGroup keywords={keywords} commentsOn={commentsOn} posts={postChoices} save={saveKeyword.bind(null, id)} remove={removeKeyword.bind(null, id)} />}
               {!bot.is_demo && <FailedSends botId={id} channel="instagram" />}
             </div>
           )}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowUpRight, KeyRound, Webhook, Workflow } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
+import { ShowMore } from "@/components/ui/show-more";
 
 const OPEN = "inline-flex shrink-0 items-center gap-1 rounded-[9px] px-2 py-1 text-[12.5px] font-medium text-brand hover:bg-brand-soft";
 
@@ -9,7 +10,8 @@ const OPEN = "inline-flex shrink-0 items-center gap-1 rounded-[9px] px-2 py-1 te
  * Cliente → Dados: resumo, só de leitura, das Integrações que valem para este cliente (chaves de
  * API e webhooks da conta com escopo nele, e as ações de cada chatbot). Quem mexe é a área
  * Integrações da conta e a aba Ações de cada chatbot. Redesenho (23/10/2026): uma linha para cada,
- * com o "Abrir" no canto.
+ * com o "Abrir" no canto. Com muitos chatbots, os que têm ações vêm primeiro e o resto fica no
+ * "Mostrar todos".
  */
 export async function ClientIntegrationsSummary({ agencyId, clientId, bots }: { agencyId: string; clientId: string; bots: Array<{ id: string; name: string }> }) {
   const db = createAdminClient();
@@ -35,10 +37,12 @@ export async function ClientIntegrationsSummary({ agencyId, clientId, bots }: { 
     <SettingGroup title="Integrações deste cliente">
       <SettingRow icon={<KeyRound size={18} />} title="Chaves de API" summary={myKeys.length ? myKeys.map((k) => `${k.name as string} (${k.prefix as string}…)`).join(", ") : "Nenhuma chave cobre este cliente"} trailing={open("/painel/integracoes?aba=chaves")} />
       <SettingRow icon={<Webhook size={18} />} title="Webhooks" summary={myHooks.length ? myHooks.map((h) => `${h.name as string}${h.active ? "" : " (desativado)"}`).join(", ") : "Nenhum webhook cobre este cliente"} trailing={open("/painel/integracoes?aba=webhooks")} />
-      {bots.map((b) => {
+      <ShowMore initial={3}>
+      {[...bots].sort((a, b) => (actionCount.get(b.id) ?? 0) - (actionCount.get(a.id) ?? 0)).map((b) => {
         const n = actionCount.get(b.id) ?? 0;
         return <SettingRow key={b.id} icon={<Workflow size={18} />} title={`Ações · ${b.name}`} summary={n ? `${n} ${n === 1 ? "ação" : "ações"}` : "Nenhuma ação"} trailing={open(`/painel/bots/${b.id}?tab=acoes`)} />;
       })}
+      </ShowMore>
     </SettingGroup>
   );
 }

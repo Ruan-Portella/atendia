@@ -14,7 +14,8 @@ const SHEET_DESCRIPTION = "Antes de enviar, você vê quantos recebem, quem fica
  * Cliente → Campanhas (leva B3): as campanhas e os lembretes dos chatbots deste cliente, o limite
  * de envio do número dele, o fuso e a declaração de consentimento para lembretes. Redesenho
  * (23/10/2026, a pedido do usuário): Nova campanha e Novo lembrete abrem o painel lateral da tela
- * Campanhas (só com os chatbots deste cliente), e os ajustes viram linhas com modal.
+ * Campanhas (só com os chatbots deste cliente), e os ajustes viram linhas com modal. O fuso e o
+ * consentimento vêm antes da lista (rodada 2 das telas, 23/10).
  */
 export async function ClientCampaigns({ clientId, clientName, bots }: { clientId: string; clientName: string; bots: BoardBot[] }) {
   const options = await campaignBotOptions(await createClient(), createAdminClient(), clientId);
@@ -35,10 +36,8 @@ export async function ClientCampaigns({ clientId, clientName, bots }: { clientId
           </DialogButton>
         </div>
       </div>
+      <ClientReminderSettings clientId={clientId} clientName={clientName} />
       <CampaignBoard bots={bots} showClient={false} limits />
-      <div>
-        <ClientReminderSettings clientId={clientId} clientName={clientName} />
-      </div>
     </div>
   );
 }

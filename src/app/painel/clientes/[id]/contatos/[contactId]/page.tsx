@@ -11,13 +11,15 @@ import { activeSuppressions, suppressionScope } from "@/lib/suppression";
 import { relativeTime } from "@/lib/utils";
 import { birthdayLabel } from "@/lib/contact-import";
 import { CLIENT_TIMEZONES, DEFAULT_TIMEZONE, isoToLocalInput } from "@/lib/timezone";
-import { Brain, CalendarDays, ChevronRight, FileCheck2, Megaphone, MessagesSquare, Tags } from "lucide-react";
+import { Brain, CalendarDays, ChevronRight, FileCheck2, Megaphone, MessagesSquare, StickyNote, Tags } from "lucide-react";
+import { listContactNotes } from "@/lib/conversation-notes";
+import { NOTE_MAX } from "@/lib/note-text";
 import { ContactAvatar } from "@/components/contact-avatar";
 import { TagsField } from "@/components/tags-field";
 import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { StatusPill } from "@/components/ui/form-section";
 import { ConfirmAction } from "@/components/ui/confirm-action";
-import { clearContactMemoryAction, recordContactConsent, revokeContactConsent, saveContactDates, saveContactTags } from "../../../../actions";
+import { addConversationNote, clearContactMemoryAction, recordContactConsent, revokeContactConsent, saveContactDates, saveContactTags } from "../../../../actions";
 
 export const metadata = { title: "Contato" };
 
@@ -63,6 +65,10 @@ export default async function ContactPage({ params, searchParams }: PageProps<"/
   // memória do assistente (leva Memória e avisos, parte 1): o que a IA lembra desta pessoa neste chatbot
   const memory = await contactMemory(db, contactId).catch(() => [] as string[]);
   const { data: conversations } = await supabase.from("conversations").select("id, bot_id, started_at, last_message_at, message_count, channel").eq("contact_id", contactId).order("last_message_at", { ascending: false }).limit(20);
+  // notas internas das conversas desta pessoa (rodada 2 das telas, 23/10): a nova vai para a conversa mais recente
+  const notes = await listContactNotes(db, (conversations ?? []).map((c) => c.id as string)).catch(() => []);
+  const latestConv = (conversations ?? [])[0]?.id as string | undefined;
+  const convStart = new Map((conversations ?? []).map((c) => [c.id as string, c.started_at as string]));
   const title = contact.name ?? (contact.phone ? `+${contact.phone}` : contact.instagram ? `Instagram ${contact.instagram}` : "Sem nome");
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
   const tz = (client.timezone as string | null) ?? DEFAULT_TIMEZONE;
@@ -155,6 +161,42 @@ export default async function ContactPage({ params, searchParams }: PageProps<"/
             </ul>
           </SettingRow>
         )}
+      </SettingGroup>
+
+      <SettingGroup title="Equipe">
+        <SettingRow
+          icon={<StickyNote size={18} />}
+          title="Notas internas"
+          badge={notes.length ? <StatusPill>{notes.length}</StatusPill> : undefined}
+          summary={notes[0]?.body ? `A última, de ${notes[0].authorName}: ${notes[0].body}` : "Nenhuma nota nas conversas desta pessoa"}
+          description={latestConv ? "Só a equipe vê. Cada nota fica na conversa em que foi escrita; a nova vai para a conversa mais recente." : "Só a equipe vê. As notas ficam nas conversas: esta pessoa ainda não tem conversa guardada."}
+          dialogTitle="Notas internas"
+          action={latestConv && can(role, "attend") ? addConversationNote.bind(null, latestConv) : undefined}
+          saveLabel="Gravar a nota"
+          footer={latestConv && can(role, "attend") ? "save" : "close"}
+        >
+          {notes.length > 0 && (
+            <ul className="flex max-h-[40vh] flex-col gap-1.5 overflow-y-auto">
+              {notes.map((n) => (
+                <li key={n.id} className="rounded-[12px] bg-amber-soft/60 px-3 py-2 text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--color-amber-line)]">
+                  <span className="block text-[11.5px] text-muted">
+                    {n.authorName} · {relativeTime(n.createdAt)}
+                    {convStart.get(n.conversationId) ? ` · na conversa de ${new Date(convStart.get(n.conversationId)!).toLocaleDateString("pt-BR", { timeZone: tz })}` : ""}
+                  </span>
+                  {n.body && <span className="mt-0.5 block whitespace-pre-wrap break-words">{n.body}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {latestConv && can(role, "attend") && (
+            <div>
+              <label htmlFor="contato-nota" className="label">
+                Nova nota
+              </label>
+              <textarea id="contato-nota" name="nota" required rows={3} maxLength={NOTE_MAX} className="input" placeholder="Ex.: prefere ser chamada pelo WhatsApp depois das 18h" />
+            </div>
+          )}
+        </SettingRow>
       </SettingGroup>
 
       {contact.channel === "whatsapp" && (

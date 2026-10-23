@@ -8,7 +8,8 @@ import { Plus, X } from "lucide-react";
  * texto separado por vírgula). Enter ou vírgula adiciona; o X tira. Vão no campo `name`, separadas
  * por vírgula, como antes.
  */
-export function TagsField({ name, initial, max = 30 }: { name: string; initial: string[]; max?: number }) {
+export function TagsField({ name, initial, max = 30, placeholder = "cliente vip, pizza, zona sul…", empty = "Sem etiquetas.", idPrefix }: { name: string; initial: string[]; max?: number; placeholder?: string; empty?: string; /** o id do campo (padrão: `name`) */ idPrefix?: string }) {
+  const fieldId = `${idPrefix ?? name}-new`;
   const [tags, setTags] = useState<string[]>(initial);
   const [draft, setDraft] = useState("");
   const add = (raw: string) => {
@@ -32,14 +33,14 @@ export function TagsField({ name, initial, max = 30 }: { name: string; initial: 
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted">Sem etiquetas.</p>
+        <p className="text-sm text-muted">{empty}</p>
       )}
       <div className="flex items-center gap-2">
-        <label htmlFor={`${name}-new`} className="sr-only">
+        <label htmlFor={fieldId} className="sr-only">
           Nova etiqueta
         </label>
         <input
-          id={`${name}-new`}
+          id={fieldId}
           value={draft}
           onChange={(e) => (e.target.value.includes(",") ? add(e.target.value) : setDraft(e.target.value))}
           onKeyDown={(e) => {
@@ -49,7 +50,7 @@ export function TagsField({ name, initial, max = 30 }: { name: string; initial: 
             }
           }}
           maxLength={60}
-          placeholder="cliente vip, pizza, zona sul…"
+          placeholder={placeholder}
           className="input min-w-0 flex-1"
         />
         <button type="button" onClick={() => add(draft)} className="btn-ghost shrink-0">

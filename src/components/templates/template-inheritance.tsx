@@ -54,13 +54,14 @@ export function TemplateInheritance({
   const others = (skip: TemplateField): Record<string, string> => Object.fromEntries(unlocked.filter((f) => f !== skip).map((f) => [`f_${f}`, "on"]));
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0 flex-1">
+      {/* o botão fica no alto, ao lado do título, sem quebrar a linha (rodada 2 das telas) */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 max-w-[720px] flex-1">
           <h2 className="text-[22px] font-medium">Herança</h2>
           <p className="text-sm text-muted">Cada chatbot criado deste modelo recebe o que você publica aqui: a personalidade, as instruções, os assuntos do negócio, as ações, os roteiros e a base de conhecimento. Ele fica com o próprio cliente, os canais, o horário e o destino do atendimento e o contexto fixo.</p>
         </div>
         {manage && (
-          <DialogButton label="Novo chatbot deste modelo" icon={<Plus size={15} />} className="btn-primary" title="Novo chatbot deste modelo" description="Um por cliente ou loja. Ele nasce com a versão em uso do modelo." action={createDerived} saveLabel="Criar chatbot" size="lg">
+          <DialogButton label="Novo chatbot deste modelo" icon={<Plus size={15} />} className="btn-primary shrink-0 self-start whitespace-nowrap" title="Novo chatbot deste modelo" description="Um por cliente ou loja. Ele nasce com a versão em uso do modelo." action={createDerived} saveLabel="Criar chatbot" size="lg">
             <ClientPicker clients={clients} defaultClientId={null} idPrefix="deriv" />
             <div className="flex flex-col gap-1.5">
               <span className="label">Contexto fixo (opcional): a loja ou o cliente no seu sistema</span>

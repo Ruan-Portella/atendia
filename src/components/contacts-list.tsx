@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Search, Upload } from "lucide-react";
+import { Search } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { clientContactTags, listClientContacts, type ContactListRow } from "@/lib/contacts";
 import { CONSENT_LABEL, consentByContact } from "@/lib/marketing-consent";
@@ -31,7 +31,7 @@ export async function ContactsList({
   searchParams,
   basePath,
   hidden = {},
-  importHref = null,
+  importSlot = null,
   clients = null,
   emptyText,
 }: {
@@ -43,7 +43,8 @@ export async function ContactsList({
   basePath: string;
   /** os parâmetros que ficam (ex.: a aba) */
   hidden?: Record<string, string>;
-  importHref?: string | null;
+  /** o botão de importar planilha (o painel lateral), quando a tela permite */
+  importSlot?: React.ReactNode;
   /** o filtro por cliente (Contatos e leads): as opções e o escolhido */
   clients?: { options: Array<{ id: string; name: string }>; value: string } | null;
   emptyText: string;
@@ -61,7 +62,9 @@ export async function ContactsList({
 
   return (
     <div className="flex flex-col gap-3">
-      <form className="flex flex-wrap items-end gap-2" action={basePath}>
+      {/* o painel de importar fica fora do formulário do filtro (os botões dele não enviam o filtro) */}
+      <div className="flex flex-wrap items-end gap-2">
+      <form className="flex min-w-0 flex-1 flex-wrap items-end gap-2" action={basePath}>
         {Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
         <div className="relative min-w-[200px] flex-1">
           <label htmlFor="contatos-q" className="sr-only">Buscar</label>
@@ -88,13 +91,9 @@ export async function ContactsList({
         )}
         <button type="submit" className="btn-ghost">Filtrar</button>
         {filtered && <Link href={`${basePath}${Object.keys(hidden).length ? `?${new URLSearchParams(hidden)}` : ""}`} className="btn-ghost text-muted">Limpar</Link>}
-        {importHref && (
-          <Link href={importHref} className="btn-ghost ml-auto">
-            <Upload size={15} />
-            Importar planilha
-          </Link>
-        )}
       </form>
+      {importSlot}
+      </div>
 
       <div className="card overflow-hidden">
         {rows.length === 0 && <p className="p-6 text-sm text-muted">{filtered ? "Nenhum contato com esse filtro." : emptyText}</p>}

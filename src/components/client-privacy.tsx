@@ -4,16 +4,20 @@ import { RETENTION_MONTHS, effectiveRetention, retentionLabel } from "@/lib/rete
 import { setBotSensitiveMode, setClientRetention } from "@/app/painel/actions";
 import { SensitiveModeFields } from "@/components/sensitive-mode-form";
 import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
+import { ShowMore } from "@/components/ui/show-more";
 
 /**
  * Privacidade do cliente no painel (aba Dados do cliente): prazo de guarda próprio (vazio = o da
  * agência) e o modo dados sensíveis de cada chatbot, que a agência ou o cliente (na área dele) ligam.
  * Redesenho (23/10/2026): uma linha para o prazo e uma para cada chatbot, cada uma com o modal.
+ * Com muitos chatbots, os ligados e os sugeridos vêm primeiro e o resto fica no "Mostrar todos".
  */
 export async function ClientPrivacy({ clientId, clientName, clientMonths, agencyMonths }: { clientId: string; clientName: string; clientMonths: number | null; agencyMonths: number | null }) {
   const supabase = await createClient();
   const { data: bots } = await supabase.from("bots").select("id, name, sensitive_mode, sensitive_retention_days, sensitive_mode_suggested_at").eq("client_id", clientId).eq("is_demo", false).order("name");
   const agencyLabel = agencyMonths ? `${agencyMonths} meses` : "não apagar";
+  const rank = (b: { sensitive_mode: unknown; sensitive_mode_suggested_at: unknown }) => (b.sensitive_mode ? 0 : b.sensitive_mode_suggested_at ? 1 : 2);
+  const sorted = [...(bots ?? [])].sort((a, b) => rank(a) - rank(b));
   return (
     <SettingGroup title="Privacidade e LGPD">
       <SettingRow
@@ -41,7 +45,8 @@ export async function ClientPrivacy({ clientId, clientName, clientMonths, agency
           <span className="text-ink-2">Se o prazo diminuir: entendo que o que for mais antigo é apagado na próxima limpeza diária, sem desfazer.</span>
         </label>
       </SettingRow>
-      {(bots ?? []).map((b) => {
+      <ShowMore>
+      {sorted.map((b) => {
         const on = Boolean(b.sensitive_mode);
         const days = (b.sensitive_retention_days as number | null) || 30;
         const r = effectiveRetention({ isDemo: false, sensitiveMode: on, sensitiveDays: b.sensitive_retention_days as number, clientMonths, agencyMonths });
@@ -59,6 +64,7 @@ export async function ClientPrivacy({ clientId, clientName, clientMonths, agency
           </SettingRow>
         );
       })}
+      </ShowMore>
     </SettingGroup>
   );
 }

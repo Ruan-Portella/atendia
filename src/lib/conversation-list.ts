@@ -65,8 +65,8 @@ export function listStatus(r: Pick<Row, "handoff_requested_at" | "takeover_at" |
   return { label: "Encerrada", tone: "neutral" };
 }
 
-/** As conversas dos chatbots (o escopo vem de quem consulta: a RLS no painel), com o filtro. */
-export async function loadConversationList(db: SupabaseClient, o: { bots: InboxBot[]; filter: ConversationFilter; limit: number }): Promise<{ items: ConversationListItem[]; more: boolean }> {
+/** As conversas dos chatbots (o escopo vem de quem consulta: a RLS no painel), com o filtro e, no cliente, o setor. */
+export async function loadConversationList(db: SupabaseClient, o: { bots: InboxBot[]; filter: ConversationFilter; limit: number; sectorId?: string | null }): Promise<{ items: ConversationListItem[]; more: boolean }> {
   if (!o.bots.length) return { items: [], more: false };
   const bots = new Map(o.bots.map((b) => [b.id, b]));
   let q = db
@@ -76,6 +76,7 @@ export async function loadConversationList(db: SupabaseClient, o: { bots: InboxB
     .gt("message_count", 0);
   if (o.filter === "esperando") q = q.or("handoff_requested_at.not.is.null,takeover_at.not.is.null").is("handled_at", null);
   else if (o.filter !== "todas") q = q.eq("channel", o.filter);
+  if (o.sectorId) q = q.eq("sector_id", o.sectorId);
   const { data, error } = await q.order("last_message_at", { ascending: false }).limit(o.limit + 1);
   if (error) throw new Error(`conversas: ${error.message}`);
   const rows = ((data ?? []) as Row[]).slice(0, o.limit);

@@ -68,3 +68,21 @@ export async function listNotes(db: SupabaseClient, conversationId: string): Pro
     })),
   );
 }
+
+/** As notas internas das conversas de um contato (a ficha do contato), da mais nova para a mais antiga; sem as transferências. */
+export async function listContactNotes(db: SupabaseClient, conversationIds: string[], limit = 50): Promise<Array<ConversationNote & { conversationId: string }>> {
+  if (!conversationIds.length) return [];
+  const { data } = await db.from("conversation_notes").select("id, conversation_id, kind, author_id, author_name, body_enc, target_label, created_at").in("conversation_id", conversationIds).eq("kind", "nota").order("created_at", { ascending: false }).limit(limit);
+  return Promise.all(
+    ((data ?? []) as Array<Record<string, unknown>>).map(async (r) => ({
+      id: r.id as string,
+      conversationId: r.conversation_id as string,
+      kind: r.kind as NoteKind,
+      authorId: r.author_id as string,
+      authorName: r.author_name as string,
+      body: await openNullable("conversation_notes.body_enc", r.body_enc).catch(() => null),
+      targetLabel: (r.target_label as string | null) ?? null,
+      createdAt: r.created_at as string,
+    })),
+  );
+}

@@ -18,7 +18,8 @@ const FROM: Record<string, string> = { ia: "IA: ", equipe: "Equipe: ", contato: 
  * usuário): a lista à esquerda (a pessoa, o começo da última mensagem, a situação e o chatbot), com
  * os filtros no alto, e a conversa aberta ao lado. No celular, a lista ocupa a tela e a conversa
  * abre no lugar dela, com a seta para voltar. O endereço guarda o filtro (`f`), quantas carregar
- * (`n`) e a conversa aberta (`c`).
+ * (`n`) e a conversa aberta (`c`). No cliente com setores, uma segunda linha filtra pelo setor
+ * (rodada 2 das telas, 23/10/2026).
  */
 export async function ConversationsBrowser({
   db,
@@ -31,6 +32,9 @@ export async function ConversationsBrowser({
   earlier = 0,
   intro,
   renderConversation,
+  sectors = [],
+  sector = null,
+  heightClass = "h-[calc(100dvh-230px)] min-h-[540px] max-md:h-[calc(100dvh-170px)]",
 }: {
   db: SupabaseClient;
   bots: InboxBot[];
@@ -38,7 +42,7 @@ export async function ConversationsBrowser({
   limit: number;
   selectedId: string | null;
   /** o endereço desta aba com o filtro, quantas e a conversa aberta */
-  hrefFor: (o: { filter?: ConversationFilter; limit?: number; conversationId?: string | null; earlier?: number }) => string;
+  hrefFor: (o: { filter?: ConversationFilter; limit?: number; conversationId?: string | null; earlier?: number; sector?: string | null }) => string;
   /** o nome do chatbot em cada linha (no cliente, que tem mais de um) */
   showBot: boolean;
   earlier?: number;
@@ -46,14 +50,19 @@ export async function ConversationsBrowser({
   intro?: React.ReactNode;
   /** a conversa aberta (padrão: a do painel; a área do cliente passa a dela) */
   renderConversation?: (o: { botId: string; convId: string; back: string; mobileBack: string; earlier: number; earlierHref: (n: number) => string }) => React.ReactNode;
+  /** os setores do cliente (o filtro só aparece com algum) e o escolhido */
+  sectors?: Array<{ id: string; name: string }>;
+  sector?: string | null;
+  /** a altura do cartão (a área do cliente tem outro topo) */
+  heightClass?: string;
 }) {
-  const { items, more } = await loadConversationList(db, { bots, filter, limit });
+  const { items, more } = await loadConversationList(db, { bots, filter, limit, sectorId: sector });
   const selected = selectedId ? (items.find((i) => i.id === selectedId) ?? null) : null;
   // a conversa aberta pode estar fora da página carregada (veio de um link): o chatbot dela precisa estar na lista
   const openBot = selected?.botId ?? (selectedId ? (await db.from("conversations").select("bot_id").eq("id", selectedId).in("bot_id", bots.map((b) => b.id)).maybeSingle()).data?.bot_id : null);
 
   return (
-    <div className="card relative flex h-[calc(100dvh-230px)] min-h-[540px] overflow-hidden max-md:h-[calc(100dvh-170px)]">
+    <div className={cn("card relative flex overflow-hidden", heightClass)}>
       <section className={cn("flex w-full min-w-0 flex-col md:w-[340px] md:shrink-0 md:border-r md:border-line", selectedId && openBot && "hidden md:flex")}>
         <div className="flex flex-col gap-2.5 border-b border-line-2 px-3 py-3">
           {intro}
@@ -61,7 +70,7 @@ export async function ConversationsBrowser({
             {CONVERSATION_FILTERS.map((f) => (
               <Link
                 key={f.key}
-                href={hrefFor({ filter: f.key, limit: 40, conversationId: selectedId })}
+                href={hrefFor({ filter: f.key, limit: 40, conversationId: selectedId, sector })}
                 scroll={false}
                 aria-current={f.key === filter ? "page" : undefined}
                 className={cn("rounded-full px-2.5 py-1 text-[12.5px] transition-colors duration-[120ms]", f.key === filter ? "bg-ink font-medium text-ground" : "bg-raised/70 text-ink-2 hover:bg-raised hover:text-ink")}
@@ -70,6 +79,22 @@ export async function ConversationsBrowser({
               </Link>
             ))}
           </nav>
+          {sectors.length > 0 && (
+            <nav aria-label="Setor" className="flex flex-wrap items-center gap-1">
+              <span className="mr-0.5 text-[11.5px] text-muted">Setor</span>
+              {[{ id: null, name: "Todos" }, ...sectors].map((s) => (
+                <Link
+                  key={s.id ?? "todos"}
+                  href={hrefFor({ filter, limit: 40, conversationId: selectedId, sector: s.id })}
+                  scroll={false}
+                  aria-current={s.id === sector ? "page" : undefined}
+                  className={cn("rounded-full px-2.5 py-0.5 text-[12px] transition-colors duration-[120ms]", s.id === sector ? "bg-brand-soft font-medium text-brand shadow-[inset_0_0_0_1px_var(--color-brand)]" : "text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line)] hover:text-ink")}
+                >
+                  {s.name}
+                </Link>
+              ))}
+            </nav>
+          )}
         </div>
         <ul className="relative flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {items.length === 0 && (
@@ -77,7 +102,7 @@ export async function ConversationsBrowser({
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-raised">
                 <MessagesSquare size={18} />
               </span>
-              {filter === "todas" ? "Nenhuma conversa ainda." : "Nenhuma conversa neste filtro."}
+              {filter === "todas" && !sector ? "Nenhuma conversa ainda." : "Nenhuma conversa neste filtro."}
             </li>
           )}
           {items.map((i) => {
@@ -86,7 +111,7 @@ export async function ConversationsBrowser({
             return (
               <li key={i.id}>
                 <Link
-                  href={hrefFor({ filter, limit, conversationId: i.id })}
+                  href={hrefFor({ filter, limit, conversationId: i.id, sector })}
                   scroll={false}
                   aria-current={on ? "true" : undefined}
                   className={cn("flex gap-3 rounded-[14px] px-2.5 py-2.5 transition-colors duration-[120ms]", on ? "bg-raised shadow-[inset_0_0_0_1px_var(--color-line-strong)]" : "hover:bg-raised/60")}
@@ -119,7 +144,7 @@ export async function ConversationsBrowser({
           })}
           {more && (
             <li className="flex justify-center py-2">
-              <Link href={hrefFor({ filter, limit: limit + 40, conversationId: selectedId })} scroll={false} className="btn-ghost py-1.5 text-[13px]">
+              <Link href={hrefFor({ filter, limit: limit + 40, conversationId: selectedId, sector })} scroll={false} className="btn-ghost py-1.5 text-[13px]">
                 <ArrowDown size={14} />
                 Carregar mais
               </Link>
@@ -133,10 +158,10 @@ export async function ConversationsBrowser({
           (renderConversation ?? ((o) => <AgencyConversation botId={o.botId} convId={o.convId} embedded back={o.back} mobileBack={o.mobileBack} earlier={o.earlier} earlierHref={o.earlierHref} />))({
             botId: openBot as string,
             convId: selectedId,
-            back: hrefFor({ filter, limit, conversationId: selectedId }),
-            mobileBack: hrefFor({ filter, limit, conversationId: null }),
+            back: hrefFor({ filter, limit, conversationId: selectedId, sector }),
+            mobileBack: hrefFor({ filter, limit, conversationId: null, sector }),
             earlier,
-            earlierHref: (n) => hrefFor({ filter, limit, conversationId: selectedId, earlier: n }),
+            earlierHref: (n) => hrefFor({ filter, limit, conversationId: selectedId, earlier: n, sector }),
           })
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted">

@@ -34,6 +34,7 @@ export default async function MemberConversationsPage({ params, searchParams }: 
         selectedId={typeof sp.c === "string" && /^[0-9a-f-]{36}$/i.test(sp.c) ? sp.c : null}
         earlier={Math.min(50, Number(sp.ant) || 0)}
         showBot={(bots ?? []).length > 1}
+        heightClass="h-[calc(100dvh-270px)] min-h-[460px] lg:h-[calc(100dvh-180px)]"
         hrefFor={(o) => `/cliente/${id}/conversas?${[o.filter && o.filter !== "todas" ? `f=${o.filter}` : "", o.limit && o.limit > 40 ? `n=${o.limit}` : "", o.conversationId ? `c=${o.conversationId}` : "", o.earlier ? `ant=${o.earlier}` : ""].filter(Boolean).join("&")}`}
         renderConversation={(o) => <ClientConversation clientId={id} convId={o.convId} embedded back={o.back} mobileBack={o.mobileBack} earlier={o.earlier} earlierHref={o.earlierHref} />}
       />

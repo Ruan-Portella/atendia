@@ -1,13 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Link2, Trash2 } from "lucide-react";
+import { Link2, Plus, Tags, Trash2 } from "lucide-react";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { CopyButton } from "@/components/copy-button";
 import type { ActionResult } from "@/lib/action-result";
 import { ICE_BREAKERS_MAX, ICE_BREAKER_MAX, PUBLIC_REPLY_MAX, REF_LABEL_MAX, REF_NOTE_MAX, REPLY_MAX, igMeLink, refFromLabel } from "@/lib/instagram-links";
 import { relativeTime } from "@/lib/utils";
+import { TagsField } from "@/components/tags-field";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { ConfirmAction } from "@/components/ui/confirm-action";
+import { StatusPill } from "@/components/ui/form-section";
+import { DialogButton, SettingRow, SwitchField } from "@/components/ui/setting-row";
 
 /*
  * O direct do Instagram na aba Instagram (E1, partes 3a e 3b): as perguntas prontas (ice breakers),
@@ -134,7 +139,9 @@ export interface PostChoice {
 /**
  * Os campos de uma palavra-chave (nova ou existente). Com os comentários, o direct e os comentários
  * ficam em blocos separados: as duas respostas chegam no direct da pessoa, e no teste de 20/10 a
- * mensagem para quem comentou foi parar na resposta do direct.
+ * mensagem para quem comentou foi parar na resposta do direct. Rodada 2 das telas (23/10/2026, a
+ * pedido do usuário): as palavras em etiquetas, onde vale em cartões, os posts num seletor com busca
+ * e "ligada" numa chave.
  */
 function KeywordFields({ k, commentsOn, posts }: { k: KeywordItem | null; commentsOn: boolean; posts: PostChoice[] }) {
   const [scope, setScope] = useState(k?.media_ids ? "escolhidos" : "todos");
@@ -145,21 +152,22 @@ function KeywordFields({ k, commentsOn, posts }: { k: KeywordItem | null; commen
       <textarea id={`kw-dm-${prefix}`} name="dm_reply" rows={3} maxLength={REPLY_MAX} defaultValue={k?.dm_reply ?? ""} placeholder="Oi! A tabela de preços está aqui: …" className="input" />
     </div>
   );
+  const postDate = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
   return (
     <>
       {k && <input type="hidden" name="id" value={k.id} />}
-      <div>
-        <label htmlFor={`kw-words-${prefix}`} className="label">Palavras (separadas por vírgula)</label>
-        <input id={`kw-words-${prefix}`} name="words" required defaultValue={k?.words.join(", ") ?? ""} placeholder="preço, eu quero" className="input" />
+      <div className="flex flex-col gap-1.5">
+        <span className="label">Palavras</span>
+        <TagsField name="words" initial={k?.words ?? []} placeholder="preço, eu quero…" empty="Nenhuma palavra ainda: escreva e toque em Adicionar." idPrefix={`kw-words-${prefix}`} />
       </div>
       {!commentsOn && dmField("Resposta pronta no direct (quando a pessoa manda só a palavra)")}
       {commentsOn && (
         <>
-          <fieldset className="flex flex-col gap-2 rounded-xl border border-line p-3">
+          <fieldset className="flex flex-col gap-2 rounded-[14px] border border-line p-3">
             <legend className="px-1 text-sm font-semibold">Quando a pessoa manda a palavra no direct</legend>
             {dmField("Resposta pronta (quando a mensagem é só a palavra; vazio, não responde no direct)")}
           </fieldset>
-          <fieldset className="flex flex-col gap-2 rounded-xl border border-line p-3">
+          <fieldset className="flex flex-col gap-3 rounded-[14px] border border-line p-3">
             <legend className="px-1 text-sm font-semibold">Quando a pessoa comenta a palavra num post</legend>
             <div>
               <label htmlFor={`kw-cr-${prefix}`} className="label">Mensagem no direct de quem comentou (uma por comentário, até 7 dias depois dele)</label>
@@ -170,93 +178,103 @@ function KeywordFields({ k, commentsOn, posts }: { k: KeywordItem | null; commen
               <input id={`kw-cp-${prefix}`} name="comment_public" maxLength={PUBLIC_REPLY_MAX} defaultValue={k?.comment_public ?? ""} placeholder="Te chamei no direct!" className="input" />
               <p className="mt-1 text-xs text-muted">Se ela diz que chamou a pessoa no direct, escreva também a mensagem acima.</p>
             </div>
-            <fieldset className="flex flex-col gap-1.5 text-sm">
+            <fieldset className="flex flex-col gap-2">
               <legend className="label">Nos comentários de</legend>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="posts" value="todos" checked={scope === "todos"} onChange={() => setScope("todos")} /> todos os posts
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="posts" value="escolhidos" checked={scope === "escolhidos"} onChange={() => setScope("escolhidos")} disabled={!posts.length} /> posts escolhidos{!posts.length && <span className="text-xs text-muted"> (leia os posts na aba Base de conhecimento)</span>}
-              </label>
-              {scope === "escolhidos" && (
-                <div className="ml-6 flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-line p-2">
-                  {posts.map((p) => (
-                    <label key={p.media_id} className="flex items-start gap-2 text-xs">
-                      <input type="checkbox" name="media_ids" value={p.media_id} defaultChecked={k?.media_ids?.includes(p.media_id)} className="mt-0.5" />
-                      <span className="min-w-0">
-                        <span className="text-muted">{new Date(p.posted_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} · </span>
-                        {p.caption?.trim().slice(0, 90) || "(sem legenda)"}
-                      </span>
-                    </label>
-                  ))}
-                </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {[
+                  ["todos", "Todos os posts", "Vale em qualquer post, inclusive os novos."],
+                  ["escolhidos", "Posts escolhidos", posts.length ? "Só nos posts que você marcar." : "Leia os posts na aba Base de conhecimento para escolher."],
+                ].map(([v, title, hint]) => (
+                  <label key={v} className={`flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-line p-3 text-sm has-[:checked]:border-brand has-[:checked]:bg-brand-soft/60 ${v === "escolhidos" && !posts.length ? "pointer-events-none opacity-60" : ""}`}>
+                    <input type="radio" name="posts" value={v} checked={scope === v} onChange={() => setScope(v)} disabled={v === "escolhidos" && !posts.length} className="mt-0.5 accent-brand" />
+                    <span>
+                      <span className="block font-medium text-ink">{title}</span>
+                      <span className="block text-xs text-muted">{hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {scope === "escolhidos" && posts.length > 0 && (
+                <MultiSelect
+                  name="media_ids"
+                  label="Posts"
+                  options={posts.map((p) => ({ value: p.media_id, label: `${postDate(p.posted_at)} · ${p.caption?.trim().slice(0, 70) || "(sem legenda)"}` }))}
+                  defaultValue={k?.media_ids ?? []}
+                  placeholder="Escolha os posts"
+                />
               )}
             </fieldset>
           </fieldset>
         </>
       )}
       {k && (
-        <label className="flex items-center gap-2 text-sm">
+        <>
           <input type="hidden" name="has_active" value="1" />
-          <input type="checkbox" name="active" value="on" defaultChecked={k.active} /> ligada
-        </label>
+          <SwitchField name="active" defaultChecked={k.active} label="Ligada" hint="Desligada, a palavra fica guardada mas não responde." />
+        </>
       )}
     </>
   );
 }
 
-export function KeywordsCard({ keywords, commentsOn, posts, save, remove }: { keywords: KeywordItem[]; commentsOn: boolean; posts: PostChoice[]; save: Save; remove: Save }) {
-  const [adding, setAdding] = useState(false);
+const KEYWORDS_HELP = "A pessoa manda só a palavra no direct (ex.: PREÇO) e recebe a resposta pronta da loja, sem IA. Para começar um roteiro pela palavra, cadastre a palavra no próprio roteiro (aba Roteiros).";
+const KEYWORDS_HELP_COMMENTS = "A pessoa manda só a palavra no direct (ex.: PREÇO) e recebe a resposta pronta da loja, sem IA. Nos comentários, a palavra manda uma mensagem no direct de quem comentou (para quem não segue a conta, ela cai em Solicitações) e, se quiser, uma resposta pública no post. Para começar um roteiro pela palavra, cadastre a palavra no próprio roteiro (aba Roteiros).";
+
+/** O resumo da linha: onde a palavra responde. Pura. */
+function keywordSummary(k: KeywordItem): string {
+  const parts = [
+    k.dm_reply ? `Direct: ${k.dm_reply}` : null,
+    k.comment_reply || k.comment_public ? `Comentários${k.media_ids ? ` em ${k.media_ids.length} ${k.media_ids.length === 1 ? "post" : "posts"}` : " em todos os posts"}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "Sem resposta pronta";
+}
+
+/**
+ * As palavras-chave na aba Instagram (rodada 2 das telas, 23/10/2026, a pedido do usuário:
+ * "melhorar a edição e o cadastro"): um grupo com uma linha por palavra, que abre o modal de editar
+ * (com o Apagar no rodapé), e o "Nova palavra-chave" no alto, no lugar dos detalhes abertos na lista.
+ */
+export function KeywordsGroup({ keywords, commentsOn, posts, save, remove }: { keywords: KeywordItem[]; commentsOn: boolean; posts: PostChoice[]; save: Save; remove: Save }) {
+  const help = commentsOn ? KEYWORDS_HELP_COMMENTS : KEYWORDS_HELP;
+  const removeOne = (id: string) => () => {
+    const fd = new FormData();
+    fd.set("id", id);
+    return remove(fd);
+  };
   return (
-    <div className="card flex flex-col gap-3 p-5">
-      <div>
-        <div className="font-semibold">Palavras-chave</div>
-        <p className="text-sm text-muted">
-          A pessoa manda só a palavra no direct (ex.: PREÇO) e recebe a resposta pronta da loja, sem IA.{commentsOn ? " Nos comentários, a palavra manda uma mensagem no direct de quem comentou (para quem não segue a conta, ela cai em Solicitações) e, se quiser, uma resposta pública no post." : ""} Para começar um roteiro pela palavra, cadastre a palavra no próprio roteiro (aba Roteiros).
-        </p>
-      </div>
-      {keywords.length > 0 && (
-        <ul className="flex flex-col divide-y divide-line-2 rounded-xl border border-line">
-          {keywords.map((k) => (
-            <li key={k.id} className="px-3 py-2.5 text-sm">
-              <details>
-                <summary className="flex cursor-pointer flex-wrap items-center gap-1.5">
-                  {k.words.map((w) => (
-                    <span key={w} className="rounded-full bg-ground px-2 py-0.5 text-xs font-semibold">{w}</span>
-                  ))}
-                  {!k.active && <span className="text-xs text-muted">desligada</span>}
-                  <span className="ml-auto text-xs text-muted">{[k.dm_reply && "direct", (k.comment_reply || k.comment_public) && "comentários"].filter(Boolean).join(" e ")}</span>
-                </summary>
-                <ActionForm action={save} className="mt-3 flex flex-col gap-2">
-                  <KeywordFields k={k} commentsOn={commentsOn} posts={posts} />
-                  <div className="flex flex-wrap items-center gap-3">
-                    <SubmitButton pendingLabel="Salvando…" className="btn-ghost">Salvar</SubmitButton>
-                  </div>
-                </ActionForm>
-                <ActionForm action={remove} success="Palavra-chave removida." className="mt-2">
-                  <input type="hidden" name="id" value={k.id} />
-                  <SubmitButton pendingLabel="Removendo…" className="flex items-center gap-1 text-xs font-medium text-danger hover:underline">
-                    <Trash2 size={13} />
-                    Remover
-                  </SubmitButton>
-                </ActionForm>
-              </details>
-            </li>
-          ))}
-        </ul>
-      )}
-      {adding ? (
-        <ActionForm action={save} onSuccess={() => setAdding(false)} className="flex flex-col gap-2 rounded-xl bg-ground p-3">
+    <section className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <h3 className="kpi-label">Palavras-chave</h3>
+        <DialogButton label="Nova palavra-chave" icon={<Plus size={14} />} className="btn-ghost py-1.5 text-[13px]" title="Nova palavra-chave" description={help} action={save} saveLabel="Criar palavra-chave" size="lg">
           <KeywordFields k={null} commentsOn={commentsOn} posts={posts} />
-          <div className="flex items-center gap-3">
-            <SubmitButton pendingLabel="Salvando…" className="btn-ghost">Criar palavra-chave</SubmitButton>
-            <button type="button" onClick={() => setAdding(false)} className="text-sm text-muted">Cancelar</button>
-          </div>
-        </ActionForm>
-      ) : (
-        <button type="button" onClick={() => setAdding(true)} className="btn-ghost self-start">Nova palavra-chave</button>
-      )}
-    </div>
+        </DialogButton>
+      </div>
+      <div className="card flex flex-col divide-y divide-line-2 overflow-hidden">
+        {keywords.length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhuma palavra-chave ainda. {help}</p>}
+        {keywords.map((k) => (
+          <SettingRow
+            key={k.id}
+            icon={<Tags size={18} />}
+            title={k.words.join(", ")}
+            badge={k.active ? undefined : <StatusPill>desligada</StatusPill>}
+            summary={keywordSummary(k)}
+            summaryTone={k.active ? "muted" : "warn"}
+            dialogTitle="Palavra-chave"
+            description={help}
+            action={save}
+            size="lg"
+            footerStart={
+              <ConfirmAction action={removeOne(k.id)} title="Apagar esta palavra-chave?" description={`"${k.words.join(", ")}" deixa de responder no direct e nos comentários.`} confirmLabel="Apagar" className="btn-ghost text-danger">
+                <Trash2 size={14} />
+                Apagar
+              </ConfirmAction>
+            }
+          >
+            <KeywordFields k={k} commentsOn={commentsOn} posts={posts} />
+          </SettingRow>
+        ))}
+      </div>
+    </section>
   );
 }
 

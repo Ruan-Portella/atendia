@@ -8,12 +8,19 @@ import { MomentNoticeCard } from "@/components/moment-notice-card";
 import { activeMomentNotice, defaultUntilInput } from "@/lib/moment-notice";
 import { FileText, Megaphone } from "lucide-react";
 import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
+import { BotSelect } from "@/components/bot-select";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 export const metadata = { title: { absolute: "Ensinar o assistente" }, robots: { index: false, follow: false } };
 
-/** O cliente completa a base: responde o que o assistente não soube e mantém textos/FAQs. */
-export default async function MemberKnowledgePage({ params }: PageProps<"/cliente/[id]/aprender">) {
-  const { id } = await params;
+/**
+ * O cliente completa a base: responde o que o assistente não soube e mantém textos/FAQs. Com mais
+ * de um chatbot, um de cada vez (rodada 2 das telas, 23/10/2026: "muito scroll com muitos
+ * chatbots"): pílulas até 6, uma lista acima disso; abre no que tem mais perguntas sem resposta.
+ */
+export default async function MemberKnowledgePage({ params, searchParams }: PageProps<"/cliente/[id]/aprender">) {
+  const [{ id }, sp] = await Promise.all([params, searchParams]);
   const { email, admin, botIds } = await requireMember(id, "knowledge");
   const ids = botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"];
   const [{ data: bots }, questions, { data: sources }] = await Promise.all([
@@ -21,6 +28,12 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
     listUnanswered(admin, { botIds: ids, limit: 60 }),
     admin.from("sources").select("id, bot_id, kind, title, content, created_by, updated_at").in("bot_id", ids).in("kind", ["text", "faq"]).order("created_at"),
   ]);
+  const pending = (botId: string) => questions.filter((q) => q.bot_id === botId).length;
+  const all = bots ?? [];
+  const busiest = [...all].sort((a, b) => pending(b.id) - pending(a.id))[0];
+  const chosen = all.find((b) => b.id === sp.bot) ?? busiest;
+  const hrefOf = (botId: string) => `/cliente/${id}/aprender?bot=${botId}`;
+  const label = (b: { id: string; name: string }) => `${b.name}${pending(b.id) ? ` · ${pending(b.id)} sem resposta` : ""}`;
   const who = (by: string | null) => (!by ? "" : by === email ? " por você" : by === "agência" ? " pela agência" : ` por ${by}`);
 
   return (
@@ -29,8 +42,19 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
         <h1 className="text-2xl font-normal">Ensinar o assistente</h1>
         <p className="text-sm text-muted">Responda o que ele não soube e mantenha as informações em dia. Tudo vale na próxima conversa. O site e os PDFs continuam com a agência.</p>
       </div>
-      {(bots ?? []).length === 0 && <p className="text-sm text-muted">Ainda não há assistente configurado.</p>}
-      {(bots ?? []).map((bot) => {
+      {all.length === 0 && <p className="text-sm text-muted">Ainda não há assistente configurado.</p>}
+      {all.length > 1 && all.length <= 6 && (
+        <nav aria-label="Chatbot" className="flex flex-wrap gap-1.5">
+          {all.map((b) => (
+            <Link key={b.id} href={hrefOf(b.id)} aria-current={b.id === chosen?.id ? "page" : undefined} className={cn("inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm transition-colors duration-[120ms]", b.id === chosen?.id ? "bg-ink font-medium text-ground" : "bg-raised/70 text-ink-2 hover:bg-raised hover:text-ink")}>
+              {b.name}
+              {pending(b.id) > 0 && <span className={cn("rounded-full px-1.5 font-mono text-[11px] font-medium", b.id === chosen?.id ? "bg-amber text-ground" : "bg-amber-soft text-amber-ink")}>{pending(b.id)}</span>}
+            </Link>
+          ))}
+        </nav>
+      )}
+      {all.length > 6 && chosen && <BotSelect value={chosen.id} options={all.map((b) => ({ value: b.id, label: label(b), href: hrefOf(b.id) }))} />}
+      {(chosen ? [chosen] : []).map((bot) => {
         const qs = questions.filter((q) => q.bot_id === bot.id);
         const items: TextSourceItem[] = (sources ?? [])
           .filter((s) => s.bot_id === bot.id)
@@ -45,7 +69,6 @@ export default async function MemberKnowledgePage({ params }: PageProps<"/client
           }));
         return (
           <section key={bot.id} className="flex flex-col gap-4">
-            {(bots ?? []).length > 1 && <h2 className="text-lg font-medium">{bot.name}</h2>}
             <div className={qs.length ? "flex flex-col gap-2.5 rounded-xl border border-amber-line bg-amber-soft px-[18px] py-4" : "rounded-xl border border-line bg-panel px-[18px] py-4"}>
               <div className={qs.length ? "text-sm font-semibold text-amber-ink" : "text-sm text-muted"}>
                 {qs.length ? `${qs.length} pergunta${qs.length > 1 ? "s" : ""} que ${bot.name} não soube responder` : `Nenhuma pergunta sem resposta. ${bot.name} está dando conta!`}

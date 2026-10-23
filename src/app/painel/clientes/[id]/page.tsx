@@ -29,6 +29,8 @@ import { ExportLinks } from "@/components/export-links";
 import { periodLabel } from "@/lib/report";
 import { deleteBot, deleteClientRecord, eraseContactData, updateClientRecord } from "../../actions";
 import { ContactsList } from "@/components/contacts-list";
+import { ContactImportDialog } from "@/components/contact-import-dialog";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { ClientCampaigns } from "@/components/client-campaigns";
 import { ClientIntegrationsSummary } from "@/components/integrations/client-integrations-summary";
 import { ClientSectors } from "@/components/client-sectors";
@@ -109,7 +111,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   // a RLS limita os dados à agência logada
   const [{ agency }, { data: client }, { data: botData }, stats] = await Promise.all([
     requireAgency(),
-    supabase.from("clients").select("id, name, site, external_id, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, name, site, external_id, price_cents, created_at, portal_token, report_email, report_last_period, allow_handoff, allow_knowledge, allow_hours, handoff_notify, retention_months, timezone").eq("id", id).maybeSingle(),
     supabase.from("bots").select("id, name, client_name, client_site, status, public_key, appearance, face, template_id, sensitive_mode").eq("client_id", id).eq("is_demo", false).order("created_at"),
     getBotStats(supabase, daysAgoIso(30)),
   ]);
@@ -129,6 +131,8 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
   const base = agencyBaseUrl(agency);
 
   // Só busca o que a aba aberta mostra.
+  // o filtro por setor nas Conversas (rodada 2 das telas, 23/10): a RLS já confirmou o cliente
+  const conversationSectors = tab === "conversas" ? (await listSectors(createAdminClient(), [client.id]).catch(() => [])).map((s) => ({ id: s.id, name: s.name })) : [];
   const [pending, leads, { data: members }, { count: memberCount }] = await Promise.all([
     tab === "visao" ? getPendingHandoffs(supabase, botIds) : Promise.resolve([]),
     tab === "leads" ? listLeads(supabase, { botIds, limit: 200 }) : Promise.resolve([] as LeadRow[]),
@@ -305,7 +309,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           searchParams={sp}
           basePath={`/painel/clientes/${client.id}`}
           hidden={{ tab: "contatos" }}
-          importHref={`/painel/clientes/${client.id}/contatos/importar`}
+          importSlot={can(role, "config") ? <ContactImportDialog clientId={client.id} bots={bots.map((b) => ({ id: b.id, name: b.name }))} timezone={(client.timezone as string | null) ?? DEFAULT_TIMEZONE} /> : null}
           emptyText="Nenhum contato ainda. Cada pessoa que conversa com os chatbots deste cliente pelo WhatsApp, pelo Instagram ou identificada no site aparece aqui."
         />
       )}
@@ -322,7 +326,9 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           selectedId={typeof sp.c === "string" && /^[0-9a-f-]{36}$/i.test(sp.c) ? sp.c : null}
           earlier={Math.min(50, Number(sp.ant) || 0)}
           showBot={bots.length > 1}
-          hrefFor={(o) => `/painel/clientes/${id}?tab=conversas${o.filter && o.filter !== "todas" ? `&f=${o.filter}` : ""}${o.limit && o.limit > 40 ? `&n=${o.limit}` : ""}${o.conversationId ? `&c=${o.conversationId}` : ""}${o.earlier ? `&ant=${o.earlier}` : ""}`}
+          sectors={conversationSectors}
+          sector={conversationSectors.some((s) => s.id === sp.setor) ? (sp.setor as string) : null}
+          hrefFor={(o) => `/painel/clientes/${id}?tab=conversas${o.filter && o.filter !== "todas" ? `&f=${o.filter}` : ""}${o.sector ? `&setor=${o.sector}` : ""}${o.limit && o.limit > 40 ? `&n=${o.limit}` : ""}${o.conversationId ? `&c=${o.conversationId}` : ""}${o.earlier ? `&ant=${o.earlier}` : ""}`}
         />
       )}
 

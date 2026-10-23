@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { ACTIVITIES, dayLabel, getCompliance, type ComplianceStatus } from "@/lib/acceptance";
 import { relativeTime } from "@/lib/utils";
 import { CATEGORIES } from "@/lib/gate/rules";
-import type { ClientProfile } from "@/lib/bot-analysis";
+import type { BotProfile, ClientProfile } from "@/lib/bot-analysis";
 import { SettingGroup, SettingRow } from "@/components/ui/setting-row";
 import { StatusPill } from "@/components/ui/form-section";
+import { ShowMore } from "@/components/ui/show-more";
 
 const STATUS: Record<ComplianceStatus, { label: string; tone: "ok" | "warn" | "danger"; text: string }> = {
   ativo: { label: "Ativo", tone: "ok", text: "Pode usar o WhatsApp e o Instagram normalmente." },
@@ -19,7 +20,8 @@ const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Inst
 /**
  * Aba Conformidade do cliente: estado do negócio, a resposta de atividades, a análise do BoaVoz e os
  * aceites registrados. Redesenho (23/10/2026): tudo em linhas; as respostas de atividades abrem num
- * modal só de leitura.
+ * modal só de leitura. Com muitos chatbots, a análise mostra primeiro os que têm itens com regras
+ * especiais e esconde o resto atrás do "Mostrar todos" (rodada 2 das telas).
  */
 export async function ClientCompliance({ clientId, clientName }: { clientId: string; clientName: string }) {
   const supabase = await createClient();
@@ -31,7 +33,8 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
   ]);
   // análise do bot: só os itens achados na base, para consulta (sem selo nem rótulo de perfil)
   const profile = (client?.profile ?? null) as ClientProfile | null;
-  const analyzed = (bots ?? []).map((b) => ({ name: b.name as string, p: profile?.bots?.[b.id as string] }));
+  const rank = (p: BotProfile | undefined) => (!p ? 1 : p.regulados.length || p.proibidos.length ? 0 : 2);
+  const analyzed = (bots ?? []).map((b) => ({ name: b.name as string, p: profile?.bots?.[b.id as string] })).sort((a, b) => rank(a.p) - rank(b.p) || a.name.localeCompare(b.name, "pt-BR"));
   const st = compliance ? STATUS[compliance.status] : null;
   const flagged = compliance ? ACTIVITIES.filter((a) => compliance.answers[a.id] && compliance.answers[a.id] !== "nao").length : 0;
   return (
@@ -65,6 +68,7 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
       <section className="flex flex-col gap-2">
         <SettingGroup title="Análise do BoaVoz">
           {analyzed.length === 0 && <p className="px-4 py-5 text-sm text-muted">Nenhum chatbot ainda.</p>}
+          <ShowMore>
           {analyzed.map(({ name, p }) => (
             <SettingRow
               key={name}
@@ -81,6 +85,7 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
               summaryTone={p && (p.regulados.length || p.proibidos.length) ? "warn" : "muted"}
             />
           ))}
+          </ShowMore>
         </SettingGroup>
         <p className="px-1 text-xs text-muted">O BoaVoz analisa a base de cada assistente que atende pelo WhatsApp e pelo Instagram. É só para consulta: nada precisa ser feito. Bebida e remédio só aparecem para quem confirma ter 18 anos ou mais.</p>
       </section>
@@ -88,6 +93,7 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
       <section className="flex flex-col gap-2">
         <SettingGroup title="Aceites registrados">
           {!acceptances?.length && <p className="px-4 py-5 text-sm text-muted">Nenhum aceite ainda.</p>}
+          <ShowMore>
           {(acceptances ?? []).map((a) => (
             <SettingRow
               key={a.id as number}
@@ -97,6 +103,7 @@ export async function ClientCompliance({ clientId, clientName }: { clientId: str
               trailing={a.status === "pending" ? <StatusPill tone="warn">esperando a Meta</StatusPill> : <span className="shrink-0 text-xs text-muted">{relativeTime((a.confirmed_at as string | null) ?? (a.created_at as string))}</span>}
             />
           ))}
+          </ShowMore>
         </SettingGroup>
         <p className="px-1 text-xs text-muted">Termos do canal e Política de Uso Aceitável, aceitos pelo próprio negócio antes de conectar. Pelo link, o aceite só vale quando a Meta conclui a conexão.</p>
       </section>
