@@ -141,7 +141,7 @@ export async function contactActiveLinkId(db: SupabaseClient, contactId: string)
 
 /**
  * Marca o vínculo ativo (e o display que veio com ele, para o painel). Sem vínculo nenhum, o nome
- * da identificação sai da ficha (23/10/2026: ficava preso depois do "Não sou eu"), e o painel volta
+ * da identificação sai da ficha (23/10/2026: ficava preso depois do "Sou outra pessoa"), e o painel volta
  * ao nome do perfil; no chat do site, o display vem do token da empresa e fica.
  */
 export async function setActiveLink(db: SupabaseClient, contactId: string, linkId: string | null, display: Record<string, unknown> | object | null): Promise<void> {
