@@ -108,7 +108,7 @@ A pedido do próprio negócio (o dono dos dados), o suporte do BoaVoz pode levar
 
 ## Demos para prospects
 
-Em Demos, a agência gera uma demonstração do chatbot de um possível cliente a partir do site dele, para mostrar antes de fechar. Cada demo vale 14 dias e responde até 50 vezes. A conta grátis gera até 3 demos por mês; com assinatura, até 20. A demo tem um link próprio e conta as visitas.
+Em Demos, a agência gera uma demonstração do chatbot de um possível cliente a partir do site dele, para mostrar antes de fechar. Cada demo vale 14 dias e responde até 50 vezes. A conta grátis gera até 3 demos por mês; com assinatura, até 20. A demo tem um link próprio e conta as visitas. Em Demos para prospects, "Nova demo" abre um modal com o site e o nome do cliente (opcional); ao lado, quantas demos do mês já foram usadas. Cada demo é uma linha com a situação ("No ar até… · 12 de 50 respostas", "Terminou" ou "Erro ao ler o site"), a etiqueta "quente" quando foi aberta mais de 3 vezes, o Copiar link e o Mandar no WhatsApp; o "…" tem Editar, Abrir, Copiar e Excluir. As terminadas ficam fechadas embaixo. Fechou negócio? Na página da demo, ela vira cliente.
 
 ## Base de conhecimento (fontes)
 

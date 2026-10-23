@@ -26,6 +26,31 @@ export function DemoGenerator({ inPanel = false }: { inPanel?: boolean }) {
     }
   }
 
+  // no painel (o modal Nova demo, redesenho etapa 5): os dois campos com rótulo e o botão embaixo
+  if (inPanel)
+    return (
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <div>
+          <label htmlFor="demo-url" className="label">
+            Site do prospect
+          </label>
+          <input id="demo-url" type="text" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="site-do-cliente.com.br" className="input" disabled={state === "loading"} />
+        </div>
+        <div>
+          <label htmlFor="demo-client" className="label">
+            Nome do cliente (opcional)
+          </label>
+          <input id="demo-client" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Ex.: Pousada Brisa" className="input" disabled={state === "loading"} />
+          <p className="mt-1 text-xs text-muted">Em branco, vem do endereço do site.</p>
+        </div>
+        {state === "loading" && <p className="text-xs text-muted">Lendo até 40 páginas do site e montando a base de conhecimento. Leva de 20 a 60 segundos.</p>}
+        {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+        <button type="submit" className="btn-primary self-start" disabled={state === "loading"}>
+          {state === "loading" ? "Lendo o site…" : "Gerar demo"}
+        </button>
+      </form>
+    );
+
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -35,12 +60,6 @@ export function DemoGenerator({ inPanel = false }: { inPanel?: boolean }) {
           {state === "loading" ? "Lendo o site…" : "Gerar demo"}
         </button>
       </div>
-      {inPanel && (
-        <div>
-          <label htmlFor="demo-client" className="label">Nome do cliente (opcional)</label>
-          <input id="demo-client" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Ex.: Pousada Brisa" className="input" />
-        </div>
-      )}
       {state === "loading" && <p className="text-xs text-muted">Lendo até 40 páginas do site e montando a base de conhecimento. Leva de 20 a 60 segundos.</p>}
       {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
     </form>
