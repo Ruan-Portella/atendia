@@ -1450,11 +1450,18 @@ export async function startWhatsAppConversation(botId: string, formData: FormDat
 
 /* ------------------------------------------------------------------ domínio próprio */
 
+/**
+ * Mudanças que pedem o segundo fator fora da Segurança (relatório de segurança de 23/10/2026, A3 e
+ * A4): o domínio próprio, o modo dados sensíveis e a equipe. A Segurança pede o código ao abrir.
+ */
+const MFA_FIRST = "Esta mudança pede a verificação em duas etapas: abra Configurações → Segurança e auditoria (ela pede o código do app autenticador) e tente de novo.";
+
 /** Salva (ou remove) o domínio próprio. Trocar de domínio exige verificar de novo. */
 export async function saveCustomDomain(formData: FormData): Promise<ActionResult> {
   if (!(await allowed("brand"))) return fail(DENIED);
   const { agency, packs } = await requireAgency();
   if (!packs.includes("dominio")) return fail(NEEDS_DOMAIN);
+  if (!(await hasMfa())) return fail(MFA_FIRST);
   const parsed = parseDomain(text(formData.get("custom_domain")));
   if ("error" in parsed) return fail(parsed.error);
   const domain = parsed.domain;
@@ -1467,8 +1474,8 @@ export async function saveCustomDomain(formData: FormData): Promise<ActionResult
     const added = await addDomainToProject(domain);
     if (!added.ok) return fail(added.message);
   }
-  const supabase = await createClient();
-  const { error } = await supabase.from("agencies").update({ custom_domain: domain, custom_domain_verified_at: null }).eq("id", agency.id);
+  // o domínio só sai pelo servidor (0174): a sessão não grava custom_domain nem a verificação
+  const { error } = await createAdminClient().from("agencies").update({ custom_domain: domain, custom_domain_verified_at: null }).eq("id", agency.id);
   if (error) return fail(error.code === "23505" ? "Este domínio já está cadastrado em outra conta." : "Não foi possível salvar o domínio.");
   if (agency.custom_domain) await removeDomainFromProject(agency.custom_domain);
   revalidatePath("/painel", "layout");
@@ -1478,12 +1485,13 @@ export async function saveCustomDomain(formData: FormData): Promise<ActionResult
 /** Confere se o domínio já responde por nós; se sim, os links passam a usá-lo. */
 export async function verifyCustomDomain(): Promise<ActionResult> {
   if (!(await allowed("brand"))) return fail(DENIED);
-  const { agency } = await requireAgency();
+  const { agency, packs } = await requireAgency();
+  if (!packs.includes("dominio")) return fail(NEEDS_DOMAIN);
   if (!agency.custom_domain) return fail("Cadastre um domínio primeiro.");
+  if (!(await hasMfa())) return fail(MFA_FIRST);
   const status = await checkDomain(agency.custom_domain);
   if (!status.live) return fail(status.message);
-  const supabase = await createClient();
-  await supabase.from("agencies").update({ custom_domain_verified_at: new Date().toISOString() }).eq("id", agency.id);
+  await createAdminClient().from("agencies").update({ custom_domain_verified_at: new Date().toISOString() }).eq("id", agency.id).eq("custom_domain", agency.custom_domain);
   revalidatePath("/painel", "layout");
   return ok("Domínio verificado! Demos, portal do cliente e código do widget já usam ele.");
 }
@@ -1883,6 +1891,7 @@ export async function setClientRetention(clientId: string, formData: FormData): 
  */
 export async function setBotSensitiveMode(clientId: string, botId: string, formData: FormData): Promise<ActionResult> {
   if (!(await allowed("security"))) return fail(DENIED);
+  if (!(await hasMfa())) return fail(MFA_FIRST);
   const { agency } = await requireAgency();
   const supabase = await createClient();
   // a RLS confere que o cliente e o chatbot são desta agência (e do escopo de quem está logado)

@@ -347,6 +347,8 @@ export async function memberSetRetention(clientId: string, formData: FormData): 
 export async function memberSetSensitive(clientId: string, botId: string, formData: FormData): Promise<ActionResult> {
   const ctx = await memberForAction(clientId, "manager");
   if (!ctx || !ctx.botIds.includes(botId)) return fail("Assistente não encontrado.");
+  // o modo protege a leitura com o segundo fator: mudar também pede (relatório de segurança de 23/10/2026, A3)
+  if (!(await memberHasMfa())) return fail("Esta mudança pede a verificação em duas etapas: abra uma conversa do assistente (ela pede o código do app autenticador) e tente de novo.");
   const cur = await memberRetention(ctx, clientId);
   const r = await applySensitiveMode(ctx.admin, { botId, on: formData.get("sensitive") === "on", days: Number(formData.get("days")), confirmed: formData.get("confirm") === "on", clientMonths: cur.clientMonths, agencyMonths: cur.agencyMonths });
   if (!r.ok) return fail(r.message);

@@ -33,9 +33,13 @@ const scopeText = (s: ScopeInput) => (s.scope === "all" ? "todos os clientes" : 
 export type InviteResult = ActionResult & { link?: string };
 
 /** Convida por e-mail; o link também aparece na tela, para copiar (sem e-mail configurado, é o único jeito). */
+/** Mudar a equipe pede o segundo fator (relatório de segurança de 23/10/2026, A4a): uma sessão roubada não vira acesso de administrador. */
+const TEAM_MFA = "Faça a verificação em duas etapas (código do app autenticador) e tente de novo.";
+
 export async function inviteTeamMember(formData: FormData): Promise<InviteResult> {
   const ctx = await teamContext();
   if (!ctx) return fail(DENIED);
+  if (!(await hasMfa())) return fail(TEAM_MFA);
   const role = formData.get("role");
   if (!isInvitableRole(role)) return fail("Escolha o papel.");
   if (role === "admin" && ctx.role !== "owner") return fail("Só o dono da agência convida um administrador.");
@@ -62,6 +66,7 @@ export async function inviteTeamMember(formData: FormData): Promise<InviteResult
 export async function updateTeamMember(memberId: string, formData: FormData): Promise<ActionResult> {
   const ctx = await teamContext();
   if (!ctx) return fail(DENIED);
+  if (!(await hasMfa())) return fail(TEAM_MFA);
   const role = formData.get("role");
   if (!isInvitableRole(role)) return fail("Escolha o papel.");
   const access = scopeFromForm(formData);
@@ -78,6 +83,7 @@ export async function updateTeamMember(memberId: string, formData: FormData): Pr
 export async function removeTeamMember(memberId: string): Promise<ActionResult> {
   const ctx = await teamContext();
   if (!ctx) return fail(DENIED);
+  if (!(await hasMfa())) return fail(TEAM_MFA);
   const r = await removeMember(createAdminClient(), { agencyId: ctx.agency.id, memberId, actorRole: ctx.role, actorMemberId: ctx.member.id });
   if (!r.ok) return fail(r.message);
   // quem sai da equipe deixa de receber os avisos no WhatsApp (o número sai)
@@ -91,7 +97,7 @@ export async function removeTeamMember(memberId: string): Promise<ActionResult> 
 export async function endTeamMemberSessions(memberId: string): Promise<ActionResult> {
   const ctx = await teamContext();
   if (!ctx) return fail(DENIED);
-  if (!(await hasMfa())) return fail("Faça a verificação em duas etapas (código do app autenticador) e tente de novo.");
+  if (!(await hasMfa())) return fail(TEAM_MFA);
   const r = await endMemberSessions(createAdminClient(), { agencyId: ctx.agency.id, memberId, actorRole: ctx.role, actorMemberId: ctx.member.id });
   if (!r.ok) return fail(r.message);
   await auditTeam(ctx, "equipe.encerrar_sessoes", memberId, { after: { email: r.member.email } });

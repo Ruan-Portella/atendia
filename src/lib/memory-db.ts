@@ -64,7 +64,7 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
     constructor(public table: string) {}
     select(cols?: string, o?: { count?: string; head?: boolean }) {
       if (this.op === "select") {
-        this.embeds = [...(cols ?? "").matchAll(/\b([a-z_]+)\s*\(/g)].map((m) => m[1]).filter((n) => n in EMBED_FK);
+        this.embeds = [...(cols ?? "").matchAll(/\b([a-z_]+)(?:!inner)?\s*\(/g)].map((m) => m[1]).filter((n) => n in EMBED_FK);
         this.head = Boolean(o?.head);
       }
       return this;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { memoryDb } from "../memory-db";
 import { findContactIds } from "../contacts";
 import { findLeadsByContact, nationalDigits } from "../leads";
+import { loadBotActions } from "../action-tools";
 
 /*
  * Pedido de titular pelo painel (relatório de segurança de 23/10/2026, M1 e M2): o e-mail compara
@@ -43,5 +44,26 @@ describe("pedido de titular: só a pessoa certa", () => {
     expect(found.map((l) => l.id).sort()).toEqual(["rio", "rio-55"]);
     // sem DDD não casa com nenhum (o painel pede o DDD antes)
     expect(await findLeadsByContact(db, ["b1"], { phone: "99999-0000", phoneHash: null })).toEqual([]);
+  });
+});
+
+describe("ações de outra conta (relatório de segurança de 23/10/2026, C1)", () => {
+  const tables = () => ({
+    bots: [
+      { id: "vitima", agency_id: "B", template_id: null },
+      { id: "meu", agency_id: "A", template_id: null, config_bot_id: "vitima" },
+    ],
+    actions: [{ id: "act-1", bot_id: "vitima", name: "consultar_cpf", active: true }],
+    agency_packs: [
+      { agency_id: "A", pack: "integracoes", ends_at: null },
+      { agency_id: "B", pack: "integracoes", ends_at: null },
+    ],
+  });
+
+  it("o chatbot apontado para a versão de outra conta não recebe as ações (nem o segredo) dela", async () => {
+    const db = memoryDb(tables());
+    expect(await loadBotActions(db, { id: "meu", agency_id: "A", config_bot_id: "vitima" })).toEqual([]);
+    // a dona continua com as dela
+    expect((await loadBotActions(db, { id: "vitima", agency_id: "B" })).map((a) => a.id)).toEqual(["act-1"]);
   });
 });

@@ -86,7 +86,7 @@ export function contactLevel(channel: string, waPhone: string | null): ActionLev
  * Ações que a IA deste bot pode receber agora: ativas, com o pacote Integrações na conta (sem ele,
  * ficam guardadas e o botão Testar do painel continua funcionando).
  */
-export async function loadBotActions(db: SupabaseClient, bot: { id: string; template_id?: string | null; config_bot_id?: string | null }): Promise<ActionRow[]> {
+export async function loadBotActions(db: SupabaseClient, bot: { id: string; agency_id: string; template_id?: string | null; config_bot_id?: string | null }): Promise<ActionRow[]> {
   // no derivado, as ações do modelo (D', parte 2a), vistas como do derivado
   const { data, error } = await db.from("actions").select("*, bots!inner(agency_id)").eq("bot_id", configBotId(bot)).eq("active", true).order("name");
   if (error) {
@@ -96,7 +96,8 @@ export async function loadBotActions(db: SupabaseClient, bot: { id: string; temp
   const rows = (data ?? []) as Array<ActionRow & { bots: { agency_id: string } | Array<{ agency_id: string }> }>;
   if (!rows.length) return [];
   const owner = Array.isArray(rows[0].bots) ? rows[0].bots[0]?.agency_id : rows[0].bots?.agency_id;
-  if (!owner || !(await hasPack(db, owner, "integracoes"))) return [];
+  // as ações (e o segredo) de outra conta nunca valem, mesmo com o ponteiro trocado (o banco já recusa: 0174)
+  if (!owner || owner !== bot.agency_id || !(await hasPack(db, owner, "integracoes"))) return [];
   return rows.map((r) => {
     const a: Record<string, unknown> = { ...r };
     delete a.bots;
@@ -107,7 +108,7 @@ export async function loadBotActions(db: SupabaseClient, bot: { id: string; temp
 
 export interface CallerInput {
   /** fixed_context: o contexto fixo do chatbot (D', parte 1), por cima do da identidade. */
-  bot: { id: string; fixed_context?: unknown; template_id?: string | null; config_bot_id?: string | null };
+  bot: { id: string; agency_id: string; fixed_context?: unknown; template_id?: string | null; config_bot_id?: string | null };
   conversationId: string;
   channel: "widget" | "demo" | "painel" | "whatsapp" | "instagram";
   waPhone: string | null;
