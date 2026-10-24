@@ -3467,7 +3467,7 @@
     },
     {
       "name": "11. Fontes",
-      "description": "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, uma página ou um PDF por URL, e o aviso do momento (o texto com prazo que a IA usa quando perguntam; também com **provisioning**). Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
+      "description": "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, planilha CSV, uma página ou um PDF por URL, e o aviso do momento (o texto com prazo que a IA usa quando perguntam; também com **provisioning**). Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
       "item": [
         {
           "name": "Fonte de texto com contexto",
@@ -3553,6 +3553,55 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"kind\": \"pdf\",\n  \"url\": \"{{pdf_url}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fonte planilha CSV",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Uma chave nova a cada envio (o Postman gera). Repetir a mesma chave devolve a mesma resposta."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bots/{{bot_id}}/sources",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bots",
+                "{{bot_id}}",
+                "sources"
+              ]
+            },
+            "description": "O texto do arquivo em `content` (até 30 mil caracteres), com a primeira linha de cabeçalho; separador `;` ou `,`. Cada linha vira um trecho com o nome das colunas.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"csv\",\n  \"title\": \"Tabela de preços\",\n  \"content\": \"Serviço;Preço;Duração\\nCorte masculino;R$ 45;30 min\\nBarba;R$ 35;20 min\\nCorte e barba;R$ 70;50 min\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
