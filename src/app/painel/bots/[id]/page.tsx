@@ -93,7 +93,7 @@ import type { RegulatedChannel } from "@/lib/gate/sales-channel";
 import { BotOverview } from "@/components/bot-overview";
 import { getBotStats, getPendingHandoffs } from "@/lib/panel";
 import { choiceLabel } from "@/lib/billing";
-import { Ban, BookOpen, Brain, ChartColumn, Clock, FileText, Hash, Image as ImageIcon, LayoutDashboard, Link2, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, MessagesSquare, PenLine, Phone, Plus, Radio, RefreshCw, Send, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Star, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
+import { Ban, BookOpen, Brain, ChartColumn, Clock, FileText, GitFork, Hash, Image as ImageIcon, LayoutDashboard, Link2, Mail, Megaphone, MessageCircle, MessageCircleQuestionMark, MessageSquareText, MessagesSquare, PenLine, Phone, Plus, Radio, RefreshCw, Send, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Star, Ticket, UserPlus, UserRound, Wine, Workflow } from "lucide-react";
 import { AutoSwitch, DialogButton, SettingGroup, SettingRow, SubmitSwitch, SwitchField } from "@/components/ui/setting-row";
 import { FaceEditor } from "@/components/face-editor";
 import { BotFace } from "@/components/bot-face";
@@ -148,7 +148,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
   const tab = (tabs.some(([t]) => t === sp.tab) ? sp.tab : canConfig ? (isTemplate ? "fontes" : "visao") : "conversas") as Tab;
   // as seções com o que a pessoa pode ver, e a seção da aba aberta
   const label = new Map<string, string>(tabs.map(([t, l]) => [t, l]));
-  const sections = SECTIONS.map((s) => ({ ...s, tabs: s.tabs.filter((t) => label.has(t)) })).filter((s) => s.tabs.length);
+  // no modelo, a primeira seção só tem a Herança (ele não atende): ganha o nome e o ícone dela
+  const sections = SECTIONS.map((s) => ({ ...s, ...(isTemplate && s.key === "visao" ? { label: "Herança", icon: GitFork } : {}), tabs: s.tabs.filter((t) => label.has(t)) })).filter((s) => s.tabs.length);
   const section = sections.find((s) => s.tabs.includes(tab)) ?? sections[0];
   // Ações (C pública): dono e administrador mexem com o segundo fator; o editor só vê. Cadastrar e
   // testar não precisa do pacote; a IA só usa as ações com o Integrações
