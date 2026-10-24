@@ -581,10 +581,12 @@ export async function memberConfirmRequest(clientId: string, requestId: string):
 }
 
 /** Segundo fator no portal: entrada ou falha no registro de acesso e, no primeiro código, o cadastro na auditoria. */
-export async function recordMemberMfa(clientId: string, success: boolean, enrolled: boolean): Promise<void> {
+export async function recordMemberMfa(clientId: string, reported: boolean, enrolled: boolean): Promise<void> {
   const ctx = await memberForAction(clientId);
   if (!ctx) return;
   const { data } = await (await createClient()).auth.getClaims();
+  // o navegador só diz que deu certo; vale se a sessão já está no segundo fator (relatório de segurança de 23/10/2026)
+  const success = reported && data?.claims?.aal === "aal2";
   const meta = await requestMeta();
   if (data?.claims?.sub) await logAccess(ctx.admin, { actorType: "member", actorId: String(data.claims.sub), email: ctx.email, event: success ? "login" : "login_failed", ip: meta.ip, userAgent: meta.userAgent, agencyId: ctx.member.agencyId });
   if (success && enrolled) await audit(ctx.admin, { agencyId: ctx.member.agencyId, actorType: "member", actorId: ctx.email, action: "seguranca.mfa_cadastrar", targetType: "client", targetId: clientId, ...meta });

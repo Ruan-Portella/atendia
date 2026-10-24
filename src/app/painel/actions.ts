@@ -1676,8 +1676,10 @@ export async function eraseContactData(clientId: string, formData: FormData): Pr
 const MFA_NEEDED = "Faça a verificação em duas etapas (código do app autenticador) e tente de novo.";
 
 /** Segundo fator da agência: entrada ou falha no registro de acesso e, no primeiro código, o cadastro na auditoria. */
-export async function recordAgencyMfa(ok: boolean, enrolled: boolean): Promise<void> {
+export async function recordAgencyMfa(reported: boolean, enrolled: boolean): Promise<void> {
   const { agency, userId } = await requireAgency();
+  // o navegador só diz que deu certo; vale se a sessão já está no segundo fator (relatório de segurança de 23/10/2026)
+  const ok = reported && (await hasMfa());
   const meta = await requestMeta();
   await logAccess(createAdminClient(), { actorType: "user", actorId: userId, event: ok ? "login" : "login_failed", ip: meta.ip, userAgent: meta.userAgent, agencyId: agency.id });
   if (ok && enrolled) await auditPanel("seguranca.mfa_cadastrar", { type: "agency", id: agency.id });

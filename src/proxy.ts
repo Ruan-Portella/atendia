@@ -86,8 +86,10 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     return NextResponse.redirect(url);
   }
   // sem senha (Entrada e docs, parte 3): a sessão aberta só com senha sai, e a pessoa entra pelo
-  // código no e-mail ou pelo Google (os cookies apagados vão junto no redirecionamento)
-  if (user && (path.startsWith("/painel") || path === "/comecar") && passwordOnlySession(user.amr)) {
+  // código no e-mail ou pelo Google (os cookies apagados vão junto no redirecionamento). Também no
+  // convite e no backoffice (relatório de segurança de 23/10/2026, A4c); o banco recusa a mesma
+  // sessão (0175) e a área do cliente só aceita o link do e-mail
+  if (user && (path.startsWith("/painel") || path === "/comecar" || path.startsWith("/convite") || path === "/admin" || path.startsWith("/admin/")) && passwordOnlySession(user.amr)) {
     await supabase!.auth.signOut({ scope: "local" });
     const url = request.nextUrl.clone();
     url.pathname = "/login";

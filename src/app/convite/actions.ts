@@ -7,6 +7,7 @@ import { createAgencyFor } from "@/lib/agency";
 import { audit, requestMeta } from "@/lib/audit";
 import { fail, type ActionResult } from "@/lib/action-result";
 import { acceptInvite, activeMembership, declineInvites } from "@/lib/team";
+import { passwordOnlySession } from "@/lib/login-code";
 import { firstName, personName } from "@/lib/authors";
 
 /*
@@ -18,7 +19,8 @@ import { firstName, personName } from "@/lib/authors";
 async function session() {
   const { data } = await (await createClient()).auth.getClaims();
   const claims = data?.claims;
-  if (!claims?.sub) return null;
+  // sessão só com senha não aceita convite (relatório de segurança de 23/10/2026, A4c)
+  if (!claims?.sub || passwordOnlySession(claims.amr)) return null;
   return { userId: claims.sub, email: String(claims.email ?? "").toLowerCase(), meta: (claims.user_metadata ?? {}) as Record<string, unknown> };
 }
 

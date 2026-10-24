@@ -8,6 +8,7 @@ import { slugify } from "./utils";
 import type { AccountProfile } from "./first-access";
 import { botQuotaStatus, type BotQuotaStatus } from "./atendimentos";
 import { activeMembership, can, hadMembership, openInvitesFor, sessionRevoked, type AgencyMember, type AgencyRole, type Permission } from "./team";
+import { passwordOnlySession } from "./login-code";
 import { firstName, personName } from "./authors";
 import { DEVICE_COOKIE, recordSignupSignals } from "./person-signals";
 import { requestIp } from "./access-log";
@@ -94,6 +95,8 @@ export const requireAgency = cache(async (): Promise<AgencyContext> => {
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   if (!claims?.sub) redirect("/login");
+  // sessão só com senha não entra (o proxy já desloga; aqui vale para as server actions também)
+  if (passwordOnlySession(claims.amr)) redirect("/login?senha=1");
   const userId = claims.sub;
   const email = ((claims.email as string | undefined) ?? "").toLowerCase();
   const meta = (claims.user_metadata ?? {}) as Record<string, unknown>;

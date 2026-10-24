@@ -10,9 +10,11 @@ import { requestMeta } from "@/lib/audit";
  * Resultado da segunda etapa do backoffice (o código é conferido no navegador, direto no
  * Supabase): entrada ou falha vai para o registro de acesso da equipe interna.
  */
-export async function recordMfaResult(ok: boolean): Promise<void> {
+export async function recordMfaResult(reported: boolean): Promise<void> {
   const { data } = await (await createClient()).auth.getClaims();
   const claims = data?.claims;
+  // o navegador só diz que deu certo; vale se a sessão já está no segundo fator (relatório de segurança de 23/10/2026)
+  const ok = reported && claims?.aal === "aal2";
   const email = typeof claims?.email === "string" ? claims.email : null;
   if (!claims?.sub || !isPlatformAdmin(email)) return;
   const meta = await requestMeta();

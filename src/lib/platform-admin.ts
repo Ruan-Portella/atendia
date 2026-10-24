@@ -2,6 +2,7 @@ import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
 import { createAdminClient } from "./supabase/admin";
+import { passwordOnlySession } from "./login-code";
 
 /*
  * Quem opera a plataforma (backoffice /admin e /api/eval): e-mail na lista PLATFORM_ADMIN_EMAILS
@@ -27,7 +28,9 @@ export const adminSession = cache(async (): Promise<AdminSession | null> => {
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   const email = (claims?.email as string | undefined) ?? null;
-  if (!claims?.sub || !isPlatformAdmin(email)) return null;
+  // sessão só com senha não vale (relatório de segurança de 23/10/2026, A4c: a conta criada com senha
+  // num e-mail de admin ainda sem cadastro)
+  if (!claims?.sub || !isPlatformAdmin(email) || passwordOnlySession(claims.amr)) return null;
   return { userId: claims.sub, email: email!, mfa: claims.aal === "aal2" };
 });
 
