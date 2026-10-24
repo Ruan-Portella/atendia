@@ -92,27 +92,27 @@ describe("prompt em duas partes (cache da OpenAI)", () => {
 
 describe("opções de chamada por modelo", () => {
   it("gpt-4.1-mini: temperatura e chave de cache, sem raciocínio", () => {
-    expect(modelCallOptions("gpt-4.1-mini", { temperature: 0.3, cacheKey: "k" })).toEqual({ temperature: 0.3, providerOptions: { openai: { promptCacheKey: "k" } } });
+    expect(modelCallOptions("gpt-4.1-mini", { temperature: 0.3, cacheKey: "k" })).toEqual({ temperature: 0.3, providerOptions: { openai: { store: false, promptCacheKey: "k" } } });
   });
 
   it("gpt-5 (mini e nano): raciocínio mínimo e sem temperatura (o modelo não aceita)", () => {
     for (const m of ["gpt-5-mini", "gpt-5-nano", "gpt-5", "gpt-5-mini-2025-08-07"]) {
-      expect(modelCallOptions(m, { temperature: 0.3, cacheKey: "k" }), m).toEqual({ providerOptions: { openai: { promptCacheKey: "k", reasoningEffort: "minimal" } } });
+      expect(modelCallOptions(m, { temperature: 0.3, cacheKey: "k" }), m).toEqual({ providerOptions: { openai: { store: false, promptCacheKey: "k", reasoningEffort: "minimal" } } });
     }
   });
 
   it("gpt-5.1 em diante: sem raciocínio (none), e aí aceita temperatura", () => {
-    expect(modelCallOptions("gpt-5.4-nano", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { reasoningEffort: "none" } } });
-    expect(modelCallOptions("gpt-5.4-mini", { temperature: 0.3, effort: "low" })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
+    expect(modelCallOptions("gpt-5.4-nano", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { store: false, reasoningEffort: "none" } } });
+    expect(modelCallOptions("gpt-5.4-mini", { temperature: 0.3, effort: "low" })).toEqual({ providerOptions: { openai: { store: false, reasoningEffort: "low" } } });
   });
 
   it("gpt-6-luna e gpt-6-sol: none com temperatura; astra e 6.1-sol não aceitam none (low)", () => {
-    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { reasoningEffort: "none" } } });
-    expect(modelCallOptions("gpt-6-sol", { temperature: 0 })).toEqual({ temperature: 0, providerOptions: { openai: { reasoningEffort: "none" } } });
-    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3, effort: "low" })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
-    expect(modelCallOptions("gpt-6-astra", { temperature: 0.3 })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
-    expect(modelCallOptions("gpt-6.1-sol", { temperature: 0.3 })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
-    expect(modelCallOptions("gpt-5.6-luna", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { reasoningEffort: "none" } } });
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { store: false, reasoningEffort: "none" } } });
+    expect(modelCallOptions("gpt-6-sol", { temperature: 0 })).toEqual({ temperature: 0, providerOptions: { openai: { store: false, reasoningEffort: "none" } } });
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3, effort: "low" })).toEqual({ providerOptions: { openai: { store: false, reasoningEffort: "low" } } });
+    expect(modelCallOptions("gpt-6-astra", { temperature: 0.3 })).toEqual({ providerOptions: { openai: { store: false, reasoningEffort: "low" } } });
+    expect(modelCallOptions("gpt-6.1-sol", { temperature: 0.3 })).toEqual({ providerOptions: { openai: { store: false, reasoningEffort: "low" } } });
+    expect(modelCallOptions("gpt-5.6-luna", { temperature: 0.3 })).toEqual({ temperature: 0.3, providerOptions: { openai: { store: false, reasoningEffort: "none" } } });
   });
 
   it("ponto de corte do cache no fim do prompt fixo só do gpt-5.6 em diante", () => {
@@ -124,7 +124,7 @@ describe("opções de chamada por modelo", () => {
   });
 
   it("esforço escolhido na avaliação vale", () => {
-    expect(modelCallOptions("gpt-5-mini", { effort: "low" })).toEqual({ providerOptions: { openai: { reasoningEffort: "low" } } });
+    expect(modelCallOptions("gpt-5-mini", { effort: "low" })).toEqual({ providerOptions: { openai: { store: false, reasoningEffort: "low" } } });
   });
 });
 
@@ -154,11 +154,11 @@ describe("modelo e esforço do chat", () => {
     expect(chatReasoningEffort("gpt-6-luna")).toBe("medium");
     expect(chatReasoningEffort("gpt-5.4-mini")).toBe("medium");
     // chamada do chat
-    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3, cacheKey: "k", effort: chatReasoningEffort("gpt-6-luna") })).toEqual({ providerOptions: { openai: { promptCacheKey: "k", reasoningEffort: "medium" } } });
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0.3, cacheKey: "k", effort: chatReasoningEffort("gpt-6-luna") })).toEqual({ providerOptions: { openai: { store: false, promptCacheKey: "k", reasoningEffort: "medium" } } });
     // classificador do portão (gate/entrance.ts): sem effort
-    expect(modelCallOptions("gpt-6-luna", { temperature: 0, cacheKey: "boavoz-portao" })).toEqual({ temperature: 0, providerOptions: { openai: { promptCacheKey: "boavoz-portao", reasoningEffort: "none" } } });
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0, cacheKey: "boavoz-portao" })).toEqual({ temperature: 0, providerOptions: { openai: { store: false, promptCacheKey: "boavoz-portao", reasoningEffort: "none" } } });
     // a variável antiga (valia para as duas) não muda mais nada
     vi.stubEnv("OPENAI_REASONING_EFFORT", "low");
-    expect(modelCallOptions("gpt-6-luna", { temperature: 0 })).toEqual({ temperature: 0, providerOptions: { openai: { reasoningEffort: "none" } } });
+    expect(modelCallOptions("gpt-6-luna", { temperature: 0 })).toEqual({ temperature: 0, providerOptions: { openai: { store: false, reasoningEffort: "none" } } });
   });
 });

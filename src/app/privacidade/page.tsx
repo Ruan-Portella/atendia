@@ -134,7 +134,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Supabase</strong>: banco de dados, autenticação, fila e arquivos (Brasil, região de São Paulo).</li>
           <li><strong>Vercel</strong>: hospedagem da aplicação (funções na região de São Paulo).</li>
-          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento, transcrevem áudios e descrevem as fotos enviadas pelos contatos e as fotos dos posts e stories da empresa no Instagram (a OpenAI). Pelos termos de uso das APIs, não usam os dados para treinar modelos. Junto de cada pedido vai um código do contato (gerado pela {brand} com uma chave própria, sem o telefone nem o nome), para o provedor poder bloquear só aquele contato em caso de abuso.</li>
+          <li><strong>Provedores de IA</strong> (OpenAI, Anthropic, Google e Groq): geram as respostas, processam a base de conhecimento, transcrevem áudios e descrevem as fotos enviadas pelos contatos e as fotos dos posts e stories da empresa no Instagram (a OpenAI). Pelos termos de uso das APIs, não usam os dados para treinar modelos. Os pedidos à OpenAI vão sem armazenamento (não ficam no histórico da conta); pelos termos, os provedores podem guardar os pedidos por até 30 dias só para monitorar abuso. Junto de cada pedido vai um código do contato (gerado pela {brand} com uma chave própria, sem o telefone nem o nome), para o provedor poder bloquear só aquele contato em caso de abuso.</li>
           <li><strong>Meta Platforms</strong>: entrega de mensagens no WhatsApp e no Instagram, quando a empresa conecta esses canais.</li>
           <li><strong>Stripe</strong>: pagamentos.</li>
           <li><strong>Resend</strong>: envio de e-mails.</li>

@@ -93,7 +93,9 @@ export function modelCallOptions(modelId: string, o: { temperature?: number; cac
   const keepsTemperature = !reasoning || (effort === "none" && acceptsNone);
   // o identificador do contato que o BoaVoz está atendendo (ai-contact.ts), quando houver
   const safetyIdentifier = currentContactId();
-  const openaiOptions = { ...(o.cacheKey ? { promptCacheKey: o.cacheKey } : {}), ...(effort ? { reasoningEffort: effort } : {}), ...(safetyIdentifier ? { safetyIdentifier } : {}) };
+  // store: false: a OpenAI não guarda as conversas nos Logs dela por 30 dias (relatório de segurança de
+  // 23/10/2026, M10); nos modelos que raciocinam, o provedor pede o raciocínio cifrado no lugar
+  const openaiOptions = { store: false, ...(o.cacheKey ? { promptCacheKey: o.cacheKey } : {}), ...(effort ? { reasoningEffort: effort } : {}), ...(safetyIdentifier ? { safetyIdentifier } : {}) };
   return {
     ...(keepsTemperature && o.temperature !== undefined ? { temperature: o.temperature } : {}),
     ...(Object.keys(openaiOptions).length ? { providerOptions: { openai: openaiOptions } } : {}),
