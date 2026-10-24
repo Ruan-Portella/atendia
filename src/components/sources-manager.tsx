@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AlertCircle, Eye, FileText, Globe, Images, Link2, ListChecks, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Type } from "lucide-react";
+import { AlertCircle, Eye, FileText, Globe, Images, Link2, ListChecks, Loader2, Pencil, Plus, RefreshCw, Search, Sheet, Trash2, Type } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { socialNetworkOf } from "@/lib/social-links";
 import { Modal, ConfirmModal } from "@/components/ui/modal";
@@ -41,12 +41,13 @@ export interface InstagramSourceInfo {
   withAi: boolean;
 }
 
-type Kind = "site" | "page" | "pdf" | "text" | "faq" | "instagram";
+type Kind = "site" | "page" | "pdf" | "csv" | "text" | "faq" | "instagram";
 
 const KIND: Record<Kind, { label: string; add: string; hint: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
   site: { label: "Site", add: "Adicionar site", hint: "Lê até 40 páginas do mesmo domínio.", icon: Globe },
   page: { label: "Página", add: "Uma página", hint: "Só uma página, sem seguir os links.", icon: Link2 },
   pdf: { label: "PDF", add: "Enviar PDF", hint: "Até 15 MB, com texto selecionável.", icon: FileText },
+  csv: { label: "Planilha", add: "Enviar planilha CSV", hint: "Produtos, preços, tabelas. Até 2 MB, com cabeçalho.", icon: Sheet },
   text: { label: "Texto", add: "Escrever texto", hint: "O que o assistente precisa saber e não está no site.", icon: Type },
   faq: { label: "FAQ", add: "Perguntas e respostas", hint: "As dúvidas de sempre, com a resposta certa.", icon: ListChecks },
   instagram: { label: "Instagram", add: "Posts do Instagram", hint: "Os posts da conta conectada, com a foto descrita.", icon: Images },
@@ -144,7 +145,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
 
   /* ---------- reprocessar ---------- */
   async function reprocess(s: SourceItem) {
-    if (s.kind === "pdf") {
+    if (s.kind === "pdf" || s.kind === "csv") {
       setEditing(s);
       return;
     }
@@ -322,9 +323,9 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
       <Modal
         open={editing !== null}
         onClose={() => !saving && setEditing(null)}
-        title={editing?.kind === "pdf" ? "Atualizar PDF" : editing?.kind === "text" || editing?.kind === "faq" ? "Editar conteúdo" : editing?.kind === "instagram" ? "Renomear fonte" : "Editar fonte"}
+        title={editing?.kind === "pdf" ? "Atualizar PDF" : editing?.kind === "csv" ? "Atualizar planilha" : editing?.kind === "text" || editing?.kind === "faq" ? "Editar conteúdo" : editing?.kind === "instagram" ? "Renomear fonte" : "Editar fonte"}
         description={
-          editing?.kind === "pdf"
+          editing?.kind === "pdf" || editing?.kind === "csv"
             ? "Envie a versão nova do arquivo. O conteúdo antigo é substituído."
             : editing?.kind === "site" || editing?.kind === "page"
               ? "Se mudar o endereço, o site é lido de novo. Só o título não reprocessa nada."
@@ -357,6 +358,13 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
               <div>
                 <label htmlFor="edit-file" className="label">Novo arquivo PDF (até 15 MB, com texto selecionável)</label>
                 <input id="edit-file" name="file" type="file" accept="application/pdf" className="input" />
+                <p className="mt-1 text-xs text-muted">Sem arquivo, só o título é alterado.</p>
+              </div>
+            )}
+            {editing.kind === "csv" && (
+              <div>
+                <label htmlFor="edit-file" className="label">Nova planilha CSV (até 2 MB, com cabeçalho)</label>
+                <input id="edit-file" name="file" type="file" accept=".csv,text/csv" className="input" />
                 <p className="mt-1 text-xs text-muted">Sem arquivo, só o título é alterado.</p>
               </div>
             )}
@@ -405,6 +413,13 @@ function SourceFields({ kind }: { kind: Kind }) {
         <div>
           <label htmlFor="src-file" className="label">Arquivo PDF (até 15 MB, com texto selecionável)</label>
           <input id="src-file" name="file" type="file" accept="application/pdf" required className="input" />
+        </div>
+      )}
+      {kind === "csv" && (
+        <div>
+          <label htmlFor="src-file" className="label">Planilha CSV (até 2 MB; a primeira linha é o cabeçalho)</label>
+          <input id="src-file" name="file" type="file" accept=".csv,text/csv" required className="input" />
+          <p className="mt-1 text-xs text-muted">No Excel ou no Google Planilhas: Arquivo, Salvar como (ou Fazer download), CSV.</p>
         </div>
       )}
       {(kind === "text" || kind === "faq") && (
@@ -463,7 +478,7 @@ function SourceMenu({ s, processing, onEdit, onReprocess, onRemove, onPosts }: {
     <Menu
       items={[
         ...(s.kind === "instagram" ? [{ label: "Ver e corrigir os posts", icon: Eye, onSelect: onPosts, disabled: s.pages === 0 }] : []),
-        { label: s.kind === "pdf" ? "Enviar novo PDF" : s.kind === "site" || s.kind === "page" ? "Reler e atualizar" : s.kind === "instagram" ? "Atualizar agora" : "Editar conteúdo", icon: s.kind === "pdf" ? FileText : editable ? Pencil : RefreshCw, onSelect: editable ? onEdit : onReprocess, disabled: processing || syncing(s) },
+        { label: s.kind === "pdf" ? "Enviar novo PDF" : s.kind === "csv" ? "Enviar nova planilha" : s.kind === "site" || s.kind === "page" ? "Reler e atualizar" : s.kind === "instagram" ? "Atualizar agora" : "Editar conteúdo", icon: s.kind === "pdf" ? FileText : s.kind === "csv" ? Sheet : editable ? Pencil : RefreshCw, onSelect: editable ? onEdit : onReprocess, disabled: processing || syncing(s) },
         { label: s.kind === "site" || s.kind === "page" ? "Editar endereço ou título" : "Renomear", icon: Pencil, onSelect: onEdit, disabled: processing },
         { type: "separator" },
         { label: "Remover", icon: Trash2, danger: true, onSelect: onRemove, disabled: processing },

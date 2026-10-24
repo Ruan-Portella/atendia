@@ -225,7 +225,7 @@ export interface SourceRow {
   id: string;
   bot_id: string;
   /** instagram: os posts da conta conectada, lidos por instagram-posts.ts (não passa por aqui). */
-  kind: "site" | "page" | "pdf" | "text" | "faq" | "instagram";
+  kind: "site" | "page" | "pdf" | "text" | "faq" | "csv" | "instagram";
   title: string;
   url: string | null;
   content: string | null;

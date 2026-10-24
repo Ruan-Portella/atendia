@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SOURCES_BUCKET, looksLikePdf, removeSourceFiles, sourcePdfPath } from "@/lib/source-files";
 import { ingestSource, type SourceRow } from "@/lib/ingest";
+import { CSV_MAX_BYTES, csvToText } from "@/lib/csv-source";
 import { classifyLater } from "@/lib/gate/base";
 import { normalizeUrl } from "@/lib/utils";
 import { activeMembership, can } from "@/lib/team";
@@ -78,7 +79,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sourc
   if (!bot) return Response.json({ error: "not_found" }, { status: 404 });
 
   const form = await req.formData();
-  const kind = z.enum(["site", "page", "text", "faq", "pdf", "instagram"]).parse(form.get("kind"));
+  const kind = z.enum(["site", "page", "text", "faq", "pdf", "csv", "instagram"]).parse(form.get("kind"));
   const title = String(form.get("title") ?? "").trim();
   if (kind === "instagram") return addInstagramSource(botId, title);
   const rawUrl = String(form.get("url") ?? "");
@@ -101,6 +102,11 @@ export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sourc
     row = { ...row, title: title || file.name, file_path: path };
     const admin = createAdminClient();
     await admin.storage.from(SOURCES_BUCKET).upload(path, pdfBuffer, { contentType: "application/pdf", upsert: false });
+  } else if (kind === "csv") {
+    if (!(file instanceof File)) return Response.json({ error: "no_file", message: "Envie um arquivo CSV." }, { status: 400 });
+    const csv = await readCsvFile(file);
+    if ("error" in csv) return Response.json({ error: "bad_csv", message: csv.error }, { status: 400 });
+    row = { ...row, content: csv.text, title: title || file.name.replace(/\.csv$/i, "") };
   } else {
     if (content.trim().length < 20) return Response.json({ error: "empty", message: "Escreva pelo menos algumas linhas." }, { status: 400 });
     row = { ...row, content, title: title || (kind === "faq" ? "Perguntas frequentes" : "Texto") };
@@ -174,7 +180,12 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
       if (content !== source.content) patch.content = content;
     }
     const file = form.get("file");
-    if (file instanceof File && file.size > 0) {
+    if (file instanceof File && file.size > 0 && source.kind === "csv") {
+      const csv = await readCsvFile(file);
+      if ("error" in csv) return Response.json({ error: "bad_csv", message: csv.error }, { status: 400 });
+      patch.content = csv.text;
+      if (!title) patch.title = file.name.replace(/\.csv$/i, "");
+    } else if (file instanceof File && file.size > 0) {
       if (source.kind !== "pdf") return Response.json({ error: "not_pdf", message: "Só fontes do tipo PDF aceitam arquivo." }, { status: 400 });
       if (file.size > 15 * 1024 * 1024) return Response.json({ error: "too_large", message: "PDF acima de 15 MB." }, { status: 400 });
       pdfBuffer = await file.arrayBuffer();
@@ -219,4 +230,18 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
   } catch (e) {
     return Response.json({ error: "ingest_failed", message: (e as Error).message }, { status: 422 });
   }
+}
+
+/** Lê o CSV enviado (UTF-8, ou Latin-1 do Excel antigo) e já devolve o texto da fonte. */
+async function readCsvFile(file: File): Promise<{ text: string; rows: number } | { error: string }> {
+  if (file.size > CSV_MAX_BYTES) return { error: "CSV acima de 2 MB." };
+  const buf = await file.arrayBuffer();
+  let raw: string;
+  try {
+    raw = new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch {
+    raw = new TextDecoder("latin1").decode(buf);
+  }
+  if (raw.includes("\u0000")) return { error: "Esse arquivo não é um CSV." };
+  return csvToText(raw);
 }
