@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, BadgeDollarSign, Building2, ClipboardCheck, FileText, FlaskConical, Gauge, KeyRound, LayoutDashboard, Map, ShieldCheck, Sparkles, Wallet } from "lucide-react";
+import { Activity, BadgeDollarSign, Building2, ClipboardCheck, FileText, FlaskConical, Gauge, KeyRound, LayoutDashboard, ListOrdered, Map, ShieldCheck, Sparkles, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS: Array<{ href: string; label: string; exact?: boolean; icon: typeof Gauge }> = [
@@ -16,6 +16,7 @@ const ITEMS: Array<{ href: string; label: string; exact?: boolean; icon: typeof 
   { href: "/admin/operacao", label: "Operação", icon: Gauge },
   { href: "/admin/status", label: "Status", icon: Activity },
   { href: "/admin/segundo-fator", label: "Segundo fator", icon: KeyRound },
+  { href: "/admin/lista-de-espera", label: "Lista de espera", icon: ListOrdered },
   { href: "/admin/conformidade", label: "Conformidade", icon: ShieldCheck },
   { href: "/admin/roadmap", label: "Roadmap", icon: Map },
 ];

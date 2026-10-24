@@ -9,6 +9,7 @@ import type { AccountProfile } from "./first-access";
 import { botQuotaStatus, type BotQuotaStatus } from "./atendimentos";
 import { activeMembership, can, hadMembership, openInvitesFor, sessionRevoked, type AgencyMember, type AgencyRole, type Permission } from "./team";
 import { passwordOnlySession } from "./login-code";
+import { canCreateAccount, markJoined, waitlistMode } from "./waitlist";
 import { firstName, personName } from "./authors";
 import { DEVICE_COOKIE, recordSignupSignals } from "./person-signals";
 import { requestIp } from "./access-log";
@@ -120,7 +121,10 @@ export const requireAgency = cache(async (): Promise<AgencyContext> => {
       const { count } = await admin.from("client_members").select("id", { count: "exact", head: true }).eq("email", email);
       if (count) redirect("/cliente");
     }
+    // lista de espera ligada (até o lançamento): só quem foi convidado cria a conta
+    if (!(await canCreateAccount(admin, email))) redirect("/lista-de-espera?aguarde=1");
     member = await createAgencyFor(userId, email, meta);
+    if (waitlistMode()) await markJoined(admin, email);
   }
   // e-mail trocado na conta: o vínculo acompanha (o convite e a equipe mostram o e-mail atual)
   if (email && member.email !== email) await admin.from("agency_members").update({ email }).eq("id", member.id);
