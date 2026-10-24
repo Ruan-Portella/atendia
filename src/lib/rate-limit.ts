@@ -8,6 +8,11 @@ export interface LimitRule {
   windowSeconds: number;
   /** Mensagem mostrada quando o limite estoura. */
   message: string;
+  /**
+   * Com o banco fora, recusa em vez de liberar: para o que adivinha um segredo (o código de entrada).
+   * O resto libera (limite de uso nunca derruba o chat de um cliente).
+   */
+  failClosed?: boolean;
 }
 
 /** IP de quem chamou (Vercel preenche x-forwarded-for / x-real-ip). */
@@ -25,7 +30,8 @@ export function hashId(value: string): string {
 /**
  * Confere todas as regras em paralelo e devolve a primeira que estourou (ou null).
  * Se o banco falhar (ex.: migração 0005 ainda não rodada), deixa passar: limite de uso
- * nunca pode derrubar o chat de um cliente.
+ * nunca pode derrubar o chat de um cliente. A regra com failClosed recusa (relatório de
+ * segurança de 23/10/2026: o código de entrada não fica sem limite).
  */
 export async function firstExceeded(db: SupabaseClient, rules: LimitRule[]): Promise<LimitRule | null> {
   const results = await Promise.all(
@@ -33,7 +39,7 @@ export async function firstExceeded(db: SupabaseClient, rules: LimitRule[]): Pro
       const { data, error } = await db.rpc("hit_rate_limit", { p_key: r.key, p_max: r.max, p_window_seconds: r.windowSeconds });
       if (error) {
         console.warn("rate limit indisponível:", error.message);
-        return true;
+        return !r.failClosed;
       }
       return data !== false;
     }),

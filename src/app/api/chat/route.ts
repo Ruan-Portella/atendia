@@ -96,6 +96,9 @@ export async function POST(req: Request) {
     const { data: own } = await (await createClient()).from("bots").select("id").eq("id", bot.id).maybeSingle();
     if (!own) channel = "widget";
   }
+  // "demo" só no chatbot de demo: num chatbot de verdade, o canal pulava a cota do mês e as
+  // respostas de teste (relatório de segurança de 23/10/2026, M9)
+  if (channel === "demo" && !bot.is_demo) channel = "widget";
   // o bot modelo (D') só responde no teste do painel: quem atende são os derivados
   if (bot.is_template && channel !== "painel") return Response.json({ error: "bot_not_found" }, { status: 404, headers: CORS_HEADERS });
   if (bot.status !== "live" && !bot.is_demo && channel !== "painel") {
@@ -392,8 +395,9 @@ export async function POST(req: Request) {
   } catch (e) {
     const msg = (e as Error).message;
     // Falha do provedor de IA: o visitante nunca vê erro técnico. O widget troca o chat por um
-    // formulário de contato (o lead não se perde).
-    console.error(e, msg);
+    // formulário de contato (o lead não se perde). Só a mensagem vai ao log: o erro do provedor
+    // leva o pedido inteiro, com a conversa (relatório de segurança de 23/10/2026)
+    console.error("chat: a IA falhou", msg);
     return contactFallback("chat_failed", 503);
   }
 }

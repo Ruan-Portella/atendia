@@ -38,18 +38,19 @@ export async function GET(req: Request) {
   const db = createAdminClient();
   const { data: conv } = await db
     .from("conversations")
-    .select("id, visitor_id, identity_hash, context_hash, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, ai_paused_until, bots!inner(id, agency_id, client_id, public_key)")
+    .select("id, channel, visitor_id, identity_hash, context_hash, handoff_requested_at, takeover_at, handled_at, assigned_to_type, assigned_to_id, assigned_to_name, ai_paused_until, bots!inner(id, agency_id, client_id, public_key)")
     .eq("id", conversationId)
     .eq("bots.public_key", key)
     .maybeSingle();
-  if (!conv) return Response.json({ error: "not_found" }, { status: 404, headers: HEADERS });
-  // conversa de usuário (P2): só com o token da mesma pessoa e do mesmo contexto
-  if (conv.identity_hash || conv.context_hash) {
-    const bot = conv.bots as unknown as { id: string; agency_id: string; client_id: string | null; public_key: string };
-    const who = await widgetWho(db, bot, req);
-    if (who.kind === "invalid") return Response.json({ error: "invalid_token" }, { status: 401, headers: HEADERS });
-    if (conversationAccess(conv, who, visitorId) !== "ok") return Response.json({ error: "not_found" }, { status: 404, headers: HEADERS });
-  }
+  // só conversa do chat do site (WhatsApp e Instagram não passam por aqui)
+  if (!conv || !["widget", "demo", "painel"].includes(String(conv.channel))) return Response.json({ error: "not_found" }, { status: 404, headers: HEADERS });
+  // a mesma regra do chat: conversa de usuário (P2) só com o token da mesma pessoa e do mesmo
+  // contexto; a anônima, só do mesmo navegador (relatório de segurança de 23/10/2026: antes, o id
+  // da conversa bastava)
+  const bot = conv.bots as unknown as { id: string; agency_id: string; client_id: string | null; public_key: string };
+  const who = await widgetWho(db, bot, req);
+  if (who.kind === "invalid") return Response.json({ error: "invalid_token" }, { status: 401, headers: HEADERS });
+  if (conversationAccess(conv, who, visitorId || null) === "denied") return Response.json({ error: "not_found" }, { status: 404, headers: HEADERS });
 
   const now = Date.now();
   await db

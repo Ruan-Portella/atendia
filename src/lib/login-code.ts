@@ -85,9 +85,9 @@ export async function requestLoginCode(admin: SupabaseClient, i: { email: string
   if (isDisposableEmail(email)) return { ok: false, message: LOGIN_CODE_TEXTS.disposable };
   const who = hashId(email);
   const over = await firstExceeded(admin, [
-    { key: `login-code:ip:${hashId(i.ip)}`, max: 10, windowSeconds: 3600, message: LOGIN_CODE_TEXTS.tooMany },
-    { key: `login-code:email:${who}`, max: 5, windowSeconds: 3600, message: LOGIN_CODE_TEXTS.tooMany },
-    { key: `login-code:gap:${who}`, max: 1, windowSeconds: 45, message: LOGIN_CODE_TEXTS.wait },
+    { key: `login-code:ip:${hashId(i.ip)}`, max: 10, windowSeconds: 3600, message: LOGIN_CODE_TEXTS.tooMany, failClosed: true },
+    { key: `login-code:email:${who}`, max: 5, windowSeconds: 3600, message: LOGIN_CODE_TEXTS.tooMany, failClosed: true },
+    { key: `login-code:gap:${who}`, max: 1, windowSeconds: 45, message: LOGIN_CODE_TEXTS.wait, failClosed: true },
   ]);
   if (over) return { ok: false, message: over.message };
 
@@ -122,8 +122,8 @@ export async function checkLoginCode(
   const code = parseLoginCode(i.code);
   if (!code) return { ok: false, message: LOGIN_CODE_TEXTS.invalidCode };
   const over = await firstExceeded(admin, [
-    { key: `login-verify:email:${hashId(email)}`, max: 8, windowSeconds: 900, message: LOGIN_CODE_TEXTS.tooMany },
-    { key: `login-verify:ip:${hashId(i.ip)}`, max: 40, windowSeconds: 3600, message: LOGIN_CODE_TEXTS.tooMany },
+    { key: `login-verify:email:${hashId(email)}`, max: 8, windowSeconds: 900, message: LOGIN_CODE_TEXTS.tooMany, failClosed: true },
+    { key: `login-verify:ip:${hashId(i.ip)}`, max: 40, windowSeconds: 3600, message: LOGIN_CODE_TEXTS.tooMany, failClosed: true },
   ]);
   if (over) return { ok: false, message: over.message };
   const { data, error } = await auth.verifyOtp({ email, token: code, type: "email" });

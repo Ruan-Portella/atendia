@@ -21,6 +21,12 @@ describe("firstExceeded", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(await firstExceeded(db, [rule("a")])).toBeNull();
   });
+
+  it("com failClosed (o código de entrada), recusa se o banco falhar", async () => {
+    const db = fakeDb(async () => ({ data: null, error: { message: "fora do ar" } }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect((await firstExceeded(db, [rule("a"), { ...rule("codigo"), failClosed: true }]))?.key).toBe("codigo");
+  });
 });
 
 describe("clientIp / hashId", () => {
