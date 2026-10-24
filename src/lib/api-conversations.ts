@@ -97,7 +97,8 @@ export const encodeCursor = (parts: string[]) => Buffer.from(parts.join("|")).to
 export function decodeCursor(raw: string | null, n: number): string[] | null {
   if (!raw) return null;
   const parts = Buffer.from(raw, "base64url").toString("utf8").split("|");
-  if (parts.length !== n || parts.some((p) => !p)) throw invalidRequest("cursor inválido: use o next_cursor da resposta anterior.", { field: "cursor" });
+  // só datas e ids (o cursor entra no filtro do banco: nada de aspas, vírgulas ou parênteses; relatório de segurança de 23/10/2026)
+  if (parts.length !== n || parts.some((p) => !p || !/^[0-9A-Za-z:.+-]{1,64}$/.test(p))) throw invalidRequest("cursor inválido: use o next_cursor da resposta anterior.", { field: "cursor" });
   return parts;
 }
 

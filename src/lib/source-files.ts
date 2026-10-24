@@ -13,6 +13,11 @@ export function sourcePdfPath(botId: string, fileName: string, now = Date.now())
   return `${botId}/${now}-${base}`;
 }
 
+/** O arquivo é um PDF (começa com %PDF-)? O tipo e o nome vêm do navegador e não provam nada. Pura. */
+export function looksLikePdf(buf: ArrayBuffer): boolean {
+  return new TextDecoder("latin1").decode(new Uint8Array(buf.slice(0, 5))) === "%PDF-";
+}
+
 export async function removeSourceFiles(db: SupabaseClient, paths: Array<string | null | undefined>, onlyBot?: string): Promise<void> {
   // o caminho lido do banco só apaga na pasta do próprio chatbot: um file_path trocado não leva o PDF
   // de outro (relatório de segurança de 23/10/2026)

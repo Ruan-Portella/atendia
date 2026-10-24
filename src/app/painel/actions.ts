@@ -1,6 +1,7 @@
 "use server";
 
 import { canLinkWhatsAppById } from "@/lib/platform-admin";
+import { isOurLogoUrl } from "@/lib/attendants";
 import { revalidatePath } from "next/cache";
 import { parseFace } from "@/lib/bot-face";
 import { sizeRequiredBlock } from "@/lib/free-account";
@@ -646,7 +647,10 @@ export async function updateAgency(formData: FormData): Promise<ActionResult> {
     if (digits && (digits.length < 10 || digits.length > 15)) return fail("Use o WhatsApp com o DDD (ex.: 41 99999-9999).");
     patch.support_whatsapp = digits ? (canonicalPhone(digits, { typed: true }) ?? digits) : null;
   }
-  if (d.logo_url !== undefined) patch.logo_url = d.logo_url || null;
+  if (d.logo_url !== undefined) {
+    if (d.logo_url && d.logo_url !== agency.logo_url && !isOurLogoUrl(d.logo_url, agency.id)) return fail("O logo não foi enviado por aqui. Envie de novo.");
+    patch.logo_url = d.logo_url || null;
+  }
   if (!Object.keys(patch).length) return ok("Nada mudou.");
   const { error } = await supabase.from("agencies").update(patch).eq("id", agency.id);
   if (error) return fail("Não foi possível salvar a marca. Tente de novo.");

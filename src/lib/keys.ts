@@ -49,7 +49,7 @@ export function gcmSeal(key: Buffer, plain: string | Buffer, aad?: string): stri
 export function gcmOpen(key: Buffer, packed: string, aad?: string): Buffer {
   const [iv, tag, data] = packed.split(".");
   if (!iv || !tag || data === undefined) throw new Error("valor cifrado em formato desconhecido");
-  const d = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"));
+  const d = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"), { authTagLength: 16 });
   if (aad) d.setAAD(Buffer.from(aad));
   d.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([d.update(Buffer.from(data, "base64url")), d.final()]);

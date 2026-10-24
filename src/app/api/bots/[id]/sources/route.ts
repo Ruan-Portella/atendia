@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { SOURCES_BUCKET, removeSourceFiles, sourcePdfPath } from "@/lib/source-files";
+import { SOURCES_BUCKET, looksLikePdf, removeSourceFiles, sourcePdfPath } from "@/lib/source-files";
 import { ingestSource, type SourceRow } from "@/lib/ingest";
 import { classifyLater } from "@/lib/gate/base";
 import { normalizeUrl } from "@/lib/utils";
@@ -96,6 +96,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sourc
     if (!(file instanceof File)) return Response.json({ error: "no_file", message: "Envie um PDF." }, { status: 400 });
     if (file.size > 15 * 1024 * 1024) return Response.json({ error: "too_large", message: "PDF acima de 15 MB." }, { status: 400 });
     pdfBuffer = await file.arrayBuffer();
+    if (!looksLikePdf(pdfBuffer)) return Response.json({ error: "not_pdf", message: "Esse arquivo não é um PDF." }, { status: 400 });
     const path = sourcePdfPath(botId, file.name);
     row = { ...row, title: title || file.name, file_path: path };
     const admin = createAdminClient();
@@ -177,6 +178,7 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
       if (source.kind !== "pdf") return Response.json({ error: "not_pdf", message: "Só fontes do tipo PDF aceitam arquivo." }, { status: 400 });
       if (file.size > 15 * 1024 * 1024) return Response.json({ error: "too_large", message: "PDF acima de 15 MB." }, { status: 400 });
       pdfBuffer = await file.arrayBuffer();
+      if (!looksLikePdf(pdfBuffer)) return Response.json({ error: "not_pdf", message: "Esse arquivo não é um PDF." }, { status: 400 });
       if (!title) patch.title = file.name;
       patch.file_path = sourcePdfPath(botId, file.name);
       await createAdminClient().storage.from(SOURCES_BUCKET).upload(patch.file_path, pdfBuffer, { contentType: "application/pdf", upsert: false });

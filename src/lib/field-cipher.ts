@@ -160,7 +160,8 @@ export async function openBytes(field: CipherField, buf: Uint8Array): Promise<Ui
       key = masterKey(Number(version)).key;
     }
     if (!key) return null;
-    const d = createDecipheriv("aes-256-gcm", key, b.subarray(nl + 1, nl + 13));
+    // etiqueta de 16 bytes, sempre: uma etiqueta curta não passa (relatório de segurança de 23/10/2026)
+    const d = createDecipheriv("aes-256-gcm", key, b.subarray(nl + 1, nl + 13), { authTagLength: 16 });
     d.setAAD(Buffer.from(field));
     d.setAuthTag(b.subarray(nl + 13, nl + 29));
     return Buffer.concat([d.update(b.subarray(nl + 29)), d.final()]);

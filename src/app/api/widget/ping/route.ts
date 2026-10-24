@@ -1,3 +1,4 @@
+import { clientIp, firstExceeded, hashId } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -16,6 +17,9 @@ export async function POST(req: Request) {
   const db = createAdminClient();
   const now = new Date().toISOString();
   const { data: bot } = await db.from("bots").select("id, installed_at, installed_host").eq("public_key", key).eq("is_demo", false).maybeSingle();
+  // um ping por navegador e chatbot a cada poucos minutos basta; sem limite, qualquer um trocava o
+  // "Instalado em" do painel à vontade (relatório de segurança de 23/10/2026)
+  if (bot && (await firstExceeded(db, [{ key: `ping:${bot.id}:${hashId(clientIp(req))}`, max: 10, windowSeconds: 3600, message: "" }]))) return new Response(null, { status: 204 });
   if (bot) {
     const patch: Record<string, unknown> = { last_seen_at: now, installed_host: cleanHost };
     if (!bot.installed_at) patch.installed_at = now;

@@ -23,6 +23,15 @@ export function isOurAvatarUrl(url: string | null | undefined, supabaseUrl = pro
   return url.startsWith(`${supabaseUrl.replace(/\/$/, "")}/storage/v1/object/public/logos/avatars/`) && !/[\s"'<>]/.test(url);
 }
 
+/**
+ * O logo da conta veio do nosso envio (bucket logos, na pasta da conta)? Um endereço qualquer
+ * deixava registrar o IP de quem abre o chat do site (relatório de segurança de 23/10/2026). Pura.
+ */
+export function isOurLogoUrl(url: string, agencyId: string, supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""): boolean {
+  if (!supabaseUrl) return false;
+  return url.startsWith(`${supabaseUrl.replace(/\/$/, "")}/storage/v1/object/public/logos/${agencyId}/`) && !/[\s"'<>]/.test(url);
+}
+
 /** Fotos atuais de quem escreveu (pessoas da agência e do portal), por id. */
 async function avatarsOf(db: SupabaseClient, refs: Array<{ type: string; id: string }>): Promise<Map<string, string | null>> {
   const ids = (type: string) => [...new Set(refs.filter((r) => r.type === type).map((r) => r.id))];
