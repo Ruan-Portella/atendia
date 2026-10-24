@@ -58,6 +58,7 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
     conflict = "id";
     orderBy: { col: string; asc: boolean } | null = null;
     lim = 0;
+    skip = 0;
     embeds: string[] = [];
     head = false;
     constructor(public table: string) {}
@@ -99,6 +100,19 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       const esc = (p: string) => p.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&");
       const re = new RegExp("^" + pattern.split("%").map(esc).join(".*") + "$");
       this.filters.push((r) => typeof colOf(r, c) === "string" && re.test(colOf(r, c) as string));
+      return this;
+    }
+    /** Como no Postgres: % vale qualquer texto, _ um caractere, \ escapa; sem diferença de maiúscula. */
+    ilike(c: string, pattern: string) {
+      const esc = (p: string) => p.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&");
+      let re = "";
+      for (let i = 0; i < pattern.length; i++) {
+        const ch = pattern[i];
+        if (ch === "\\" && i + 1 < pattern.length) re += esc(pattern[++i]);
+        else re += ch === "%" ? ".*" : ch === "_" ? "." : esc(ch);
+      }
+      const rx = new RegExp(`^${re}$`, "is");
+      this.filters.push((r) => typeof colOf(r, c) === "string" && rx.test(colOf(r, c) as string));
       return this;
     }
     /** A coluna (lista) tem todos estes valores. */
@@ -169,6 +183,11 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
       this.lim = n;
       return this;
     }
+    range(from: number, to: number) {
+      this.skip = from;
+      this.lim = to - from + 1;
+      return this;
+    }
     async maybeSingle() {
       const r = await this.exec();
       return { data: (r.data as MemRow[] | null)?.[0] ?? null, error: r.error };
@@ -225,6 +244,7 @@ export function memoryDb(tables: Record<string, MemRow[]>): SupabaseClient {
         rows = [...rows].sort((a, b) => cmp(a[col], b[col]) * (asc ? 1 : -1));
       }
       const count = rows.length;
+      if (this.skip) rows = rows.slice(this.skip);
       if (this.lim) rows = rows.slice(0, this.lim);
       if (this.head) return { data: null, error: null, count };
       const joined = (r: MemRow) => Object.fromEntries(this.embeds.map((n) => [n, (tables[n] ?? []).find((x) => x.id === r[EMBED_FK[n]]) ?? null]));

@@ -1594,34 +1594,67 @@ export async function deleteConversation(conversationId: string): Promise<Action
 
 const digitsOf = (v: string) => v.replace(/\D/g, "");
 
+const ERASE_NOTHING = "Nenhum dado encontrado para esse contato.";
+
 /**
- * Pedido de titular (LGPD): apaga todos os contatos com esse e-mail ou telefone nos chatbots
- * do cliente, e as conversas em que foram capturados.
+ * O que o pedido de titular apaga para esse e-mail ou telefone, nos chatbots do cliente: as fichas,
+ * os leads e as conversas (as das fichas e as dos leads). O telefone vai com o DDD: sem ele, o
+ * número de outra cidade entrava junto (relatório de segurança de 23/10/2026, M2).
  */
-export async function eraseContactData(clientId: string, formData: FormData): Promise<ActionResult> {
-  if (!(await allowed("security"))) return fail(DENIED);
-  const contact = text(formData.get("contact")).toLowerCase();
-  const digits = digitsOf(contact);
+async function contactErasure(clientId: string, raw: string): Promise<{ ok: false; message: string } | { ok: true; byEmail: boolean; contactIds: string[]; leads: Array<{ id: string; conversation_id: string | null }>; leadConvs: string[]; conversations: number }> {
+  const contact = raw.trim().toLowerCase();
   const byEmail = isEmail(contact);
-  if (!byEmail && digits.length < 8) return fail("Informe um e-mail ou um telefone com DDD.");
+  if (!byEmail && digitsOf(contact).length < 10) return { ok: false, message: "Informe um e-mail ou o telefone com DDD." };
   const supabase = await createClient();
   const { data: bots } = await supabase.from("bots").select("id").eq("client_id", clientId);
   const ids = (bots ?? []).map((b) => b.id);
-  if (!ids.length) return ok("Nenhum dado encontrado para esse contato.");
-
-  // telefone: pelo hash do número canônico e comparando só os números pelo final (com ou sem +55 e DDD formatado)
+  if (!ids.length) return { ok: true, byEmail, contactIds: [], leads: [], leadConvs: [], conversations: 0 };
+  // telefone: pelo hash do número canônico e comparando o número inteiro com DDD (com ou sem +55)
   const ph = byEmail ? null : typedPhoneHash(contact);
-  const matches = await findLeadsByContact(supabase, ids, byEmail ? { email: contact } : { phone: contact, phoneHash: ph });
-
+  const leads = await findLeadsByContact(supabase, ids, byEmail ? { email: contact } : { phone: contact, phoneHash: ph });
   const admin = createAdminClient();
   // a ficha do contato (WhatsApp, pelo telefone canônico em hash, ou pelo e-mail): a rotina apaga todas as conversas dela
   const contactIds = byEmail ? await findContactIds(admin, ids, { email: contact }) : ph ? await findContactIds(admin, ids, { phoneHash: ph }) : [];
-  if (!matches.length && !contactIds.length) return ok("Nenhum dado encontrado para esse contato.");
+  const leadConvs = leads.map((l) => l.conversation_id).filter((c): c is string => Boolean(c));
+  const convs = new Set(leadConvs);
+  if (contactIds.length) {
+    const { data } = await admin.from("conversations").select("id").in("contact_id", contactIds);
+    for (const c of data ?? []) convs.add(c.id as string);
+  }
+  return { ok: true, byEmail, contactIds, leads, leadConvs, conversations: convs.size };
+}
+
+const eraseCount = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const eraseSummary = (e: { contactIds: string[]; leads: unknown[]; conversations: number }) =>
+  `${eraseCount(e.conversations, "conversa", "conversas")}, ${eraseCount(e.leads.length, "lead", "leads")} e ${eraseCount(e.contactIds.length, "ficha de contato", "fichas de contato")}`;
+const eraseKey = (e: { contactIds: string[]; leads: unknown[]; conversations: number }) => `${e.contactIds.length}:${e.leads.length}:${e.conversations}`;
+
+/** A prévia do pedido de titular: quanto sai, antes de confirmar (não apaga nada). */
+export async function previewContactErasure(clientId: string, contact: string): Promise<{ ok: false; message: string } | { ok: true; summary: string; expected: string; empty: boolean }> {
+  if (!(await allowed("security"))) return { ok: false, message: DENIED };
+  const e = await contactErasure(clientId, contact);
+  if (!e.ok) return e;
+  const empty = !e.contactIds.length && !e.leads.length;
+  return { ok: true, summary: empty ? ERASE_NOTHING : `Vai apagar ${eraseSummary(e)}.`, expected: eraseKey(e), empty };
+}
+
+/**
+ * Pedido de titular (LGPD): apaga todos os contatos com esse e-mail ou telefone nos chatbots
+ * do cliente, e as conversas em que foram capturados. Só com a prévia conferida: o que vai sair
+ * precisa bater com o que a tela mostrou (sem desfazer).
+ */
+export async function eraseContactData(clientId: string, formData: FormData): Promise<ActionResult> {
+  if (!(await allowed("security"))) return fail(DENIED);
+  const e = await contactErasure(clientId, text(formData.get("contact")));
+  if (!e.ok) return fail(e.message);
+  const { byEmail, contactIds, leads: matches, leadConvs } = e;
+  if (!matches.length && !contactIds.length) return ok(ERASE_NOTHING);
+  if (text(formData.get("expected")) !== eraseKey(e)) return fail(`Confira antes de apagar: agora vai apagar ${eraseSummary(e)}, diferente da prévia. Digite o contato de novo para conferir.`);
 
   // rotina única do pedido do titular (a mesma do chat): entregas e logs, perguntas, leads, conversas,
   // 18+, supressão e ficha, tudo no registro de exclusões; depois o contact.deleted e o pedido como prova
+  const admin = createAdminClient();
   const { agency, userId } = await requireAgency();
-  const leadConvs = matches.map((l) => l.conversation_id).filter((c): c is string => Boolean(c));
   const { erased, ...summary } = await eraseTargets(admin, { contactIds, conversationIds: leadConvs, leadIds: matches.map((l) => l.id) }, { code: `painel:${clientId}`, source: "painel" });
   const requestId = await recordPanelRequest(admin, { agencyId: agency.id, clientId, by: userId, summary });
   await emitErasedContacts(admin, erased, requestId ?? `painel:${clientId}`);

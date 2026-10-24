@@ -365,7 +365,8 @@ export async function apiContacts(db: SupabaseClient, botIds: string[], addr: Co
 /** Fichas para o pedido de exclusão (LGPD), nestes chatbots: pelo e-mail ou pelo hash do telefone. */
 export async function findContactIds(db: SupabaseClient, botIds: string[], by: { email: string } | { phoneHash: string }): Promise<string[]> {
   const base = db.from("contacts").select("id").in("bot_id", botIds);
-  const { data } = await ("email" in by ? base.ilike("email", by.email) : base.eq("phone_hash", by.phoneHash));
+  // % e _ são curingas no ilike: o e-mail compara ao pé da letra (joao_silva não leva joao.silva junto)
+  const { data } = await ("email" in by ? base.ilike("email", by.email.replace(/[\\%_]/g, "\\$&")) : base.eq("phone_hash", by.phoneHash));
   return (data ?? []).map((c) => c.id as string);
 }
 

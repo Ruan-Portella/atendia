@@ -316,10 +316,16 @@ export async function leadIdsBefore(db: SupabaseClient, botId: string, cutoff: s
 
 const digitsOf = (v: string) => v.replace(/\D/g, "");
 
+/** O número sem o +55 (DDD e número), para comparar telefones digitados de jeitos diferentes. Pura. */
+export function nationalDigits(v: string): string {
+  const d = digitsOf(v);
+  return d.length >= 12 && d.startsWith("55") ? d.slice(2) : d;
+}
+
 /**
  * Leads destes chatbots com este e-mail, ou com este telefone (pedido de titular, LGPD).
- * Telefone: pelo hash do número canônico e, para os digitados de outro jeito, comparando só os
- * números pelo final (com ou sem +55 e DDD formatado), com o telefone aberto.
+ * Telefone: pelo hash do número canônico e, para os digitados de outro jeito, comparando o número
+ * inteiro com DDD (com ou sem +55, com ou sem formatação), com o telefone aberto.
  */
 export async function findLeadsByContact(db: SupabaseClient, botIds: string[], by: { email: string } | { phone: string; phoneHash: string | null }): Promise<Array<{ id: string; conversation_id: string | null }>> {
   if (!botIds.length) return [];
@@ -334,14 +340,14 @@ export async function findLeadsByContact(db: SupabaseClient, botIds: string[], b
     const { data } = await db.from("leads").select("id, conversation_id").in("bot_id", botIds).eq("phone_hash", by.phoneHash);
     for (const r of (data ?? []) as Array<Record<string, unknown>>) found.set(r.id as string, pick(r));
   }
-  const tail = digitsOf(by.phone).slice(-10);
+  const wanted = nationalDigits(by.phone);
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
     const { data } = await db.from("leads").select("id, conversation_id, phone, phone_enc").in("bot_id", botIds).or("phone.not.is.null,phone_enc.not.is.null").order("id").range(from, from + PAGE - 1);
     const rows = (data ?? []) as Array<Record<string, unknown>>;
     for (const r of rows) {
       const phone = (await openNullable("leads.phone_enc", r.phone_enc)) ?? String(r.phone ?? "");
-      if (tail && digitsOf(phone).endsWith(tail)) found.set(r.id as string, pick(r));
+      if (wanted.length >= 10 && nationalDigits(phone) === wanted) found.set(r.id as string, pick(r));
     }
     if (rows.length < PAGE) break;
   }

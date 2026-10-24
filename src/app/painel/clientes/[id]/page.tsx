@@ -27,7 +27,8 @@ import { DialogButton, SettingGroup, SettingRow } from "@/components/ui/setting-
 import { ClientPrivacy } from "@/components/client-privacy";
 import { ExportLinks } from "@/components/export-links";
 import { periodLabel } from "@/lib/report";
-import { deleteBot, deleteClientRecord, eraseContactData, updateClientRecord } from "../../actions";
+import { deleteBot, deleteClientRecord, eraseContactData, previewContactErasure, updateClientRecord } from "../../actions";
+import { EraseContactField } from "@/components/erase-contact-field";
 import { ContactsList } from "@/components/contacts-list";
 import { ContactImportDialog } from "@/components/contact-import-dialog";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
@@ -285,12 +286,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
             <div className="flex flex-wrap justify-end gap-2">
               {can(role, "security") && (
                 <DialogButton label="Apagar os dados de uma pessoa" icon={<Trash2 size={15} />} className="btn-ghost" title="Apagar os dados de uma pessoa (pedido LGPD)" description="Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os chatbots deste cliente. Não tem desfazer." action={eraseContactData.bind(null, client.id)} saveLabel="Apagar dados" danger>
-                  <div>
-                    <label htmlFor="erase-contact" className="label">
-                      E-mail ou WhatsApp que a pessoa deixou no chat
-                    </label>
-                    <input id="erase-contact" name="contact" required maxLength={120} className="input" placeholder="ana@exemplo.com ou (21) 99999-0000" />
-                  </div>
+                  <EraseContactField preview={previewContactErasure.bind(null, client.id)} />
                 </DialogButton>
               )}
               {(leads ?? []).length > 0 && can(role, "export") && (
