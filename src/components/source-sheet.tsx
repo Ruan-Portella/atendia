@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { parseSheet, sheetToText } from "@/lib/csv-source";
@@ -23,7 +23,7 @@ export function SourceSheetModal({ botId, source, onClose, onSaved }: { botId: s
 function SheetEditor({ botId, source, onClose, onSaved }: { botId: string; source: SheetSource; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [initial] = useState(() => parseSheet(source.content ?? ""));
-  const cols = initial.cols;
+  const [cols, setCols] = useState<string[]>(initial.cols);
   const [rows, setRows] = useState<string[][]>(initial.rows);
   const [query, setQuery] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -35,6 +35,13 @@ function SheetEditor({ botId, source, onClose, onSaved }: { botId: string; sourc
     const all = rows.map((r, i) => ({ r, i }));
     return q ? all.filter(({ r }) => r.some((v) => v.toLowerCase().includes(q))) : all;
   }, [rows, query]);
+
+  // tirar a coluna que o cliente não precisa saber (ID, NCM, unidade…): o assistente só lê o que fica
+  const dropColumn = (c: number) => {
+    setCols((cs) => cs.filter((_, k) => k !== c));
+    setRows((rs) => rs.map((r) => r.filter((_, k) => k !== c)));
+    setDirty(true);
+  };
 
   const setCell = (i: number, c: number, v: string) => {
     setRows((rs) => rs.map((r, j) => (j === i ? r.map((x, k) => (k === c ? v : x)) : r)));
@@ -69,7 +76,7 @@ function SheetEditor({ botId, source, onClose, onSaved }: { botId: string; sourc
       open
       onClose={() => !saving && onClose()}
       title={source.title}
-      description="Cada linha é um item que o assistente consulta (produto, preço, convênio…). Ele responde só com o que está aqui."
+      description="Cada linha é um item que o assistente consulta (produto, preço, convênio…). Ele responde só com o que está aqui: tire no × as colunas que o cliente não precisa saber, como ID, unidade e NCM."
       size="xl"
       footer={
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
@@ -108,8 +115,17 @@ function SheetEditor({ botId, source, onClose, onSaved }: { botId: string; sourc
             <table className="w-full min-w-[640px] border-collapse text-[13px]">
               <thead className="sticky top-0 z-10 bg-raised">
                 <tr>
-                  {cols.map((c) => (
-                    <th key={c} className="whitespace-nowrap border-b border-line px-2 py-2 text-left text-xs font-semibold text-ink-2">{c}</th>
+                  {cols.map((c, k) => (
+                    <th key={c} className="whitespace-nowrap border-b border-line px-2 py-1.5 text-left text-xs font-semibold text-ink-2">
+                      <span className="flex items-center gap-1">
+                        {c}
+                        {cols.length > 1 && (
+                          <button type="button" onClick={() => dropColumn(k)} aria-label={`Tirar a coluna ${c}`} title={`Tirar a coluna ${c}`} className="rounded p-0.5 text-muted hover:bg-danger-soft hover:text-danger">
+                            <X size={12} />
+                          </button>
+                        )}
+                      </span>
+                    </th>
                   ))}
                   <th className="w-10 border-b border-line" aria-label="Ações" />
                 </tr>
