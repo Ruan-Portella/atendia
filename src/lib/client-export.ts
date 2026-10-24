@@ -1,3 +1,4 @@
+import { csvCell } from "./csv";
 /*
  * Lista de clientes exportável do backoffice (L1; spec "Painel interno → Clientes"): uma linha por
  * chatbot, com a agência, o negócio, o número e a conta do WhatsApp, o portfólio da Meta
@@ -62,11 +63,7 @@ export const EXPORT_COLUMNS: Array<[string, (r: ClientExportRow) => string | num
 ];
 
 /** Célula de CSV: aspas quando preciso, e sem fórmula (=, +, -, @ no começo viram texto). */
-export function csvCell(v: string | number): string {
-  let s = String(v ?? "");
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+export { csvCell };
 
 /** CSV com ponto e vírgula e BOM (abre direto no Excel em português). */
 export function toCsv(rows: ClientExportRow[]): string {

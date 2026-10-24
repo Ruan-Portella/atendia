@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { SESSION_COOKIE_OPTIONS } from "@/lib/supabase/cookie-options";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isCustomHost } from "@/lib/domain";
 import { accessDay, logAccess, requestIp, type AccessActor } from "@/lib/access-log";
@@ -59,6 +60,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // segue sem tocar no Supabase (Proteção contra robôs)
   const supabase = hasSessionCookie(request.cookies.getAll().map((c) => c.name))
     ? createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+        cookieOptions: SESSION_COOKIE_OPTIONS,
         cookies: {
           getAll() {
             return request.cookies.getAll();

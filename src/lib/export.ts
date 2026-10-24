@@ -1,3 +1,4 @@
+import { csvCell } from "./csv";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { exportContactsPage } from "./contacts";
 import { exportLeadsPage } from "./leads";
@@ -94,11 +95,6 @@ export async function* exportRows(db: SupabaseClient, bots: Array<{ id: string; 
     if (convs.length < PAGE) return;
   }
 }
-
-const csvCell = (v: unknown) => {
-  const s = v == null ? "" : String(v);
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 /** Resposta em stream: CSV (BOM e ponto e vírgula, para o Excel em português) ou JSON (lista de objetos). */
 export function exportResponse(rows: AsyncGenerator<Row>, kind: ExportKind, format: ExportFormat, filename: string, onDone?: (count: number) => void): Response {

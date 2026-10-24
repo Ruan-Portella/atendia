@@ -1,3 +1,4 @@
+import { csvCell } from "./csv";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SECURITY_ALERTS } from "./security-alerts";
 import { memberName } from "./team";
@@ -423,11 +424,6 @@ export async function clientTargetIds(supabase: SupabaseClient, clientId: string
   const { data } = await supabase.from("bots").select("id").eq("client_id", clientId);
   return [clientId, ...(data ?? []).map((b) => b.id as string)];
 }
-
-const csvCell = (v: unknown) => {
-  const s = v == null ? "" : typeof v === "string" ? v : JSON.stringify(v);
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 /** CSV da auditoria (BOM e ponto e vírgula, para o Excel). Pura. */
 export function auditCsv(rows: AuditRow[], people: AuditPeople, targetName: (r: AuditRow) => string): string {

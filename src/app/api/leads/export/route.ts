@@ -1,3 +1,4 @@
+import { csvCell } from "@/lib/csv";
 import { createClient } from "@/lib/supabase/server";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
@@ -22,10 +23,7 @@ export async function GET(req: Request) {
 
   const leads = await listLeads(supabase, { botIds: ids, limit: 5000 });
 
-  const esc = (v: unknown) => {
-    const s = v == null ? "" : String(v);
-    return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+  const esc = csvCell;
   const lines = [["Data", "Cliente", "Chatbot", "Nome", "Telefone", "E-mail", "Instagram", "Interesse", "Último pedido", "Pedidos"].join(";")];
   const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
   for (const l of leads) {
