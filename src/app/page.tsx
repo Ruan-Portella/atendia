@@ -9,7 +9,7 @@ import { ChatDemo } from "@/components/landing/chat-demo";
 import { InboxMockup } from "@/components/landing/inbox-mockup";
 import { BOT_SIZES, CREDIT_MIN_BRL, DEMOS_PER_MONTH_FREE, OVERAGE_PRICE_BRL, PACKS, TEST_ANSWERS_FREE, brl, brlCents, num } from "@/lib/plans";
 import { LANDING, audienceOf, featuresFor, type Audience } from "@/lib/landing";
-import { waitlistMode } from "@/lib/waitlist";
+import { siteLaunched } from "@/lib/waitlist";
 import { cn } from "@/lib/utils";
 
 /** Perguntas frequentes (revisão de preços, parte 6), mais as da lista de espera quando ligada. */
@@ -64,8 +64,8 @@ function SectionHead({ eyebrow, title, children, center }: { eyebrow: string; ti
 /**
  * Landing (redesenho de 24/10/2026, com as referências do usuário): para a agência ou para o próprio
  * negócio (?para=negocio). O produto aparece de verdade logo no alto, a demonstração deixa escolher a
- * pergunta e ver o assistente responder, e, com a lista de espera ligada (NEXT_PUBLIC_WAITLIST=1),
- * os botões levam para a lista em vez do cadastro.
+ * pergunta e ver o assistente responder. Até o lançamento (NEXT_PUBLIC_LAUNCHED), os botões levam
+ * para a lista e a página não mostra preços.
  */
 export default async function LandingPage({ searchParams }: PageProps<"/">) {
   const sp = await searchParams;
@@ -73,7 +73,8 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
   const business = audience === "business";
   const saas = audience === "saas";
   const c = LANDING[audience];
-  const waitlist = waitlistMode();
+  // até o lançamento, a landing é a da lista em todo ambiente (sem preços nem cadastro)
+  const waitlist = !siteLaunched();
   const sizes = Object.values(BOT_SIZES).filter((s) => s.atendimentos > 0);
   const packs = Object.values(PACKS).filter((p) => !(business && p.id === "plataforma"));
   const faq = waitlist ? WAITLIST_FAQ : FAQ;

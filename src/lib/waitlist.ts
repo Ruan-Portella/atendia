@@ -32,8 +32,14 @@ export interface WaitlistInput {
   source: string | null;
 }
 
-/** A lista de espera está ligada neste ambiente? */
+/** A trava de contas da lista está ligada neste ambiente? (só a produção, até o lançamento) */
 export const waitlistMode = () => process.env.NEXT_PUBLIC_WAITLIST === "1";
+
+/**
+ * O site já lançou? Até lá, a landing é a da lista em todo ambiente (sem preços, sem cadastro); no
+ * lançamento, NEXT_PUBLIC_LAUNCHED=1 traz os preços e o cadastro de volta (e a trava sai).
+ */
+export const siteLaunched = () => process.env.NEXT_PUBLIC_LAUNCHED === "1";
 
 const clean = (v: unknown, max: number) => {
   const s = typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "";
