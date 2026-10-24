@@ -34,7 +34,7 @@ export type InviteResult = ActionResult & { link?: string };
 
 /** Convida por e-mail; o link também aparece na tela, para copiar (sem e-mail configurado, é o único jeito). */
 /** Mudar a equipe pede o segundo fator (relatório de segurança de 23/10/2026, A4a): uma sessão roubada não vira acesso de administrador. */
-const TEAM_MFA = "Faça a verificação em duas etapas (código do app autenticador) e tente de novo.";
+const TEAM_MFA = "Esta mudança pede a verificação em duas etapas: abra Configurações → Segurança e auditoria (ela pede o código do app autenticador) e tente de novo.";
 
 export async function inviteTeamMember(formData: FormData): Promise<InviteResult> {
   const ctx = await teamContext();

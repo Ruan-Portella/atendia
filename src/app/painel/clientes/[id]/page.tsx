@@ -285,7 +285,7 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
           {((leads ?? []).length > 0 && can(role, "export")) || can(role, "security") ? (
             <div className="flex flex-wrap justify-end gap-2">
               {can(role, "security") && (
-                <DialogButton label="Apagar os dados de uma pessoa" icon={<Trash2 size={15} />} className="btn-ghost" title="Apagar os dados de uma pessoa (pedido LGPD)" description="Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os chatbots deste cliente. Não tem desfazer." action={eraseContactData.bind(null, client.id)} saveLabel="Apagar dados" danger>
+                <DialogButton label="Apagar os dados de uma pessoa" icon={<Trash2 size={15} />} className="btn-ghost" title="Apagar os dados de uma pessoa (pedido LGPD)" description={`Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os ${business ? "seus chatbots" : "chatbots deste cliente"}. Não tem desfazer.`} action={eraseContactData.bind(null, client.id)} saveLabel="Apagar dados" danger>
                   <EraseContactField preview={previewContactErasure.bind(null, client.id)} />
                 </DialogButton>
               )}

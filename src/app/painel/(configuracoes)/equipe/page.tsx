@@ -89,7 +89,7 @@ export default async function TeamPage() {
           <p>
             <strong className="text-ink">Atendente:</strong> só as conversas dos clientes e chatbots do escopo: assumir, responder e devolver para a IA.
           </p>
-          <p className="text-xs">Quem já tem uma conta no BoaVoz não entra em outra com o mesmo e-mail: peça outro e-mail à pessoa. Conversas de chatbot em modo dados sensíveis pedem o segundo fator a qualquer papel.</p>
+          <p className="text-xs">Quem já tem uma conta no BoaVoz não entra em outra com o mesmo e-mail: peça outro e-mail à pessoa. Conversas de chatbot em modo dados sensíveis pedem o segundo fator a qualquer papel. Convidar, mudar o papel, tirar alguém e convidar de novo também pedem a verificação em duas etapas.</p>
         </HowItWorks>
       </div>
 

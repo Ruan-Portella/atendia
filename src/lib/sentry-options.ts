@@ -27,8 +27,11 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
   return event;
 }
 
-/** Atributos de span da IA que podem ficar: modelo, operação, uso e motivo do fim (sem texto). */
-const KEEP_AI = /^(gen_ai|ai)\.(system|operation\.name|operationId|request\.model|response\.model|model\.|usage\.|response\.finish_?reasons?|response\.finishReason)/;
+/**
+ * Atributos de span da IA que podem ficar: modelo, operação, uso e motivo do fim (sem texto). Nomes
+ * inteiros (com $): gen_ai.system fica, gen_ai.system_instructions e gen_ai.system.message (o prompt) não.
+ */
+const KEEP_AI = /^(gen_ai|ai)\.((system|operation\.name|operationId|request\.model|response\.model|response\.finish_?reasons?|response\.finishReason)$|(model|usage)\.)/;
 /** O que sai de qualquer span: texto da IA, corpo e cabeçalho HTTP, query, usuário, consulta ao banco. */
 const DROP = /^(gen_ai|ai)\.|^http\.(request|response)\.(body|header)|^url\.query|^user\.|^db\.(query\.text|statement)|cookie/i;
 const URL_KEYS = new Set(["url.full", "http.url", "http.target", "url", "http.request.url"]);

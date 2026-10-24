@@ -18,6 +18,8 @@ export function EraseContactField({ preview }: { preview: (contact: string) => P
   const ready = v.includes("@") ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) : v.replace(/\D/g, "").length >= 10;
   // a prévia só vale para o que está digitado agora
   const shown = ready && result?.for === v ? result : null;
+  const digits = v.replace(/\D/g, "").length;
+  const noAreaCode = !v.includes("@") && digits > 0 && digits < 10;
 
   useEffect(() => {
     if (!ready) {
@@ -45,6 +47,8 @@ export function EraseContactField({ preview }: { preview: (contact: string) => P
       <p className="min-h-5 text-sm" aria-live="polite">
         {loading && ready && !shown ? (
           <span className="text-muted">Conferindo…</span>
+        ) : noAreaCode ? (
+          <span className="font-semibold text-ink">Falta o DDD: informe o telefone com DDD (10 ou 11 números).</span>
         ) : shown ? (
           <span className={shown.ok && !shown.empty ? "font-semibold text-ink" : "text-muted"}>{shown.ok ? shown.summary : shown.message}</span>
         ) : (

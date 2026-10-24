@@ -35,6 +35,10 @@ describe("Sentry sem dados pessoais", () => {
       attributes: {
         "gen_ai.input.messages": '[{"role":"user","content":"meu cpf é 123"}]',
         "gen_ai.output.messages": "resposta",
+        "gen_ai.system_instructions": "Você é o assistente da Pizzaria do Zé...",
+        "gen_ai.system.message": "Você é o assistente da Pizzaria do Zé...",
+        "gen_ai.system": "openai",
+        "gen_ai.request.model_extra": "x",
         "gen_ai.request.model": "gpt-6-luna",
         "gen_ai.usage.input_tokens": 120,
         "ai.prompt": "oi",
@@ -51,6 +55,7 @@ describe("Sentry sem dados pessoais", () => {
     } as StreamedSpanJSON);
     expect(out.name).toBe("GET /api/chat");
     expect(out.attributes).toEqual({
+      "gen_ai.system": "openai",
       "gen_ai.request.model": "gpt-6-luna",
       "gen_ai.usage.input_tokens": 120,
       "ai.model.id": "gpt-6-luna",
