@@ -170,7 +170,8 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
     supabase.from("sources").select("id", { count: "exact", head: true }).eq("bot_id", id).eq("status", "ready"),
     // as fontes com etiqueta de contexto (enviadas pela API, uma por cliente de um SaaS) ficam fora da lista: só a contagem
     tab === "fontes" ? supabase.from("sources").select("id, kind, title, url, status, chunk_count, pages, error, refresh_error, created_by, updated_at, sync_total, sync_requested_at, last_refreshed_at").eq("bot_id", id).is("context", null).order("created_at") : none,
-    tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).is("context", null).in("kind", ["text", "faq"]) : none,
+    // a planilha também: o painel mostra quantas linhas tem e abre para ver e editar (24/10/2026)
+    tab === "fontes" ? supabase.from("sources").select("id, content").eq("bot_id", id).is("context", null).in("kind", ["text", "faq", "csv"]) : none,
     tab === "fontes" ? listUnanswered(supabase, { botIds: [id], limit: 10 }) : Promise.resolve(null),
     tab === "leads" ? countLeads(supabase, id) : Promise.resolve(null),
     // a aba Fontes também: os posts do Instagram são uma fonte (E1)

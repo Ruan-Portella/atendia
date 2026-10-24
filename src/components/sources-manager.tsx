@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { liveValidation, validateForm } from "@/components/ui/form-errors";
 import { InstagramPostsModal } from "@/components/instagram-posts-modal";
 import { FaqFields } from "@/components/faq-fields";
+import { SourceSheetModal } from "@/components/source-sheet";
 
 export interface SourceItem {
   id: string;
@@ -76,6 +77,8 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
   // a busca na lista, a partir de 6 fontes (redesenho, etapa 5)
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<SourceItem | null>(null);
+  // a planilha aberta para ver e editar (24/10/2026)
+  const [sheetOf, setSheetOf] = useState<SourceItem | null>(null);
   const [removing, setRemoving] = useState<SourceItem | null>(null);
   const [postsOf, setPostsOf] = useState<string | null>(null); // a fonte do Instagram com a lista dos posts aberta
   const [busyId, setBusyId] = useState<string | null>(null); // linha em processamento
@@ -288,13 +291,13 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{s.title}</span>
                   <span className="block truncate text-xs text-muted">
-                    {posts && processing ? `lendo os posts… ${postsProgress(s)}` : processing ? "processando…" : s.status === "error" ? <span className="text-danger">{s.error ?? "erro ao processar"}</span> : posts ? `${postsProgress(s)}${syncing(s) ? " · buscando posts novos…" : s.last_refreshed_at ? ` · lidos ${relativeTime(s.last_refreshed_at)}` : ""}` : s.kind === "site" || s.kind === "pdf" ? `${s.pages} página${s.pages === 1 ? "" : "s"}${s.url ? ` · ${s.url.replace(/^https?:\/\//, "")}` : ""}` : s.url?.replace(/^https?:\/\//, "") ?? `${s.content?.length ?? 0} caracteres`}
+                    {posts && processing ? `lendo os posts… ${postsProgress(s)}` : processing ? "processando…" : s.status === "error" ? <span className="text-danger">{s.error ?? "erro ao processar"}</span> : posts ? `${postsProgress(s)}${syncing(s) ? " · buscando posts novos…" : s.last_refreshed_at ? ` · lidos ${relativeTime(s.last_refreshed_at)}` : ""}` : s.kind === "site" || s.kind === "pdf" ? `${s.pages} página${s.pages === 1 ? "" : "s"}${s.url ? ` · ${s.url.replace(/^https?:\/\//, "")}` : ""}` : s.kind === "csv" ? `${(s.content ?? "").split("\n").filter((l) => l.trim()).length} linhas` : s.url?.replace(/^https?:\/\//, "") ?? `${s.content?.length ?? 0} caracteres`}
                   </span>
                   {s.created_by && s.created_by !== "agência" && <span className="block truncate text-xs text-brand">editado pelo cliente · {s.created_by}</span>}
                   {s.refresh_error && s.status === "ready" && <span className="block truncate text-xs text-amber-ink" title={s.refresh_error}>{posts ? `Não consegui buscar os posts novos (${s.refresh_error}); usando os que já tinha.` : "Não consegui reler na última atualização automática; usando o conteúdo anterior."}</span>}
                 </span>
                 <span className="md:hidden">
-                  <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} onPosts={() => setPostsOf(s.id)} />
+                  <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} onPosts={() => setPostsOf(s.id)} onSheet={() => setSheetOf(s)} />
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-[42px] text-xs text-muted md:contents md:pl-0">
@@ -303,7 +306,7 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
                 <span className="md:text-sm">{relativeTime(s.updated_at)}</span>
               </div>
               <span className="hidden justify-end md:flex">
-                <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} onPosts={() => setPostsOf(s.id)} />
+                <SourceMenu s={s} processing={processing} onEdit={() => setEditing(s)} onReprocess={() => reprocess(s)} onRemove={() => setRemoving(s)} onPosts={() => setPostsOf(s.id)} onSheet={() => setSheetOf(s)} />
               </span>
             </div>
           );
@@ -315,6 +318,17 @@ export function SourcesManager({ botId, sources, instagram = null }: { botId: st
           </div>
         )}
       </div>
+
+      {/* planilha: ver e editar as linhas (salvar reprocessa a fonte) */}
+      <SourceSheetModal
+        botId={botId}
+        source={sheetOf}
+        onClose={() => setSheetOf(null)}
+        onSaved={() => {
+          setSheetOf(null);
+          router.refresh();
+        }}
+      />
 
       {/* posts do Instagram: a lista, com a descrição das fotos corrigível */}
       <InstagramPostsModal botId={botId} sourceId={postsOf} open={postsOf !== null} onClose={() => setPostsOf(null)} />
@@ -472,12 +486,13 @@ function UrlInput({ id, defaultValue, autoFocus }: { id: string; defaultValue?: 
   );
 }
 
-function SourceMenu({ s, processing, onEdit, onReprocess, onRemove, onPosts }: { s: SourceItem; processing: boolean; onEdit: () => void; onReprocess: () => void; onRemove: () => void; onPosts: () => void }) {
+function SourceMenu({ s, processing, onEdit, onReprocess, onRemove, onPosts, onSheet }: { s: SourceItem; processing: boolean; onEdit: () => void; onReprocess: () => void; onRemove: () => void; onPosts: () => void; onSheet: () => void }) {
   const editable = s.kind === "text" || s.kind === "faq";
   return (
     <Menu
       items={[
         ...(s.kind === "instagram" ? [{ label: "Ver e corrigir os posts", icon: Eye, onSelect: onPosts, disabled: s.pages === 0 }] : []),
+        ...(s.kind === "csv" ? [{ label: "Ver e editar a planilha", icon: Sheet, onSelect: onSheet, disabled: processing }] : []),
         { label: s.kind === "pdf" ? "Enviar novo PDF" : s.kind === "csv" ? "Enviar nova planilha" : s.kind === "site" || s.kind === "page" ? "Reler e atualizar" : s.kind === "instagram" ? "Atualizar agora" : "Editar conteúdo", icon: s.kind === "pdf" ? FileText : s.kind === "csv" ? Sheet : editable ? Pencil : RefreshCw, onSelect: editable ? onEdit : onReprocess, disabled: processing || syncing(s) },
         { label: s.kind === "site" || s.kind === "page" ? "Editar endereço ou título" : "Renomear", icon: Pencil, onSelect: onEdit, disabled: processing },
         { type: "separator" },

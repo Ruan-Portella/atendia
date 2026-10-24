@@ -11,7 +11,7 @@ interface ModalProps {
   description?: React.ReactNode;
   children?: React.ReactNode;
   footer?: React.ReactNode;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
 }
 
 /**
@@ -40,7 +40,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className={cn("modal", size === "sm" ? "max-w-sm" : size === "lg" ? "max-w-2xl" : "max-w-md")}
+      className={cn("modal", size === "sm" ? "max-w-sm" : size === "lg" ? "max-w-2xl" : size === "xl" ? "max-w-5xl" : "max-w-md")}
     >
       <div className="flex flex-col gap-4 p-6">
         <div className="flex items-start gap-3">
