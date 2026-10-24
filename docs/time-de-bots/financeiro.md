@@ -5,7 +5,7 @@
 Não substitui o contador. Organiza os números, aponta o que falta e prepara o pacote do mês para o contador.
 
 ## Lê
-- Stripe (chave restrita, só leitura): recebimentos, assinaturas, crédito, Pix, reembolsos, contestações, taxas e repasses
+- Stripe (chave restrita, só leitura, em `atendia-bots/financeiro/.env.bots` como `STRIPE_READONLY_KEY`; o git ignora o arquivo): recebimentos, assinaturas, crédito, Pix, reembolsos, contestações, taxas e repasses
 - Faturas dos fornecedores: OpenAI, Groq, Meta (WhatsApp por conversa, tabela em reais), Vercel, Supabase, Resend, domínios e afins
 - A pasta de notas e comprovantes que o Ruan indicar (só leitura)
 - Os preços decididos e as telas de Uso e Crédito em dev.boavoz.com, para saber quanto cada plano deveria render
