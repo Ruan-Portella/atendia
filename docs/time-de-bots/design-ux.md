@@ -17,7 +17,10 @@
 - Não depende das referências do Ruan para começar: segue o padrão do painel redesenhado e pede as referências só para o ajuste visual (vale para a landing e a whitelist).
 
 **Entrega**
-- Por tela: proposta com antes × depois e os textos prontos, **sempre no Figma** (o Ruan loga no navegador). Antes = captura real do dev; depois = desenho novo, lado a lado, um quadro por tela.
+- Por tela: proposta com antes × depois e os textos prontos, **sempre no Figma** (o Ruan loga no navegador). Antes = captura real do dev; depois = desenho novo, lado a lado.
+- **Tela inteira, não por partes:** o antes e o depois mostram a página completa, do topo ao rodapé. Se a página rola, juntar as capturas em uma imagem só, de cima para baixo.
+- **Um quadro por versão:** celular e desktop em quadros separados, cada um com o antes e o depois da tela inteira.
+- **O que só aparece depois de um clique** (modal, menu, painel, aba, estado de erro): além do depois da tela, fazer um quadro a mais com o que aparece depois do clique. Se o antes não tinha esse elemento, dizer no quadro "novo: não existe hoje".
 - Cobrir celular e desktop, claro e escuro. Se faltar algum, dizer no começo da entrega e por quê.
 - Salvar também em `Shared/relatorios/<AAAA-MM-DD>/design.md`, com o link do Figma.
 - Mensal: auditoria de consistência (espaçamentos, botões, estados vazios, mensagens de erro, celular).
