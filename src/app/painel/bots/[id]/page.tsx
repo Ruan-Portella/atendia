@@ -705,6 +705,31 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   </SettingRow>
                 </SettingGroup>
               </ActionForm>
+              {/* o aceite de novidades nasce junto com o contato: vale no chat do site e no WhatsApp (antes ficava só na aba WhatsApp, e sumia sem número conectado) */}
+              <SettingGroup title="Novidades e promoções">
+                <SettingRow
+                  icon={<Megaphone size={18} />}
+                  title="Oferecer novidades"
+                  summary={bot.marketing_optin_offer ? "Ligado: o assistente pergunta uma vez a cada contato, no fim da conversa" : "Desligado: só quem aceitou antes pode receber campanhas"}
+                  description="O assistente pergunta uma vez a cada contato, quando a conversa termina, se ele quer receber novidades e promoções. Só quem aceita poderá receber campanhas; a resposta, o texto e a data ficam guardados como prova, e quem responde SAIR deixa de receber na hora. Quem disse que não tem 18 anos não recebe a pergunta."
+                  trailing={canConfig ? <AutoSwitch checked={Boolean(bot.marketing_optin_offer)} action={setMarketingOptIn.bind(null, id)} name="offer" label="Oferecer novidades" /> : undefined}
+                  dialogTitle="A pergunta das novidades"
+                  footer="close"
+                >
+                  <div className="flex flex-col gap-2 rounded-[12px] bg-raised p-3 text-sm" aria-label="Prévia da mensagem">
+                    <span className="text-xs font-semibold text-muted">Prévia da pergunta</span>
+                    <p className="max-w-[440px] rounded-lg bg-panel px-3 py-2">{optInOfferText(bot.client_name)}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {OPTIN_BUTTONS.map((b) => (
+                        <span key={b.id} className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-brand">
+                          {b.title}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {!canConfig && <p className="text-xs text-muted">Só quem configura o chatbot muda esta opção.</p>}
+                </SettingRow>
+              </SettingGroup>
             </div>
           )}
 
@@ -1002,28 +1027,6 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                     <WhatsAppDiagnostics botId={id} />
                   </div>
                   <SettingGroup title="Mensagens">
-                    <SettingRow
-                      icon={<Megaphone size={18} />}
-                      title="Oferecer novidades"
-                      summary={bot.marketing_optin_offer ? "Ligado: o assistente pergunta uma vez a cada contato, no fim da conversa" : "Desligado: só quem aceitou antes pode receber campanhas"}
-                      description="O assistente pergunta uma vez a cada contato, quando a conversa termina, se ele quer receber novidades e promoções. Só quem aceita poderá receber campanhas; a resposta, o texto e a data ficam guardados como prova, e quem responde SAIR deixa de receber na hora. Quem disse que não tem 18 anos não recebe a pergunta."
-                      trailing={canConfig ? <AutoSwitch checked={Boolean(bot.marketing_optin_offer)} action={setMarketingOptIn.bind(null, id)} name="offer" label="Oferecer novidades" /> : undefined}
-                      dialogTitle="A pergunta das novidades"
-                      footer="close"
-                    >
-                      <div className="flex flex-col gap-2 rounded-[12px] bg-raised p-3 text-sm" aria-label="Prévia da mensagem">
-                        <span className="text-xs font-semibold text-muted">Prévia no WhatsApp</span>
-                        <p className="max-w-[440px] rounded-lg bg-panel px-3 py-2">{optInOfferText(bot.client_name)}</p>
-                        <div className="flex flex-wrap gap-2">
-                          {OPTIN_BUTTONS.map((b) => (
-                            <span key={b.id} className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-brand">
-                              {b.title}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      {!canConfig && <p className="text-xs text-muted">Só quem configura o chatbot muda esta opção.</p>}
-                    </SettingRow>
                     <SettingRow icon={<FileText size={18} />} title="Modelos de mensagem" summary="Os modelos aprovados pela Meta: retomar conversas, campanhas e lembretes" size="lg" footer="close">
                       <WhatsAppTemplates botId={id} />
                     </SettingRow>

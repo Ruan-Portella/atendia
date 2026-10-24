@@ -165,7 +165,8 @@ Na página do cliente, as abas de Atendimento e de Ajustes vêm em linhas: cada 
 Em Canais, cada aba começa pela situação e o resto vem em linhas que abrem um modal.
 
 - Chat do site: o cartão diz se o chat já foi achado em algum site. Embaixo, "Código do chat" (com o Copiar), "Passo a passo por plataforma" (WordPress, Wix, Shopify, Webflow, Framer, Google Tag Manager, Next.js, React e outros, num modal), "Link direto (sem site)" (com o Copiar), "Abrir o chat por um botão seu" e "Instalei e o balão não apareceu".
-- WhatsApp conectado: o número, o nome e o diagnóstico ficam no cartão do alto. Em Mensagens, "Oferecer novidades" é uma chave que salva na hora (a linha abre a prévia da pergunta), e "Modelos de mensagem" e "Uso do mês" abrem num modal. Em Conta ficam os Termos do canal e o Desconectar.
+- WhatsApp conectado: o número, o nome e o diagnóstico ficam no cartão do alto. Em Mensagens, "Modelos de mensagem" e "Uso do mês" abrem num modal.
+- Leads do chatbot (seção Comportamento): a captura de leads e os avisos de lead novo; embaixo, em "Novidades e promoções", a chave "Oferecer novidades" (salva na hora; a linha abre a prévia da pergunta). Vale no chat do site e no WhatsApp, e aparece mesmo sem número conectado. Em Conta ficam os Termos do canal e o Desconectar.
 - WhatsApp sem número: "Mandar um link para o cliente" (o mais simples), "Já atende pelo WhatsApp Business no celular" e "Número novo, só para o atendimento", cada um num modal com a lista do que conferir antes.
 - Instagram: a conta no cartão do alto e, em "Direct e comentários", as perguntas prontas, os links com origem, as palavras-chave e os comentários dos posts, cada um num modal; os Termos do canal e o Desconectar ficam no fim.
 
