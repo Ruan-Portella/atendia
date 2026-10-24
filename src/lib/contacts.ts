@@ -438,9 +438,11 @@ export async function contactsForErasure(db: SupabaseClient, ids: string[]): Pro
 }
 
 /** Exportação dos dados do negócio: uma página de fichas destes chatbots, abertas (por id, depois de `after`). */
-export async function exportContactsPage(db: SupabaseClient, botIds: string[], after: string | null, limit = 500): Promise<Array<Record<string, string | null>>> {
+export async function exportContactsPage(db: SupabaseClient, botIds: string[], after: string | null, limit = 500, onlyIds?: string[]): Promise<Array<Record<string, string | null>>> {
   if (!botIds.length) return [];
   let q = db.from("contacts").select("id, bot_id, channel, phone_enc, wa_user_enc, ig_enc, external_id_enc, name, email, first_inbound_at, last_inbound_at, birthday, last_visit_at, appointment_at, custom_dates, created_at").in("bot_id", botIds);
+  // a pessoa do pedido de titular (acesso e portabilidade): só estas fichas
+  if (onlyIds) q = q.in("id", onlyIds);
   if (after) q = q.gt("id", after);
   const { data, error } = await q.order("id").limit(limit);
   if (error) throw new Error(`exportação dos contatos: ${error.message}`);

@@ -262,9 +262,11 @@ export async function listLeads(db: SupabaseClient, opts: { botIds: string[]; fr
 }
 
 /** Exportação dos dados do negócio: uma página de leads destes chatbots, abertos (por id, depois de `after`). */
-export async function exportLeadsPage(db: SupabaseClient, botIds: string[], after: string | null, limit = 500): Promise<Lead[]> {
+export async function exportLeadsPage(db: SupabaseClient, botIds: string[], after: string | null, limit = 500, onlyIds?: string[]): Promise<Lead[]> {
   if (!botIds.length) return [];
   let q = db.from("leads").select(COLS).in("bot_id", botIds);
+  // a pessoa do pedido de titular (acesso e portabilidade): só estes leads
+  if (onlyIds) q = q.in("id", onlyIds);
   if (after) q = q.gt("id", after);
   const { data } = await q.order("id").limit(limit);
   return openAll(data);

@@ -282,11 +282,29 @@ export default async function ClientPanelPage({ params, searchParams }: PageProp
       {tab === "leads" && (
         // redesenho (23/10/2026): exportar e o pedido LGPD como botões no alto; o pedido abre um modal
         <>
-          {((leads ?? []).length > 0 && can(role, "export")) || can(role, "security") ? (
+          {can(role, "export") || can(role, "security") ? (
             <div className="flex flex-wrap justify-end gap-2">
               {can(role, "security") && (
                 <DialogButton label="Apagar os dados de uma pessoa" icon={<Trash2 size={15} />} className="btn-ghost" title="Apagar os dados de uma pessoa (pedido LGPD)" description={`Apaga os contatos com esse e-mail ou telefone e as conversas em que eles foram deixados, em todos os ${business ? "seus chatbots" : "chatbots deste cliente"}. Não tem desfazer.`} action={eraseContactData.bind(null, client.id)} saveLabel="Apagar dados" danger>
                   <EraseContactField preview={previewContactErasure.bind(null, client.id)} />
+                </DialogButton>
+              )}
+              {can(role, "export") && (
+                // pedido de acesso do titular (LGPD, relatório de segurança de 23/10/2026, M11): o JSON da pessoa
+                <DialogButton label="Exportar os dados de uma pessoa" icon={<Download size={15} />} className="btn-ghost" title="Exportar os dados de uma pessoa (pedido LGPD)" description={`Baixa um arquivo com as fichas, os leads e as conversas de quem tem esse e-mail ou telefone, em todos os ${business ? "seus chatbots" : "chatbots deste cliente"}, para mandar à pessoa. Pede a verificação em duas etapas.`} footer="close">
+                  <form method="post" action="/api/titular/exportar" className="flex flex-col gap-3">
+                    <input type="hidden" name="cliente" value={client.id} />
+                    <div>
+                      <label htmlFor="export-contact" className="label">
+                        E-mail ou WhatsApp que a pessoa deixou no chat
+                      </label>
+                      <input id="export-contact" name="contato" required maxLength={120} className="input" placeholder="ana@exemplo.com ou (21) 99999-0000" />
+                    </div>
+                    <button type="submit" className="btn-primary self-start">
+                      <Download size={15} />
+                      Baixar os dados (JSON)
+                    </button>
+                  </form>
                 </DialogButton>
               )}
               {(leads ?? []).length > 0 && can(role, "export") && (

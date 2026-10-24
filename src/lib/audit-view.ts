@@ -198,6 +198,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "titular.confirmar": "Pedido de exclusão confirmado",
   "titular.recusar": "Pedido de exclusão recusado (com o motivo)",
   "titular.pedido": "Pedido de exclusão recebido pelo chat",
+  "titular.exportar": "Dados de uma pessoa exportados (pedido de acesso)",
   "webhook.apagar": "Webhook apagado",
   "webhook.reativar": "Webhook reativado",
   "webhook.desativar": "Webhook desativado",

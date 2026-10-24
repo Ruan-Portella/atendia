@@ -1,6 +1,7 @@
 "use server";
 
 import { canLinkWhatsAppById } from "@/lib/platform-admin";
+import { findPerson } from "@/lib/titular-dados";
 import { isOurLogoUrl } from "@/lib/attendants";
 import { revalidatePath } from "next/cache";
 import { parseFace } from "@/lib/bot-face";
@@ -70,12 +71,12 @@ import { audit, requestMeta } from "@/lib/audit";
 import { BillingOpError, setOverage } from "@/lib/billing-ops";
 import { channelMsgHash } from "@/lib/hash";
 import { listDateFields } from "@/lib/contact-date-fields";
-import { contactForPanel, findContactIds, importWhatsAppContacts, normalizeTags, setContactCustomDates, setContactDates, setContactTags, typedPhoneHash, whatsappContact } from "@/lib/contacts";
+import { contactForPanel, importWhatsAppContacts, normalizeTags, setContactCustomDates, setContactDates, setContactTags, whatsappContact } from "@/lib/contacts";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { carryWhatsAppPreferences, consentHistory, consentStateOf, recordConsent, recordImportedConsents, revokeConsents } from "@/lib/marketing-consent";
 import { IMPORT_MAX_ROWS, contactDatesFromForm, validateImportRows, type ImportError, type RawImportRow } from "@/lib/contact-import";
 import { setCompanyAgesBulk } from "@/lib/gate/age";
-import { deleteLeads, findLeadsByContact, leadIdsOfConversations } from "@/lib/leads";
+import { deleteLeads, leadIdsOfConversations } from "@/lib/leads";
 import { markUnansweredResolved } from "@/lib/unanswered";
 import { logDeletion } from "@/lib/deletions";
 import { saveMessage } from "@/lib/messages";
@@ -1607,8 +1608,6 @@ export async function deleteConversation(conversationId: string): Promise<Action
   redirect(`/painel/bots/${owned.conv.bot_id}?tab=conversas`);
 }
 
-const digitsOf = (v: string) => v.replace(/\D/g, "");
-
 const ERASE_NOTHING = "Nenhum dado encontrado para esse contato.";
 
 /**
@@ -1617,26 +1616,10 @@ const ERASE_NOTHING = "Nenhum dado encontrado para esse contato.";
  * número de outra cidade entrava junto (relatório de segurança de 23/10/2026, M2).
  */
 async function contactErasure(clientId: string, raw: string): Promise<{ ok: false; message: string } | { ok: true; byEmail: boolean; contactIds: string[]; leads: Array<{ id: string; conversation_id: string | null }>; leadConvs: string[]; conversations: number }> {
-  const contact = raw.trim().toLowerCase();
-  const byEmail = isEmail(contact);
-  if (!byEmail && digitsOf(contact).length < 10) return { ok: false, message: "Informe um e-mail ou o telefone com DDD." };
-  const supabase = await createClient();
-  const { data: bots } = await supabase.from("bots").select("id").eq("client_id", clientId);
-  const ids = (bots ?? []).map((b) => b.id);
-  if (!ids.length) return { ok: true, byEmail, contactIds: [], leads: [], leadConvs: [], conversations: 0 };
-  // telefone: pelo hash do número canônico e comparando o número inteiro com DDD (com ou sem +55)
-  const ph = byEmail ? null : typedPhoneHash(contact);
-  const leads = await findLeadsByContact(supabase, ids, byEmail ? { email: contact } : { phone: contact, phoneHash: ph });
-  const admin = createAdminClient();
-  // a ficha do contato (WhatsApp, pelo telefone canônico em hash, ou pelo e-mail): a rotina apaga todas as conversas dela
-  const contactIds = byEmail ? await findContactIds(admin, ids, { email: contact }) : ph ? await findContactIds(admin, ids, { phoneHash: ph }) : [];
-  const leadConvs = leads.map((l) => l.conversation_id).filter((c): c is string => Boolean(c));
-  const convs = new Set(leadConvs);
-  if (contactIds.length) {
-    const { data } = await admin.from("conversations").select("id").in("contact_id", contactIds);
-    for (const c of data ?? []) convs.add(c.id as string);
-  }
-  return { ok: true, byEmail, contactIds, leads, leadConvs, conversations: convs.size };
+  // a mesma busca da exportação dos dados da pessoa (lib/titular-dados)
+  const m = await findPerson(await createClient(), createAdminClient(), clientId, raw);
+  if (!m.ok) return m;
+  return { ok: true, byEmail: m.byEmail, contactIds: m.contactIds, leads: m.leads, leadConvs: m.leadConvs, conversations: m.conversationIds.length };
 }
 
 const eraseCount = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;

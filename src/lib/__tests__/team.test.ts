@@ -75,9 +75,12 @@ describe("ações do painel conferem o papel", () => {
   it("toda ação exportada chama allowed(), menos as que valem para qualquer papel", () => {
     const src = readFileSync(join(__dirname, "../../app/painel/actions.ts"), "utf8");
     // valem para qualquer pessoa logada da equipe: o próprio segundo fator, as próprias sessões, o próprio aviso
-    const anyRole = new Set(["recordAgencyMfa", "recordMfaRemoved", "endOtherSessions", "hideOnboarding"]);
+    // (e a própria recuperação do 2FA e o mostrar dos primeiros passos); setClientMemberRoleTo só repassa
+    // para setClientMemberRole, que confere
+    const anyRole = new Set(["recordAgencyMfa", "recordMfaRemoved", "endOtherSessions", "hideOnboarding", "showOnboarding", "requestAgencyMfaRecovery", "setClientMemberRoleTo"]);
     const missing: string[] = [];
-    for (const m of src.matchAll(/^export async function (\w+)\([^\n]*\{\n((?:.*\n){1,3})/gm)) {
+    // \r?\n: no Windows o git devolve o arquivo com CRLF (antes, a regex não achava nenhuma função ali)
+    for (const m of src.matchAll(/^export async function (\w+)\([^\n]*\{\r?\n((?:.*\r?\n){1,3})/gm)) {
       if (!anyRole.has(m[1]) && !m[2].includes("await allowed(")) missing.push(m[1]);
     }
     expect(missing).toEqual([]);
