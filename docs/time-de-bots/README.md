@@ -13,12 +13,14 @@ Bots do OpenBot, conectados ao Claude Code neste repositório. Cada arquivo dest
 | 7 | [Security e LGPD](security-lgpd.md) | 2 | semanal + a cada leva | não |
 | 8 | [Design e UX](design-ux.md) | 3 | sob demanda | propostas |
 | 9 | [Marketing e conteúdo](marketing.md) | 3 | semanal | rascunhos |
+| 10 | [Jurídico](juridico.md) | 2 | semanal + a cada leva | rascunhos |
+| 11 | [Financeiro e contabilidade](financeiro.md) | 2 | semanal + fechamento mensal | rascunhos |
 
 ## Regras do time (valem para todos)
 
 1. **Só leitura por padrão.** Nenhum bot faz deploy, merge para `main`, escreve na produção, mexe no Stripe, aprova template na Meta ou manda mensagem a cliente/lead. Propõe; o Ruan aprova.
 2. **Produção é intocável.** O `.env` local aponta para o Supabase de **dev**. Dados de produção só por leitura nos painéis (Sentry, Vercel, Supabase) e sem copiar dados pessoais de contatos para relatórios.
-3. **Um dono por assunto.** Erro de deploy → Plantão. Regressão de funcionalidade → QA. Qualidade da IA e custos → backoffice (o Ruan). Preço/política da Meta → Meta. Quem não é dono cita e passa adiante.
+3. **Um dono por assunto.** Erro de deploy → Plantão. Regressão de funcionalidade → QA. Qualidade da IA e custos → backoffice (o Ruan). Textos legais e contratos → Jurídico. Números e impostos → Financeiro. Preço/política da Meta → Meta. Quem não é dono cita e passa adiante.
 4. **Um resumo por dia.** Cada bot entrega no formato abaixo; o resumo diário junta todos numa mensagem só. Nada urgente? Uma linha: "Sem novidades".
 5. **Fontes antes de opinião.** Toda afirmação traz o link, o commit, o id do erro ou o arquivo:linha.
 6. **Português**, frases curtas, sem jargão quando houver palavra simples.
