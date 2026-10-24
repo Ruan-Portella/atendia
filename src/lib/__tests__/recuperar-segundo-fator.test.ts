@@ -130,18 +130,20 @@ describe("o suporte", () => {
     const { t, db, ops, factors } = setup();
     await requestRecovery(db, painel, { factors: ops, now: T0 });
     const id = t.mfa_recovery_requests[0].id as string;
-    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { factors: ops, now: at(1) })).toEqual({ ok: false, problem: "fechado" });
+    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { check: "Liguei para o WhatsApp do dono", factors: ops, now: at(1) })).toEqual({ ok: false, problem: "fechado" });
     await confirmRecovery(db, tokenOf(sent[0].text), { now: at(1) });
-    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { factors: ops, now: at(48) })).toEqual({ ok: false, problem: "espera" });
+    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { check: "Liguei para o WhatsApp do dono", factors: ops, now: at(48) })).toEqual({ ok: false, problem: "espera" });
+    // sem a conferência fora do e-mail (M12, relatório de segurança de 23/10/2026), nada sai
+    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { check: "ok", factors: ops, now: at(49) })).toEqual({ ok: false, problem: "conferencia" });
     expect(factors.removed).toEqual([]);
 
-    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { factors: ops, now: at(49) })).toEqual({ ok: true, removed: 1 });
+    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { check: "Liguei para o WhatsApp do dono", factors: ops, now: at(49) })).toEqual({ ok: true, removed: 1 });
     expect(factors.removed).toEqual(["f1"]);
-    expect(t.mfa_recovery_requests[0]).toMatchObject({ status: "feito", closed_by: "ruan@boavoz.com" });
+    expect(t.mfa_recovery_requests[0]).toMatchObject({ status: "feito", closed_by: "ruan@boavoz.com", close_note: "Conferido fora do e-mail: Liguei para o WhatsApp do dono" });
     expect(t.audit_log.at(-1)).toMatchObject({ action: "seguranca.mfa_remover_suporte", actor_type: "support", actor_id: "ruan@boavoz.com" });
     expect(ownerMails.at(-1)).toBe("Alerta de segurança: Segundo fator removido pelo suporte (recuperação)");
     expect(sent.at(-1)!.subject).toBe("O app autenticador foi removido da sua conta");
-    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { factors: ops, now: at(50) })).toEqual({ ok: false, problem: "fechado" });
+    expect(await supportRemoveFactors(db, id, "ruan@boavoz.com", { check: "Liguei para o WhatsApp do dono", factors: ops, now: at(50) })).toEqual({ ok: false, problem: "fechado" });
   });
 
   it("o Supabase recusou a remoção: o pedido continua confirmado", async () => {
@@ -149,7 +151,7 @@ describe("o suporte", () => {
     await requestRecovery(db, painel, { factors: ops, now: T0 });
     await confirmRecovery(db, tokenOf(sent[0].text), { now: T0 });
     const failing: FactorOps = { list: ops.list, remove: async () => Promise.reject(new Error("fora do ar")) };
-    expect(await supportRemoveFactors(db, t.mfa_recovery_requests[0].id as string, "ruan@boavoz.com", { factors: failing, now: at(49) })).toEqual({ ok: false, problem: "erro" });
+    expect(await supportRemoveFactors(db, t.mfa_recovery_requests[0].id as string, "ruan@boavoz.com", { check: "Liguei para o WhatsApp do dono", factors: failing, now: at(49) })).toEqual({ ok: false, problem: "erro" });
     expect(t.mfa_recovery_requests[0].status).toBe("confirmado");
   });
 

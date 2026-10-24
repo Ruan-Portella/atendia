@@ -14,11 +14,12 @@ const SUPPORT_PROBLEM = {
   espera: "Ainda está na espera de 48 horas depois da confirmação.",
   fechado: "Este pedido já foi encerrado (ou ainda não foi confirmado pelo e-mail).",
   erro: "O Supabase não removeu o fator. Tente de novo em alguns minutos.",
+  conferencia: "Escreva como conferiu a pessoa fora do e-mail (pelo menos 10 letras): o WhatsApp do dono, outro administrador da conta…",
 } as const;
 
-export async function removeRecoveredFactor(id: string): Promise<ActionResult> {
+export async function removeRecoveredFactor(id: string, fd: FormData): Promise<ActionResult> {
   const s = await requireAdmin(`/admin/segundo-fator (removeu o segundo fator do pedido ${id})`);
-  const r = await supportRemoveFactors(createAdminClient(), id, s.email);
+  const r = await supportRemoveFactors(createAdminClient(), id, s.email, { check: text(fd.get("check")) });
   if (!r.ok) return fail(SUPPORT_PROBLEM[r.problem]);
   revalidatePath("/admin/segundo-fator");
   return ok(r.removed ? `Pronto: o app autenticador saiu da conta (${r.removed === 1 ? "1 fator" : `${r.removed} fatores`}) e o e-mail foi para a pessoa.` : "A conta já estava sem fator: o pedido foi encerrado e o e-mail foi para a pessoa.");

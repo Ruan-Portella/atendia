@@ -289,10 +289,23 @@ export async function cancelOnVerified(db: SupabaseClient, userId: string, now =
   return data?.length ?? 0;
 }
 
-export type SupportResult = { ok: true; removed?: number } | { ok: false; problem: "nao_encontrado" | "espera" | "fechado" | "erro" };
+export type SupportResult = { ok: true; removed?: number } | { ok: false; problem: "nao_encontrado" | "espera" | "fechado" | "erro" | "conferencia" };
 
-/** Backoffice: remove os fatores da pessoa (só o pedido confirmado, depois das 48 horas). */
-export async function supportRemoveFactors(db: SupabaseClient, id: string, by: string, o: { factors?: FactorOps; now?: Date } = {}): Promise<SupportResult> {
+/** A conferência fora do e-mail, como o suporte escreveu (pelo menos 10 letras). Pura. */
+export function outOfBandCheck(raw: string | null | undefined): string | null {
+  const clean = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  return clean.length >= 10 ? clean : null;
+}
+
+/**
+ * Backoffice: remove os fatores da pessoa (só o pedido confirmado, depois das 48 horas). O e-mail
+ * sozinho não basta (quem domina a caixa confirma e apaga os avisos): o suporte confere a pessoa
+ * por outro canal (o WhatsApp do dono da agência, outro administrador da conta) e escreve como
+ * conferiu, que fica no pedido e na auditoria (relatório de segurança de 23/10/2026, M12).
+ */
+export async function supportRemoveFactors(db: SupabaseClient, id: string, by: string, o: { check: string; factors?: FactorOps; now?: Date }): Promise<SupportResult> {
+  const check = outOfBandCheck(o.check);
+  if (!check) return { ok: false, problem: "conferencia" };
   const now = o.now ?? new Date();
   const factors = o.factors ?? supabaseFactorOps(db);
   const { data } = await db.from("mfa_recovery_requests").select(ROW_COLS).eq("id", id).maybeSingle();
@@ -310,9 +323,9 @@ export async function supportRemoveFactors(db: SupabaseClient, id: string, by: s
     console.error("recuperação do segundo fator: remoção falhou", id, (e as Error).message);
     return { ok: false, problem: "erro" };
   }
-  const { data: done } = await db.from("mfa_recovery_requests").update({ status: "feito", closed_at: now.toISOString(), closed_by: by }).eq("id", id).eq("status", "confirmado").select("id");
+  const { data: done } = await db.from("mfa_recovery_requests").update({ status: "feito", closed_at: now.toISOString(), closed_by: by, close_note: `Conferido fora do e-mail: ${check}` }).eq("id", id).eq("status", "confirmado").select("id");
   if (!done?.length) return { ok: false, problem: "fechado" };
-  await audit(db, { agencyId: r.agency_id, actorType: "support", actorId: by, action: "seguranca.mfa_remover_suporte", targetType: "user", targetId: r.user_id, after: { area: r.area, email: r.email, fatores: removed } });
+  await audit(db, { agencyId: r.agency_id, actorType: "support", actorId: by, action: "seguranca.mfa_remover_suporte", targetType: "user", targetId: r.user_id, after: { area: r.area, email: r.email, conferencia: check, fatores: removed } });
   const brand = await brandOf(db, r.agency_id);
   const [subject, lines] = recoveryDoneEmail({ area: r.area, agencyName: brand.name });
   await sendAsAgency(voice(r.area, brand.name).from, r.email, subject, lines).catch(() => false);

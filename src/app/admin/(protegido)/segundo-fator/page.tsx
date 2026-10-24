@@ -3,7 +3,6 @@ import { requireAdmin } from "@/lib/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { ConfirmAction } from "@/components/ui/confirm-action";
 import { RECOVERY_STATUS_LABEL, RECOVERY_WAIT_HOURS, effectiveStatus, recoveryReady, type RecoveryArea, type RecoveryStatus } from "@/lib/mfa-recovery";
 import { refuseRecovery, removeRecoveredFactor } from "./actions";
 
@@ -73,9 +72,11 @@ export default async function AdminMfaRecovery() {
               </p>
               <div className="flex flex-wrap items-start gap-3">
                 {ready && (
-                  <ConfirmAction action={removeRecoveredFactor.bind(null, r.id)} title="Remover o segundo fator?" description={`O app autenticador sai da conta de ${r.email}; no próximo acesso a uma área protegida, a pessoa cadastra um novo. A agência vê na auditoria e recebe o alerta.`} confirmLabel="Remover" className="btn-danger text-xs">
-                    Remover o segundo fator
-                  </ConfirmAction>
+                  // o e-mail sozinho não basta (M12): a conferência por outro canal fica no pedido e na auditoria
+                  <ActionForm action={removeRecoveredFactor.bind(null, r.id)} className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+                    <input name="check" required minLength={10} maxLength={300} placeholder="Como conferiu a pessoa fora do e-mail (WhatsApp do dono, outro administrador…)" className="input" />
+                    <SubmitButton className="btn-primary shrink-0 text-xs" pendingLabel="Removendo…">Remover o segundo fator</SubmitButton>
+                  </ActionForm>
                 )}
                 <ActionForm action={refuseRecovery.bind(null, r.id)} className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
                   <input name="note" required minLength={3} maxLength={300} placeholder="Motivo da recusa (vai no e-mail à pessoa)" className="input" />
