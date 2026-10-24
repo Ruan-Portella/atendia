@@ -18,7 +18,7 @@ export default async function WaitlistPage({ searchParams }: PageProps<"/lista-d
     <div className="flex min-h-full flex-col">
       <header className="mx-auto flex w-full max-w-[1200px] items-center justify-between px-5 py-4 sm:px-6">
         <Logo />
-        <Link href={audience === "business" ? "/?para=negocio" : "/"} className="text-sm font-medium text-ink-2 hover:text-ink">Conhecer o BoaVoz</Link>
+        <Link href={audience === "business" ? "/?para=negocio" : audience === "saas" ? "/?para=saas" : "/"} className="text-sm font-medium text-ink-2 hover:text-ink">Conhecer o BoaVoz</Link>
       </header>
       <main className="relative flex flex-1 items-center overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[radial-gradient(60%_60%_at_50%_0%,var(--color-brand-soft),transparent)]" aria-hidden />
@@ -34,7 +34,8 @@ export default async function WaitlistPage({ searchParams }: PageProps<"/lista-d
             {(
               [
                 ["agency", "/lista-de-espera", "Para a minha agência", "Agência"],
-                ["business", "/lista-de-espera?para=negocio", "Para o meu negócio", "Meu negócio"],
+                ["business", "/lista-de-espera?para=negocio", "Para o meu negócio", "Negócio"],
+                ["saas", "/lista-de-espera?para=saas", "Para o meu SaaS", "SaaS"],
               ] as const
             ).map(([a, href, label, short]) => (
               <Link key={a} href={waiting ? `${href}${href.includes("?") ? "&" : "?"}aguarde=1` : href} scroll={false} aria-current={a === audience ? "page" : undefined} className={cn("rounded-full px-4 py-1.5", a === audience ? "bg-ink text-ground" : "text-muted hover:text-ink")}>

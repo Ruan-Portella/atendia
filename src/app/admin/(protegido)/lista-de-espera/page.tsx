@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ActionForm } from "@/components/ui/action-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { StatusPill } from "@/components/ui/form-section";
-import { listWaitlist, waitlistMode } from "@/lib/waitlist";
+import { PROFILE_LABEL, listWaitlist, waitlistMode } from "@/lib/waitlist";
 import { inviteNext, inviteOne } from "./actions";
 
 export const metadata = { title: "Lista de espera" };
@@ -20,7 +20,7 @@ export default async function AdminWaitlist() {
   const waiting = rows.filter((r) => !r.invited_at).length;
   const invited = rows.filter((r) => r.invited_at && !r.joined_at).length;
   const joined = rows.filter((r) => r.joined_at).length;
-  const agencies = rows.filter((r) => r.profile === "agency").length;
+  const byProfile = (["agency", "business", "saas"] as const).map((p) => `${rows.filter((r) => r.profile === p).length} ${PROFILE_LABEL[p].toLowerCase()}`).join(" · ");
 
   return (
     <>
@@ -42,7 +42,7 @@ export default async function AdminWaitlist() {
           ["Na fila", waiting],
           ["Convidados", invited],
           ["Já entraram", joined],
-          ["Agências", `${agencies} de ${rows.length}`],
+          ["Por perfil", byProfile],
         ].map(([label, value]) => (
           <div key={String(label)} className="card flex flex-col gap-1 p-4">
             <span className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">{label}</span>
@@ -75,7 +75,7 @@ export default async function AdminWaitlist() {
                     <span className="block font-medium">{r.name ?? r.email}</span>
                     <span className="block text-xs text-muted">{r.name ? r.email : ""}{r.company ? `${r.name ? " · " : ""}${r.company}` : ""}</span>
                   </td>
-                  <td className="px-4 py-3">{r.profile === "agency" ? "Agência" : "Negócio"}</td>
+                  <td className="px-4 py-3">{PROFILE_LABEL[r.profile] ?? r.profile}</td>
                   <td className="px-4 py-3 text-muted">{r.size_band ?? "—"}</td>
                   <td className="px-4 py-3 text-muted">{dt(r.created_at)}</td>
                   <td className="px-4 py-3">

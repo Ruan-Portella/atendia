@@ -1,11 +1,12 @@
 /*
  * Conteúdo da landing (24/10/2026), por público: a agência (que atende os clientes dela, com a marca
- * dela) e o próprio negócio. A página escolhe pelo ?para=negocio; a agência é o padrão. Só dados.
+ * dela), o próprio negócio e o SaaS (a plataforma que dá um assistente a cada cliente dela, pela
+ * API). A página escolhe pelo ?para=negocio ou ?para=saas; a agência é o padrão. Só dados.
  */
 
-export type Audience = "agency" | "business";
+export type Audience = "agency" | "business" | "saas";
 
-export const audienceOf = (raw: unknown): Audience => (raw === "negocio" ? "business" : "agency");
+export const audienceOf = (raw: unknown): Audience => (raw === "negocio" ? "business" : raw === "saas" ? "saas" : "agency");
 
 export interface DemoTurn {
   /** O que o contato manda (o botão da demonstração). */
@@ -77,6 +78,29 @@ export const LANDING: Record<
     brandFeature: ["Seu número, seu jeito", "O assistente responde no seu WhatsApp e no seu Instagram, com o nome e a foto que você escolher, e chama você quando a conversa pede uma pessoa."],
     ctaTitle: "Coloque o assistente no ar e pare de perder conversa fora do horário.",
   },
+  saas: {
+    eyebrow: "Para plataformas e SaaS",
+    title: "Atendimento com IA para cada cliente do seu software, criado pela API.",
+    subtitle: "Monte um modelo uma vez e crie um assistente por cliente direto do seu sistema, cada um com o próprio WhatsApp, Instagram e equipe. As ações consultam o seu sistema, os webhooks avisam tudo e a sua marca fica na frente.",
+    demoName: "Pizzaria do Zé",
+    demoInitials: "PZ",
+    demoColor: "#c53d3d",
+    demo: [
+      { ask: "Qual o cardápio de hoje?", answer: "Hoje tem calabresa, margherita e portuguesa (R$ 49,90 a grande), e a do dia é frango com catupiry por R$ 44,90. Quer pedir?", note: "Buscou o cardápio da loja no sistema da plataforma" },
+      { ask: "Quero uma margherita grande", answer: "Anotado: 1 margherita grande, R$ 49,90. Entrego na Rua das Flores, 120, como da última vez? A taxa é R$ 6.", note: "Criou o pedido pela ação criar_pedido, com o id da loja" },
+      { ask: "Cadê o meu pedido?", answer: "O seu pedido #4821 saiu para entrega às 19h42 com o Marcos. Deve chegar em uns 15 minutos.", note: "Reconheceu a pessoa pelo login do app e consultou o pedido" },
+      { ask: "Mandou a foto do comprovante", answer: "Recebi o comprovante do Pix de R$ 55,90 para Pizzaria do Zé. Já avisei a loja para confirmar.", note: "Leu a foto e mandou o webhook para o seu sistema" },
+      { ask: "Quero falar com a loja", answer: "Já chamei a equipe da Pizzaria do Zé. Eles respondem por aqui mesmo.", note: "Passou a conversa para a equipe da loja, no portal dela" },
+    ],
+    steps: [
+      ["Monte o modelo uma vez", "Personalidade, instruções, roteiros e ações (como buscar_cardapio e criar_pedido) valem para todos os seus clientes."],
+      ["Crie um assistente por cliente", "Quando um cliente entra no seu software, o seu sistema cria o assistente dele pela API, com os dados e o contexto da loja."],
+      ["Cada cliente com os canais dele", "WhatsApp e Instagram de cada loja pelo link de conexão, e o chat dentro do seu app com o login dos seus usuários."],
+      ["Integre e acompanhe", "Webhooks de cada conversa e lead, o uso de cada cliente pela API e um portal para a equipe de cada loja."],
+    ],
+    brandFeature: ["A sua plataforma na frente", "Cada cliente vê a sua marca no chat, no portal e nos e-mails. O modelo é seu: mude uma vez e publique a versão nova para todos."],
+    ctaTitle: "Dê a cada cliente do seu software um atendimento que não dorme.",
+  },
 };
 
 /** O que acontece num dia de atendimento (a faixa que corre embaixo do painel). */
@@ -91,7 +115,7 @@ export const TICKER = [
   "Pedido de exclusão de dados concluído (LGPD)",
 ];
 
-/** Recursos, em cartões (o primeiro e o último mudam por público). */
+/** Recursos, em cartões (o destaque muda por público; o SaaS tem os dele). */
 export const FEATURES: Array<[string, string]> = [
   ["Uma caixa para os três canais", "WhatsApp oficial, Instagram Direct e o chat do site na mesma Caixa de entrada, com setores, rodízio entre a equipe e respostas prontas."],
   ["Responde com o que é verdade", "A IA usa só o que está no site, nos PDFs e no que você escrever. Quando não sabe, diz que vai confirmar e chama alguém."],
@@ -100,3 +124,15 @@ export const FEATURES: Array<[string, string]> = [
   ["Foto e áudio também", "Lê comprovantes e fotos de produtos, transcreve áudios e responde como se tivesse ouvido."],
   ["LGPD de verdade", "Dados cifrados por cliente, modo dados sensíveis para saúde, pedidos do titular e auditoria de quem viu o quê."],
 ];
+
+/** Recursos de quem integra pela API (SaaS e plataformas). */
+export const SAAS_FEATURES: Array<[string, string]> = [
+  ["API completa", "Clientes, chatbots, canais, pausa, equipe, contatos, conversas, mensagens e uso: tudo pela API, com chaves por escopo."],
+  ["Modelo com versões", "Um modelo para todos os clientes, com os campos que cada um pode mudar e a publicação de versões novas."],
+  ["Ações no seu sistema", "A IA consulta e cria no seu sistema (pedido, saldo, segunda via) com o contexto de cada cliente, em chamadas assinadas e com limites."],
+  ["Webhooks de tudo", "Conversa, lead, mensagem, pausa e exclusão de dados: eventos assinados, com reenvio e registro de cada entrega."],
+  ["Usuários identificados", "No chat dentro do seu app, o login do seu usuário vai junto: a IA atende a pessoa certa, com os dados da conta dela."],
+  ["LGPD por cliente", "Dados cifrados com a chave de cada cliente, pedidos do titular e exclusão em cascata, também pela API."],
+];
+
+export const featuresFor = (a: Audience) => (a === "saas" ? SAAS_FEATURES : FEATURES);

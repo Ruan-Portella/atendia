@@ -11,14 +11,17 @@ import { isEmail } from "./validation";
  * só cria a conta quem o backoffice convidou (ou o admin da plataforma). Sem a chave, tudo como antes.
  */
 
-export const WAITLIST_PROFILES = ["agency", "business"] as const;
+export const WAITLIST_PROFILES = ["agency", "business", "saas"] as const;
 export type WaitlistProfile = (typeof WAITLIST_PROFILES)[number];
 
 /** As faixas do tamanho, por perfil (o que a pessoa escolhe no formulário). */
 export const SIZE_BANDS: Record<WaitlistProfile, string[]> = {
   agency: ["Começando (0 a 2 clientes)", "3 a 10 clientes", "11 a 30 clientes", "Mais de 30 clientes"],
   business: ["Até 100 conversas por mês", "100 a 500 por mês", "500 a 2.000 por mês", "Mais de 2.000 por mês"],
+  saas: ["Até 50 clientes no software", "50 a 500 clientes", "500 a 5.000 clientes", "Mais de 5.000 clientes"],
 };
+
+export const PROFILE_LABEL: Record<WaitlistProfile, string> = { agency: "Agência", business: "Negócio", saas: "SaaS" };
 
 export interface WaitlistInput {
   email: string;
@@ -103,7 +106,9 @@ export function waitlistJoinedEmail(position: number, profile: WaitlistProfile, 
       "",
       profile === "agency"
         ? "Estamos abrindo aos poucos, por ordem de chegada. Quando chegar a sua vez, você recebe o convite neste e-mail e já pode montar os chatbots dos seus clientes, com a sua marca."
-        : "Estamos abrindo aos poucos, por ordem de chegada. Quando chegar a sua vez, você recebe o convite neste e-mail e já pode colocar o assistente no seu WhatsApp, no seu Instagram e no seu site.",
+        : profile === "saas"
+          ? "Estamos abrindo aos poucos, por ordem de chegada. Quando chegar a sua vez, você recebe o convite neste e-mail, com o acesso à API para criar um assistente para cada cliente do seu software."
+          : "Estamos abrindo aos poucos, por ordem de chegada. Quando chegar a sua vez, você recebe o convite neste e-mail e já pode colocar o assistente no seu WhatsApp, no seu Instagram e no seu site.",
       "",
       "Enquanto isso, não precisa fazer nada. Se não foi você que se inscreveu, ignore este e-mail.",
       "",

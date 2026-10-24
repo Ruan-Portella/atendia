@@ -8,7 +8,7 @@ import { WaitlistForm } from "@/components/landing/waitlist-form";
 import { ChatDemo } from "@/components/landing/chat-demo";
 import { InboxMockup } from "@/components/landing/inbox-mockup";
 import { BOT_SIZES, CREDIT_MIN_BRL, DEMOS_PER_MONTH_FREE, OVERAGE_PRICE_BRL, PACKS, TEST_ANSWERS_FREE, brl, brlCents, num } from "@/lib/plans";
-import { FEATURES, LANDING, audienceOf, type Audience } from "@/lib/landing";
+import { LANDING, audienceOf, featuresFor, type Audience } from "@/lib/landing";
 import { waitlistMode } from "@/lib/waitlist";
 import { cn } from "@/lib/utils";
 
@@ -22,9 +22,13 @@ const FAQ: Array<[string, string]> = [
   ["E sem IA?", `O tamanho Atendimento (${brl(BOT_SIZES.atendimento.priceBrl)}/mês) liga o WhatsApp, o Instagram e o chat do site só com a sua equipe respondendo.`],
 ];
 
+/** Com a lista ligada, a página fica só para a lista (como no agentes.chat): sem preços, sem a conta. */
 const WAITLIST_FAQ: Array<[string, string]> = [
   ["Por que lista de espera?", "Estamos abrindo aos poucos, para acompanhar de perto cada conta no começo. Quem entra na lista recebe o convite por ordem de chegada."],
-  ["Quando chega o meu convite?", "Nas próximas semanas. O convite chega no e-mail que você deixou, com o link para entrar e montar o primeiro chatbot na hora."],
+  ["Quando chega o meu convite?", "Nas próximas semanas. O convite chega no e-mail que você deixou, com o link para entrar e montar o primeiro assistente na hora."],
+  ["Quanto vai custar?", "Os preços chegam junto com o convite. Dá para montar e testar de graça, sem cartão, antes de pagar qualquer coisa."],
+  ["Preciso de chave da OpenAI?", "Não. A IA vem incluída, com o custo dela por nossa conta."],
+  ["Funciona no WhatsApp oficial?", "Sim: WhatsApp e Instagram pela integração oficial da Meta, e o chat do site com uma linha de código, em qualquer plataforma."],
 ];
 
 const SITES = ["WordPress", "Webflow", "Framer", "Wix", "Shopify", "Lovable", "HTML puro"];
@@ -32,7 +36,8 @@ const SITES = ["WordPress", "Webflow", "Framer", "Wix", "Shopify", "Lovable", "H
 function AudienceSwitch({ audience }: { audience: Audience }) {
   const options: Array<[Audience, string, string, string]> = [
     ["agency", "/", "Para a minha agência", "Agência"],
-    ["business", "/?para=negocio", "Para o meu negócio", "Meu negócio"],
+    ["business", "/?para=negocio", "Para o meu negócio", "Negócio"],
+    ["saas", "/?para=saas", "Para o meu SaaS", "SaaS"],
   ];
   return (
     <nav aria-label="Para quem é" className="inline-flex rounded-full border border-line bg-panel p-1 text-sm font-medium">
@@ -66,11 +71,13 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
   const sp = await searchParams;
   const audience = audienceOf(sp.para);
   const business = audience === "business";
+  const saas = audience === "saas";
   const c = LANDING[audience];
   const waitlist = waitlistMode();
   const sizes = Object.values(BOT_SIZES).filter((s) => s.atendimentos > 0);
   const packs = Object.values(PACKS).filter((p) => !(business && p.id === "plataforma"));
-  const faq = waitlist ? [...WAITLIST_FAQ, ...FAQ] : FAQ;
+  const faq = waitlist ? WAITLIST_FAQ : FAQ;
+  const chips = waitlist ? ["IA incluída", "WhatsApp oficial da Meta", "Instagram e site", "LGPD"] : ["Sem cartão", "IA incluída", "WhatsApp oficial da Meta", "Sem fidelidade"];
 
   const primaryCta = waitlist ? (
     <a href="#lista" className="btn-primary">Entrar na lista</a>
@@ -86,7 +93,7 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
           <nav className="hidden items-center gap-7 text-[15px] font-medium lg:flex">
             <a href="#demo" className="text-ink-2 hover:text-ink">Demonstração</a>
             <a href="#como" className="text-ink-2 hover:text-ink">Como funciona</a>
-            <a href="#precos" className="text-ink-2 hover:text-ink">Preços</a>
+            {!waitlist && <a href="#precos" className="text-ink-2 hover:text-ink">Preços</a>}
             <a href="#perguntas" className="text-ink-2 hover:text-ink">Perguntas</a>
           </nav>
           <div className="flex items-center gap-3">
@@ -116,12 +123,12 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
               </div>
             )}
             <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-sm text-muted">
-              {["Sem cartão", "IA incluída", "WhatsApp oficial da Meta", "Sem fidelidade"].map((t) => (
+              {chips.map((t) => (
                 <span key={t} className="flex items-center gap-1.5"><Check size={14} className="text-brand" />{t}</span>
               ))}
             </div>
             <div className="mt-6 w-full max-w-[1120px] text-left">
-              <InboxMockup business={business} />
+              <InboxMockup audience={audience} />
             </div>
           </div>
         </section>
@@ -143,24 +150,29 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
         </section>
 
         <section id="demo" className="mx-auto flex w-full max-w-[1200px] scroll-mt-20 flex-col gap-10 px-5 py-20 sm:px-6 lg:py-24">
-          <SectionHead eyebrow="Demonstração" title={business ? "Pergunte como os seus clientes perguntam." : "Pergunte como o cliente do seu cliente pergunta."}>
+          <SectionHead eyebrow="Demonstração" title={business ? "Pergunte como os seus clientes perguntam." : saas ? "Uma loja da sua plataforma, atendendo sozinha." : "Pergunte como o cliente do seu cliente pergunta."}>
             {business
               ? "Preço, horário, agendamento, áudio e a hora de chamar você: escolha uma mensagem e veja o assistente responder."
-              : "Preço, horário, agendamento, comprovante e a hora de chamar a recepção: escolha uma mensagem e veja o assistente da clínica responder."}
+              : saas
+                ? "Cardápio, pedido, status da entrega, comprovante e a hora de chamar a loja: escolha uma mensagem e veja o assistente usar o seu sistema."
+                : "Preço, horário, agendamento, comprovante e a hora de chamar a recepção: escolha uma mensagem e veja o assistente da clínica responder."}
           </SectionHead>
           <ChatDemo name={c.demoName} initials={c.demoInitials} color={c.demoColor} turns={c.demo} />
-          <div className="card flex flex-col gap-4 p-6 sm:p-7 lg:flex-row lg:items-center lg:gap-10">
-            <div className="flex flex-col gap-1.5 lg:max-w-[380px]">
-              <div className="display text-[22px] font-bold">{business ? "Agora com o seu site" : "Agora com o site de um cliente"}</div>
-              <p className="text-[15px] leading-relaxed text-ink-2">Cole o endereço e receba um assistente de demonstração em 30 segundos, respondendo com o que está no site. Nada inventado.</p>
+          {/* com a lista, a página fica só para a lista (o gerador manda criar conta no limite) */}
+          {!waitlist && !saas && (
+            <div className="card flex flex-col gap-4 p-6 sm:p-7 lg:flex-row lg:items-center lg:gap-10">
+              <div className="flex flex-col gap-1.5 lg:max-w-[380px]">
+                <div className="display text-[22px] font-bold">{business ? "Agora com o seu site" : "Agora com o site de um cliente"}</div>
+                <p className="text-[15px] leading-relaxed text-ink-2">Cole o endereço e receba um assistente de demonstração em 30 segundos, respondendo com o que está no site. Nada inventado.</p>
+              </div>
+              <div className="min-w-0 flex-1"><DemoGenerator /></div>
             </div>
-            <div className="min-w-0 flex-1"><DemoGenerator /></div>
-          </div>
+          )}
         </section>
 
         <section id="como" className="border-t border-line bg-panel">
           <div className="mx-auto flex w-full max-w-[1200px] scroll-mt-20 flex-col gap-12 px-5 py-20 sm:px-6 lg:py-24">
-            <SectionHead eyebrow="Como funciona" title={business ? "Do seu site ao assistente no ar em uma tarde." : "Do site do cliente ao assistente no ar em uma tarde."} />
+            <SectionHead eyebrow="Como funciona" title={business ? "Do seu site ao assistente no ar em uma tarde." : saas ? "Do modelo ao assistente de cada cliente, pelo seu sistema." : "Do site do cliente ao assistente no ar em uma tarde."} />
             <ol className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
               {c.steps.map(([t, d], i) => (
                 <li key={t} className="flex flex-col gap-3">
@@ -184,7 +196,7 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
               <div className="display text-2xl font-bold">{c.brandFeature[0]}</div>
               <p className="text-[15px] leading-relaxed opacity-90">{c.brandFeature[1]}</p>
             </div>
-            {FEATURES.map(([t, d]) => (
+            {featuresFor(audience).map(([t, d]) => (
               <div key={t} className="card flex flex-col gap-2 p-6">
                 <div className="display text-lg font-bold">{t}</div>
                 <p className="text-[15px] leading-relaxed text-ink-2">{d}</p>
@@ -193,7 +205,7 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
           </div>
         </section>
 
-        {!business && (
+        {!waitlist && audience === "agency" && (
           <section className="bg-[#161615] text-[#efefec]">
             <div className="mx-auto grid w-full max-w-[1200px] items-center gap-12 px-5 py-20 sm:px-6 md:grid-cols-2">
               <div className="flex flex-col gap-4">
@@ -206,6 +218,7 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
           </section>
         )}
 
+        {!waitlist && (
         <section id="precos" className="mx-auto flex w-full max-w-[1200px] scroll-mt-20 flex-col gap-10 px-5 py-20 sm:px-6 lg:py-24">
           <SectionHead eyebrow="Preços" title={business ? "Pague pelo tamanho do seu atendimento." : "Conta grátis. Cada chatbot no ar com um tamanho."}>
             {`Monte e teste grátis, sem cartão. Para atender, cada chatbot ganha um tamanho, com a IA incluída e os três canais sem custo a mais. 1 atendimento = 24 horas de conversa da IA com um contato, com até 40 respostas; as respostas da ${business ? "sua equipe" : "equipe"} não contam.`}
@@ -224,7 +237,7 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
                   <ul className={cn("flex flex-col gap-2 text-[15px]", featured ? "opacity-90" : "text-ink-2")}>
                     <li>{num(s.atendimentos)} atendimentos/mês{s.id === "volume" ? " por pacote" : ""}</li>
                     <li>{s.description}</li>
-                    <li>{business ? "WhatsApp, Instagram e site" : "Sua marca no chat e no painel"}</li>
+                    <li>{business ? "WhatsApp, Instagram e site" : saas ? "Um por cliente, criado pela API" : "Sua marca no chat e no painel"}</li>
                   </ul>
                   {waitlist ? (
                     <a href="#lista" className={featured ? "btn mt-auto bg-ground text-ink hover:opacity-90" : "btn-ghost mt-auto"}>Entrar na lista</a>
@@ -236,9 +249,10 @@ export default async function LandingPage({ searchParams }: PageProps<"/">) {
             })}
           </div>
           <p className="text-[15px] leading-relaxed text-ink-2">
-            Só a caixa de entrada da equipe, sem IA: tamanho Atendimento, {brl(BOT_SIZES.atendimento.priceBrl)}/mês por chatbot. Pacotes da conta: {packs.map((p) => `${p.name} ${brl(p.priceBrl)}/mês`).join(" · ")}. Passou da cota? Ligue o excedente, pago com crédito: {brlCents(OVERAGE_PRICE_BRL)} por atendimento a mais.
+            {saas ? "Para criar os clientes pela API e usar o modelo, a conta leva os pacotes Integrações e Plataforma. " : ""}Só a caixa de entrada da equipe, sem IA: tamanho Atendimento, {brl(BOT_SIZES.atendimento.priceBrl)}/mês por chatbot. Pacotes da conta: {packs.map((p) => `${p.name} ${brl(p.priceBrl)}/mês`).join(" · ")}. Passou da cota? Ligue o excedente, pago com crédito: {brlCents(OVERAGE_PRICE_BRL)} por atendimento a mais.
           </p>
         </section>
+        )}
 
         <section id="perguntas" className="border-t border-line bg-panel">
           <div className="mx-auto grid w-full max-w-[1200px] scroll-mt-20 gap-10 px-5 py-20 sm:px-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:py-24">

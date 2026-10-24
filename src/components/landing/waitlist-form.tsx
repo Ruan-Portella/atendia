@@ -7,14 +7,22 @@ import { cn } from "@/lib/utils";
 const BANDS = {
   agency: ["Começando (0 a 2 clientes)", "3 a 10 clientes", "11 a 30 clientes", "Mais de 30 clientes"],
   business: ["Até 100 conversas por mês", "100 a 500 por mês", "500 a 2.000 por mês", "Mais de 2.000 por mês"],
+  saas: ["Até 50 clientes no software", "50 a 500 clientes", "500 a 5.000 clientes", "Mais de 5.000 clientes"],
 } as const;
+
+const COMPANY: Record<"agency" | "business" | "saas", string> = { agency: "Nome da agência", business: "Nome do negócio", saas: "Nome da empresa" };
+const SIZE_QUESTION: Record<"agency" | "business" | "saas", string> = {
+  agency: "Quantos clientes você atende hoje?",
+  business: "Quantas conversas por mês, mais ou menos?",
+  saas: "Quantos clientes usam o seu software?",
+};
 
 /**
  * Entrar na lista de espera (landing, 24/10/2026): só o e-mail para entrar; depois, a posição e, se
  * a pessoa quiser, o nome, a empresa e o tamanho (melhora a ordem dos convites). "site" é o campo
  * escondido contra robôs.
  */
-export function WaitlistForm({ profile, source, align = "center", className }: { profile: "agency" | "business"; source?: string; align?: "center" | "start"; className?: string }) {
+export function WaitlistForm({ profile, source, align = "center", className }: { profile: "agency" | "business" | "saas"; source?: string; align?: "center" | "start"; className?: string }) {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done" | "details-sent">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -71,10 +79,10 @@ export function WaitlistForm({ profile, source, align = "center", className }: {
             <p className="text-sm text-ink-2">Quer ajudar a gente a te chamar antes? Conte um pouco (opcional):</p>
             <div className="grid gap-2.5 sm:grid-cols-2">
               <input name="name" maxLength={80} placeholder="Seu nome" className="input" aria-label="Seu nome" />
-              <input name="company" maxLength={120} placeholder={profile === "agency" ? "Nome da agência" : "Nome do negócio"} className="input" aria-label={profile === "agency" ? "Nome da agência" : "Nome do negócio"} />
+              <input name="company" maxLength={120} placeholder={COMPANY[profile]} className="input" aria-label={COMPANY[profile]} />
             </div>
-            <select name="sizeBand" defaultValue="" className="input" aria-label={profile === "agency" ? "Quantos clientes você atende" : "Quantas conversas por mês"}>
-              <option value="" disabled>{profile === "agency" ? "Quantos clientes você atende hoje?" : "Quantas conversas por mês, mais ou menos?"}</option>
+            <select name="sizeBand" defaultValue="" className="input" aria-label={SIZE_QUESTION[profile]}>
+              <option value="" disabled>{SIZE_QUESTION[profile]}</option>
               {BANDS[profile].map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
@@ -98,7 +106,7 @@ export function WaitlistForm({ profile, source, align = "center", className }: {
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder={profile === "agency" ? "Seu e-mail de trabalho" : "Seu melhor e-mail"}
+          placeholder={profile === "business" ? "Seu melhor e-mail" : "Seu e-mail de trabalho"}
           className="min-w-0 flex-1 bg-transparent px-3.5 py-3 text-base outline-none placeholder:text-muted"
         />
         {/* contra robôs: gente não vê nem preenche */}

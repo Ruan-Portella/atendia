@@ -10,6 +10,7 @@ describe("lista de espera", () => {
   it("lê o formulário: e-mail em minúsculas, perfil e faixa só das opções", () => {
     expect(parseWaitlist({ email: " Ana@Exemplo.com ", profile: "business", sizeBand: "100 a 500 por mês", name: "  Ana   Souza " })).toMatchObject({ email: "ana@exemplo.com", profile: "business", sizeBand: "100 a 500 por mês", name: "Ana Souza" });
     expect(parseWaitlist({ email: "ana@exemplo.com", profile: "outro", sizeBand: "inventada" })).toMatchObject({ profile: "agency", sizeBand: null });
+    expect(parseWaitlist({ email: "ana@exemplo.com", profile: "saas", sizeBand: "50 a 500 clientes" })).toMatchObject({ profile: "saas", sizeBand: "50 a 500 clientes" });
     expect(parseWaitlist({ email: "não é e-mail" })).toEqual({ error: "Confira o e-mail." });
   });
 
