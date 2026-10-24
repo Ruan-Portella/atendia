@@ -80,6 +80,10 @@ h1 { letter-spacing: -0.02em; }
 @keyframes bv-pop { 0% { transform: scale(0.4); } 60% { transform: scale(1.15); } 100% { transform: none; } }
 @keyframes bv-halo { 0% { opacity: 0.9; transform: scale(0.97); } 100% { opacity: 0; transform: scale(1.08); } }
 @keyframes bv-blink { 0%, 90%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.12); } }
+/* a faixa de acontecimentos da landing (24/10/2026): corre devagar e para com movimento reduzido */
+@keyframes landing-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.landing-marquee { animation: landing-marquee 60s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .landing-marquee { animation: none; } }
 @keyframes bv-look { 0%, 20%, 85%, 100% { transform: translateX(0); } 30%, 45% { transform: translateX(-8%); } 55%, 75% { transform: translateX(8%); } }
 @keyframes bv-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
 @keyframes bv-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
