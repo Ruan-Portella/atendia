@@ -349,7 +349,7 @@ Salve em Shared/relatorios/<data de hoje>/marketing.md e me mande o calendário.
 
 - **Título:** os textos legais dizem a verdade sobre o produto, e nenhuma leva nova cria risco legal sem o Ruan saber.
 - **Modelo:** Opus 5.5 · **Raciocínio:** Alto
-- **Habilidades (Loja):** Contract Review
+- **Habilidades (Loja):** Evidence Brief (a mesma do Meta: afirmação com fonte)
 - **Notificações:** desligadas
 - **Acessos extras:** navegador (leis, ANPD, políticas da Meta e do Stripe) e dev.boavoz.com
 
@@ -388,7 +388,7 @@ Salve em Shared/relatorios/<data de hoje>/juridico.md e me mande só o que preci
 
 - **Título:** o Ruan sabe quanto entrou, quanto saiu e quanto vai pagar de imposto, sem surpresa no fim do mês.
 - **Modelo:** Sonnet 5.5 · **Raciocínio:** Médio
-- **Habilidades (Loja):** planilhas (xlsx)
+- **Habilidades (Loja):** nenhuma; a planilha sai em CSV, que abre no Excel
 - **Notificações:** desligadas
 - **Acessos extras:** Stripe com chave restrita só leitura, faturamento dos fornecedores só leitura; nunca o banco
 
@@ -417,6 +417,6 @@ Salve em Shared/relatorios/<AAAA-MM-DD>/financeiro.md e os fechamentos em Shared
 
 ```
 Sexta: liste o gasto fora do normal da semana (fatura +20%, cobrança duplicada, assinatura esquecida) e as contestações abertas no Stripe.
-Dia 3: feche o mês anterior: receita por plano e crédito, custo por fornecedor, margem, MRR, cancelamentos, estimativa do DAS, notas a emitir e comprovantes que faltam. Monte a planilha para o contador.
+Dia 3: feche o mês anterior: receita por plano e crédito, custo por fornecedor, margem, MRR, cancelamentos, estimativa do DAS, notas a emitir e comprovantes que faltam. Monte a planilha para o contador em CSV (abre no Excel).
 Salve em Shared/relatorios/<data de hoje>/financeiro.md e me mande o resumo. Sem nada, responda "Financeiro: sem novidades".
 ```

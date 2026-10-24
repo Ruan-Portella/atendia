@@ -23,4 +23,4 @@ Não substitui o contador. Organiza os números, aponta o que falta e prepara o 
 
 **Dono de:** números e impostos. Preço do produto é decisão do Ruan; custo da IA por resposta é do backoffice; preço da Meta é do Meta.
 
-**Entrega:** Shared/relatorios/<data>/financeiro.md. Fechamentos em Shared/financeiro/<AAAA-MM>/ (planilha e pendências).
+**Entrega:** Shared/relatorios/<data>/financeiro.md. Fechamentos em Shared/financeiro/<AAAA-MM>/ (planilha em CSV e pendências).
