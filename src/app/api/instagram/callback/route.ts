@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { readState } from "@/lib/instagram";
+import { cookies } from "next/headers";
+import { IG_NONCE_COOKIE, readState, stateNonce } from "@/lib/instagram";
+import { safeEqual } from "@/lib/safe-equal";
 import { connectInstagram } from "@/lib/instagram-channel";
 import { hashToken, markConnectLinkUsed, resolveConnectLink, type ResolvedLink } from "@/lib/whatsapp-connect-link";
 import { confirmAcceptance, connectBlockFor } from "@/lib/acceptance";
@@ -25,6 +27,12 @@ export async function GET(req: Request) {
     return new Response("O Instagram não está configurado no servidor (INSTAGRAM_APP_SECRET).", { status: 503 });
   }
   if (!origin) return new Response("Este retorno do Instagram não é válido ou expirou. Comece a conexão de novo.", { status: 400 });
+  // pelo painel, o mesmo navegador que começou a conexão (o código do state e o do cookie). No link do
+  // cliente, não: ele costuma abrir no navegador do WhatsApp e o login do Instagram pode voltar em
+  // outro; ali o link de uso único e o aceite amarram a conexão
+  if (origin.via === "painel" && !safeEqual((await cookies()).get(IG_NONCE_COOKIE)?.value, stateNonce(p.get("state")))) {
+    return new Response("Este retorno do Instagram não veio deste navegador. Comece a conexão de novo por aqui.", { status: 400 });
+  }
 
   const back = (result: { ok: true } | { ok: false; message: string }): never => {
     const q = result.ok ? "ig=ok" : `ig_erro=${encodeURIComponent(result.message)}`;

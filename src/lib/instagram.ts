@@ -64,8 +64,8 @@ export type ConnectOrigin = { botId: string; via: "painel" } | { botId: string; 
  * state que nós mesmos geramos há pouco, para este chatbot. Evita que alguém ligue uma conta a
  * um chatbot que não é dele.
  */
-export function signState(origin: ConnectOrigin, now = Date.now()): string {
-  const body = Buffer.from(JSON.stringify({ ...origin, exp: now + 15 * 60_000, n: randomBytes(6).toString("hex") })).toString("base64url");
+export function signState(origin: ConnectOrigin, now = Date.now(), nonce = randomBytes(6).toString("hex")): string {
+  const body = Buffer.from(JSON.stringify({ ...origin, exp: now + 15 * 60_000, n: nonce })).toString("base64url");
   return `${body}.${createHmac("sha256", secret()).update(body).digest("base64url")}`;
 }
 
@@ -80,6 +80,24 @@ export function readState(state: string | null, now = Date.now()): ConnectOrigin
     if (typeof data.exp !== "number" || data.exp < now || typeof data.botId !== "string") return null;
     if (data.via === "link") return typeof data.token === "string" ? { botId: data.botId, via: "link", token: data.token } : null;
     return data.via === "painel" ? { botId: data.botId, via: "painel" } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O login do Instagram preso ao navegador que começou (relatório de segurança de 23/10/2026): o
+ * começo grava um código num cookie e no state; o retorno só conecta com os dois iguais. Sem isso,
+ * alguém mandava o link de autorização do chatbot dele, e quem abrisse ligava o próprio Instagram.
+ */
+export const IG_NONCE_COOKIE = "bv_ig_n";
+export const newStateNonce = () => randomBytes(16).toString("hex");
+
+/** O código do state (já conferido por readState). Pura. */
+export function stateNonce(state: string | null): string | null {
+  try {
+    const n = (JSON.parse(Buffer.from((state ?? "").split(".")[0] ?? "", "base64url").toString("utf8")) as { n?: unknown }).n;
+    return typeof n === "string" && n ? n : null;
   } catch {
     return null;
   }

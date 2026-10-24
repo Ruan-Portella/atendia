@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InstagramError, authorizeUrl, fitDm, isInstagramAccessError, isOutsideWindow, readState, signState, toInstagramText } from "../instagram";
+import { InstagramError, authorizeUrl, fitDm, isInstagramAccessError, isOutsideWindow, readState, stateNonce, signState, toInstagramText } from "../instagram";
 import { igButtonId, igMediaLabel, igText } from "../instagram-inbound";
 
 describe("state do login", () => {
@@ -9,6 +9,11 @@ describe("state do login", () => {
   it("volta o que foi assinado: painel e link", () => {
     expect(readState(signState({ botId: "b1", via: "painel" }))).toEqual({ botId: "b1", via: "painel" });
     expect(readState(signState({ botId: "b1", via: "link", token: "tok" }))).toEqual({ botId: "b1", via: "link", token: "tok" });
+  });
+
+  it("o código do state é o do cookie do navegador que começou (relatório de segurança de 23/10/2026)", () => {
+    expect(stateNonce(signState({ botId: "b1", via: "painel" }, Date.now(), "abc123"))).toBe("abc123");
+    expect(stateNonce("lixo")).toBeNull();
   });
 
   it("recusa state adulterado, de outra chave, vencido ou vazio", () => {

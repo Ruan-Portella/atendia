@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
+import { NextResponse } from "next/server";
 import { sizeRequiredBlock } from "@/lib/free-account";
 import { requireAgency } from "@/lib/agency";
 import { can } from "@/lib/team";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { authorizeUrl, instagramConfigured, signState } from "@/lib/instagram";
+import { authorizeUrl, IG_NONCE_COOKIE, instagramConfigured, newStateNonce, signState, type ConnectOrigin } from "@/lib/instagram";
 import { channelBlock } from "@/lib/features";
 import { hashToken, resolveConnectLink } from "@/lib/whatsapp-connect-link";
 import { connectBlockFor } from "@/lib/acceptance";
@@ -13,8 +14,16 @@ import { connectBlockFor } from "@/lib/acceptance";
  * Começo do login do Instagram. Dois jeitos de chegar:
  *   ?bot=ID    a agência logada, dona do chatbot (e no teste fechado)
  *   ?link=TOK  o cliente, pelo link de conexão do Instagram ainda válido
- * Nos dois, o `state` assinado leva o chatbot até o retorno do login (/api/instagram/callback).
+ * Nos dois, o `state` assinado leva o chatbot até o retorno do login (/api/instagram/callback),
+ * com o código que também fica num cookie deste navegador.
  */
+function startLogin(origin: ConnectOrigin): Response {
+  const nonce = newStateNonce();
+  const res = NextResponse.redirect(authorizeUrl(signState(origin, Date.now(), nonce)), { status: 303 });
+  res.cookies.set(IG_NONCE_COOKIE, nonce, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/api/instagram", maxAge: 15 * 60 });
+  return res;
+}
+
 export async function GET(req: Request) {
   const p = new URL(req.url).searchParams;
   if (!instagramConfigured()) return new Response("Instagram não configurado no servidor.", { status: 503 });
@@ -29,7 +38,7 @@ export async function GET(req: Request) {
     // tela única de aceite: sem o aceite (pendente deste link) ou com o negócio bloqueado, não abre o login
     const blocked = await connectBlockFor(createAdminClient(), { clientId: link.clientId, channel: "instagram", linkTokenHash: hashToken(linkToken), neutral: true });
     if (blocked) redirect(`/conectar/${encodeURIComponent(linkToken)}?ig_erro=${encodeURIComponent(blocked)}`);
-    redirect(authorizeUrl(signState({ botId: link.botId, via: "link", token: linkToken })));
+    return startLogin({ botId: link.botId, via: "link", token: linkToken });
   }
 
   const botId = p.get("bot") ?? "";
@@ -43,5 +52,5 @@ export async function GET(req: Request) {
   if (unsized) redirect(`/painel/bots/${bot.id}?tab=instagram&ig_erro=${encodeURIComponent(unsized)}`);
   const blocked = await connectBlockFor(createAdminClient(), { clientId: bot.client_id as string | null, channel: "instagram" });
   if (blocked) redirect(`/painel/bots/${bot.id}?tab=instagram&ig_erro=${encodeURIComponent(blocked)}`);
-  redirect(authorizeUrl(signState({ botId: bot.id, via: "painel" })));
+  return startLogin({ botId: bot.id, via: "painel" });
 }

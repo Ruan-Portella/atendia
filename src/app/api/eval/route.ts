@@ -56,6 +56,10 @@ const effortOf = (v: string | null): ReasoningEffort | undefined => (EFFORTS as 
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  // gasta IA: vale só aberto aqui (endereço digitado ou o backoffice), nunca disparado por outro
+  // site, como uma imagem apontando para a rota (relatório de segurança de 23/10/2026)
+  const site = req.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return Response.json({ error: "forbidden" }, { status: 403 });
   const admin = await requireAdminApi(`${url.pathname}${url.search}`);
   if (admin instanceof Response) return admin;
 
