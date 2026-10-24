@@ -458,3 +458,41 @@ export async function executeApiRequest(db: SupabaseClient, requestId: string, c
   await db.from("data_subject_requests").update({ status: "executado", executed_at: new Date().toISOString(), summary }).eq("id", requestId).eq("status", "aguardando");
   return summary;
 }
+
+/**
+ * Pedidos do titular perto do prazo (15 dias): o dono da conta recebe um e-mail quando faltam 2 dias
+ * e outro quando venceu, uma vez por pedido em cada etapa (relatório de segurança de 23/10/2026).
+ * Um e-mail por conta, com a contagem. Devolve quantos e-mails saíram.
+ */
+export async function remindDueRequests(
+  db: SupabaseClient,
+  o: { now?: Date; notify?: (agencyId: string, subject: string, lines: string[]) => Promise<unknown> } = {},
+): Promise<number> {
+  const now = o.now ?? new Date();
+  const notify = o.notify ?? ((agencyId: string, subject: string, lines: string[]) => notifyAgencyOwner(db, agencyId, subject, lines));
+  const soon = new Date(now.getTime() + 2 * 86_400_000).toISOString();
+  const { data, error } = await db.from("data_subject_requests").select("id, agency_id, due_at").eq("status", "aguardando").lte("due_at", soon).order("due_at").limit(1000);
+  if (error) throw new Error(`pedidos do titular: ${error.message}`);
+  const byAgency = new Map<string, { late: number; soon: number }>();
+  for (const r of (data ?? []) as Array<{ id: string; agency_id: string; due_at: string }>) {
+    const late = Date.parse(r.due_at) < now.getTime();
+    // a marca de "já avisado" de cada pedido e etapa (o mesmo contador do limite de tentativas)
+    const { data: first } = await db.rpc("hit_rate_limit", { p_key: `dsr-aviso:${r.id}:${late ? "vencido" : "vence"}`, p_max: 1, p_window_seconds: 60 * 86_400 });
+    if (first === false) continue;
+    const t = byAgency.get(r.agency_id) ?? { late: 0, soon: 0 };
+    if (late) t.late += 1;
+    else t.soon += 1;
+    byAgency.set(r.agency_id, t);
+  }
+  let sent = 0;
+  for (const [agencyId, t] of byAgency) {
+    const parts = [t.late ? `${t.late} ${t.late === 1 ? "pedido venceu" : "pedidos venceram"}` : null, t.soon ? `${t.soon} ${t.soon === 1 ? "pedido vence" : "pedidos vencem"} em até 2 dias` : null].filter(Boolean);
+    await notify(agencyId, "Pedidos do titular perto do prazo (LGPD)", [
+      `Pedidos de exclusão de dados: ${parts.join(" e ")}.`,
+      "A LGPD dá 15 dias para responder. Confirme e apague, ou recuse com o motivo, em Segurança e auditoria → Pedidos do titular:",
+      appUrl("/painel/seguranca?aba=pedidos"),
+    ]);
+    sent += 1;
+  }
+  return sent;
+}
