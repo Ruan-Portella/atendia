@@ -463,13 +463,14 @@ export async function retryDueDeliveries(db: SupabaseClient, o: { limit?: number
 export async function redeliver(db: SupabaseClient, agencyId: string, deliveryId: string): Promise<{ result: "delivered" | "pending" | "failed" } | { error: string }> {
   const { data: found } = await db.from("webhook_deliveries").select("id, webhook_id, event_id, payload_enc, attempts, status").eq("id", deliveryId).maybeSingle<DeliveryRow & { status: string }>();
   if (!found) return { error: "Entrega não encontrada (pode ter sido apagada por um pedido de exclusão)." };
-  // pendente: só se ninguém estiver tentando agora (senão a mesma sairia duas vezes)
-  const d = found.status === "pending" ? await claimDelivery(db, found.id) : found;
-  if (!d) return { error: "Essa entrega está saindo agora. Confira em instantes." };
-  const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", d.webhook_id).eq("agency_id", agencyId).maybeSingle<WebhookRow>();
+  // a conta antes da trava: a entrega de outra conta não fica presa (relatório de segurança de 23/10/2026)
+  const { data: w } = await db.from("webhooks").select(WEBHOOK_COLS).eq("id", found.webhook_id).eq("agency_id", agencyId).maybeSingle<WebhookRow>();
   if (!w) return { error: "Entrega não encontrada." };
   if (!w.active) return { error: "Reative o webhook antes de reenviar." };
   if (!(await hasPack(db, agencyId, "integracoes"))) return { error: NEEDS_INTEGRATIONS };
+  // pendente: só se ninguém estiver tentando agora (senão a mesma sairia duas vezes)
+  const d = found.status === "pending" ? await claimDelivery(db, found.id) : found;
+  if (!d) return { error: "Essa entrega está saindo agora. Confira em instantes." };
   return { result: await attempt(db, d, w) };
 }
 

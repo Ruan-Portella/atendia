@@ -52,7 +52,7 @@ export async function GET(req: Request) {
     r = await connectInstagram(db, { botId: origin.botId, code: p.get("code")!, via: origin.via });
   } catch (e) {
     console.error("instagram: retorno do login falhou", e);
-    r = { ok: false, message: `Não foi possível concluir a conexão (${(e as Error).message}). Tente de novo; se continuar, fale com o suporte.` };
+    r = { ok: false, message: "Não foi possível concluir a conexão. Tente de novo; se continuar, fale com o suporte." };
   }
   if (r.ok) {
     const { data: owner } = await db.from("bots").select("agency_id, agencies(owner_id)").eq("id", origin.botId).maybeSingle();

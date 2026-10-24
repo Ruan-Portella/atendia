@@ -1,3 +1,4 @@
+import { safeEqual } from "@/lib/safe-equal";
 import { KNOWN_IG_FIELDS, reportUnknownMeta } from "@/lib/meta-monitor";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -65,7 +66,7 @@ function shape(body: WebhookBody) {
 export async function GET(req: Request) {
   const p = new URL(req.url).searchParams;
   const expected = process.env.INSTAGRAM_VERIFY_TOKEN;
-  if (expected && p.get("hub.mode") === "subscribe" && p.get("hub.verify_token") === expected) {
+  if (expected && p.get("hub.mode") === "subscribe" && safeEqual(p.get("hub.verify_token"), expected)) {
     return new Response(p.get("hub.challenge") ?? "", { status: 200, headers: { "Content-Type": "text/plain" } });
   }
   return new Response("forbidden", { status: 403 });

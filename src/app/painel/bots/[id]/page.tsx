@@ -1,3 +1,4 @@
+import { canLinkWhatsAppById } from "@/lib/platform-admin";
 import { businessMode } from "@/lib/business-mode";
 import Link from "next/link";
 import { actionCapNotice } from "@/lib/action-limits";
@@ -133,7 +134,7 @@ const SECTIONS: Array<{ key: string; label: string; icon: typeof BookOpen; tabs:
 const TEMPLATE_TABS = new Set<string>(["fontes", "personalidade", "aparencia", "atendimento", "roteiros", "acoes", "heranca"]);
 
 export default async function BotEditorPage({ params, searchParams }: PageProps<"/painel/bots/[id]">) {
-  const [{ id }, sp, { agency: owner, role, member, packs, bots: quotaList }] = await Promise.all([params, searchParams, requireAgency()]);
+  const [{ id }, sp, { agency: owner, role, member, packs, bots: quotaList, email }] = await Promise.all([params, searchParams, requireAgency()]);
   // equipe (leva B1'): o atendente vê só as conversas do chatbot
   const canConfig = can(role, "config");
   // canais da Meta: liberação da agência no backoffice, ou abertura geral
@@ -1075,7 +1076,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                   ) : (
                     <p className="px-4 py-4 text-sm text-muted">O botão de conexão aparece quando META_APP_ID e WHATSAPP_CONFIG_ID estiverem configurados.</p>
                   )}
-                  <SettingRow icon={<Hash size={18} />} title="Ligar pelo ID" summary="Número de teste do app da Meta" footer="close">
+                  {canLinkWhatsAppById(email) && (<SettingRow icon={<Hash size={18} />} title="Ligar pelo ID" summary="Número de teste do app da Meta" footer="close">
                     {/* sem o cadastro da Meta configurado (ex.: dev com o número de teste), o aceite fica aqui */}
                     {signup ? (
                       <ActionForm action={connectWhatsApp.bind(null, id)} className="flex flex-col gap-4">
@@ -1094,7 +1095,7 @@ export default async function BotEditorPage({ params, searchParams }: PageProps<
                         </ActionForm>
                       </ChannelAcceptGate>
                     )}
-                  </SettingRow>
+                  </SettingRow>)}
                 </SettingGroup>
               )}
               {!bot.is_demo && <FailedSends botId={id} channel="whatsapp" />}

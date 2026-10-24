@@ -35,7 +35,7 @@ export interface SignedRequest {
  * assinatura HMAC-SHA256 dos dados pela chave secreta do app. Tenta cada chave (app do
  * Instagram e app do WhatsApp) e devolve qual delas assinou. null = assinatura inválida.
  */
-export function parseSignedRequest(signed: string | null | undefined, secrets: Array<{ app: string; secret: string | undefined }>): { app: string; data: SignedRequest } | null {
+export function parseSignedRequest(signed: string | null | undefined, secrets: Array<{ app: string; secret: string | undefined }>, now = Date.now()): { app: string; data: SignedRequest } | null {
   if (!signed || !signed.includes(".")) return null;
   const [sigPart, payload] = signed.split(".", 2);
   const sig = Buffer.from(sigPart, "base64url");
@@ -46,6 +46,8 @@ export function parseSignedRequest(signed: string | null | undefined, secrets: A
     try {
       const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as SignedRequest;
       if (String(data.algorithm).toUpperCase() !== "HMAC-SHA256" || !data.user_id) return null;
+      // o pedido vale por 1 hora: um signed_request antigo não roda de novo (relatório de segurança de 23/10/2026)
+      if (typeof data.issued_at === "number" && Math.abs(now / 1000 - data.issued_at) > 3600) return null;
       return { app, data: { ...data, user_id: String(data.user_id) } };
     } catch {
       return null;

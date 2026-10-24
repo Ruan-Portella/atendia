@@ -13,8 +13,10 @@ export function sourcePdfPath(botId: string, fileName: string, now = Date.now())
   return `${botId}/${now}-${base}`;
 }
 
-export async function removeSourceFiles(db: SupabaseClient, paths: Array<string | null | undefined>): Promise<void> {
-  const list = paths.filter((p): p is string => Boolean(p));
+export async function removeSourceFiles(db: SupabaseClient, paths: Array<string | null | undefined>, onlyBot?: string): Promise<void> {
+  // o caminho lido do banco só apaga na pasta do próprio chatbot: um file_path trocado não leva o PDF
+  // de outro (relatório de segurança de 23/10/2026)
+  const list = paths.filter((p): p is string => Boolean(p) && (!onlyBot || p!.startsWith(`${onlyBot}/`)));
   if (!list.length) return;
   const { error } = await db.storage.from(SOURCES_BUCKET).remove(list);
   if (error) console.error("PDF da fonte não apagado", error.message);

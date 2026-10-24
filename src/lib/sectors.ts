@@ -189,6 +189,8 @@ export function sectorFromForm(fd: FormData): SectorInput | { error: string } {
  */
 export async function saveSector(db: SupabaseClient, o: { agencyId: string; clientId: string; id: string | null; input: SectorInput }): Promise<{ id: string } | { error: string }> {
   const current = await listSectors(db, [o.clientId]);
+  // só setor deste cliente: com o id de outro, as pessoas entravam no setor alheio (relatório de segurança de 23/10/2026, M13)
+  if (o.id && !current.some((s) => s.id === o.id)) return { error: "Setor não encontrado." };
   if (!o.id && current.length >= SECTOR_MAX) return { error: `Até ${SECTOR_MAX} setores por cliente.` };
   const problem = sectorNameProblem(o.input.name, current.filter((s) => s.id !== o.id).map((s) => s.name));
   if (problem) return { error: problem };

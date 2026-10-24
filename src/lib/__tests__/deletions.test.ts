@@ -16,8 +16,10 @@ const secrets = [
 
 describe("signed_request da Meta", () => {
   it("lê o user_id e diz qual app assinou", () => {
-    const ig = parseSignedRequest(sign({ algorithm: "HMAC-SHA256", user_id: "17841400000000000", issued_at: 1 }, "segredo-ig"), secrets);
+    const ig = parseSignedRequest(sign({ algorithm: "HMAC-SHA256", user_id: "17841400000000000", issued_at: 1 }, "segredo-ig"), secrets, 60_000);
     expect(ig).toEqual({ app: "instagram", data: { algorithm: "HMAC-SHA256", user_id: "17841400000000000", issued_at: 1 } });
+    // mais de 1 hora depois, o mesmo pedido não vale
+    expect(parseSignedRequest(sign({ algorithm: "HMAC-SHA256", user_id: "17841400000000000", issued_at: 1 }, "segredo-ig"), secrets, 3_700_000)).toBeNull();
     expect(parseSignedRequest(sign({ algorithm: "HMAC-SHA256", user_id: 123 }, "segredo-fb"), secrets)?.app).toBe("facebook");
   });
 

@@ -1,5 +1,6 @@
 "use server";
 
+import { canLinkWhatsAppById } from "@/lib/platform-admin";
 import { revalidatePath } from "next/cache";
 import { parseFace } from "@/lib/bot-face";
 import { sizeRequiredBlock } from "@/lib/free-account";
@@ -241,8 +242,9 @@ async function parseHumanHandoff(supabase: Awaited<ReturnType<typeof createClien
   if (phone) {
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 10) return { error: "Telefone de atendimento inválido. Use DDD, ex.: (21) 3333-4444." };
-    // fora da coexistência, o telefone precisa ser outro: o número do bot é atendido pelo próprio bot
-    const { data: wa } = await createAdminClient().from("whatsapp_channels").select("display_phone, coexistence").eq("bot_id", botId).maybeSingle();
+    // fora da coexistência, o telefone precisa ser outro: o número do bot é atendido pelo próprio bot.
+    // Pela sessão (RLS): com o id de um chatbot de outra conta, a resposta não diz se o número bate
+    const { data: wa } = await (await createClient()).from("whatsapp_channels").select("display_phone, coexistence").eq("bot_id", botId).maybeSingle();
     const botDigits = (wa?.display_phone ?? "").replace(/\D/g, "");
     if (botDigits && !wa?.coexistence && (botDigits.endsWith(digits) || digits.endsWith(botDigits))) {
       return { error: "Esse é o número do WhatsApp do próprio assistente. Informe outro telefone da equipe (ou deixe em branco)." };
@@ -1015,6 +1017,7 @@ export async function connectWhatsApp(botId: string, formData: FormData): Promis
   const phoneNumberId = text(formData.get("phone_number_id")).replace(/\D/g, "");
   const wabaId = text(formData.get("waba_id")).replace(/\D/g, "") || null;
   if (phoneNumberId.length < 8) return fail("Cole o Phone number ID (só números), que aparece na configuração da API do app na Meta.");
+  if (!canLinkWhatsAppById((await requireAgency()).email, phoneNumberId)) return fail("Ligar pelo ID vale só para o número de teste do app da Meta. Conecte pelo botão da Meta.");
 
   let phone: Awaited<ReturnType<typeof getPhoneNumber>>;
   try {

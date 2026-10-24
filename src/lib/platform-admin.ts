@@ -15,6 +15,18 @@ export function isPlatformAdmin(email: string | undefined | null): boolean {
   return Boolean(email) && list.includes(email!.toLowerCase());
 }
 
+/**
+ * "Ligar pelo ID" do WhatsApp usa o token da plataforma: só para o número de teste do app da Meta
+ * (WHATSAPP_TEST_PHONE_IDS, separados por vírgula) ou para o admin da plataforma. Sem isso, qualquer
+ * conta ligava um número de outro negócio que passou pelo cadastro da BoaVoz (relatório de
+ * segurança de 23/10/2026, M14). Pura.
+ */
+export function canLinkWhatsAppById(email: string | null | undefined, phoneNumberId?: string): boolean {
+  if (isPlatformAdmin(email)) return true;
+  const ids = (process.env.WHATSAPP_TEST_PHONE_IDS ?? "").split(",").map((s) => s.replace(/\D/g, "")).filter(Boolean);
+  return phoneNumberId === undefined ? ids.length > 0 : ids.includes(phoneNumberId);
+}
+
 export interface AdminSession {
   userId: string;
   email: string;

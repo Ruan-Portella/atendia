@@ -217,7 +217,7 @@ export async function deleteSourceApi(api: ApiContext, rawBotId: string, rawSour
   if (!before) throw notFound();
   const { error } = await api.db.from("sources").delete().eq("id", before.id);
   if (error) throw new Error(`fonte não apagada: ${error.message}`);
-  await removeSourceFiles(api.db, [before.file_path as string | null]);
+  await removeSourceFiles(api.db, [before.file_path as string | null], botId);
   if (!asContext(before.context)) await markAnalysisDue(api.db, botId);
   return new Response(null, { status: 204 });
 }

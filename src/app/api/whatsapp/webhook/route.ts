@@ -1,3 +1,4 @@
+import { safeEqual } from "@/lib/safe-equal";
 import { KNOWN_WA_FIELDS, KNOWN_WA_MESSAGE_TYPES, reportUnknownMeta } from "@/lib/meta-monitor";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -44,7 +45,7 @@ type Change = NonNullable<NonNullable<WebhookBody["entry"]>[number]["changes"]>[
 export async function GET(req: Request) {
   const p = new URL(req.url).searchParams;
   const expected = process.env.WHATSAPP_VERIFY_TOKEN;
-  if (expected && p.get("hub.mode") === "subscribe" && p.get("hub.verify_token") === expected) {
+  if (expected && p.get("hub.mode") === "subscribe" && safeEqual(p.get("hub.verify_token"), expected)) {
     return new Response(p.get("hub.challenge") ?? "", { status: 200, headers: { "Content-Type": "text/plain" } });
   }
   return new Response("forbidden", { status: 403 });

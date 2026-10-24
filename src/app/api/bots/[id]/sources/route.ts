@@ -52,7 +52,10 @@ async function addInstagramSource(botId: string, title: string): Promise<Respons
     .select("id")
     .single();
   if (error?.code === "23505") return Response.json({ error: "already_exists", message: "Este chatbot já tem a fonte do Instagram: use “Atualizar agora” nela." }, { status: 409 });
-  if (error || !source) return Response.json({ error: "insert_failed", message: error?.message }, { status: 500 });
+  if (error || !source) {
+    console.error("fontes: não gravou", error?.message);
+    return Response.json({ error: "insert_failed", message: "Não foi possível salvar a fonte. Tente de novo." }, { status: 500 });
+  }
   readPostsSoon(source.id);
   return Response.json({ ok: true, sourceId: source.id, queued: true });
 }
@@ -104,7 +107,10 @@ export async function POST(req: Request, ctx: RouteContext<"/api/bots/[id]/sourc
 
   const admin = createAdminClient();
   const { data: source, error } = await admin.from("sources").insert(row).select("id, bot_id, kind, title, url, content").single();
-  if (error || !source) return Response.json({ error: "insert_failed", message: error?.message }, { status: 500 });
+  if (error || !source) {
+    console.error("fontes: não gravou", error?.message);
+    return Response.json({ error: "insert_failed", message: "Não foi possível salvar a fonte. Tente de novo." }, { status: 500 });
+  }
 
   try {
     const r = await ingestSource(admin, source as SourceRow, pdfBuffer);
@@ -124,10 +130,13 @@ export async function DELETE(req: Request, ctx: RouteContext<"/api/bots/[id]/sou
   if (!(await canEdit(supabase))) return Response.json(FORBIDDEN, { status: 403 });
   const { data: before } = await supabase.from("sources").select("file_path").eq("id", sourceId).eq("bot_id", botId).maybeSingle();
   const { error, count } = await supabase.from("sources").delete({ count: "exact" }).eq("id", sourceId).eq("bot_id", botId);
-  if (error) return Response.json({ error: error.message, message: "Não foi possível remover a fonte." }, { status: 500 });
+  if (error) {
+    console.error("fontes: não removeu", error.message);
+    return Response.json({ error: "delete_failed", message: "Não foi possível remover a fonte." }, { status: 500 });
+  }
   if (!count) return Response.json({ error: "not_found", message: "Fonte não encontrada." }, { status: 404 });
   // fonte apagada leva o PDF
-  await removeSourceFiles(createAdminClient(), [before?.file_path as string | null | undefined]);
+  await removeSourceFiles(createAdminClient(), [before?.file_path as string | null | undefined], botId);
   return Response.json({ ok: true });
 }
 
@@ -178,9 +187,12 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/bots/[id]/source
   const changedKeys = Object.keys(patch);
   if (changedKeys.length) {
     const { error } = await admin.from("sources").update(patch).eq("id", source.id);
-    if (error) return Response.json({ error: "update_failed", message: error.message }, { status: 500 });
+    if (error) {
+      console.error("fontes: não atualizou", error.message);
+      return Response.json({ error: "update_failed", message: "Não foi possível salvar a fonte. Tente de novo." }, { status: 500 });
+    }
     // PDF trocado: o arquivo anterior sai
-    if (patch.file_path && source.file_path && source.file_path !== patch.file_path) await removeSourceFiles(admin, [source.file_path as string]);
+    if (patch.file_path && source.file_path && source.file_path !== patch.file_path) await removeSourceFiles(admin, [source.file_path as string], botId);
   }
 
   // Só renomeou: não precisa reler nada.

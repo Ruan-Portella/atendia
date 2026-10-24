@@ -94,7 +94,8 @@ export async function POST(req: Request) {
     .single();
   if (error || !bot) {
     if (own) await releaseDemo(db, own);
-    return Response.json({ error: "create_failed", message: error?.message }, { status: 500 });
+    console.error("demo: chatbot não criado", error?.message);
+    return Response.json({ error: "create_failed", message: "Não foi possível criar a demo. Tente de novo." }, { status: 500 });
   }
 
   const { data: source } = await db

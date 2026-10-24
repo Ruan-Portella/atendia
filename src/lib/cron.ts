@@ -1,3 +1,4 @@
+import { safeEqual } from "./safe-equal";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -6,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 export function isCronAuthorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
-  return Boolean(secret) && req.headers.get("authorization") === `Bearer ${secret}`;
+  return Boolean(secret) && safeEqual(req.headers.get("authorization"), `Bearer ${secret}`);
 }
 
 /** Para laços longos pararem antes do tempo máximo da função. */
