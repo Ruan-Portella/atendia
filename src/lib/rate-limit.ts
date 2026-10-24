@@ -56,6 +56,17 @@ export async function noticeOnce(db: SupabaseClient, rule: LimitRule): Promise<b
   return (await firstExceeded(db, [{ ...rule, key: `${rule.key}:aviso`, max: 1 }])) === null;
 }
 
+/**
+ * Teto de conversas novas por chatbot e por hora no chat do site, somando todos os IPs (relatório de
+ * segurança de 23/10/2026, M9: muitos IPs esgotavam a cota do mês do cliente). Padrão 200;
+ * CHAT_BOT_HOURLY_CAP troca. Pura.
+ */
+export function botHourlyCap(raw = process.env.CHAT_BOT_HOURLY_CAP): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : 200;
+}
+export const BOT_HOURLY_CAP_SUFFIX = ":novas:h";
+
 /** Resposta 429 padrão, com Retry-After para clientes que respeitam. */
 export function tooMany(rule: LimitRule, headers: Record<string, string> = {}): Response {
   return Response.json(

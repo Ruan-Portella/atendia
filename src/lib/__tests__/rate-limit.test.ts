@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { clientIp, firstExceeded, hashId, tooMany, type LimitRule } from "../rate-limit";
+import { botHourlyCap, clientIp, firstExceeded, hashId, tooMany, type LimitRule } from "../rate-limit";
 
 const rule = (key: string, max = 1): LimitRule => ({ key, max, windowSeconds: 60, message: `limite ${key}` });
 const fakeDb = (rpc: (name: string, args: { p_key: string }) => Promise<{ data: unknown; error: unknown }>) => ({ rpc: vi.fn(rpc) }) as unknown as SupabaseClient;
@@ -26,6 +26,15 @@ describe("firstExceeded", () => {
     const db = fakeDb(async () => ({ data: null, error: { message: "fora do ar" } }));
     vi.spyOn(console, "warn").mockImplementation(() => {});
     expect((await firstExceeded(db, [rule("a"), { ...rule("codigo"), failClosed: true }]))?.key).toBe("codigo");
+  });
+});
+
+describe("teto de conversas novas por chatbot (relatório de segurança de 23/10/2026, M9)", () => {
+  it("200 por hora, ou o CHAT_BOT_HOURLY_CAP válido", () => {
+    expect(botHourlyCap(undefined)).toBe(200);
+    expect(botHourlyCap("500")).toBe(500);
+    expect(botHourlyCap("0")).toBe(200);
+    expect(botHourlyCap("muito")).toBe(200);
   });
 });
 

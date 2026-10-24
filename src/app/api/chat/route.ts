@@ -19,7 +19,8 @@ import { handleErasureRequest } from "@/lib/data-subject";
 import { SUSPENDED_NOTICE, resolveMode, withoutAi } from "@/lib/conversation-mode";
 import { botHasAi } from "@/lib/plans";
 import { logWidgetAccess } from "@/lib/access-log";
-import { clientIp, firstExceeded, hashId, tooMany } from "@/lib/rate-limit";
+import { BOT_HOURLY_CAP_SUFFIX, botHourlyCap, clientIp, firstExceeded, hashId, noticeOnce, tooMany } from "@/lib/rate-limit";
+import { notifyAgencyOwner } from "@/lib/notify";
 import { isResumable } from "@/lib/presence";
 import { openAtendimento } from "@/lib/atendimentos";
 import { saveMessage } from "@/lib/messages";
@@ -138,7 +139,21 @@ export async function POST(req: Request) {
           { key: `chat:${bot.id}:ip:${ip}:convd`, max: 30, windowSeconds: 86400, message: "Muitas conversas novas hoje. Tente de novo amanhã." },
         ]),
   ]);
-  if (exceeded) return tooMany(exceeded, CORS_HEADERS);
+  // e um teto do chatbot, somando todos os IPs (muitos IPs esgotavam a cota do mês). Só depois dos
+  // limites por IP: quem já foi barrado não soma no teto e não trava o chat dos outros
+  const capped = !exceeded && !convId && !bot.is_demo
+    ? await firstExceeded(db, [{ key: `chat:${bot.id}${BOT_HOURLY_CAP_SUFFIX}`, max: botHourlyCap(), windowSeconds: 3600, message: "O atendimento está com muita procura agora. Tente de novo em alguns minutos." }])
+    : null;
+  // o teto do chatbot estourou: o dono fica sabendo (uma vez por hora)
+  if (capped && (await noticeOnce(db, capped))) {
+    after(() =>
+      notifyAgencyOwner(db, bot.agency_id, `Muitas conversas novas no chat de ${bot.client_name ?? bot.name}`, [
+        `O chat do site de ${bot.name} passou de ${botHourlyCap()} conversas novas na última hora, somando todos os visitantes.`,
+        "As conversas novas param por alguns minutos (as abertas seguem). Se não for um movimento esperado, pode ser alguém tentando gastar a cota do mês: confira em Conversas.",
+      ]).catch(() => false),
+    );
+  }
+  if (exceeded ?? capped) return tooMany((exceeded ?? capped)!, CORS_HEADERS);
 
   // regra única de estado (conversation-mode): suspensão, equipe na conversa, pausa e modo só humano;
   // no site, o chatbot sem IA (Atendimento ou sem tamanho) é só o formulário de contato
