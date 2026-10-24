@@ -47,7 +47,8 @@ export default async function InboxPage({ searchParams }: PageProps<"/painel/cai
   // fora das filas; o chatbot precisa estar no escopo)
   const listed = typeof sp.c === "string" ? items.find((i) => i.id === sp.c) ?? null : null;
   const other = !listed && typeof sp.c === "string" && /^[0-9a-f-]{36}$/i.test(sp.c) && bots.length
-    ? (await supabase.from("conversations").select("id, bot_id, contact_id").eq("id", sp.c).in("bot_id", bots.map((b) => b.id)).maybeSingle()).data
+    ? // pelo servidor, nos chatbots do escopo: a conversa de chatbot sensível aparece e pede o 2FA (o banco a esconde da sessão sem ele, 0177)
+      (await admin.from("conversations").select("id, bot_id, contact_id").eq("id", sp.c).in("bot_id", bots.map((b) => b.id)).maybeSingle()).data
     : null;
   const selected: { id: string; botId: string; contactId: string | null } | null = listed ?? (other ? { id: other.id as string, botId: other.bot_id as string, contactId: (other.contact_id as string | null) ?? null } : null);
   const hrefFor = (o: { queue: Queue; conversationId?: string }) => `/painel/caixa?fila=${encodeURIComponent(o.queue)}${o.conversationId ? `&c=${o.conversationId}` : ""}`;

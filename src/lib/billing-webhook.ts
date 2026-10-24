@@ -154,7 +154,10 @@ export async function handleStripeEvent(db: SupabaseClient, event: Stripe.Event)
     }
     case "customer.subscription.created":
     case "customer.subscription.updated": {
-      const sub = event.data.object;
+      // a Stripe não garante a ordem dos eventos: vale o estado atual da assinatura, não o do evento
+      // (um "ativa" antigo chegando depois do cancelamento reativava a conta; relatório de segurança
+      // de 23/10/2026). Falha na leitura volta para a Stripe tentar de novo
+      const sub = stripe ? await stripe.subscriptions.retrieve(event.data.object.id) : event.data.object;
       const customer = customerOf(sub.customer);
       const status = billingStatusOf(sub.status);
       if (status === null) break;
