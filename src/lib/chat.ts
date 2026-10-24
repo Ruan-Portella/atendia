@@ -119,6 +119,24 @@ export function contactSaid(messages: UIMessage[], knownNames: unknown[] = []): 
   return [...texts, ...knownNames.filter((n): n is string => typeof n === "string" && n.trim() !== "")];
 }
 
+/**
+ * O que a busca na base procura. A mensagem curta ("quero sim", "pode ser", "esse") não tem assunto:
+ * a busca leva junto a mensagem anterior da pessoa, para não perder o produto de que se falava (bug
+ * do Loki, 24/10/2026: no "quero sim", a base trouxe outro trecho e a IA desmentiu o preço certo).
+ * Pura.
+ */
+export function searchQuestion(question: string, history: UIMessage[]): string {
+  const q = question.trim();
+  if (q.length >= 40 || q.split(/\s+/).length > 6) return q;
+  const texts = history
+    .filter((m) => m.role === "user")
+    .map((m) => m.parts.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join(" ").trim())
+    .filter(Boolean);
+  // a última do histórico costuma ser a própria pergunta
+  const previous = [...texts].reverse().find((t) => t !== q);
+  return previous ? `${previous.slice(-300)}\n${q}` : q;
+}
+
 export function lastUserText(messages: UIMessage[]): string {
   const last = [...messages].reverse().find((m) => m.role === "user");
   if (!last) return "";
@@ -884,7 +902,7 @@ export async function runChat(opts: {
   // 2. Recuperação de contexto
   const question = lastUserText(messages);
   const search = searchBots(bot);
-  const retrieval = opts.retrieval ?? (await retrieveContext(db, search.botId, question, activeContext(bot, opts.identity), search.alsoBotId, postPriceRuleOf(bot)));
+  const retrieval = opts.retrieval ?? (await retrieveContext(db, search.botId, searchQuestion(question, messages), activeContext(bot, opts.identity), search.alsoBotId, postPriceRuleOf(bot)));
   const { context, used, embeddingUsage } = retrieval;
 
   const leadEnabled = bot.lead_capture?.enabled !== false;

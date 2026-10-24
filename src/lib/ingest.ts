@@ -217,6 +217,19 @@ export function chunkText(text: string, size = 1200, overlap = 150): string[] {
   return chunks.filter((c) => c.length > 40);
 }
 
+/**
+ * Planilha (CSV): cada linha é um trecho. Juntar várias linhas num trecho diluía a busca (o "LOKI"
+ * no meio de 11 produtos não aparecia ao procurar por "loki") e o corte por tamanho partia linhas ao
+ * meio (bug do Loki, 24/10/2026). Linha muito longa ainda passa pelo corte por tamanho. Pura.
+ */
+export function chunkRows(text: string, size = 1200): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length >= 8)
+    .flatMap((l) => (l.length > size * 1.5 ? chunkText(l, size) : [l]));
+}
+
 /* ------------------------------------------------------------------------ */
 /* Ingestão completa de uma fonte                                            */
 /* ------------------------------------------------------------------------ */
@@ -251,7 +264,7 @@ export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuf
   if (source.kind === "instagram") throw new Error("A fonte do Instagram é lida pela leitura dos posts (Atualizar agora).");
   if (!opts.background) await db.from("sources").update({ status: "pending", error: null }).eq("id", source.id);
   try {
-    const docs: Array<{ text: string; meta: Record<string, unknown> }> = [];
+    const docs: Array<{ text: string; meta: Record<string, unknown>; rows?: boolean }> = [];
     let pages = 0;
 
     const social = source.url ? socialNetworkOf(source.url) : null;
@@ -276,11 +289,11 @@ export async function ingestSource(db: SupabaseClient, source: SourceRow, pdfBuf
     } else {
       if (!source.content || source.content.trim().length < 20) throw new Error("Texto vazio.");
       pages = 1;
-      docs.push({ text: source.content, meta: { title: source.title } });
+      docs.push({ text: source.content, meta: { title: source.title }, rows: source.kind === "csv" });
     }
 
     const pieces: Array<{ content: string; metadata: Record<string, unknown> }> = [];
-    for (const d of docs) for (const c of chunkText(d.text)) pieces.push({ content: c, metadata: d.meta });
+    for (const d of docs) for (const c of d.rows ? chunkRows(d.text) : chunkText(d.text)) pieces.push({ content: c, metadata: d.meta });
     if (!pieces.length) throw new Error("Nenhum conteúdo aproveitável encontrado.");
 
     const hash = createHash("sha256").update(pieces.map((x) => x.content).join("\u0000")).digest("hex");

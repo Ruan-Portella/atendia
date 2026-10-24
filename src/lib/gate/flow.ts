@@ -3,7 +3,7 @@ import { findByChannelId, quoteSnippet, quotedNote } from "../message-links";
 import { searchBots } from "../bot-template";
 import { activeContext } from "../bot-context";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, requestHandoff, retrieveContext, runChat, withRiskText, type BotRow, type InstagramChat } from "../chat";
+import { SYSTEM_AUTHOR, aiDisclosure, conversationHistory, requestHandoff, retrieveContext, runChat, searchQuestion, withRiskText, type BotRow, type InstagramChat } from "../chat";
 import { deliver } from "../send";
 import { deleteMessage, loadMessages } from "../messages";
 import { storeOnce } from "../whatsapp-inbound";
@@ -392,7 +392,7 @@ export async function answerWithGate(io: GateIO, q: GateQuestion): Promise<GateA
   const age: AgeStatus = await getAge(db, who);
   // o contexto ativo (o pareamento ou o roteiro, com o fixo do chatbot por cima) escolhe as fontes com etiqueta
   const search = searchBots(bot);
-  const [retrieval, exempt] = await Promise.all([retrieveContext(db, search.botId, question, activeContext(bot, pairingIdentity ?? port.current()), search.alsoBotId, postPriceRuleOf(bot)), botGateExemptions(db, bot.id)]);
+  const [retrieval, exempt] = await Promise.all([retrieveContext(db, search.botId, searchQuestion(question, history), activeContext(bot, pairingIdentity ?? port.current()), search.alsoBotId, postPriceRuleOf(bot)), botGateExemptions(db, bot.id)]);
   const entrance = await decideEntrance({
     text: question,
     channel,
