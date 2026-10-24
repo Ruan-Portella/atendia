@@ -390,7 +390,7 @@ Salve em Shared/relatorios/<data de hoje>/juridico.md e me mande só o que preci
 - **Modelo:** Sonnet 5.5 · **Raciocínio:** Médio
 - **Habilidades (Loja):** planilhas (xlsx)
 - **Notificações:** desligadas
-- **Acessos extras:** Stripe com chave restrita só leitura, faturamento dos fornecedores só leitura e a pasta de notas indicada pelo Ruan; nunca o banco
+- **Acessos extras:** Stripe com chave restrita só leitura, faturamento dos fornecedores só leitura; nunca o banco
 
 **Instruções**
 
