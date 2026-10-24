@@ -9,19 +9,20 @@ import { safeFetch } from "./safe-fetch";
 import { SOURCES_BUCKET, removeSourceFiles, sourcePdfPath } from "./source-files";
 import { firstExceeded } from "./rate-limit";
 import { normalizeUrl } from "./utils";
+import { csvToText } from "./csv-source";
 
 /*
  * Fontes pela API (D', parte 1, 19/10/2026; spec, "Fonte de conhecimento por contexto"), permissão
  * sources:
- * - POST /v1/bots/{id}/sources {kind, title?, content | url, context?}: texto, FAQ, uma página ou um
- *   PDF por URL. Com `context`, a fonte só vale nas conversas daquele contexto (o SaaS manda os
+ * - POST /v1/bots/{id}/sources {kind, title?, content | url, context?}: texto, FAQ, planilha CSV (o
+ *   texto do arquivo em content), uma página ou um PDF por URL. Com `context`, a fonte só vale nas conversas daquele contexto (o SaaS manda os
  *   documentos de cada cliente dele) e só passa pelo portão, sem a análise do bot.
  * - GET /v1/bots/{id}/sources ?context=<json> | ?tagged=false, cursor, limit.
  * - DELETE /v1/bots/{id}/sources/{source}.
  * O site inteiro fica no painel (a leitura de várias páginas passa do tempo de uma requisição).
  */
 
-export const API_SOURCE_KINDS = ["text", "faq", "page", "pdf"] as const;
+export const API_SOURCE_KINDS = ["text", "faq", "csv", "page", "pdf"] as const;
 export type ApiSourceKind = (typeof API_SOURCE_KINDS)[number];
 const isKind = (v: unknown): v is ApiSourceKind => typeof v === "string" && (API_SOURCE_KINDS as readonly string[]).includes(v);
 
@@ -55,6 +56,13 @@ export function parseSourceBody(body: Record<string, unknown>): ApiSourceInput |
     if (content.length < 20) return { error: "content precisa de pelo menos 20 caracteres.", field: "content" };
     if (content.length > API_SOURCE_TEXT_MAX) return { error: `content vai até ${API_SOURCE_TEXT_MAX} caracteres; para mais, mande um PDF por URL.`, field: "content" };
     return { kind, title: rawTitle || (kind === "faq" ? "Perguntas frequentes" : "Texto"), content, url: null, context: tag.value };
+  }
+  if (kind === "csv") {
+    const raw = typeof body.content === "string" ? body.content : "";
+    if (raw.length > API_SOURCE_TEXT_MAX) return { error: `content vai até ${API_SOURCE_TEXT_MAX} caracteres; para mais, divida a planilha em várias fontes.`, field: "content" };
+    const csv = csvToText(raw);
+    if ("error" in csv) return { error: csv.error, field: "content" };
+    return { kind, title: rawTitle || "Planilha", content: csv.text, url: null, context: tag.value };
   }
   const url = typeof body.url === "string" ? normalizeUrl(body.url) : null;
   if (!url || !/^https?:\/\//i.test(url)) return { error: "url precisa ser um endereço http ou https.", field: "url" };

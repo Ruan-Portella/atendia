@@ -38,12 +38,13 @@ export default function SourcesApiDocs() {
       <Route id="criar" method="POST" path="/v1/bots/{id}/sources" />
       <Example page={E} id="texto" />
       <Example page={E} id="pdf" />
+      <Example page={E} id="csv" />
       <Table
         head={["Campo", "Regra", "Erro"]}
         rows={[
-          [<code key="1">kind</code>, <><code>text</code>, <code>faq</code>, <code>page</code> (uma página) ou <code>pdf</code> (por URL). O site inteiro e os posts do Instagram ficam no painel (na lista, aparecem como <code>site</code> e <code>instagram</code>).</>, <>400 <code>kind</code></>],
-          [<code key="2">title</code>, "Opcional (até 120 caracteres). Sem ele: Texto, Perguntas frequentes, o domínio da página ou o nome do arquivo.", <>400 <code>title</code></>],
-          [<code key="3">content</code>, <>Em <code>text</code> e <code>faq</code>: de 20 a 30 mil caracteres (o corpo vai até 32 KB). Para mais, um PDF por URL.</>, <>400 <code>content</code></>],
+          [<code key="1">kind</code>, <><code>text</code>, <code>faq</code>, <code>csv</code> (planilha), <code>page</code> (uma página) ou <code>pdf</code> (por URL). O site inteiro e os posts do Instagram ficam no painel (na lista, aparecem como <code>site</code> e <code>instagram</code>).</>, <>400 <code>kind</code></>],
+          [<code key="2">title</code>, "Opcional (até 120 caracteres). Sem ele: Texto, Perguntas frequentes, Planilha, o domínio da página ou o nome do arquivo.", <>400 <code>title</code></>],
+          [<code key="3">content</code>, <>Em <code>text</code> e <code>faq</code>: de 20 a 30 mil caracteres (o corpo vai até 32 KB). Para mais, um PDF por URL. Em <code>csv</code>: o texto do arquivo, até 30 mil caracteres, com a primeira linha de cabeçalho e separador <code>;</code> ou <code>,</code>; cada linha vira um trecho com o nome das colunas.</>, <>400 <code>content</code></>],
           [<code key="4">url</code>, <>Em <code>page</code> e <code>pdf</code>: http ou https. O PDF vai até 15 MB e precisa ter texto (PDF só de imagem não é lido).</>, <>400 <code>url</code>; 422 <code>source_unreadable</code> ou <code>source_too_large</code></>],
           [<code key="5">context</code>, "Opcional: até 5 pares, com chaves de letras, números, _, . e - e valores texto (até 200), número ou verdadeiro/falso.", <>400 <code>context</code></>],
         ]}

@@ -1107,6 +1107,37 @@
     },
     {
       "page": "fontes",
+      "id": "csv",
+      "title": "Planilha CSV (o texto do arquivo em content)",
+      "method": "POST",
+      "path": "bots/bot_7c9e6679-7425-40de-944b-e07fc1f90ae7/sources",
+      "query": [],
+      "headers": {
+        "Idempotency-Key": "3b9f2c8e-5a1d-4e7b-9c6f-2d8a4e1b7c90"
+      },
+      "body": {
+        "kind": "csv",
+        "title": "Tabela de preços",
+        "content": "Serviço;Preço;Duração\nCorte masculino;R$ 45;30 min\nBarba;R$ 35;20 min\nCorte e barba;R$ 70;50 min"
+      },
+      "status": 201,
+      "response": {
+        "id": "src_9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",
+        "bot_id": "bot_7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "kind": "csv",
+        "title": "Tabela de preços",
+        "url": null,
+        "status": "ready",
+        "chunks": 1,
+        "pages": 1,
+        "error": null,
+        "context": null,
+        "created_at": "2026-10-19T15:11:30.215Z"
+      },
+      "binary": false
+    },
+    {
+      "page": "fontes",
       "id": "listar",
       "title": "As fontes de um contexto",
       "method": "GET",

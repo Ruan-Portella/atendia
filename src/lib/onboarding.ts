@@ -62,7 +62,7 @@ export function onboardingSteps(input: { bots: OnboardingBot[]; hasLogo: boolean
     const d = input.dev ?? { keys: 0, keyUsed: false, webhooks: 0, integrations: false };
     return [
       { key: "bot", title: "Crie um chatbot", hint: "É ele quem responde: pela API, você manda mensagens e lê as conversas dele.", href: "/painel/bots/novo", cta: "Criar chatbot", done: created },
-      { key: "fontes", title: "Treine com uma fonte", hint: "Um site, um PDF ou perguntas frequentes: é daí que saem as respostas da IA.", href: editor("fontes"), cta: "Adicionar fonte", done: trained },
+      { key: "fontes", title: "Treine com uma fonte", hint: "Um site, um PDF, uma planilha ou perguntas frequentes: é daí que saem as respostas da IA.", href: editor("fontes"), cta: "Adicionar fonte", done: trained },
       { key: "chave", title: "Crie uma chave da API", hint: "Em Integrações, escolha os chatbots e as permissões. A chave aparece uma vez só: guarde no seu sistema.", href: "/painel/integracoes", cta: "Criar chave", done: d.keys > 0 },
       { key: "webhook", title: "Cadastre um webhook", hint: "Os eventos (mensagem nova, lead, pedido de atendente) chegam no seu sistema, assinados. Confira pelo botão Testar.", href: "/painel/integracoes", cta: "Cadastrar webhook", done: d.webhooks > 0 },
       { key: "pacote", title: "Assine o pacote Integrações", hint: `Com ele, a API responde e os webhooks entregam (R$ ${PACKS.integracoes.priceBrl} por mês).`, href: "/painel/cobranca", cta: "Ver em Cobrança", done: d.integrations },
@@ -73,7 +73,7 @@ export function onboardingSteps(input: { bots: OnboardingBot[]; hasLogo: boolean
   if (input.profile === "business") {
     return [
       { key: "bot", title: "Crie o seu chatbot", hint: "Dê um nome ao assistente do seu negócio.", href: "/painel/bots/novo", cta: "Criar chatbot", done: created },
-      { key: "fontes", title: "Treine com o seu site", hint: "Cole o endereço do seu site, uma página, um PDF ou escreva as perguntas frequentes. É daí que saem as respostas.", href: editor("fontes"), cta: "Adicionar fonte", done: trained },
+      { key: "fontes", title: "Treine com o seu site", hint: "Cole o endereço do seu site, uma página, um PDF, uma planilha ou escreva as perguntas frequentes. É daí que saem as respostas.", href: editor("fontes"), cta: "Adicionar fonte", done: trained },
       { key: "teste", title: "Converse com ele", hint: "Use o teste ao vivo ao lado do editor e pergunte o que um cliente seu perguntaria.", href: editor(), cta: "Testar agora", done: tested },
       { key: "publicar", title: "Coloque no ar", hint: "Enquanto está em rascunho, ele não responde no seu site nem no WhatsApp.", href: editor(), cta: "Publicar", done: live },
       { key: "instalar", title: "Leve para o site ou o WhatsApp", hint: "Cole uma linha de código no seu site (tem passo a passo para WordPress, Wix, Shopify e outros) ou conecte o WhatsApp e o Instagram na página do chatbot.", href: editor("instalacao"), cta: "Ver como", done: Boolean(bot && outside(bot)) },
@@ -83,7 +83,7 @@ export function onboardingSteps(input: { bots: OnboardingBot[]; hasLogo: boolean
 
   return [
     { key: "bot", title: "Crie o primeiro chatbot", hint: "Escolha o cliente (ou cadastre um na hora) e dê um nome ao assistente.", href: "/painel/bots/novo", cta: "Criar chatbot", done: created },
-    { key: "fontes", title: "Treine com o site do cliente", hint: "Cole o endereço do site, uma página, um PDF ou escreva FAQs. É daí que saem as respostas.", href: editor("fontes"), cta: "Adicionar fonte", done: trained },
+    { key: "fontes", title: "Treine com o site do cliente", hint: "Cole o endereço do site, uma página, um PDF, uma planilha ou escreva FAQs. É daí que saem as respostas.", href: editor("fontes"), cta: "Adicionar fonte", done: trained },
     { key: "teste", title: "Converse com ele", hint: "Use o teste ao vivo ao lado do editor e pergunte o que um visitante perguntaria.", href: editor(), cta: "Testar agora", done: tested },
     { key: "publicar", title: "Coloque no ar", hint: "Enquanto está em rascunho, o chat não responde no site do cliente.", href: editor(), cta: "Publicar", done: live },
     { key: "instalar", title: "Instale no site", hint: "Cole uma linha de código (tem passo a passo para WordPress, Wix, Shopify e outros). Marcamos sozinhos quando o chat carregar lá.", href: editor("instalacao"), cta: "Ver instalação", done: Boolean(bot?.installed_at) },

@@ -17,7 +17,7 @@ export default function AgencyGuide() {
           Em <strong>Clientes</strong>, cadastre o cliente e crie um chatbot para ele.
         </li>
         <li>
-          Na <strong>Base de conhecimento</strong>, cole o site do cliente, envie PDFs ou escreva as perguntas frequentes. É daí que saem as respostas.
+          Na <strong>Base de conhecimento</strong>, cole o site do cliente, envie PDFs e planilhas CSV ou escreva as perguntas frequentes. É daí que saem as respostas.
         </li>
         <li>
           Na <strong>Personalidade</strong>, dê o nome do assistente, o tom e as instruções, e converse com ele no <strong>teste ao vivo</strong>.

@@ -27,7 +27,7 @@ O painel abre no tema escuro. Para trocar, clique no seu nome no rodapé do menu
 1. Crie a conta grátis em boavoz.com: com o Google, ou com o seu e-mail e o código que chega nele (o BoaVoz não usa senha; entrar e criar conta é a mesma tela, e o código vale por 1 hora).
 2. No primeiro acesso, diga como vai usar o BoaVoz: para os clientes da sua agência, para o seu negócio ou para integrar pela API. Ali vão também o nome da agência (ou do negócio), o seu nome e, se quiser, o seu WhatsApp para os avisos. A resposta muda os "Primeiros passos" do painel: a agência vai até o chat no site do cliente; o negócio, até o site ou o WhatsApp dele; quem integra, até a chave da API, o webhook, o pacote Integrações e a primeira chamada. Para mudar depois, use "Mudar o perfil" nos primeiros passos ou o "Mudar" em Marca e domínio (só o dono da conta): abre uma janela com as três respostas, sem sair da tela. Os primeiros passos ficam num botão no canto de baixo, à direita, em todo o painel (com o anel de quantos já foram feitos): ele abre a lista, com o próximo passo em destaque e o botão para fazer, e minimiza de novo pela seta. Quando um passo fica pronto, o botão diz "Feito! Próximo: …"; com tudo pronto, aparece "Tudo pronto!" e o Fechar. O botão some na Caixa de entrada e nas conversas, para não ficar em cima do campo de resposta, e "Ocultar" tira os primeiros passos do painel. Para ver de novo, use "Primeiros passos" no menu da sua conta (clique no seu nome, embaixo do menu da esquerda) ou no Ctrl K.
 3. No painel, em Clientes, crie o cliente e um chatbot para ele (no perfil do próprio negócio, o cliente é o próprio negócio).
-4. No chatbot, aba Base de conhecimento, adicione o site, PDFs, textos ou perguntas frequentes do cliente.
+4. No chatbot, aba Base de conhecimento, adicione o site, PDFs, planilhas CSV, textos ou perguntas frequentes do cliente.
 5. Ajuste a aba Personalidade (nome do assistente, tom, instruções) e teste no "teste ao vivo".
 6. Quando estiver bom, escolha um tamanho para o chatbot (em Cobrança) e conecte os canais: o chat do site (em Canais → Chat do site, na página do chatbot), o WhatsApp e o Instagram.
 
@@ -112,7 +112,7 @@ Em Demos, a agência gera uma demonstração do chatbot de um possível cliente 
 
 ## Base de conhecimento (fontes)
 
-Na aba Base de conhecimento do chatbot, a agência adiciona o que o assistente sabe: o site do cliente (o BoaVoz lê as páginas sozinho), uma página só, PDF de até 15 MB, texto e perguntas frequentes (FAQ). O site é lido de novo toda semana, sozinho. O assistente só responde com o que está na base: o que não está vira "Não tenho essa informação" e a pergunta fica registrada para a equipe responder. Respondida no painel, ela entra na base como FAQ.
+Na aba Base de conhecimento do chatbot, a agência adiciona o que o assistente sabe: o site do cliente (o BoaVoz lê as páginas sozinho), uma página só, PDF de até 15 MB, planilha CSV de até 2 MB (produtos, preços, tabelas), texto e perguntas frequentes (FAQ). O site é lido de novo toda semana, sozinho. O assistente só responde com o que está na base: o que não está vira "Não tenho essa informação" e a pergunta fica registrada para a equipe responder. Respondida no painel, ela entra na base como FAQ.
 
 ## Aviso do momento
 

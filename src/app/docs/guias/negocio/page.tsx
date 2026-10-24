@@ -17,7 +17,7 @@ export default function BusinessGuide() {
           Crie o chatbot: o cliente dele é o seu próprio negócio.
         </li>
         <li>
-          Na <strong>Base de conhecimento</strong>, cole o endereço do seu site, envie o cardápio ou a tabela de preços em PDF, ou escreva as perguntas frequentes.
+          Na <strong>Base de conhecimento</strong>, cole o endereço do seu site, envie o cardápio ou a tabela de preços em PDF ou planilha CSV, ou escreva as perguntas frequentes.
         </li>
         <li>
           Na <strong>Personalidade</strong>, dê um nome ao assistente e diga como ele fala. Converse com ele no <strong>teste ao vivo</strong> como se fosse um cliente.

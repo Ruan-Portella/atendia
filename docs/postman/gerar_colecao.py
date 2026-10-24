@@ -434,6 +434,19 @@ DOC_OF = {
         "context": None,
         "created_at": "2026-10-19T15:11:05.402Z",
     }),
+    "Fonte planilha CSV": ex("fontes", "csv", "Planilha CSV (o texto do arquivo em content)", 201, {
+        "id": "src_9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",
+        "bot_id": DOC_VALUES["bot_id"],
+        "kind": "csv",
+        "title": "Tabela de preços",
+        "url": None,
+        "status": "ready",
+        "chunks": 1,
+        "pages": 1,
+        "error": None,
+        "context": None,
+        "created_at": "2026-10-19T15:11:30.215Z",
+    }),
     "Fontes de um contexto": ex("fontes", "listar", "As fontes de um contexto", 200, {
         "data": [
             {
@@ -1097,7 +1110,7 @@ SAVE_SOURCE = [
 
 fontes = folder(
     "11. Fontes",
-    "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, uma página ou um PDF por URL, e o aviso do momento (o texto com prazo que a IA usa quando perguntam; também com **provisioning**). Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
+    "Fontes de conhecimento pela API (permissão **sources**): texto, FAQ, planilha CSV, uma página ou um PDF por URL, e o aviso do momento (o texto com prazo que a IA usa quando perguntam; também com **provisioning**). Com `context`, a fonte só vale nas conversas daquele contexto (o do token, do pareamento ou o contexto fixo do chatbot) e só passa pelo portão, sem refazer a análise do bot. A leitura acontece na hora: a resposta já diz quantos trechos entraram.",
     [
         req(
             "Fonte de texto com contexto",
@@ -1113,6 +1126,14 @@ fontes = folder(
             f"bots/{BOT}/sources",
             body={"kind": "pdf", "url": "{{pdf_url}}"},
             desc="Sem `context`: vale em todas as conversas do chatbot (e a análise do bot roda de novo). O PDF vai até 15 MB; um PDF só de imagem volta 422 source_unreadable.",
+            tests=expect_status(201),
+        ),
+        req(
+            "Fonte planilha CSV",
+            "POST",
+            f"bots/{BOT}/sources",
+            body={"kind": "csv", "title": "Tabela de preços", "content": "Serviço;Preço;Duração\nCorte masculino;R$ 45;30 min\nBarba;R$ 35;20 min\nCorte e barba;R$ 70;50 min"},
+            desc="O texto do arquivo em `content` (até 30 mil caracteres), com a primeira linha de cabeçalho; separador `;` ou `,`. Cada linha vira um trecho com o nome das colunas.",
             tests=expect_status(201),
         ),
         req(

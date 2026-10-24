@@ -54,7 +54,7 @@ export function BotOverview(p: OverviewProps) {
   const resolved = p.stats.conversations ? Math.round(100 - (p.stats.needsHuman / p.stats.conversations) * 100) : 100;
   const channelOn = Boolean(p.site) || Boolean(p.whatsapp?.connected) || Boolean(p.instagram?.connected);
   const todo = [
-    { done: p.readySources > 0, label: "Base de conhecimento com uma fonte pronta", hint: "site, PDF ou texto do negócio", href: tab("fontes") },
+    { done: p.readySources > 0, label: "Base de conhecimento com uma fonte pronta", hint: "site, PDF, planilha ou texto do negócio", href: tab("fontes") },
     { done: p.hasFace, label: "Rosto e aparência", hint: "a cor, os olhos e o balão do site", href: tab("aparencia") },
     { done: Boolean(p.quota && p.quota.sizeLabel !== "sem tamanho"), label: "Tamanho escolhido", hint: "sem tamanho, ele não liga nos canais", href: p.canBill ? "/painel/cobranca" : tab("visao") },
     { done: channelOn, label: "Um canal ligado", hint: "chat do site, WhatsApp ou Instagram", href: tab("instalacao") },
